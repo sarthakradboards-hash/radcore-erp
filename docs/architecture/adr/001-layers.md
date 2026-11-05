@@ -94,12 +94,15 @@ libraries it may import. Every edge points from a higher rank to a lower one, so
 | 4 | lib-gst | lib-integrations |
 | 4 | lib-ops | lib-hr |
 | 5 | lib-accounts | lib-gst, lib-integrations |
-| 6 | lib-crm | lib-accounts, lib-integrations |
-| 6 | lib-stock | lib-accounts, lib-gst |
+| 6 | lib-crm | lib-accounts, lib-ops (follow-ups that become tasks), lib-integrations |
+| 6 | lib-stock | lib-accounts, lib-gst, lib-integrations (stock levels pushed to Shopify) |
 | 6 | lib-payroll | lib-hr, lib-accounts |
 | 7 | lib-purchasing | lib-stock, lib-accounts, lib-gst |
 | 7 | lib-sales | lib-stock, lib-accounts, lib-gst, lib-crm, lib-integrations |
-| 8 | lib-service | lib-sales, lib-stock, lib-accounts, lib-purchasing |
+| 8 | lib-service | lib-sales, lib-stock, lib-accounts, lib-purchasing, lib-ops (technicians allocated to job cards) |
+
+Some flows need no edge. When lib-accounts records a receipt against an invoice, it writes only its own allocation
+rows. "Paid" is then read from a view, so lib-accounts never writes a sales table.
 
 | App | May import |
 |---|---|
@@ -115,19 +118,46 @@ Adding an edge to the table means amending this ADR in a PR the architect review
 ### 5. One owner per table
 
 Each table belongs to exactly one library: its schema file sits in `packages/db/src/<module>/`, the same module
-as the library.
+as the library. packages/db publishes exactly these entries:
 
-- **Writes.** Only `lib-<module>` imports `@radcore/db/<module>`. Insert, update and delete need the table object,
-  so no other library can write that module's tables. To change another module's data, call that library's
-  service.
-- **Reads across modules.** Use Drizzle relational queries from your own tables (`ctx.tx.query.salesOrders.findMany({ with: { party: true } })`),
-  or a named view from `@radcore/db/views`. Neither needs the other module's table objects.
-- **Record scope follows the record.** A view that another library reads returns totals, or rows the reading
-  library may show to anyone who can open its screen. To list another module's records for a person, call that
-  module's service, so its `ctx.can` scope check runs (M1-17). Reading another module's rows through a relation
-  or view never widens what a person can see.
-- `@radcore/db/platform` and the full schema (`@radcore/db/schema`, used to build the typed client) are imported
-  only by lib-platform.
+```
+"exports": {
+  "./<module>":         "./src/<module>/index.ts",     one per module with tables (platform, hr, gst, ops, accounts,
+                                                        crm, stock, payroll, purchasing, sales, service); only lib-<module>
+  "./views":            "./views/index.ts",            every library
+  "./schema":           "./src/schema.ts",             lib-platform only (builds the client)
+  "./request-context":  "./src/request-context.ts",    lib-platform only
+  "./migrate":          "./src/migrate.ts"             lib-platform only
+}
+```
+
+**How ownership is enforced.** Each point below fails a check, and has a fixture (see Enforcement):
+
+- `ctx.tx` is **opaque**. Its type has no `query`, `select`, `insert`, `update`, `delete`, `execute` or `_`, so a
+  service can only pass it on (T1).
+- A library gets a usable transaction for its own module only: `const tx = salesTx(ctx)`, from `@radcore/db/sales`.
+  Only lib-sales may import that entry (D7), so only lib-sales can obtain a `SalesTx`. The type exposes `query`
+  for the sales tables only, plus `select`, `insert`, `update` and `delete`, and has no `execute` and no `_` (T1).
+  At run time it is the same transaction.
+- `insert`, `update`, `delete` and `select().from(table)` all need the table object, and only the owner can import
+  it (D7). So a library can't read or write another module's tables directly.
+- No way around it: no `sql` or `.execute` outside the SQL zone (ADR-002 L1 to L3), and no `any`, double cast or
+  `getTableConfig` in libraries (E4).
+
+**Reads across modules.** A library reads other modules' data in two ways only:
+
+- as rows related to its own records, through a relational query on its own tables
+  (`salesTx(ctx).query.invoices.findMany({ with: { party: { columns: { name: true } } } })`);
+- from a named view in `@radcore/db/views`.
+
+**Record scope: what is enforced, and what is reviewed.** It is enforced that a library can't list another
+module's table at all. It isn't machine-checked that related rows and view rows show only what the person may see.
+That is the rule below, reviewed by the auditor and tested in M1-17:
+
+- Related rows appear only next to the reading library's own records, and those are scope-checked.
+- Rows from a view are filtered by the service with `ctx.can` before they are returned.
+- To list another module's records for a person, call that module's service.
+- Masking is structural either way: `pii()` fields are masked on the declared output (§6).
 
 ### 6. Routes declared as data, one generic handler
 
@@ -156,23 +186,61 @@ from the contract, and `handler` is the service function itself. The compiler ch
 output match the contract. `auth` is `session`, `public` (with a named rate-limit class) or `webhook` (signature
 checked by the webhook intake).
 
-The one generic handler (`apps/api/src/http/`, M1-08) runs every route in the same order:
+The one generic handler (`apps/api/src/http/`, M1-08) runs every `session` and `public` route in the same order:
 
 ```
-request ─► origin and rate guards ─► session ─► parse input (contract.input)
-        ─► route permission (contract.perm) ─► saved-once lookup
+request ─► origin and rate guards ─► principal (§6a: session, or a link token) ─► parse input (contract.input)
+        ─► route permission (contract.perm) for that principal
         ─► one transaction with statement, lock and idle timeouts; Ctx built
-        ─► service(ctx, input) ─► record-scope checks inside the service: ctx.can(perm, row)
-        ─► commit ─► saved-once store ─► output checked against contract.output, camelCase as is,
-           fields marked pii() masked for a role without pii:read
+        ─► saved-once claim (writes only): insert (principal, route, key, input hash) under a unique constraint
+        ─► service(ctx, input) ─► record-scope checks inside the service: ctx.can(...)
+        ─► output checked against contract.output, camelCase as is, pii() fields masked for this principal
+        ─► saved-once: store the masked answer on the claimed row ─► commit
         ─► errors mapped by code, never by message text
 ```
 
-Masking happens on the declared output, not in each service. A phone number that reaches a response through a
-relation is masked like one read directly (M1-22).
+**Saved-once (M1-09).** The claim and the stored answer are in the same transaction as the work.
+- A second request with the same key waits on the unique index until the first ends. If the first committed, the
+  second replays the stored answer. If it rolled back, the second runs.
+- The same key with a different body is refused. The key is scoped to the principal and the route, so one person's
+  key can't replay another's answer.
+- A crash after commit can't lose the answer, because it was committed with the work.
 
-The route-level permission says whether this role may use the feature. The record-scope check happens inside the
-service (M1-17), so a job or script calling the same service gets the same check.
+**Masking** happens on the declared output, not in each service. A phone number that reaches a response through a
+relation is masked like one read directly (M1-22). Exports use the same output path (§8b).
+
+**Webhook routes** (`auth: 'webhook'`) take their own lane, because a signature is over the raw bytes:
+
+```
+request ─► rate guard ─► raw body kept, not parsed ─► no verifier registered for this route? refuse 401, store nothing
+        ─► verify the signature over the raw body ─► bad: refuse 401, store nothing
+        ─► one transaction: insert the delivery under unique (provider, delivery id) ─► already there: answer 200, queue nothing
+        ─► queue the job in the same transaction ─► commit ─► 200
+```
+
+The delivery id is the provider's own (for example Shopify's `X-Shopify-Webhook-Id`), extracted by the
+lib-integrations adapter. Where a provider sends none, the id is a hash of the raw body. Retries and replays are
+stored once and acted on once (M1-27).
+
+### 6a. Who a request runs as
+
+`ctx.can` always checks a named principal. There are four kinds:
+
+| Principal | Comes from | Permission checked | Record scope |
+|---|---|---|---|
+| user | a session | the user's roles at that moment | the role's scope (M1-17) |
+| link | a public link token | only the one action on the one record the token names | that record (M1-23) |
+| job for a user | `ctx.jobs.send` during a user's request | the enqueuer's roles, **rechecked when the job runs**; a revoked permission fails the job and raises the dead-letter alert | the enqueuer's scope (M1-26) |
+| system | a schedule or a webhook | only the permissions listed in the job contract, for example `principal: system('online-orders', ['sales:write', 'parties:write'])` | every record, for the listed permissions only |
+
+There is no principal that passes every check. Audit rows record the principal: a user id, `system:<name>` or a
+link id.
+
+The feature permission is checked once, at the entry: the route contract's `perm`, or the job contract's
+principal. Inside, services check record scope with `ctx.can`. A service called by another service runs under the
+same principal. The scope rules are keyed by the kind of data, so payroll reading employees asks "may this principal
+see this employee's pay", not "does this principal hold hr:read". M1-17 defines the scope rules. M1-19's manifest
+lists which services each route and job reaches, so a new reach shows up in review.
 
 ### 7. The web client
 
@@ -189,6 +257,26 @@ the same zod schemas the API uses.
 (server-only). A service queues a job with `ctx.jobs.send(contract, input)` inside its own transaction, so a save
 that rolls back queues nothing. This means the queue must accept a send on the caller's transaction connection.
 M1-26 proves that with a rolled-back save, and ADR-003 names the library. The API process runs no jobs.
+
+**No network call inside a transaction.** A service that needs an outside call, such as an e-invoice IRN or a
+WhatsApp send, queues a job. The job makes the call (with the provider's idempotency key where the provider has
+one) and records the result in its own transaction. A rolled-back invoice therefore never leaves an IRN behind,
+and a slow provider never holds a transaction open past the idle timeout.
+
+### 8b. Platform engines, module functions
+
+lib-platform's lists, exports, imports and approvals are engines that know no module, and lib-platform can't call
+up into module libraries. So each module supplies the function that does its part, and the route or job file wires
+the two together:
+
+```ts
+defineExport(sales.contracts.exportInvoices, sales.invoiceExportRows),   // engine: paging, streaming, file format
+defineImport(stock.contracts.importItems, stock.importItemRow),          // engine: parsing, limits, per-row errors
+defineApproval('purchase-order', purchasing.approvePurchaseOrder),       // engine: maker-checker record and hash
+```
+
+The module function runs under `ctx` like any service. Scope, rules and `pii()` masking apply to an export exactly
+as they do on a screen (M1-22, M1-28, M1-29, M1-20).
 
 ### 8a. Inbound work from outside services
 
@@ -244,18 +332,23 @@ built-in cycle rule. The version goes in ADR-003. **ESLint** handles what is ins
 |---|---|---|---|
 | D1 | `no-circular` | dependency-cruiser | any import cycle, inside or between packages |
 | D2 | allowed-dependency table (§4) as `allowed` rules; everything else is `not-in-allowed` | dependency-cruiser | a library imports a library not in its row |
-| D3 | no deep import | dependency-cruiser | a file outside `packages/X/` imports `packages/X/src/**` other than `src/index.ts` or `src/contract.ts` (group-matched path rule) |
+| D3 | no deep import | dependency-cruiser | a file outside `packages/X/` imports a file of X that is not one of X's declared entries: `src/index.ts` and `src/contract.ts` for a library, `src/runtime.ts` for lib-platform, and the five entries listed in §5 for packages/db (group-matched path rule) |
 | D4 | web stays in the browser | dependency-cruiser | `apps/web/**` imports `packages/db`, `packages/lib-platform`, a library's `src/index.ts`, or a Node built-in |
 | D5 | contracts are browser-safe | dependency-cruiser | a `contract.ts` (or a file it imports) reaches `packages/db`, `lib-platform`, `src/services/**` or a Node built-in |
 | D6 | rules are pure | dependency-cruiser | `src/rules/**` imports `packages/db`, `lib-platform` or `src/services/**` |
-| D7 | one owner per table (§5) | dependency-cruiser | anything other than `packages/lib-<m>` (and `packages/db` itself) imports `packages/db/src/<m>/**`; anything other than lib-platform imports `db/src/platform/**` or the full schema |
+| D7 | one owner per table (§5) | dependency-cruiser | anything other than `packages/lib-<m>` (and `packages/db` itself) imports `@radcore/db/<m>`; anything other than lib-platform imports `@radcore/db/platform`, `/schema`, `/request-context` or `/migrate` |
+| T1 | the opaque transaction (§5) | TypeScript (`tsc --noEmit`, the typecheck job) | a library touches `ctx.tx.query`, `.select`, `.insert`, `.update`, `.delete`, `.execute` or `._`; or reaches another module's table through its own module transaction (`salesTx(ctx).query.parties`) |
 | D8 | apps never touch the database directly | dependency-cruiser | `apps/api/**` or `apps/worker/**` imports `packages/db` |
 | D9 | no HTTP in libraries | dependency-cruiser | `packages/**` imports `express`, `next`, or anything under `apps/` |
-| E1 | no rule in a route or job file | ESLint `no-restricted-syntax` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator. Route and job files hold only `defineRoute`, `defineWebhook` and `defineJob` calls. |
+| E1 | no rule in a route or job file | ESLint `no-restricted-syntax` and `no-restricted-imports` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator; or an argument of a `define*` call is itself a call (so `defineRoute(c, wrap(sales.x))` fails); or the file imports anything except libraries' `.` and `./contract` entries and the `define*` helpers. Route and job files hold only `defineRoute`, `defineWebhook`, `defineJob`, `defineExport`, `defineImport` and `defineApproval` calls. |
 | E2 | file size | ESLint `max-lines` (`max: 400`, blank lines and comments counted) | any source file over 400 lines |
+| E3 | no I/O without an import | ESLint `no-restricted-globals` and `no-restricted-syntax` on `packages/lib-common/**`, every `contract.ts` and every `src/rules/**` | use of `process`, `fetch`, `setTimeout`, `setInterval`, `crypto`, `Math.random`, `Date.now()` or `new Date()` with no argument. Time and randomness come in as arguments or from `ctx.clock`. |
+| E4 | no escape hatch in libraries | ESLint on `packages/lib-*/**`: `@typescript-eslint/no-explicit-any`, `no-restricted-syntax` on a double cast (`x as unknown as T`) and on `as any`, `no-restricted-imports` of `getTableConfig` | a library casts its way past T1 or reads table metadata |
 
-Proof for M0-07: one throwaway commit per rule that breaks it, each failing the check with a message that names the
-rule. The commits aren't merged.
+**Proof.** Every rule has one violating fixture per clause, kept in `tools/boundary-fixtures/<rule>-<clause>/`, so
+D4, D5, D7, E1 and E3 have one fixture for each thing they forbid. A CI job runs each check against each fixture on
+every run, and fails if any fixture passes. A rule that stops working is caught the day it breaks. The fixtures sit
+outside the normal lint and typecheck globs.
 
 ## Consequences
 
