@@ -79,8 +79,22 @@ A migration that has reached `dev` is never edited. A change is a new migration 
 
 ## Lint rules (for M0-07 to add, M0-08 to run in CI)
 
-"Server code" means `packages/**`, `apps/api/**` and `apps/worker/**`. "The SQL zone" means the four places in §3,
-excluding `repo.ts` files. Each rule must fail CI, and M0-07 proves each one with a throwaway commit that breaks it.
+"Server code" means `packages/**`, `apps/api/**` and `apps/worker/**`. Each rule must fail CI, and M0-07 proves
+each one with a throwaway commit that breaks it.
+
+**The SQL zone is exactly these globs, and nothing else:**
+
+```
+packages/db/migrations/**            (SQL files; drizzle-kit output and --custom migrations)
+packages/db/views/*.ts
+packages/db/src/*/tables.ts
+packages/db/src/columns.ts
+packages/db/src/request-context.ts
+```
+
+The ESLint config holds them in one constant, `SQL_ZONE`. It is the only place L1 to L3 are switched off. M0-07
+adds a test that fails when `SQL_ZONE` differs from this list, so widening the zone means amending this ADR in a
+reviewed PR. `repo.ts` files are outside the zone.
 
 | # | Rule | How | Fails when |
 |---|---|---|---|
