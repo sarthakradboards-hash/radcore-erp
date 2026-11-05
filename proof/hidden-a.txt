@@ -1,0 +1,2 @@
+Fake token behind a -diff attribute (random, not a real credential):
+ghp_elqhuRSCDw9ZbIo9Ij4P76feGdsuDQJDuIq7
