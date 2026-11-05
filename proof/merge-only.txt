@@ -1,0 +1,2 @@
+Fake token added only in the merge commit (random, not a real credential):
+ghp_nPFcDImKgSfFpEqU147idr5OpiWHlnCRWoTT
