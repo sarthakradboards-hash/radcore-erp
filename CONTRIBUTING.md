@@ -43,6 +43,10 @@ It must print the `users.noreply.github.com` address above.
 
 ## Never commit
 
+The `secret-scan` check (gitleaks) catches most secrets. It can't read UTF-16 files (Windows PowerShell 5.1's
+default output), archives, Git LFS objects or commit messages, and it skips lockfiles, `node_modules/`, `vendor/`,
+images and binaries. Treat those as unscanned.
+
 - Secrets: passwords, API keys, tokens, `.env` files with real values.
 - The restricted security appendix (02b) or anything quoted from it.
 - Real customer, employee or bank data.
