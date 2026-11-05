@@ -1,0 +1,12 @@
+# Dependency updates (RAD-6, RC-006). The npm entry has nothing to read until the workspaces land (M0-07).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

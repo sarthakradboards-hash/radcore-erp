@@ -1,0 +1,24 @@
+# Fails any PR whose branch is not <ticket-id>-<slug> (RAD-6). Dependabot's own branches are let through.
+name: branch-name
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  branch-name:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Check the branch name
+        env:
+          # Passed through env, never interpolated into the script: a branch name is attacker-controlled text.
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          if [[ "$BRANCH" =~ ^rad-[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$ || "$BRANCH" == dependabot/* ]]; then
+            echo "Branch name OK: $BRANCH"
+          else
+            echo "::error::Branch '$BRANCH' must be <ticket-id>-<slug> in lowercase, for example rad-6-repository-guardrails."
+            exit 1
+          fi
