@@ -8,7 +8,11 @@
    `branch-name` check fails any other name.
 3. Open a PR into `dev` and fill in the template.
 4. A PR is merged only after auditor PASS, e2e-playwright PASS (user-facing tickets only) and the
-   coordinator's check. Only the coordinator merges. Nobody pushes to `dev` or `main` directly.
+   coordinator's check. Only the coordinator merges.
+
+**Never push directly to `dev` or `main`.** GitHub does not refuse such a push here: the repository
+is on the Free plan with no branch protection (Sarthak's decision, 5 Nov 2026). The rule holds only
+because everyone keeps it. Every change reaches `dev` through a reviewed PR that the coordinator merges.
 
 **Dependabot PRs** come from `dependabot/...` branches, which are exempt from the `<ticket-id>-<slug>`
 name. They belong to the standing ticket
