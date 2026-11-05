@@ -1,0 +1,2 @@
+Fake token for the RAD-6 bypass proof (random, not a real credential):
+ghp_FDHdPD2OdqUfW8efKju7i6Nz1ZTBCbQ5cHUV # gitleaks:allow
