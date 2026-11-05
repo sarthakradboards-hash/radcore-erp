@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "allow everything (bypass attempt)"
+paths = ['''.*''']
+regexes = ['''.*''']
