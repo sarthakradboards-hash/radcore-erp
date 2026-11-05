@@ -10,6 +10,12 @@
 4. A PR is merged only after auditor PASS, e2e-playwright PASS (user-facing tickets only) and the
    coordinator's check. Only the coordinator merges. Nobody pushes to `dev` or `main` directly.
 
+**Dependabot PRs** come from `dependabot/...` branches, which are exempt from the `<ticket-id>-<slug>`
+name. They belong to the standing ticket
+[RAD-16](https://linear.app/radboards-erp/issue/RAD-16), and each one links to it. The auditor
+reviews them, and so does e2e-playwright when they touch `apps/web` or a UI library. The coordinator
+merges them. A major version update gets its own ticket.
+
 ## Commit identity
 
 Commits must record the account that owns the repository, **sarthakradboards-hash**, not a personal
