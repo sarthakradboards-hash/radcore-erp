@@ -1,11 +1,7 @@
-# Dependency updates (RAD-6, RC-006). The npm entry has nothing to read until the workspaces land (M0-07).
+# Dependency updates (RAD-6, RC-006). PRs belong to RAD-16.
+# M0-07 (RAD-13) adds the npm entry in the same PR as the root package.json; until then it would only error.
 version: 2
 updates:
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -14,8 +14,8 @@
 is on the Free plan with no branch protection (Sarthak's decision, 5 Nov 2026). The rule holds only
 because everyone keeps it. Every change reaches `dev` through a reviewed PR that the coordinator merges.
 
-**Dependabot PRs** come from `dependabot/...` branches, which are exempt from the `<ticket-id>-<slug>`
-name. They belong to the standing ticket
+**Dependabot PRs** come from `dependabot/...` branches. They are exempt from the `<ticket-id>-<slug>`
+name only when Dependabot opened the PR: a person's PR from a `dependabot/...` branch fails the check. They belong to the standing ticket
 [RAD-16](https://linear.app/radboards-erp/issue/RAD-16), and each one links to it. The auditor
 reviews them, and so does e2e-playwright when they touch `apps/web` or a UI library. The coordinator
 merges them. A major version update gets its own ticket.

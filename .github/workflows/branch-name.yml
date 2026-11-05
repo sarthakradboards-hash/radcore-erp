@@ -1,4 +1,4 @@
-# Fails any PR whose branch is not <ticket-id>-<slug> (RAD-6). Dependabot's own branches are let through.
+# Fails any PR whose branch is not <ticket-id>-<slug> (RAD-6). Only PRs opened by Dependabot itself are exempt (RAD-16).
 name: branch-name
 
 on:
@@ -15,8 +15,16 @@ jobs:
         env:
           # Passed through env, never interpolated into the script: a branch name is attacker-controlled text.
           BRANCH: ${{ github.head_ref }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
-          if [[ "$BRANCH" =~ ^rad-[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$ || "$BRANCH" == dependabot/* ]]; then
+          ok() { [[ "$1" =~ ^rad-[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$ || ( "$2" == "dependabot[bot]" && "$1" == dependabot/* ) ]]; }
+          # Self-check: the rule must keep giving these answers.
+          for b in rad-6-repository-guardrails rad-12-x; do ok "$b" someone || { echo "::error::self-check: $b should pass"; exit 1; }; done
+          ok dependabot/npm_and_yarn/zod-4.1 'dependabot[bot]' || { echo "::error::self-check: Dependabot's own branch should pass"; exit 1; }
+          for b in dependabot/x jainsarthak0205/rad-6-x RAD-6-x rad-6 rad-6-Bad rad-6--x rad-6-x- feature/foo 'rad-6-x;rm'; do
+            ! ok "$b" someone || { echo "::error::self-check: $b should fail"; exit 1; }
+          done
+          if ok "$BRANCH" "$AUTHOR"; then
             echo "Branch name OK: $BRANCH"
           else
             echo "::error::Branch '$BRANCH' must be <ticket-id>-<slug> in lowercase, for example rad-6-repository-guardrails."
