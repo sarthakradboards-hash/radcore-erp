@@ -1,0 +1,2 @@
+Fake token for the RAD-6 secret-scan proof (random, not a real credential):
+ghp_uxtK5zmQtQQuSvswy9oBmwrVuXi37NSm62FQ
