@@ -53,6 +53,10 @@ packages/lib-sales/
 The second entry, `contract`, exists so the web app can share the module's schemas without pulling server code
 into the browser bundle.
 
+One exception: lib-platform has no `contract` entry. Instead it has `./runtime`, which opens transactions, builds
+the pool and starts the server or worker. Only `apps/api` and `apps/worker` may import it, so no library can open
+its own transaction (ADR-002, rule L7). lib-common's single `.` entry is already browser-safe.
+
 ### 3. Where each master, engine and document lives
 
 | Library | Owns (its tables, its services) |
