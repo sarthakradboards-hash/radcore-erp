@@ -58,7 +58,7 @@ into the browser bundle.
 | Library | Owns (its tables, its services) |
 |---|---|
 | lib-platform | users, roles and the permission matrix, sessions, saved-once keys, jobs, files, secrets, settings, numbering series, approvals (maker-checker), public links, webhook deliveries; the audit context the database triggers read |
-| lib-integrations | no tables: provider clients and parsers only |
+| lib-integrations | no tables: provider clients, payload parsers and signature checks only (inbound work lives in the owning module, §8a) |
 | lib-hr | employees master, hiring, attendance, leave |
 | lib-gst | GST rates by date, tax maths (split, cess, place of supply), returns (GSTR-1, GSTR-3B) read from views, e-invoice adapter use |
 | lib-ops | tasks, routines, projects, allocation, assets, maintenance; the cross-module home overview (read from views only) |
@@ -186,6 +186,45 @@ the same zod schemas the API uses.
 that rolls back queues nothing. This means the queue must accept a send on the caller's transaction connection.
 M1-26 proves that with a rolled-back save, and ADR-003 names the library. The API process runs no jobs.
 
+### 8a. Inbound work from outside services
+
+lib-integrations only speaks to outside services. It holds their clients, payload parsers and signature checks,
+and it never imports a module library. Inbound work (a Shopify order becoming a sales order, a WhatsApp message
+becoming a lead) lives in **the module that owns the result**. It always takes the same path:
+
+```
+outside service ─► apps/api webhook route ─► lib-platform webhook intake: check the signature (the provider's
+check from lib-integrations, passed in by the route), store the raw delivery once, answer 200 quickly, queue a job
+─► apps/worker job ─► owning library's service: parse the payload with lib-integrations, then act
+(retries, replay protection and the stuck-event alarm belong to the intake, M1-27)
+```
+
+Example: a Shopify order.
+
+```ts
+// apps/api/src/routes/hooks.ts  (declarations only)
+import { shopify, whatsapp } from '@radcore/lib-integrations';
+import * as sales from '@radcore/lib-sales';
+import * as crm from '@radcore/lib-crm';
+export default [
+  defineWebhook(shopify.orderCreated, shopify.verifySignature, sales.jobs.takeShopifyOrder),
+  defineWebhook(whatsapp.message, whatsapp.verifySignature, crm.jobs.captureWhatsappMessage),
+];
+
+// apps/worker/src/jobs/sales.ts
+export default [defineJob(sales.jobs.takeShopifyOrder, sales.takeShopifyOrder)];
+
+// packages/lib-sales/src/services/online-orders.ts
+export async function takeShopifyOrder(ctx: Ctx, delivery: WebhookDelivery): Promise<SalesOrder> {
+  const order = shopify.parseOrder(delivery.payload); // lib-integrations: Shopify's shape, checked
+  // ...match items by SKU and the customer by phone, then create a confirmed order (lib-sales' own rules)
+}
+```
+
+lib-platform can't import lib-integrations, which ranks above it. So the route hands the provider's signature
+check to the intake as data. Outbound calls go the other way, as normal downward imports. For example, lib-crm's
+send-message service calls `whatsapp.send()` from lib-integrations.
+
 ### 9. File size
 
 No source file (`.ts`, `.tsx`, `.js`, `.mjs`) under `apps/` or `packages/` is over 400 lines, tests included.
@@ -208,7 +247,7 @@ built-in cycle rule. The version goes in ADR-003. **ESLint** handles what is ins
 | D7 | one owner per table (§5) | dependency-cruiser | anything other than `packages/lib-<m>` (and `packages/db` itself) imports `packages/db/src/<m>/**`; anything other than lib-platform imports `db/src/platform/**` or the full schema |
 | D8 | apps never touch the database directly | dependency-cruiser | `apps/api/**` or `apps/worker/**` imports `packages/db` |
 | D9 | no HTTP in libraries | dependency-cruiser | `packages/**` imports `express`, `next`, or anything under `apps/` |
-| E1 | no rule in a route or job file | ESLint `no-restricted-syntax` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator. Route files hold only `defineRoute(contract, service)` calls. |
+| E1 | no rule in a route or job file | ESLint `no-restricted-syntax` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator. Route and job files hold only `defineRoute`, `defineWebhook` and `defineJob` calls. |
 | E2 | file size | ESLint `max-lines` (`max: 400`, blank lines and comments counted) | any source file over 400 lines |
 
 Proof for M0-07: one throwaway commit per rule that breaks it, each failing the check with a message that names the
