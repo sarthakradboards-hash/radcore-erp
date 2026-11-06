@@ -37,13 +37,17 @@ production.
 | Monitoring | a small separate server watching health and heartbeats from outside (RC-083) | Outside the app server |
 
 The same major versions run everywhere:
-- **Development:** `compose.dev.yml` runs PostgreSQL 16 and MinIO, bound to `127.0.0.1` with generated passwords
-  (M0-07, RC-198).
+- **Development:** `compose.dev.yml` runs PostgreSQL 16 and an S3-compatible dev server (SeaweedFS, Apache-2.0,
+  pinned by digest), bound to `127.0.0.1` with generated passwords (M0-07, RC-198). MinIO's image can no longer be
+  pulled anonymously, so it was replaced on 6 Nov.
 - **CI:** a PostgreSQL 16 service (M0-08).
 - **Production:** RDS PostgreSQL 16.
 
-Files use the S3 API in every environment: MinIO in development and CI, S3 in production. Mail in development and
-CI goes to a local catcher, never out.
+Files use the S3 API in every environment: an S3-compatible dev server (SeaweedFS) in development and CI, AWS S3 in
+production. The dev server's smoke test covers what production relies on: a presigned **POST** with its
+`content-length-range` and content-type conditions (§2) is accepted within the limits and refused outside them, and
+a presigned GET works. A presigned PUT alone isn't enough. Mail in development and CI goes to a local catcher, never
+out.
 
 ### 2. Rules the runtime keeps
 
@@ -251,7 +255,7 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 | `DB_POOL_MAX`, `DB_POOL_WAIT_MS` | pool size and wait limit (§2) | no | all | Parameter Store | api, worker |
 | `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` | connection timeouts (ADR-002 §4) | no | all | Parameter Store | api, worker |
 | `S3_REGION`, `S3_BUCKET_FILES` | where files live | no | all | Parameter Store | api, worker |
-| `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | MinIO in development and CI only | **yes** | development, CI | generated `.env` / CI | api, worker |
+| `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | the S3-compatible dev server (SeaweedFS) in development and CI only | **yes** | development, CI | generated `.env` / CI | api, worker |
 | `SECRETS_KMS_KEY_ID` | the multi-Region KMS key that wraps the secrets library's data keys | no | staging, production | Parameter Store | api, worker |
 | `SECRETS_LOCAL_KEY` | development and CI stand-in for KMS, at least 32 random bytes | **yes** | development, CI | generated `.env` / CI | api, worker |
 | `MAIL_FROM` | the sender address for invites and resets (a verified SES identity) | no | staging, production | Parameter Store | api, worker |
@@ -314,7 +318,7 @@ team) still builds this repository's branches, and its red check on PRs is noise
 - **Running jobs inside the API process** (v1's way). That's one process fewer, but a slow job holds up requests and
   a second API copy would run the schedule twice. Rejected (ADR-001 §8).
 - **Files in the database.** It avoids S3 in development, but files grow to most of the data and slow backups
-  (Hosting recommendation §2). Rejected; MinIO gives development the same API.
+  (Hosting recommendation §2). Rejected; an S3-compatible dev server gives development the same API.
 - **Migrations in a container on the server** (this ADR's first draft). The owner credential would sit on the
   server and be readable through its role. Rejected; CI runs them through a tunnel.
 - **A transaction-mode pooler (PgBouncer, RDS Proxy pinned).** It isn't needed at 20 to 150 users, and it drops the
