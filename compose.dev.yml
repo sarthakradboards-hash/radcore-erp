@@ -1,0 +1,41 @@
+# Local services for development (RC-198): every port on 127.0.0.1 only, and no password in this file.
+# Passwords come from .env, which `npm run dev:env` generates and git ignores. Start with `npm run db:up`.
+name: radcore
+
+services:
+  postgres:
+    image: postgres:16.14-alpine3.23
+    environment:
+      POSTGRES_USER: radcore
+      POSTGRES_DB: radcore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run npm run dev:env first}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radcore -d radcore"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: radcore
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run npm run dev:env first}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres:
+  minio:
