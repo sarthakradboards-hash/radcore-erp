@@ -9,7 +9,11 @@ const pkg = (names) => `${F}packages/(${names.join('|')})/`;
 const ENTRIES = `${F}packages/(lib-[^/]+/src/(index|contract)\\.ts|lib-platform/src/runtime\\.ts`
   + '|db/(src/[^/]+/index\\.ts|views/index\\.ts|src/(schema|request-context|migrate)\\.ts))$';
 const NODE_BUILTIN = `^(node:)?(${builtinModules.join('|')})$`;
-const SERVER_ONLY = `${F}packages/(db|lib-platform)/|/src/services/`;
+// D5: what a contract may never reach. lib-platform's contract may reach its other browser-safe files, so only its
+// `.` and `./runtime` count. Another library's `.` counts too: ADR-001 §2 lets a contract import only zod, lib-common
+// and other libraries' contract entries.
+const CONTRACT_UNSAFE = `${F}packages/db/|${F}packages/lib-(?!common/)[^/]+/src/(index|runtime)\\.ts$|/src/services/`;
+const RULES_UNSAFE = `${F}packages/(db|lib-platform)/|/src/services/`;
 
 // ADR-001 §4: the other @radcore packages each workspace may import.
 const BASE = ['lib-common', 'lib-platform', 'db'];
@@ -54,13 +58,15 @@ module.exports = {
     { name: 'D3-unresolvable', severity: 'error', comment: "A specifier the target's exports refuse does not resolve.",
       from: {}, to: { couldNotResolve: true } },
     { name: 'D4-web-server-code', severity: 'error', from: { path: `${F}apps/web/` },
-      to: { path: [pkg(['db', 'lib-platform']), `${F}packages/lib-(?!common/)[^/]+/src/index\\.ts$`] } },
-    { name: 'D4-web-node-builtin', severity: 'error', from: { path: `${F}apps/web/` }, to: { dependencyTypes: ['core'] } },
+      to: { path: [pkg(['db']), `${F}packages/lib-(?!common/)[^/]+/src/(index|runtime)\\.ts$`] } },
+    { name: 'D4-web-node-builtin', severity: 'error', comment: 'next.config.* and scripts/** are exempt (ADR-001 D4).',
+      from: { path: `${F}apps/web/`, pathNot: `${F}apps/web/(next\\.config\\.[^/]+$|scripts/)` },
+      to: { dependencyTypes: ['core'] } },
     { name: 'D5-contract-server-code', severity: 'error', from: { path: 'src/contract\\.ts$' },
-      to: { path: SERVER_ONLY, reachable: true } },
+      to: { path: CONTRACT_UNSAFE, reachable: true } },
     { name: 'D5-contract-node-builtin', severity: 'error', from: { path: 'src/contract\\.ts$' },
       to: { path: NODE_BUILTIN, reachable: true } },
-    { name: 'D6-rules-pure', severity: 'error', from: { path: '/src/rules/' }, to: { path: SERVER_ONLY } },
+    { name: 'D6-rules-pure', severity: 'error', from: { path: '/src/rules/' }, to: { path: RULES_UNSAFE } },
     { name: 'D7-other-module-tables', severity: 'error', from: { path: `${F}packages/lib-([^/]+)/` },
       to: { path: `${F}packages/db/src/[^/]+/index\\.ts$`, pathNot: `${F}packages/db/src/$1/` } },
     { name: 'D7-tables-only-from-libraries', severity: 'error', from: { pathNot: pkg(['lib-[^/]+', 'db']) },

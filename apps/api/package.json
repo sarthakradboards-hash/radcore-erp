@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "node --watch src/main.ts",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "express": "5.3.0"

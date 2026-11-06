@@ -25,6 +25,8 @@ it('runs the production PostgreSQL major version', () => {
   expect(compose).toMatch(/image:\s*postgres:16[.\-]/);
 });
 
-it('pins the object store image by digest', () => {
-  expect(compose).toMatch(/image:\s*chrislusf\/seaweedfs:[\w.]+@sha256:[0-9a-f]{64}\s/);
+it('pins every image by digest', () => {
+  const images = [...compose.matchAll(/^\s*image:\s*(\S+)\s*$/gm)].map((m) => m[1]);
+  expect(images.length).toBe(2);
+  for (const image of images) expect(image).toMatch(/^[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$/);
 });
