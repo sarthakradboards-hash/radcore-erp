@@ -1,11 +1,16 @@
 // Smoke test for the dev object store (SeaweedFS in compose.dev.yml): a presigned PUT, then a presigned GET.
-// It needs the running store, so it runs where S3_ENDPOINT is set (CI after `npm run db:up`).
+// It needs the running store, so it runs where S3_ENDPOINT is set: CI's compose job, which has the store, or locally
+// after `npm run db:up`. In CI it fails instead of skipping (RC-019); the test job, which has no store, excludes it.
 import { CreateBucketCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 const env = process.env;
+
+it.runIf(env['CI'] && !env['S3_ENDPOINT'])('has its object store in CI', () => {
+  expect.fail('S3_ENDPOINT is not set: in CI this smoke test must run, not skip');
+});
 
 describe.skipIf(!env['S3_ENDPOINT'])('dev object store', () => {
   it('accepts a presigned PUT and serves it back on a presigned GET', async () => {
