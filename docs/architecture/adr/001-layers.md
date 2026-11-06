@@ -334,8 +334,8 @@ marked as masked in the output type.
 - The API sends no `Access-Control-Allow-*` headers, so no other site can read its answers.
 - The session cookie is `HttpOnly`, `Secure` and `SameSite=Lax`, and every write must carry a matching `Origin`
   header (M1-21).
-- The one cross-origin call is the browser's presigned upload to S3. The bucket's CORS rule allows `PUT` from
-  `PUBLIC_ORIGIN` only.
+- The one cross-origin call is the browser's presigned upload to S3, a **POST** (so the bucket enforces the size
+  limit; ADR-004 §2). The bucket's CORS rule allows `POST` from `PUBLIC_ORIGIN` only.
 
 ### 8. The worker
 
