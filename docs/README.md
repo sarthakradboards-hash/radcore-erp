@@ -10,16 +10,19 @@ What each file is, and which one decides when two disagree.
 | Which v1 defects v2 must design out, and which ticket proves each | [register.md](register.md), RC-001 to RC-222 |
 | What must be true before real data and go-live | [source/07-Go-Live-Checklist.md](source/07-Go-Live-Checklist.md), GL-001 to GL-248 |
 | How the code is shaped, and why | the decision records in [architecture/adr/](architecture/adr/) |
+| What was decided after the plan was approved | [decisions.md](decisions.md), one dated line per decision |
 
-Where the plan sketches a design and an ADR decides it differently, the ADR wins. For example, the plan's single
-`packages/core` became module-wise libraries under N2 (ADR-001). Tickets in Linear carry the exact acceptance
-criteria; when one changes, its Notes say so.
+plan.md is the record of what was approved on 5 Nov 2026 and isn't edited. **Where decisions.md or an ADR
+differs from plan.md, decisions.md and the ADR win.** For example, the plan's single `packages/core` became
+module-wise libraries under N2 (ADR-001). Tickets in Linear carry the exact acceptance criteria; when one changes,
+its Notes say so.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| [plan.md](plan.md) | The approved v2 plan: decisions N1 to N4, milestones M0 to M9, every ticket with its acceptance criteria, the open owner decisions (D-xx), and the coverage index from register item to ticket. |
+| [plan.md](plan.md) | The approved v2 plan: decisions N1 to N4, milestones M0 to M9, every ticket with its acceptance criteria, the open owner decisions (D-xx), and the coverage index from register item to ticket. Unchanged since approval, except that a personal email address was blanked (RAD-18). |
+| [decisions.md](decisions.md) | Every decision since the plan was approved (N5, D-19, D-20 and the rest): who decided, and where it is applied. |
 | [register.md](register.md) | All 222 v1 register items with wave, level, title and the v2 ticket that covers each. Built from the plan's coverage index and the fix plan's register. |
 | [architecture/](architecture/) | The package diagram and the ADRs (layers, data access, libraries, runtime, database). |
 | [source/00-RadCore-application-plan.md](source/00-RadCore-application-plan.md) | The RadCore application plan (PDF of 4 Nov 2026): the business, its roles, and the 12 user flows. |

@@ -9,6 +9,8 @@ import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
 const FIXTURES = 'tools/boundary-fixtures';
+// Type-aware linting builds a TypeScript program on first use; a cold CI runner can take a while.
+const LINT_TIMEOUT = 180_000;
 // T1 is proved with M1-08 (ADR-001 Enforcement).
 const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5',
   'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b'];
@@ -97,7 +99,8 @@ const CLAUSE_IDS: Record<string, string[]> = {
 };
 
 const dirs = readdirSync(FIXTURES).filter((d) => statSync(join(FIXTURES, d)).isDirectory());
-const fixtures = dirs.filter((d) => !d.startsWith('ok-'));
+// ADR-003's `C*` fixtures are dependency data, not source; tools/deps.test.ts runs them.
+const fixtures = dirs.filter((d) => !d.startsWith('ok-') && !/^C\d+-/.test(d));
 const tagOf = (dir: string) => dir.split('-')[0] ?? '';
 const eslintFixtures = fixtures.filter((d) => !(d in DEPCRUISE_RULE));
 
@@ -138,7 +141,7 @@ describe('boundary fixtures', () => {
     const errors = (await lint(CONTROLS.eslint)).flatMap((r) =>
       r.messages.filter((m) => m.severity === 2).map((m) => `${r.filePath}: ${m.ruleId} ${m.message}`));
     expect(errors).toEqual([]);
-  }, 60_000);
+  }, LINT_TIMEOUT);
 
   it.each(eslintFixtures)('%s fails ESLint', async (d) => {
     const ids = CLAUSE_IDS[d] ?? ESLINT_IDS[tagOf(d)] ?? [];
@@ -147,7 +150,7 @@ describe('boundary fixtures', () => {
     const got = results.flatMap((r) => r.messages.map((m) => `${r.filePath}: ${m.ruleId}: ${m.message}`));
     expect(results.flatMap((r) => r.messages).filter((m) => ids.includes(m.ruleId ?? '')), got.join('\n'))
       .not.toHaveLength(0);
-  }, 60_000);
+  }, LINT_TIMEOUT);
 
   it.each(Object.entries(DEPCRUISE_RULE))('%s fails dependency-cruiser rule %s', async (d, rule) => {
     const names = await violations(d);
