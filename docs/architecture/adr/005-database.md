@@ -339,6 +339,8 @@ under 63 bytes (§1).
 | RA004 | a posted document was changed outside its cancel and write-once columns, moved to a status it may not reach, or deleted, or its lines were touched |
 | RA005 | a write ran with no principal in the request context |
 | RA006 | a document's header and lines disagree (total, round-off), or allocations exceed it |
+| RA007 | stock: a document's movements and its Stock in Hand lines disagree, an empty location holds value, a movement's units don't match its quantity, or an issue would take stock below zero (ADR-006 §4) |
+| RA008 | a unit event isn't allowed from the unit's current state (ADR-006 §5) |
 
 (The `RA` prefix keeps them apart from the register's RC-numbers, which name v1 defects.)
 

@@ -1,0 +1,516 @@
+# ADR-006: Ledger and posting
+
+- Status: proposed
+- Date: 2026-11-07
+- Ticket: RAD-60 (M2-01). The design basis for M2-03 (journal), M2-04 (numbers), M2-05 (stock), M2-06 (units) and
+  M2-07 (books integrity).
+- Builds on: [ADR-001](001-layers.md) (lib-accounts owns the journal engine, lib-stock the stock and units engines;
+  lib-stock may call lib-accounts, never the reverse), [ADR-002](002-data-access.md) (one transaction per save),
+  [ADR-005](005-database.md) (types, append-only ledgers, business date, allocations, error codes).
+- Source: v1 `docs/ARCHITECTURE.md` §6 on `erp/main` (the posting table), corrected by the register; Technical
+  report Theme 11 and §5.20 (RC-062); CA questions CA-09, CA-19, CA-25, CA-27 and CA-29 to CA-33.
+
+## Context
+
+v1's posting table was right on the common path (Technical report Theme 11). The register found where it wasn't:
+- the moving average counted rejected, job-work and demo stock (RC-205);
+- the stock ledger had no business date (RC-025);
+- negative-stock mode left a value with no units behind it (RC-062);
+- one unit status answered three questions (RC-027), and nothing in the database kept a unit on one shelf
+  (RC-026);
+- manual journals could post to the GST, TDS, GRNI and payroll accounts (RC-093), and journal numbers had gaps
+  (RC-206);
+- item locks blocked unrelated saves and could deadlock (RC-053);
+- the books check compared one total (RC-063);
+- a taken-back credit note was costed as a new return (RC-207), and a returned unit kept its sale (RC-128).
+
+This ADR sets the rules M2's engines build. It gives a hand-worked figure for every document (§8), so the tests
+assert numbers worked out away from the code (Technical report Theme 8).
+
+## Decision
+
+### 1. Who posts, in one transaction
+
+A document's service, in its own library, posts inside the save's one transaction (ADR-002 §4):
+1. it calls lib-stock's stock engine for the movements, and the units engine for serialised units;
+2. it calls lib-accounts's journal engine for the entry;
+3. the database checks at commit that the two agree (§4, §7).
+
+lib-stock may call lib-accounts (ADR-001 §4), so the stock engine posts its own revaluations (§4). lib-accounts
+never calls lib-stock.
+
+**One lock order (RC-053, M2-05).** Every posting takes its locks in this order, and no other:
+1. the company's period-lock row, and the filed-month lock row (M5-08), `FOR SHARE`. Moving a lock takes
+   `FOR UPDATE`, so it waits for the postings in flight (RC-163, M5-09);
+2. the documents being posted, `ORDER BY id FOR UPDATE` (ADR-005 §7a);
+3. the stock positions, `ORDER BY item_id, location_id FOR UPDATE` (§4);
+4. the units, `ORDER BY id FOR UPDATE` (§5);
+5. the numbering series (M2-04), last. A number is drawn only once every check has passed, and the series row is
+   held for the shortest time.
+
+The stock lock is a row in `stock_positions (item_id, location_id)`, never the item row. A `FOR UPDATE` on `items`
+also blocks every insert that references the item by foreign key, which is how v1 blocked unrelated saves. M2-05's
+concurrency test runs, on PostgreSQL 16, two saves that touch the same items in opposite order, and expects both to
+finish.
+
+### 2. Chart of accounts (M2-03)
+
+The system accounts are seeded by an owner migration. Code refers to them by `system_key`, never by name or id.
+People add their own accounts (expense heads, each bank account) under the account groups. A system account can be
+renamed, but not removed or re-keyed.
+
+| Key | Name | Type | Control |
+|---|---|---|---|
+| `cash` | Cash | asset | - |
+| `bank` | Bank (each bank account is an account in this group) | asset | - |
+| `debtors` | Debtors | asset | party |
+| `stock` | Stock in Hand | asset | stock |
+| `gdni` | Goods Delivered Not Invoiced | asset | gdni |
+| `input_cgst`, `input_sgst`, `input_igst`, `input_cess` | Input GST | asset | gst |
+| `tds_receivable` | TDS Receivable | asset | tds |
+| `staff_advances` | Staff Advances | asset | payroll |
+| `creditors` | Creditors | liability | party |
+| `grni` | Goods Received Not Billed | liability | grni |
+| `jw_accrued` | Job Work Charges to be Billed | liability | grni |
+| `output_cgst`, `output_sgst`, `output_igst`, `output_cess` | Output GST | liability | gst |
+| `tds_payable`, `tcs_payable` | TDS Payable, TCS Payable | liability | tds |
+| `salaries_payable`, `pf_payable`, `esic_payable`, `pt_payable` | Payroll payables | liability | payroll |
+| `opening_equity` | Opening Balance Equity | equity | opening |
+| `retained_earnings` | Retained Earnings | equity | year_close |
+| `sales` | Sales | income | - |
+| `fx_difference` | Foreign Exchange Gain / Loss | income | - |
+| `cogs` | Cost of Goods Sold | expense | - |
+| `stock_adjustment` | Stock Adjustment | expense | - |
+| `round_off` | Round Off | expense | - |
+| `salaries`, `employer_pf`, `employer_esic` | Salaries, Employer PF, Employer ESIC | expense | - |
+
+Reverse charge (M5-03) and the monthly GST settlement (M5-07) add their own accounts (control `gst`) and entry
+kinds in their tickets, with a row in the posting rules below.
+
+**A control account takes only its own documents (RC-093).**
+- Each control kind lists the entry kinds that may post to it, in `posting_rules (control_kind, entry_kind)`.
+  An owner migration seeds it, the runtime login can only read it, and a test checks it equals the lib-common
+  constant (like ADR-005's `state_transitions`).
+- Each journal line copies its account's control kind, through a composite foreign key to
+  `accounts (id, control_kind)`, and its entry's kind and date, through one to
+  `journal_entries (id, kind, business_date)`.
+- A composite foreign key from the line's `(account_control_kind, entry_kind)` to `posting_rules` then refuses any
+  other pair. A line on an ordinary account has a null control kind, so the key doesn't apply to it.
+
+So the database, not only the screen, refuses a manual journal (`kind = 'manual'`) on any control account. It also
+refuses, for example, a payment that touches Stock in Hand.
+
+| Control | Entry kinds that may post to it |
+|---|---|
+| party | opening, invoice, credit_note, purchase_bill, supplier_return, expense, payment_in, payment_out |
+| stock | opening, goods_receipt, purchase_bill, supplier_return, delivery, credit_note, stock_transfer, stock_adjustment, job_work, revaluation |
+| gdni | delivery, invoice, credit_note |
+| grni | goods_receipt, purchase_bill, supplier_return, job_work |
+| gst | invoice, credit_note, purchase_bill, supplier_return, expense |
+| tds | invoice, purchase_bill, expense, payment_in, payment_out, payroll, tds_deposit |
+| payroll | payroll, payroll_payment, salary_advance, statutory_payment |
+| opening | opening |
+| year_close | year_close |
+
+**Party lines (M2-11).** `CHECK ((coalesce(account_control_kind, '') = 'party') = (party_id is not null))`. Every
+Debtors or Creditors line names its party, and only those lines do. A party's balance is the sum of its lines.
+
+### 3. Journal entries (M2-03, M2-04)
+
+- **Kinds** are a fixed list in lib-common (ADR-005 §4): the entry kinds in §2's table, plus `manual`.
+- **One entry per document and kind.** An entry names its document (`source_table`, `source_id`). A unique key on
+  `(source_table, source_id, kind, reverses_entry_id)` with `NULLS NOT DISTINCT` refuses posting a document twice.
+- **Corrections are reversals** (ADR-005 §7). Cancelling writes a new entry with `reverses_entry_id` set:
+  - `reverses_entry_id` is unique, so an entry is reversed at most once;
+  - a composite foreign key `(reverses_entry_id, kind)` to `(id, kind)` keeps the original's kind;
+  - its lines are the original's with debit and credit swapped, line for line, which the commit check confirms;
+  - it is dated with the cancellation's business date (ADR-005 §7b), so the period lock applies to the day of the
+    cancellation.
+- **Balanced at commit:** each entry's debits equal its credits (RA002, ADR-005 §2).
+- **Business date and posting time** are on the entry and on every line (ADR-005 §6). The lines' composite foreign
+  key keeps their date equal to the entry's.
+- **The lock is checked under the lock** (RC-163). The engine reads the period-lock row `FOR SHARE` before writing
+  any line (§1), and the line trigger refuses a business date on or before the lock date (RA003). M2-03 creates
+  the financial-year and period-lock rows; M5-09 builds moving the lock and the year close.
+- **Gap-free numbers** (RC-206, M2-04). The entry's number comes from its financial year's series, under the series
+  row lock, as the last step (§1). There's no database sequence. A save that fails rolls the number back with
+  everything else.
+- **A manual journal** carries a reason (bounded text, ADR-005 §1) and only ordinary accounts (§2).
+
+### 4. Stock ledger and valuation (M2-05)
+
+**Movements.** `stock_movements` is append-only (ADR-005 §7). Each row has:
+- an item, a location, and the document line it came from;
+- `direction`: `in`, `out` or `revalue`. `qty >= 0`, and `qty = 0` exactly when the direction is `revalue`;
+- `value` in rupees: at least 0 for `in` and `out`, signed for `revalue`;
+- `rate`, to 6 places, on an `in`: what one unit cost;
+- `business_date` and `posted_at` (ADR-005 §6);
+- on a cancellation's mirror, `reverses_movement_id` (unique), at the same value as the original.
+
+Quantity and value on hand are sums of movements, never stored, so they can't drift from the ledger. This was v1's
+strength, and it stays. An index on `(item_id, location_id)` that includes direction, quantity and value serves the
+sums.
+
+**One average per item and location.** The moving average is kept per item **and per location**.
+- Rejected, job-work and demo stock sit in their own locations (M2-14's location kinds). So they never enter the
+  average of the stock that is sold (RC-205).
+- A transfer takes value out of the source at the source's average, and puts the same value into the destination.
+- Each location's value is the sum of its own movements. Stock by place and books by place therefore agree (§7).
+
+**An issue** of q from a location holding Q units at value V, with Q > 0:
+- if q = Q, it takes V exactly, so a location left empty holds no value;
+- if q < Q, it takes round(V × q / Q, 2).
+
+**Cost is fixed at posting, in posting order. Reports cut by business date (RC-025).**
+- An issue's value is fixed when it posts, from the location's position at that moment. A back-dated receipt
+  changes the average from then on. It doesn't re-cost issues already posted, which are append-only.
+- A stock report as at a date sums the movements with a business date on or before it. The books as at a date sum
+  journal lines the same way. Every movement has its Stock in Hand line with the same business date (below), so
+  the two agree at any date.
+- With negative stock off, an issue dated D is refused (RA007) unless the lowest running quantity of its item and
+  location, from D onward in business-date order, is at least q. A back-dated issue therefore can't make a later
+  day negative. Held stock (M3-13) counts as unavailable to any other order.
+
+**Negative stock (RC-062).** When the company allows it:
+- An issue beyond what's on hand takes what is there at its value, and the rest at an estimate: the location's last
+  `in` rate for the item, else the item's purchase price. With neither, the issue is refused.
+- A receipt of q at rate r, into a location at quantity Q < 0 and value V, also posts a `revalue` movement and its
+  journal, so that afterwards:
+  - if Q + q ≤ 0, the units still missing keep their estimate: value = round(V × (Q + q) / Q, 2);
+  - if Q + q > 0, the units on hand are at r: value = (Q + q) × r.
+
+  The revaluation is that value minus (V + q × r). A negative revaluation is Dr Cost of Goods Sold, Cr Stock in
+  Hand; a positive one is the other way round. So a quantity of zero always carries zero value, and the units sold
+  end up at what they really cost (F15).
+
+**A bill's price difference (M4-03).** A bill's goods amount can differ from what the receipt accrued at the order
+rate. The difference d, plus any input GST that can't be claimed (M4-04), is split by what is still on hand, in the
+location the goods went into:
+- on hand Q ≥ billed b: all of d to stock, as a `revalue` movement;
+- 0 < Q < b: round(d × Q / b, 2) to stock, and the rest to Cost of Goods Sold;
+- Q ≤ 0: all of d to Cost of Goods Sold.
+
+**Goods come back at the value they went out at (RC-207).** A credit note that restocks, a delivery taken back
+before invoicing, and every cancellation put stock back at the value of the movement they undo, not at today's
+average:
+- a serialised unit returns at its own value;
+- other goods return at the line's unit value, and the last return from a line clears what is left of it exactly.
+
+A later re-delivery is costed afresh.
+
+**Checked at commit (RA007).**
+- For each document, per item and location, the sum of its movements (in minus out plus revalue) equals the net
+  Stock in Hand amount of its entry's lines for that item and location. Stock in Hand lines carry `item_id` and
+  `location_id`; a CHECK requires them on stock lines and nowhere else.
+- After the save, a location with quantity 0 has value 0, and a quantity below 0 exists only in negative-stock
+  mode.
+
+### 5. Units by serial (M2-06)
+
+An item is serialised by its flag (M2-10); only serialised items have units. v1's one status column becomes
+separate columns (RC-027):
+
+| Column | Answers | Values |
+|---|---|---|
+| `ownership` | Whose is it? | `ours`, `customer`, `gone` (returned to the supplier, or scrapped) |
+| `condition` | What state is it in? | `new`, `demo`, `used`, `damaged` |
+| `promised_to` | Is it promised? | an order line, or null |
+| `location_id` | Where is it? | a location, or null while it's with a customer |
+| `sale_line_id` | Which sale is it on? | the delivery line it left on, or null |
+
+So a customer's own scooter in the service bay (`customer`, at the service bay) is never counted as stock and can't
+be sold. A returned unit's sale is cleared (RC-128), which ends the customer warranty that came from it.
+
+- **One row per serial.** A unique key on `(item_id, serial_key)`, where `serial_key` is a generated column: the
+  serial in upper case without spaces. A unit has one `location_id`, so it can't be on two shelves.
+- **Events are the only way in.** `unit_events` is append-only (ADR-005 §7). A trigger applies each event to its
+  `units` row, and the runtime login has no `INSERT` or `UPDATE` on `units` (M1-06). So every path goes through
+  the units engine (RC-026).
+- **Each event is allowed only from certain states.** `unit_event_rules (kind, from_ownership)` is seeded by an
+  owner migration, read-only to the runtime login, and checked against lib-common, like the posting rules. A refused event raises RA008. For example:
+  - `received` needs no row yet, or `gone`, so a sold serial can't be received again at goods-receipt QC (RC-128);
+  - `delivered` needs `ours`, and no promise to another order line;
+  - `taken_in`, for service, needs no row yet (a scooter we never sold) or `customer`.
+- **Units agree with stock.** An event that moves a unit into or out of stock names its stock movement. At commit,
+  each such movement's quantity equals its number of unit events (RA007). The books check (§7) also compares, per
+  item and location, the units we own there with the quantity on hand.
+
+### 6. What each document posts
+
+"Built by" names the document's own ticket. The engines it calls are M2-03 (journal), M2-05 (stock) and M2-06
+(units). GST is CGST and SGST within the state, and IGST between states: the company's state comes from its
+profile (M2-02), and the place of supply decides (CA-08). A line's rate is the one in force on its business date
+(M2-12).
+
+| Document | Stock ledger | Books | Built by |
+|---|---|---|---|
+| Opening stock | in, at the agreed cut-over value | Dr Stock in Hand, Cr Opening Balance Equity | M5-16 |
+| Opening party and account balances | - | Dr or Cr the party or account, against Opening Balance Equity | M5-16, M5-17 |
+| Goods receipt, after QC | accepted goods into their location, rejects into Rejected, at the order rate | Dr Stock in Hand, Cr Goods Received Not Billed | M4-02 |
+| Purchase bill for goods | the price difference, as a revaluation (§4) | Dr Goods Received Not Billed (what was accrued), Dr Input GST (where claimable, M4-04), the difference (§4), Cr Creditors, Cr TDS Payable (where due at the bill, M5-10) | M4-03 |
+| Purchase bill for services, or an expense | - | Dr the expense, Dr Input GST (where claimable, M5-02), Cr Creditors, Bank or Cash, Cr TDS Payable | M4-03, M5-02 |
+| Supplier return, not yet billed | out of Rejected, at its value | Dr Goods Received Not Billed, Cr Stock in Hand | M4-05 |
+| Supplier return, billed (a debit note) | out of Rejected, at its value | Dr Creditors, Cr Stock in Hand, Cr Input GST | M4-05 |
+| Delivery | out, at the location's average | Dr Goods Delivered Not Invoiced, Cr Stock in Hand | M3-08 |
+| Delivery taken back before invoicing | in, at the value it went out at | Dr Stock in Hand, Cr Goods Delivered Not Invoiced | M3-08 |
+| Invoice | - | Dr Debtors, Cr Sales, Cr Output GST and cess, Cr TCS Payable (if due), Dr or Cr Round Off; and, for the delivered lines it bills, Dr Cost of Goods Sold, Cr Goods Delivered Not Invoiced | M3-09 |
+| Quick bill at the counter | the delivery's | the delivery's and the invoice's, and the payment's | M3-11 |
+| Credit note, value only (price or discount) | - | Dr Sales, Dr Output GST, Cr Debtors | M3-10 |
+| Credit note with goods back | in, at the value they went out at (§4) | the invoice lines in reverse; Dr Stock in Hand, Cr Cost of Goods Sold | M3-10 |
+| Payment received | - | Dr Bank or Cash, Dr TDS Receivable (if the customer held some back), Cr Debtors; allocations (ADR-005 §7a) | M3-12 |
+| Payment made | - | Dr Creditors, Cr Bank or Cash, Cr TDS Payable (only on an advance paid before any bill) | M3-12 |
+| Foreign bill paid at another rate | - | the difference, to Foreign Exchange Gain / Loss | M4-09 |
+| Stock transfer | out of one location at its average, into another at the same value | Dr Stock in Hand (to), Cr Stock in Hand (from), by item and location | M4-06 |
+| Stock count or adjustment | in or out, at the location's average | Dr or Cr Stock in Hand, against Stock Adjustment | M4-06 |
+| Job work challan | from Stores to the job worker's location, at the same value | Dr Stock in Hand (job worker), Cr Stock in Hand (Stores) | M4-07 |
+| Job work receipt | inputs out of the job worker's location; goods made, in at the inputs used plus the charge; unused inputs back at their value | the charge: Dr Stock in Hand, Cr Job Work Charges to be Billed; lost inputs: Dr Stock Adjustment, Cr Stock in Hand | M4-07 |
+| Job worker's bill | any difference over the accrual, as a revaluation (§4) | Dr Job Work Charges to be Billed (what was accrued), the difference (§4), Dr Input GST, Cr Creditors, Cr TDS Payable | M4-07 |
+| Receipt into negative stock | a revaluation (§4) | Dr Cost of Goods Sold, Cr Stock in Hand, or the reverse | M2-05 |
+| Salary advance | - | Dr Staff Advances, Cr Bank or Cash | M6-07 |
+| Salaries approved | - | Dr Salaries, Dr Employer PF and ESIC, Cr Salaries Payable, Cr PF, ESIC, PT and TDS Payable, Cr Staff Advances (recovered) | M6-06, M6-08 |
+| Salaries paid | - | Dr Salaries Payable, Cr Bank | M6-07 |
+| PF, ESIC or PT paid over | - | Dr the payable, Cr Bank | M6-08, M6-09 |
+| TDS paid over | - | Dr TDS Payable, Cr Bank | M5-10 |
+| Transfer between own accounts | - | Dr the account it went to, Cr the account it came from | M5-19 |
+| Manual journal | - | ordinary accounts only (§2), with a reason | M2-03 |
+| Year-end close | - | every income and expense account's balance for the year, emptied into Retained Earnings, dated 31 March | M5-09 |
+| Cancelling any of these | the mirror of its movements, at the same values | the mirror of its entry, dated the cancellation's business date | each document's ticket |
+
+**Changes from v1's table:**
+- **Cost of goods sold moves at the invoice, not at the delivery.** v1 posted it at delivery. Goods can leave
+  before the invoice (CA-09, M3-01), so across a month or year end the cost fell in one period and the sale in the
+  next. The delivery now parks the cost in Goods Delivered Not Invoiced, and the invoice moves it to Cost of Goods
+  Sold, the same way Goods Received Not Billed works when buying. If M3-01 makes invoice-at-delivery the rule, both
+  happen in one save and nothing changes for the person at the counter.
+- **An unbilled reject goes back against Goods Received Not Billed**, not Creditors: there's no bill to debit
+  (M4-05 debits only billed rejects).
+- **TDS is deducted at the bill** where the section says "on credit or payment, whichever is earlier" (RC-060,
+  CA-19), not at payment.
+- **Employer PF and ESIC** are expense lines of their own. v1's entry had none.
+- **Stock transfers and job-work challans post** a Stock in Hand line per location, so books by place agree with
+  stock by place (§7). The total doesn't move.
+
+### 7. Books integrity (M2-07)
+
+The check runs in one read-only transaction at `REPEATABLE READ`, so every figure comes from the same snapshot
+(RC-063), as at a business date. It compares:
+- the trial balance: debits equal credits;
+- Stock in Hand, per item and location: the books equal the stock ledger;
+- every location at quantity 0 holds value 0;
+- serialised items: the units we own at each location equal the quantity there;
+- Goods Received Not Billed, per receipt line: accrued, minus billed, minus returned unbilled, equals the books;
+- Goods Delivered Not Invoiced, per delivery line: delivered, minus invoiced, minus taken back;
+- Job Work Charges to be Billed, per job-work receipt;
+- Debtors and Creditors, per party: the ledger equals the documents, minus allocations and credit applications
+  (ADR-005 §7a).
+
+Every journey test ends with this check, and the parallel month compares against it (M5-18).
+
+### 8. Hand-worked figures
+
+Each figure starts from the position it states, so its test runs on its own (RC-222). M2-08's mutation tests and
+M2-09's fault injection use the same figures. The items are:
+- **SCOOTER:** an electric scooter, serialised, unit Nos, GST 5% (CGST 2.5%, SGST 2.5%);
+- **PAD:** a brake-pad set, not serialised, unit Nos, GST 18%;
+- **KIT** and **FRAME:** a frame kit, and the painted frame a job worker makes from one.
+
+The company and every party are in Maharashtra, so the tax is CGST and SGST. The tax rates, TDS sections and
+payroll figures are examples for the arithmetic; M2-12, M5-10 and M6-08 pin the real ones. "Dr" and "Cr" amounts
+are in rupees; quantities are units.
+
+**F1. Opening stock** (M5-16). Start: nothing. 2 SCOOTER at 60,000.00 each, into Stores.
+- Movement: Stores in 2, value 120,000.00, rate 60,000.00.
+- Entry `opening`: Dr Stock in Hand (SCOOTER, Stores) 120,000.00; Cr Opening Balance Equity 120,000.00.
+- After: Stores 2 at 120,000.00; average 60,000.00.
+- Variant, a customer owing 5,000.00 at cut-over: Dr Debtors (customer) 5,000.00; Cr Opening Balance Equity
+  5,000.00. (If the invoice itself must exist, CA-28, M5-17 brings it in instead.)
+
+**F2. Goods receipt with a reject** (M4-02). Start: SCOOTER at Stores, 2 at 120,000.00. 3 come in at the order
+rate of 62,000.00. QC accepts 2 and rejects 1.
+- Movements: Stores in 2, 124,000.00; Rejected in 1, 62,000.00.
+- Entry `goods_receipt`: Dr Stock in Hand (Stores) 124,000.00; Dr Stock in Hand (Rejected) 62,000.00; Cr Goods
+  Received Not Billed 186,000.00.
+- After: Stores 4 at 244,000.00, average 61,000.00; Rejected 1 at 62,000.00. Counting the reject, as v1 did, the
+  average would be 306,000.00 / 5 = 61,200.00 (RC-205).
+
+**F3. A bill above the order rate** (M4-03). Start: as after F2. The supplier bills the 2 accepted at 62,500.00
+each, plus GST.
+- Goods 125,000.00; accrued 124,000.00; difference 1,000.00. Stores holds 4, at least the 2 billed, so all of it
+  goes to stock.
+- Movement: Stores revalue +1,000.00.
+- Entry `purchase_bill`: Dr Goods Received Not Billed 124,000.00; Dr Stock in Hand (Stores) 1,000.00; Dr Input
+  CGST 3,125.00; Dr Input SGST 3,125.00; Cr Creditors (supplier) 131,250.00.
+- After: Stores 4 at 245,000.00, average 61,250.00. Goods Received Not Billed is 62,000.00, the reject.
+- Variant: had Stores held only 1, 500.00 would go to stock and 500.00 to Cost of Goods Sold.
+
+**F4. Supplier return** (M4-05). Start: Rejected 1 at 62,000.00, not billed.
+- Movement: Rejected out 1, 62,000.00.
+- Entry `supplier_return`: Dr Goods Received Not Billed 62,000.00; Cr Stock in Hand (Rejected) 62,000.00.
+- After: Rejected 0 at 0.00; Goods Received Not Billed 0.00.
+- Variant, the reject billed at 62,000.00 plus GST: Dr Creditors 65,100.00; Cr Stock in Hand (Rejected)
+  62,000.00; Cr Input CGST 1,550.00; Cr Input SGST 1,550.00.
+
+**F5. Delivery** (M3-08). Start: SCOOTER at Showroom, 4 at 245,000.00 (average 61,250.00). Unit S-0003 is
+delivered.
+- Movement: Showroom out 1, round(245,000.00 × 1 / 4, 2) = 61,250.00.
+- Entry `delivery`: Dr Goods Delivered Not Invoiced 61,250.00; Cr Stock in Hand (Showroom) 61,250.00.
+- Unit S-0003: a `delivered` event; ownership `customer`, no location, `sale_line_id` the delivery line.
+- After: Showroom 3 at 183,750.00, average still 61,250.00.
+- Variant, taken back before invoicing: Showroom in 1 at 61,250.00; Dr Stock in Hand (Showroom) 61,250.00; Cr
+  Goods Delivered Not Invoiced 61,250.00.
+
+**F6. Invoice** (M3-09). Start: F5's delivery, not yet invoiced. Taxable 80,000.00 at 5%.
+- No movement.
+- Entry `invoice`: Dr Debtors (customer) 84,000.00; Cr Sales 80,000.00; Cr Output CGST 2,000.00; Cr Output SGST
+  2,000.00; Dr Cost of Goods Sold 61,250.00; Cr Goods Delivered Not Invoiced 61,250.00. Debits and credits are
+  both 145,250.00.
+- After: Goods Delivered Not Invoiced 0.00; the customer owes 84,000.00.
+
+**F7. Counter sale with a round-off** (M3-11). Start: PAD at Showroom, 10 at 2,000.00. 3 sold at 345.00, delivered
+and invoiced in one save.
+- Movement: Showroom out 3, 600.00.
+- Entry `delivery`: Dr Goods Delivered Not Invoiced 600.00; Cr Stock in Hand (Showroom) 600.00.
+- Invoice figures: taxable 1,035.00; CGST at 9%, 93.15; SGST at 9%, 93.15; lines 1,221.30; round-off −0.30; total
+  1,221.00. The header equals the lines plus the round-off, and the round-off is under 1 (ADR-005 §2).
+- Entry `invoice`: Dr Debtors 1,221.00; Dr Round Off 0.30; Cr Sales 1,035.00; Cr Output CGST 93.15; Cr Output
+  SGST 93.15; Dr Cost of Goods Sold 600.00; Cr Goods Delivered Not Invoiced 600.00. Debits and credits are both
+  1,821.30.
+- After: Showroom 7 at 1,400.00.
+
+**F8. Payment received** (M3-12). Start: F6's invoice, 84,000.00 owed.
+- Entry `payment_in`: Dr Bank 84,000.00; Cr Debtors (customer) 84,000.00.
+- Allocation: apply 84,000.00 to the invoice, which is then paid.
+- Variant, the customer holds back TDS of 0.1% on 80,000.00 (section 194Q): Dr Bank 83,920.00; Dr TDS Receivable
+  80.00; Cr Debtors 84,000.00; allocation 84,000.00.
+
+**F9. Credit note with the scooter back** (M3-10). Start: F6's invoice, unpaid; S-0003 went out at 61,250.00.
+Stores holds 3 SCOOTER at 186,000.00 (average 62,000.00). The customer returns S-0003 unused, to Stores.
+- Movement: Stores in 1 at 61,250.00, the value it went out at, not 62,000.00.
+- Entry `credit_note`: Dr Sales 80,000.00; Dr Output CGST 2,000.00; Dr Output SGST 2,000.00; Cr Debtors
+  (customer) 84,000.00; Dr Stock in Hand (Stores) 61,250.00; Cr Cost of Goods Sold 61,250.00.
+- Credit application: 84,000.00 against the invoice.
+- Unit S-0003: `returned`; ownership `ours`, condition `new` (from its return QC), location Stores, sale cleared
+  (RC-128).
+- After: Stores 4 at 247,250.00, average 61,812.50. The credit note settles the invoice.
+- Variant, a discount of 1,000.00 on the taxable value, as a value-only credit note: Dr Sales 1,000.00; Dr Output
+  CGST 25.00; Dr Output SGST 25.00; Cr Debtors 1,050.00. No movement.
+
+**F10. Invoice cancelled on a later day** (M3-10). Start: F6's invoice dated 5 June 2026, unpaid. It's cancelled
+on 10 June 2026.
+- Entry `invoice`, with `reverses_entry_id` set to F6's entry, dated 10 June 2026: Dr Sales 80,000.00; Dr Output
+  CGST 2,000.00; Dr Output SGST 2,000.00; Cr Debtors 84,000.00; Dr Goods Delivered Not Invoiced 61,250.00; Cr Cost
+  of Goods Sold 61,250.00.
+- After: the delivery is open again (Goods Delivered Not Invoiced 61,250.00), to be invoiced again or taken back.
+- A period lock up to 5 June doesn't stop the cancellation. A lock up to 10 June does (RA003).
+
+**F11. A foreign bill paid at another rate** (M4-09). Start: Creditors (foreign supplier) 83,000.00, from a bill
+of USD 1,000.0000 at 83.00000000. It's paid when the rate is 84.00000000.
+- Entry `payment_out`: Dr Creditors 83,000.00; Dr Foreign Exchange Gain / Loss 1,000.00; Cr Bank 84,000.00.
+- After: the supplier's balance is 0 in rupees and in dollars.
+
+**F12. An expense with TDS** (M5-02, M5-10). A professional fee of 60,000.00 plus 18% GST, paid by bank, with TDS
+of 10% under section 194J on the fee before GST.
+- Entry `expense`: Dr Professional Fees 60,000.00; Dr Input CGST 5,400.00; Dr Input SGST 5,400.00; Cr Bank
+  64,800.00; Cr TDS Payable 6,000.00. Debits and credits are both 70,800.00.
+
+**F13. Transfer to demo** (M4-06). Start: SCOOTER at Stores, 4 at 245,000.00 (average 61,250.00); Demo empty.
+- Movements: Stores out 1, 61,250.00; Demo in 1, 61,250.00.
+- Entry `stock_transfer`: Dr Stock in Hand (Demo) 61,250.00; Cr Stock in Hand (Stores) 61,250.00.
+- After: Stores 3 at 183,750.00; Demo 1 at 61,250.00.
+- A receipt of 1 at 63,000.00 into Stores then makes Stores' average (183,750.00 + 63,000.00) / 4 = 61,687.50.
+  The demo unit stays at 61,250.00 (RC-205).
+
+**F14. A count with a shortage** (M4-06). Start: PAD at Showroom, 7 at 1,400.00. The count finds 6.
+- Movement: Showroom out 1, 200.00.
+- Entry `stock_adjustment`: Dr Stock Adjustment 200.00; Cr Stock in Hand (Showroom) 200.00.
+- After: Showroom 6 at 1,200.00.
+
+**F15. Negative stock, then the goods arrive** (M2-05). Start: PAD at Showroom, 7 at 1,400.00; last `in` rate
+200.00; negative stock allowed.
+- A sale of 10: Showroom out 10 at 2,000.00, which is the 7 on hand at 1,400.00 plus 3 at the estimate of 200.00.
+  Entry `delivery`: Dr Goods Delivered Not Invoiced 2,000.00; Cr Stock in Hand (Showroom) 2,000.00. Showroom is
+  then −3 at −600.00.
+- A receipt of 5 at 240.00: Showroom in 5, 1,200.00. Q + q = 2, above 0, so the target value is 2 × 240.00 =
+  480.00, and the revaluation is 480.00 − (−600.00 + 1,200.00) = −120.00.
+  - Movement: Showroom revalue −120.00.
+  - Entry `goods_receipt`: Dr Stock in Hand (Showroom) 1,200.00; Cr Goods Received Not Billed 1,200.00.
+  - Entry `revaluation`: Dr Cost of Goods Sold 120.00; Cr Stock in Hand (Showroom) 120.00.
+- After: Showroom 2 at 480.00. Once the sale is invoiced, the ten pads have cost 2,000.00 + 120.00 = 2,120.00,
+  which is 1,400.00 + 3 × 240.00: what they really cost.
+- Variant, a receipt of exactly 3: the target is 0.00; the revaluation is 0.00 − (−600.00 + 720.00) = −120.00;
+  Showroom ends at 0 and 0.00.
+- Variant, a receipt of 2: Q + q = −1; the target is round(−600.00 × −1 / −3, 2) = −200.00; the revaluation is
+  −200.00 − (−600.00 + 480.00) = −80.00. The one pad still missing keeps its estimate of 200.00.
+
+**F16. Job work** (M4-07). Start: KIT at Stores, 5 at 5,000.00; no FRAME.
+- Challan, 4 KIT to the job worker:
+  - Movements: Stores out 4, 4,000.00; Job worker in 4, 4,000.00.
+  - Entry `job_work`: Dr Stock in Hand (KIT, job worker) 4,000.00; Cr Stock in Hand (KIT, Stores) 4,000.00.
+- Receipt: 3 FRAME made from 3 KIT; 1 KIT lost; a charge of 150.00 a frame.
+  - Movements: job worker out 4 KIT, 4,000.00; Stores in 3 FRAME, 3,450.00 (3,000.00 of kits used plus the 450.00
+    charge, so 1,150.00 a frame).
+  - Entry `job_work`: Dr Stock in Hand (FRAME, Stores) 3,450.00; Dr Stock Adjustment 1,000.00; Cr Stock in Hand
+    (KIT, job worker) 4,000.00; Cr Job Work Charges to be Billed 450.00. Debits and credits are both 4,450.00.
+- The job worker's bill: 450.00 plus 18% GST, with TDS of 1% under section 194C (the year's threshold is already
+  crossed).
+  - Entry `purchase_bill`: Dr Job Work Charges to be Billed 450.00; Dr Input CGST 40.50; Dr Input SGST 40.50; Cr
+    Creditors 526.50; Cr TDS Payable 4.50. Debits and credits are both 531.00.
+- After: KIT at Stores, 1 at 1,000.00; FRAME at Stores, 3 at 3,450.00; Job Work Charges to be Billed 0.00.
+
+**F17. Payroll** (M6-06 to M6-08). One employee: gross 30,000.00, of which basic is 15,000.00. Employee PF is 12%
+of basic, 1,800.00, and employer PF is the same. Professional tax is 200.00 and salary TDS 500.00. An advance of
+1,000.00 is recovered. ESIC doesn't apply above its wage ceiling.
+- The advance, earlier: entry `salary_advance`: Dr Staff Advances 1,000.00; Cr Bank 1,000.00.
+- Approval: entry `payroll`: Dr Salaries 30,000.00; Dr Employer PF 1,800.00; Cr Salaries Payable 26,500.00; Cr PF
+  Payable 3,600.00; Cr PT Payable 200.00; Cr TDS Payable 500.00; Cr Staff Advances 1,000.00. Debits and credits
+  are both 31,800.00.
+- Payment: entry `payroll_payment`: Dr Salaries Payable 26,500.00; Cr Bank 26,500.00.
+- PF paid over: entry `statutory_payment`: Dr PF Payable 3,600.00; Cr Bank 3,600.00.
+
+**F18. TDS paid over** (M5-10). Start: TDS Payable 6,000.00, from F12.
+- Entry `tds_deposit`: Dr TDS Payable 6,000.00; Cr Bank 6,000.00.
+
+**F19. Cash paid into the bank** (M5-19).
+- Entry `transfer`: Dr Bank 10,000.00; Cr Cash 10,000.00.
+
+**F20. Year-end close** (M5-09). Start, for the year to 31 March 2027: Sales Cr 1,035.00; Cost of Goods Sold Dr
+600.00; Round Off Dr 0.30; Professional Fees Dr 60,000.00.
+- Entry `year_close`, dated 31 March 2027: Dr Sales 1,035.00; Cr Cost of Goods Sold 600.00; Cr Round Off 0.30; Cr
+  Professional Fees 60,000.00; Dr Retained Earnings 59,565.30. Debits and credits are both 60,600.30.
+- After: every income and expense account is 0.00 for that year, and Retained Earnings carries the loss of
+  59,565.30. Balance-sheet accounts aren't touched. A balance is a sum of lines, so the new year needs no opening
+  entry.
+
+## Consequences
+
+- Each document's ticket (M3 to M6) builds its row of §6 and asserts its figure from §8. A document that isn't here
+  adds a row and a figure to this ADR in its own PR.
+- The database refuses a manual journal on a control account, a document posted twice, unbalanced entries, stock
+  that disagrees with the books for a document, and a unit event its state doesn't allow. Two new error codes are
+  added to ADR-005 §9: RA007 (stock) and RA008 (units).
+- Stock value is per location, so Cost of Goods Sold depends on which location a sale ships from. Goods normally
+  reach the showroom by transfer from Stores, at Stores' average, so the difference is small.
+- Sums over movements are read on every posting. At a dealership's volumes that's one indexed range read per item
+  and location [estimated]. If it gets slow, a per-day closing snapshot can be added without changing a rule.
+
+**Questions for the CA** (docs/source/10-Questions-for-CA-and-Counsel.md). The design works either way, but these
+fix figures:
+- CA-09: whether goods may leave before the invoice, which decides how long Goods Delivered Not Invoiced stays open.
+- CA-25 and CA-27: that a moving average per location is acceptable for the audit, and against Vyapar's basis at
+  cut-over.
+- CA-29: whether demo units are stock (as here: a Demo location) or a fixed asset.
+- CA-30 and CA-31: job work and franchisee stock. A franchisee's store is a location of ours here.
+- CA-19: TDS at the bill, and CA-05: input GST that can't be claimed goes into the cost.
+
+## Alternatives considered
+
+- **One average per item across all locations.** That's v1's way. Rejected, demo and job-work stock then have to be
+  kept out by special cases (RC-205), and a location's value can't be compared with the books. Rejected.
+- **FIFO.** It's more work for every issue, and the client's books (Vyapar, CA-27) and v1 both used an average. A
+  FIFO option stays open if the CA asks for it (CA-25).
+- **Cost of goods sold at delivery, as v1.** It mismatches cost and sale across a period end whenever goods leave
+  before the invoice. Goods Delivered Not Invoiced costs one account and one control kind.
+- **Stored stock balances.** They're faster to read, but they can drift from the ledger, which is the problem the
+  books check exists to find. Sums stay the source; a snapshot can be added later as a cache.
+- **Control accounts guarded by the service only.** That's v1's way, and a manual journal still reached them
+  (RC-093). The composite key puts the rule in the database.
