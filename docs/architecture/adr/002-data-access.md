@@ -186,6 +186,7 @@ zone list differs from the table below. Widening a zone means amending this ADR 
 | Rule | Off only in |
 |---|---|
 | L1 (no `sql` outside its positions) | none. In the zone files, L1 allows `sql` only in the positions listed in §3 |
+| L1's `drizzle-orm` value allowlist: extra names in exactly these files, with the rest of L1 still on | `packages/db/src/*/relations.ts`: `relations`. `packages/db/src/conditions.ts` (home of `notInNonEmpty`): `notInArray`. `packages/db/src/module-tx.ts` (the module-transaction wrapper, §4): `getOperators`, `getOrderByOperators`, `is`, `getTableName`. |
 | L2 (no query strings) | `packages/db/views/<name>.ts`, `packages/db/src/request-context.ts` |
 | L3 (no raw execution) | `packages/db/src/request-context.ts` |
 | L4 (no driver) | `packages/lib-platform/src/db/client.ts` (pool, transactions, pg-boss), `packages/db/src/migrate.ts` (the migrator) |
