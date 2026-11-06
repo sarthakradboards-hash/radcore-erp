@@ -1,0 +1,1 @@
+el.insertAdjacentHTML('beforeend', s);

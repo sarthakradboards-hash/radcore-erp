@@ -1,0 +1,467 @@
+{
+  "radcore/no-sql": {
+    "allowNames": [
+      "and",
+      "or",
+      "not",
+      "eq",
+      "ne",
+      "gt",
+      "gte",
+      "lt",
+      "lte",
+      "isNull",
+      "isNotNull",
+      "inArray",
+      "between",
+      "like",
+      "ilike",
+      "asc",
+      "desc",
+      "count",
+      "countDistinct",
+      "sum",
+      "avg",
+      "min",
+      "max",
+      "exists"
+    ]
+  },
+  "radcore/no-query-strings": {
+    "syntax": [
+      {
+        "selector": "Literal[value=/\\bselect\\b[\\s\\S]*\\bfrom\\b|\\binsert\\W+into\\b|\\bupdate\\b[\\s\\S]*\\bset\\b|\\bdelete\\W+from\\b|\\bwith\\b[\\s\\S]*\\bas\\W*\\(|\\b(create|alter|drop)\\W+(or\\W+replace\\W+)?(table|view|index|trigger|function)\\b|\\btruncate\\W+(table\\b|\\w+\\W*$)|\\bgrant\\b[\\s\\S]*\\b(on|to)\\b/i]",
+        "message": "[L2] This string is shaped like SQL. Use Drizzle, or reword the message (ADR-002)."
+      },
+      {
+        "selector": "TemplateElement[value.raw=/\\bselect\\b[\\s\\S]*\\bfrom\\b|\\binsert\\W+into\\b|\\bupdate\\b[\\s\\S]*\\bset\\b|\\bdelete\\W+from\\b|\\bwith\\b[\\s\\S]*\\bas\\W*\\(|\\b(create|alter|drop)\\W+(or\\W+replace\\W+)?(table|view|index|trigger|function)\\b|\\btruncate\\W+(table\\b|\\w+\\W*$)|\\bgrant\\b[\\s\\S]*\\b(on|to)\\b/i]",
+        "message": "[L2] This string is shaped like SQL. Use Drizzle, or reword the message (ADR-002)."
+      },
+      {
+        "selector": "TemplateElement[value.cooked=/\\bselect\\b[\\s\\S]*\\bfrom\\b|\\binsert\\W+into\\b|\\bupdate\\b[\\s\\S]*\\bset\\b|\\bdelete\\W+from\\b|\\bwith\\b[\\s\\S]*\\bas\\W*\\(|\\b(create|alter|drop)\\W+(or\\W+replace\\W+)?(table|view|index|trigger|function)\\b|\\btruncate\\W+(table\\b|\\w+\\W*$)|\\bgrant\\b[\\s\\S]*\\b(on|to)\\b/i]",
+        "message": "[L2] This string is shaped like SQL. Use Drizzle, or reword the message (ADR-002)."
+      }
+    ]
+  },
+  "radcore/no-raw-execution": {
+    "syntax": [
+      {
+        "selector": "CallExpression[arguments.length>0][callee.property.name=/^(execute|unsafe|query)$/]",
+        "message": "[L3] No raw execution of SQL text (ADR-002)."
+      },
+      {
+        "selector": "CallExpression[arguments.length>0][callee.property.value=/^(execute|unsafe|query)$/]",
+        "message": "[L3] No raw execution of SQL text (ADR-002)."
+      },
+      {
+        "selector": "CallExpression[callee.property.name=/^(call|apply|bind)$/][callee.object.property.name=/^(execute|unsafe|query)$/]",
+        "message": "[L3] No raw execution of SQL text (ADR-002)."
+      }
+    ]
+  },
+  "radcore/no-driver": {
+    "imports": [
+      {
+        "source": "^(pg|pg-[^/]+|postgres|@electric-sql/[^/]+|drizzle-orm/(node-postgres|pglite|postgres-js)[^/]*)(/.*)?$",
+        "message": "[L4] Only packages/lib-platform/src/db/client.ts and the migrator open connections (ADR-002)."
+      }
+    ]
+  },
+  "radcore/no-raw-html": {
+    "syntax": [
+      {
+        "selector": "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "AssignmentExpression[left.property.value=/^(innerHTML|outerHTML)$/]",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='Object'][callee.property.name='assign'] Property[key.name=/^(innerHTML|outerHTML)$/]",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "CallExpression[callee.property.name='insertAdjacentHTML']",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "CallExpression[callee.property.name=/^(write|writeln)$/][callee.object.name='document']",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "CallExpression[callee.property.name=/^(write|writeln)$/][callee.object.property.name='document']",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "CallExpression[callee.property.name='setHTMLUnsafe']",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "CallExpression[callee.property.name='setAttribute'][arguments.0.value=/^srcdoc$/i]",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "JSXAttribute[name.name=/^srcdoc$/i]",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+        "message": "[L6] No raw HTML (ADR-002)."
+      },
+      {
+        "selector": "Property[key.name='dangerouslySetInnerHTML']",
+        "message": "[L6] No raw HTML (ADR-002)."
+      }
+    ]
+  },
+  "radcore/outbound-only": {
+    "globals": [
+      {
+        "name": "fetch",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "name": "WebSocket",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "name": "XMLHttpRequest",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      }
+    ],
+    "globalMembers": {
+      "objects": [
+        "globalThis",
+        "global",
+        "window",
+        "self"
+      ],
+      "members": [
+        "fetch",
+        "WebSocket",
+        "XMLHttpRequest"
+      ],
+      "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+    },
+    "syntax": [
+      {
+        "selector": "MemberExpression[property.name='getBuiltinModule']",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "MemberExpression[property.value='getBuiltinModule']",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "MemberExpression[property.quasis.0.value.cooked='getBuiltinModule']",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "ObjectPattern > Property[key.name='getBuiltinModule']",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "ObjectPattern > Property[key.value='getBuiltinModule']",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "ObjectPattern > Property[key.quasis.0.value.cooked='getBuiltinModule']",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      }
+    ],
+    "imports": [
+      {
+        "source": "^(node:)?(undici|axios|got|node-fetch|ws|http|https|http2|net|tls|dgram|child_process|module|worker_threads|vm|inspector|cluster)(/.*)?$",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      }
+    ]
+  },
+  "radcore/tables-in-schema": {
+    "imports": [
+      {
+        "source": "^drizzle-orm/pg-core(/.*)?$",
+        "names": [
+          "pgTable",
+          "pgTableCreator",
+          "pgTableWithSchema",
+          "pgSchema",
+          "pgEnum",
+          "pgEnumWithSchema"
+        ],
+        "message": "[L9a] Tables are declared only in packages/db/src/<module>/tables.ts (ADR-002)."
+      }
+    ]
+  },
+  "radcore/views-in-views": {
+    "imports": [
+      {
+        "source": "^drizzle-orm/pg-core(/.*)?$",
+        "names": [
+          "pgView",
+          "pgViewWithSchema",
+          "pgMaterializedView",
+          "pgMaterializedViewWithSchema"
+        ],
+        "message": "[L9b] Views are declared only in packages/db/views/<name>.ts (ADR-002)."
+      }
+    ]
+  },
+  "radcore/e1-route-files": {
+    "syntax": [
+      {
+        "selector": "ArrowFunctionExpression",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "FunctionExpression",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "FunctionDeclaration",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "IfStatement",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "SwitchStatement",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "ForStatement",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "ForInStatement",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "ForOfStatement",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "WhileStatement",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "DoWhileStatement",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "ConditionalExpression",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "LogicalExpression",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "UpdateExpression",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "AssignmentExpression[operator!='=']",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='+']",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='-']",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='*']",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='/']",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='%']",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='**']",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "CallExpression:not([callee.name=/^define(Route|Webhook|Job|Export|Import|Approval)$/])",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "CallExpression > CallExpression.arguments",
+        "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
+      },
+      {
+        "selector": "ImportDeclaration:not([source.value='@radcore/lib-platform']) > ImportSpecifier[local.name=/^define/]",
+        "message": "[E1] The define* helpers come from @radcore/lib-platform (ADR-001)."
+      }
+    ],
+    "onlyImports": {
+      "source": "^@radcore/lib-[a-z]+(-[a-z]+)*(/contract)?$",
+      "message": "[E1] Route and job files import only libraries' . and ./contract entries (ADR-001)."
+    }
+  },
+  "radcore/e3-no-io": {
+    "globals": [
+      {
+        "name": "process",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "fetch",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "setTimeout",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "setInterval",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "setImmediate",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "crypto",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "performance",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "globalThis",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "global",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "window",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "self",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      }
+    ],
+    "syntax": [
+      {
+        "selector": "MemberExpression[object.name='Math'][property.name='random']",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "selector": "MemberExpression[object.name='Math'][property.value='random']",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='Date'][callee.property.name='now']",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "selector": "CallExpression[callee.name='Date']",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "selector": "NewExpression[callee.name='Date'][arguments.length=0]",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      }
+    ]
+  },
+  "radcore/e4-no-escape": {
+    "syntax": [
+      {
+        "selector": "TSAsExpression[typeAnnotation.type=/^TS(Any|Unknown)Keyword$/]",
+        "message": "[E4] No cast or reflection past the type checker (ADR-001)."
+      },
+      {
+        "selector": "TSTypeAssertion[typeAnnotation.type=/^TS(Any|Unknown)Keyword$/]",
+        "message": "[E4] No cast or reflection past the type checker (ADR-001)."
+      },
+      {
+        "selector": "MemberExpression[property.name='Reflect']",
+        "message": "[E4] No cast or reflection past the type checker (ADR-001)."
+      }
+    ],
+    "globals": [
+      {
+        "name": "Reflect",
+        "message": "[E4] No reflection in libraries (ADR-001)."
+      }
+    ],
+    "imports": [
+      {
+        "source": "^drizzle-orm(/.*)?$",
+        "names": [
+          "getTableConfig"
+        ],
+        "message": "[E4] Libraries do not read table metadata (ADR-001)."
+      }
+    ]
+  },
+  "radcore/d7-no-db-reexport": {
+    "sources": [
+      "^@radcore/db(/|$)",
+      "^\\.{1,2}/(.*/)?db(/|$)"
+    ],
+    "message": "[D7] A library never hands on @radcore/db's tables or transactions, or lib-platform's db/ (ADR-001)."
+  },
+  "radcore/d7-no-table-exports": {
+    "names": [
+      "PgTable",
+      "PgTableWithColumns",
+      "PgColumn",
+      "PgView",
+      "PgViewWithSelection",
+      "PgMaterializedView",
+      "PgMaterializedViewWithSelection",
+      "PgSchema",
+      "PgDatabase",
+      "PgTransaction",
+      "NodePgDatabase"
+    ],
+    "txPattern": "^(Platform|Hr|Gst|Ops|Accounts|Crm|Stock|Payroll|Purchasing|Sales|Service)Tx$",
+    "message": "[D7] A library's entry never exports a table, view, column, database or module transaction (ADR-001)."
+  },
+  "radcore/no-subpath-imports": {
+    "imports": [
+      {
+        "source": "^#",
+        "message": "[L4] No package.json \"imports\" aliases: they hide the real specifier from L1, L4, L8 and L9 (ADR-002)."
+      }
+    ]
+  },
+  "radcore/no-declare": {
+    "syntax": [
+      {
+        "selector": "VariableDeclaration[declare=true]",
+        "message": "[E4] No ambient declarations outside .d.ts: they hide globals such as fetch and Reflect (ADR-001)."
+      },
+      {
+        "selector": "TSModuleDeclaration[declare=true]",
+        "message": "[E4] No ambient declarations outside .d.ts: they hide globals such as fetch and Reflect (ADR-001)."
+      },
+      {
+        "selector": "TSDeclareFunction",
+        "message": "[E4] No ambient declarations outside .d.ts: they hide globals such as fetch and Reflect (ADR-001)."
+      },
+      {
+        "selector": "ClassDeclaration[declare=true]",
+        "message": "[E4] No ambient declarations outside .d.ts: they hide globals such as fetch and Reflect (ADR-001)."
+      },
+      {
+        "selector": "TSEnumDeclaration[declare=true]",
+        "message": "[E4] No ambient declarations outside .d.ts: they hide globals such as fetch and Reflect (ADR-001)."
+      }
+    ]
+  }
+}
