@@ -1,0 +1,55 @@
+# Browser journeys (RAD-15) on every PR that can change what a person sees: the web app, the suite, this workflow or
+# the dependencies. Playwright starts the API, worker and web app itself (e2e/playwright.config.ts). On failure the
+# traces, screenshots, videos and HTML report are kept as the `e2e-results` artifact.
+name: e2e
+
+on:
+  pull_request:
+    paths:
+      - apps/web/**
+      - e2e/**
+      - .github/workflows/e2e.yml
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      # The e2e database: the production major version, same image as compose.dev.yml. Trust auth with no password,
+      # since the container lives only as long as this job on a throwaway runner.
+      postgres:
+        image: postgres:16.14-alpine3.23@sha256:42b8b8b29c8a4e933d88943e5b03001a78794905cf786e6e7634e9f2abd5a0d3
+        env:
+          POSTGRES_USER: radcore
+          POSTGRES_DB: radcore_e2e
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U radcore -d radcore_e2e"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+        env:
+          E2E_DATABASE_URL: postgres://radcore@127.0.0.1:5432/radcore_e2e
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-results
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          retention-days: 14
