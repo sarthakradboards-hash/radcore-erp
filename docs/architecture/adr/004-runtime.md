@@ -52,8 +52,15 @@ CI goes to a local catcher, never out.
   - sessions and rate-limit counters;
   - the permission matrix, re-read on change;
   - saved-once keys and job state.
-- **Uploads go straight to S3, with limits the bucket enforces.** The browser uploads with a presigned **POST**
-  whose policy fixes the content type and a `content-length-range`. A presigned PUT can't limit size.
+- **Uploads go straight to S3, with limits the bucket enforces.** The browser uploads with a presigned **POST**.
+  A presigned PUT can't limit size. The POST policy fixes:
+  - the exact `bucket` and `key` (made by the server);
+  - the `Content-Type`;
+  - a `content-length-range` for the kind of file;
+  - an expiry of 5 minutes.
+
+  The client can't set an ACL, encryption or any other field: encryption is the bucket's default (KMS). The
+  bucket's CORS allows `POST` from `PUBLIC_ORIGIN` only (ADR-001 §7a).
   - Limits by kind: photos 10 MB, resumes 5 MB, bank statements 15 MB, import files 25 MB (M1-25).
   - After upload, the API checks the stored object's size and magic bytes before the file is used.
   - Downloads are short-lived presigned GETs with `Content-Disposition: attachment`.
@@ -89,19 +96,32 @@ CI goes to a local catcher, never out.
 
 ### 3. Credentials, deploys and rollback
 
-**What can reach AWS credentials.** The server's instance role is the only AWS credential on the server.
-- IMDSv2 is required (`HttpTokens=required`), with a hop limit of 2.
-- The containers sit on two Docker networks: `edge` (`proxy`, `web`) and `app` (`api`, `worker`). A host firewall
-  rule in the `DOCKER-USER` chain drops traffic from `edge` to `169.254.169.254`. So an SSRF bug in `web` can't
-  reach the instance role.
-- M8 proves it from inside `web`: the metadata endpoint is unreachable, while `api` reaches it.
+**What can reach AWS credentials.** The server's instance role is the only AWS credential on the server. Only `api`
+and `worker` may reach it, by an allowlist:
+- **Metadata service:** IMDSv2 is required (`HttpTokens=required`), with a hop limit of 2. Its IPv6 endpoint is
+  off (`HttpProtocolIpv6=disabled`).
+- **One network.** All four containers sit on a single Docker network with a **pinned** subnet (`172.30.0.0/24`)
+  and bridge name (`br-radcore`), and **fixed** addresses: `proxy` .2, `web` .3, `api` .10, `worker` .11.
+  Docker uses the iptables backend, pinned in its daemon config.
+- **Firewall rules,** in the `DOCKER-USER` chain:
+  - traffic to `169.254.169.254` is **accepted only from .10 and .11**, and dropped from every other container
+    address;
+  - traffic to RDS's port 5432 is likewise accepted only from .10 and .11.
+- **The rules hold across reboots.** A systemd unit installs them, and it is ordered before `docker.service`.
+- **A continuous check.** `web`'s `/health` tries the metadata address with a 1-second timeout, and reports
+  unhealthy if it gets an answer. The outside monitor reads it every 5 minutes, so a lost rule is noticed the same
+  day, not at the next audit. M8 also proves it once from a shell inside `web`.
 
 **What the instance role may do**, and nothing else:
 - read and write objects in the files bucket;
 - use the secrets KMS key (encrypt, decrypt, generate data keys);
 - read the named **runtime** secrets in Secrets Manager (`DATABASE_URL`, `TURNSTILE_SECRET`, `ALERT_WEBHOOK_URL`,
-  `HEARTBEAT_URL`);
-- send mail from the verified SES identity.
+  `HEARTBEAT_URL`), and the runtime settings in Parameter Store;
+- send mail from the verified SES identity, with the condition `ses:FromAddress = MAIL_FROM`;
+- pull the app's images from its ECR repository;
+- run the SSM agent (`AmazonSSMManagedInstanceCore`).
+
+It has no `s3:DeleteObjectVersion`, so it can't remove old versions of a file.
 
 It can't read the owner secret.
 - `api` and `worker` fetch their runtime secrets at start through the role and keep them in memory. They are never
@@ -115,12 +135,36 @@ Actions with its own AWS role, assumed through OIDC (no stored keys). That role 
 
 1. takes an RDS snapshot;
 2. opens an SSM port-forwarding session through the server to RDS, which isn't public;
-3. runs the `migrate` image in CI with the owner login, under `lock_timeout = 5s` and a statement timeout, so a
-   migration never queues behind live traffic for long;
-4. closes the session;
-5. tells the server, through SSM, to pull the new images **by digest** and swap containers.
+3. runs the `migrate` image in CI with the owner login. TLS is still verified through the tunnel: `ssl.servername`
+   is the RDS endpoint name, so `verify-full` checks the right certificate. It runs under `lock_timeout = 5s` and a
+   statement timeout, so a migration never queues behind live traffic for long;
+4. runs the partition top-up (ADR-005 §8) the same way;
+5. closes the session;
+6. tells the server, through SSM, to pull the new images **by digest** and swap containers.
 
-Deploys are serialised: one GitHub Actions concurrency group per environment, so two deploys never overlap.
+Deploys are serialised: one GitHub Actions concurrency group per environment, with `cancel-in-progress: false`, so
+two deploys never overlap and a running one is never cut off. The previous five image digests are kept.
+
+**The deploy role is bound to `main` and to the deploy workflow.** It can read the owner secret and run commands
+on the server, so its OIDC trust policy requires all three of:
+- `aud` = `sts.amazonaws.com`;
+- `sub` = `repo:sarthakradboards-hash/radcore-erp:ref:refs/heads/main`;
+- `job_workflow_ref` = `sarthakradboards-hash/radcore-erp/.github/workflows/deploy.yml@refs/heads/main`.
+
+A workflow on any other branch, or any other workflow file, can't assume it. GitHub Environments with required
+reviewers aren't available on a private Free repository, so this binding is the guard. Only the coordinator merges
+to `main`.
+- `ssm:StartSession` is limited to the port-forwarding document (`AWS-StartPortForwardingSessionToRemoteHost`),
+  with the RDS endpoint and port 5432 as its only parameters, on the one instance.
+- `ssm:SendCommand` is limited to the named documents `radcore-deploy` and `radcore-bootstrap-admin`, on the one
+  instance.
+- Session Manager logging (to CloudWatch Logs) and CloudTrail are on.
+- An interactive shell on the server needs a person's own IAM identity with MFA: Sarthak, or the devops role once
+  it exists. The deploy role can't open one.
+
+**Migrations stay compatible, checked in CI.** A migration that drops or renames a column or table fails CI
+(M0-08) unless the PR names the earlier release that stopped using it (the contract step of expand/contract). Job
+payloads follow the same rule: a job queued by the previous release must still run on the new one.
 
 **Rollback keeps the data.**
 - Every migration works with the previous release as well as the new one (expand, then contract). A column or
@@ -135,19 +179,27 @@ the deploy job through SSM:
   minted once ever, and a later deploy can't mint another.
 - It sends the invite link by email (SES) to `SEED_ADMIN_EMAIL`. The link is never written to a log or to the
   command's output, which shows only that an invite was sent to a masked address (M1-14).
+- SES must be out of its sandbox (production access) before this runs.
+- **Re-issue.** If the invite bounces or expires before any admin has accepted, the same command can re-issue it.
+  That invalidates the old invite, is logged, and goes only to `SEED_ADMIN_EMAIL`. Once an admin exists, it does
+  nothing.
+- **Tokens stay out of URLs that get logged.** Invite and password-reset links carry their token in the URL
+  fragment (`#...`), which browsers don't send to the server or in `Referer`. The page exchanges it by POST.
 
 **Network.**
 - **The server's security group** allows 80 and 443 in, and nothing else: no SSH, since administration goes
   through SSM Session Manager.
 - **RDS** accepts 5432 only from the server's security group, and isn't publicly reachable.
-- **Ports:** only `proxy` publishes ports on the host. `api` and `web` are reachable only on the Docker networks.
+- **Ports:** only `proxy` publishes ports on the host. `api` and `web` are reachable only on the Docker network.
 - **Caddy:** its admin API is off, its `/data` volume persists (Let's Encrypt has rate limits), and it overwrites
   any `X-Forwarded-*` headers arriving from outside.
 - **Client addresses:**
-  - `api` trusts forwarded-for headers only from addresses in `TRUST_PROXY`, the internal networks' CIDRs, parsed
+  - `api` trusts forwarded-for headers only from the fixed addresses in `TRUST_PROXY` (`proxy` and `web`), parsed
     and validated at start.
-  - When a `web` server component calls `api` (at `API_INTERNAL_URL`), it passes on the person's cookie, sets
-    `Origin` to `PUBLIC_ORIGIN`, and passes the client address Caddy gave it.
+  - `web`'s server components call **only read contracts** on `api` (at `API_INTERNAL_URL`). They pass on the
+    person's cookie and the client address Caddy gave them.
+  - **Every write comes from the browser itself,** carrying its own `Origin`, so the API's write-Origin check
+    (M1-21) still sees where the person really came from. The web server never sets `Origin` for them.
 
 ### 4. Copies in Hyderabad that can actually be used
 
@@ -165,6 +217,9 @@ the deploy job through SSM:
   (D4).
 - **Backups out of reach of one compromised admin:** the cross-region copies sit in a backup vault with a
   deletion lock (M8).
+- **Files, still open:** the Hyderabad files bucket has no Object Lock yet, and one key protects both regions. Object
+  Lock would protect files from one admin as the vault protects backups, but it would also block deleting a
+  person's files on request (DPDP). The choice goes with the retention decision, D-12.
 - **Recovery time:** about 30 to 60 minutes to rebuild the server from images and reattach RDS, rehearsed in M8
   (Hosting recommendation §3).
 
@@ -188,8 +243,8 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 | `NODE_ENV` | `production` outside development and CI | no | all | Parameter Store | all |
 | `APP_ENV` | `development`, `ci`, `staging` or `production`; production refuses demo data and weak settings | no | all | Parameter Store | all |
 | `PUBLIC_ORIGIN` | the site's own `https://` origin, for the Origin check, links and cookies | no | all | Parameter Store | api, web, worker |
-| `API_INTERNAL_URL` | where `web`'s server reaches `api` on the `app` network | no | all | Parameter Store | web |
-| `TRUST_PROXY` | the internal networks' CIDRs, whose forwarded-for headers `api` trusts | no | all | Parameter Store | api |
+| `API_INTERNAL_URL` | where `web`'s server reaches `api` on the Docker network (read contracts only, §3) | no | all | Parameter Store | web |
+| `TRUST_PROXY` | the fixed addresses of `proxy` and `web`, whose forwarded-for headers `api` trusts | no | all | Parameter Store | api |
 | `DATABASE_URL` | runtime login `radcore_app`, with `sslmode=verify-full` | **yes** | all | Secrets Manager | api, worker |
 | `DATABASE_READ_URL` | read-only login `radcore_read` | **yes** | staging, production | Secrets Manager | restore drill, support |
 | `MIGRATION_DATABASE_URL` | owner login `radcore_owner` | **yes** | all | Secrets Manager, readable only by the CI deploy role | `migrate` in CI only |
