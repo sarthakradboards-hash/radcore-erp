@@ -14,8 +14,13 @@ const sel = (message: string) => (selector: string) => ({ selector, message });
 const LET = String.raw`VariableDeclaration[kind=/^(let|var)$/]`;
 const ENV = String.raw`/^(NODE_ENV|VITEST\w*|JEST_WORKER_ID|TEST)$/`;
 
+// The one allowed read (coordinator, for PR #20's dev-server CSP): `process.env.NODE_ENV === 'development'`, written
+// that way round. Under vitest NODE_ENV is 'test', so it still takes the production path. `!== 'production'` is
+// true under test, so it stays refused, as does every other read.
+const DEV_ONLY = "BinaryExpression[operator='==='][right.value='development'] > "
+  + "MemberExpression.left[object.object.name='process'][object.property.name='env'][property.name='NODE_ENV']";
 const TEST_MODE = [
-  `MemberExpression[property.name=${ENV}]`,
+  `MemberExpression[property.name=${ENV}]:not(${DEV_ONLY})`,
   `MemberExpression[property.value=${ENV}]`,
   `MemberExpression[property.quasis.0.value.cooked=${ENV}]`,
   `ObjectPattern > Property[key.name=${ENV}]`,
@@ -116,6 +121,12 @@ const TEST = 'packages/lib-sales/src/services/orders.test.ts';
 describe('each check fails its violating samples', () => {
   it.each([
     "if (process.env.NODE_ENV === 'test') skip();",
+    "if (process.env.NODE_ENV !== 'production') relax();",
+    "if (process.env.NODE_ENV == 'development') relax();",
+    "if ('development' === process.env.NODE_ENV) relax();",
+    "if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') relax();",
+    "const dev = process.env['NODE_ENV'] === 'development';",
+    "const dev = env.NODE_ENV === 'development';",
     "const v = process.env['VITEST_POOL_ID'];",
     'const v = process.env[`JEST_WORKER_ID`];',
     'const { NODE_ENV } = process.env;',
@@ -175,6 +186,11 @@ describe('each check lets the safe forms through', () => {
     const code = '// NODE_ENV is never read here.\nexport const cost = (s: { memoryKib: number }) => s.memoryKib;\n'
       + 'export const contest = 1; export const latest = 2;';
     expect(await lintSample(code, PROD)).toEqual([]);
+  });
+
+  it("production code's one allowed read: process.env.NODE_ENV === 'development' (PR #20)", async () => {
+    const code = "const dev = process.env.NODE_ENV === 'development';\nexport const csp = dev ? 'relaxed' : 'strict';";
+    expect(await lintSample(code, 'apps/web/proxy.ts')).toEqual([]);
   });
 
   it('a test with a fixed date, a loop of assertions and state kept inside one test', async () => {
