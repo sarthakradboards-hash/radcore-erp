@@ -1,5 +1,5 @@
 # Local services for development (RC-198): every port on 127.0.0.1 only, and no password in this file.
-# Passwords come from .env, which `npm run dev:env` generates and git ignores. Start with `npm run db:up`.
+# Credentials come from .env, which `npm run dev:env` generates and git ignores. Start with `npm run db:up`.
 name: radcore
 
 services:
@@ -19,23 +19,25 @@ services:
       timeout: 5s
       retries: 30
 
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address :9001
+  # S3-compatible store for development and CI; production is AWS S3. MinIO's image is no longer pullable
+  # anonymously (coordinator, 6 Nov). Pinned by digest.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: server -dir=/data -s3 -s3.port=8333
     environment:
-      MINIO_ROOT_USER: radcore
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run npm run dev:env first}
+      # SeaweedFS makes these the one admin identity, so unsigned requests are refused.
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?run npm run dev:env first}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?run npm run dev:env first}
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:8333:8333"
     volumes:
-      - minio:/data
+      - seaweedfs:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8333/healthz"]
       interval: 2s
       timeout: 5s
-      retries: 30
+      retries: 60
 
 volumes:
   postgres:
-  minio:
+  seaweedfs:

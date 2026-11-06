@@ -66,7 +66,8 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Second factor (TOTP) | otpauth | 9.5.2 | MIT | nothing (RC-055). Required for admin and owner (D-19). Settings: SHA-1, 6 digits, 30-second steps, a window of ±1 step, and a 20-byte random secret kept by the secrets library. The last accepted step is stored, so a code is refused if it's reused. Attempts are limited per account, and recovery codes are stored as Argon2id hashes (M1-15) |
 | Envelope encryption | @aws-crypto/client-node | 5.0.2 | Apache-2.0 | the hand-written AES-GCM `secret-box`. KMS keyring in staging and production (`SECRETS_KMS_KEY_ID`); raw AES keyring from `SECRETS_LOCAL_KEY` in development and CI. Each value's encryption context names its table, column and row id, and decryption checks it, so a ciphertext copied into another row won't decrypt. Commitment policy `REQUIRE_ENCRYPT_REQUIRE_DECRYPT`; key rotation by KMS (M1-24) |
 | Rate limits in a shared store | rate-limiter-flexible (PostgreSQL store) | 11.2.3 | ISC | express-rate-limit counting in memory (RC-088). Its table comes from a migration (`tableCreated: true`, since the runtime login has no DDL), and it uses its own small pool in `client.ts`. It fails **closed**: when the store can't be reached, a limited action is refused |
-| File store | @aws-sdk/client-s3 | 3.1155.0 | Apache-2.0 | files in the database or on local disk. Works with MinIO in development |
+| File store | @aws-sdk/client-s3 | 3.1155.0 | Apache-2.0 | files in the database or on local disk. Works with SeaweedFS in development and CI (MinIO's image is no longer public; coordinator, 6 Nov) |
+| Presigned URLs | @aws-sdk/s3-request-presigner | 3.1155.0 | Apache-2.0 | none. Files reach the browser by presigned URL (Next row). Same release as client-s3; added by RAD-13 for the dev store's smoke test |
 | CSV read and write (streams) | csv-parse, csv-stringify | 7.0.3, 6.9.0 | MIT | hand-written comma split and quadratic amount pattern (RC-118). Exports use csv-stringify's `escape_formulas` (§3) |
 | Text encoding detection | chardet | 2.2.0 | MIT | UTF-8 only (RC-117). Decoding is `TextDecoder` (§1), not iconv-lite |
 | Excel read and write | read-excel-file, write-excel-file | 9.3.12, 4.1.1 | MIT | hand-written `lib/xlsx.ts` writer, and no Excel import at all (RC-117) |
@@ -217,7 +218,7 @@ that opens a connection or fetches something is named here with its rule:
 | Library | What it does on its own | Rule |
 |---|---|---|
 | pg, pg-boss, rate-limiter-flexible | connect to PostgreSQL | only the pools built in `lib-platform/src/db/client.ts`, from `DATABASE_URL`, are allowed (ADR-002 L4) |
-| @aws-sdk/client-s3 | connects to S3 | the endpoint comes only from settings (`S3_REGION`, MinIO's `S3_ENDPOINT` in development), never from data |
+| @aws-sdk/client-s3 | connects to S3 | the endpoint comes only from settings (`S3_REGION`, SeaweedFS's `S3_ENDPOINT` in development), never from data |
 | @aws-crypto/client-node | calls KMS | the key comes only from `SECRETS_KMS_KEY_ID` |
 | imapflow | connects to the statements mailbox | the host is set by an admin, checked against the global-unicast rule before connecting, TLS only, with connection and idle timeouts |
 | mailauth | DNS lookups on the sender's domain | a `node:dns` `Resolver` with a timeout and a limited number of tries, passed in as its resolver |

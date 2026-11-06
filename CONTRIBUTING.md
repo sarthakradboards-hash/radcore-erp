@@ -31,10 +31,10 @@ npm run dev        # API on 127.0.0.1:3001, web on 127.0.0.1:3000, worker
 npm test
 npm run lint       # ESLint (ADR-001 E rules, ADR-002 L rules) and dependency-cruiser (D rules, L7)
 npm run typecheck
-npm run db:up      # PostgreSQL 16 and the object store, on 127.0.0.1 only (needs Docker)
+npm run db:up      # PostgreSQL 16 and SeaweedFS (S3), on 127.0.0.1 only (needs Docker)
 ```
 
-`npm run dev` and `npm run db:up` first write `.env` with new random passwords if it doesn't exist. `.env` is
+`npm run dev` and `npm run db:up` first write `.env` with new random credentials if it doesn't exist. `.env` is
 git-ignored; never commit it. Each lint rule has a violating fixture in `tools/boundary-fixtures/`, and
 `npm test` fails if any fixture stops failing.
 

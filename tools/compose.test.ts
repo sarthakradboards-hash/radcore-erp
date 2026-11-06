@@ -17,6 +17,14 @@ it('commits no password: each secret is a required variable from the generated .
   for (const [, , , value] of secrets) expect(value).toMatch(/^"?\$\{\w+:\?[^}]*\}"?$/);
 });
 
+it('commits no access key either', () => {
+  expect(compose).toMatch(/AWS_ACCESS_KEY_ID:\s*\$\{S3_ACCESS_KEY_ID:\?/);
+});
+
 it('runs the production PostgreSQL major version', () => {
   expect(compose).toMatch(/image:\s*postgres:16[.\-]/);
+});
+
+it('pins the object store image by digest', () => {
+  expect(compose).toMatch(/image:\s*chrislusf\/seaweedfs:[\w.]+@sha256:[0-9a-f]{64}\s/);
 });

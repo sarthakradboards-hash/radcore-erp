@@ -1,5 +1,5 @@
 # RAD-13's proof on a fresh runner: npm ci, tests (fixtures included), lint, typecheck, and the dev compose
-# PostgreSQL started from generated passwords. RAD-14 (M0-08) replaces this with the full CI pipeline.
+# services started from generated credentials, with the object store's smoke test. RAD-14 (M0-08) replaces this with the full CI pipeline.
 name: skeleton-proof
 
 on:
@@ -23,10 +23,13 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run typecheck
-      - name: Dev compose PostgreSQL on 127.0.0.1 with generated passwords (RC-198)
+      - name: Dev compose on 127.0.0.1 with generated credentials (RC-198)
         run: |
-          npm run dev:env
-          # The object store waits on the MinIO decision (RAD-13 comment, 6 Nov); PostgreSQL alone for now.
-          docker compose -f compose.dev.yml up -d --wait postgres
+          npm run db:up
           docker compose -f compose.dev.yml port postgres 5432 | grep -x '127.0.0.1:5432'
+          docker compose -f compose.dev.yml port seaweedfs 8333 | grep -x '127.0.0.1:8333'
           docker compose -f compose.dev.yml exec -T postgres psql -U radcore -d radcore -tAc 'show server_version' | grep '^16\.'
+      - name: Object store smoke test (presigned PUT and GET)
+        run: |
+          set -a; . ./.env; set +a
+          npx vitest run --project tools tools/s3.test.ts
