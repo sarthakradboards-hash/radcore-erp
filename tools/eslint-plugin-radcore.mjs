@@ -1,7 +1,6 @@
 // The local ESLint plugin for ADR-001's E-rules and ADR-002's L-rules. Each ADR rule is its own rule here, so a later
 // config block can never replace another rule's options (ADR-001 "One ESLint rule per E-rule"). Selectors and
 // patterns live in eslint.config.mjs as each rule's options; tools/eslint-options.json pins them.
-import ts from 'typescript';
 
 const DRIZZLE = /^drizzle-orm(\/|$)/;
 
@@ -44,7 +43,8 @@ const fromDrizzle = (context, n) => {
  *   globals: [{ name, message }]                           references to an undeclared global
  *   imports: [{ source, names?, message }]                 source is a regex; with names, only those value imports
  *   onlyImports: { source, message }                       every import must match source (E1)
- *   globalMembers: { objects, members, message }           members read from a real global object (L8)
+ *   globalMembers: { objects, members, message }           the real global objects, readable only as `G.key` for a
+ *                                                          static key not in members (L8)
  */
 const restrict = (description) => ({
   meta: { type: 'problem', docs: { description }, schema: false, messages: { m: '{{message}}' } },
@@ -96,18 +96,16 @@ const restrict = (description) => ({
         }
       });
     }
-    // A member of the real global object, by any spelling: `.x`, `['x']`, `const { x } = g`, `({ x } = g)`,
-    // `({ x } = g) =>`, or an alias of the object itself. A local `deps` or `ctx.outbound` is never the global.
-    const memberKey = (n) => (n.computed ? staticString(n.property) : n.property.name);
-    const patternHits = (pattern) => pattern?.type === 'ObjectPattern' && pattern.properties.some((p) =>
-      p.type === 'Property' && gm.members.includes(p.computed ? staticString(p.key) : p.key.name ?? p.key.value));
+    // The real global object (resolved by scope, so a local `deps` or `ctx.outbound` never counts) may only be read
+    // as `G.key` with a static key that isn't one of `members`, such as `globalThis.structuredClone`. Any other use
+    // (passing it on, returning it, aliasing, destructuring, spreading, a dynamic key) could reach a member.
+    const WRAPPERS = new Set(['ChainExpression', 'TSAsExpression', 'TSNonNullExpression', 'TSSatisfiesExpression', 'TSTypeAssertion']);
     const checkGlobalObject = (id) => {
-      const p = id.parent;
-      const hit = (p.type === 'MemberExpression' && p.object === id && gm.members.includes(memberKey(p)))
-        || (p.type === 'VariableDeclarator' && p.init === id && (p.id.type === 'Identifier' || patternHits(p.id)))
-        || (p.type === 'AssignmentExpression' && p.right === id && (p.left.type === 'Identifier' || patternHits(p.left)))
-        || (p.type === 'AssignmentPattern' && p.right === id && patternHits(p.left));
-      if (hit) report(id, gm.message);
+      let n = id;
+      while (WRAPPERS.has(n.parent.type) && n.parent.expression === n) n = n.parent;
+      const p = n.parent;
+      const key = p.type === 'MemberExpression' && p.object === n ? (p.computed ? staticString(p.property) : p.property.name) : null;
+      if (key === null || gm.members.includes(key)) report(id, gm.message);
     };
     return listeners;
   },
@@ -296,13 +294,9 @@ const noTableExports = {
     // (Promise<SalesTx>, (fn: (tx: SalesTx) => T) => T, { tables: { invoices } }).
     const MAX_DEPTH = 8;
     const PROPERTY_DEPTH = 6;
-    const typeArguments = (type) => {
-      try {
-        return type.flags & ts.TypeFlags.Object && type.objectFlags & ts.ObjectFlags.Reference ? checker.getTypeArguments(type) : [];
-      } catch {
-        return [];
-      }
-    };
+    // Structure only: array and tuple elements, never a generic's type arguments. drizzle types a row as
+    // `InferSelectModel<Table<T>>`, so following type arguments would find a table inside every plain row type.
+    const elements = (type) => (checker.isArrayType(type) || checker.isTupleType(type) ? checker.getTypeArguments(type) : []);
     const carries = (type, best, depth) => {
       if (!type || depth > MAX_DEPTH) return false;
       // Keep the shallowest depth a type was reached at, so a deeper first visit can't hide a shallower one.
@@ -316,8 +310,7 @@ const noTableExports = {
       const awaited = checker.getAwaitedType(type);
       const next = [
         ...(type.isUnionOrIntersection() ? type.types : []),
-        ...(type.aliasTypeArguments ?? []),
-        ...typeArguments(type),
+        ...elements(type),
         ...(awaited && awaited !== type ? [awaited] : []),
         ...[...type.getCallSignatures(), ...type.getConstructSignatures()].flatMap((s) =>
           [s.getReturnType(), ...s.getParameters().map((p) => checker.getTypeOfSymbol(p))]),

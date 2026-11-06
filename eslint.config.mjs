@@ -87,7 +87,7 @@ export const OPTIONS = {
   },
   'radcore/outbound-only': {
     globals: ['fetch', 'WebSocket', 'XMLHttpRequest'].map((name) => ({ name, message: L8 })),
-    // The real global object only (resolved by scope), so `const { fetch } = deps` or `ctx.outbound` is fine.
+    // The real global object only (resolved by scope), read only as `G.key` for keys not listed here; `deps.fetch` is fine.
     globalMembers: { objects: ['globalThis', 'global', 'window', 'self'], members: ['fetch', 'WebSocket', 'XMLHttpRequest'],
       message: L8 },
     syntax: [
