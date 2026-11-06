@@ -259,8 +259,9 @@ They are append-only with explicit reversals:
 
   `api` and `worker` share `radcore_app`, so separate logins per process are an option for M1-06 if the audit needs
   to tell them apart.
-- **The owner login** runs migrations only, and never sits in the API or worker containers (RC-003). A read-only
-  login serves reports and the restore drill (RC-193).
+- **The owner login** runs migrations and the partition top-up only, from CI. It never sits on the server or in the
+  API or worker containers (RC-003, ADR-004 §3). A read-only login, `radcore_read`, serves the restore drill and
+  support queries (RC-193).
 
 **Access logging and read-only requests.** A GET runs read-only (ADR-002 §4), so it can't write `access_log`. When
 a GET opens a full record:
