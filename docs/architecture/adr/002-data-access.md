@@ -232,6 +232,9 @@ in `packages/lib-platform/src/http/outbound.ts`. lib-integrations and the alert 
   response URL is used, any credential parameter the client names (for Meta, `access_token`, which Graph API
   paging links do carry) is removed from it.
 - **Logs** show only the origin and path, never the query or headers.
+  - A client whose URL itself comes from a secret (an alert webhook, a heartbeat address) is created with
+    `logPath: false` and logs the origin alone.
+  - No refusal message includes the URL.
 - **Redirects** are followed by hand (`redirect: 'manual'`), at most 3 hops.
   - Each `Location` is resolved with `new URL(location, current)` and passes the same check.
   - If a redirect crosses to another allowed origin, `Authorization` is dropped.
