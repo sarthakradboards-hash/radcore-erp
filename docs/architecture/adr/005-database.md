@@ -1,11 +1,11 @@
 # ADR-005: Database conventions
 
 - Status: accepted
-- Date: 2026-11-06
+- Date: 2026-11-06, revised after the auditor's review the same day
 - Ticket: RAD-11 (M0-06). The basis for M1-05, M1-06 and M1-12, which cover RC-024, RC-029, RC-044, RC-003,
   RC-193, RC-030 and RC-046.
-- Builds on: [ADR-001](001-layers.md) (one owner per table), [ADR-002](002-data-access.md) (the SQL zone: CHECKs in
-  `tables.ts` and `columns.ts`, triggers in `migrations/`, views in `views/`).
+- Builds on: [ADR-001](001-layers.md) (one owner per table, principals), [ADR-002](002-data-access.md) (the SQL
+  zone: CHECKs in `tables.ts` and `columns.ts`, triggers in `migrations/`, views in `views/`).
 
 ## Context
 
@@ -24,13 +24,19 @@ v2's tables are empty, so the rules can be in force from the first migration.
 
 ## Decision
 
-Every rule below is enforced by the database or by a test that reads the schema. Each names the ticket that builds
-it.
+Every rule below is enforced by the database, or by a test that reads the migrated database. Each names the ticket
+that builds it.
+
+**How the rules are tested (M1-05).** The schema tests run in CI against a database migrated from zero on
+PostgreSQL 16. They read `pg_catalog` through views in `packages/db/views/` (the SQL zone), because Drizzle's
+metadata has no triggers or grants. The pg-boss and migration schemas are excluded.
 
 ### 1. Types and precision (M1-05)
 
-Every numeric column is declared through a helper in `packages/db/src/columns.ts`. The helper fixes the type and adds
-its CHECK, so a column can't be declared without one.
+Every numeric column is declared through a helper in `packages/db/src/columns.ts`. Drizzle 0.45's `check()` is
+table-level, and a column builder doesn't know its table. So the helpers are used through a table wrapper,
+`radcoreTable(name, columns, extras)`, which adds each helper column's CHECK. The schema test catches a numeric
+column declared any other way.
 
 | Helper | PostgreSQL type | Default CHECK | Used for |
 |---|---|---|---|
@@ -42,16 +48,22 @@ its CHECK, so a column can't be declared without one.
 | `fxRate()` | `numeric(18,8)` | `> 0` | exchange rates |
 
 - **Quantity follows its unit.** A document line copies its unit's code and decimals (`uom_code`, `uom_decimals`)
-  when it is created. A CHECK holds `qty = round(qty, uom_decimals)`, so 1.5 Nos is refused (M2-10).
+  when it is created.
+  - A composite foreign key `(uom_code, uom_decimals)` points at the unit table, which is unique on
+    `(code, decimals)`, so a wrong copy is refused.
+  - `uom_decimals` is `between 0 and 3`.
+  - A CHECK holds `qty = round(qty, uom_decimals)`, so 1.5 Nos is refused (M2-10).
 - **Dates.** A business date is `date`; a moment is `timestamptz`. No column default uses `current_date` or a
   server time zone. "Today" in India comes from lib-common and is passed in.
-- **Ids.** `uuid` primary keys with the default `gen_random_uuid()`.
+- **Ids.** Documents, ledgers and masters have `uuid` primary keys with the default `gen_random_uuid()`. Lookup
+  tables are keyed by `code` (§4). The partitioned logs are keyed by `(id, occurred_at)` (§8).
 - **Text.** Text a person types has a length CHECK (the `boundedText()` helper, 200 characters unless set
   otherwise). Codes are `text` with a pattern CHECK.
-- **Money on the wire** is a decimal string, a date is `YYYY-MM-DD`, and a moment is ISO 8601 with its offset.
+- **On the wire** (ADR-001 §7a): money is a decimal string, a date is `YYYY-MM-DD`, and a moment is ISO 8601 in
+  UTC (`Z`).
 
-**Proof (M1-05):** a test reads every table through Drizzle's schema metadata. It fails on a numeric column whose
-CHECK constraint (named `ck_<table>_<column>`) is missing.
+**Proof (M1-05):** the schema test fails on a numeric column without its CHECK (`ck_<table>_<column>`), or on any
+constraint or index name over 63 bytes, which PostgreSQL would truncate.
 
 ### 2. Arithmetic identities (M1-05 for the helpers; each module's tables in M2 to M6)
 
@@ -60,58 +72,70 @@ The database checks the identities that hold whatever rounding rule is used. The
 (M2-08). Writing it twice would make two copies to keep in step.
 
 - **Within one row, as a CHECK.** For example, on every taxed line:
-  - `line_total = taxable + cgst + sgst + igst + cess`;
+  - `line_total = taxable + cgst + sgst + igst + cess_ad_valorem + cess_per_unit_amount`;
   - `cgst = sgst`;
   - `igst = 0 or (cgst = 0 and sgst = 0)`;
   - `taxable >= 0`.
-  The same pattern holds on journal lines (exactly one of debit or credit is above zero) and on payment
-  allocations (`amount > 0`).
-- **Across rows, as a deferred constraint trigger** checked at commit (`DEFERRABLE INITIALLY DEFERRED`):
-  - a document's header total equals the sum of its lines plus its round-off, with `abs(round_off) < 1`;
-  - a journal entry's debits equal its credits (M2-03);
-  - allocations against a document never exceed its total.
-- Each failure raises its own error code (§9), which lib-platform maps to a message a person can act on.
+
+  On journal lines, exactly one of debit and credit is above zero. A value-only credit or debit note line has no
+  quantity: `(qty is null) = (kind = 'value')`.
+- **Across rows, as a deferred check at commit.** A document's header total equals the sum of its lines plus its
+  header-level charges (freight, TCS) plus its round-off, with `abs(round_off) < 1`. Other examples: a journal
+  entry's debits equal its credits (M2-03), and net allocations never exceed a document's total (§7a).
+  - Each module's ticket names the exact columns of its identity, worked out with lib-gst (M2-01, M3-01).
+  - The check runs **once per document**, not per row: a statement-level trigger with transition tables collects
+    the documents a statement touched, and a deferred constraint trigger checks each once at commit. Header
+    changes queue the check too.
+  - These raise at `COMMIT`. The generic handler maps codes raised at commit like any other (§9).
 
 ### 3. Keys and indexes (M1-05)
 
 - **An index on every foreign key.** Each foreign key's columns are the leading columns of an index (or of the
-  primary key). Proof: a schema-metadata test fails on any foreign key without one (RC-029).
-- **Foreign keys never cascade a delete.** `on delete restrict` is the default and is never overridden for
-  ledgers or posted documents (RC-004: deleting a payroll run wiped its payslips). Masters are switched off
-  (`active = false`), not deleted. A draft document's lines may cascade, and a trigger refuses deleting a document
-  once it is posted.
+  primary key). Proof: the schema test fails on any foreign key without one (RC-029).
+- **Foreign keys never cascade a delete** on ledgers or posted documents. `on delete restrict` is the default
+  (RC-004: deleting a payroll run wiped its payslips). Masters are switched off (`active = false`), not deleted. A
+  draft document's lines may cascade, and the line trigger (§7) refuses any change once the document is posted.
 - **Names.** Tables are plural snake_case. Constraints are named `pk_`, `fk_`, `ck_`, `ix_`, `ux_` plus the table
-  and columns, so an error code can name the rule that failed.
+  and columns, so an error can name the rule that failed (§9).
 
 ### 4. Lookup tables, not growing enums (M1-05)
 
-No PostgreSQL `enum` type is used (ADR-002 L9 also bans `pgEnum` outside the schema files, and the schema doesn't
-use it). There are two kinds of list:
+No PostgreSQL `enum` type is used. ADR-002 L9 bans `pgEnum` outside the schema files, and the schema test fails on
+any enum. There are two kinds of list:
 
 - **A fixed state machine** (an invoice's status, a journal entry's kind) is `text` with a CHECK listing its values.
-  The CHECK is generated from the one constant in the owning library's contract, so code and database agree.
-  Changing it is a migration, which is right for a state machine.
+  - The values **and the allowed transitions** live as plain constants in lib-common (`src/states/<module>.ts`).
+  - The contract's schema and the table's CHECK both import them. packages/db may import lib-common (ADR-001 §4),
+    so there's one list and no cycle.
+  - Changing a state machine is a migration plus a constant change in one PR.
 - **A list that grows or that people edit** (roles, units of measure, lead sources, lost reasons, location kinds,
   expense categories) is a lookup table: `code text primary key` with a pattern CHECK (`^[a-z][a-z0-9_]*$`), a
   `label`, and `active`. Rows reference it by foreign key. Adding a value is an insert, never an `ALTER TYPE`.
 
-Proof: the schema-metadata test fails if the schema declares any enum.
+**Names stay distinct, in the database.** Every lookup table has two generated columns, both with plain unique
+indexes:
+- `code_key`: the code in lower case, with `_` removed and one trailing `s` dropped;
+- `label_key`: the label in lower case.
 
-**Names stay distinct.** In every lookup table, codes are unique, and labels are unique ignoring case
-(`ux_<table>_label_lower`). A seed test fails when two codes are equal after removing case, `_` and a trailing `s`.
-So `store` and `stores` can't both exist (RC-044). Roles get descriptive codes (`counter_staff`, `stores_keeper`).
+Generated columns use `sql` only inside `.generatedAlwaysAs()`, a position ADR-002 L1 allows. So `store` and
+`stores` can't both exist (RC-044), whether a seed or a screen tries to add the second. Roles get descriptive
+codes (`counter_staff`, `stores_keeper`).
 
 ### 5. Who and when, on every table (M1-12)
 
 Every table has `created_at`, `created_by`, `updated_at` and `updated_by`.
-- They are filled by triggers, never by the application. The triggers read the principal and time from the
-  request context set by `request-context.ts` (ADR-002 §3).
-- The principal is read with `nullif(current_setting('app.principal', true), '')`. A trigger **raises** when it is
-  missing, so a write with no principal fails instead of being recorded as nobody.
-- `created_by` and `updated_by` hold the principal's id (a user, a named system principal or a link; ADR-001 §6a).
+- They have database defaults, so they aren't required in Drizzle's insert type. The trigger **always overwrites
+  them** from the request context on insert, and on update it keeps `created_*` as they were. So the application
+  can't set them, or forge `created_by`.
+- The principal is read with `nullif(current_setting('app.principal', true), '')` (set by ADR-002's
+  `request-context.ts`). A trigger **raises `RA005`** when it is missing, so a write with no principal fails
+  instead of being recorded as nobody.
+- `created_by` and `updated_by` hold the principal (a user, a named system principal or a link; ADR-001 §6a).
   They aren't foreign keys, so the index rule in §3 doesn't apply to them. On an append-only table, `updated_*`
   always equals `created_*`.
-- Proof: a schema-metadata test fails on a table without the four columns or without the trigger.
+- **Migrations and the bootstrap write as named system principals.** A migration that writes rows sets
+  `app.principal = 'system:migrate'` at its start, and the first-admin bootstrap uses `system:seed` (ADR-004).
+- Proof: the schema test fails on a table without the four columns or without the trigger.
 
 ### 6. Business date and posting time on every ledger row (M2-03, M2-05)
 
@@ -119,66 +143,146 @@ Every ledger row has both:
 - `business_date date`, the date the document says, which the period lock, the financial year and the reports use;
 - `posted_at timestamptz`, when it reached the books, which the audit uses.
 
-A back-dated document is visible as one, and the lock is checked against `business_date`. A CHECK bounds
-`business_date` to the company's first financial year onwards (RC-111). The ledger tables are journal lines and
-entries, stock movements, unit events, payment allocations and credit applications. Each is marked as a ledger in
-its declaration, and the schema-metadata test fails on a marked table without both columns.
+A back-dated document is visible as one, and the lock is checked against `business_date`.
+- **Bounds:** each ledger row has a generated `fy_start` (1 April of the business date's financial year) with a
+  foreign key to `financial_years`. A business date outside a financial year the company has opened is therefore
+  refused (RC-111). A CHECK can't read the company profile; a foreign key can.
+- **The ledger tables** are journal entries and lines, stock movements, unit events, payment allocations and
+  credit applications.
+- Each is marked as a ledger in its declaration, and the schema test fails on a marked table without both columns.
 
-### 7. Append-only, enforced by triggers (M1-12, M2-03, M2-05)
+### 7. Append-only, enforced by triggers and grants (M1-12, M2-03, M2-05)
 
-The ledgers and logs are append-only:
-- journal entries and lines, stock movements, unit events;
-- the audit, access and event logs;
-- webhook deliveries and the jobs outbox history.
+**Append-only tables, exactly:**
+- `journal_entries`, `journal_lines`;
+- `stock_movements`, `unit_events`;
+- `payment_allocations`, `credit_applications`;
+- `audit_log`, `access_log`, `event_log`;
+- `webhook_delivery_attempts`.
 
-The protection has three parts:
-- A `BEFORE UPDATE OR DELETE` row trigger and a `BEFORE TRUNCATE` statement trigger raise `RC001`.
-- A correction is a new mirror-image entry, never an edit.
-- **Posted documents** (issued invoices and credit notes, posted bills, payments, expenses, payslips) refuse any
-  change after posting except the named cancel columns. The trigger lists those columns, raises `RC004` for
-  anything else, and refuses a delete. This closes RC-004 for every posted document, not only invoices.
+On each of them, and on **each partition** of the partitioned ones:
+- a `BEFORE UPDATE OR DELETE` row trigger raises `RA001`;
+- a `BEFORE TRUNCATE` statement trigger raises `RA001`. A TRUNCATE of one partition doesn't fire the parent's
+  trigger, so each partition gets its own.
 
-Defence in depth (M1-06):
-- The runtime login has no `UPDATE`, `DELETE` or `TRUNCATE` on the append-only tables, and no DDL anywhere.
-- The owner login runs migrations only and never sits in the API or worker containers (RC-003).
-- A read-only login serves reports and the restore drill (RC-193).
-- Even SQL that slipped past ADR-002's lint couldn't disable a trigger.
+A correction is a new mirror-image row, never an edit.
 
-Proof (M1-06, M1-12): for every append-only table, a test connects as the runtime login and tries `UPDATE`,
-`DELETE` and `TRUNCATE`. Each is refused. The same statements run as the owner are refused by the trigger with
-`RC001`.
+**Not append-only, by design:**
+- **`jobs_outbox`** is a queue. The relay deletes rows (ADR-002 §4).
+- **`webhook_deliveries`.** The raw payload, headers, provider and delivery id are write-once: a trigger refuses to
+  change them. Retries and outcomes are rows in the append-only `webhook_delivery_attempts`, and the current status
+  is read from the latest attempt.
+- **pg-boss's own tables**, which the library manages.
+
+#### 7a. Allocations and credit applications
+
+They are append-only with explicit reversals:
+- **Rows.** Each row has `direction` (`apply` or `reverse`) and `amount > 0`. A reversal names the row it reverses
+  (`reverses_id`, unique, so a row is reversed at most once). The net applied amount is applies minus reverses.
+- **The cap.** A deferred check holds net allocations plus net credit applications at or below the document's
+  total. It **first locks the document row** (`SELECT ... FOR UPDATE`) and only then sums. So two transactions
+  allocating 60 each against an invoice of 100 can't both pass: the second waits for the first's commit, sums
+  again, and is refused (`RA006`).
+
+#### 7b. Posted documents (issued invoices and credit notes, posted bills, payments, expenses, payslips)
+
+- **Transitions.** Each document kind's allowed status transitions come from its lib-common constant. For a posted
+  document they are only **posted → cancelled**, and cancelled is final, so a document can't be reopened or
+  un-cancelled. The trigger checks `(old.status, new.status)` against the list.
+- **What may change after posting:**
+  - **Cancel columns** (`cancelled_at`, `cancelled_by`, `cancel_reason`, `cancel_entry_id`). Each is written once,
+    from null, and only in the same update that moves the status to cancelled.
+  - **Write-once reference columns** (e-invoice IRN, acknowledgement number and date, signed QR, e-way bill number
+    and validity). Each goes from null to a value once, and never changes again.
+  - The audit columns (§5), which the guard doesn't compare.
+
+  Any other change, or a delete, raises `RA004`. This closes RC-004 for every posted document, not only invoices.
+- **Lines.** A trigger on each line table (`BEFORE INSERT OR UPDATE OR DELETE`) reads the parent's status with
+  `FOR SHARE` and refuses unless the parent is a draft. An edit that keeps the totals can't slip past.
+- **Cancelling in a locked period.** A cancellation's mirror entries are dated with the cancellation's own
+  business date, not the original's, so the period lock (`RA003`) applies to the day of the cancellation.
+
+#### 7c. Triggers can't be captured or bypassed
+
+- **Trigger functions run as their owner.** Every trigger function is `SECURITY DEFINER`, owned by
+  `radcore_owner`, with `SET search_path = pg_catalog, radcore, pg_temp` (pg_temp last), and names tables with
+  their schema. A session's temporary table can't stand in for `audit_log`.
+- **No temporary tables:** `REVOKE TEMPORARY ON DATABASE radcore FROM PUBLIC`, and the runtime login isn't granted
+  it.
+- **The runtime login** (M1-06):
+  - It has no `UPDATE`, `DELETE` or `TRUNCATE` on the append-only tables, no DDL anywhere, and **no `INSERT` on
+    `audit_log` or `access_log`**.
+  - The audit log is written only by triggers.
+  - The access log is written only through one `SECURITY DEFINER` function, `record_access(...)`, so nothing can
+    write made-up history.
+- **Two names on every audit and access row:** `app.principal` (who the request was for) and `session_user` (the
+  login that ran it). Any session can set the first; the database sets the second.
+- **The owner login** runs migrations only, and never sits in the API or worker containers (RC-003). A read-only
+  login serves reports and the restore drill (RC-193).
+
+**Access logging and read-only requests.** A GET runs read-only (ADR-002 §4), so it can't write `access_log`. When
+a GET opens a full record:
+1. lib-platform commits the read.
+2. It writes the access row through `record_access` in its own short transaction, before the response goes out.
+3. If that write fails, the request fails, and the record isn't returned without its log.
+
+**Proof (M1-06, M1-12):**
+- For every append-only table **and every partition, the default included, by name**, a test connected as the
+  runtime login tries `UPDATE`, `DELETE`, `TRUNCATE` and `INSERT` into `audit_log`. Each is refused.
+- The same statements run as the owner are refused by the trigger with `RA001`.
+- A runtime session's `CREATE TEMP TABLE audit_log (...)` is refused, and an audited write still lands in
+  `radcore.audit_log`.
+- A posted invoice can't be moved to `draft`, its lines can't be edited, and a write-once column can't be written
+  twice.
 
 ### 8. Logs partitioned by month (M1-12)
 
 `audit_log`, `access_log` and `event_log` are partitioned by range on their `occurred_at`, one partition per
-calendar month in UTC (RC-046):
+calendar month in UTC (RC-046).
 
-- Their primary key is `(id, occurred_at)`, as PostgreSQL requires the partition key in it.
-- A scheduled job (M1-26) creates the next three months' partitions. A default partition catches anything outside
-  them, and a row landing there raises an alert.
-- Old partitions are detached and dropped only under the retention rule (D-12), never by hand.
-- Drizzle can't declare a partitioned table. These three are therefore created by hand-written migrations
-  (`drizzle-kit generate --custom`). Their Drizzle declarations exist only for typed reads, and drizzle-kit's
-  `tablesFilter` skips them so it never tries to create them.
+- **Keys.** The primary key is `(id, occurred_at)`, as PostgreSQL requires the partition key in it.
+- **Partitions are created ahead, by the owner.** The first migration creates 24 months of partitions. The deploy
+  step's `migrate` container, running as the owner, tops them up to at least 12 future months on every deploy.
+  The runtime login can't create, drop or truncate a partition, because it owns none and has no DDL.
+- **The worker only watches.** A scheduled job reads a view of the partitions. It raises an alert when fewer than
+  3 future months remain, or when any row sits in the default partition.
+- **The default partition** catches only a row outside every partition, which should never happen. Recovering one
+  is a reviewed owner migration:
+  1. detach the default partition;
+  2. create the missing month;
+  3. move its rows through the parent;
+  4. drop the detached table;
+  5. re-create the default with its triggers.
+- **Retention.** Old partitions are detached and dropped only by an owner migration under the retention rule
+  (D-12), never by the application.
+- **Drizzle.** Drizzle can't declare a partitioned table, so these three are created by hand-written migrations
+  (`drizzle-kit generate --custom`). Their Drizzle declarations exist only for typed reads, and live in a file
+  outside the schema glob in `drizzle.config.ts`, which also sets `casing: 'snake_case'`. M1-05 confirms that
+  drizzle-kit `generate` then leaves them alone.
 
 ### 9. Error codes
 
-Triggers and constraints raise a custom SQLSTATE that lib-platform maps by code, never by message text
-(ADR-001 §6):
+A trigger raises a custom SQLSTATE in the `RA` class. A constraint raises PostgreSQL's own code: `23514` for a
+CHECK, `23505` for a unique violation, `23503` for a foreign key, `23502` for a not-null. lib-platform maps
+errors by **SQLSTATE plus constraint name**, never by message text (ADR-001 §6). That's why constraint names stay
+under 63 bytes (§1).
 
 | Code | Meaning |
 |---|---|
-| RC001 | an append-only row was changed, deleted or truncated |
-| RC002 | a journal entry's debits and credits differ |
-| RC003 | the business date falls in a locked period |
-| RC004 | a posted document was changed outside its cancel columns, or deleted |
-| RC005 | a write ran with no principal in the request context |
-| RC006 | a document's header and lines disagree (total, round-off, allocations) |
+| RA001 | an append-only row was changed, deleted or truncated |
+| RA002 | a journal entry's debits and credits differ |
+| RA003 | the business date falls in a locked period |
+| RA004 | a posted document was changed outside its cancel and write-once columns, moved to a status it may not reach, or deleted, or its lines were touched |
+| RA005 | a write ran with no principal in the request context |
+| RA006 | a document's header and lines disagree (total, round-off), or allocations exceed it |
+
+(The `RA` prefix keeps them apart from the register's RC-numbers, which name v1 defects.)
 
 ### 10. camelCase on the wire, snake_case in the database, no conversion layer (M1-05, M1-08)
 
-- Columns are snake_case. Drizzle's `casing: 'snake_case'` option maps them, so table objects, relational results
-  and view rows have camelCase keys with no code of ours in between.
+- Columns are snake_case. Drizzle's `casing: 'snake_case'` option, set in both the client and
+  `drizzle.config.ts`, maps them. Table objects, relational results and view rows have camelCase keys with no code
+  of ours in between.
 - The zod output schemas in each contract are camelCase. The generic handler returns what the service returns,
   checked against the output schema (ADR-001 §6). There is no per-row key conversion anywhere, which v1 had in
   `app.ts`.
@@ -187,20 +291,22 @@ Triggers and constraints raise a custom SQLSTATE that lib-platform maps by code,
 
 | Thing | Where it lives (ADR-002 §3) |
 |---|---|
-| Column CHECKs, row identities, length and pattern CHECKs | `packages/db/src/columns.ts` helpers and `packages/db/src/*/tables.ts` |
-| Deferred constraint triggers, append-only and posted-document triggers, audit triggers, partitioned logs | hand-written migrations in `packages/db/migrations/` |
-| Report views (with their scope columns) | `packages/db/views/*.ts` |
+| Column CHECKs, row identities, generated keys, length and pattern CHECKs | `packages/db/src/columns.ts` helpers and `packages/db/src/*/tables.ts` |
+| State-machine values and transitions | lib-common constants, imported by contracts and tables |
+| Deferred checks, append-only, posted-document and line triggers, audit triggers, `record_access`, the partitioned logs and their partitions | hand-written migrations in `packages/db/migrations/`, run as the owner |
+| Report views (with their scope columns) and the `pg_catalog` views the schema tests read | `packages/db/views/*.ts` |
 | The principal and the per-contract statement timeout | `packages/db/src/request-context.ts` |
 
 ## Consequences
 
 - Wrong data is refused at the database, whatever path the write took: a service, a job, or SQL typed into a
-  console with the runtime login.
+  console with the runtime login. The audit trail can't be redirected, rewritten or truncated by that login.
 - Adding a value to a list that people edit is an insert; adding a status to a state machine is a migration and a
   constant change in one PR.
 - Every table carries four audit columns and triggers. The cost on writes is small, and it removes v1's 185
   hand-written `audit()` calls (RC-030).
-- The three logs need a partition-creation job from the first month.
+- Partitions are created by deploys, not by the application, so a long gap between deploys is what the watch job
+  alerts on.
 
 ## Alternatives considered
 
@@ -209,6 +315,8 @@ Triggers and constraints raise a custom SQLSTATE that lib-platform maps by code,
 - **Row identities as hand-written CHECKs on the price arithmetic** (taxable = round(qty × price ...)). This would
   copy the rounding rule into SQL beside lib-gst's. Rejected; the database checks sums and splits only.
 - **`created_by` as a foreign key to users.** It would need an index on every table and would exclude system and
-  link principals. Rejected; the triggers write the principal's id.
-- **pg_partman for partitions.** It works and is available on RDS, but one small job does three tables, and the job
-  queue already exists.
+  link principals. Rejected; the triggers write the principal.
+- **The runtime login creating partitions.** It would own them, and could truncate or drop them. Rejected;
+  partitions are the owner's.
+- **pg_partman for partitions.** It works and is available on RDS, but it would run maintenance with DDL rights at
+  run time. Creating partitions ahead in deploys keeps every DDL step with the owner.
