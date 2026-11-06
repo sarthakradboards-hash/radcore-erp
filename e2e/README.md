@@ -1,7 +1,7 @@
 # Browser journeys (Playwright)
 
 Real-browser tests of the whole app. Playwright starts the API, the worker and a production build of the web app
-from this checkout, then drives Chromium against them. CI runs them on every PR that touches `apps/web`, `e2e`,
+from this checkout, then drives Chromium against them. CI runs them on every PR that touches `apps`, `packages`, `e2e`,
 the workflow or the dependencies (`.github/workflows/e2e.yml`).
 
 ## Run locally

@@ -1,12 +1,14 @@
-# Browser journeys (RAD-15) on every PR that can change what a person sees: the web app, the suite, this workflow or
-# the dependencies. Playwright starts the API, worker and web app itself (e2e/playwright.config.ts). On failure the
-# traces, screenshots, videos and HTML report are kept as the `e2e-results` artifact.
+# Browser journeys (RAD-15) on every PR that can change what a person sees: any app or package, the suite, this
+# workflow or the dependencies (coordinator, 7 Nov: journeys cross the API from M1). Playwright starts the API,
+# worker and web app itself (e2e/playwright.config.ts). On failure the traces, screenshots, videos and HTML report
+# are kept as the `e2e-results` artifact.
 name: e2e
 
 on:
   pull_request:
     paths:
-      - apps/web/**
+      - apps/**
+      - packages/**
       - e2e/**
       - .github/workflows/e2e.yml
       - package.json
