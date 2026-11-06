@@ -330,10 +330,10 @@ export async function listInvoices(ctx: Ctx, input: ListInvoicesInput) {
 **The cursor is an opaque string** (M1-29, decided 7 Nov): base64url of the sort key. `next` goes to the client as
 that string, and the client only sends it back as `after`. It never reads or builds one. The server never trusts
 it:
-- `decodeCursor` checks it against the list's own schema, so a cursor that is malformed, edited or taken from
-  another list is refused with 400 `invalid_input` (ADR-001 §7a).
-- The scope term is applied on every page, so a forged cursor can only move the starting point inside the
-  person's own scope. It can't reach a record outside it.
+- `decodeCursor` checks it against the list's own schema. A cursor that doesn't decode to this list's sort key
+  (malformed, or from a list with another key) is refused with 400 `invalid_input` (ADR-001 §7a).
+- A cursor that does decode, even an edited one, only sets where the page starts. The scope term is applied on
+  every page, so it can't reach a record outside the person's scope.
 
 `scopeWhere` returns a condition for every kind of scope. "All" is a condition on the entity, so the scope term is
 never `undefined` and a person never gets more than their scope. The indexes this needs are
