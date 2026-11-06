@@ -11,9 +11,11 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@radcore/lib-common": "*",
     "express": "5.3.0"
   },
   "devDependencies": {
-    "@types/express": "5.0.6"
+    "@types/express": "5.0.6",
+    "zod": "4.6.7"
   }
 }
