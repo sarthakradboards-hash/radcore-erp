@@ -11,6 +11,9 @@
     "./contract": "./src/contract.ts",
     "./runtime": "./src/runtime.ts"
   },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
   "scripts": {
     "test": "vitest run --passWithNoTests"
   }
