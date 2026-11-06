@@ -32,6 +32,12 @@ const chainRoot = (n) => {
     else return n.type === 'Identifier' ? n : null;
   }
 };
+// A reference that exists only for the type checker: typescript-eslint marks it, or it sits inside `typeof` in a type.
+const isTypeOnly = (ref) => {
+  if (ref.isValueReference === false) return true;
+  for (let p = ref.identifier.parent; p; p = p.parent) if (p.type === 'TSTypeQuery') return true;
+  return false;
+};
 const fromDrizzle = (context, n) => {
   const root = n && chainRoot(n);
   return Boolean(root && DRIZZLE.test(importSource(context, root) ?? ''));
@@ -90,6 +96,8 @@ const restrict = (description) => ({
         const refs = [...scope.through, ...scope.variables.filter((v) => v.defs.length === 0).flatMap((v) => v.references)];
         for (const ref of refs) {
           const id = ref.identifier;
+          // A type-only use (`type Fetch = typeof fetch`) runs nothing.
+          if (isTypeOnly(ref)) continue;
           const message = globals.get(id.name);
           if (message) report(id, message);
           if (gm?.objects.includes(id.name)) checkGlobalObject(id);
@@ -105,7 +113,8 @@ const restrict = (description) => ({
       while (WRAPPERS.has(n.parent.type) && n.parent.expression === n) n = n.parent;
       const p = n.parent;
       const key = p.type === 'MemberExpression' && p.object === n ? (p.computed ? staticString(p.property) : p.property.name) : null;
-      if (key === null || gm.members.includes(key)) report(id, gm.message);
+      // A key that is itself a global object (`globalThis.globalThis`, `self.window`) leads back to the same object.
+      if (key === null || gm.members.includes(key) || gm.objects.includes(key)) report(id, gm.message);
     };
     return listeners;
   },
