@@ -27,8 +27,10 @@ npm run e2e
   `flow-01-walk-in.spec.ts`, `flow-02-…`. Auth and permission journeys are `auth-*.spec.ts`.
 - Import `test`, `expect` and `expectAccessible` from `./fixtures.ts`, never from `@playwright/test`. Then every
   test fails on a console error, an uncaught error, or a request that fails or answers 4xx/5xx, without asking.
+  Requests the browser aborts itself (Next cancels prefetches on navigation) don't count. A journey that expects
+  a status says so: `test.use({ expectedStatuses: [401] })`.
 - Call `expectAccessible(page)` on each new screen the journey reaches. It fails on serious or critical WCAG 2.2
   A/AA issues (axe).
 - Find elements the way a person does: `getByRole`, `getByLabel`, `getByText`. No CSS classes or test ids unless
   there is no accessible name to use, which is itself worth raising.
-- `harness.spec.ts` proves the guards still fail when they should. Keep it passing.
+- `harness.spec.ts` proves each guard still catches what it promises, for its own reason. Keep it passing.
