@@ -280,7 +280,7 @@ import type { InvoiceStatus } from './tables';
 import { scopeWhere, type Scope } from '../scope';
 
 export type InvoiceFilter = { partyId?: string; status?: InvoiceStatus[]; from?: string; to?: string };
-export type InvoiceCursor = { invoiceDate: string; id: string };
+export type InvoiceCursor = { invoiceDate: string; id: string }; // the decoded sort key; never sent as an object
 
 export async function listInvoices(
   tx: SalesTx, scope: Scope, f: InvoiceFilter, page: { after?: InvoiceCursor; limit: number },
@@ -314,11 +314,26 @@ export async function listInvoices(
 
 ```ts
 // packages/lib-sales/src/services/invoices.ts
+import { decodeCursor, encodeCursor } from '@radcore/lib-common'; // the paging helpers (M1-29)
+import { z } from 'zod';
+
+const InvoiceCursor = z.strictObject({ invoiceDate: z.iso.date(), id: z.uuid() }); // what the cursor must hold
+
 export async function listInvoices(ctx: Ctx, input: ListInvoicesInput) {
   const scope = await ctx.can.scope('invoice'); // M1-17: e.g. all, these parties, or own records only
-  return repo.listInvoices(salesTx(ctx), scope, input.filter, { after: input.after, limit: input.limit });
+  const after = input.after ? decodeCursor(InvoiceCursor, input.after) : undefined; // bad cursor: invalid_input
+  const page = await repo.listInvoices(salesTx(ctx), scope, input.filter, { after, limit: input.limit });
+  return { items: page.items, next: page.next ? encodeCursor(page.next) : null };
 }
 ```
+
+**The cursor is an opaque string** (M1-29, decided 7 Nov): base64url of the sort key. `next` goes to the client as
+that string, and the client only sends it back as `after`. It never reads or builds one. The server never trusts
+it:
+- `decodeCursor` checks it against the list's own schema, so a cursor that is malformed, edited or taken from
+  another list is refused with 400 `invalid_input` (ADR-001 §7a).
+- The scope term is applied on every page, so a forged cursor can only move the starting point inside the
+  person's own scope. It can't reach a record outside it.
 
 `scopeWhere` returns a condition for every kind of scope. "All" is a condition on the entity, so the scope term is
 never `undefined` and a person never gets more than their scope. The indexes this needs are
