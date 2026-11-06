@@ -4,7 +4,8 @@
 // - RC-222: tests share no mutable state, and `npm test` runs files and tests in a shuffled order.
 // The checks are their own ESLint run with in-memory config, apart from eslint.config.mjs, so they can't replace
 // an ADR rule's options there. Each selector has a violating sample below, so a check that stops working fails here.
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ESLint, type Linter, type Rule } from 'eslint';
 import tseslint from 'typescript-eslint';
 import { describe, expect, it } from 'vitest';
@@ -99,9 +100,14 @@ it('finds no test-mode branch in production code and no unsafe pattern in any te
   expect(problems(await eslint.lintFiles(['apps', 'packages', 'tools/*.test.ts']))).toEqual([]);
 }, 120_000);
 
-it('runs files and tests in a shuffled order under npm test (RC-222)', () => {
+// The root config's sequence.shuffle doesn't reach the packages/* folder projects, so every run carries the flag.
+it('runs files and tests in a shuffled order in npm test and in every CI vitest step (RC-222)', () => {
   const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> };
   expect(pkg.scripts['test']).toBe('vitest run --sequence.shuffle');
+  const runs = readdirSync('.github/workflows').flatMap((f) => readFileSync(join('.github/workflows', f), 'utf8')
+    .split('\n').filter((l) => /\bvitest\b/.test(l)).map((l) => `${f}: ${l.trim()}`));
+  expect(runs.length).toBeGreaterThan(0);
+  expect(runs.filter((l) => !/\bvitest run\b.*--sequence\.shuffle\b/.test(l))).toEqual([]);
 });
 
 const PROD = 'packages/lib-sales/src/services/orders.ts';
