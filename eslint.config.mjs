@@ -46,9 +46,7 @@ const sel = (tag, adr, text) => (selector) => ({ selector, message: msg(tag, adr
 // Statement shapes, with \W+ between keywords so a comment or other separator doesn't hide them.
 const SQL_SHAPE = String.raw`/\bselect\b[\s\S]*\bfrom\b|\binsert\W+into\b|\bupdate\b[\s\S]*\bset\b|\bdelete\W+from\b|\bwith\b[\s\S]*\bas\W*\(|\b(create|alter|drop)\W+(or\W+replace\W+)?(table|view|index|trigger|function)\b|\btruncate\W+(table\b|\w+\W*$)|\bgrant\b[\s\S]*\b(on|to)\b/i`;
 const DEFINE = '/^define(Route|Webhook|Job|Export|Import|Approval)$/';
-const GLOBAL_OBJECT = '/^(globalThis|global|window|self)$/';
 const RAW_EXEC = '/^(execute|unsafe|query)$/';
-const OUTBOUND_NAMES = '/^(getBuiltinModule|fetch|WebSocket|XMLHttpRequest)$/';
 const L8 = msg('L8', 'ADR-002', `Outside calls and module loading go through ${OUTBOUND_CLIENT}`);
 const E3 = 'Pass time, randomness and I/O in as arguments or through ctx';
 
@@ -89,18 +87,17 @@ export const OPTIONS = {
   },
   'radcore/outbound-only': {
     globals: ['fetch', 'WebSocket', 'XMLHttpRequest'].map((name) => ({ name, message: L8 })),
+    // The real global object only (resolved by scope), so `const { fetch } = deps` or `ctx.outbound` is fine.
+    globalMembers: { objects: ['globalThis', 'global', 'window', 'self'], members: ['fetch', 'WebSocket', 'XMLHttpRequest'],
+      message: L8 },
     syntax: [
-      `MemberExpression[object.name=${GLOBAL_OBJECT}][property.name=/^(fetch|WebSocket|XMLHttpRequest)$/]`,
-      `MemberExpression[object.name=${GLOBAL_OBJECT}][property.value=/^(fetch|WebSocket|XMLHttpRequest)$/]`,
-      `MemberExpression[object.name=${GLOBAL_OBJECT}][property.quasis.0.value.cooked=/^(fetch|WebSocket|XMLHttpRequest)$/]`,
-      `VariableDeclarator[init.name=${GLOBAL_OBJECT}]`,
       "MemberExpression[property.name='getBuiltinModule']",
       "MemberExpression[property.value='getBuiltinModule']",
       "MemberExpression[property.quasis.0.value.cooked='getBuiltinModule']",
-      // Destructuring, by any spelling of the key: `const { getBuiltinModule: load } = process`.
-      `ObjectPattern > Property[key.name=${OUTBOUND_NAMES}]`,
-      `ObjectPattern > Property[key.value=${OUTBOUND_NAMES}]`,
-      `ObjectPattern > Property[key.quasis.0.value.cooked=${OUTBOUND_NAMES}]`,
+      // Destructuring it, by any spelling of the key: `const { getBuiltinModule: load } = process`.
+      "ObjectPattern > Property[key.name='getBuiltinModule']",
+      "ObjectPattern > Property[key.value='getBuiltinModule']",
+      "ObjectPattern > Property[key.quasis.0.value.cooked='getBuiltinModule']",
     ].map((selector) => ({ selector, message: L8 })),
     imports: [{ source: '^(node:)?(undici|axios|got|node-fetch|ws|http|https|http2|net|tls|dgram|child_process|module'
       + '|worker_threads|vm|inspector|cluster)(/.*)?$', message: L8 }],

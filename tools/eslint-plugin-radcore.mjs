@@ -1,6 +1,7 @@
 // The local ESLint plugin for ADR-001's E-rules and ADR-002's L-rules. Each ADR rule is its own rule here, so a later
 // config block can never replace another rule's options (ADR-001 "One ESLint rule per E-rule"). Selectors and
 // patterns live in eslint.config.mjs as each rule's options; tools/eslint-options.json pins them.
+import ts from 'typescript';
 
 const DRIZZLE = /^drizzle-orm(\/|$)/;
 
@@ -43,6 +44,7 @@ const fromDrizzle = (context, n) => {
  *   globals: [{ name, message }]                           references to an undeclared global
  *   imports: [{ source, names?, message }]                 source is a regex; with names, only those value imports
  *   onlyImports: { source, message }                       every import must match source (E1)
+ *   globalMembers: { objects, members, message }           members read from a real global object (L8)
  */
 const restrict = (description) => ({
   meta: { type: 'problem', docs: { description }, schema: false, messages: { m: '{{message}}' } },
@@ -80,16 +82,33 @@ const restrict = (description) => ({
     on("CallExpression[callee.name='require']", (n) => checkSource(n, staticString(n.arguments[0]), null));
 
     const globals = new Map((o.globals ?? []).map((g) => [g.name, g.message]));
-    if (globals.size) {
+    const gm = o.globalMembers;
+    if (globals.size || gm) {
       on('Program:exit', (program) => {
         const scope = context.sourceCode.getScope(program);
+        // References that resolve to no declaration in the file: the real globals.
         const refs = [...scope.through, ...scope.variables.filter((v) => v.defs.length === 0).flatMap((v) => v.references)];
         for (const ref of refs) {
-          const message = globals.get(ref.identifier.name);
-          if (message) report(ref.identifier, message);
+          const id = ref.identifier;
+          const message = globals.get(id.name);
+          if (message) report(id, message);
+          if (gm?.objects.includes(id.name)) checkGlobalObject(id);
         }
       });
     }
+    // A member of the real global object, by any spelling: `.x`, `['x']`, `const { x } = g`, `({ x } = g)`,
+    // `({ x } = g) =>`, or an alias of the object itself. A local `deps` or `ctx.outbound` is never the global.
+    const memberKey = (n) => (n.computed ? staticString(n.property) : n.property.name);
+    const patternHits = (pattern) => pattern?.type === 'ObjectPattern' && pattern.properties.some((p) =>
+      p.type === 'Property' && gm.members.includes(p.computed ? staticString(p.key) : p.key.name ?? p.key.value));
+    const checkGlobalObject = (id) => {
+      const p = id.parent;
+      const hit = (p.type === 'MemberExpression' && p.object === id && gm.members.includes(memberKey(p)))
+        || (p.type === 'VariableDeclarator' && p.init === id && (p.id.type === 'Identifier' || patternHits(p.id)))
+        || (p.type === 'AssignmentExpression' && p.right === id && (p.left.type === 'Identifier' || patternHits(p.left)))
+        || (p.type === 'AssignmentPattern' && p.right === id && patternHits(p.left));
+      if (hit) report(id, gm.message);
+    };
     return listeners;
   },
 });
@@ -113,8 +132,9 @@ const noSql = {
       if (c.type === 'Identifier') return c.name === 'check' && fromDrizzle(context, c);
       if (c.type !== 'MemberExpression' || c.computed) return false;
       if (['default', 'generatedAlwaysAs'].includes(c.property.name)) return fromDrizzle(context, c.object);
-      return c.property.name === 'as' && c.object.type === 'CallExpression' && c.object.callee.type === 'Identifier'
-        && ['pgView', 'pgMaterializedView'].includes(c.object.callee.name) && fromDrizzle(context, c.object.callee);
+      // `pgView(...).as()`, also through options such as `.with({ securityInvoker: true })` or `.withNoData()`.
+      const root = c.property.name === 'as' && c.object.type === 'CallExpression' ? chainRoot(c.object) : null;
+      return Boolean(root && ['pgView', 'pgMaterializedView'].includes(root.name) && fromDrizzle(context, root));
     };
     const inHelper = (node) => {
       for (let p = node.parent; p; p = p.parent) if (p.type === 'FunctionDeclaration' && p.id?.name === o.helper) return true;
@@ -135,10 +155,17 @@ const noSql = {
 
     // What a zone file may export: a drizzle declaration (a table, schema table, creator table, view or column, but
     // never a `check`), an object of them (audit columns), or a function that returns one.
-    const isRelative = (id) => /^\.\.?\//.test(importSource(context, id) ?? '');
+    // A relative import counts only from another zone file (whose own exports this rule already limits).
+    const inViews = /[\\/]views[\\/][^\\/]+$/.test(context.filename);
+    const fromZoneFile = (id) => {
+      const src = importSource(context, id) ?? '';
+      if (!/^\.\.?\//.test(src)) return false;
+      return /(^|\/)(tables|columns)(\.ts)?$/.test(src) || (inViews && /^\.\/(?!index(\.ts)?$)[^/]+$/.test(src));
+    };
+    const def = (id) => findVariable(context.sourceCode.getScope(id), id.name)?.defs[0];
     const localInit = (id) => {
-      const def = findVariable(context.sourceCode.getScope(id), id.name)?.defs[0];
-      return def?.type === 'Variable' && def.parent.kind === 'const' ? def.node.init : null;
+      const d = def(id);
+      return d?.type === 'Variable' && d.parent.kind === 'const' ? d.node.init : null;
     };
     const isValue = (n, depth = 0) => {
       if (!n || depth > 10) return false; // a bound on the walk; real schema code nests a handful of levels
@@ -148,9 +175,17 @@ const noSql = {
             : !p.computed && isValue(p.value, depth + 1)));
         case 'ArrowFunctionExpression': case 'FunctionExpression': case 'FunctionDeclaration':
           return returnsValue(n, depth + 1);
+        // `satisfies` and `as const` change no value; the root is checked as before.
+        case 'TSSatisfiesExpression': case 'TSAsExpression':
+          return isValue(n.expression, depth + 1);
+        // An enum-like tuple of string codes: `['draft', 'posted'] as const`.
+        case 'ArrayExpression':
+          return n.elements.length > 0 && n.elements.every((e) => e?.type === 'Literal' && typeof e.value === 'string');
         case 'Identifier': {
           const src = importSource(context, n);
-          if (src) return isRelative(n) || (DRIZZLE.test(src) && !['check', 'sql'].includes(n.name));
+          if (src) return fromZoneFile(n) || (DRIZZLE.test(src) && !['check', 'sql'].includes(n.name));
+          // A helper's own parameter, as in `(cols) => ({ ...cols, ...audit })`: whatever the caller passes.
+          if (def(n)?.type === 'Parameter') return true;
           return isValue(localInit(n), depth + 1);
         }
         case 'CallExpression': case 'MemberExpression': {
@@ -257,21 +292,39 @@ const noTableExports = {
     const checker = services.program.getTypeChecker();
     const { names, txPattern, message } = context.options[0];
     const tx = new RegExp(txPattern);
-    const carries = (type, seen, depth) => {
-      if (!type || seen.has(type) || depth > 4) return false;
-      seen.add(type);
+    // A bound on the walk, not on what is checked: an entry's types reach a table within a few hops
+    // (Promise<SalesTx>, (fn: (tx: SalesTx) => T) => T, { tables: { invoices } }).
+    const MAX_DEPTH = 8;
+    const PROPERTY_DEPTH = 6;
+    const typeArguments = (type) => {
+      try {
+        return type.flags & ts.TypeFlags.Object && type.objectFlags & ts.ObjectFlags.Reference ? checker.getTypeArguments(type) : [];
+      } catch {
+        return [];
+      }
+    };
+    const carries = (type, best, depth) => {
+      if (!type || depth > MAX_DEPTH) return false;
+      // Keep the shallowest depth a type was reached at, so a deeper first visit can't hide a shallower one.
+      const seen = best.get(type);
+      if (seen !== undefined && seen <= depth) return false;
+      best.set(type, depth);
       for (const sym of [type.getSymbol(), type.aliasSymbol]) {
         const name = sym?.getName();
         if (name && (names.includes(name) || tx.test(name))) return true;
       }
+      const awaited = checker.getAwaitedType(type);
       const next = [
         ...(type.isUnionOrIntersection() ? type.types : []),
         ...(type.aliasTypeArguments ?? []),
-        ...(checker.isArrayType?.(type) || checker.isTupleType?.(type) ? checker.getTypeArguments(type) : []),
-        ...[...type.getCallSignatures(), ...type.getConstructSignatures()].map((s) => s.getReturnType()),
-        ...(depth < 3 ? type.getProperties().map((p) => checker.getTypeOfSymbol(p)) : []),
+        ...typeArguments(type),
+        ...(awaited && awaited !== type ? [awaited] : []),
+        ...[...type.getCallSignatures(), ...type.getConstructSignatures()].flatMap((s) =>
+          [s.getReturnType(), ...s.getParameters().map((p) => checker.getTypeOfSymbol(p))]),
+        ...checker.getIndexInfosOfType(type).map((i) => i.type),
+        ...(depth < PROPERTY_DEPTH ? type.getProperties().map((p) => checker.getTypeOfSymbol(p)) : []),
       ];
-      return next.some((t) => carries(t, seen, depth + 1));
+      return next.some((t) => carries(t, best, depth + 1));
     };
     return {
       'Program:exit'(program) {
@@ -282,7 +335,7 @@ const noTableExports = {
           let s = exported;
           try { s = checker.getAliasedSymbol(exported); } catch { /* not an alias */ }
           const types = [s.valueDeclaration ? checker.getTypeOfSymbol(s) : null, checker.getDeclaredTypeOfSymbol(s)];
-          if (types.some((t) => carries(t, new Set(), 0))) {
+          if (types.some((t) => carries(t, new Map(), 0))) {
             context.report({ node: program, messageId: 'm', data: { message, name: exported.getName() } });
           }
         }

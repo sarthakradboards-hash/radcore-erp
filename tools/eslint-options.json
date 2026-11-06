@@ -130,23 +130,21 @@
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       }
     ],
+    "globalMembers": {
+      "objects": [
+        "globalThis",
+        "global",
+        "window",
+        "self"
+      ],
+      "members": [
+        "fetch",
+        "WebSocket",
+        "XMLHttpRequest"
+      ],
+      "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+    },
     "syntax": [
-      {
-        "selector": "MemberExpression[object.name=/^(globalThis|global|window|self)$/][property.name=/^(fetch|WebSocket|XMLHttpRequest)$/]",
-        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
-      },
-      {
-        "selector": "MemberExpression[object.name=/^(globalThis|global|window|self)$/][property.value=/^(fetch|WebSocket|XMLHttpRequest)$/]",
-        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
-      },
-      {
-        "selector": "MemberExpression[object.name=/^(globalThis|global|window|self)$/][property.quasis.0.value.cooked=/^(fetch|WebSocket|XMLHttpRequest)$/]",
-        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
-      },
-      {
-        "selector": "VariableDeclarator[init.name=/^(globalThis|global|window|self)$/]",
-        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
-      },
       {
         "selector": "MemberExpression[property.name='getBuiltinModule']",
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
@@ -160,15 +158,15 @@
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       },
       {
-        "selector": "ObjectPattern > Property[key.name=/^(getBuiltinModule|fetch|WebSocket|XMLHttpRequest)$/]",
+        "selector": "ObjectPattern > Property[key.name='getBuiltinModule']",
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       },
       {
-        "selector": "ObjectPattern > Property[key.value=/^(getBuiltinModule|fetch|WebSocket|XMLHttpRequest)$/]",
+        "selector": "ObjectPattern > Property[key.value='getBuiltinModule']",
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       },
       {
-        "selector": "ObjectPattern > Property[key.quasis.0.value.cooked=/^(getBuiltinModule|fetch|WebSocket|XMLHttpRequest)$/]",
+        "selector": "ObjectPattern > Property[key.quasis.0.value.cooked='getBuiltinModule']",
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       }
     ],
