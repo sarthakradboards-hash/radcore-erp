@@ -359,6 +359,7 @@ export default {
     'no-raw-execution': restrict('ADR-002 L3: no raw execution'),
     'no-driver': restrict('ADR-002 L4: no driver outside the pool'),
     'no-raw-html': restrict('ADR-002 L6: no raw HTML'),
+    'no-float-money': restrict('ADR-001 E6: no floating-point maths on money'),
     'outbound-only': restrict('ADR-002 L8: outside calls go through the guarded client'),
     'tables-in-schema': restrict('ADR-002 L9a: tables are declared only in the schema'),
     'views-in-views': restrict('ADR-002 L9b: views are declared only in views'),

@@ -115,6 +115,132 @@
       }
     ]
   },
+  "radcore/no-float-money": {
+    "globals": [
+      {
+        "name": "parseFloat",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      }
+    ],
+    "syntax": [
+      {
+        "selector": "MemberExpression[object.name='Number'][property.name='parseFloat']",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "CallExpression[callee.name='Number'] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='Math'] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "UnaryExpression[operator=/^[-+]$/] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='-'] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='*'] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='/'] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='%'] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='**'] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='+']:not([left.type='TemplateLiteral']):not([right.type='TemplateLiteral']):not([left.value=type(string)]):not([right.value=type(string)]) > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "AssignmentExpression[operator=/^([-+*%]|\\*\\*)=$/] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/].left",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "AssignmentExpression[operator='/='] > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/].left",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "UpdateExpression > Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "CallExpression[callee.name='Number'] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='Math'] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "UnaryExpression[operator=/^[-+]$/] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='-'] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='*'] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='/'] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='%'] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='**'] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "BinaryExpression[operator='+']:not([left.type='TemplateLiteral']):not([right.type='TemplateLiteral']):not([left.value=type(string)]):not([right.value=type(string)]) > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "AssignmentExpression[operator=/^([-+*%]|\\*\\*)=$/] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/].left",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "AssignmentExpression[operator='/='] > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/].left",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "UpdateExpression > MemberExpression[property.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/]",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "TSPropertySignature[key.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/] > TSTypeAnnotation > TSNumberKeyword",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "Identifier[name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/] > TSTypeAnnotation > TSNumberKeyword",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "Property[key.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/] > CallExpression[callee.object.name='z'][callee.property.name='number']",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      },
+      {
+        "selector": "Property[key.name=/^(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$|[a-z0-9_](Amount|Price|Rate|Total|Subtotal|Cost|Qty|Quantity|Balance|Tax|Cess|Paise|Rupees|Money|Discount|Mrp|Fee|Charge)s?$|_(amount|price|rate|total|subtotal|cost|qty|quantity|balance|tax|cess|paise|rupees|money|discount|mrp|fee|charge)s?$/] > CallExpression[callee.object.callee.object.name='z'][callee.object.callee.property.name='number']",
+        "message": "[E6] No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common (ADR-001)."
+      }
+    ]
+  },
   "radcore/outbound-only": {
     "globals": [
       {

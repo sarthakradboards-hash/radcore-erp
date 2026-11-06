@@ -48,6 +48,16 @@ const SQL_SHAPE = String.raw`/\bselect\b[\s\S]*\bfrom\b|\binsert\W+into\b|\bupda
 const DEFINE = '/^define(Route|Webhook|Job|Export|Import|Approval)$/';
 const RAW_EXEC = '/^(execute|unsafe|query)$/';
 const L8 = msg('L8', 'ADR-002', `Outside calls and module loading go through ${OUTBOUND_CLIENT}`);
+// E6: a name that holds money, a rate or a quantity: the whole name (`total`), a camelCase or snake_case ending
+// (`grandTotal`, `unit_price`), singular or plural. `generate` and `separate` don't match.
+const MONEY_WORDS = ['amount', 'price', 'rate', 'total', 'subtotal', 'cost', 'qty', 'quantity', 'balance', 'tax',
+  'cess', 'paise', 'rupees', 'money', 'discount', 'mrp', 'fee', 'charge'];
+const MONEY_NAME = `/^(${MONEY_WORDS.join('|')})s?$|[a-z0-9_](${MONEY_WORDS.map((w) => w[0].toUpperCase() + w.slice(1))
+  .join('|')})s?$|_(${MONEY_WORDS.join('|')})s?$/`;
+const E6 = msg('E6', 'ADR-001', 'No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common');
+const MONEY_OPERAND = [`Identifier[name=${MONEY_NAME}]`, `MemberExpression[property.name=${MONEY_NAME}]`];
+const NOT_STRING_PLUS = "BinaryExpression[operator='+']:not([left.type='TemplateLiteral']):not([right.type='TemplateLiteral'])"
+  + ':not([left.value=type(string)]):not([right.value=type(string)])';
 const E3 = 'Pass time, randomness and I/O in as arguments or through ctx';
 
 /** Each rule's options. tools/eslint-options.json holds the same values as literals. */
@@ -149,6 +159,29 @@ export const OPTIONS = {
     imports: [{ source: '^drizzle-orm(/.*)?$', names: ['getTableConfig'],
       message: msg('E4', 'ADR-001', 'Libraries do not read table metadata') }],
   },
+  'radcore/no-float-money': {
+    // shortcut: money is found by name, without type information, so `Number(x)` on a value named `n` passes; the
+    // wire types (decimal strings) make arithmetic on an unconverted value a type error, so the gap is the converted one.
+    globals: [{ name: 'parseFloat', message: E6 }],
+    syntax: [
+      "MemberExpression[object.name='Number'][property.name='parseFloat']",
+      ...MONEY_OPERAND.flatMap((operand) => [
+        `CallExpression[callee.name='Number'] > ${operand}`,
+        `CallExpression[callee.object.name='Math'] > ${operand}`,
+        `UnaryExpression[operator=/^[-+]$/] > ${operand}`,
+        ...["'-'", "'*'", "'/'", "'%'", "'**'"].map((op) => `BinaryExpression[operator=${op}] > ${operand}`),
+        `${NOT_STRING_PLUS} > ${operand}`,
+        `AssignmentExpression[operator=/^([-+*%]|\\*\\*)=$/] > ${operand}.left`,
+        `AssignmentExpression[operator='/='] > ${operand}.left`,
+        `UpdateExpression > ${operand}`,
+      ]),
+      // Declaring money as a number: `amount: number`, `total: z.number()`, `price: z.number().min(0)`.
+      `TSPropertySignature[key.name=${MONEY_NAME}] > TSTypeAnnotation > TSNumberKeyword`,
+      `Identifier[name=${MONEY_NAME}] > TSTypeAnnotation > TSNumberKeyword`,
+      `Property[key.name=${MONEY_NAME}] > CallExpression[callee.object.name='z'][callee.property.name='number']`,
+      `Property[key.name=${MONEY_NAME}] > CallExpression[callee.object.callee.object.name='z'][callee.object.callee.property.name='number']`,
+    ].map((selector) => ({ selector, message: E6 })),
+  },
   'radcore/d7-no-db-reexport': {
     sources: ['^@radcore/db(/|$)', '^\\.{1,2}/(.*/)?db(/|$)'],
     message: msg('D7', 'ADR-001', "A library never hands on @radcore/db's tables or transactions, or lib-platform's db/"),
@@ -214,6 +247,8 @@ export default tseslint.config(
   // Everywhere: L4, L6, L9a, L9b.
   { files: ALL, ignores: ZONES['radcore/no-driver'], rules: on('radcore/no-driver') },
   { files: ALL, rules: on('radcore/no-raw-html') },
+  // E6: no float maths on money, in the browser and the server alike (RC-215).
+  { files: ALL, rules: on('radcore/no-float-money') },
   { files: ALL, ignores: ZONES['radcore/tables-in-schema'], rules: on('radcore/tables-in-schema') },
   { files: ALL, ignores: ZONES['radcore/views-in-views'], rules: on('radcore/views-in-views') },
 

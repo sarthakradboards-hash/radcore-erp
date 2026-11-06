@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 const FIXTURES = 'tools/boundary-fixtures';
 // T1 is proved with M1-08 (ADR-001 Enforcement).
-const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5',
+const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6',
   'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b'];
 const CONTROLS = { depcruise: 'ok-allowed-imports', eslint: 'ok-lint-zones' };
 
@@ -67,6 +67,7 @@ const ESLINT_IDS: Record<string, string[]> = {
   E3: ['radcore/e3-no-io'],
   E4: ['radcore/e4-no-escape'],
   E5: ['@typescript-eslint/ban-ts-comment'],
+  E6: ['radcore/no-float-money'],
   L1: ['radcore/no-sql'],
   L2: ['radcore/no-query-strings'],
   L3: ['radcore/no-raw-execution'],
