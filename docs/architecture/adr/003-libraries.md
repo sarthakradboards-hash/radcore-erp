@@ -163,8 +163,10 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   published security advisory. In that case the exception is named in §5 (C9).
 - **Pinning:** exact versions in `package.json` (C3), with the lockfile committed.
 - **Our own packages.** The `@radcore/*` workspaces are referenced only as `"*"` and must resolve to the local
-  workspace (`link: true` in the lockfile, C3). The `@radcore` scope must be claimed on npm (a free organisation),
-  so nobody else can publish under it and confuse an install. **That is Sarthak's action, before M0-07 merges.**
+  workspace (`link: true` in the lockfile, C3). The `@radcore` scope is claimed on npm as a free organisation, so
+  nobody else can publish under it and confuse an install (Sarthak, 7 Nov 2026; the coordinator confirmed it on the
+  registry). Every workspace is `"private": true`, so nothing is published to it either, and `.npmrc` needs no
+  scope mapping: the one registry it names is npm's.
 - **Dependabot (RAD-16):** when M0-07 adds the npm entry, it gets `cooldown: { default-days: 14 }`. Security
   updates aren't held back by it. The Docker ecosystem entry for the Node image (added with the Dockerfile, M8)
   has **no** cooldown, because Node patches are taken at once (§5). M0-07 checks:
@@ -270,7 +272,8 @@ like ADR-001's:
   licensed, too new, off-registry or running an unlisted install script.
 - Two upgrades are waiting and named: TypeScript 7 (typescript-eslint support) and ESLint 10 (eslint-plugin-react
   support). So is Drizzle 1.0, when it's stable.
-- Two actions are Sarthak's: claim the `@radcore` npm scope, and confirm the sharp/libvips licence exception (§4).
+- Sarthak's two actions are done: the `@radcore` npm scope is claimed (7 Nov 2026), and the sharp/libvips licence
+  exception is accepted (§4, 6 Nov 2026).
 
 ## Alternatives considered
 
