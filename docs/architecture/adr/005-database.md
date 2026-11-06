@@ -269,9 +269,16 @@ a GET opens a full record:
 2. It writes the access row through `record_access` in its own short transaction, before the response goes out.
 3. If that write fails, the request fails, and the record isn't returned without its log.
 
-A full record is served, and its access logged, only on a same-origin request (`Sec-Fetch-Site: same-origin`).
-Otherwise a cross-site link could make a person "open" a record they never looked at, for example to make it seem
-they viewed someone's pay.
+A full record is served, and its access logged, only when the browser's `Sec-Fetch-Site` is `same-origin`, or
+`none` (a typed address or a bookmark). Otherwise a cross-site link could make a person "open" a record they never
+looked at, for example to make it seem they viewed someone's pay.
+- The browser sets this header itself, and a page can't change it.
+- It reaches `api` in one of two ways (ADR-004 §3): straight from the browser through `proxy`, or forwarded by
+  `web`'s server components. `web` forwards the browser's own value **unchanged** on every call to `api`, and never
+  sets one itself.
+- A request without the header, or with `cross-site` or `same-site`, gets the record's page without the full
+  record. A link from an email is one of these. The person opens the record with one click, which is a same-origin
+  request.
 
 **Proof (M1-06, M1-12):**
 - For every append-only table **and every partition, the default included, by name**, a test connected as the
@@ -281,6 +288,8 @@ they viewed someone's pay.
   `radcore.audit_log`.
 - A posted invoice can't be moved to `draft`, its lines can't be edited, and a write-once column can't be written
   twice.
+- A full-record read with `Sec-Fetch-Site: cross-site`, or with no header, returns no full record and writes no
+  access row. With `same-origin` or `none` it does both, including through `web`'s server-side call.
 
 ### 8. Logs partitioned by month (M1-12)
 
