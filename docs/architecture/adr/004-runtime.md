@@ -1,7 +1,7 @@
 # ADR-004: Runtime and hosting target
 
-- Status: **proposed**, written on the D-01 default. D-01 (hosting) is still open with Sarthak and is confirmed
-  before M1 starts. When it is, this becomes accepted or is amended (§6).
+- Status: accepted. **D-01 decided by Sarthak, 7 Nov 2026:** production is AWS Option 4 (Mumbai hybrid), as this
+  ADR describes, after testing. Testing runs on a Vercel test copy with sample data only (§7).
 - Date: 2026-11-06, revised after the auditor's review the same day
 - Ticket: RAD-10 (M0-05). Covers RC-015.
 - Builds on: [ADR-001](001-layers.md) (API and worker processes), [ADR-002](002-data-access.md) (pool, timeouts, the
@@ -23,7 +23,7 @@ production.
 
 ### 1. What runs
 
-| Piece | What it is | Where (D-01 default, Option 4: AWS Mumbai hybrid) |
+| Piece | What it is | Where (production, D-01: Option 4, AWS Mumbai hybrid) |
 |---|---|---|
 | `api` | `apps/api`: a long-running Node 26 HTTP server. Answers requests, runs no jobs. | Docker container on one EC2 server, Mumbai (`ap-south-1`) |
 | `worker` | `apps/worker`: a separate long-running Node process. It runs pg-boss: queued jobs, the outbox relay, and the schedule (the 15-minute chores, the partition watch). Exactly one scheduler. | Docker container on the same server |
@@ -245,7 +245,7 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 | Name | Purpose | Secret | Required in | Where (staging, production) | Read by |
 |---|---|---|---|---|---|
 | `NODE_ENV` | `production` outside development and CI | no | all | Parameter Store | all |
-| `APP_ENV` | `development`, `ci`, `staging` or `production`; production refuses demo data and weak settings | no | all | Parameter Store | all |
+| `APP_ENV` | `development`, `ci`, `review` (the Vercel test copy, §7), `staging` or `production`. Production refuses demo data and weak settings; `review` refuses anything but sample data | no | all | Parameter Store (Vercel's environment settings for `review`) | all |
 | `PUBLIC_ORIGIN` | the site's own `https://` origin, for the Origin check, links and cookies | no | all | Parameter Store | api, web, worker |
 | `API_INTERNAL_URL` | where `web`'s server reaches `api` on the Docker network (read contracts only, §3) | no | all | Parameter Store | web |
 | `TRUST_PROXY` | the fixed addresses of `proxy` and `web`, whose forwarded-for headers `api` trusts | no | all | Parameter Store | api |
@@ -280,26 +280,61 @@ origin only. M1-11 makes that option required for any client whose URL carries a
 There is no `SESSION_SECRET`: sessions are random tokens stored hashed in PostgreSQL. There is no `TZ`: processes
 run in UTC and lib-common works out India dates. Adding a setting means adding its row here.
 
-### 6. If D-01 picks another option
+### 6. If the production choice ever changes
 
-The code needs containers, PostgreSQL 16, the S3 API, an outgoing mail service and the settings above. In every
-option, `api` enforces request-body limits itself, and never relies on the proxy for them. Each other option
-changes the following:
+D-01 is decided (Option 4). This section stays as the record of what another option would cost to move to. The
+code needs containers, PostgreSQL 16, the S3 API, an outgoing mail service and the settings above. In every option,
+`api` enforces request-body limits itself, and never relies on the proxy for them. Each other option changes the
+following:
 
-| D-01 choice | What changes |
+| Option | What changes |
 |---|---|
 | **Option 2: AWS containers (ECS Fargate)** | `api`, `web` and `worker` become ECS services with their own task roles, so the IMDS network rule isn't needed. A load balancer replaces Caddy: set `TRUST_PROXY` to match, and note that a load balancer enforces no body limit, which `api` already does. `api` can run two copies, since no state is in memory. The `worker` service runs `maximumPercent: 100`, so a deploy never starts a second scheduler. `migrate` stays a CI step, through an ECS one-off task or the same tunnel. RDS goes two-zone. No code change. |
 | **Option 3: one rented server, database on it** | PostgreSQL runs in a container on the same server, so there's no managed point-in-time recovery: WAL archiving to S3 (pgBackRest or WAL-G) is added and drilled, or RC-016 isn't met. **There is no instance role**: the server holds a scoped access key for S3 and KMS in a root-only file, and the owner login is still used only from CI over a tunnel. Mail goes through a provider's SMTP. |
 | **Option 1: Vercel plus Supabase (Mumbai)** | The biggest change, which is why it isn't the default. **The worker can't run on Vercel**, so it needs its own always-on host, and Vercel serves only `web` and `api`. There's no instance role: credentials go in each platform's secret store. Supabase's pooler must be used in session mode, or the timeouts move to `ALTER ROLE ... SET`. Uploads go presigned to storage (the 4.5 MB body limit). The data-location statements for Vercel's logs and builds must be obtained in writing. ADR-001's shape survives, but this ADR is rewritten. |
 
-If Sarthak picks another option, this ADR is amended in a PR before M1 starts, and the devops tickets (M8-01 to
-M8-07) follow it.
+A move would be amended here in a PR first, and the devops tickets (M8-01 to M8-07) would follow it.
 
-### 7. Vercel is not used for real data
+### 7. Test copy on Vercel (sample data only)
 
-No environment that holds real data runs on Vercel. The v1 review copy (`radcore-erp.vercel.app`, Singapore,
-sample data) is retired before real data enters (M8-09, RC-018). Until then, the Vercel Git integration (Sarthak's
-team) still builds this repository's branches, and its red check on PRs is noise.
+Until production is up, people try v2 on a test copy on Vercel (D-01). It never holds real data.
+
+**What runs there.**
+- `web` and `api` as Vercel functions, in the Mumbai region (`bom1`).
+- The database is a **Supabase free-tier project in Mumbai** (`ap-south-1`). Neon, Vercel's own Postgres, has no
+  India region.
+  - The functions connect through Supabase's pooler in **session mode**, never transaction mode (ADR-002 §4),
+    with a pool of one connection per function.
+  - Supabase runs its own current major version, not 16, so CI on PostgreSQL 16 stays the reference.
+  - A free project pauses after a week without use.
+- Sessions, rate limits and saved-once keys live in that database, so they work as in production.
+- `APP_ENV=review`.
+
+**What doesn't run there, and is therefore tested in CI instead:**
+- **The long-running worker, so pg-boss doesn't run.** Nothing queued is ever processed: imports, large exports,
+  PDF printouts, webhook processing (deliveries are stored but never acted on), the statements mailbox, the
+  one-minute schedule and the outbox relay. Vercel's free cron runs once a day, and it isn't wired to jobs: the
+  code keeps one path.
+- **Request bodies over 4.5 MB**, Vercel's function limit. Files go straight to storage by presigned POST. Where
+  Supabase Storage's S3 API accepts that POST, uploads work on the test copy; either way, the POST's size and type
+  conditions are proven in CI against SeaweedFS.
+- **Mail.** The test copy sends none.
+
+CI covers every one of these on PostgreSQL 16 with SeaweedFS (M0-08), so nothing goes untested. It's only that a
+person trying the test copy won't see them happen.
+
+**No real data, ever.**
+- The API refuses to start on Vercel unless `APP_ENV=review` and the database carries the sample-data marker.
+- Production refuses `APP_ENV=review` (RC-018).
+- Sign-ins are seeded sample users, whose passwords Sarthak sets on the test copy itself, never in the repository.
+- The test copy is retired before Gate 0 (M8-20 to M8-22; M8-09, RC-018), and so is v1's review copy at
+  `radcore-erp.vercel.app`.
+
+**Plan.** Vercel's free Hobby plan is for personal, non-commercial use. A company's test copy may not fit that,
+so Sarthak should check Vercel's terms, or use the Pro plan.
+
+Until the test copy replaces it, the Vercel Git integration (Sarthak's team) still builds this repository's
+branches, and its red check on PRs is noise.
 
 ## Consequences
 
