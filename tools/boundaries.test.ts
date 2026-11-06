@@ -57,6 +57,7 @@ const DEPCRUISE_RULE: Record<string, string> = {
   'L7-library': 'L7-runtime-only-in-apps',
   'E3-node-builtin-lib-common': 'E3-node-builtin',
   'E3-node-builtin-rules': 'E3-node-builtin',
+  'E3-node-builtin-via-helper': 'E3-node-builtin',
 };
 // The ESLint rule ids that count as each tag firing.
 const ESLINT_IDS: Record<string, string[]> = {
@@ -85,6 +86,7 @@ const CLAUSE_IDS: Record<string, string[]> = {
   'E4-unsafe-argument': ['@typescript-eslint/no-unsafe-argument'],
   'E4-declare-global': ['radcore/no-declare'],
   'L4-subpath-import': ['radcore/no-subpath-imports'],
+  ...Object.fromEntries(['wrapper', 'alias', 'object', 'cast'].map((k) => [`D7-${k}-export`, ['radcore/d7-no-table-exports']])),
   'L5-update': ['drizzle/enforce-update-with-where'],
   'L5-delete': ['drizzle/enforce-delete-with-where'],
   'L6-no-danger': ['react/no-danger'],
@@ -124,7 +126,7 @@ describe('boundary fixtures', () => {
     expect(dirs.filter((d) => d.startsWith('ok-')).sort()).toEqual(Object.values(CONTROLS).sort());
     expect(Object.keys(DEPCRUISE_RULE).filter((d) => !fixtures.includes(d))).toEqual([]);
     // An import-graph fixture with no named rule would silently run through ESLint.
-    expect(eslintFixtures.filter((d) => /^(D\d|L7)$/.test(tagOf(d)) && !d.startsWith('D7-reexport'))).toEqual([]);
+    expect(eslintFixtures.filter((d) => /^(D\d|L7)$/.test(tagOf(d)) && !d.startsWith('D7-reexport') && !(d in CLAUSE_IDS))).toEqual([]);
   });
 
   it('allows the imports ADR-001 §4 permits', async () => {
@@ -140,11 +142,10 @@ describe('boundary fixtures', () => {
   it.each(eslintFixtures)('%s fails ESLint', async (d) => {
     const ids = CLAUSE_IDS[d] ?? ESLINT_IDS[tagOf(d)] ?? [];
     const results = await lint(d);
-    expect(results.length).toBeGreaterThan(0);
-    for (const r of results) {
-      const got = r.messages.map((m) => `${m.ruleId}: ${m.message}`);
-      expect(r.messages.filter((m) => ids.includes(m.ruleId ?? '')), `${r.filePath}\n${got.join('\n')}`).not.toHaveLength(0);
-    }
+    // Some file in the folder must fire the rule; the others may be helpers it imports.
+    const got = results.flatMap((r) => r.messages.map((m) => `${r.filePath}: ${m.ruleId}: ${m.message}`));
+    expect(results.flatMap((r) => r.messages).filter((m) => ids.includes(m.ruleId ?? '')), got.join('\n'))
+      .not.toHaveLength(0);
   }, 60_000);
 
   it.each(Object.entries(DEPCRUISE_RULE))('%s fails dependency-cruiser rule %s', async (d, rule) => {

@@ -48,6 +48,7 @@ const SQL_SHAPE = String.raw`/\bselect\b[\s\S]*\bfrom\b|\binsert\W+into\b|\bupda
 const DEFINE = '/^define(Route|Webhook|Job|Export|Import|Approval)$/';
 const GLOBAL_OBJECT = '/^(globalThis|global|window|self)$/';
 const RAW_EXEC = '/^(execute|unsafe|query)$/';
+const OUTBOUND_NAMES = '/^(getBuiltinModule|fetch|WebSocket|XMLHttpRequest)$/';
 const L8 = msg('L8', 'ADR-002', `Outside calls and module loading go through ${OUTBOUND_CLIENT}`);
 const E3 = 'Pass time, randomness and I/O in as arguments or through ctx';
 
@@ -91,9 +92,15 @@ export const OPTIONS = {
     syntax: [
       `MemberExpression[object.name=${GLOBAL_OBJECT}][property.name=/^(fetch|WebSocket|XMLHttpRequest)$/]`,
       `MemberExpression[object.name=${GLOBAL_OBJECT}][property.value=/^(fetch|WebSocket|XMLHttpRequest)$/]`,
+      `MemberExpression[object.name=${GLOBAL_OBJECT}][property.quasis.0.value.cooked=/^(fetch|WebSocket|XMLHttpRequest)$/]`,
       `VariableDeclarator[init.name=${GLOBAL_OBJECT}]`,
       "MemberExpression[property.name='getBuiltinModule']",
       "MemberExpression[property.value='getBuiltinModule']",
+      "MemberExpression[property.quasis.0.value.cooked='getBuiltinModule']",
+      // Destructuring, by any spelling of the key: `const { getBuiltinModule: load } = process`.
+      `ObjectPattern > Property[key.name=${OUTBOUND_NAMES}]`,
+      `ObjectPattern > Property[key.value=${OUTBOUND_NAMES}]`,
+      `ObjectPattern > Property[key.quasis.0.value.cooked=${OUTBOUND_NAMES}]`,
     ].map((selector) => ({ selector, message: L8 })),
     imports: [{ source: '^(node:)?(undici|axios|got|node-fetch|ws|http|https|http2|net|tls|dgram|child_process|module'
       + '|worker_threads|vm|inspector|cluster)(/.*)?$', message: L8 }],
@@ -123,15 +130,16 @@ export const OPTIONS = {
       message: msg('E1', 'ADR-001', "Route and job files import only libraries' . and ./contract entries") },
   },
   'radcore/e3-no-io': {
-    globals: ['process', 'fetch', 'setTimeout', 'setInterval', 'setImmediate', 'crypto', 'performance']
-      .map((name) => ({ name, message: msg('E3', 'ADR-001', E3) })),
+    // The global objects count only when they are the real globals, so a local `window` (a financial-year window)
+    // is fine.
+    globals: ['process', 'fetch', 'setTimeout', 'setInterval', 'setImmediate', 'crypto', 'performance',
+      'globalThis', 'global', 'window', 'self'].map((name) => ({ name, message: msg('E3', 'ADR-001', E3) })),
     syntax: [
       "MemberExpression[object.name='Math'][property.name='random']",
       "MemberExpression[object.name='Math'][property.value='random']",
       "CallExpression[callee.object.name='Date'][callee.property.name='now']",
       "CallExpression[callee.name='Date']",
       "NewExpression[callee.name='Date'][arguments.length=0]",
-      `MemberExpression[object.name=${GLOBAL_OBJECT}]`,
     ].map(sel('E3', 'ADR-001', E3)),
   },
   'radcore/e4-no-escape': {
@@ -147,6 +155,12 @@ export const OPTIONS = {
   'radcore/d7-no-db-reexport': {
     sources: ['^@radcore/db(/|$)', '^\\.{1,2}/(.*/)?db(/|$)'],
     message: msg('D7', 'ADR-001', "A library never hands on @radcore/db's tables or transactions, or lib-platform's db/"),
+  },
+  'radcore/d7-no-table-exports': {
+    names: ['PgTable', 'PgTableWithColumns', 'PgColumn', 'PgView', 'PgViewWithSelection', 'PgMaterializedView',
+      'PgMaterializedViewWithSelection', 'PgSchema', 'PgDatabase', 'PgTransaction', 'NodePgDatabase'],
+    txPattern: '^(Platform|Hr|Gst|Ops|Accounts|Crm|Stock|Payroll|Purchasing|Sales|Service)Tx$',
+    message: msg('D7', 'ADR-001', "A library's entry never exports a table, view, column, database or module transaction"),
   },
   'radcore/no-subpath-imports': {
     imports: [{ source: '^#', message: '[L4] No package.json "imports" aliases: they hide the real specifier from L1, L4, L8 and L9 (ADR-002).' }],
@@ -225,6 +239,11 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'error',
       ...on('radcore/e4-no-escape'),
     } },
+
+  // D7's export guard on every library entry, with the same type information.
+  { files: ['packages/lib-*/src/index.ts', 'packages/lib-*/src/contract.ts'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: on('radcore/d7-no-table-exports') },
 
   // The web app: Next's rules, with react/no-danger as an error and no exceptions (L6).
   ...nextVitals.map((c) => ({ ...c, files: [`apps/web/**/*.${EXT}`] })),

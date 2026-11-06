@@ -113,34 +113,72 @@ const noSql = {
       if (c.type === 'Identifier') return c.name === 'check' && fromDrizzle(context, c);
       if (c.type !== 'MemberExpression' || c.computed) return false;
       if (['default', 'generatedAlwaysAs'].includes(c.property.name)) return fromDrizzle(context, c.object);
-      return c.property.name === 'as' && c.object.type === 'CallExpression'
-        && c.object.callee.type === 'Identifier' && c.object.callee.name === 'pgView' && fromDrizzle(context, c.object.callee);
+      return c.property.name === 'as' && c.object.type === 'CallExpression' && c.object.callee.type === 'Identifier'
+        && ['pgView', 'pgMaterializedView'].includes(c.object.callee.name) && fromDrizzle(context, c.object.callee);
     };
-    // Inside the zone: within a `sql` template that is itself the direct argument of an allowed call, or in the helper.
+    const inHelper = (node) => {
+      for (let p = node.parent; p; p = p.parent) if (p.type === 'FunctionDeclaration' && p.id?.name === o.helper) return true;
+      return false;
+    };
+    // Inside the zone: only as the tag of a template that is the direct argument of an allowed call (so no
+    // `sql.raw` or nested `sql` inside it), or anywhere in the one helper.
     const allowed = (node) => {
       if (!o.zone) return false;
       if (node.parent.type === 'ImportSpecifier') return node.parent.imported.name === node.parent.local.name;
-      for (let p = node.parent; p; p = p.parent) {
-        if (p.type === 'TaggedTemplateExpression' && p.tag.type === 'Identifier' && p.tag.name === 'sql'
-          && p.parent.type === 'CallExpression' && p.parent.arguments.includes(p) && allowedCall(p.parent)) return true;
-        if (o.helper && p.type === 'FunctionDeclaration' && p.id?.name === o.helper) return true;
-      }
-      return false;
+      if (o.helper && inHelper(node)) return true;
+      const tt = node.parent;
+      return tt.type === 'TaggedTemplateExpression' && tt.tag === node && tt.parent.type === 'CallExpression'
+        && tt.parent.arguments.includes(tt) && allowedCall(tt.parent);
     };
     const isDataKey = (n) => n.parent.type === 'Property' && n.parent.key === n && !n.parent.computed
       && !n.parent.shorthand && n.parent.parent.type === 'ObjectExpression';
-    // A zone export must be a drizzle declaration: a table, view or column, or a column helper returning one.
-    const isDeclaration = (init) => {
-      if (!init) return false;
-      if (init.type === 'ArrowFunctionExpression' && init.body.type !== 'BlockStatement') return fromDrizzle(context, init.body);
-      return init.type === 'CallExpression' && fromDrizzle(context, init);
+
+    // What a zone file may export: a drizzle declaration (a table, schema table, creator table, view or column, but
+    // never a `check`), an object of them (audit columns), or a function that returns one.
+    const isRelative = (id) => /^\.\.?\//.test(importSource(context, id) ?? '');
+    const localInit = (id) => {
+      const def = findVariable(context.sourceCode.getScope(id), id.name)?.defs[0];
+      return def?.type === 'Variable' && def.parent.kind === 'const' ? def.node.init : null;
+    };
+    const isValue = (n, depth = 0) => {
+      if (!n || depth > 10) return false; // a bound on the walk; real schema code nests a handful of levels
+      switch (n.type) {
+        case 'ObjectExpression':
+          return n.properties.every((p) => (p.type === 'SpreadElement' ? isValue(p.argument, depth + 1)
+            : !p.computed && isValue(p.value, depth + 1)));
+        case 'ArrowFunctionExpression': case 'FunctionExpression': case 'FunctionDeclaration':
+          return returnsValue(n, depth + 1);
+        case 'Identifier': {
+          const src = importSource(context, n);
+          if (src) return isRelative(n) || (DRIZZLE.test(src) && !['check', 'sql'].includes(n.name));
+          return isValue(localInit(n), depth + 1);
+        }
+        case 'CallExpression': case 'MemberExpression': {
+          const root = chainRoot(n);
+          if (!root || root.name === 'check' || root.name === 'sql') return false;
+          return isValue(root, depth + 1);
+        }
+        default:
+          return false;
+      }
+    };
+    const returnsValue = (fn, depth) => {
+      if (fn.body.type !== 'BlockStatement') return isValue(fn.body, depth);
+      const returns = [];
+      const visit = (s) => {
+        if (!s || typeof s !== 'object' || /Function/.test(s.type ?? '')) return;
+        if (s.type === 'ReturnStatement') returns.push(s.argument);
+        for (const [k, v] of Object.entries(s)) if (k !== 'parent') (Array.isArray(v) ? v : [v]).forEach(visit);
+      };
+      fn.body.body.forEach(visit);
+      return returns.length > 0 && returns.every((r) => isValue(r, depth));
     };
     const exportOk = (n) => {
       const d = n.declaration;
       if (!d && n.specifiers.length === 0) return true; // `export {}` hands nothing on
       if (n.exportKind === 'type' || d?.type === 'TSTypeAliasDeclaration' || d?.type === 'TSInterfaceDeclaration') return true;
-      if (d?.type === 'FunctionDeclaration') return Boolean(o.helper) && d.id?.name === o.helper;
-      return d?.type === 'VariableDeclaration' && d.kind === 'const' && d.declarations.every((v) => isDeclaration(v.init));
+      if (d?.type === 'FunctionDeclaration') return (Boolean(o.helper) && d.id?.name === o.helper) || returnsValue(d, 0);
+      return d?.type === 'VariableDeclaration' && d.kind === 'const' && d.declarations.every((v) => isValue(v.init));
     };
     return {
       Identifier(n) {
@@ -204,6 +242,55 @@ const noDbReexport = {
   },
 };
 
+/**
+ * D7's export guard, with type information (ADR-001 §5): a library's entry (index.ts, contract.ts) may not export
+ * anything whose type carries a table, view, column, raw database or module transaction, however it was wrapped:
+ * a function returning `salesTx(ctx)`, an alias, a cast, or an object holding one.
+ * Options: { names: [type names], txPattern: regex for module-transaction type names, message }.
+ */
+const noTableExports = {
+  meta: { type: 'problem', docs: { description: 'ADR-001 D7: no table or transaction in a library entry' }, schema: false,
+    messages: { m: '{{message}} ({{name}})' } },
+  create(context) {
+    const services = context.sourceCode.parserServices;
+    if (!services?.program) return {};
+    const checker = services.program.getTypeChecker();
+    const { names, txPattern, message } = context.options[0];
+    const tx = new RegExp(txPattern);
+    const carries = (type, seen, depth) => {
+      if (!type || seen.has(type) || depth > 4) return false;
+      seen.add(type);
+      for (const sym of [type.getSymbol(), type.aliasSymbol]) {
+        const name = sym?.getName();
+        if (name && (names.includes(name) || tx.test(name))) return true;
+      }
+      const next = [
+        ...(type.isUnionOrIntersection() ? type.types : []),
+        ...(type.aliasTypeArguments ?? []),
+        ...(checker.isArrayType?.(type) || checker.isTupleType?.(type) ? checker.getTypeArguments(type) : []),
+        ...[...type.getCallSignatures(), ...type.getConstructSignatures()].map((s) => s.getReturnType()),
+        ...(depth < 3 ? type.getProperties().map((p) => checker.getTypeOfSymbol(p)) : []),
+      ];
+      return next.some((t) => carries(t, seen, depth + 1));
+    };
+    return {
+      'Program:exit'(program) {
+        const file = services.esTreeNodeToTSNodeMap.get(program);
+        const moduleSymbol = checker.getSymbolAtLocation(file);
+        if (!moduleSymbol) return;
+        for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+          let s = exported;
+          try { s = checker.getAliasedSymbol(exported); } catch { /* not an alias */ }
+          const types = [s.valueDeclaration ? checker.getTypeOfSymbol(s) : null, checker.getDeclaredTypeOfSymbol(s)];
+          if (types.some((t) => carries(t, new Set(), 0))) {
+            context.report({ node: program, messageId: 'm', data: { message, name: exported.getName() } });
+          }
+        }
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: 'radcore' },
   rules: {
@@ -211,6 +298,7 @@ export default {
     'e3-no-io': restrict('ADR-001 E3: no I/O without an import'),
     'e4-no-escape': restrict('ADR-001 E4: no escape hatch in libraries'),
     'd7-no-db-reexport': noDbReexport,
+    'd7-no-table-exports': noTableExports,
     'no-sql': noSql,
     'no-query-strings': restrict('ADR-002 L2: no query strings'),
     'no-raw-execution': restrict('ADR-002 L3: no raw execution'),

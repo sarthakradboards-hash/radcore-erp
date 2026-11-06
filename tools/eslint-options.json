@@ -140,6 +140,10 @@
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       },
       {
+        "selector": "MemberExpression[object.name=/^(globalThis|global|window|self)$/][property.quasis.0.value.cooked=/^(fetch|WebSocket|XMLHttpRequest)$/]",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
         "selector": "VariableDeclarator[init.name=/^(globalThis|global|window|self)$/]",
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       },
@@ -149,6 +153,22 @@
       },
       {
         "selector": "MemberExpression[property.value='getBuiltinModule']",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "MemberExpression[property.quasis.0.value.cooked='getBuiltinModule']",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "ObjectPattern > Property[key.name=/^(getBuiltinModule|fetch|WebSocket|XMLHttpRequest)$/]",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "ObjectPattern > Property[key.value=/^(getBuiltinModule|fetch|WebSocket|XMLHttpRequest)$/]",
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "selector": "ObjectPattern > Property[key.quasis.0.value.cooked=/^(getBuiltinModule|fetch|WebSocket|XMLHttpRequest)$/]",
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       }
     ],
@@ -318,6 +338,22 @@
       {
         "name": "performance",
         "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "globalThis",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "global",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "window",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
+      },
+      {
+        "name": "self",
+        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
       }
     ],
     "syntax": [
@@ -339,10 +375,6 @@
       },
       {
         "selector": "NewExpression[callee.name='Date'][arguments.length=0]",
-        "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
-      },
-      {
-        "selector": "MemberExpression[object.name=/^(globalThis|global|window|self)$/]",
         "message": "[E3] Pass time, randomness and I/O in as arguments or through ctx (ADR-001)."
       }
     ]
@@ -384,6 +416,23 @@
       "^\\.{1,2}/(.*/)?db(/|$)"
     ],
     "message": "[D7] A library never hands on @radcore/db's tables or transactions, or lib-platform's db/ (ADR-001)."
+  },
+  "radcore/d7-no-table-exports": {
+    "names": [
+      "PgTable",
+      "PgTableWithColumns",
+      "PgColumn",
+      "PgView",
+      "PgViewWithSelection",
+      "PgMaterializedView",
+      "PgMaterializedViewWithSelection",
+      "PgSchema",
+      "PgDatabase",
+      "PgTransaction",
+      "NodePgDatabase"
+    ],
+    "txPattern": "^(Platform|Hr|Gst|Ops|Accounts|Crm|Stock|Payroll|Purchasing|Sales|Service)Tx$",
+    "message": "[D7] A library's entry never exports a table, view, column, database or module transaction (ADR-001)."
   },
   "radcore/no-subpath-imports": {
     "imports": [

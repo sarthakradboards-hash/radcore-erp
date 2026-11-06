@@ -57,6 +57,12 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   'packages/db/src/sales/relations.ts': {
     rules: [...SERVER, 'radcore/e4-no-escape'], l1: { allowNames: [...ALLOW, 'relations'] }, typed: true, server: true },
   'apps/web/app/page.tsx': { rules: EVERYWHERE, l1: L1.base, typed: false, server: false },
+  // E3's three scopes, and D7's export guard on library entries.
+  'packages/lib-common/src/money.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
+  'packages/lib-sales/src/contract.ts': {
+    rules: [...LIB, 'radcore/e3-no-io', 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
+  'packages/lib-sales/src/rules/tax.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
+  'packages/lib-sales/src/index.ts': { rules: [...LIB, 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
 };
 
 describe.each(Object.entries(SAMPLES))('%s', (file, want) => {
