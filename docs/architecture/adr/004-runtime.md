@@ -1,11 +1,12 @@
 # ADR-004: Runtime and hosting target
 
-- Status: accepted on the D-01 default. **D-01 (hosting) is still open with Sarthak** and is confirmed before M1
-  starts.
-- Date: 2026-11-06
+- Status: **proposed**, written on the D-01 default. D-01 (hosting) is still open with Sarthak and is confirmed
+  before M1 starts. When it is, this becomes accepted or is amended (§6).
+- Date: 2026-11-06, revised after the auditor's review the same day
 - Ticket: RAD-10 (M0-05). Covers RC-015.
-- Builds on: [ADR-001](001-layers.md) (API and worker processes), [ADR-002](002-data-access.md) (pool, timeouts, no
-  transaction-mode pooler), [ADR-003](003-libraries.md) (Node 26.13.0, pg-boss, S3 client).
+- Builds on: [ADR-001](001-layers.md) (API and worker processes), [ADR-002](002-data-access.md) (pool, timeouts, the
+  outbound client), [ADR-003](003-libraries.md) (Node 26.13.0, pg-boss, the S3 client, envelope encryption),
+  [ADR-005](005-database.md) (the three logins, system principals).
 - Source: Hosting recommendation §1, §2, §8, §10.2; Handover call pack D-01.
 
 ## Context
@@ -25,13 +26,14 @@ production.
 | Piece | What it is | Where (D-01 default, Option 4: AWS Mumbai hybrid) |
 |---|---|---|
 | `api` | `apps/api`: a long-running Node 26 HTTP server. Answers requests, runs no jobs. | Docker container on one EC2 server, Mumbai (`ap-south-1`) |
-| `worker` | `apps/worker`: a separate long-running Node process. It runs pg-boss: queued jobs, the outbox relay, and the schedule (the 15-minute chores, monthly partitions). Exactly one scheduler. | Docker container on the same server |
+| `worker` | `apps/worker`: a separate long-running Node process. It runs pg-boss: queued jobs, the outbox relay, and the schedule (the 15-minute chores, the partition watch). Exactly one scheduler. | Docker container on the same server |
 | `web` | `apps/web`: the Next.js server | Docker container on the same server |
-| `proxy` | Caddy: TLS on our own domain, request-size limit, passes `/api` to `api` | Docker container on the same server |
-| `migrate` | a one-off container that runs the migrations with the **owner** login, then exits. Runs before a new `api` or `worker` starts (M1-07). | Same image, run by the deploy step |
+| `proxy` | Caddy: TLS on our own domain, request-size limit, `/api` to `api`, everything else to `web` | Docker container on the same server |
+| `migrate` | the migrations, run with the **owner** login from the CI deploy job (§3), never on the server | CI, through a tunnel to RDS |
 | Database | PostgreSQL **16**, Amazon RDS, with automated backups and point-in-time recovery (up to 5 minutes lost), and cross-region backup copies to Hyderabad (`ap-south-2`). Single-zone at first; two-zone is a setting. | RDS, Mumbai |
-| Files | Amazon S3: bill photos, resumes, statements, exports. Versioning on, public access blocked, encrypted with KMS, replicated to Hyderabad. | S3, Mumbai |
+| Files | Amazon S3: bill photos, resumes, statements, exports. Versioning on, public access blocked, encrypted with KMS, replicated to Hyderabad (§4) | S3, Mumbai |
 | Jobs | pg-boss tables in the same PostgreSQL. No other queue service. | RDS |
+| Mail | Amazon SES in Mumbai, for invites, password resets and alerts to people. Its client library is added under ADR-003 §4 by the first ticket that sends mail (M1-14) | SES |
 | Monitoring | a small separate server watching health and heartbeats from outside (RC-083) | Outside the app server |
 
 The same major versions run everywhere:
@@ -40,103 +42,217 @@ The same major versions run everywhere:
 - **CI:** a PostgreSQL 16 service (M0-08).
 - **Production:** RDS PostgreSQL 16.
 
-Files use the S3 API in every environment: MinIO in development and CI, S3 in production. There is no
-"files in the database" or "files on disk" mode, so the code has one path.
+Files use the S3 API in every environment: MinIO in development and CI, S3 in production. Mail in development and
+CI goes to a local catcher, never out.
 
 ### 2. Rules the runtime keeps
 
 - **No state in one process's memory.** These all live in PostgreSQL from day one, so a second `api` copy or a
   restart changes nothing (Theme 10, RC-088, RC-095):
-  - sessions and rate-limit counters (rate-limiter-flexible's PostgreSQL store, ADR-003);
+  - sessions and rate-limit counters;
   - the permission matrix, re-read on change;
   - saved-once keys and job state.
-- **Uploads stream to S3.** The browser uploads straight to S3 with a short-lived presigned URL (M1-25). Neither the
-  API nor the database holds a whole file. The size limit is set per kind of file, with the bank-statement limit
-  above 12 MB.
-- **No pooler in transaction mode.** The API and worker connect straight to RDS from their own pools, so the
-  timeouts set as connection options hold (ADR-002 §4).
+- **Uploads go straight to S3, with limits the bucket enforces.** The browser uploads with a presigned **POST**
+  whose policy fixes the content type and a `content-length-range`. A presigned PUT can't limit size.
+  - Limits by kind: photos 10 MB, resumes 5 MB, bank statements 15 MB, import files 25 MB (M1-25).
+  - After upload, the API checks the stored object's size and magic bytes before the file is used.
+  - Downloads are short-lived presigned GETs with `Content-Disposition: attachment`.
+  - Neither the API nor the database holds a whole file.
+- **Connections.** The API and worker connect straight to RDS from their own pools: no transaction-mode pooler,
+  so the timeouts set as connection options hold (ADR-002 §4).
+  - TLS to RDS is verified: `sslmode=verify-full` with the RDS CA bundled in the image, and `rds.force_ssl=1` on
+    the database. Start-up refuses a database URL without verification in staging and production.
+  - **The connection budget** is counted against RDS's `max_connections`, with room for the owner's migrations
+    and the restore drill:
+
+    | Pool | Connections |
+    |---|---|
+    | `api` | 10 |
+    | `worker` | 5 |
+    | pg-boss | 4 |
+    | rate limiter | 2 |
+- **The app uses one login.** `api` and `worker` both use `radcore_app` (read-only transactions where the contract
+  says so). `radcore_read` is for the restore drill (pointed at the restored instance) and for support queries.
 - **Graceful stop.** On a stop signal, `api` stops taking requests and finishes the ones it has, and `worker`
-  finishes or releases its current jobs. Both exit within 30 seconds (RC-079).
-- **Health.** `/health` touches the database. The worker sends a heartbeat after each scheduled run. The outside
-  monitor alerts on a failed check or a missing heartbeat (RC-083).
-- **Settings validated at start.** Both processes refuse to start, naming each missing or weak setting, rather than
-  start in a half-safe mode (M1-10, Theme 2).
-- **Three database logins** (ADR-005 §7, M1-06):
-  - `radcore_owner` runs migrations only;
-  - `radcore_app` is the runtime login (no DDL, no UPDATE, DELETE or TRUNCATE on append-only tables);
-  - `radcore_read` is read-only (reports, the restore drill).
+  finishes or releases its current jobs. Both exit within 30 seconds (RC-079). Compose sets
+  `stop_grace_period: 30s` and `init: true`, because Docker kills after 10 seconds by default.
+- **Health.** Caddy routes `/api/health` to `api`, which touches the database; it is rate-limited. `web` has its own
+  `/health`. The worker sends a heartbeat every 5 minutes. The outside monitor alerts on a failed check, or on no
+  heartbeat for 15 minutes. Who answers the alert is D-18.
+- **Settings validated at start.** Both processes refuse to start, naming each problem, rather than start in a
+  half-safe mode (M1-10, Theme 2). See the checks in §5.
+- **Containers:**
+  - each runs as a non-root user, with a read-only root filesystem, `cap_drop: ALL` and `no-new-privileges`;
+  - no container mounts the Docker socket;
+  - logs rotate (`json-file` with a size cap);
+  - export temp files go to a size-limited volume.
 
-  The owner's credentials exist only for the `migrate` step and are never in the `api` or `worker` containers
-  (RC-003).
-- **Images are built in CI and pulled, never built on the server.** Deploying takes an RDS snapshot first, runs
-  `migrate`, then swaps containers (M8-04).
+### 3. Credentials, deploys and rollback
 
-### 3. Vercel is not used for real data
+**What can reach AWS credentials.** The server's instance role is the only AWS credential on the server.
+- IMDSv2 is required (`HttpTokens=required`), with a hop limit of 2.
+- The containers sit on two Docker networks: `edge` (`proxy`, `web`) and `app` (`api`, `worker`). A host firewall
+  rule in the `DOCKER-USER` chain drops traffic from `edge` to `169.254.169.254`. So an SSRF bug in `web` can't
+  reach the instance role.
+- M8 proves it from inside `web`: the metadata endpoint is unreachable, while `api` reaches it.
 
-No environment that holds real data runs on Vercel. The v1 review copy (`radcore-erp.vercel.app`, Singapore,
-sample data) is retired before real data enters (M8-09, RC-018). Until then, the Vercel Git integration still
-builds this repository's branches. Disconnecting it is Sarthak's call, already raised by the coordinator.
+**What the instance role may do**, and nothing else:
+- read and write objects in the files bucket;
+- use the secrets KMS key (encrypt, decrypt, generate data keys);
+- read the named **runtime** secrets in Secrets Manager (`DATABASE_URL`, `TURNSTILE_SECRET`, `ALERT_WEBHOOK_URL`,
+  `HEARTBEAT_URL`);
+- send mail from the verified SES identity.
 
-### 4. Settings
+It can't read the owner secret.
+- `api` and `worker` fetch their runtime secrets at start through the role and keep them in memory. They are never
+  in the environment and never in a file.
+- Rotating one means restarting the containers.
+- The RDS master credential is managed by RDS in Secrets Manager, and no application uses it.
 
-Every setting the processes read, validated at start by M1-10. "Secret" means the value grants access. Secrets
-live in AWS Secrets Manager in staging and production, and the deploy step hands them to the containers that need
-them. Non-secrets live in SSM Parameter Store. In development, `npm run setup` generates a `.env` with fresh random
-values; it's never committed.
+**Migrations run from CI, so the owner credential never reaches the server.** The deploy job runs in GitHub
+Actions with its own AWS role, assumed through OIDC (no stored keys). That role is the only one that can read
+`MIGRATION_DATABASE_URL`. The job:
+
+1. takes an RDS snapshot;
+2. opens an SSM port-forwarding session through the server to RDS, which isn't public;
+3. runs the `migrate` image in CI with the owner login, under `lock_timeout = 5s` and a statement timeout, so a
+   migration never queues behind live traffic for long;
+4. closes the session;
+5. tells the server, through SSM, to pull the new images **by digest** and swap containers.
+
+Deploys are serialised: one GitHub Actions concurrency group per environment, so two deploys never overlap.
+
+**Rollback keeps the data.**
+- Every migration works with the previous release as well as the new one (expand, then contract). A column or
+  table is dropped only in a later release, once nothing reads it.
+- So rollback means redeploying the previous image's digest. **The snapshot is never restored over live data.** It
+  exists for disaster recovery, and restoring it would lose everything written since.
+
+**The first admin** is created by a one-off bootstrap command in the `api` image (`bootstrap-admin`), run once by
+the deploy job through SSM:
+- It runs under the runtime login, as the system principal `system:seed` (ADR-005 §5).
+- It does nothing if a bootstrap record already exists. That record is permanent and unique, so the invite is
+  minted once ever, and a later deploy can't mint another.
+- It sends the invite link by email (SES) to `SEED_ADMIN_EMAIL`. The link is never written to a log or to the
+  command's output, which shows only that an invite was sent to a masked address (M1-14).
+
+**Network.**
+- **The server's security group** allows 80 and 443 in, and nothing else: no SSH, since administration goes
+  through SSM Session Manager.
+- **RDS** accepts 5432 only from the server's security group, and isn't publicly reachable.
+- **Ports:** only `proxy` publishes ports on the host. `api` and `web` are reachable only on the Docker networks.
+- **Caddy:** its admin API is off, its `/data` volume persists (Let's Encrypt has rate limits), and it overwrites
+  any `X-Forwarded-*` headers arriving from outside.
+- **Client addresses:**
+  - `api` trusts forwarded-for headers only from addresses in `TRUST_PROXY`, the internal networks' CIDRs, parsed
+    and validated at start.
+  - When a `web` server component calls `api` (at `API_INTERNAL_URL`), it passes on the person's cookie, sets
+    `Origin` to `PUBLIC_ORIGIN`, and passes the client address Caddy gave it.
+
+### 4. Copies in Hyderabad that can actually be used
+
+- **One multi-Region KMS key** for secrets and files: its primary is in Mumbai and its replica in Hyderabad. The
+  AWS Encryption SDK uses its multi-Region-aware keyring, so ciphertexts written in Mumbai decrypt in Hyderabad
+  with the replica. The key has a 30-day deletion waiting period.
+- **S3 replication** to a bucket in `ap-south-2` opts in to KMS-encrypted objects (`SseKmsEncryptedObjects`) and
+  names the Hyderabad replica key. Without that, it would copy nothing.
+  - A daily canary object is written in Mumbai. The monitor alerts if it hasn't appeared in Hyderabad within an
+    hour.
+  - Lifecycle rules abort incomplete uploads after a day, and expire old versions under the retention rule (D-12).
+  - A bucket policy denies any request not over TLS.
+- **RDS** has deletion protection on, keeps its automated backups on deletion, and replicates them to `ap-south-2`
+  with a key in that region. M8-01 confirms that the Mumbai-to-Hyderabad pair is offered, and sets the retention
+  (D4).
+- **Backups out of reach of one compromised admin:** the cross-region copies sit in a backup vault with a
+  deletion lock (M8).
+- **Recovery time:** about 30 to 60 minutes to rebuild the server from images and reattach RDS, rehearsed in M8
+  (Hosting recommendation §3).
+
+### 5. Settings
+
+Every setting the processes read, validated at start by M1-10. "Secret" means the value grants access.
+- In staging and production, secrets live in AWS Secrets Manager (fetched as §3 says), and other settings in SSM
+  Parameter Store.
+- Only the CI deploy role may write Parameter Store, because several settings change security behaviour.
+- In development, `npm run setup` generates a `.env` with fresh random values; it's never committed.
 
 **Integration credentials are not environment settings.** Meta, WhatsApp, Shopify, the statements mailbox and a GSP
 hold tokens that rotate. They are set on the Admin screen and kept encrypted in the database by the secrets library
-(M1-24), under the KMS key below. So the environment holds only the few values needed to start.
+(ADR-003, M1-24).
 
-| Name | Purpose | Secret | Where (staging, production) | Read by |
-|---|---|---|---|---|
-| `NODE_ENV` | `production` outside development and CI | no | Parameter Store | all |
-| `APP_ENV` | `development`, `ci`, `staging` or `production`. Production refuses demo data and weak settings | no | Parameter Store | all |
-| `PUBLIC_ORIGIN` | the site's own `https://` origin, for the Origin check, links and cookies | no | Parameter Store | api, web, worker |
-| `TRUST_PROXY` | how many proxy hops sit in front of `api` (Caddy: 1), so the client address for rate limits is the real one | no | Parameter Store | api |
-| `DATABASE_URL` | runtime login `radcore_app` | **yes** | Secrets Manager | api, worker |
-| `DATABASE_READ_URL` | read-only login `radcore_read` | **yes** | Secrets Manager | api (reports), restore drill |
-| `MIGRATION_DATABASE_URL` | owner login `radcore_owner` | **yes** | Secrets Manager | `migrate` only |
-| `DB_POOL_MAX`, `DB_POOL_WAIT_MS` | pool size and wait limit | no | Parameter Store | api, worker |
-| `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` | connection timeouts (ADR-002 §4) | no | Parameter Store | api, worker |
-| `S3_REGION`, `S3_BUCKET_FILES` | where files live | no | Parameter Store | api, worker |
-| `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | MinIO in development and CI only. In AWS the server's instance role grants access and these are unset. | **yes** (dev and CI only) | generated `.env` / CI | api, worker |
-| `SECRETS_KMS_KEY_ID` | the KMS key that wraps the secrets library's data keys (M1-24) | no (the key never leaves KMS) | Parameter Store | api, worker |
-| `SECRETS_LOCAL_KEY` | development and CI stand-in for KMS, at least 32 random bytes; refused when `APP_ENV` is staging or production | **yes** | generated `.env` / CI | api, worker |
-| `TURNSTILE_SITE_KEY` | the public "I am a person" check on public forms | no | Parameter Store | web |
-| `TURNSTILE_SECRET` | verifies that check | **yes** | Secrets Manager | api |
-| `ALERT_WEBHOOK_URL` | where alerts go (the URL carries a token) | **yes** | Secrets Manager | api, worker |
-| `HEARTBEAT_URL` | the outside monitor's heartbeat address | **yes** | Secrets Manager | worker |
-| `SEED_ADMIN_EMAIL` | who gets the first admin invite link (no password is created or printed; M1-14) | no | Parameter Store | `migrate` (first run) |
-| `LOG_LEVEL` | pino level | no | Parameter Store | all |
+**No `NEXT_PUBLIC_*` settings.** Next.js fixes those at build time, which would tie an image to one environment. The
+browser gets what it needs (for example the Turnstile site key) from the server at run time.
+
+| Name | Purpose | Secret | Required in | Where (staging, production) | Read by |
+|---|---|---|---|---|---|
+| `NODE_ENV` | `production` outside development and CI | no | all | Parameter Store | all |
+| `APP_ENV` | `development`, `ci`, `staging` or `production`; production refuses demo data and weak settings | no | all | Parameter Store | all |
+| `PUBLIC_ORIGIN` | the site's own `https://` origin, for the Origin check, links and cookies | no | all | Parameter Store | api, web, worker |
+| `API_INTERNAL_URL` | where `web`'s server reaches `api` on the `app` network | no | all | Parameter Store | web |
+| `TRUST_PROXY` | the internal networks' CIDRs, whose forwarded-for headers `api` trusts | no | all | Parameter Store | api |
+| `DATABASE_URL` | runtime login `radcore_app`, with `sslmode=verify-full` | **yes** | all | Secrets Manager | api, worker |
+| `DATABASE_READ_URL` | read-only login `radcore_read` | **yes** | staging, production | Secrets Manager | restore drill, support |
+| `MIGRATION_DATABASE_URL` | owner login `radcore_owner` | **yes** | all | Secrets Manager, readable only by the CI deploy role | `migrate` in CI only |
+| `DB_POOL_MAX`, `DB_POOL_WAIT_MS` | pool size and wait limit (§2) | no | all | Parameter Store | api, worker |
+| `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` | connection timeouts (ADR-002 §4) | no | all | Parameter Store | api, worker |
+| `S3_REGION`, `S3_BUCKET_FILES` | where files live | no | all | Parameter Store | api, worker |
+| `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | MinIO in development and CI only | **yes** | development, CI | generated `.env` / CI | api, worker |
+| `SECRETS_KMS_KEY_ID` | the multi-Region KMS key that wraps the secrets library's data keys | no | staging, production | Parameter Store | api, worker |
+| `SECRETS_LOCAL_KEY` | development and CI stand-in for KMS, at least 32 random bytes | **yes** | development, CI | generated `.env` / CI | api, worker |
+| `MAIL_FROM` | the sender address for invites and resets (a verified SES identity) | no | staging, production | Parameter Store | api, worker |
+| `TURNSTILE_SITE_KEY` | the public "I am a person" check on public forms, served to the browser at run time | no | all | Parameter Store | api |
+| `TURNSTILE_SECRET` | verifies that check | **yes** | staging, production | Secrets Manager | api |
+| `ALERT_WEBHOOK_URL` | where alerts go; the URL carries a token | **yes** | staging, production | Secrets Manager | api, worker |
+| `HEARTBEAT_URL` | the outside monitor's heartbeat address; the URL carries a token | **yes** | staging, production | Secrets Manager | worker |
+| `SEED_ADMIN_EMAIL` | who gets the one-time first-admin invite (§3) | no | staging, production | Parameter Store | `bootstrap-admin` |
+| `LOG_LEVEL` | pino level | no | all | Parameter Store | all |
+
+**Start-up refuses when:**
+- `SECRETS_KMS_KEY_ID` and `SECRETS_LOCAL_KEY` aren't exactly one of them set;
+- `S3_ENDPOINT` or static S3 keys are set in staging or production;
+- `APP_ENV` is `development` or `ci` while `NODE_ENV` is `production`;
+- a setting its column marks as required is missing;
+- the database URL doesn't verify TLS in staging or production.
+
+**Tokens in URLs aren't logged.** The alert and heartbeat URLs carry their token in the path. ADR-002's outbound
+client logs origin and path by default, so these two clients are created with `logPath: false`, which logs the
+origin only. M1-11 makes that option required for any client whose URL carries a credential.
 
 There is no `SESSION_SECRET`: sessions are random tokens stored hashed in PostgreSQL. There is no `TZ`: processes
 run in UTC and lib-common works out India dates. Adding a setting means adding its row here.
 
-### 5. If D-01 picks another option
+### 6. If D-01 picks another option
 
-The code doesn't depend on the host. It needs containers, PostgreSQL 16, the S3 API and the settings above. Each
-other option changes only the following:
+The code needs containers, PostgreSQL 16, the S3 API, an outgoing mail service and the settings above. In every
+option, `api` enforces request-body limits itself, and never relies on the proxy for them. Each other option
+changes the following:
 
 | D-01 choice | What changes |
 |---|---|
-| **Option 2: AWS containers (ECS Fargate)** | `api`, `web` and `worker` become ECS services, and a load balancer replaces Caddy (proxy hops in `TRUST_PROXY` set to match). `api` can run two copies at once, since no state is in memory. `migrate` becomes a one-off ECS task. RDS goes two-zone. No code change. |
-| **Option 3: one rented server, database on it** | PostgreSQL runs in a container on the same server, so there's no managed point-in-time recovery. WAL archiving to S3 (pgBackRest or WAL-G) is added and drilled, or RC-016 isn't met. Files still go to S3 (or a compatible store). The rest is the same as Option 4. |
-| **Option 1: Vercel plus Supabase (Mumbai)** | The biggest change, which is why it isn't the default. **The worker can't run on Vercel**, so it needs its own always-on host, and Vercel serves only `web` and `api`. Supabase's pooler must be used in session mode, or the timeouts move to `ALTER ROLE ... SET`. Uploads go presigned to storage (the 4.5 MB body limit). The data-location statements for Vercel's logs and builds must be obtained in writing. ADR-001's shape survives, but this ADR is rewritten. |
+| **Option 2: AWS containers (ECS Fargate)** | `api`, `web` and `worker` become ECS services with their own task roles, so the IMDS network rule isn't needed. A load balancer replaces Caddy: set `TRUST_PROXY` to match, and note that a load balancer enforces no body limit, which `api` already does. `api` can run two copies, since no state is in memory. The `worker` service runs `maximumPercent: 100`, so a deploy never starts a second scheduler. `migrate` stays a CI step, through an ECS one-off task or the same tunnel. RDS goes two-zone. No code change. |
+| **Option 3: one rented server, database on it** | PostgreSQL runs in a container on the same server, so there's no managed point-in-time recovery: WAL archiving to S3 (pgBackRest or WAL-G) is added and drilled, or RC-016 isn't met. **There is no instance role**: the server holds a scoped access key for S3 and KMS in a root-only file, and the owner login is still used only from CI over a tunnel. Mail goes through a provider's SMTP. |
+| **Option 1: Vercel plus Supabase (Mumbai)** | The biggest change, which is why it isn't the default. **The worker can't run on Vercel**, so it needs its own always-on host, and Vercel serves only `web` and `api`. There's no instance role: credentials go in each platform's secret store. Supabase's pooler must be used in session mode, or the timeouts move to `ALTER ROLE ... SET`. Uploads go presigned to storage (the 4.5 MB body limit). The data-location statements for Vercel's logs and builds must be obtained in writing. ADR-001's shape survives, but this ADR is rewritten. |
 
 If Sarthak picks another option, this ADR is amended in a PR before M1 starts, and the devops tickets (M8-01 to
 M8-07) follow it.
+
+### 7. Vercel is not used for real data
+
+No environment that holds real data runs on Vercel. The v1 review copy (`radcore-erp.vercel.app`, Singapore,
+sample data) is retired before real data enters (M8-09, RC-018). Until then, the Vercel Git integration (Sarthak's
+team) still builds this repository's branches, and its red check on PRs is noise.
 
 ## Consequences
 
 - Development, CI and production run the same processes against the same PostgreSQL major version and the same
   file API. A job, an upload or a rate limit that works in one works in the others.
-- The `api` process can be doubled without a code change. Under Option 4 it starts as one copy to keep the cost
-  down (Hosting recommendation §4).
-- Integration tokens can rotate without a deploy, because they live in the encrypted secrets store, not in the
-  environment.
-- The first-week AWS work (account, RDS, S3, roles, Secrets Manager, monitoring) belongs to the devops session from
-  the end of M1 (M8-01 to M8-07).
+- The owner credential exists only in CI for the length of a migration, and the server's own role can't reach it.
+  A compromise of `web` reaches no AWS credential.
+- A bad release is undone by redeploying the previous image. No data is lost, because migrations are always
+  compatible with the release before.
+- The Hyderabad copies are tested by a canary, not assumed.
+- The first-week AWS work (account, RDS, S3, KMS, roles, SES, Secrets Manager, monitoring) belongs to the devops
+  session from the end of M1 (M8-01 to M8-07).
 
 ## Alternatives considered
 
@@ -144,5 +260,7 @@ M8-07) follow it.
   a second API copy would run the schedule twice. Rejected (ADR-001 §8).
 - **Files in the database.** It avoids S3 in development, but files grow to most of the data and slow backups
   (Hosting recommendation §2). Rejected; MinIO gives development the same API.
+- **Migrations in a container on the server** (this ADR's first draft). The owner credential would sit on the
+  server and be readable through its role. Rejected; CI runs them through a tunnel.
 - **A transaction-mode pooler (PgBouncer, RDS Proxy pinned).** It isn't needed at 20 to 150 users, and it drops the
   connection-level timeouts. Revisit with Option 2 at scale.
