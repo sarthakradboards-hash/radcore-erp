@@ -48,7 +48,7 @@ test('an aborted request is not recorded', async ({ page, pageProblems }) => {
 test('a serious accessibility issue is reported', async ({ page }) => {
   await page.goto('/');
   // Changing <main> before React hydrates it is a mismatch (React error #418), so wait for hydration first.
-  await page.waitForFunction(() => Object.keys(document.querySelector('main') ?? {}).some((k) => k.startsWith('__reactFiber')));
+  await page.waitForFunction('Object.keys(document.querySelector("main") ?? {}).some((k) => k.startsWith("__reactFiber"))');
   // An unlabelled form field: axe's `label` rule, impact critical.
   await page.evaluate('document.querySelector("main").append(document.createElement("input"))');
   expect(await seriousA11yIssues(page)).toEqual([expect.stringMatching(/^label: /)]);
