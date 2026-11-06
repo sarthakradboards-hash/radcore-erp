@@ -24,8 +24,9 @@ differs from plan.md, this log and the ADR win.
 | 2026-11-06 | **RAD-18**: plan.md stays as approved, with only the personal email blanked; later decisions go in this log | coordinator, on the architect's advice | this file, [README](README.md) |
 | 2026-11-06 | The **sharp/libvips licence exception** (LGPL-3.0-or-later) is accepted, as ADR-003 states it: Next's image optimisation stays off, so the binary is never loaded, and its licence notice ships in the image | Sarthak | [ADR-003](architecture/adr/003-libraries.md) §2, §4 |
 | 2026-11-06 | **SeaweedFS** (Apache-2.0, pinned by digest) replaces MinIO as the S3-compatible server in development and CI, because MinIO's image can no longer be pulled anonymously. Production stays AWS S3. This supersedes "MinIO in dev" in plan.md (M0-07, M1-25) | coordinator | ADR-003, ADR-004 §1; RAD-13 |
+| 2026-11-07 | **D-01.** Production goes to AWS Option 4 (Mumbai hybrid: one EC2 server, RDS, S3, with copies in Hyderabad) after testing. Testing runs on a Vercel test copy with sample data only: Supabase free tier in Mumbai, no worker, and retired before Gate 0. Vercel's free Hobby plan is for non-commercial use, so Sarthak checks that fits, or uses Pro | Sarthak | [ADR-004](architecture/adr/004-runtime.md) (status accepted; §7 the test copy) |
 
 **Still open**, and recorded here when decided:
-- D-01 (hosting): ADR-004 is written on the Mumbai hybrid default.
 - Claiming the `@radcore` npm scope (ADR-003 §4).
+- Whether the Vercel test copy fits the Hobby plan's non-commercial terms, or needs Pro (ADR-004 §7).
 - The other D-items, by milestone, as listed in plan.md §4.
