@@ -26,7 +26,7 @@
 | ⚠ `radcore-erp` visibility | **Public.** The register calls this Serious (RC-006). The technical report and fix plan describe live weak points, so nothing from these documents goes into the repo until it is private (decision N3). |
 | ⚠ Branch protection | None on `dev` or `main`: anyone with access can push straight in (RC-051). Fixed in M0-01. |
 | CI on `dev` | None. v1's `ci.yml` is only on `main`. Built fresh in M0-08. |
-| ⚠ Commit identity | Commits here are recorded as `jainsarthak0205@gmail.com`. v1's notes say Vercel blocked deploys for exactly this, because the owning account is sarthakradboards-hash. M0-01 sets a repo-level identity. |
+| ⚠ Commit identity | Commits here are recorded under a personal email address (blanked from this copy, RAD-18). v1's notes say Vercel blocked deploys for exactly this, because the owning account is sarthakradboards-hash. M0-01 sets a repo-level identity. |
 | `radboards` remote | A private, separate Service Desk repo. The same empty `dev` commit was pushed there too. This plan doesn't use it (decision N4). |
 | v1 review copy | https://radcore-erp.vercel.app is live in Singapore (v1, sample data). It can stay as a demo; M8-09 retires it before real data (RC-018). |
 | Not checkable yet | AWS (no account yet), Meta, WhatsApp, Shopify and the statements mailbox (never connected in v1). |
