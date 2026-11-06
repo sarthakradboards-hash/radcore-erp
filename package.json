@@ -1,0 +1,33 @@
+{
+  "name": "radcore",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26.13.0 <27"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node tools/dev.ts",
+    "dev:env": "node tools/dev-env.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json",
+    "lint": "eslint . && depcruise packages apps --config .dependency-cruiser.cjs",
+    "db:up": "npm run dev:env && docker compose -f compose.dev.yml up -d --wait"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "3.1155.0",
+    "@aws-sdk/s3-request-presigner": "3.1155.0",
+    "@types/node": "26.6.5",
+    "dependency-cruiser": "18.7.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.5",
+    "eslint-plugin-drizzle": "0.2.3",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0",
+    "vitest": "5.0.5"
+  }
+}

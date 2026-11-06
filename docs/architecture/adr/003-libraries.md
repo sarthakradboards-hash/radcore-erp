@@ -66,7 +66,8 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Second factor (TOTP) | otpauth | 9.5.2 | MIT | nothing (RC-055). Required for admin and owner (D-19). Settings: SHA-1, 6 digits, 30-second steps, a window of ±1 step, and a 20-byte random secret kept by the secrets library. The last accepted step is stored, so a code is refused if it's reused. Attempts are limited per account, and recovery codes are stored as Argon2id hashes (M1-15) |
 | Envelope encryption | @aws-crypto/client-node | 5.0.2 | Apache-2.0 | the hand-written AES-GCM `secret-box`. KMS keyring in staging and production (`SECRETS_KMS_KEY_ID`); raw AES keyring from `SECRETS_LOCAL_KEY` in development and CI. Each value's encryption context names its table, column and row id, and decryption checks it, so a ciphertext copied into another row won't decrypt. Commitment policy `REQUIRE_ENCRYPT_REQUIRE_DECRYPT`; key rotation by KMS (M1-24) |
 | Rate limits in a shared store | rate-limiter-flexible (PostgreSQL store) | 11.2.3 | ISC | express-rate-limit counting in memory (RC-088). Its table comes from a migration (`tableCreated: true`, since the runtime login has no DDL), and it uses its own small pool in `client.ts`. It fails **closed**: when the store can't be reached, a limited action is refused |
-| File store | @aws-sdk/client-s3 | 3.1155.0 | Apache-2.0 | files in the database or on local disk. Works with the S3-compatible dev server (SeaweedFS) in development and CI |
+| File store | @aws-sdk/client-s3 | 3.1155.0 | Apache-2.0 | files in the database or on local disk. Works with SeaweedFS in development and CI (MinIO's image is no longer public; coordinator, 6 Nov) |
+| Presigned URLs | @aws-sdk/s3-request-presigner | 3.1155.0 | Apache-2.0 | none. Files reach the browser by presigned URL (Next row). Same release as client-s3; added by RAD-13 for the dev store's smoke test |
 | CSV read and write (streams) | csv-parse, csv-stringify | 7.0.3, 6.9.0 | MIT | hand-written comma split and quadratic amount pattern (RC-118). Exports use csv-stringify's `escape_formulas` (§3) |
 | Text encoding detection | chardet | 2.2.0 | MIT | UTF-8 only (RC-117). Decoding is `TextDecoder` (§1), not iconv-lite |
 | Excel read and write | read-excel-file, write-excel-file | 9.3.12, 4.1.1 | MIT | hand-written `lib/xlsx.ts` writer, and no Excel import at all (RC-117) |
@@ -152,6 +153,8 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   | `caniuse-lite` (via browserslist) | CC-BY-4.0 | a data file of browser support tables; attribution is kept in the image's notices |
   | `argparse` (via eslint's js-yaml) | Python-2.0 | permissive; dev tooling only |
   | `@img/sharp-libvips-*` (via next's optional `sharp`) | LGPL-3.0-or-later | an unmodified, dynamically linked prebuilt binary. It is never loaded, because image optimisation is off (§2), and the image ships its licence notice. **Confirm with Sarthak.** The alternative is a build that leaves it out |
+  | `@img/sharp-win32-*`, `@img/sharp-wasm32` (same `sharp`, bundling libvips) | `Apache-2.0 AND LGPL-3.0-or-later` (wasm32 adds `AND MIT`); chosen: all of them apply | the same libvips binary as the row above, so it stands or falls with it. Added by RAD-13 from the real lockfile |
+  | `language-subtag-registry` (via eslint-config-next's `eslint-plugin-jsx-a11y`) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
 
 - **Maintenance:** a release in the last 12 months, or a stated reason in its row (decimal.js, pino-http, cmdk and
   eslint-plugin-drizzle carry one). It must have no open advisory without a fix (C5). Its install scripts, if any,
@@ -160,8 +163,10 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   published security advisory. In that case the exception is named in §5 (C9).
 - **Pinning:** exact versions in `package.json` (C3), with the lockfile committed.
 - **Our own packages.** The `@radcore/*` workspaces are referenced only as `"*"` and must resolve to the local
-  workspace (`link: true` in the lockfile, C3). The `@radcore` scope must be claimed on npm (a free organisation),
-  so nobody else can publish under it and confuse an install. **That is Sarthak's action, before M0-07 merges.**
+  workspace (`link: true` in the lockfile, C3). The `@radcore` scope is claimed on npm as a free organisation, so
+  nobody else can publish under it and confuse an install (Sarthak, 7 Nov 2026; the coordinator confirmed it on the
+  registry). Every workspace is `"private": true`, so nothing is published to it either, and `.npmrc` needs no
+  scope mapping: the one registry it names is npm's.
 - **Dependabot (RAD-16):** when M0-07 adds the npm entry, it gets `cooldown: { default-days: 14 }`. Security
   updates aren't held back by it. The Docker ecosystem entry for the Node image (added with the Dockerfile, M8)
   has **no** cooldown, because Node patches are taken at once (§5). M0-07 checks:
@@ -215,7 +220,7 @@ that opens a connection or fetches something is named here with its rule:
 | Library | What it does on its own | Rule |
 |---|---|---|
 | pg, pg-boss, rate-limiter-flexible | connect to PostgreSQL | only the pools built in `lib-platform/src/db/client.ts`, from `DATABASE_URL`, are allowed (ADR-002 L4) |
-| @aws-sdk/client-s3 | connects to S3 | the endpoint comes only from settings (`S3_REGION`, and `S3_ENDPOINT` for the SeaweedFS dev server in development and CI), never from data |
+| @aws-sdk/client-s3 | connects to S3 | the endpoint comes only from settings (`S3_REGION`, SeaweedFS's `S3_ENDPOINT` in development), never from data |
 | @aws-crypto/client-node | calls KMS | the key comes only from `SECRETS_KMS_KEY_ID` |
 | imapflow | connects to the statements mailbox | the host is set by an admin, checked against the global-unicast rule before connecting, TLS only, with connection and idle timeouts |
 | mailauth | DNS lookups on the sender's domain | a `node:dns` `Resolver` with a timeout and a limited number of tries, passed in as its resolver |
@@ -267,7 +272,8 @@ like ADR-001's:
   licensed, too new, off-registry or running an unlisted install script.
 - Two upgrades are waiting and named: TypeScript 7 (typescript-eslint support) and ESLint 10 (eslint-plugin-react
   support). So is Drizzle 1.0, when it's stable.
-- Two actions are Sarthak's: claim the `@radcore` npm scope, and confirm the sharp/libvips licence exception (§4).
+- Sarthak's two actions are done: the `@radcore` npm scope is claimed (7 Nov 2026), and the sharp/libvips licence
+  exception is accepted (§4, 6 Nov 2026).
 
 ## Alternatives considered
 

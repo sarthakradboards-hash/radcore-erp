@@ -20,6 +20,24 @@ name only when Dependabot opened the PR: a person's PR from a `dependabot/...` b
 reviews them, and so does e2e-playwright when they touch `apps/web` or a UI library. The coordinator
 merges them. A major version update gets its own ticket.
 
+## Local setup
+
+Use Node 26.13.0 (`.nvmrc`). `npm ci` refuses any other version (`engine-strict`) and runs no install scripts
+(`ignore-scripts`, ADR-003 §6).
+
+```bash
+npm ci
+npm run dev        # API on 127.0.0.1:3001, web on 127.0.0.1:3000, worker
+npm test
+npm run lint       # ESLint (ADR-001 E rules, ADR-002 L rules) and dependency-cruiser (D rules, L7)
+npm run typecheck
+npm run db:up      # PostgreSQL 16 and SeaweedFS (S3), on 127.0.0.1 only (needs Docker)
+```
+
+`npm run dev` and `npm run db:up` first write `.env` with new random credentials if it doesn't exist. `.env` is
+git-ignored; never commit it. Each lint rule has a violating fixture in `tools/boundary-fixtures/`, and
+`npm test` fails if any fixture stops failing.
+
 ## Commit identity
 
 Commits must record the account that owns the repository, **sarthakradboards-hash**, not a personal
