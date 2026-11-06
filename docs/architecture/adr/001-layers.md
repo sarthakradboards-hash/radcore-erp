@@ -138,11 +138,18 @@ as the library. packages/db publishes exactly these entries:
 - A library gets a usable transaction for its own module only: `const tx = salesTx(ctx)`, from `@radcore/db/sales`.
   Only lib-sales may import that entry (D7), so only lib-sales can obtain a `SalesTx`. The type exposes `query`
   for the sales tables only, plus `select`, `insert`, `update` and `delete`, and has no `execute` and no `_` (T1).
-  At run time it is the same transaction.
+  `insert`, `update` and `delete` accept only sales tables by type, so even a foreign table object obtained some
+  other way can't be written through it. At run time it is the same transaction.
 - `insert`, `update`, `delete` and `select().from(table)` all need the table object, and only the owner can import
-  it (D7). So a library can't read or write another module's tables directly.
-- No way around it: no `sql` or `.execute` outside the SQL zone (ADR-002 L1 to L3), and no `any`, double cast or
-  `getTableConfig` in libraries (E4).
+  it (D7). D7 sees type-only imports too: `import type { SalesTx } from '@radcore/db/sales'` in lib-crm fails it.
+  So a library can't read or write another module's tables directly.
+- No way around it. Each route below is closed by a named rule:
+  - SQL text: no `sql` template or `sql.*` call anywhere outside the SQL zone, including the `sql` that Drizzle
+    passes into relational `where` and `orderBy` callbacks, and no `.execute` (ADR-002 L1 to L3).
+  - Self-declared tables: no `pgTable`, `pgView`, `pgSchema` or `pgMaterializedView` outside packages/db's table
+    and view files, so a library can't declare its own handle on another module's table (ADR-002 L9).
+  - Casts and reflection: no `any`, double cast, unsafe member access, `Reflect` or `getTableConfig` in libraries
+    (E4).
 
 **Reads across modules.** A library reads other modules' data in two ways only:
 
@@ -336,17 +343,19 @@ built-in cycle rule. The version goes in ADR-003. **ESLint** handles what is ins
 | D4 | web stays in the browser | dependency-cruiser | `apps/web/**` imports `packages/db`, `packages/lib-platform`, a library's `src/index.ts`, or a Node built-in |
 | D5 | contracts are browser-safe | dependency-cruiser | a `contract.ts` (or a file it imports) reaches `packages/db`, `lib-platform`, `src/services/**` or a Node built-in |
 | D6 | rules are pure | dependency-cruiser | `src/rules/**` imports `packages/db`, `lib-platform` or `src/services/**` |
-| D7 | one owner per table (§5) | dependency-cruiser | anything other than `packages/lib-<m>` (and `packages/db` itself) imports `@radcore/db/<m>`; anything other than lib-platform imports `@radcore/db/platform`, `/schema`, `/request-context` or `/migrate` |
+| D7 | one owner per table (§5) | dependency-cruiser with `tsPreCompilationDeps: true`, so `import type` counts | anything other than `packages/lib-<m>` (and `packages/db` itself) imports `@radcore/db/<m>`, including a type-only import; anything other than lib-platform imports `@radcore/db/platform`, `/schema`, `/request-context` or `/migrate` |
 | T1 | the opaque transaction (§5) | TypeScript (`tsc --noEmit`, the typecheck job) | a library touches `ctx.tx.query`, `.select`, `.insert`, `.update`, `.delete`, `.execute` or `._`; or reaches another module's table through its own module transaction (`salesTx(ctx).query.parties`) |
 | D8 | apps never touch the database directly | dependency-cruiser | `apps/api/**` or `apps/worker/**` imports `packages/db` |
 | D9 | no HTTP in libraries | dependency-cruiser | `packages/**` imports `express`, `next`, or anything under `apps/` |
 | E1 | no rule in a route or job file | ESLint `no-restricted-syntax` and `no-restricted-imports` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator; or an argument of a `define*` call is itself a call (so `defineRoute(c, wrap(sales.x))` fails); or the file imports anything except libraries' `.` and `./contract` entries and the `define*` helpers. Route and job files hold only `defineRoute`, `defineWebhook`, `defineJob`, `defineExport`, `defineImport` and `defineApproval` calls. |
 | E2 | file size | ESLint `max-lines` (`max: 400`, blank lines and comments counted) | any source file over 400 lines |
 | E3 | no I/O without an import | ESLint `no-restricted-globals` and `no-restricted-syntax` on `packages/lib-common/**`, every `contract.ts` and every `src/rules/**` | use of `process`, `fetch`, `setTimeout`, `setInterval`, `crypto`, `Math.random`, `Date.now()` or `new Date()` with no argument. Time and randomness come in as arguments or from `ctx.clock`. |
-| E4 | no escape hatch in libraries | ESLint on `packages/lib-*/**`: `@typescript-eslint/no-explicit-any`, `no-restricted-syntax` on a double cast (`x as unknown as T`) and on `as any`, `no-restricted-imports` of `getTableConfig` | a library casts its way past T1 or reads table metadata |
+| E4 | no escape hatch in libraries | ESLint on `packages/lib-*/**` with type information: `@typescript-eslint/no-explicit-any`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-assignment`; `no-restricted-syntax` on a double cast (`x as unknown as T`) and on `as any`; `no-restricted-globals` for `Reflect`; `no-restricted-imports` of `getTableConfig` | a library casts or reflects its way past T1 (`Reflect.get(ctx.tx, '_')`), or reads table metadata |
 
 **Proof.** Every rule has one violating fixture per clause, kept in `tools/boundary-fixtures/<rule>-<clause>/`, so
-D4, D5, D7, E1 and E3 have one fixture for each thing they forbid. A CI job runs each check against each fixture on
+D4, D5, D7, E1 and E3 have one fixture for each thing they forbid. D7's fixtures include a type-only import with a
+single cast (`(ctx.tx as SalesTx).query.invoices` from lib-crm), and E4's include `Reflect.get(ctx.tx, '_')`.
+A CI job runs each check against each fixture on
 every run, and fails if any fixture passes. A rule that stops working is caught the day it breaks. The fixtures sit
 outside the normal lint and typecheck globs.
 
