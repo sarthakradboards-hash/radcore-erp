@@ -1,13 +1,27 @@
-// `npm run dev`: the API, the worker and the web app side by side. When one stops, the others are stopped too.
-import { spawn } from 'node:child_process';
+// `npm run dev`: the API, the worker and the web app side by side. When one stops, or on Ctrl+C, all of them stop.
+import { spawn, spawnSync } from 'node:child_process';
 import { writeDevEnv } from './dev-env.ts';
+
+// npm sets this to its own CLI script, so each workspace runs through the same npm without a shell.
+const npm = process.env['npm_execpath'];
+if (!npm) throw new Error('Run this through `npm run dev`.');
 
 writeDevEnv();
 const children = ['@radcore/api', '@radcore/worker', '@radcore/web'].map((ws) =>
-  // One command string through the shell, because npm is npm.cmd on Windows. ws is a constant from the list above.
-  spawn(`npm run dev -w ${ws}`, { stdio: 'inherit', shell: true }));
+  spawn(process.execPath, [npm, 'run', 'dev', '-w', ws], { stdio: 'inherit' }));
+
+// Windows doesn't pass a stop on to grandchildren (next dev, node --watch), so stop each whole process tree.
+const stopAll = () => {
+  for (const child of children) {
+    if (child.pid === undefined || child.exitCode !== null) continue;
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    else child.kill('SIGTERM');
+  }
+};
 for (const child of children)
   child.on('exit', (code) => {
-    for (const other of children) if (other !== child) other.kill();
-    process.exitCode = code ?? 1;
+    process.exitCode ??= code ?? 1;
+    stopAll();
   });
+process.on('SIGINT', stopAll);
+process.on('SIGTERM', stopAll);

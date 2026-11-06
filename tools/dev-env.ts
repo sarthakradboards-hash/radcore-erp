@@ -10,6 +10,7 @@ export function writeDevEnv(file = '.env'): boolean {
   if (existsSync(file)) return false;
   const pg = secret();
   const lines = [
+    '# Local development only. DATABASE_URL is the compose superuser; the runtime login (M1-06) is a different one.',
     `POSTGRES_PASSWORD=${pg}`,
     `DATABASE_URL=postgres://radcore:${pg}@127.0.0.1:5432/radcore`,
     `S3_ENDPOINT=http://127.0.0.1:8333`,

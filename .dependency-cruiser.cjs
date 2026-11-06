@@ -1,10 +1,14 @@
-// Import-graph rules from ADR-001 (D1 to D9) and ADR-002 (L7). In-file rules are in eslint.config.mjs.
-// Every path pattern accepts the tools/boundary-fixtures/<rule>/ prefix, so a fixture is judged as if it sat at its
-// mirrored path in the repo (tools/boundaries.test.ts). The normal run cruises only packages/ and apps/.
+// Import-graph rules from ADR-001 (D1 to D9, plus E3's Node built-in ban) and ADR-002 (L7). In-file rules are in
+// eslint.config.mjs. The normal run cruises only packages/ and apps/.
 const { builtinModules } = require('node:module');
 
+// Only tools/boundaries.test.ts sets RADCORE_BOUNDARY_FIXTURES: then every pattern also accepts the
+// tools/boundary-fixtures/<rule>/ prefix, so a fixture is judged as if it sat at its mirrored path. In a normal run the
+// fixtures are just files outside the workspaces, which D3-outside-workspaces refuses.
 // An empty alternative rather than `?`: dependency-cruiser refuses nested quantifiers as unsafe regexes.
-const F = '^(?:tools/boundary-fixtures/[^/]+/|)';
+const F = process.env.RADCORE_BOUNDARY_FIXTURES === '1' ? '^(?:tools/boundary-fixtures/[^/]+/|)' : '^';
+// The install locations: the root's node_modules, or a workspace's own when npm can't hoist a version.
+const NODE_MODULES = '^(node_modules|(apps|packages)/[^/]+/node_modules)/';
 const pkg = (names) => `${F}packages/(${names.join('|')})/`;
 const ENTRIES = `${F}packages/(lib-[^/]+/src/(index|contract)\\.ts|lib-platform/src/runtime\\.ts`
   + '|db/(src/[^/]+/index\\.ts|views/index\\.ts|src/(schema|request-context|migrate)\\.ts))$';
@@ -43,7 +47,7 @@ module.exports = {
   // D2: anything not listed here fails as `not-in-allowed`.
   allowedSeverity: 'error',
   allowed: [
-    { from: {}, to: { path: '(^|/)node_modules/' } },
+    { from: {}, to: { path: NODE_MODULES } },
     { from: {}, to: { dependencyTypes: ['core'] } },
     { from: { path: `${F}(packages|apps)/([^/]+)/` }, to: { path: `${F}$1/$2/` } },
     ...Object.entries(MAY_IMPORT).filter(([, to]) => to.length)
@@ -55,13 +59,20 @@ module.exports = {
     { name: 'D3-no-deep-import', severity: 'error', comment: 'Import another package only through its declared entries.',
       from: { path: `${F}(packages|apps)/([^/]+)/` },
       to: { path: `${F}packages/`, pathNot: [`${F}packages/$2/`, ENTRIES] } },
+    { name: 'D3-outside-workspaces', severity: 'error', comment: 'Workspaces import only workspaces, npm packages and Node.',
+      from: { path: `${F}(packages|apps)/` },
+      to: { dependencyTypesNot: ['core'], pathNot: [`${F}(packages|apps)/`, NODE_MODULES] } },
+    { name: 'D2-undeclared-dependency', severity: 'error', comment: "An npm import must be in the workspace's own package.json.",
+      from: {}, to: { dependencyTypes: ['npm-no-pkg', 'npm-unknown'] } },
     { name: 'D3-unresolvable', severity: 'error', comment: "A specifier the target's exports refuse does not resolve.",
       from: {}, to: { couldNotResolve: true } },
     { name: 'D4-web-server-code', severity: 'error', from: { path: `${F}apps/web/` },
       to: { path: [pkg(['db']), `${F}packages/lib-(?!common/)[^/]+/src/(index|runtime)\\.ts$`] } },
     { name: 'D4-web-node-builtin', severity: 'error', comment: 'next.config.* and scripts/** are exempt (ADR-001 D4).',
       from: { path: `${F}apps/web/`, pathNot: `${F}apps/web/(next\\.config\\.[^/]+$|scripts/)` },
-      to: { dependencyTypes: ['core'] } },
+      to: { path: NODE_BUILTIN, reachable: true } },
+    { name: 'E3-node-builtin', severity: 'error', comment: 'lib-common and rules read no environment, clock or files (ADR-001 §1, E3).',
+      from: { path: `${F}packages/lib-common/|/src/rules/` }, to: { dependencyTypes: ['core'] } },
     { name: 'D5-contract-server-code', severity: 'error', from: { path: 'src/contract\\.ts$' },
       to: { path: CONTRACT_UNSAFE, reachable: true } },
     { name: 'D5-contract-node-builtin', severity: 'error', from: { path: 'src/contract\\.ts$' },
@@ -76,12 +87,13 @@ module.exports = {
     { name: 'D8-apps-no-db', severity: 'error', from: { path: `${F}apps/(api|worker)/` }, to: { path: pkg(['db']) } },
     { name: 'D9-no-http-in-packages', severity: 'error', from: { path: `${F}packages/` },
       to: { path: ['(^|/)node_modules/(express|next)/', `${F}apps/`] } },
-    { name: 'L7-runtime-only-in-apps', severity: 'error', from: { pathNot: `${F}apps/(api|worker)/` },
+    { name: 'L7-runtime-only-in-apps', severity: 'error', comment: "lib-platform's own tests may test its runtime.",
+      from: { pathNot: [`${F}apps/(api|worker)/`, `${F}packages/lib-platform/src/.*\\.test\\.ts$`] },
       to: { path: `${F}packages/lib-platform/src/runtime\\.ts$` } },
   ],
   options: {
-    doNotFollow: { path: '(^|/)node_modules/' },
-    exclude: { path: '(^|/)\\.next/' },
+    doNotFollow: { path: NODE_MODULES },
+    exclude: { path: '^apps/web/\\.next/' },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
       exportsFields: ['exports'],
