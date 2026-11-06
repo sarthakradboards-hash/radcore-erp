@@ -53,9 +53,15 @@ packages/lib-sales/
 The second entry, `contract`, exists so the web app can share the module's schemas without pulling server code
 into the browser bundle.
 
-One exception: lib-platform has no `contract` entry. Instead it has `./runtime`, which opens transactions, builds
-the pool and starts the server or worker. Only `apps/api` and `apps/worker` may import it, so no library can open
-its own transaction (ADR-002, rule L7). lib-common's single `.` entry is already browser-safe.
+lib-platform has three entries:
+- `.`, server-only;
+- `./contract`, browser-safe. It holds the contracts for what every screen needs from the platform: sign-in,
+  sign-out, the second factor, invites and password change, the current session (`/me`), the person's sessions,
+  settings, file upload and download links, approvals, and the shared list and error shapes.
+- `./runtime`, which opens transactions, builds the pool and starts the server or worker. Only `apps/api` and
+  `apps/worker` may import it, so no library can open its own transaction (ADR-002, rule L7).
+
+lib-common's single `.` entry is already browser-safe.
 
 ### 3. Where each master, engine and document lives
 
@@ -108,7 +114,7 @@ rows. "Paid" is then read from a view, so lib-accounts never writes a sales tabl
 |---|---|
 | apps/api | lib-platform and every library's `.` and `./contract` entries; **not** packages/db |
 | apps/worker | the same as apps/api |
-| apps/web | lib-common and every library's `./contract` entry, **nothing else**: not lib-platform, not packages/db, not a library's `.` entry |
+| apps/web | lib-common and every library's `./contract` entry, lib-platform's included, **nothing else**: not lib-platform's `.` or `./runtime`, not packages/db, not a library's `.` entry. This holds for all of `apps/web`, including server components, route handlers and middleware: the web server also talks to the API over HTTP |
 
 No package under `packages/` imports an HTTP framework (Express, Next) or anything under `apps/`. That is what lets
 the worker run any service without loading the web layer, which is RC-175's fix.
@@ -257,6 +263,69 @@ screen imports only its own module's client, so its bundle carries only that mod
 from the contracts at compile time, so there is no code generation step to forget to rerun. Forms validate with
 the same zod schemas the API uses.
 
+### 7a. What crosses the wire
+
+These rules are the contract between `apps/web` and `apps/api`. The shared schemas live in lib-common, and the
+platform contracts in lib-platform's `./contract`.
+
+**Wire format.**
+- JSON with camelCase keys (ADR-005 §10).
+- Money, quantities and rates are decimal strings (`"1250.50"`), checked by lib-common's base schemas. They are
+  never JavaScript numbers.
+- Dates are `"YYYY-MM-DD"`. Moments are ISO 8601 in UTC (`"2026-11-06T08:30:00Z"`). Ids are UUID strings.
+- A status or kind is its string code.
+- An optional field is left out; a field that can be empty is sent as `null`.
+- Contract schemas describe the wire exactly: no `.transform()` in a contract. One schema therefore validates the
+  same JSON on both sides, and the client's types are plain JSON types. Services turn strings into decimals and
+  dates.
+
+**Errors.** Every failure has one shape, `{ error: { code, message, fields?, requestId } }`, defined in
+lib-common:
+- `message` is a sentence a person can act on.
+- `fields` maps an input path to its messages, for forms.
+- `code` comes from a closed list: lib-common's platform codes, plus the codes each contract declares in its
+  `errors` list. The client switches on the code, never on the message.
+- The status codes are fixed:
+
+  | Status | Code | When |
+  |---|---|---|
+  | 400 | `invalid_input` | the request fails the schema (with `fields`) |
+  | 400 | `idempotency_key_required` | a write was sent without its key |
+  | 401 | `signed_out` | no session, or it has ended |
+  | 403 | `forbidden` | the principal lacks the permission or the record's scope |
+  | 404 | `not_found` | |
+  | 409 | `conflict`, `idempotency_mismatch` | a version clash, or a key reused with another body |
+  | 422 | the contract's own codes, such as `credit_limit_exceeded` | a business rule refused it |
+  | 429 | `rate_limited` | |
+  | 500 | `server_error` | the message is generic and the detail is in the log under `requestId` |
+
+**Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
+- It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
+  new one only after a success (Design notes A-0).
+- A write without it is refused with `idempotency_key_required`, so the protection fails closed (RC-132).
+- The server scopes the key as §6 says.
+
+**Lists.** Every list contract returns `{ items, next }`:
+- `next` is an opaque cursor, or `null` on the last page.
+- `limit` is capped at 200 (ADR-002 §4).
+- There is no total count. A screen that needs counts, such as count cards, calls a count contract of its own, so a
+  list never adds up a whole ledger (RC-176).
+
+**Masked fields.** A `pii()` field sent to a principal without `pii:read` arrives masked (`"••••••3210"`) and
+marked as masked in the output type.
+- Edit forms show it read-only and never send it back. Edit contracts change only the fields they receive (patch
+  semantics), so a field left out is left alone.
+- The server also refuses an input value shaped like a mask, with `invalid_input`. A masked value can never be
+  saved over the real one.
+
+**Same origin, no CORS.**
+- Caddy serves `web` at `/` and `api` at `/api` on one origin (ADR-004).
+- The API sends no `Access-Control-Allow-*` headers, so no other site can read its answers.
+- The session cookie is `HttpOnly`, `Secure` and `SameSite=Lax`, and every write must carry a matching `Origin`
+  header (M1-21).
+- The one cross-origin call is the browser's presigned upload to S3. The bucket's CORS rule allows `PUT` from
+  `PUBLIC_ORIGIN` only.
+
 ### 8. The worker
 
 `apps/worker` is its own process (M1-26). Jobs are declared like routes:
@@ -348,7 +417,7 @@ config test (ADR-002) calls `calculateConfigForFile` and asserts each local rule
 | D1 | `no-circular` | dependency-cruiser | any import cycle, inside or between packages |
 | D2 | allowed-dependency table (§4) as `allowed` rules; everything else is `not-in-allowed` | dependency-cruiser | a library imports a library not in its row |
 | D3 | no deep import | dependency-cruiser | a file outside `packages/X/` imports a file of X that is not one of X's declared entries: `src/index.ts` and `src/contract.ts` for a library, `src/runtime.ts` for lib-platform, and the five entries listed in §5 for packages/db (group-matched path rule) |
-| D4 | web stays in the browser | dependency-cruiser | `apps/web/**` imports `packages/db`, `packages/lib-platform`, a library's `src/index.ts`, or a Node built-in |
+| D4 | web stays in the browser | dependency-cruiser | any file in `apps/web/**` (client and server components, route handlers, middleware) imports `packages/db`, lib-platform's `.` or `./runtime`, a library's `src/index.ts`, or a Node built-in. Every library's `./contract`, lib-platform's included, is allowed. |
 | D5 | contracts are browser-safe | dependency-cruiser | a `contract.ts` (or a file it imports) reaches `packages/db`, `lib-platform`, `src/services/**` or a Node built-in |
 | D6 | rules are pure | dependency-cruiser | `src/rules/**` imports `packages/db`, `lib-platform` or `src/services/**` |
 | D7 | one owner per table (§5) | dependency-cruiser with `tsPreCompilationDeps: true`, so `import type` counts | anything other than `packages/lib-<m>` (and `packages/db` itself) imports `@radcore/db/<m>`, including a type-only import; anything other than lib-platform imports `@radcore/db/platform`, `/schema`, `/request-context` or `/migrate` |

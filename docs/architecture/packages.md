@@ -29,6 +29,7 @@ flowchart TB
   COMMON["lib-common<br/>money, dates, ids, base schemas: no I/O"]
 
   WEB -.->|contract.ts only| MODS
+  WEB -.->|contract.ts only| PLAT
   WEB --> COMMON
   API --> MODS
   API --> INT
