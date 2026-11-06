@@ -9,10 +9,22 @@ const EMPTY: Message = { id: 0, text: '' };
 let current = EMPTY;
 const listeners = new Set<() => void>();
 
-/** Says `text` to screen readers, for example `announce('Saved')` after a save succeeds. */
-export function announce(text: string): void {
-  current = { id: current.id + 1, text };
+// Long enough for a screen reader to queue the message; short enough that it isn't found later as stale text.
+const CLEAR_AFTER_MS = 5000;
+
+function set(message: Message): void {
+  current = message;
   for (const listener of listeners) listener();
+}
+
+/**
+ * Says `text` to screen readers, for example `announce('Saved')` after a save succeeds.
+ * A modal dialog makes the page's region inert, so dialog content mounts its own <LiveRegion /> (RAD-53).
+ */
+export function announce(text: string): void {
+  const id = current.id + 1;
+  set({ id, text });
+  setTimeout(() => { if (current.id === id) set({ id, text: '' }); }, CLEAR_AFTER_MS);
 }
 
 function subscribe(listener: () => void): () => void {
