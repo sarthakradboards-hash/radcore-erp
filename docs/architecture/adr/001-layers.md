@@ -301,8 +301,8 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   | 400 | `invalid_input` | the request fails the schema (with `issues`) |
   | 400 | `idempotency_key_required` | a write was sent without its key |
   | 401 | `signed_out` | no session, or it has ended |
-  | 403 | `forbidden` | the principal lacks the permission or the record's scope |
-  | 404 | `not_found` | |
+  | 403 | `forbidden` | the principal lacks the route's permission |
+  | 404 | `not_found` | the record doesn't exist, **or it is outside the principal's scope**. Both get the same answer, so a person can't learn that a record they may not see exists (M1-17) |
   | 409 | `conflict`, `idempotency_mismatch` | a version clash, or a key reused with another body |
   | 422 | the contract's own codes, such as `credit_limit_exceeded` | a business rule refused it |
   | 429 | `rate_limited` | |
