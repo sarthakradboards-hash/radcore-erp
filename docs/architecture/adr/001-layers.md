@@ -262,8 +262,9 @@ the same zod schemas the API uses.
 `apps/worker` is its own process (M1-26). Jobs are declared like routes:
 `defineJob(jobContract, service)` in `apps/worker/src/jobs/`. Job contracts live in the owning library's `.` entry
 (server-only). A service queues a job with `ctx.jobs.send(contract, input)` inside its own transaction, so a save
-that rolls back queues nothing. This means the queue must accept a send on the caller's transaction connection.
-M1-26 proves that with a rolled-back save, and ADR-003 names the library. The API process runs no jobs.
+that rolls back queues nothing. `send` writes an outbox row on lib-platform's `jobs_outbox` table with the query
+builder (no SQL). The worker's relay hands committed rows to the queue library and deletes them (ADR-002 §4). M1-26
+proves that a rolled-back save queues nothing; ADR-003 names the queue library. The API process runs no jobs.
 
 **No network call inside a transaction.** A service that needs an outside call, such as an e-invoice IRN or a
 WhatsApp send, queues a job. The job makes the call (with the provider's idempotency key where the provider has
