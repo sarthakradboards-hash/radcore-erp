@@ -22,9 +22,9 @@ differs from plan.md, this log and the ADR win.
 | 2026-11-06 | The Vercel team `acme-3a16` is Sarthak's. Its red check on PRs is noise until the v1 review copy is retired | Sarthak | ADR-004 §7 |
 | 2026-11-06 | **RAD-17**: ADR-001 follow-ups from the ui, backend and auditor reviews, after RAD-7 merged | coordinator | ADR-001 (RAD-17) |
 | 2026-11-06 | **RAD-18**: plan.md stays as approved, with only the personal email blanked; later decisions go in this log | coordinator, on the architect's advice | this file, [README](README.md) |
+| 2026-11-06 | The **sharp/libvips licence exception** (LGPL-3.0-or-later) is accepted, as ADR-003 states it: Next's image optimisation stays off, so the binary is never loaded, and its licence notice ships in the image | Sarthak | [ADR-003](architecture/adr/003-libraries.md) §2, §4 |
 
 **Still open**, and recorded here when decided:
 - D-01 (hosting): ADR-004 is written on the Mumbai hybrid default.
 - Claiming the `@radcore` npm scope (ADR-003 §4).
-- Whether the sharp/libvips licence exception stands (ADR-003 §4).
 - The other D-items, by milestone, as listed in plan.md §4.
