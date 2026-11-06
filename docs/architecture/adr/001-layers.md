@@ -336,6 +336,13 @@ per file.
 **dependency-cruiser** handles the import graph, because it sees resolved imports across workspaces and has a
 built-in cycle rule. The version goes in ADR-003. **ESLint** handles what is inside a file. Each rule must fail CI.
 
+**One ESLint rule per E-rule.** Each E-rule here, and each L-rule in ADR-002, is its own rule in a local ESLint
+plugin (`radcore/e1-route-files`, `radcore/e3-no-io`, and so on). They are never entries in a shared
+`no-restricted-syntax`, `no-restricted-imports` or `no-restricted-globals`. In flat config, a later block's options
+for a core rule replace the earlier block's options: E4's selectors would silently wipe L1's in every library. The
+config test (ADR-002) calls `calculateConfigForFile` and asserts each local rule's full selector set and its
+`error` severity, not the severity alone.
+
 | # | Rule | Tool | Fails when |
 |---|---|---|---|
 | D1 | `no-circular` | dependency-cruiser | any import cycle, inside or between packages |
@@ -352,10 +359,12 @@ built-in cycle rule. The version goes in ADR-003. **ESLint** handles what is ins
 | E2 | file size | ESLint `max-lines` (`max: 400`, blank lines and comments counted) | any source file over 400 lines |
 | E3 | no I/O without an import | ESLint `no-restricted-globals` and `no-restricted-syntax` on `packages/lib-common/**`, every `contract.ts` and every `src/rules/**` | use of `process`, `fetch`, `setTimeout`, `setInterval`, `crypto`, `Math.random`, `Date.now()` or `new Date()` with no argument. Time and randomness come in as arguments or from `ctx.clock`. |
 | E4 | no escape hatch in libraries | ESLint on `packages/lib-*/**` with type information: `@typescript-eslint/no-explicit-any`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-assignment`; `no-restricted-syntax` on a double cast (`x as unknown as T`) and on `as any`; `no-restricted-globals` for `Reflect`; `no-restricted-imports` of `getTableConfig` | a library casts or reflects its way past T1 (`Reflect.get(ctx.tx, '_')`), or reads table metadata |
+| E5 | no switching the type checker off | `@typescript-eslint/ban-ts-comment` at `error`, with no description allowance, over `packages/**` and `apps/**` | a `// @ts-ignore`, `// @ts-expect-error`, `// @ts-nocheck` or `// @ts-check` comment (T1 would otherwise be silenced on one line) |
 
 **Proof.** Every rule has one violating fixture per clause, kept in `tools/boundary-fixtures/<rule>-<clause>/`, so
 D4, D5, D7, E1 and E3 have one fixture for each thing they forbid. D7's fixtures include a type-only import with a
-single cast (`(ctx.tx as SalesTx).query.invoices` from lib-crm), and E4's include `Reflect.get(ctx.tx, '_')`.
+single cast (`(ctx.tx as SalesTx).query.invoices` from lib-crm). E4's include `Reflect.get(ctx.tx, '_')`, and E5's
+include `// @ts-expect-error` above a T1 violation.
 A CI job runs each check against each fixture on
 every run, and fails if any fixture passes. A rule that stops working is caught the day it breaks. The fixtures sit
 outside the normal lint and typecheck globs.
