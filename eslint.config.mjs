@@ -48,14 +48,27 @@ const SQL_SHAPE = String.raw`/\bselect\b[\s\S]*\bfrom\b|\binsert\W+into\b|\bupda
 const DEFINE = '/^define(Route|Webhook|Job|Export|Import|Approval)$/';
 const RAW_EXEC = '/^(execute|unsafe|query)$/';
 const L8 = msg('L8', 'ADR-002', `Outside calls and module loading go through ${OUTBOUND_CLIENT}`);
-// E6: a name that holds money, a rate or a quantity: the whole name (`total`), a camelCase or snake_case ending
-// (`grandTotal`, `unit_price`), singular or plural. `generate` and `separate` don't match.
-const MONEY_WORDS = ['amount', 'price', 'rate', 'total', 'subtotal', 'cost', 'qty', 'quantity', 'balance', 'tax',
-  'cess', 'paise', 'rupees', 'money', 'discount', 'mrp', 'fee', 'charge'];
-const MONEY_NAME = `/^(${MONEY_WORDS.join('|')})s?$|[a-z0-9_](${MONEY_WORDS.map((w) => w[0].toUpperCase() + w.slice(1))
-  .join('|')})s?$|_(${MONEY_WORDS.join('|')})s?$/`;
-const E6 = msg('E6', 'ADR-001', 'No floating-point maths on money, rates or quantities. Use the decimal helpers in @radcore/lib-common');
-const MONEY_OPERAND = [`Identifier[name=${MONEY_NAME}]`, `MemberExpression[property.name=${MONEY_NAME}]`];
+// E6: a name that holds money, a rate or a quantity: the whole name (`total`), a camelCase, ALL-CAPS or snake_case
+// ending (`grandTotal`, `totalGST`, `unit_price`), singular or plural. `generate` and `separate` don't match. A word
+// in SUFFIX_ONLY counts only as a camelCase ending, so a page's `limit` and `MAX_LIMIT` are numbers but `creditLimit`
+// is money. tools/e6-words.test.ts lints a sample for every word.
+export const MONEY_WORDS = ['amount', 'price', 'rate', 'total', 'subtotal', 'cost', 'qty', 'quantity', 'balance', 'tax',
+  'cess', 'paise', 'rupees', 'money', 'discount', 'mrp', 'fee', 'charge', 'gst', 'cgst', 'sgst', 'igst', 'tds', 'tcs',
+  'freight', 'roundOff', 'salary', 'gross', 'net', 'wage', 'pay', 'outstanding', 'due', 'payable', 'receivable', 'debit',
+  'credit', 'interest', 'commission', 'advance', 'refund'];
+export const SUFFIX_ONLY = ['limit'];
+const cap = (w) => w[0].toUpperCase() + w.slice(1);
+const snake = (w) => w.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+const alt = (ws) => ws.join('|');
+const UPPER = MONEY_WORDS.map((w) => w.toUpperCase());
+const MONEY_NAME = `/^(${alt(MONEY_WORDS)}|${alt(UPPER)})s?$`
+  + `|[a-z0-9_](${alt([...MONEY_WORDS, ...SUFFIX_ONLY].map(cap))}|${alt(UPPER)})s?$|_(${alt(MONEY_WORDS.map(snake))})s?$/`;
+const E6 = msg('E6', 'ADR-001', 'No floating-point maths or text comparison on money, rates or quantities. Use '
+  + "@radcore/lib-common's decimal helpers: dec(a).plus(b), dec(a).gt(b), dec(a).eq(b)");
+const MONEY = `:matches(Identifier[name=${MONEY_NAME}], MemberExpression[property.name=${MONEY_NAME}])`;
+// An operand is the money value itself, or one wrapped in ?., !, as, satisfies or a spread.
+const WRAPPED = ':matches(ChainExpression, TSNonNullExpression, TSAsExpression, TSSatisfiesExpression, SpreadElement)';
+const operands = (parent) => [`${parent} > ${MONEY}`, `${parent} > ${WRAPPED} ${MONEY}`];
 const NOT_STRING_PLUS = "BinaryExpression[operator='+']:not([left.type='TemplateLiteral']):not([right.type='TemplateLiteral'])"
   + ':not([left.value=type(string)]):not([right.value=type(string)])';
 const E3 = 'Pass time, randomness and I/O in as arguments or through ctx';
@@ -159,27 +172,31 @@ export const OPTIONS = {
     imports: [{ source: '^drizzle-orm(/.*)?$', names: ['getTableConfig'],
       message: msg('E4', 'ADR-001', 'Libraries do not read table metadata') }],
   },
-  'radcore/no-float-money': {
+  'radcore/e6-no-float-money': {
     // shortcut: money is found by name, without type information, so `Number(x)` on a value named `n` passes; the
     // wire types (decimal strings) make arithmetic on an unconverted value a type error, so the gap is the converted one.
     globals: [{ name: 'parseFloat', message: E6 }],
     syntax: [
       "MemberExpression[object.name='Number'][property.name='parseFloat']",
-      ...MONEY_OPERAND.flatMap((operand) => [
-        `CallExpression[callee.name='Number'] > ${operand}`,
-        `CallExpression[callee.object.name='Math'] > ${operand}`,
-        `UnaryExpression[operator=/^[-+]$/] > ${operand}`,
-        ...["'-'", "'*'", "'/'", "'%'", "'**'"].map((op) => `BinaryExpression[operator=${op}] > ${operand}`),
-        `${NOT_STRING_PLUS} > ${operand}`,
-        `AssignmentExpression[operator=/^([-+*%]|\\*\\*)=$/] > ${operand}.left`,
-        `AssignmentExpression[operator='/='] > ${operand}.left`,
-        `UpdateExpression > ${operand}`,
-      ]),
-      // Declaring money as a number: `amount: number`, `total: z.number()`, `price: z.number().min(0)`.
-      `TSPropertySignature[key.name=${MONEY_NAME}] > TSTypeAnnotation > TSNumberKeyword`,
-      `Identifier[name=${MONEY_NAME}] > TSTypeAnnotation > TSNumberKeyword`,
-      `Property[key.name=${MONEY_NAME}] > CallExpression[callee.object.name='z'][callee.property.name='number']`,
-      `Property[key.name=${MONEY_NAME}] > CallExpression[callee.object.callee.object.name='z'][callee.object.callee.property.name='number']`,
+      // A conversion with money anywhere inside it: Number(line.amount || 0), Number(l?.qty), Math.max(...amounts).
+      `CallExpression[callee.name='Number'] ${MONEY}`,
+      `CallExpression[callee.object.name='Math'] ${MONEY}`,
+      `UnaryExpression[operator=/^[-+]$/] ${MONEY}`,
+      // Arithmetic, and comparison (decimal strings compare as text: "9.00" > "10.00").
+      ...["'-'", "'*'", "'/'", "'%'", "'**'", "'<'", "'<='", "'>'", "'>='"]
+        .flatMap((op) => operands(`BinaryExpression[operator=${op}]`)),
+      ...operands(NOT_STRING_PLUS),
+      `AssignmentExpression[operator=/^([-+*%]|\\*\\*)=$/] > ${MONEY}.left`,
+      `AssignmentExpression[operator='/='] > ${MONEY}.left`,
+      ...operands('UpdateExpression'),
+      // Equality between two money values ("10.0" !== "10.00"); against null or a literal is fine.
+      ...['name', 'property.name'].flatMap((l) => ['name', 'property.name'].map((r) =>
+        `BinaryExpression[operator=/^[!=]==?$/][left.${l}=${MONEY_NAME}][right.${r}=${MONEY_NAME}]`)),
+      // Declaring money as a number, in any form: `amount: number | null`, `amounts: number[]`,
+      // `total: z.coerce.number()`, `price: z.number().int().min(0)`, `tax: z.optional(z.number())`.
+      `TSPropertySignature[key.name=${MONEY_NAME}] TSNumberKeyword`,
+      `Identifier[name=${MONEY_NAME}] > TSTypeAnnotation TSNumberKeyword`,
+      `Property[key.name=${MONEY_NAME}] CallExpression[callee.property.name='number']`,
     ].map((selector) => ({ selector, message: E6 })),
   },
   'radcore/d7-no-db-reexport': {
@@ -248,7 +265,7 @@ export default tseslint.config(
   { files: ALL, ignores: ZONES['radcore/no-driver'], rules: on('radcore/no-driver') },
   { files: ALL, rules: on('radcore/no-raw-html') },
   // E6: no float maths on money, in the browser and the server alike (RC-215).
-  { files: ALL, rules: on('radcore/no-float-money') },
+  { files: ALL, rules: on('radcore/e6-no-float-money') },
   { files: ALL, ignores: ZONES['radcore/tables-in-schema'], rules: on('radcore/tables-in-schema') },
   { files: ALL, ignores: ZONES['radcore/views-in-views'], rules: on('radcore/views-in-views') },
 

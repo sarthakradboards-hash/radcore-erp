@@ -19,20 +19,22 @@ export const MONEY_PLACES = 2;
 export const RATE_PLACES = 6;
 export const MAX_QTY_PLACES = 3;
 
-// Integer digits follow the column widths: numeric(18,2) money, numeric(18,6) unit price, numeric(18,3) quantity.
+// Integer digits follow ADR-005's column widths: numeric(18,2) money, numeric(18,6) unit price, numeric(18,3)
+// quantity, numeric(9,6) percent. No leading zeros, so "0001250.50" is refused.
 const shape = (intDigits: number, places: number) =>
-  new RegExp(`^-?\\d{1,${intDigits}}${places > 0 ? `(\\.\\d{1,${places}})?` : ''}$`);
+  new RegExp(`^-?(0|[1-9]\\d{0,${intDigits - 1}})${places > 0 ? `(\\.\\d{1,${places}})?` : ''}$`);
 const ANY_DECIMAL = /^-?\d+(\.\d+)?$/;
 const MONEY_SHAPE = shape(16, MONEY_PLACES);
 const RATE_SHAPE = shape(12, RATE_PLACES);
 const QTY_SHAPE = shape(15, MAX_QTY_PLACES);
+const PERCENT_SHAPE = shape(3, RATE_PLACES);
 
 /** A decimal string or a Decimal. Strings must be plain decimals: no exponent, hex, spaces, `Infinity` or `NaN`. */
 export type DecimalInput = string | Decimal;
 
 /** Parses a plain decimal string strictly; decimal.js alone would accept "1e5", "0x10" and "Infinity". */
 export function dec(x: DecimalInput): Decimal {
-  if (typeof x !== 'string') return new Decimal(x);
+  if (typeof x !== 'string') return finite(new Decimal(x));
   if (!ANY_DECIMAL.test(x)) throw new RangeError(`Not a decimal number: "${x}"`);
   return new Decimal(x);
 }
@@ -40,8 +42,14 @@ export function dec(x: DecimalInput): Decimal {
 /** The sum of a list; 0 for an empty list. */
 export const sum = (xs: readonly DecimalInput[]): Decimal => xs.reduce<Decimal>((s, x) => s.plus(dec(x)), new Decimal(0));
 
+/** A division by zero gives Infinity or NaN in decimal.js; neither may reach a total or the database. */
+function finite(d: Decimal): Decimal {
+  if (!d.isFinite()) throw new RangeError(`Not a finite number: ${d.toString()}`);
+  return d;
+}
+
 const fixed = (d: Decimal, places: number) => {
-  const r = d.toDecimalPlaces(places, Decimal.ROUND_HALF_UP);
+  const r = finite(d).toDecimalPlaces(places, Decimal.ROUND_HALF_UP);
   return (r.isZero() ? r.abs() : r).toFixed(places); // never "-0.00"
 };
 
@@ -76,16 +84,22 @@ const decimalString = (re: RegExp, what: string) => (opts: { signed?: boolean } 
     .refine((s) => opts.signed === true || !s.startsWith('-'), `${what[0]?.toUpperCase()}${what.slice(1)} can't be negative`);
 /** Rupees with up to 2 decimals: "1250.50". */
 export const moneyString = decimalString(MONEY_SHAPE, 'an amount with up to 2 decimals');
-/** A unit price with up to 6 decimals: "0.375" (RC-008). */
-export const rateString = decimalString(RATE_SHAPE, 'a rate with up to 6 decimals');
+/** A unit price with up to 6 decimals: "0.375" (RC-008). ADR-005's unitPrice(). */
+export const unitPriceString = decimalString(RATE_SHAPE, 'a price with up to 6 decimals');
+/** A percentage (GST, cess, TDS, discount) with up to 6 decimals, 0 to 100 unless the law allows more (a cess):
+ * ADR-005's percent(). */
+export const percentString = (opts: { max?: string } = {}) =>
+  decimalString(PERCENT_SHAPE, 'a percentage with up to 6 decimals')()
+    .refine((s) => dec(s).lte(opts.max ?? '100'), `Enter a percentage up to ${opts.max ?? '100'}`);
 /** A quantity with up to 3 decimals. The line's unit narrows it further (fitsUnit). */
 export const quantityString = decimalString(QTY_SHAPE, 'a quantity with up to 3 decimals');
 
 // Display, en-IN: lakh and crore grouping. Intl formats a numeric string exactly, with no float on the way.
+// signDisplay 'negative' shows a value that rounds to zero as 0.00, never -0.00.
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2,
-  maximumFractionDigits: 2, roundingMode: 'halfExpand' });
-const plain = Array.from({ length: RATE_PLACES + 1 }, (_, p) =>
-  new Intl.NumberFormat('en-IN', { minimumFractionDigits: p, maximumFractionDigits: p, roundingMode: 'halfExpand' }));
+  maximumFractionDigits: 2, roundingMode: 'halfExpand', signDisplay: 'negative' });
+const plain = Array.from({ length: RATE_PLACES + 1 }, (_, p) => new Intl.NumberFormat('en-IN',
+  { minimumFractionDigits: p, maximumFractionDigits: p, roundingMode: 'halfExpand', signDisplay: 'negative' }));
 const numeric = (x: DecimalInput): `${number}` => {
   const s = typeof x === 'string' ? x : x.toFixed();
   if (!ANY_DECIMAL.test(s)) throw new RangeError(`Not a decimal number: "${s}"`);

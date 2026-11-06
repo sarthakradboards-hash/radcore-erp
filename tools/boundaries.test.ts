@@ -67,7 +67,7 @@ const ESLINT_IDS: Record<string, string[]> = {
   E3: ['radcore/e3-no-io'],
   E4: ['radcore/e4-no-escape'],
   E5: ['@typescript-eslint/ban-ts-comment'],
-  E6: ['radcore/no-float-money'],
+  E6: ['radcore/e6-no-float-money'],
   L1: ['radcore/no-sql'],
   L2: ['radcore/no-query-strings'],
   L3: ['radcore/no-raw-execution'],

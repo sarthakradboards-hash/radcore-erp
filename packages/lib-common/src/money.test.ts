@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-  amountInWords, dec, fitsUnit, formatMoney, formatNumber, lineAmount, moneyString, quantityString, rateString,
+  amountInWords, dec, fitsUnit, formatMoney, formatNumber, lineAmount, moneyString, percentString, quantityString,
+  unitPriceString,
   roundMoney, roundQty, roundRate, sum,
 } from './index.ts';
 
 describe('RC-008: rates keep more than 2 decimals', () => {
   it('accepts a rate of 0.375 and keeps it exactly', () => {
-    expect(rateString().safeParse('0.375').success).toBe(true);
+    expect(unitPriceString().safeParse('0.375').success).toBe(true);
     expect(roundRate('0.375')).toBe('0.375000');
-    expect(rateString().safeParse('0.123456').success).toBe(true);
-    expect(rateString().safeParse('0.1234567').success).toBe(false);
+    expect(unitPriceString().safeParse('0.123456').success).toBe(true);
+    expect(unitPriceString().safeParse('0.1234567').success).toBe(false);
   });
 
   it('bills a PO for 100,000 at 0.375 as 37,500.00 (GL-027)', () => {
@@ -97,5 +98,37 @@ describe('display, en-IN', () => {
   it('writes the amount in words', () => {
     expect(amountInWords('125000.50')).toBe('One Lakh Twenty Five Thousand Rupees And Fifty Paise Only');
     expect(amountInWords('10000000')).toBe('One Crore Rupees Only');
+  });
+});
+
+describe('review fixes', () => {
+  it('throws on a division by zero instead of writing "Infinity" or "NaN"', () => {
+    expect(() => roundMoney(dec('1').div('0'))).toThrow(RangeError);
+    expect(() => roundMoney(dec('0').div('0'))).toThrow(RangeError);
+    expect(() => dec(dec('-1').div('0'))).toThrow(RangeError);
+    expect(() => lineAmount('1', dec('5').div('0'))).toThrow(RangeError);
+    expect(() => sum(['1', dec('1').div('0')])).toThrow(RangeError);
+    expect(() => formatMoney(dec('1').div('0'))).toThrow(RangeError);
+  });
+
+  it('never shows a negative zero', () => {
+    expect(formatMoney('-0.001')).toBe('₹0.00');
+    expect(formatNumber('-0.0001', 2)).toBe('0.00');
+    expect(formatMoney('-0.01')).toBe('-₹0.01');
+  });
+
+  it.each(['0001250.50', '00', '-01.5', '01'])('refuses the leading zeros in "%s"', (x) => {
+    expect(moneyString({ signed: true }).safeParse(x).success).toBe(false);
+  });
+
+  it('keeps unit prices and percentages apart (ADR-005 unitPrice and percent)', () => {
+    expect(unitPriceString().safeParse('123456789012.375').success).toBe(true);
+    expect(percentString().safeParse('18').success).toBe(true);
+    expect(percentString().safeParse('100').success).toBe(true);
+    expect(percentString().safeParse('0.125').success).toBe(true);
+    expect(percentString().safeParse('100.000001').success).toBe(false);
+    expect(percentString().safeParse('1000').success).toBe(false);
+    expect(percentString({ max: '290' }).safeParse('204').success).toBe(true);
+    expect(percentString().safeParse('-5').success).toBe(false);
   });
 });
