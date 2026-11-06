@@ -1,0 +1,8 @@
+# Dependency updates (RAD-6, RC-006). PRs belong to RAD-16.
+# M0-07 (RAD-13) adds the npm entry in the same PR as the root package.json; until then it would only error.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
