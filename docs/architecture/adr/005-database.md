@@ -83,9 +83,11 @@ The database checks the identities that hold whatever rounding rule is used. The
   header-level charges (freight, TCS) plus its round-off, with `abs(round_off) < 1`. Other examples: a journal
   entry's debits equal its credits (M2-03), and net allocations never exceed a document's total (§7a).
   - Each module's ticket names the exact columns of its identity, worked out with lib-gst (M2-01, M3-01).
-  - The check runs **once per document**, not per row: a statement-level trigger with transition tables collects
-    the documents a statement touched, and a deferred constraint trigger checks each once at commit. Header
-    changes queue the check too.
+  - The check runs **once per document**, not per row. PostgreSQL 16's constraint triggers can't use transition
+    tables, so:
+    - per-event statement triggers (with transition tables) on the lines and the header insert each touched
+      document's id into `pending_document_checks`, a small table unique per document;
+    - a deferred constraint trigger on that table checks each document once at commit, then removes its row.
   - These raise at `COMMIT`. The generic handler maps codes raised at commit like any other (§9).
 
 ### 3. Keys and indexes (M1-05)
@@ -177,28 +179,54 @@ A correction is a new mirror-image row, never an edit.
 #### 7a. Allocations and credit applications
 
 They are append-only with explicit reversals:
-- **Rows.** Each row has `direction` (`apply` or `reverse`) and `amount > 0`. A reversal names the row it reverses
-  (`reverses_id`, unique, so a row is reversed at most once). The net applied amount is applies minus reverses.
+- **Rows.** Each row has `direction` (`apply` or `reverse`) and `amount > 0`. The net applied amount is applies
+  minus reverses.
+- **A reversal can only undo exactly one apply** (all enforced by the database, with no trigger):
+  - `CHECK ((direction = 'reverse') = (reverses_id is not null))`: only a reversal names a row, and every
+    reversal names one;
+  - `reverses_id` is unique, so a row is reversed at most once;
+  - a generated column `reverses_direction` (`'apply'` when `reverses_id` is set);
+  - a composite foreign key `(reverses_id, document_id, payment_id, amount, reverses_direction)` to a unique key
+    on `(id, document_id, payment_id, amount, direction)`.
+
+  So a reversal must point at an `apply` row on the same document and payment, for the same amount. A reversal
+  of 1,000 against an apply of 10, or one filed against another document, is refused.
+- **When rows may be written.** An apply needs its document to be posted. A posted document moves to cancelled
+  only when its net allocations are zero.
 - **The cap.** A deferred check holds net allocations plus net credit applications at or below the document's
-  total. It **first locks the document row** (`SELECT ... FOR UPDATE`) and only then sums. So two transactions
-  allocating 60 each against an invoice of 100 can't both pass: the second waits for the first's commit, sums
-  again, and is refused (`RA006`).
+  total.
+  - It **first locks the document row** (`SELECT ... ORDER BY id FOR UPDATE`, so locks are always taken in one
+    order) and only then sums.
+  - So two transactions allocating 60 each against an invoice of 100 can't both pass: the second waits for the
+    first's commit, sums again, and is refused (`RA006`).
 
 #### 7b. Posted documents (issued invoices and credit notes, posted bills, payments, expenses, payslips)
 
-- **Transitions.** Each document kind's allowed status transitions come from its lib-common constant. For a posted
-  document they are only **posted → cancelled**, and cancelled is final, so a document can't be reopened or
-  un-cancelled. The trigger checks `(old.status, new.status)` against the list.
+- **Transitions.** Each document kind's allowed status transitions live in a `state_transitions` table seeded by
+  an owner migration. A test checks it equals the lib-common constant, since a SQL trigger can't read a TypeScript
+  constant.
+  - For a posted document the only transition is **posted → cancelled**, and cancelled is final, so a document
+    can't be reopened or un-cancelled. The trigger checks `(old.status, new.status)` against the table.
+  - **On insert**, a document must start in its initial state (draft), with its cancel and write-once columns
+    null, so nothing can be inserted already posted or cancelled.
 - **What may change after posting:**
   - **Cancel columns** (`cancelled_at`, `cancelled_by`, `cancel_reason`, `cancel_entry_id`). Each is written once,
     from null, and only in the same update that moves the status to cancelled.
-  - **Write-once reference columns** (e-invoice IRN, acknowledgement number and date, signed QR, e-way bill number
-    and validity). Each goes from null to a value once, and never changes again.
-  - The audit columns (§5), which the guard doesn't compare.
+  - **Write-once reference columns** (e-invoice IRN, acknowledgement number and date, signed QR). Each goes from
+    null to a value once, and never changes again. E-way bills, which can be extended, updated (Part B) or
+    cancelled and regenerated, and IRN cancellation are events in an append-only child table, not columns.
+  - The audit columns (§5) and stored generated columns, which the guard doesn't compare.
 
   Any other change, or a delete, raises `RA004`. This closes RC-004 for every posted document, not only invoices.
-- **Lines.** A trigger on each line table (`BEFORE INSERT OR UPDATE OR DELETE`) reads the parent's status with
-  `FOR SHARE` and refuses unless the parent is a draft. An edit that keeps the totals can't slip past.
+- **Lines.** A trigger on each line table (`BEFORE INSERT OR UPDATE OR DELETE`) checks the parent's status, locking
+  it with `FOR NO KEY UPDATE` (the same lock strength the document trigger takes, so the two can't deadlock), and
+  refuses unless the parent is a draft.
+  - **A line's parent column can't change**: a line moves to another document only by a delete and an insert, each
+    checked against its own parent. This trigger therefore checks the `OLD` parent on update and delete, and the
+    `NEW` parent on insert, and a line can't be moved off a posted invoice.
+  - When a draft document is deleted and its lines go with it by cascade, the parent row no longer exists, and the
+    trigger allows the delete.
+  - An edit that keeps the totals can't slip past.
 - **Cancelling in a locked period.** A cancellation's mirror entries are dated with the cancellation's own
   business date, not the original's, so the period lock (`RA003`) applies to the day of the cancellation.
 
@@ -213,10 +241,24 @@ They are append-only with explicit reversals:
   - It has no `UPDATE`, `DELETE` or `TRUNCATE` on the append-only tables, no DDL anywhere, and **no `INSERT` on
     `audit_log` or `access_log`**.
   - The audit log is written only by triggers.
-  - The access log is written only through one `SECURITY DEFINER` function, `record_access(...)`, so nothing can
-    write made-up history.
-- **Two names on every audit and access row:** `app.principal` (who the request was for) and `session_user` (the
-  login that ran it). Any session can set the first; the database sets the second.
+  - The access log is written only through one `SECURITY DEFINER` function, `record_access(record_table,
+    record_id)`. It takes **no** principal or time argument: it reads the principal from the request context and
+    the time from `now()` itself. The runtime login can therefore append an access row, but can't alter one or
+    choose who or when.
+- **No function is callable by default.**
+  - `REVOKE EXECUTE ON FUNCTION record_access FROM PUBLIC`, then `GRANT` it to `radcore_app` only. `radcore_read`
+    can't call it.
+  - `ALTER DEFAULT PRIVILEGES FOR ROLE radcore_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`, so a function added
+    later isn't callable by everyone either.
+  - A schema test fails on any non-trigger `SECURITY DEFINER` function that PUBLIC can execute or that has no fixed
+    `search_path`. Trigger functions can't be called directly.
+- **Three facts on every audit and access row:**
+  - `app.principal`: who the request was for. Any session can set it.
+  - `session_user`: the login that ran it. The database sets it.
+  - `inet_client_addr()`: the client address the database saw.
+
+  `api` and `worker` share `radcore_app`, so separate logins per process are an option for M1-06 if the audit needs
+  to tell them apart.
 - **The owner login** runs migrations only, and never sits in the API or worker containers (RC-003). A read-only
   login serves reports and the restore drill (RC-193).
 
@@ -225,6 +267,10 @@ a GET opens a full record:
 1. lib-platform commits the read.
 2. It writes the access row through `record_access` in its own short transaction, before the response goes out.
 3. If that write fails, the request fails, and the record isn't returned without its log.
+
+A full record is served, and its access logged, only on a same-origin request (`Sec-Fetch-Site: same-origin`).
+Otherwise a cross-site link could make a person "open" a record they never looked at, for example to make it seem
+they viewed someone's pay.
 
 **Proof (M1-06, M1-12):**
 - For every append-only table **and every partition, the default included, by name**, a test connected as the
@@ -241,9 +287,14 @@ a GET opens a full record:
 calendar month in UTC (RC-046).
 
 - **Keys.** The primary key is `(id, occurred_at)`, as PostgreSQL requires the partition key in it.
-- **Partitions are created ahead, by the owner.** The first migration creates 24 months of partitions. The deploy
-  step's `migrate` container, running as the owner, tops them up to at least 12 future months on every deploy.
-  The runtime login can't create, drop or truncate a partition, because it owns none and has no DDL.
+- **The time is the database's.** `occurred_at` defaults to `now()`. A trigger refuses a caller-supplied value more
+  than five minutes from `now()`, so nobody can plant a row far ahead in the default partition and break the next
+  top-up.
+- **Partitions are created ahead, by the owner.**
+  - The first migration creates 24 months of partitions.
+  - Every deploy runs a top-up as the owner, from CI (ADR-004 §3). It is an idempotent step, not a journaled
+    migration, and keeps at least 12 future months, each with its own TRUNCATE trigger.
+  - The runtime login can't create, drop or truncate a partition, because it owns none and has no DDL.
 - **The worker only watches.** A scheduled job reads a view of the partitions. It raises an alert when fewer than
   3 future months remain, or when any row sits in the default partition.
 - **The default partition** catches only a row outside every partition, which should never happen. Recovering one
@@ -253,6 +304,9 @@ calendar month in UTC (RC-046).
   3. move its rows through the parent;
   4. drop the detached table;
   5. re-create the default with its triggers.
+
+  The moved rows are re-stamped by the audit trigger, so the migration records `system:migrate` and the recovery's
+  time; their own `occurred_at` stays as it was.
 - **Retention.** Old partitions are detached and dropped only by an owner migration under the retention rule
   (D-12), never by the application.
 - **Drizzle.** Drizzle can't declare a partitioned table, so these three are created by hand-written migrations
