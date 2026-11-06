@@ -86,3 +86,13 @@ describe.each(Object.entries(SAMPLES))('%s', (file, want) => {
       'drizzle/enforce-delete-with-where']) expect(rules[id]?.[0] ?? 0, id).toBe(want.server ? 2 : 0);
   });
 });
+
+// RC-146 (M1-46): a web link that opens a new tab must carry rel="noopener noreferrer".
+it('refuses target="_blank" without rel="noopener noreferrer" in the web app', async () => {
+  const lint = async (code: string) => (await new ESLint().lintText(code, { filePath: 'apps/web/app/x.tsx' }))[0]
+    ?.messages.map((m) => m.ruleId);
+  expect(await lint('export const A = (u: string) => <a href={u} target="_blank">x</a>;\n'))
+    .toEqual(['react/jsx-no-target-blank']);
+  expect(await lint('export const A = (u: string) => <a href={u} target="_blank" rel="noopener noreferrer">x</a>;\n'))
+    .toEqual([]);
+}, 60_000);
