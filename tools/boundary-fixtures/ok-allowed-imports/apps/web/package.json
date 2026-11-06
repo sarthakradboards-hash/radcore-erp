@@ -1,0 +1,1 @@
+{ "name": "@radcore/web", "dependencies": { "next": "16.4.5", "react": "19.3.1" } }

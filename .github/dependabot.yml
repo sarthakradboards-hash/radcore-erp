@@ -1,8 +1,15 @@
 # Dependency updates (RAD-6, RC-006). PRs belong to RAD-16.
-# M0-07 (RAD-13) adds the npm entry in the same PR as the root package.json; until then it would only error.
+# The npm entry came with the root package.json (RAD-13).
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # ADR-003 §4: versions must be 14 days old. Security updates are not held back by the cooldown.
+    cooldown:
+      default-days: 14

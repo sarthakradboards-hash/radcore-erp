@@ -1,0 +1,43 @@
+# Local services for development (RC-198): every port on 127.0.0.1 only, and no password in this file.
+# Credentials come from .env, which `npm run dev:env` generates and git ignores. Start with `npm run db:up`.
+name: radcore
+
+services:
+  postgres:
+    image: postgres:16.14-alpine3.23@sha256:42b8b8b29c8a4e933d88943e5b03001a78794905cf786e6e7634e9f2abd5a0d3
+    environment:
+      POSTGRES_USER: radcore
+      POSTGRES_DB: radcore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?not in .env. Run npm run dev:env, or for an .env from an older checkout run docker compose -f compose.dev.yml down -v, delete .env, then npm run dev:env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radcore -d radcore"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # S3-compatible store for development and CI; production is AWS S3. MinIO's image is no longer pullable
+  # anonymously (coordinator, 6 Nov). Pinned by digest.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: server -dir=/data -s3 -s3.port=8333
+    environment:
+      # SeaweedFS makes these the one admin identity, so unsigned requests are refused.
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?not in .env. Run npm run dev:env, or for an .env from an older checkout run docker compose -f compose.dev.yml down -v, delete .env, then npm run dev:env}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?not in .env. Run npm run dev:env, or for an .env from an older checkout run docker compose -f compose.dev.yml down -v, delete .env, then npm run dev:env}
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - seaweedfs:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8333/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+volumes:
+  postgres:
+  seaweedfs:
