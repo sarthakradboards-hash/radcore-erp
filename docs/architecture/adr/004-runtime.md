@@ -251,13 +251,13 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 | `TRUST_PROXY` | the fixed addresses of `proxy` and `web`, whose forwarded-for headers `api` trusts | no | all | Parameter Store | api |
 | `DATABASE_URL` | runtime login `radcore_app`, with `sslmode=verify-full` | **yes** | all | Secrets Manager | api, worker |
 | `DATABASE_READ_URL` | read-only login `radcore_read` | **yes** | staging, production | Secrets Manager | restore drill, support |
-| `MIGRATION_DATABASE_URL` | owner login `radcore_owner` | **yes** | all | Secrets Manager, readable only by the CI deploy role | `migrate` in CI only |
+| `MIGRATION_DATABASE_URL` | owner login `radcore_owner` | **yes** | all | Secrets Manager, readable only by the CI deploy role (for `review`, a GitHub Actions secret, §7) | `migrate` in CI only |
 | `DB_POOL_MAX`, `DB_POOL_WAIT_MS` | pool size and wait limit (§2) | no | all | Parameter Store | api, worker |
 | `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` | connection timeouts (ADR-002 §4) | no | all | Parameter Store | api, worker |
 | `S3_REGION`, `S3_BUCKET_FILES` | where files live | no | all | Parameter Store | api, worker |
 | `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | the S3-compatible dev server (SeaweedFS) in development and CI only | **yes** | development, CI | generated `.env` / CI | api, worker |
 | `SECRETS_KMS_KEY_ID` | the multi-Region KMS key that wraps the secrets library's data keys | no | staging, production | Parameter Store | api, worker |
-| `SECRETS_LOCAL_KEY` | development and CI stand-in for KMS, at least 32 random bytes | **yes** | development, CI | generated `.env` / CI | api, worker |
+| `SECRETS_LOCAL_KEY` | stand-in for KMS in development, CI and the test copy, at least 32 random bytes | **yes** | development, CI, review | generated `.env` / CI / Vercel (§7) | api, worker |
 | `MAIL_FROM` | the sender address for invites and resets (a verified SES identity) | no | staging, production | Parameter Store | api, worker |
 | `TURNSTILE_SITE_KEY` | the public "I am a person" check on public forms, served to the browser at run time | no | all | Parameter Store | api |
 | `TURNSTILE_SECRET` | verifies that check | **yes** | staging, production | Secrets Manager | api |
@@ -309,6 +309,13 @@ Until production is up, people try v2 on a test copy on Vercel (D-01). It never 
   - A free project pauses after a week without use.
 - Sessions, rate limits and saved-once keys live in that database, so they work as in production.
 - `APP_ENV=review`.
+- **Its settings** are the Vercel project's environment variables, with every secret marked Sensitive. It uses
+  the local keyring (`SECRETS_LOCAL_KEY`, generated for the test copy alone), because nothing in it is real. Its
+  database URLs and keys are never reused anywhere else.
+- **Migrations and the sample-data seed** run from a CI job, with the test database's owner URL as a GitHub
+  Actions secret, never from a function. Any branch's workflow could read that secret (GitHub Free has no
+  branch-restricted environments for private repositories). That is accepted only because the database holds
+  sample data.
 
 **What doesn't run there, and is therefore tested in CI instead:**
 - **The long-running worker, so pg-boss doesn't run.** Nothing queued is ever processed: imports, large exports,
