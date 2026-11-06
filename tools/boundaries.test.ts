@@ -20,6 +20,7 @@ const DEPCRUISE_RULE: Record<string, string> = {
   'D2-hr-imports-sales': 'D2-not-in-allowed',
   'D2-integrations-imports-db': 'D2-not-in-allowed',
   'D2-undeclared-dependency': 'D2-undeclared-dependency',
+  'D2-test-helpers-in-production': 'D2-not-in-allowed',
   'D3-library-internal': 'D3-no-deep-import',
   'D3-platform-internal': 'D3-no-deep-import',
   'D3-db-internal': 'D3-no-deep-import',

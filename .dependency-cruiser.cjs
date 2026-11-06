@@ -11,7 +11,7 @@ const F = process.env.RADCORE_BOUNDARY_FIXTURES === '1' ? '^(?:tools/boundary-fi
 const NODE_MODULES = '^(node_modules|(apps|packages)/[^/]+/node_modules)/';
 const pkg = (names) => `${F}packages/(${names.join('|')})/`;
 const ENTRIES = `${F}packages/(lib-[^/]+/src/(index|contract)\\.ts|lib-platform/src/runtime\\.ts`
-  + '|db/(src/[^/]+/index\\.ts|views/index\\.ts|src/(schema|request-context|migrate)\\.ts))$';
+  + '|db/(src/[^/]+/index\\.ts|views/index\\.ts|src/(schema|request-context|migrate)\\.ts)|test-helpers/src/index\\.ts)$';
 const NODE_BUILTIN = `^(node:)?(${builtinModules.join('|')})$`;
 // D5: what a contract may never reach. lib-platform's contract may reach its other browser-safe files, so only its
 // `.` and `./runtime` count. Another library's `.` counts too: ADR-001 §2 lets a contract import only zod, lib-common
@@ -53,6 +53,8 @@ module.exports = {
     ...Object.entries(MAY_IMPORT).filter(([, to]) => to.length)
       .map(([from, to]) => ({ from: { path: `${F}${from}/` }, to: { path: pkg(to) } })),
     { from: { path: `${F}apps/web/` }, to: { path: [`${F}packages/lib-common/`, `${F}packages/lib-[^/]+/src/contract\\.ts$`] } },
+    // RAD-49: the test-only helpers, from test files only, so production code can't run differently under test (RC-155).
+    { from: { path: '\\.test\\.tsx?$' }, to: { path: `${F}packages/test-helpers/src/index\\.ts$` } },
   ],
   forbidden: [
     { name: 'D1-no-circular', severity: 'error', from: {}, to: { circular: true } },
