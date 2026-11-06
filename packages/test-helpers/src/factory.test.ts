@@ -7,7 +7,7 @@ const party = factory((f) => ({ id: f.id, name: `Party ${f.tag}`, gstin: null as
 it('builds a record with a fresh UUID and a unique tag', () => {
   const p = party();
   expect(p.id).toMatch(UUID);
-  expect(p.name).toMatch(/^Party [0-9a-f]{8}$/);
+  expect(p.name).toMatch(/^Party [0-9a-f]{16}$/);
   expect(p.gstin).toBeNull();
 });
 

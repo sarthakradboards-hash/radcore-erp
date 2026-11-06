@@ -16,8 +16,12 @@ export type FakeClock = {
 
 // An explicit UTC moment only: a bare date or a local time would depend on the machine's time zone.
 const MOMENT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
-// en-CA formats as YYYY-MM-DD.
-const IST_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+// Built from the parts, not one locale's layout, which is CLDR data and can change.
+const IST = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+const istDate = (ms: number): string => {
+  const part = Object.fromEntries(IST.formatToParts(ms).map((p) => [p.type, p.value]));
+  return `${part['year']}-${part['month']}-${part['day']}`;
+};
 
 const parse = (moment: string): number => {
   const ms = Date.parse(moment);
@@ -33,7 +37,7 @@ export function fakeClock(start: string): FakeClock {
   let ms = parse(start);
   return {
     now: () => new Date(ms),
-    today: () => IST_DATE.format(ms),
+    today: () => istDate(ms),
     set: (moment) => { ms = parse(moment); },
     advance: (step) => {
       if (!Number.isFinite(step) || step < 0) throw new Error(`advance needs a finite step of 0 or more, got ${step}`);
