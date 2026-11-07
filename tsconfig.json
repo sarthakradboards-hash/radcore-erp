@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "allowJs": true },
-  "include": ["packages/*/src", "packages/db/views", "apps/api/src", "apps/worker/src", "tools", "*.ts"],
+  "include": ["packages/*/src", "packages/db/views", "apps/api/src", "apps/worker/src", "tools", "e2e", "*.ts"],
   "exclude": ["tools/boundary-fixtures"]
 }
