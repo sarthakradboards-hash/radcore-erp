@@ -285,9 +285,23 @@ be sold. A returned unit's sale is cleared (RC-128), which ends the customer war
   - `received` needs no row yet, or `gone`, so a sold serial can't be received again at goods-receipt QC (RC-128);
   - `delivered` needs `ours`, and no promise to another order line;
   - `taken_in`, for service, needs no row yet (a scooter we never sold) or `customer`.
-- **Units agree with stock.** An event that moves a unit into or out of stock names its stock movement. At commit,
-  each such movement's quantity equals its number of unit events (RA007). The books check (§7) also compares, per
-  item and location, the units we own there with the quantity on hand.
+- **Units agree with stock** (RAD-64). An event names up to two stock movements: `out_movement_id`, the movement
+  that takes the unit out of where it was, and `in_movement_id`, the one that puts it where it goes.
+  - Which ones a kind needs is fixed:
+    - **both**: `moved`, `sent_to_job_work`, `received_from_job_work`;
+    - **in only**: `received`, `returned`, `delivery_returned`;
+    - **out only**: `delivered`, `returned_to_supplier`, `scrapped`;
+    - **neither**: `reserved`, `released`, `condition_changed`, `taken_in`, `handed_back`.
+
+    A CHECK on the kind holds this.
+  - Each reference points at a movement of the right direction: a composite foreign key from
+    `(out_movement_id, 'out')` and `(in_movement_id, 'in')`, through generated constant columns, to
+    `stock_movements (id, direction)`. The trigger also checks that the out movement is at the unit's old location
+    and the in movement at its new one (RA008).
+  - At commit, each `out` movement of a serialised item has as many events naming it as `out_movement_id` as its
+    quantity, and each `in` movement as many naming it as `in_movement_id` (RA007). So a transfer of one unit is one
+    event, counted once on each of its two movements.
+  - The books check (§7) also compares, per item and location, the units we own there with the quantity on hand.
 
 ### 6. What each document posts
 
@@ -483,8 +497,9 @@ of 10% under section 194J on the fee before GST.
 **F13. Transfer to demo** (M4-06). Start: SCOOTER at Stores, 4 at 245,000.00 (average 61,250.00); Demo empty.
 - Movements: Stores out 1, 61,250.00; Demo in 1, 61,250.00.
 - Entry `stock_transfer`: Dr Stock in Hand (Demo) 61,250.00; Cr Stock in Hand (Stores) 61,250.00.
-- Unit S-0004: a `moved` event; location Demo, condition `demo`, ownership still `ours`. One event for each of the
-  two movements' one unit (RA007).
+- Unit S-0004: one `moved` event, with `out_movement_id` the Stores movement and `in_movement_id` the Demo one;
+  location Demo, condition `demo`, ownership still `ours`. Each movement has quantity 1 and one event naming it
+  (RA007).
 - After: Stores 3 at 183,750.00; Demo 1 at 61,250.00.
 - A receipt of 1 at 63,000.00 into Stores then makes Stores' average (183,750.00 + 63,000.00) / 4 = 61,687.50.
   The demo unit stays at 61,250.00 (RC-205).
