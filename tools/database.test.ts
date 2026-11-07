@@ -1,9 +1,14 @@
 // The test database is production's major version (RC-154) and fresh for this run (RC-005). Runs where
-// TEST_DATABASE_ADMIN_URL is set: CI's PostgreSQL 16 service, or locally after `npm run db:up`.
+// TEST_DATABASE_ADMIN_URL is set: CI's PostgreSQL 16 service, or locally after `npm run db:up`. In CI it fails
+// instead of skipping, so the proof can't drop out quietly (RC-019).
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
+
+it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
+  expect.fail('TEST_DATABASE_URL is not set: in CI the database tests must run, not skip');
+});
 
 describe.skipIf(!url)('test database', () => {
   it('is PostgreSQL 16, created for this run, and holds only what the migrations made', async () => {
