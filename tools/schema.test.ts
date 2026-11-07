@@ -86,6 +86,8 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
       generateDrizzleJson(objects, undefined, undefined, 'snake_case'));
     for (const statement of ddl) await client.query(statement);
     await client.query("set local app.principal = 'system:test'");
+    // Rows every test may rely on; each test's own writes run in a savepoint, so the shuffled order doesn't matter.
+    await client.query("insert into fixture_units (code, label) values ('nos', 'Numbers'), ('store', 'Store')");
   });
 
   afterAll(async () => {
@@ -127,8 +129,7 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
     `insert into fixture_lines (unit_code, amount, ${column}) values ('nos', 10, $1)`, [value]);
 
   it('keeps lookup codes and labels distinct (RC-044)', async () => {
-    expect(await attempt("insert into fixture_units (code, label) values ('nos', 'Numbers')")).toBe('ok');
-    await client.query("insert into fixture_units (code, label) values ('nos', 'Numbers'), ('store', 'Store')");
+    expect(await attempt("insert into fixture_units (code, label) values ('kg', 'Kilograms')")).toBe('ok');
     expect(await attempt("insert into fixture_units (code, label) values ('stores', 'Stores')")).toBe('23505');
     expect(await attempt("insert into fixture_units (code, label) values ('st_ore', 'Other')")).toBe('23505');
     expect(await attempt("insert into fixture_units (code, label) values ('kg', 'STORE')")).toBe('23505');
@@ -155,15 +156,23 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
   });
 
   it('stores a unit price of 0.375 exactly (RC-008)', async () => {
-    const { rows: [row] } = await client.query<{ line_price: string }>(
-      "insert into fixture_lines (unit_code, amount, line_price) values ('nos', 1, 0.375) returning line_price");
-    expect(row?.line_price).toBe('0.375000');
+    await client.query('savepoint price');
+    try {
+      const { rows: [row] } = await client.query<{ line_price: string }>(
+        "insert into fixture_lines (unit_code, amount, line_price) values ('nos', 1, 0.375) returning line_price");
+      expect(row?.line_price).toBe('0.375000');
+    } finally {
+      await client.query('rollback to savepoint price');
+    }
   });
 
   it('refuses a write with no principal in the request context', async () => {
     await client.query('savepoint principal');
-    await client.query("set local app.principal = ''");
-    expect(await attempt("insert into fixture_lines (unit_code, amount) values ('nos', 1)")).toBe('23502');
-    await client.query('rollback to savepoint principal');
+    try {
+      await client.query("set local app.principal = ''");
+      expect(await attempt("insert into fixture_lines (unit_code, amount) values ('nos', 1)")).toBe('23502');
+    } finally {
+      await client.query('rollback to savepoint principal');
+    }
   });
 });
