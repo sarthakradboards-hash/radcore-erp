@@ -292,7 +292,7 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   - What it sends back is a string again.
 
 **Errors.** Every failure has one shape, lib-common's error envelope:
-`{ code, message, issues: [{ path, code, message }], requestId }`.
+`{ code, message, issues: [{ path, code, message }], requestId, retryAfterSeconds? }`.
 - `message` is a sentence a person can act on.
 - `issues` lists each problem with one input. `path` is the list of keys to the field, as zod reports it, so a
   form can put the message beside the field. `code` is the issue's own code. `issues` is empty when the failure
@@ -310,14 +310,36 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   | 404 | `not_found` | the record doesn't exist, **or it is outside the principal's scope**. Both get the same answer, so a person can't learn that a record they may not see exists (M1-17) |
   | 409 | `conflict`, `idempotency_mismatch` | a version clash, or a key reused with another body |
   | 422 | the contract's own codes, such as `credit_limit_exceeded` | a business rule refused it |
-  | 429 | `rate_limited` | |
+  | 429 | `rate_limited`, `account_locked` | too many requests, or too many failed sign-ins for one address (M1-14) |
   | 500 | `server_error` | the message is generic and the detail is in the log under `requestId` |
+
+- **Waiting before a retry** (RAD-61). `rate_limited` and `account_locked`, and only they, carry
+  `retryAfterSeconds`: whole seconds until a retry can succeed, rounded up. The response also sets the HTTP
+  `Retry-After` header to the same number, so the screen and any HTTP client read one value.
+- `account_locked` doesn't reveal that an account exists. Failed attempts are counted for the address typed,
+  whether or not an account has it, so an unknown address locks the same way (M1-14).
 
 **Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
 - It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
   new one only after a success (Design notes A-0).
 - A write without it is refused with `idempotency_key_required`, so the protection fails closed (RC-132).
 - The server scopes the key as §6 says.
+- **Three routes are exempt** (RAD-61): sign-in, sign-out, and the second-factor verify step (M1-14, M1-15,
+  M1-16). Their answer sets or clears the session cookie, and a stored answer replayed for a repeated key can't
+  do that.
+  - Each declares `idempotency: 'exempt'` on its route. It's exempt from the key only: the write-Origin check
+    (M1-21) and the rate limits still apply.
+  - The generic handler accepts the declaration only from those three routes, a fixed list in lib-platform, and
+    refuses to start otherwise. The permission manifest test (M1-19) fails on any other route that declares it.
+  - Repeating one is harmless. A second sign-in starts another session, listed under the person's sessions; a
+    second sign-out finds no session; a TOTP code already used is refused (ADR-003).
+
+**Links that carry a token** (RAD-61). Invite and password-reset links carry their token in the URL fragment
+(`/invite#token=…`), never in the path or the query string. Browsers don't send a fragment to the server or in
+`Referer`, so the token stays out of Caddy's and pino-http's logs (ADR-004 §3).
+- The page reads the token, removes it from the address bar (`history.replaceState`), and sends it in the body of
+  a POST, which is an ordinary write with its saved-once key.
+- The API never accepts these tokens from a path or query parameter.
 
 **Lists.** Every list contract returns lib-common's list envelope, `{ items, next }`:
 - `next` is an opaque cursor, or `null` on the last page.
