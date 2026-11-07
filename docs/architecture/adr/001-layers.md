@@ -117,6 +117,11 @@ rows. "Paid" is then read from a view, so lib-accounts never writes a sales tabl
 | apps/worker | the same as apps/api |
 | apps/web | lib-common and every library's `./contract` entry, lib-platform's included, **nothing else**: not lib-platform's `.` or `./runtime`, not packages/db, not a library's `.` entry. This holds for all of `apps/web`, including server components, route handlers and middleware: the web server also talks to the API over HTTP |
 
+**Test-only helpers** (RAD-49, M1-31). `packages/test-helpers` (`@radcore/test-helpers`: the fake clock and the
+test-data factories) is an 18th workspace that ships no production code. Only `*.test.ts` and `*.test.tsx` files may
+import it, from any workspace; any other import of it fails D2. It imports nothing from `@radcore/*` today; an edge
+to lib-common (for the Clock type, RAD-20) is added here in the PR that first needs it.
+
 No package under `packages/` imports an HTTP framework (Express, Next) or anything under `apps/`. That is what lets
 the worker run any service without loading the web layer, which is RC-175's fix.
 
@@ -287,7 +292,7 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   - What it sends back is a string again.
 
 **Errors.** Every failure has one shape, lib-common's error envelope:
-`{ code, message, issues: [{ path, code, message }], requestId }`.
+`{ code, message, issues: [{ path, code, message }], requestId, retryAfterSeconds? }`.
 - `message` is a sentence a person can act on.
 - `issues` lists each problem with one input. `path` is the list of keys to the field, as zod reports it, so a
   form can put the message beside the field. `code` is the issue's own code. `issues` is empty when the failure
@@ -305,14 +310,61 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   | 404 | `not_found` | the record doesn't exist, **or it is outside the principal's scope**. Both get the same answer, so a person can't learn that a record they may not see exists (M1-17) |
   | 409 | `conflict`, `idempotency_mismatch` | a version clash, or a key reused with another body |
   | 422 | the contract's own codes, such as `credit_limit_exceeded` | a business rule refused it |
-  | 429 | `rate_limited` | |
+  | 429 | `rate_limited`, `account_locked` | too many requests from one client IP, or too many failed sign-ins for one email address (M1-14) |
   | 500 | `server_error` | the message is generic and the detail is in the log under `requestId` |
+
+- **Waiting before a retry** (RAD-61). `rate_limited` and `account_locked`, and only they, carry
+  `retryAfterSeconds`: whole seconds until a retry can succeed, rounded up. The response also sets the HTTP
+  `Retry-After` header to the same number, so the screen and any HTTP client read one value.
+- **Two counters** (RAD-64, M1-14's "per account and per address"):
+  - `account_locked` counts failed sign-ins per **email address typed**;
+  - `rate_limited` counts requests per **client IP**, the address `api` takes from `proxy` through `TRUST_PROXY`
+    (ADR-004 §3).
+
+  Both live in the shared store (ADR-003, rate-limiter-flexible).
+- **Nothing tells anyone an account exists:**
+  - Failed attempts are counted for the email address typed, whether or not an account has it, so an unknown
+    address locks the same way.
+  - Timing gives nothing away either. An unknown address is checked against a fixed dummy Argon2id hash, made
+    once at start-up with the current parameters, so it takes as long as a wrong password and gets the same
+    answer (RAD-64).
+- **The lockout trade-off** (RAD-64). Anyone who knows a person's email address can lock them out by failing to
+  sign in as them. These limit it (M1-14 sets the numbers):
+  - a lock is short and ends on its own, with `retryAfterSeconds` saying when;
+  - the per-IP limit slows one source trying many addresses;
+  - a password reset from the email link still works while the account is locked, and clears the lock;
+  - an admin can lift a lock, and lifting it is an audited admin action.
+
+  A permanent lock would make that attack worse, so there is none.
 
 **Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
 - It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
   new one only after a success (Design notes A-0).
 - A write without it is refused with `idempotency_key_required`, so the protection fails closed (RC-132).
 - The server scopes the key as §6 says.
+- **Three routes are exempt** (RAD-61): sign-in, sign-out, and the second-factor verify step (M1-14, M1-15,
+  M1-16). Their answer sets or clears the session cookie, and a stored answer replayed for a repeated key can't
+  do that.
+  - Each declares `idempotency: 'exempt'` on its route. It's exempt from the key only: the write-Origin check
+    (M1-21) and the rate limits still apply.
+  - The generic handler accepts the declaration only from those three routes, a fixed list in lib-platform, and
+    refuses to start otherwise. The permission manifest test (M1-19) fails on any other route that declares it.
+  - Repeating one is harmless. A second sign-in starts another session, listed under the person's sessions; a
+    second sign-out finds no session; a TOTP code already used is refused (ADR-003).
+  - **A recovery code goes through the verify step** (RAD-64, M1-15). The verify step takes either a TOTP code or
+    a recovery code. A recovery code is just another kind of second factor, so one route finishes the second step
+    and sets the cookie, and the exempt list stays at three. A recovery code is used once: the second use is
+    refused like a reused TOTP code.
+
+**Links that carry a token** (RAD-61). Invite and password-reset links carry their token in the URL fragment
+(`/invite#token=…`), never in the path or the query string. Browsers don't send a fragment to the server or in
+`Referer`, so the token stays out of Caddy's and pino-http's logs (ADR-004 §3).
+- The page reads the token, removes it from the address bar (`history.replaceState`), and sends it in the body of
+  a POST, which is an ordinary write with its saved-once key.
+- The API never accepts these tokens from a path or query parameter.
+- **Accepting an invite or resetting a password doesn't start a session** (RAD-64, M1-14). Afterwards the person
+  signs in, and passes the second factor if their role needs it (D-19), so a link from an email can never stand
+  in for the second factor. A password reset also ends the person's other sessions (M1-16).
 
 **Lists.** Every list contract returns lib-common's list envelope, `{ items, next }`:
 - `next` is an opaque cursor, or `null` on the last page.
