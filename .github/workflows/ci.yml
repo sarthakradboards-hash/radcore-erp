@@ -1,0 +1,143 @@
+# RAD-14 (M0-08): every PR, and every push to dev and main, is checked the way production runs.
+# The last job, `ci`, is the one name to watch: the coordinator never merges a PR whose `ci` isn't green
+# (CONTRIBUTING.md). GitHub Free has no branch protection for this private repo, so it can't be a required check (N5).
+# Every job has a timeout, the runner image is pinned, and every action is pinned by commit SHA (RC-071).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    name: dependencies (ADR-003 C1 to C10)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # C9 compares the lockfile with the base commit's.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # tools/deps/cli.ts uses only Node's own modules, so these run before anything is installed (ADR-003 §6).
+      - name: Lockfile integrity and advisories, before install (C8, C5)
+        run: node tools/deps/cli.ts --only C8,C5
+      - run: npm ci
+      - name: Registry signatures (C10)
+        run: npm audit signatures
+      - name: Install scripts, only those tools/install-scripts.json marks for rebuild (ADR-003 §6)
+        run: |
+          pkgs=$(node -p "Object.entries(require('./tools/install-scripts.json').packages).filter(([, v]) => v.rebuild).map(([k]) => k).join(' ')")
+          if [ -n "$pkgs" ]; then npm rebuild $pkgs; else echo "None marked for rebuild."; fi
+      - name: Node version, exact pins, licences, the approved list, install scripts (C2, C3, C4, C6, C7)
+        run: node tools/deps/cli.ts --only C2,C3,C4,C6,C7
+      - name: Age of every added or changed version (C9)
+        env:
+          # Passed through env, never interpolated into the script.
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node tools/deps/cli.ts --only C9 --base "$BASE"
+      - name: Unused files, exports and dependencies (C1)
+        run: npx knip
+
+  checks:
+    name: typecheck and lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+      - run: npm run typecheck
+      - name: ESLint (ADR-001 E rules, ADR-002 L rules) and dependency-cruiser (D rules, L7)
+        run: npm run lint
+
+  test:
+    name: tests on PostgreSQL 16
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      # Production's major version (RC-154), pinned like compose.dev.yml. Reachable only on the runner's loopback, and
+      # it holds nothing but this run's throwaway test database, so it needs no password.
+      postgres:
+        image: postgres:16.14-alpine3.23@sha256:42b8b8b29c8a4e933d88943e5b03001a78794905cf786e6e7634e9f2abd5a0d3
+        env:
+          POSTGRES_USER: radcore
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U radcore"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      # tools/test-database.ts makes one fresh database from this for the whole run (RC-005).
+      TEST_DATABASE_ADMIN_URL: postgres://radcore@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+      - name: Every test, fixtures and register proofs included, with coverage
+        run: npx vitest run --coverage
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: error
+
+  compose:
+    name: dev compose and the S3 smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+      - name: Compose on 127.0.0.1 with generated credentials (RC-198)
+        run: |
+          npm run db:up
+          docker compose -f compose.dev.yml port postgres 5432 | grep -x '127.0.0.1:5432'
+          docker compose -f compose.dev.yml port seaweedfs 8333 | grep -x '127.0.0.1:8333'
+          docker compose -f compose.dev.yml exec -T postgres psql -U radcore -d radcore -tAc 'show server_version' | grep '^16\.'
+      - name: Object store smoke test (presigned PUT and GET)
+        run: |
+          set -a; . ./.env; set +a
+          npx vitest run --project tools tools/s3.test.ts
+
+  ci:
+    name: ci
+    needs: [dependencies, checks, test, compose]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Every job passed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' > /dev/null
