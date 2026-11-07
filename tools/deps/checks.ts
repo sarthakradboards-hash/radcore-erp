@@ -93,7 +93,8 @@ function tableRows(markdown: string, header: string): string[][] {
 export function checkLicences(p: Project): string[] {
   const exceptions = tableRows(p.adr, '| Package | Licence |').map(([pkg = '', licence = '']) => ({
     names: [...pkg.matchAll(/`([^`]+)`/g)].map((m) => glob(m[1] ?? '')),
-    licence,
+    // Whole SPDX ids named in the row, so `GPL-3.0` never matches inside `LGPL-3.0-or-later`.
+    ids: new Set(licence.match(/[A-Za-z0-9][A-Za-z0-9.+-]*/g) ?? []),
   }));
   const out: string[] = [];
   for (const [key, e] of entries(p.lock)) {
@@ -101,7 +102,7 @@ export function checkLicences(p: Project): string[] {
     const l = e.license;
     if (l && !isExpression(l) && (ALLOWED.has(l) || (l === 'MPL-2.0' && e.dev === true))) continue;
     const excepted = exceptions.some((x) => x.names.some((re) => re.test(name))
-      && l !== undefined && spdxIds(l).every((id) => x.licence.includes(id)));
+      && l !== undefined && spdxIds(l).every((id) => x.ids.has(id)));
     if (excepted) continue;
     if (!l) out.push(`[C4] ${name}@${e.version} has no licence`);
     else if (l === 'MPL-2.0') out.push(`[C4] ${name}@${e.version} is MPL-2.0 in production`);
