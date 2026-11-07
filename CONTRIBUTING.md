@@ -9,9 +9,10 @@
 3. Open a PR into `dev` and fill in the template.
 4. A PR is merged only after auditor PASS, e2e-playwright PASS (user-facing tickets only) and the
    coordinator's check. Only the coordinator merges.
-5. **A red `ci` never merges.** The `ci` workflow's last job, named `ci`, is green only when every other job is.
-   GitHub can't enforce it on this plan (no branch protection, N5), so the coordinator checks `ci` on the PR's
-   final head before every merge, and never merges red, cancelled or missing.
+5. **A PR merges only with `ci` green, and with `e2e` green whenever the e2e workflow ran on it.** The `ci`
+   workflow's last job, named `ci`, is green only when every other job is. GitHub can't enforce either on this plan
+   (no branch protection, N5), so the coordinator checks both on the PR's final head before every merge, and never
+   merges one that is red, cancelled or missing.
 
 **Never push directly to `dev` or `main`.** GitHub does not refuse such a push here: the repository
 is on the Free plan with no branch protection (Sarthak's decision, 5 Nov 2026). The rule holds only
@@ -51,7 +52,9 @@ fails means the fix isn't done: fix the code, not the test.
 
 CI (`.github/workflows/ci.yml`) runs, on every PR and every push to `dev` and `main`:
 
-- **dependencies:** ADR-003's C1 to C10 (`npm run deps:check`, `npm run knip`, `npm audit signatures`);
+- **dependencies:** ADR-003's C1 to C10 (`npm run deps:check`, `npm run knip`, `npm audit signatures`). Never
+  re-run a C9 (package age) failure to clear it: age is measured when the job runs, so a re-run days later passes
+  without anything having been checked. Pin an older version, or name the exception in ADR-003 §5;
 - **typecheck and lint;**
 - **tests on PostgreSQL 16:** every test, with coverage uploaded. The suite gets one fresh database for the whole
   run, never one per test file (`tools/test-database.ts`, RC-005);
