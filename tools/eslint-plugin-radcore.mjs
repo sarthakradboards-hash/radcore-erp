@@ -154,8 +154,13 @@ const noSql = {
       if (node.parent.type === 'ImportSpecifier') return node.parent.imported.name === node.parent.local.name;
       if (o.helper && inHelper(node)) return true;
       const tt = node.parent;
-      return tt.type === 'TaggedTemplateExpression' && tt.tag === node && tt.parent.type === 'CallExpression'
-        && tt.parent.arguments.includes(tt) && allowedCall(tt.parent);
+      if (tt.type !== 'TaggedTemplateExpression' || tt.tag !== node) return false;
+      // `sql\`... ${n}\`.inlineParams()` renders a number into DDL as a literal, not a `$1` bind parameter (a CHECK's
+      // cap or length); it then stands where the bare template would.
+      const p = tt.parent;
+      const arg = p.type === 'MemberExpression' && p.object === tt && !p.computed && p.property.name === 'inlineParams'
+        && p.parent.type === 'CallExpression' && p.parent.callee === p && p.parent.arguments.length === 0 ? p.parent : tt;
+      return arg.parent.type === 'CallExpression' && arg.parent.arguments.includes(arg) && allowedCall(arg.parent);
     };
     const isDataKey = (n) => n.parent.type === 'Property' && n.parent.key === n && !n.parent.computed
       && !n.parent.shorthand && n.parent.parent.type === 'ObjectExpression';

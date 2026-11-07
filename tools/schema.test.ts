@@ -1,0 +1,169 @@
+// ADR-005's schema rules (M1-05), read from a real PostgreSQL 16 database through the views in packages/db/views:
+// every numeric column has its CHECK, every foreign key an index (RC-029), every table its four audit columns, no
+// enums (RC-044), and no name over 63 bytes. Fixture tables prove each rule fires, and the helpers' CHECKs refuse
+// what they should (RC-024, NaN included).
+//
+// The DDL comes from drizzle-kit's own generator, applied inside one transaction that is rolled back, so this file
+// leaves the run's database as it found it. shortcut: until RAD-25's migrator exists the schema is generated here;
+// RAD-25 points these checks at the migrated database.
+import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
+import { getTableConfig, index, numeric, pgSchema, text, uuid, type PgTable } from 'drizzle-orm/pg-core';
+import pg from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as schema from '@radcore/db/schema';
+import * as views from '@radcore/db/views';
+import {
+  boundedText, foreignMoney, fxRate, id, lookupTable, money, percent, qty, radcoreTable, unitPrice,
+} from '../packages/db/src/columns.ts';
+
+// Tables built with the helpers: they must pass every rule.
+const fixtureUnits = lookupTable('fixture_units');
+const fixtureLines = radcoreTable('fixture_lines', {
+  id: id(),
+  unitCode: text().notNull().references(() => fixtureUnits.code),
+  amount: money().notNull(),
+  balance: money({ signed: true }),
+  foreignAmount: foreignMoney(),
+  linePrice: unitPrice(),
+  lineQty: qty({ line: true }),
+  stockQty: qty(),
+  tax: percent(),
+  cess: percent({ max: 290 }),
+  fx: fxRate(),
+  note: boundedText(),
+  shortNote: boundedText({ max: 5 }),
+}, (t) => [index('ix_fixture_lines_unit_code').on(t.unitCode)]);
+
+// Tables that break each rule, in their own schema.
+const bad = pgSchema('guard_bad');
+const badParents = bad.table('parents', { id: uuid().primaryKey() });
+const badRawNumbers = bad.table('raw_numbers', { id: uuid().primaryKey(), amount: numeric({ precision: 18, scale: 2 }) });
+const badChildren = bad.table('children', { id: uuid().primaryKey(), parentId: uuid().references(() => badParents.id) });
+const badColour = bad.enum('colour', ['red', 'green']);
+const badLongName = bad.table('long_names', { id: uuid().primaryKey(), x: text() },
+  (t) => [index(`ix_${'very_long_name_'.repeat(5)}`).on(t.x)]);
+
+const tables = (mod: Record<string, unknown>) => Object.values(mod).filter((v): v is PgTable =>
+  typeof v === 'object' && v !== null && Symbol.for('drizzle:IsDrizzleTable') in v);
+
+/** Constraint and index names over 63 bytes, which PostgreSQL would silently truncate (ADR-005 §1). */
+function longNames(ts: PgTable[]): string[] {
+  return ts.flatMap((t) => {
+    const c = getTableConfig(t);
+    const names = [
+      ...c.checks.map((k) => k.name), ...c.indexes.map((i) => i.config.name ?? ''),
+      ...c.foreignKeys.map((f) => f.getName()), ...c.uniqueConstraints.map((u) => u.getName()),
+      ...c.primaryKeys.map((p) => p.getName()),
+    ];
+    return names.filter((n): n is string => typeof n === 'string' && Buffer.byteLength(n) > 63).map((n) => `${c.name}: ${n}`);
+  });
+}
+
+describe('names', () => {
+  it('has no constraint or index name over 63 bytes in the schema or the helper fixtures', () => {
+    expect(longNames([...tables(schema), fixtureUnits, fixtureLines])).toEqual([]);
+  });
+
+  it('catches a name over 63 bytes', () => {
+    expect(longNames([badLongName])).toHaveLength(1);
+  });
+});
+
+const url = process.env['TEST_DATABASE_URL'];
+
+it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
+  expect.fail('TEST_DATABASE_URL is not set: in CI the schema tests must run, not skip');
+});
+
+describe.skipIf(!url)('schema rules on PostgreSQL', () => {
+  const client = new pg.Client({ connectionString: url });
+
+  beforeAll(async () => {
+    await client.connect();
+    await client.query('begin');
+    const objects = { ...schema, ...views, fixtureUnits, fixtureLines, bad, badParents, badRawNumbers, badChildren, badColour };
+    const ddl = await generateMigration(generateDrizzleJson({}),
+      generateDrizzleJson(objects, undefined, undefined, 'snake_case'));
+    for (const statement of ddl) await client.query(statement);
+    await client.query("set local app.principal = 'system:test'");
+  });
+
+  afterAll(async () => {
+    await client.query('rollback');
+    await client.end();
+  });
+
+  const rows = async (view: string) => (await client.query<Record<string, string>>(`select * from ${view}`)).rows;
+  const outside = (schemaName: string) => (r: Record<string, string>) => r['schema_name'] !== schemaName;
+
+  it('finds no rule broken outside the fixture schema (the real schema and the helper fixtures)', async () => {
+    for (const view of ['v_schema_numeric_without_check', 'v_schema_fk_without_index', 'v_schema_missing_audit', 'v_schema_enums']) {
+      expect((await rows(view)).filter(outside('guard_bad')), view).toEqual([]);
+    }
+  });
+
+  it('reports each broken rule in the fixture schema', async () => {
+    const inBad = async (view: string) => (await rows(view)).filter((r) => r['schema_name'] === 'guard_bad');
+    expect(await inBad('v_schema_numeric_without_check')).toEqual([
+      { schema_name: 'guard_bad', table_name: 'raw_numbers', column_name: 'amount' }]);
+    expect((await inBad('v_schema_fk_without_index')).map((r) => r['table_name'])).toEqual(['children']);
+    expect((await inBad('v_schema_missing_audit')).map((r) => r['table_name']).sort()).toEqual(['children', 'parents', 'raw_numbers']);
+    expect(await inBad('v_schema_enums')).toEqual([{ schema_name: 'guard_bad', type_name: 'colour' }]);
+  });
+
+  // Runs `sql` in a savepoint and returns the SQLSTATE it raised, or 'ok'.
+  const attempt = async (sql: string, params: unknown[] = []) => {
+    await client.query('savepoint attempt');
+    try {
+      await client.query(sql, params);
+      return 'ok';
+    } catch (e) {
+      return (e as { code?: string }).code ?? 'error';
+    } finally {
+      await client.query('rollback to savepoint attempt');
+    }
+  };
+  const line = (column: string, value: unknown) => attempt(
+    `insert into fixture_lines (unit_code, amount, ${column}) values ('nos', 10, $1)`, [value]);
+
+  it('keeps lookup codes and labels distinct (RC-044)', async () => {
+    expect(await attempt("insert into fixture_units (code, label) values ('nos', 'Numbers')")).toBe('ok');
+    await client.query("insert into fixture_units (code, label) values ('nos', 'Numbers'), ('store', 'Store')");
+    expect(await attempt("insert into fixture_units (code, label) values ('stores', 'Stores')")).toBe('23505');
+    expect(await attempt("insert into fixture_units (code, label) values ('st_ore', 'Other')")).toBe('23505');
+    expect(await attempt("insert into fixture_units (code, label) values ('kg', 'STORE')")).toBe('23505');
+    expect(await attempt("insert into fixture_units (code, label) values ('Bad Code', 'Bad')")).toBe('23514');
+  });
+
+  it("holds each helper's CHECK, NaN included (RC-024)", async () => {
+    expect(await line('balance', -5)).toBe('ok');
+    expect(await attempt("insert into fixture_lines (unit_code, amount) values ('nos', -1)")).toBe('23514');
+    expect(await attempt("insert into fixture_lines (unit_code, amount) values ('nos', 'NaN')")).toBe('23514');
+    expect(await line('balance', 'NaN')).toBe('23514');
+    expect(await line('line_price', 'NaN')).toBe('23514');
+    expect(await line('foreign_amount', -0.0001)).toBe('23514');
+    expect(await line('line_qty', 0)).toBe('23514');
+    expect(await line('line_qty', 'NaN')).toBe('23514');
+    expect(await line('stock_qty', 0)).toBe('ok');
+    expect(await line('tax', 101)).toBe('23514');
+    expect(await line('tax', 'NaN')).toBe('23514');
+    expect(await line('cess', 150)).toBe('ok');
+    expect(await line('cess', 291)).toBe('23514');
+    expect(await line('fx', 0)).toBe('23514');
+    expect(await line('short_note', 'abcdef')).toBe('23514');
+    expect(await line('note', 'x'.repeat(201))).toBe('23514');
+  });
+
+  it('stores a unit price of 0.375 exactly (RC-008)', async () => {
+    const { rows: [row] } = await client.query<{ line_price: string }>(
+      "insert into fixture_lines (unit_code, amount, line_price) values ('nos', 1, 0.375) returning line_price");
+    expect(row?.line_price).toBe('0.375000');
+  });
+
+  it('refuses a write with no principal in the request context', async () => {
+    await client.query('savepoint principal');
+    await client.query("set local app.principal = ''");
+    expect(await attempt("insert into fixture_lines (unit_code, amount) values ('nos', 1)")).toBe('23502');
+    await client.query('rollback to savepoint principal');
+  });
+});
