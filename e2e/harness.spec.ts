@@ -40,8 +40,10 @@ test('a request that cannot connect is recorded', async ({ page, pageProblems })
 
 test('an aborted request is not recorded', async ({ page, pageProblems }) => {
   await page.goto('/');
+  // Wait for the abort itself, so this can't pass without a request ever being sent.
+  const failed = page.waitForEvent('requestfailed', (r) => r.url().endsWith('/?slow'));
   await page.evaluate('(() => { const c = new AbortController(); fetch("/?slow", { signal: c.signal }).catch(() => {}); c.abort(); })()');
-  await page.waitForTimeout(200);
+  expect((await failed).failure()?.errorText).toMatch(/ERR_ABORTED|NS_BINDING_ABORTED|cancelled/i);
   expect(pageProblems).toEqual([]);
 });
 
