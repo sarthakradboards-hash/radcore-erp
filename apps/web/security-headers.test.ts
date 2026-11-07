@@ -22,10 +22,10 @@ describe('headers on every response', () => {
 });
 
 describe('content security policy', () => {
-  it('allows no inline or eval code in production', () => {
+  it('allows no inline script, eval or un-nonced <style> in production; style attributes only', () => {
     expect(contentSecurityPolicy('abc', false)).toBe([
       "default-src 'self'", "script-src 'self' 'nonce-abc' 'strict-dynamic'", "style-src 'self' 'nonce-abc'",
-      "img-src 'self' blob: data:", "font-src 'self'", "connect-src 'self'", "object-src 'none'", "base-uri 'none'",
+      "style-src-attr 'unsafe-inline'", "img-src 'self' blob: data:", "font-src 'self'", "connect-src 'self'", "object-src 'none'", "base-uri 'none'",
       "form-action 'self'", "frame-ancestors 'none'",
     ].join('; '));
   });
@@ -34,7 +34,7 @@ describe('content security policy', () => {
     const dev = contentSecurityPolicy('abc', true);
     expect(dev).toContain("script-src 'self' 'nonce-abc' 'strict-dynamic' 'unsafe-eval';");
     expect(dev).toContain("style-src 'self' 'unsafe-inline';");
-    expect(dev.replace(/'unsafe-(eval|inline)'/g, '')).not.toContain('unsafe');
+    expect(dev.replace("style-src-attr 'unsafe-inline'", '').replace(/'unsafe-(eval|inline)'/g, '')).not.toContain('unsafe');
   });
 
   it('gives each request its own nonce, on the response and on the request Next renders', () => {

@@ -10,6 +10,9 @@ export function contentSecurityPolicy(nonce: string, dev: boolean): string {
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
     // Dev only: hot reload injects styles without the nonce.
     `style-src 'self' ${dev ? "'unsafe-inline'" : `'nonce-${nonce}'`}`,
+    // Style attributes from React style props (Radix, react-virtual) can't run script, so they are allowed. <style>
+    // elements still fall under style-src: nonce only (coordinator, PR #20 review).
+    "style-src-attr 'unsafe-inline'",
     "img-src 'self' blob: data:",
     "font-src 'self'",
     "connect-src 'self'",
