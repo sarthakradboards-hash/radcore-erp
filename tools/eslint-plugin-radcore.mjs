@@ -306,6 +306,13 @@ const noTableExports = {
     // Structure only: array and tuple elements, never a generic's type arguments. drizzle types a row as
     // `InferSelectModel<Table<T>>`, so following type arguments would find a table inside every plain row type.
     const elements = (type) => (checker.isArrayType(type) || checker.isTupleType(type) ? checker.getTypeArguments(type) : []);
+    // A table or transaction type is declared in drizzle-orm or in our own packages/db, so the walk enters other
+    // packages' types only through their type arguments: a zod schema's methods return more zod types, and walking
+    // them ran ESLint out of memory on every entry that exports a schema (M1-04). TypeScript's own lib is walked in
+    // full, for Promise<SalesTx>.
+    const FOREIGN = /[\\/]node_modules[\\/](?!drizzle-orm[\\/]|typescript[\\/]lib[\\/])/;
+    const foreign = (sym) => (sym?.declarations?.length ?? 0) > 0
+      && sym.declarations.every((d) => FOREIGN.test(d.getSourceFile().fileName));
     const carries = (type, best, depth) => {
       if (!type || depth > MAX_DEPTH) return false;
       // Keep the shallowest depth a type was reached at, so a deeper first visit can't hide a shallower one.
@@ -315,6 +322,11 @@ const noTableExports = {
       for (const sym of [type.getSymbol(), type.aliasSymbol]) {
         const name = sym?.getName();
         if (name && (names.includes(name) || tx.test(name))) return true;
+      }
+      // Into another package's type, only through what we passed it: AsyncLocalStorage<SalesTx> holds a transaction.
+      if (foreign(type.aliasSymbol ?? type.getSymbol())) {
+        const args = [...(type.aliasTypeArguments ?? []), ...(type.target ? checker.getTypeArguments(type) : [])];
+        return args.some((t) => carries(t, best, depth + 1));
       }
       const awaited = checker.getAwaitedType(type);
       const next = [
