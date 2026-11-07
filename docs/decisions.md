@@ -31,6 +31,7 @@ differs from plan.md, this log and the ADR win.
 | 2026-11-07 | **Retry timing:** `rate_limited` and `account_locked` carry `retryAfterSeconds` in the error envelope, and the HTTP `Retry-After` header is set to the same number | coordinator, from ui's RAD-55 read-ahead | ADR-001 §7a (RAD-61); M1-14 |
 | 2026-11-07 | **Tokens in the fragment:** invite and password-reset tokens travel in the URL fragment (`#…`), never the path or query, so they stay out of logs and `Referer` | coordinator, from ui's RAD-55 read-ahead | ADR-001 §7a, ADR-004 §3 (RAD-61); M1-14, M1-45 |
 | 2026-11-07 | **`qrcode` 1.5.4 (MIT)** is approved, browser only, to draw the second-factor enrolment code as SVG | coordinator, from ui's RAD-55 read-ahead | [ADR-003](architecture/adr/003-libraries.md) §2 (RAD-61); M1-15 |
+| 2026-11-07 | **Cost of goods sold at the invoice:** a delivery parks its cost in Goods Delivered Not Invoiced, and the invoice moves it to Cost of Goods Sold, so cost and sale fall in the same period even when goods leave first. v1 posted the cost at delivery. The CA confirms it later (CA-09) | Sarthak, on the architect's design | [ADR-006](architecture/adr/006-ledger.md) §6 (RAD-60); M3-08 to M3-10 |
 
 **Still open**, and recorded here when decided:
 - Whether the Vercel test copy fits the Hobby plan's non-commercial terms, or needs Pro (ADR-004 §7).
