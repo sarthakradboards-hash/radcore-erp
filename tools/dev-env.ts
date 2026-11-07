@@ -1,13 +1,29 @@
-// Writes the local .env with fresh random credentials for compose.dev.yml (RC-198). Never overwrites an existing one.
+// Writes the local .env with fresh random credentials for compose.dev.yml (RC-198). Never overwrites an existing one;
+// settings added since it was written are appended, so its credentials (and the database volume's password) stay.
 import { randomBytes } from 'node:crypto';
-import { existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const secret = () => randomBytes(32).toString('base64url');
 // The shape of an AWS access key id: 20 upper-case letters and digits.
 const accessKeyId = () => randomBytes(15).toString('base64url').toUpperCase().replace(/[^A-Z0-9]/g, '0').slice(0, 20);
 
+// What the api and worker check at start (ADR-004 §5, RAD-28), with development values. 1x00…AA is Cloudflare's
+// published Turnstile test site key, which always passes.
+const settings = () => [
+  'NODE_ENV=development', 'APP_ENV=development', 'PUBLIC_ORIGIN=http://127.0.0.1:3000', 'TRUST_PROXY=127.0.0.1',
+  'DB_POOL_MAX=10', 'DB_POOL_WAIT_MS=5000', 'DB_STATEMENT_TIMEOUT_MS=15000', 'DB_LOCK_TIMEOUT_MS=5000',
+  'DB_IDLE_TX_TIMEOUT_MS=10000', 'S3_BUCKET_FILES=radcore-files', `SECRETS_LOCAL_KEY=${secret()}`,
+  'TURNSTILE_SITE_KEY=1x00000000000000000000AA', 'LOG_LEVEL=info',
+];
+
 export function writeDevEnv(file = '.env'): boolean {
-  if (existsSync(file)) return false;
+  if (existsSync(file)) {
+    const text = readFileSync(file, 'utf8');
+    const have = new Set(text.split(/\r?\n/).map((l) => l.split('=', 1)[0]));
+    const missing = settings().filter((l) => !have.has(l.split('=', 1)[0]));
+    if (missing.length > 0) appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}${missing.join('\n')}\n`);
+    return false;
+  }
   const pg = secret();
   const lines = [
     '# Local development only. DATABASE_URL is the compose superuser; the runtime login (M1-06) is a different one.',
@@ -17,6 +33,7 @@ export function writeDevEnv(file = '.env'): boolean {
     `S3_REGION=us-east-1`,
     `S3_ACCESS_KEY_ID=${accessKeyId()}`,
     `S3_SECRET_ACCESS_KEY=${secret()}`,
+    ...settings(),
   ];
   writeFileSync(file, `${lines.join('\n')}\n`, { mode: 0o600, flag: 'wx' });
   return true;
