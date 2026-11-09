@@ -8,7 +8,10 @@ const API_PORT = Number(process.env['E2E_API_PORT'] ?? 3101);
 const CI = Boolean(process.env['CI']);
 // The e2e database, never the dev one: tests will write to it once there are tables (M1).
 const DATABASE_URL = process.env['E2E_DATABASE_URL'] ?? 'postgres://radcore@127.0.0.1:5432/radcore_e2e';
-const serverEnv = { DATABASE_URL, API_PORT: String(API_PORT) };
+// The api and worker refuse to start without ADR-004 §5's settings (RAD-28). `npm run e2e` writes them to the root
+// .env first (`npm run dev:env`), and both load it; these win over it. APP_ENV ci: the e2e database uses trust auth,
+// so its URL has no password, which only CI may use.
+const serverEnv = { DATABASE_URL, API_PORT: String(API_PORT), APP_ENV: 'ci' };
 
 export default defineConfig({
   testDir: '.',
@@ -27,7 +30,7 @@ export default defineConfig({
   webServer: [
     {
       name: 'api',
-      command: 'node apps/api/src/main.ts',
+      command: 'node --env-file=.env apps/api/src/main.ts',
       cwd: '..',
       env: serverEnv,
       url: `http://127.0.0.1:${API_PORT}/health`,
@@ -35,7 +38,7 @@ export default defineConfig({
     {
       name: 'worker',
       // shortcut: the placeholder worker exits at once, so --watch keeps it running; drop it when M1-26 adds the job loop.
-      command: 'node --watch apps/worker/src/main.ts',
+      command: 'node --env-file=.env --watch apps/worker/src/main.ts',
       cwd: '..',
       env: serverEnv,
     },

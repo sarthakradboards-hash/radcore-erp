@@ -16,8 +16,11 @@ npm run e2e
   tests a server it didn't start. To run beside another checkout's suite, pick other ports:
   `E2E_WEB_PORT=3110 E2E_API_PORT=3111 npm run e2e`.
 - The servers get `DATABASE_URL` from `E2E_DATABASE_URL`, default `postgres://radcore@127.0.0.1:5432/radcore_e2e`.
-  Point it at a database used only for these tests, never the dev one. Nothing reads it yet; the M1 tickets add
-  migrations and seeded users to it.
+  Point it at a database used only for these tests, never the dev one. The API's `/health` must reach it before the
+  run starts (RAD-28); the M1 tickets add migrations and seeded users to it.
+- The API and worker check their settings at start. `npm run e2e` writes them to the root `.env` first
+  (`npm run dev:env`, which keeps an existing `.env` and adds only missing settings). The servers run with
+  `APP_ENV=ci`, since the e2e database URL has no password.
 - `npx playwright test -c e2e --ui` opens the interactive runner. `npx playwright show-trace <trace.zip>` opens a
   trace from `e2e/test-results/` or from a CI run's `e2e-results` artifact.
 
