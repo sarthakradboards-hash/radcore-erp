@@ -61,6 +61,9 @@ Read the module arrows as "calls the service of". For example, lib-sales calls l
 lib-accounts to post the journal. apps/api imports lib-integrations only to hand a provider's signature check to
 the webhook intake (ADR-001 §8a).
 
+`packages/test-helpers` (the fake clock and test factories) is imported only by `*.test.ts(x)` files, so it isn't
+drawn (ADR-001 §4).
+
 Where the rules are, rather than repeated here:
 
 - What may import what, and what never may: [ADR-001 §4](adr/001-layers.md#4-who-may-depend-on-whom) and the
