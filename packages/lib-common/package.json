@@ -5,5 +5,10 @@
   "type": "module",
   "engines": { "node": ">=26.13.0 <27" },
   "exports": { ".": "./src/index.ts" },
-  "scripts": { "test": "vitest run --passWithNoTests" }
+  "scripts": { "test": "vitest run --passWithNoTests" },
+  "dependencies": {
+    "decimal.js": "10.6.0",
+    "to-words": "7.4.0",
+    "zod": "4.6.7"
+  }
 }

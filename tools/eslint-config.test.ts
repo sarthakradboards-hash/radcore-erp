@@ -30,7 +30,8 @@ it('each zone is exactly the ADR-002 table', () => {
 
 const ALLOW = PINNED['radcore/no-sql']?.allowNames ?? [];
 const L1 = { base: { allowNames: ALLOW }, zone: { allowNames: [...ALLOW, 'sql'], zone: true } };
-const EVERYWHERE = ['radcore/no-driver', 'radcore/no-raw-html', 'radcore/tables-in-schema', 'radcore/views-in-views',
+const EVERYWHERE = ['radcore/no-driver', 'radcore/no-raw-html', 'radcore/e6-no-float-money', 'radcore/tables-in-schema',
+  'radcore/views-in-views',
   'radcore/no-subpath-imports', 'radcore/no-declare'];
 const SERVER = ['radcore/no-query-strings', 'radcore/no-raw-execution', 'radcore/outbound-only', ...EVERYWHERE];
 const LIB = [...SERVER, 'radcore/e4-no-escape', 'radcore/d7-no-db-reexport'];
@@ -86,3 +87,13 @@ describe.each(Object.entries(SAMPLES))('%s', (file, want) => {
       'drizzle/enforce-delete-with-where']) expect(rules[id]?.[0] ?? 0, id).toBe(want.server ? 2 : 0);
   });
 });
+
+// RC-146 (M1-46): a web link that opens a new tab must carry rel="noopener noreferrer".
+it('refuses target="_blank" without rel="noopener noreferrer" in the web app', async () => {
+  const lint = async (code: string) => (await new ESLint().lintText(code, { filePath: 'apps/web/app/x.tsx' }))[0]
+    ?.messages.map((m) => m.ruleId);
+  expect(await lint('export const A = (u: string) => <a href={u} target="_blank">x</a>;\n'))
+    .toEqual(['react/jsx-no-target-blank']);
+  expect(await lint('export const A = (u: string) => <a href={u} target="_blank" rel="noopener noreferrer">x</a>;\n'))
+    .toEqual([]);
+}, 60_000);
