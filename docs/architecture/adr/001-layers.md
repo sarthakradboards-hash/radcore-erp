@@ -328,6 +328,10 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   - Timing gives nothing away either. An unknown address is checked against a fixed dummy Argon2id hash, made
     once at start-up with the current parameters, so it takes as long as a wrong password and gets the same
     answer (RAD-64).
+  - A password-reset request gets the same answer, in the same time, whatever address is typed (RAD-68, M1-14).
+    It always just queues the reset, through the outbox (ADR-002 §4). The worker looks the address up and sends
+    the email only if an account has it, at most once per address in a short window, so the form can't flood
+    anyone's inbox. The request counts against the per-IP `rate_limited` limit.
 - **The lockout trade-off** (RAD-64). Anyone who knows a person's email address can lock them out by failing to
   sign in as them. These limit it (M1-14 sets the numbers):
   - a lock is short and ends on its own, with `retryAfterSeconds` saying when;
