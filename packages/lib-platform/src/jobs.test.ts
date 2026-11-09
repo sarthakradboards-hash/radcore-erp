@@ -10,13 +10,13 @@ const contract = (over: Partial<JobContract<{ n: number }>> = {}): JobContract<{
 
 describe('queueSettings', () => {
   it('gives every job retries with backoff, a timeout and a dead-letter queue by default', () => {
-    expect(queueSettings(contract())).toEqual({ policy: 'standard', retryLimit: 3, retryDelay: 30, retryBackoff: true,
+    expect(queueSettings(contract())).toEqual({ policy: 'standard', retries: 3, retryDelay: 30, retryBackoff: true,
       expireInSeconds: 300, deleteAfterSeconds: 7 * 86_400, deadLetter: 'sales.shopify-order.dead' });
   });
 
   it('takes the overlap guard, the limits, and delete-on-complete from the contract', () => {
     expect(queueSettings(contract({ oneAtATime: true, retries: 0, retryDelaySeconds: 5, timeoutSeconds: 60,
-      deleteOnComplete: true }))).toMatchObject({ policy: 'singleton', retryLimit: 0, retryDelay: 5, expireInSeconds: 60,
+      deleteOnComplete: true }))).toMatchObject({ policy: 'singleton', retries: 0, retryDelay: 5, expireInSeconds: 60,
       deleteAfterSeconds: 1 });
   });
 

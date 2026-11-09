@@ -48,7 +48,8 @@ export type JobDefinition = {
 /** What pg-boss gets for the queue (its Queue options). */
 export type QueueSettings = {
   policy: 'standard' | 'singleton';
-  retryLimit: number;
+  /** Attempts after the first (pg-boss's retryLimit). */
+  retries: number;
   retryDelay: number;
   retryBackoff: true;
   expireInSeconds: number;
@@ -68,7 +69,7 @@ export function queueSettings(c: JobContract<unknown>): QueueSettings {
   if (!NAME.test(c.name) || c.name.endsWith('.dead')) throw new Error(`job name ${JSON.stringify(c.name)} is not valid`);
   return {
     policy: c.oneAtATime === true ? 'singleton' : 'standard',
-    retryLimit: wholeNumber(c.retries ?? 3, 0, `${c.name}: retries`),
+    retries: wholeNumber(c.retries ?? 3, 0, `${c.name}: retries`),
     retryDelay: wholeNumber(c.retryDelaySeconds ?? 30, 1, `${c.name}: retryDelaySeconds`),
     retryBackoff: true,
     expireInSeconds: wholeNumber(c.timeoutSeconds ?? 300, 1, `${c.name}: timeoutSeconds`),

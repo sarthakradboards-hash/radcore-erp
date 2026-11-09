@@ -11,7 +11,8 @@ export type { Logger } from './log.ts';
 
 type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };
 // pg-boss's create_queue is a plain insert: create a missing queue, and bring an existing one's options up to date.
-const ensureQueue = async (queue: JobQueue, name: string, { policy, ...options }: QueueOptions): Promise<void> => {
+const ensureQueue = async (queue: JobQueue, name: string, { policy, retries, ...rest }: QueueOptions): Promise<void> => {
+  const options = { ...rest, retryLimit: retries };
   if ((await queue.getQueue(name)) === null) await queue.createQueue(name, { policy, ...options });
   else await queue.updateQueue(name, options);
 };
@@ -26,7 +27,7 @@ export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], l
   for (const job of jobs) {
     const { deadLetter, ...settings } = job.settings;
     // Dead letters keep the job's clean-up, so a deleteOnComplete payload doesn't linger there either.
-    await ensureQueue(queue, deadLetter, { ...settings, policy: 'standard', retryLimit: 0 });
+    await ensureQueue(queue, deadLetter, { ...settings, policy: 'standard', retries: 0 });
     await ensureQueue(queue, job.name, job.settings);
     await queue.work(job.name, async ([attempt]) => {
       if (attempt === undefined) return;
