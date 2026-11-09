@@ -35,11 +35,17 @@ describe('the repo', () => {
   });
 
   it("reads ADR-003 §2's approved list", () => {
+    // One row of each shape: two names with two versions (vitest), two names sharing one (react-dom), a bold
+    // version with a note (next), a scoped name (the presigner). Compared with what the manifests declare, so a
+    // routine version bump doesn't break this test.
     const list = approvedList(repo.adr);
-    expect(list.get('vitest')).toBe('5.0.5');
-    expect(list.get('react-dom')).toBe('19.3.1');
-    expect(list.get('next')).toBe('16.4.5');
-    expect(list.get('@aws-sdk/s3-request-presigner')).toBe('3.1155.0');
+    const declared = (name: string) => repo.manifests
+      .flatMap((m) => ['dependencies', 'devDependencies'].map((f) => (m.json[f] as Record<string, string> | undefined)?.[name]))
+      .find((v) => v !== undefined);
+    for (const name of ['vitest', 'react-dom', 'next', '@aws-sdk/s3-request-presigner']) {
+      expect(declared(name), name).toBeDefined();
+      expect(list.get(name), name).toBe(declared(name));
+    }
   });
 
   it('takes its 14-day exceptions only from ADR-003 §5', () => {

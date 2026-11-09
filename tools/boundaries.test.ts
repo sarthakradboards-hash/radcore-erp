@@ -12,7 +12,7 @@ const FIXTURES = 'tools/boundary-fixtures';
 // Type-aware linting builds a TypeScript program on first use; a cold CI runner can take a while.
 const LINT_TIMEOUT = 180_000;
 // T1 is proved with M1-08 (ADR-001 Enforcement).
-const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5',
+const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6',
   'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b'];
 const CONTROLS = { depcruise: 'ok-allowed-imports', eslint: 'ok-lint-zones' };
 
@@ -70,6 +70,7 @@ const ESLINT_IDS: Record<string, string[]> = {
   E3: ['radcore/e3-no-io'],
   E4: ['radcore/e4-no-escape'],
   E5: ['@typescript-eslint/ban-ts-comment'],
+  E6: ['radcore/e6-no-float-money'],
   L1: ['radcore/no-sql'],
   L2: ['radcore/no-query-strings'],
   L3: ['radcore/no-raw-execution'],
@@ -89,7 +90,7 @@ const CLAUSE_IDS: Record<string, string[]> = {
   'E4-unsafe-argument': ['@typescript-eslint/no-unsafe-argument'],
   'E4-declare-global': ['radcore/no-declare'],
   'L4-subpath-import': ['radcore/no-subpath-imports'],
-  ...Object.fromEntries(['wrapper', 'alias', 'object', 'cast', 'async', 'callback'].map((k) => [`D7-${k}-export`, ['radcore/d7-no-table-exports']])),
+  ...Object.fromEntries(['wrapper', 'alias', 'object', 'cast', 'async', 'callback', 'foreign-generic', 'maybe'].map((k) => [`D7-${k}-export`, ['radcore/d7-no-table-exports']])),
   'L5-update': ['drizzle/enforce-update-with-where'],
   'L5-delete': ['drizzle/enforce-delete-with-where'],
   'L6-no-danger': ['react/no-danger'],
