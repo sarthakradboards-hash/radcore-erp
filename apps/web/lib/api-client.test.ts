@@ -30,9 +30,8 @@ describe('RC-186: the web form refuses a bad GSTIN', () => {
     const err = await api.createParty({ name: 'Asha Motors', gstin: '27AAPFU0939F1Z' }, { idempotencyKey: idemKey })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
-    if (!(err instanceof ApiError)) return;
-    expect(err.code).toBe('invalid_input');
-    expect(err.envelope.issues).toEqual([{ path: ['gstin'], code: 'custom', message: 'Enter a valid 15-character GSTIN, in capitals' }]);
+    expect(err).toMatchObject({ code: 'invalid_input',
+      envelope: { issues: [{ path: ['gstin'], code: 'custom', message: 'Enter a valid 15-character GSTIN, in capitals' }] } });
     expect(fetch).not.toHaveBeenCalled();
   });
 });

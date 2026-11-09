@@ -13,11 +13,9 @@ const createParty = defineContract({
 describe('RC-186: the API refuses a bad GSTIN', () => {
   it('answers 400 invalid_input with the issue on the gstin field', () => {
     const body = JSON.parse(requestFor(createParty, { name: 'Asha Motors', gstin: '27AAPFU0939F1Z' }).body ?? '');
-    const r = readInput(createParty, { params: {}, body });
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(PLATFORM_ERRORS[r.error.code]).toBe(400);
-    expect(r.error.issues).toEqual([{ path: ['gstin'], code: 'custom', message: 'Enter a valid 15-character GSTIN, in capitals' }]);
+    expect(readInput(createParty, { params: {}, body })).toMatchObject({ ok: false, error: { code: 'invalid_input',
+      issues: [{ path: ['gstin'], code: 'custom', message: 'Enter a valid 15-character GSTIN, in capitals' }] } });
+    expect(PLATFORM_ERRORS.invalid_input).toBe(400);
   });
 
   it('lets a valid GSTIN through', () => {
