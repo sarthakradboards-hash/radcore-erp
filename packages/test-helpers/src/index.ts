@@ -2,3 +2,4 @@
 // nothing here can change how production code runs (RC-155).
 export { fakeClock, type FakeClock } from './clock.ts';
 export { factory, type Fresh } from './factory.ts';
+export { testPassword, testProductionSettings, testSettings } from './settings.ts';
