@@ -13,6 +13,11 @@ updates:
     # ADR-003 §4: versions must be 14 days old. Security updates are not held back by the cooldown.
     cooldown:
       default-days: 14
+    # ADR-003 ties client-s3 and s3-request-presigner to one release, so they arrive as one PR.
+    groups:
+      aws-sdk:
+        patterns:
+          - "@aws-sdk/*"
   # ADR-003's check fixtures pin bad versions on purpose (C5 needs a known advisory, C4 a bad licence, C8 a bad
   # lockfile). An update there breaks the check it proves, so every dependency is ignored, which stops security
   # updates there too (RAD-16, PR #28).
