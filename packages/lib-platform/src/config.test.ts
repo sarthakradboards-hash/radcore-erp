@@ -92,7 +92,7 @@ describe('refuses to start', () => {
     // RAD-42: the MRK-aware keyring decrypts only with the full ARN, so a bare id, an alias or a single-Region key
     // would encrypt and then never decrypt.
     [{ SECRETS_KMS_KEY_ID: `mrk-${'a'.repeat(32)}` }, 'SECRETS_KMS_KEY_ID must be a multi-Region KMS key ARN'],
-    [{ SECRETS_KMS_KEY_ID: 'alias/radcore-secrets' }, 'SECRETS_KMS_KEY_ID must be a multi-Region KMS key ARN'],
+    [{ SECRETS_KMS_KEY_ID: 'alias/rc' }, 'SECRETS_KMS_KEY_ID must be a multi-Region KMS key ARN'],
     [{ SECRETS_KMS_KEY_ID: testKmsKeyArn().replace('/mrk-', '/') }, 'SECRETS_KMS_KEY_ID must be a multi-Region KMS key ARN'],
     [{ NODE_ENV: 'test', APP_ENV: 'staging' }, 'NODE_ENV must be production when APP_ENV is staging'],
     [{ NODE_ENV: undefined, APP_ENV: 'review' }, 'NODE_ENV must be production when APP_ENV is review'],

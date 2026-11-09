@@ -62,7 +62,7 @@ describe('createSecrets', () => {
   // The MRK-aware strict keyring encrypts with these but decrypts only with the full ARN (auditor-2, RAD-42).
   it.each([
     ['a bare key id', `mrk-${'a'.repeat(32)}`],
-    ['an alias', 'alias/radcore-secrets'],
+    ['an alias', 'alias/rc'],
     ['a single-Region key ARN', testKmsKeyArn().replace('/mrk-', '/')],
   ])('refuses %s as the KMS key, since nothing it encrypted would decrypt', (_what, kmsKeyId) => {
     expect(() => createSecrets({ kmsKeyId, localKey: null })).toThrow(/multi-Region KMS key ARN/);
