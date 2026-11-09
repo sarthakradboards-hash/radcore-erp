@@ -88,7 +88,7 @@ const CLAUSE_IDS: Record<string, string[]> = {
   'E4-unsafe-argument': ['@typescript-eslint/no-unsafe-argument'],
   'E4-declare-global': ['radcore/no-declare'],
   'L4-subpath-import': ['radcore/no-subpath-imports'],
-  ...Object.fromEntries(['wrapper', 'alias', 'object', 'cast', 'async', 'callback'].map((k) => [`D7-${k}-export`, ['radcore/d7-no-table-exports']])),
+  ...Object.fromEntries(['wrapper', 'alias', 'object', 'cast', 'async', 'callback', 'foreign-generic', 'maybe'].map((k) => [`D7-${k}-export`, ['radcore/d7-no-table-exports']])),
   'L5-update': ['drizzle/enforce-update-with-where'],
   'L5-delete': ['drizzle/enforce-delete-with-where'],
   'L6-no-danger': ['react/no-danger'],
