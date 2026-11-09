@@ -13,3 +13,22 @@ updates:
     # ADR-003 §4: versions must be 14 days old. Security updates are not held back by the cooldown.
     cooldown:
       default-days: 14
+    # ADR-003 ties client-s3 and s3-request-presigner to one release, so they arrive as one PR.
+    groups:
+      aws-sdk:
+        patterns:
+          - "@aws-sdk/*"
+  # ADR-003's check fixtures pin bad versions on purpose (C5 needs a known advisory, C4 a bad licence, C8 a bad
+  # lockfile). An update there breaks the check it proves, so every dependency is ignored (RAD-16, PR #28). That
+  # stops version updates. GitHub doesn't document whether it also stops security updates: if a fixture security
+  # PR still appears, close it and dismiss the alert as "used in tests". The second glob covers nested fixture
+  # manifests (ok-allowed-imports/apps/web and apps/api, ok-allowed-imports/packages/lib-hr, and
+  # D2-undeclared-dependency/packages/lib-integrations).
+  - package-ecosystem: npm
+    directories:
+      - /tools/boundary-fixtures/*
+      - /tools/boundary-fixtures/*/*/*
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"

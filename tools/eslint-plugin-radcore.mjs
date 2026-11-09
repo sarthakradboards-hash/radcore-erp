@@ -324,6 +324,13 @@ const noTableExports = {
     // Structure only: array and tuple elements, never a generic's type arguments. drizzle types a row as
     // `InferSelectModel<Table<T>>`, so following type arguments would find a table inside every plain row type.
     const elements = (type) => (checker.isArrayType(type) || checker.isTupleType(type) ? checker.getTypeArguments(type) : []);
+    // A table or transaction type is declared in drizzle-orm or in our own packages/db, so the walk enters other
+    // packages' types only through their type arguments: a zod schema's methods return more zod types, and walking
+    // them ran ESLint out of memory on every entry that exports a schema (M1-04). TypeScript's own lib is walked in
+    // full, for Promise<SalesTx>.
+    const FOREIGN = /[\\/]node_modules[\\/](?!drizzle-orm[\\/]|typescript[\\/]lib[\\/])/;
+    const foreign = (sym) => (sym?.declarations?.length ?? 0) > 0
+      && sym.declarations.every((d) => FOREIGN.test(d.getSourceFile().fileName));
     const carries = (type, best, depth) => {
       if (!type || depth > MAX_DEPTH) return false;
       // Keep the shallowest depth a type was reached at, so a deeper first visit can't hide a shallower one.
@@ -333,6 +340,11 @@ const noTableExports = {
       for (const sym of [type.getSymbol(), type.aliasSymbol]) {
         const name = sym?.getName();
         if (name && (names.includes(name) || tx.test(name))) return true;
+      }
+      // Into another package's type, only through what we passed it: AsyncLocalStorage<SalesTx> holds a transaction.
+      if (foreign(type.aliasSymbol ?? type.getSymbol())) {
+        const args = [...(type.aliasTypeArguments ?? []), ...(type.target ? checker.getTypeArguments(type) : [])];
+        return args.some((t) => carries(t, best, depth + 1));
       }
       const awaited = checker.getAwaitedType(type);
       const next = [
@@ -377,6 +389,7 @@ export default {
     'no-raw-execution': restrict('ADR-002 L3: no raw execution'),
     'no-driver': restrict('ADR-002 L4: no driver outside the pool'),
     'no-raw-html': restrict('ADR-002 L6: no raw HTML'),
+    'e6-no-float-money': restrict('ADR-001 E6: no floating-point maths or text comparison on money'),
     'outbound-only': restrict('ADR-002 L8: outside calls go through the guarded client'),
     'tables-in-schema': restrict('ADR-002 L9a: tables are declared only in the schema'),
     'views-in-views': restrict('ADR-002 L9b: views are declared only in views'),
