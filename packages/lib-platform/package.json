@@ -12,7 +12,10 @@
     "./runtime": "./src/runtime.ts"
   },
   "dependencies": {
+    "chardet": "2.2.0",
+    "csv-parse": "7.0.3",
     "pg": "8.23.1",
+    "read-excel-file": "9.3.12",
     "zod": "4.6.7"
   },
   "scripts": {
