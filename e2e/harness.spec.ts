@@ -32,16 +32,19 @@ test('an uncaught error is recorded', async ({ page, pageProblems }) => {
 
 test('a request that cannot connect is recorded', async ({ page, pageProblems }) => {
   await page.goto('/');
-  // Port 9 (discard) has nothing listening, so the connection is refused.
-  await page.evaluate('fetch("http://127.0.0.1:9/").catch(() => {})');
-  await expect.poll(() => pageProblems).toEqual([expect.stringMatching(/^request failed: GET http:\/\/127\.0\.0\.1:9\//)]);
+  // Same origin, so the CSP's connect-src allows it; the route refuses the connection (not an abort, which is ignored).
+  await page.route('**/?refused', (route) => route.abort('connectionrefused'));
+  await page.evaluate('fetch("/?refused").catch(() => {})');
+  await expect.poll(() => pageProblems).toEqual([expect.stringMatching(/^request failed: GET http:\/\/127\.0\.0\.1:\d+\/\?refused \(.*REFUSED.*\)$/)]);
   pageProblems.length = 0;
 });
 
 test('an aborted request is not recorded', async ({ page, pageProblems }) => {
   await page.goto('/');
+  // Wait for the abort itself, so this can't pass without a request ever being sent.
+  const failed = page.waitForEvent('requestfailed', (r) => r.url().endsWith('/?slow'));
   await page.evaluate('(() => { const c = new AbortController(); fetch("/?slow", { signal: c.signal }).catch(() => {}); c.abort(); })()');
-  await page.waitForTimeout(200);
+  expect((await failed).failure()?.errorText).toMatch(/ERR_ABORTED|NS_BINDING_ABORTED|cancelled/i);
   expect(pageProblems).toEqual([]);
 });
 

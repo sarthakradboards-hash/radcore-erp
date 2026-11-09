@@ -117,6 +117,11 @@ rows. "Paid" is then read from a view, so lib-accounts never writes a sales tabl
 | apps/worker | the same as apps/api |
 | apps/web | lib-common and every library's `./contract` entry, lib-platform's included, **nothing else**: not lib-platform's `.` or `./runtime`, not packages/db, not a library's `.` entry. This holds for all of `apps/web`, including server components, route handlers and middleware: the web server also talks to the API over HTTP |
 
+**Test-only helpers** (RAD-49, M1-31). `packages/test-helpers` (`@radcore/test-helpers`: the fake clock and the
+test-data factories) is an 18th workspace that ships no production code. Only `*.test.ts` and `*.test.tsx` files may
+import it, from any workspace; any other import of it fails D2. It imports nothing from `@radcore/*` today; an edge
+to lib-common (for the Clock type, RAD-20) is added here in the PR that first needs it.
+
 No package under `packages/` imports an HTTP framework (Express, Next) or anything under `apps/`. That is what lets
 the worker run any service without loading the web layer, which is RC-175's fix.
 
