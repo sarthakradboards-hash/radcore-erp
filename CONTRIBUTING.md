@@ -55,7 +55,8 @@ git-ignored; never commit it. Each lint rule has a violating fixture in `tools/b
   file and its journal entry and snapshot, then run `generate` again, so your migration comes after dev's.
   - drizzle applies a migration only if its journal `when` is later than the last one applied, so an older `when`
     would be skipped silently on every database that is already migrated.
-  - `tools/migrate.test.ts` fails when the journal is out of order.
+  - `tools/migrate.test.ts` fails when the journal is out of order. In CI it also compares with the base commit:
+    each new migration must be dated after the newest one there, and merged migrations must be unchanged.
 
 ## Tests
 

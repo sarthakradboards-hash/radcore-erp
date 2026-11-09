@@ -1,6 +1,7 @@
 // RAD-25 (M1-07, RC-052): the migration runner on a real PostgreSQL. It applies the migrations once, under an advisory
 // lock, in one transaction, forward-only, from an empty database and as an upgrade. Each test makes its own empty
 // database and drops it, so the shuffled order doesn't matter.
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,6 +12,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { MIGRATIONS_FOLDER, migrate } from '../packages/db/src/migrate.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
+// The commit CI compares the migrations with (.github/workflows/ci.yml).
+const base = process.env['MIGRATIONS_BASE'];
 
 type Journal = { entries: { idx: number; version: string; when: number; tag: string; breakpoints: boolean }[] };
 const readJournal = (dir: string) => JSON.parse(readFileSync(join(dir, 'meta', '_journal.json'), 'utf8')) as Journal;
@@ -82,6 +85,27 @@ describe('the migration files', () => {
     const entries = readJournal(MIGRATIONS_FOLDER).entries;
     expect(entries.map((e) => e.idx)).toEqual(entries.map((_, i) => i));
     expect(entries.filter((e, i) => i > 0 && e.when <= (entries[i - 1]?.when ?? 0)).map((e) => e.tag)).toEqual([]);
+  });
+
+  // Against the base commit (a PR's base, or the commit before a push): a branch whose migration is older than one
+  // that merged meanwhile fails here before the journal merge would hide it, and merged migrations never change.
+  it.runIf(process.env['CI'] && !base)('has the base commit in CI', () => {
+    expect.fail('MIGRATIONS_BASE is not set: in CI the migrations are compared with the base commit');
+  });
+
+  it.skipIf(!base)('dates each new migration after the newest one at the base, and leaves merged ones unchanged', () => {
+    const git = (...args: string[]) => spawnSync('git', args, { encoding: 'utf8' });
+    expect(git('rev-parse', '--verify', `${base}^{commit}`).status).toBe(0);
+    const shown = git('show', `${base}:packages/db/migrations/meta/_journal.json`);
+    // Before the first migration merged, the base has no journal.
+    const merged = shown.status === 0 ? (JSON.parse(shown.stdout) as Journal).entries : [];
+    const entries = readJournal(MIGRATIONS_FOLDER).entries;
+    const newest = Math.max(0, ...merged.map((e) => e.when));
+    expect(entries.filter((e) => !merged.some((m) => m.tag === e.tag) && e.when <= newest).map((e) => e.tag)).toEqual([]);
+    expect(merged.filter((m) => !entries.some((e) => e.tag === m.tag && e.when === m.when)).map((m) => m.tag)).toEqual([]);
+    const lf = (s: string) => s.replaceAll('\r\n', '\n');
+    expect(merged.filter((m) => lf(git('show', `${base}:packages/db/migrations/${m.tag}.sql`).stdout)
+      !== lf(readFileSync(join(MIGRATIONS_FOLDER, `${m.tag}.sql`), 'utf8'))).map((m) => m.tag)).toEqual([]);
   });
 
   // ADR-002: L3 is off in migrate.ts for the advisory lock only.
