@@ -97,7 +97,7 @@ jobs:
       - name: Every test, fixtures and register proofs included, with coverage
         # The S3 smoke test needs the store, which only the compose job starts; there it must run (it fails in CI
         # without S3_ENDPOINT).
-        run: npx vitest run --coverage --exclude tools/s3.test.ts
+        run: npx vitest run --coverage --sequence.shuffle --exclude tools/s3.test.ts
       - name: Upload the coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -128,7 +128,7 @@ jobs:
       - name: Object store smoke test (presigned PUT and GET)
         run: |
           set -a; . ./.env; set +a
-          npx vitest run --project tools tools/s3.test.ts
+          npx vitest run --sequence.shuffle --project tools tools/s3.test.ts
 
   ci:
     name: ci
