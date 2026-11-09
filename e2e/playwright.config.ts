@@ -11,7 +11,8 @@ const DATABASE_URL = process.env['E2E_DATABASE_URL'] ?? 'postgres://radcore@127.
 // The api and worker refuse to start without ADR-004 §5's settings (RAD-28). `npm run e2e` writes them to the root
 // .env first (`npm run dev:env`), and both load it; these win over it. APP_ENV ci: the e2e database uses trust auth,
 // so its URL has no password, which only CI may use.
-const serverEnv = { DATABASE_URL, API_PORT: String(API_PORT), APP_ENV: 'ci' };
+// PUBLIC_ORIGIN is the e2e web app's, not dev's, so the origin check (M1-21) accepts e2e's writes.
+const serverEnv = { DATABASE_URL, API_PORT: String(API_PORT), APP_ENV: 'ci', PUBLIC_ORIGIN: `http://127.0.0.1:${WEB_PORT}` };
 
 export default defineConfig({
   testDir: '.',
