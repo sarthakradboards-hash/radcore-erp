@@ -76,6 +76,20 @@ it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
 });
 
 describe('the migration files', () => {
+  // drizzle applies a migration only if its `when` is later than the last one applied, so one merged from a parallel
+  // branch with an earlier `when` would be skipped on every database already migrated, while CI's fresh one applies it.
+  it('are in journal order, each `when` later than the one before (regenerate yours after merging dev)', () => {
+    const entries = readJournal(MIGRATIONS_FOLDER).entries;
+    expect(entries.map((e) => e.idx)).toEqual(entries.map((_, i) => i));
+    expect(entries.filter((e, i) => i > 0 && e.when <= (entries[i - 1]?.when ?? 0)).map((e) => e.tag)).toEqual([]);
+  });
+
+  // ADR-002: L3 is off in migrate.ts for the advisory lock only.
+  it('migrate.ts makes exactly one raw call, the lock', () => {
+    const source = readFileSync(join(MIGRATIONS_FOLDER, '..', 'src', 'migrate.ts'), 'utf8');
+    expect(source.match(/\.(query|execute|unsafe)\(/g)).toEqual(['.query(']);
+  });
+
   it("creates pg-boss's schema from pg-boss's own construction plan (ADR-002 §4)", () => {
     // A Windows checkout may have CRLF line ends.
     const file = readFileSync(join(MIGRATIONS_FOLDER, '0001_pgboss.sql'), 'utf8').replaceAll('\r\n', '\n');

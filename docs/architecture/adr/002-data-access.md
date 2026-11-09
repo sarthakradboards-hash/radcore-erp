@@ -188,7 +188,7 @@ zone list differs from the table below. Widening a zone means amending this ADR 
 | L1 (no `sql` outside its positions) | none. In the zone files, L1 allows `sql` only in the positions listed in §3 |
 | L1's `drizzle-orm` value allowlist: extra names in exactly these files, with the rest of L1 still on | `packages/db/src/*/relations.ts`: `relations`. `packages/db/src/conditions.ts` (home of `notInNonEmpty`): `notInArray`. `packages/db/src/module-tx.ts` (the module-transaction wrapper, §4): `getOperators`, `getOrderByOperators`, `is`, `getTableName`. `packages/db/src/migrate.ts` (the migrator, RAD-25): `drizzle` and `migrate`, from `drizzle-orm/node-postgres` and its `/migrator`. |
 | L2 (no query strings) | `packages/db/views/<name>.ts`, `packages/db/src/request-context.ts` |
-| L3 (no raw execution) | `packages/db/src/request-context.ts`, `packages/db/src/migrate.ts` (the migrator's session advisory lock, RAD-25: drizzle's migrator takes none; the migrations themselves run through drizzle's migrator) |
+| L3 (no raw execution) | `packages/db/src/request-context.ts`, `packages/db/src/migrate.ts` (the migrator, RAD-25: drizzle's migrator takes no lock, so the file makes exactly one raw call, the session advisory lock, which tools/migrate.test.ts pins; the migrations themselves run through drizzle's migrator) |
 | L4 (no driver) | `packages/lib-platform/src/db/client.ts` (pool, transactions, pg-boss), `packages/db/src/migrate.ts` (the migrator) |
 | L9a (tables declared only in the schema) | `packages/db/src/*/tables.ts`, `packages/db/src/columns.ts` |
 | L9b (views declared only in views) | `packages/db/views/<name>.ts` |
