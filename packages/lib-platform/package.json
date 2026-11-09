@@ -11,10 +11,12 @@
     "./contract": "./src/contract.ts",
     "./runtime": "./src/runtime.ts"
   },
+  "dependencies": {
+    "pg": "8.23.1",
+    "pino": "10.4.0",
+    "zod": "4.6.7"
+  },
   "scripts": {
     "test": "vitest run --passWithNoTests"
-  },
-  "dependencies": {
-    "pino": "10.4.0"
   }
 }

@@ -117,6 +117,11 @@ rows. "Paid" is then read from a view, so lib-accounts never writes a sales tabl
 | apps/worker | the same as apps/api |
 | apps/web | lib-common and every library's `./contract` entry, lib-platform's included, **nothing else**: not lib-platform's `.` or `./runtime`, not packages/db, not a library's `.` entry. This holds for all of `apps/web`, including server components, route handlers and middleware: the web server also talks to the API over HTTP |
 
+**Test-only helpers** (RAD-49, M1-31). `packages/test-helpers` (`@radcore/test-helpers`: the fake clock and the
+test-data factories) is an 18th workspace that ships no production code. Only `*.test.ts` and `*.test.tsx` files may
+import it, from any workspace; any other import of it fails D2. It imports nothing from `@radcore/*` today; an edge
+to lib-common (for the Clock type, RAD-20) is added here in the PR that first needs it.
+
 No package under `packages/` imports an HTTP framework (Express, Next) or anything under `apps/`. That is what lets
 the worker run any service without loading the web layer, which is RC-175's fix.
 
@@ -323,6 +328,10 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   - Timing gives nothing away either. An unknown address is checked against a fixed dummy Argon2id hash, made
     once at start-up with the current parameters, so it takes as long as a wrong password and gets the same
     answer (RAD-64).
+  - A password-reset request gets the same answer, in the same time, whatever address is typed (RAD-68, M1-14).
+    It always just queues the reset, through the outbox (ADR-002 §4). The worker looks the address up and sends
+    the email only if an account has it, at most once per address in a short window, so the form can't flood
+    anyone's inbox. The request counts against the per-IP `rate_limited` limit.
 - **The lockout trade-off** (RAD-64). Anyone who knows a person's email address can lock them out by failing to
   sign in as them. These limit it (M1-14 sets the numbers):
   - a lock is short and ends on its own, with `retryAfterSeconds` saying when;
@@ -487,6 +496,7 @@ config test (ADR-002) calls `calculateConfigForFile` and asserts each local rule
 | E3 | no I/O without an import | local rule `radcore/e3-no-io` on `packages/lib-common/**`, every `contract.ts` and every `src/rules/**` | use of `process`, `fetch`, `setTimeout`, `setInterval`, `crypto`, `Math.random`, `Date.now()` or `new Date()` with no argument. Time and randomness come in as arguments or from `ctx.clock`. |
 | E4 | no escape hatch in libraries | on `packages/lib-*/**` and `packages/db/src/*/repo.ts`, with type information: `@typescript-eslint/no-explicit-any`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-assignment` (these typed rules aren't shared with any other E- or L-rule); plus local rule `radcore/e4-no-escape`, which bans a double cast (`x as unknown as T`), `as any`, the `Reflect` global and importing `getTableConfig` | a library casts or reflects its way past T1 (`Reflect.get(ctx.tx, '_')`), or reads table metadata |
 | E5 | no switching the type checker off | `@typescript-eslint/ban-ts-comment` at `error`, with no description allowance, over `packages/**` and `apps/**` | a `// @ts-ignore`, `// @ts-expect-error`, `// @ts-nocheck` or `// @ts-check` comment (T1 would otherwise be silenced on one line) |
+| E6 | no float maths or text comparison on money (M1-01, RC-215) | local rule `radcore/e6-no-float-money` on `apps/**` and `packages/**` | `parseFloat` or `Number.parseFloat` anywhere; or a value named like money, a rate or a quantity (`total`, `grandTotal`, `totalGST`, `unit_price`, `cgst`, `grossSalary`, `creditLimit`, and the other words in `eslint.config.mjs`) appears anywhere inside `Number()`, `Math.*` or a unary `+` or `-`; is an operand, bare or inside `?.`, `!`, `as`, `satisfies` or a spread, of `-`, `*`, `/`, `%`, `**`, a `+` that isn't joining a string, a compound assignment or `++`/`--`; is compared with `<`, `<=`, `>` or `>=`; or is compared with `===`, `!==`, `==` or `!=` to another such value; or such a name is declared with `number` anywhere in its type or a `.number()` schema anywhere in its value. Money is a decimal string on the wire (§7a), so these convert it to a float or compare it as text (`"9.00" > "10.00"`). Use lib-common: `dec(a).plus(b)`, `dec(a).gt(b)`, `dec(a).cmp(b)`, `dec(a).eq(b)` |
 
 **Proof.** Every rule has one violating fixture per clause, kept in `tools/boundary-fixtures/<rule>-<clause>/`, so
 D4, D5, D7, E1 and E3 have one fixture for each thing they forbid. D7's fixtures include a type-only import with a

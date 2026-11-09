@@ -13,13 +13,13 @@
   "scripts": {
     "dev": "node tools/dev.ts",
     "dev:env": "node tools/dev-env.ts",
-    "test": "vitest run",
+    "test": "vitest run --sequence.shuffle",
     "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json",
     "lint": "eslint . && depcruise packages apps --config .dependency-cruiser.cjs",
     "db:up": "npm run dev:env && docker compose -f compose.dev.yml up -d --wait",
     "deps:check": "node tools/deps/cli.ts",
     "knip": "knip",
-    "e2e": "playwright test -c e2e"
+    "e2e": "npm run dev:env && playwright test -c e2e"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1155.0",
