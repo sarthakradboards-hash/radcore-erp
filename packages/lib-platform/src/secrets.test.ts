@@ -1,5 +1,6 @@
 // RC-213: secrets encrypted with a per-value data key, bound to their place, rotatable, with a long enough key.
 import { randomUUID } from 'node:crypto';
+import { testKmsKeyArn } from '@radcore/test-helpers';
 import { describe, expect, it } from 'vitest';
 import { createSecrets, expiringBefore, SecretPlaceMismatch } from './index.ts';
 
@@ -54,10 +55,17 @@ describe('createSecrets', () => {
       .toThrow(/exactly one/);
   });
 
-  it('builds the KMS keyring from SECRETS_KMS_KEY_ID without calling KMS', () => {
-    expect(() => createSecrets({
-      kmsKeyId: `arn:aws:kms:ap-south-1:${'1'.repeat(12)}:key/mrk-${'a'.repeat(32)}`, localKey: null,
-    })).not.toThrow();
+  it('builds the KMS keyring from a multi-Region key ARN without calling KMS', () => {
+    expect(() => createSecrets({ kmsKeyId: testKmsKeyArn(), localKey: null })).not.toThrow();
+  });
+
+  // The MRK-aware strict keyring encrypts with these but decrypts only with the full ARN (auditor-2, RAD-42).
+  it.each([
+    ['a bare key id', `mrk-${'a'.repeat(32)}`],
+    ['an alias', 'alias/radcore-secrets'],
+    ['a single-Region key ARN', testKmsKeyArn().replace('/mrk-', '/')],
+  ])('refuses %s as the KMS key, since nothing it encrypted would decrypt', (_what, kmsKeyId) => {
+    expect(() => createSecrets({ kmsKeyId, localKey: null })).toThrow(/multi-Region KMS key ARN/);
   });
 });
 
@@ -70,5 +78,11 @@ describe('expiringBefore', () => {
       { id: 'gsp', expiresAt: '2027-01-01T00:00:00Z' },
     ];
     expect(expiringBefore(tokens, '2026-11-21T00:00:00Z').map((t) => t.id)).toEqual(['whatsapp', 'meta']);
+  });
+
+  it('fails closed: an unreadable expiry is reported first, and an unreadable horizon is refused', () => {
+    const tokens = [{ id: 'meta', expiresAt: '2026-11-20T00:00:00Z' }, { id: 'broken', expiresAt: 'soon' }];
+    expect(expiringBefore(tokens, '2026-11-21T00:00:00Z').map((t) => t.id)).toEqual(['broken', 'meta']);
+    expect(() => expiringBefore(tokens, 'next week')).toThrow(/valid horizon/);
   });
 });

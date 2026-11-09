@@ -7,7 +7,7 @@ import {
   buildAwsKmsMrkAwareStrictMultiKeyringNode, buildClient, CommitmentPolicy, RawAesKeyringNode,
   RawAesWrappingSuiteIdentifier, type KeyringNode,
 } from '@aws-crypto/client-node';
-import type { Config } from './config.ts';
+import { MULTI_REGION_KEY_ARN, type Config } from './config.ts';
 
 /** Where a secret lives. It is bound into the ciphertext. */
 export type SecretPlace = { table: string; column: string; rowId: string };
@@ -22,8 +22,12 @@ export type Secrets = {
 
 // The SDK signs with an ECDSA key it puts in the context itself; nothing else may be there but ours.
 const SDK_SIGNING_FIELD = 'aws-crypto-public-key';
+// The local key can't rotate: data keys still change per value, but replacing SECRETS_LOCAL_KEY makes everything it
+// wrapped unreadable. It's for development, CI and the sample-data test copy only (ADR-004 §5); KMS rotates in production.
 const LOCAL_RING_NAME = 'secrets-local-v1';
-const { encrypt, decrypt } = buildClient(CommitmentPolicy.REQUIRE_ENCRYPT_REQUIRE_DECRYPT);
+// One keyring wraps each data key, so a message with more wrapped keys is not ours: refuse it before any KMS call.
+const { encrypt, decrypt } = buildClient({ commitmentPolicy: CommitmentPolicy.REQUIRE_ENCRYPT_REQUIRE_DECRYPT,
+  maxEncryptedDataKeys: 1 });
 
 export class SecretPlaceMismatch extends Error {
   constructor() {
@@ -34,6 +38,8 @@ export class SecretPlaceMismatch extends Error {
 
 function keyring(keys: Config['secrets']): KeyringNode {
   if (keys.kmsKeyId !== null && keys.localKey === null) {
+    // config.ts refuses this at start; checked again because the wrong form encrypts fine and never decrypts.
+    if (!MULTI_REGION_KEY_ARN.test(keys.kmsKeyId)) throw new Error('SECRETS_KMS_KEY_ID must be a multi-Region KMS key ARN');
     return buildAwsKmsMrkAwareStrictMultiKeyringNode({ generatorKeyId: keys.kmsKeyId });
   }
   if (keys.localKey !== null && keys.kmsKeyId === null) {
@@ -78,6 +84,11 @@ export function createSecrets(keys: Config['secrets']): Secrets {
 /** Outside tokens that expire before `horizon`, soonest first: what the expiry watch alerts on (RC-213). */
 export function expiringBefore<T extends { expiresAt: string | null }>(tokens: T[], horizon: string): T[] {
   const limit = Date.parse(horizon);
-  return tokens.filter((t) => t.expiresAt !== null && Date.parse(t.expiresAt) < limit)
-    .sort((a, b) => Date.parse(a.expiresAt ?? '') - Date.parse(b.expiresAt ?? ''));
+  if (Number.isNaN(limit)) throw new Error(`expiringBefore needs a valid horizon, got ${JSON.stringify(horizon)}`);
+  // Fails closed: an expiry that can't be read counts as already past, so it is reported first, never skipped.
+  const at = (t: T): number => {
+    const ms = Date.parse(t.expiresAt ?? '');
+    return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+  };
+  return tokens.filter((t) => t.expiresAt !== null && at(t) < limit).sort((a, b) => at(a) - at(b));
 }
