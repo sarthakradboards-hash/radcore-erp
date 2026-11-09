@@ -297,5 +297,7 @@ export default tseslint.config(
   // The web app: Next's rules, with react/no-danger as an error and no exceptions (L6).
   ...nextVitals.map((c) => ({ ...c, files: [`apps/web/**/*.${EXT}`] })),
   { files: [`apps/web/**/*.${EXT}`], settings: { next: { rootDir: 'apps/web' } },
-    rules: { 'react/no-danger': 'error' } },
+    rules: { 'react/no-danger': 'error',
+      // RC-146: a link to a new tab carries rel="noopener noreferrer" (COOP in next.config.ts also cuts the opener).
+      'react/jsx-no-target-blank': ['error', { allowReferrer: false, enforceDynamicLinks: 'always', forms: true }] } },
 );
