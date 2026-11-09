@@ -38,6 +38,7 @@ npm run typecheck
 npm run deps:check # ADR-003 C2 to C9: Node version, pins, licences, the approved list, lockfile, age
 npm run knip       # unused files, exports and dependencies (C1)
 npm run db:up      # PostgreSQL 16 and SeaweedFS (S3), on 127.0.0.1 only (needs Docker)
+npm run db:migrate # the migrations, as the owner login (MIGRATION_DATABASE_URL); run after db:up and each pull
 ```
 
 `npm run dev` and `npm run db:up` first write `.env` with new random credentials if it doesn't exist. `.env` is

@@ -1,6 +1,6 @@
 // Vitest global setup: one fresh PostgreSQL database per test run, never one per test file (RC-005).
 // With TEST_DATABASE_ADMIN_URL set (CI's PostgreSQL 16 service, or `npm run db:up` locally), it creates
-// radcore_test_<random>, runs the migrations into it once `db:migrate` exists (RAD-25), hands it to every test file
+// radcore_test_<random>, runs the migrations into it (`npm run db:migrate`, RAD-25), hands it to every test file
 // as TEST_DATABASE_URL, and drops it when the run ends. Without it, database tests skip.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -26,7 +26,7 @@ export default async function setup() {
 
   const scripts = (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string> }).scripts ?? {};
   if (scripts['db:migrate']) {
-    const r = spawnSync('npm run db:migrate', { stdio: 'inherit', shell: true, env: { ...process.env, DATABASE_URL: url.toString() } });
+    const r = spawnSync('npm run db:migrate', { stdio: 'inherit', shell: true, env: { ...process.env, MIGRATION_DATABASE_URL: url.toString() } });
     if (r.status !== 0) throw new Error('db:migrate failed on the fresh test database');
   }
 

@@ -156,6 +156,7 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   | `@img/sharp-libvips-*` (via next's optional `sharp`) | LGPL-3.0-or-later | an unmodified, dynamically linked prebuilt binary. It is never loaded, because image optimisation is off (§2), and the image ships its licence notice. **Confirm with Sarthak.** The alternative is a build that leaves it out |
   | `@img/sharp-win32-*`, `@img/sharp-wasm32` (same `sharp`, bundling libvips) | `Apache-2.0 AND LGPL-3.0-or-later` (wasm32 adds `AND MIT`); chosen: all of them apply | the same libvips binary as the row above, so it stands or falls with it. Added by RAD-13 from the real lockfile |
   | `language-subtag-registry` (via eslint-config-next's `eslint-plugin-jsx-a11y`) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
+  | `type-fest` (via pg-boss's serialize-error) | `(MIT OR CC0-1.0)`; chosen: MIT | TypeScript type definitions only, with no runtime code. Added by RAD-25 from the real lockfile |
 
 - **Maintenance:** a release in the last 12 months, or a stated reason in its row (decimal.js, pino-http, cmdk and
   eslint-plugin-drizzle carry one). It must have no open advisory without a fix (C5). Its install scripts, if any,
