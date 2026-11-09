@@ -30,7 +30,8 @@ it('each zone is exactly the ADR-002 table', () => {
 
 const ALLOW = PINNED['radcore/no-sql']?.allowNames ?? [];
 const L1 = { base: { allowNames: ALLOW }, zone: { allowNames: [...ALLOW, 'sql'], zone: true } };
-const EVERYWHERE = ['radcore/no-driver', 'radcore/no-raw-html', 'radcore/tables-in-schema', 'radcore/views-in-views',
+const EVERYWHERE = ['radcore/no-driver', 'radcore/no-raw-html', 'radcore/e6-no-float-money', 'radcore/tables-in-schema',
+  'radcore/views-in-views',
   'radcore/no-subpath-imports', 'radcore/no-declare'];
 const SERVER = ['radcore/no-query-strings', 'radcore/no-raw-execution', 'radcore/outbound-only', ...EVERYWHERE];
 const LIB = [...SERVER, 'radcore/e4-no-escape', 'radcore/d7-no-db-reexport'];
