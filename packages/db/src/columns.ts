@@ -2,8 +2,11 @@
 // `sql` appears only as a CHECK's, a default's or a generated column's argument.
 import { sql } from 'drizzle-orm';
 import type { BuildExtraConfigColumns } from 'drizzle-orm';
-import { boolean, check, numeric, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, numeric, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { PgColumnBuilderBase, PgTableExtraConfigValue } from 'drizzle-orm/pg-core';
+
+/** The one schema every table and view lives in (ADR-005 §7c); the trigger functions' search_path names it, `public` is unused. */
+export const radcore = pgSchema('radcore');
 
 // The CHECK a helper column carries. radcoreTable reads it back, because Drizzle 0.45's check() is table-level and a
 // column builder doesn't know its table.
@@ -50,14 +53,14 @@ const snake = (key: string) =>
   (key.replace(/['’]/g, '').match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? []).map((w) => w.toLowerCase()).join('_');
 
 /**
- * Every table: the four audit columns (ADR-005 §5), and the CHECK of each helper column, named `ck_<table>_<column>`
+ * Every table, in the `radcore` schema: the four audit columns (ADR-005 §5), and the CHECK of each helper column, named `ck_<table>_<column>`
  * (§1). Each numeric CHECK also refuses 'NaN', which `>= 0` would let through.
  */
 export const radcoreTable = <TName extends string, TColumns extends Record<string, PgColumnBuilderBase>>(
   name: TName,
   columns: TColumns,
   extras?: (t: BuildExtraConfigColumns<TName, TColumns & Audit, 'pg'>) => PgTableExtraConfigValue[],
-) => pgTable(name, { ...columns, ...audit() }, (t) => [
+) => radcore.table(name, { ...columns, ...audit() }, (t) => [
   ...Object.entries(columns).flatMap(([key, builder]) => {
     const rule = rules.get(builder);
     const c = t[key as keyof typeof t];

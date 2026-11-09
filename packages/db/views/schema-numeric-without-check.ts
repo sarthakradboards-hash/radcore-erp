@@ -1,9 +1,10 @@
 // ADR-005 §1: every numeric column carries its CHECK, `ck_<table>_<column>`. Each row is a column without one, so a
 // numeric column declared outside the helpers shows up here. Read by tools/schema.test.ts.
 import { sql } from 'drizzle-orm';
-import { pgView, text } from 'drizzle-orm/pg-core';
+import { text } from 'drizzle-orm/pg-core';
+import { radcore } from '../src/columns.ts';
 
-export const vNumericWithoutCheck = pgView('v_schema_numeric_without_check', {
+export const vNumericWithoutCheck = radcore.view('v_schema_numeric_without_check', {
   schemaName: text(),
   tableName: text(),
   columnName: text(),

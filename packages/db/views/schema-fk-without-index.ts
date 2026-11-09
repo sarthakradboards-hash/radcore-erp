@@ -1,9 +1,10 @@
 // ADR-005 §3: each foreign key's columns lead an index, or the primary key (RC-029). Each row is a foreign key without
 // one. Read by tools/schema.test.ts.
 import { sql } from 'drizzle-orm';
-import { pgView, text } from 'drizzle-orm/pg-core';
+import { text } from 'drizzle-orm/pg-core';
+import { radcore } from '../src/columns.ts';
 
-export const vFkWithoutIndex = pgView('v_schema_fk_without_index', {
+export const vFkWithoutIndex = radcore.view('v_schema_fk_without_index', {
   schemaName: text(),
   tableName: text(),
   constraintName: text(),

@@ -124,7 +124,8 @@ const restrict = (description) => ({
  * L1, no `sql` outside its positions (ADR-002 §3). Options:
  *   allowNames: the value imports allowed from drizzle-orm and its subpaths other than pg-core (on everywhere)
  *   zone: in the SQL zone files. A `sql` tag may then be the direct argument of a drizzle `check()`, a drizzle
- *         column's `.default()` or `.generatedAlwaysAs()`, or `pgView(...).as()`, and the file may export only
+ *         column's `.default()` or `.generatedAlwaysAs()`, or `pgView(...).as()` (in a views file also
+ *         `radcore.view(...).as()`, on a schema imported from columns.ts), and the file may export only
  *         drizzle declarations (tables, views, columns), so no zone file can hand out an SQL value of its own
  *   helper: in request-context.ts, the one function whose body may use `sql`
  *   importExpressions: false in test files, which may use import() for mocking
@@ -134,6 +135,7 @@ const noSql = {
   create(context) {
     const o = { importExpressions: true, ...context.options[0] };
     const report = (node, message) => context.report({ node, messageId: 'm', data: { message: `[L1] ${message} (ADR-002).` } });
+    const inViews = /[\\/]views[\\/][^\\/]+$/.test(context.filename);
     const allowedCall = (call) => {
       const c = call.callee;
       if (c.type === 'Identifier') return c.name === 'check' && fromDrizzle(context, c);
@@ -141,7 +143,13 @@ const noSql = {
       if (['default', 'generatedAlwaysAs'].includes(c.property.name)) return fromDrizzle(context, c.object);
       // `pgView(...).as()`, also through options such as `.with({ securityInvoker: true })` or `.withNoData()`.
       const root = c.property.name === 'as' && c.object.type === 'CallExpression' ? chainRoot(c.object) : null;
-      return Boolean(root && ['pgView', 'pgMaterializedView'].includes(root.name) && fromDrizzle(context, root));
+      if (!root) return false;
+      if (['pgView', 'pgMaterializedView'].includes(root.name)) return fromDrizzle(context, root);
+      // `radcore.view(...).as()`: a view in the schema columns.ts declares (ADR-005 §7c), and only in a views file.
+      const m = root.parent;
+      return inViews && m.type === 'MemberExpression' && m.object === root && !m.computed
+        && ['view', 'materializedView'].includes(m.property.name) && m.parent.type === 'CallExpression'
+        && m.parent.callee === m && /(^|\/)columns(\.ts)?$/.test(importSource(context, root) ?? '');
     };
     const inHelper = (node) => {
       for (let p = node.parent; p; p = p.parent) if (p.type === 'FunctionDeclaration' && p.id?.name === o.helper) return true;
@@ -168,7 +176,6 @@ const noSql = {
     // What a zone file may export: a drizzle declaration (a table, schema table, creator table, view or column, but
     // never a `check`), an object of them (audit columns), or a function that returns one.
     // A relative import counts only from another zone file (whose own exports this rule already limits).
-    const inViews = /[\\/]views[\\/][^\\/]+$/.test(context.filename);
     const fromZoneFile = (id) => {
       const src = importSource(context, id) ?? '';
       if (!/^\.\.?\//.test(src)) return false;

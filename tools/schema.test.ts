@@ -1,6 +1,6 @@
 // ADR-005's schema rules (M1-05), read from a real PostgreSQL 16 database through the views in packages/db/views:
 // every numeric column has its CHECK, every foreign key an index (RC-029), every table its four audit columns, no
-// enums (RC-044), and no name over 63 bytes. Fixture tables prove each rule fires, and the helpers' CHECKs refuse
+// enums (RC-044), no name over 63 bytes, and nothing in `public` (§7c). Fixture tables prove each rule fires, and the helpers' CHECKs refuse
 // what they should (RC-024, NaN included).
 //
 // The DDL comes from drizzle-kit's own generator, applied inside one transaction that is rolled back, so this file
@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as schema from '@radcore/db/schema';
 import * as views from '@radcore/db/views';
 import {
-  boundedText, foreignMoney, fxRate, id, lookupTable, money, percent, qty, radcoreTable, unitPrice,
+  boundedText, foreignMoney, fxRate, id, lookupTable, money, percent, qty, radcore, radcoreTable, unitPrice,
 } from '../packages/db/src/columns.ts';
 
 // Tables built with the helpers: they must pass every rule.
@@ -81,10 +81,12 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
   beforeAll(async () => {
     await client.connect();
     await client.query('begin');
-    const objects = { ...schema, ...views, fixtureUnits, fixtureLines, bad, badParents, badRawNumbers, badChildren, badColour };
+    const objects = { ...schema, ...views, radcore, fixtureUnits, fixtureLines, bad, badParents, badRawNumbers, badChildren, badColour };
     const ddl = await generateMigration(generateDrizzleJson({}),
       generateDrizzleJson(objects, undefined, undefined, 'snake_case'));
     for (const statement of ddl) await client.query(statement);
+    // As the runtime logins will (ADR-005 §7c): unqualified names resolve in `radcore` only, never in `public`.
+    await client.query('set local search_path = radcore');
     await client.query("set local app.principal = 'system:test'");
     // Rows every test may rely on; each test's own writes run in a savepoint, so the shuffled order doesn't matter.
     await client.query("insert into fixture_units (code, label) values ('nos', 'Numbers'), ('store', 'Store')");
@@ -99,7 +101,8 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
   const outside = (schemaName: string) => (r: Record<string, string>) => r['schema_name'] !== schemaName;
 
   it('finds no rule broken outside the fixture schema (the real schema and the helper fixtures)', async () => {
-    for (const view of ['v_schema_numeric_without_check', 'v_schema_fk_without_index', 'v_schema_missing_audit', 'v_schema_enums']) {
+    for (const view of ['v_schema_numeric_without_check', 'v_schema_fk_without_index', 'v_schema_missing_audit', 'v_schema_enums',
+      'v_schema_public_relations']) {
       expect((await rows(view)).filter(outside('guard_bad')), view).toEqual([]);
     }
   });
@@ -111,6 +114,17 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
     expect((await inBad('v_schema_fk_without_index')).map((r) => r['table_name'])).toEqual(['children']);
     expect((await inBad('v_schema_missing_audit')).map((r) => r['table_name']).sort()).toEqual(['children', 'parents', 'raw_numbers']);
     expect(await inBad('v_schema_enums')).toEqual([{ schema_name: 'guard_bad', type_name: 'colour' }]);
+  });
+
+  it('reports a table or view in public (ADR-005 §7c)', async () => {
+    await client.query('savepoint stray');
+    try {
+      await client.query('create table public.stray (id int)');
+      await client.query('create view public.stray_view as select 1 as one');
+      expect((await rows('v_schema_public_relations')).map((r) => r['table_name']).sort()).toEqual(['stray', 'stray_view']);
+    } finally {
+      await client.query('rollback to savepoint stray');
+    }
   });
 
   // Runs `sql` in a savepoint and returns the SQLSTATE it raised, or 'ok'.

@@ -1,9 +1,10 @@
 // ADR-005 §5: every table has created_at, created_by, updated_at and updated_by. Each row is a table missing one.
 // Read by tools/schema.test.ts.
 import { sql } from 'drizzle-orm';
-import { pgView, text } from 'drizzle-orm/pg-core';
+import { text } from 'drizzle-orm/pg-core';
+import { radcore } from '../src/columns.ts';
 
-export const vMissingAudit = pgView('v_schema_missing_audit', {
+export const vMissingAudit = radcore.view('v_schema_missing_audit', {
   schemaName: text(),
   tableName: text(),
 }).as(sql`select n.nspname::text as schema_name, c.relname::text as table_name
