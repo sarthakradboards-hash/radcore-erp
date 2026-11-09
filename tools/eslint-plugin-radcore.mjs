@@ -146,9 +146,14 @@ const noSql = {
       if (!root) return false;
       if (['pgView', 'pgMaterializedView'].includes(root.name)) return fromDrizzle(context, root);
       // `radcore.view(...).as()`: a view in the schema columns.ts declares (ADR-005 §7c), and only in a views file.
-      // Exactly the real file: any other `columns.ts` could export a look-alike that hands the `sql` back.
+      // Exactly the real file's named `radcore` export. A views file sits directly in packages/db/views, so this
+      // specifier can only be packages/db/src/columns.ts. Any other `columns.ts`, or a namespace import's `view`,
+      // could be a look-alike that hands the `sql` back.
       const m = root.parent;
-      return inViews && m.type === 'MemberExpression' && m.object === root && !m.computed
+      const d = findVariable(context.sourceCode.getScope(root), root.name)?.defs[0];
+      const named = d?.type === 'ImportBinding' && d.node.type === 'ImportSpecifier'
+        && (d.node.imported.name ?? d.node.imported.value) === 'radcore';
+      return inViews && named && m.type === 'MemberExpression' && m.object === root && !m.computed
         && ['view', 'materializedView'].includes(m.property.name) && m.parent.type === 'CallExpression'
         && m.parent.callee === m && ['../src/columns.ts', '../src/columns'].includes(importSource(context, root) ?? '');
     };
