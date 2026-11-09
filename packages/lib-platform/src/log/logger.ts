@@ -1,12 +1,11 @@
 // Structured logs (RC-077): pino's JSON lines with a level, a time, the service and, inside a request or a job, its
-// request id. Every message is scrubbed, known secret keys are redacted, and errors go through describeError, so no
-// line carries personal data, a token or a failed query's values (RC-007). The process writes to stdout; the host
-// ships it (ADR-004).
+// request id. Every message is scrubbed and every field goes through safeFields, so no line carries personal data,
+// a token or a failed query's values (RC-007). The process writes to stdout; the host ships it (ADR-004).
 import { pino, type DestinationStream, type Level } from 'pino';
-import { describeError } from './safe-error.ts';
-import { REDACT_PATHS, scrubText } from './scrub.ts';
+import { safeFields } from './fields.ts';
+import { scrubText } from './scrub.ts';
 
-/** Fields to add to a line. Anything at a secret key is redacted. */
+/** Fields to add to a line. A key naming personal data or a secret is redacted, at any depth. */
 export type Fields = Record<string, unknown>;
 
 /** The logger the API, the worker and the platform pieces take. It fits RAD-28's Logger: info(m) and error(m, err). */
@@ -36,7 +35,8 @@ function wrap(p: Pino): Log {
     info: (m, f) => p.info(f ?? {}, scrubText(m)),
     warn: (m, f) => p.warn(f ?? {}, scrubText(m)),
     error: (m, err, f) => p.error(err === undefined ? (f ?? {}) : { ...f, err }, scrubText(m)),
-    child: (f) => wrap(p.child(f)),
+    // A child's bindings skip formatters.log, so they are walked here.
+    child: (f) => wrap(p.child(safeFields(f))),
   };
 }
 
@@ -45,12 +45,9 @@ export function createLog(o: LogOptions): Log {
     level: o.level,
     base: { service: o.service },
     timestamp: pino.stdTimeFunctions.isoTime,
-    redact: { paths: REDACT_PATHS, censor: '[redacted]' },
-    // Every error, however it reaches a line, is described, never dumped.
-    serializers: { err: describeError, error: describeError },
-    // shortcut: string fields are scrubbed one level deep; a nested object's strings rely on the redact keys.
-    formatters: { log: (fields) => Object.fromEntries(Object.entries(fields).map(([k, v]) =>
-      [k, typeof v === 'string' ? scrubText(v) : v])) },
+    // A line's fields are walked whole: errors described, sensitive keys redacted, every string scrubbed, at any
+    // depth and in arrays (fields.ts).
+    formatters: { log: safeFields },
   };
   return wrap(o.destination ? pino(options, o.destination) : pino(options));
 }

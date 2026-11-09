@@ -79,3 +79,64 @@ describe('RC-077: levels', () => {
     expect(lines[0]).toContain('"loud"');
   });
 });
+
+describe('RC-007 review: personal data at any depth, under any key (auditor-2 on #39)', () => {
+  const line = (fields: Record<string, unknown>) => {
+    const { lines, log } = capture();
+    log.info('lead saved', fields);
+    return { line: lines[0], text: JSON.stringify(lines) };
+  };
+  const pgFailure = () => Object.assign(new Error('null value in column "phone" violates not-null constraint'),
+    { code: '23502', table: 'leads', column: 'phone', detail: 'Failing row contains (Asha Rao, 98765 43210).' });
+
+  it.each<[string, Record<string, unknown>]>([
+    ['two objects down', { lead: { contact: { phone: '9876543210', email: 'asha.rao@example.com' } } }],
+    ['inside an array', { items: [{ phone: '9876543210', name: 'Asha Rao' }] }],
+    ['under a compound key', { leadName: 'Asha Rao', address: '12 MG Road, Pune', customer_phone: '9876543210' }],
+    ['as a nested string', { lead: { note: 'call 9876543210, PAN ABCPE1234F' } }],
+    ['in an error under any key', { reason: pgFailure() }],
+  ])('drops it %s', (_, fields) => {
+    expect(line(fields).text).not.toMatch(/Asha|9876543210|98765|asha\.rao|MG Road|ABCPE1234F|Failing row/);
+  });
+
+  it('keeps the shape: redacted keys, described errors, harmless keys', () => {
+    const { line: l } = line({ items: [{ name: 'Asha Rao', qty: 2 }], companyId: 'c1', reason: pgFailure(),
+      deep: { a: { b: { c: { d: { e: { f: 'x' } } } } } } });
+    expect(l).toMatchObject({ items: [{ name: '[redacted]', qty: 2 }], companyId: 'c1',
+      reason: { name: 'Error', code: '23502', table: 'leads', column: 'phone' } });
+    expect(JSON.stringify(l)).toContain('[too deep]');
+  });
+
+  it('scrubs a child logger\'s bindings too', () => {
+    const { lines, log } = capture();
+    log.child({ requestId: 'r1', user: { email: 'asha.rao@example.com' } }).info('x');
+    expect(lines[0]).toMatchObject({ requestId: 'r1', user: { email: '[redacted]' } });
+  });
+});
+
+describe('RC-007 review: messages that quote their input', () => {
+  it('masks the value in PostgreSQL 22P02', () => {
+    const e = Object.assign(new Error('invalid input syntax for type integer: "Asha Rao"'), { code: '22P02' });
+    expect(describeError(e)).toMatchObject({ code: '22P02', message: 'invalid input syntax for type integer: "…"' });
+  });
+
+  it("masks the body in Node's JSON.parse error", () => {
+    let err: unknown;
+    try {
+      JSON.parse('Asha Rao 9876543210');
+    } catch (e) {
+      err = e;
+    }
+    const d = describeError(err);
+    expect(d.name).toBe('SyntaxError');
+    expect(d.message).not.toMatch(/Asha|9876/);
+  });
+});
+
+describe('tokens without a digit (auditor-2 SHOULD)', () => {
+  it('treats a long segment as a token and anything after Bearer as a credential', () => {
+    expect(routeOf('/api/public/shares/abcdefghijklmnopqrstuvwxyzAB')).toBe('/api/public/shares/:token');
+    expect(routeOf('/api/accounts/parties')).toBe('/api/accounts/parties');
+    expect(scrubText('Authorization: Bearer abcdefghijklmnopqrstuvwxyzABCDEF')).toBe('Authorization: Bearer [token]');
+  });
+});

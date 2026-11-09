@@ -1,15 +1,10 @@
 // What a log line may not carry (RC-007): personal data and anything that works as a password. Logs record what
 // happened (the error code, the table, the route template, the request id), never what was in it.
 
-/** Keys pino blanks out wherever they appear, at the top level or one object down (fast-redact paths). */
-// Not `code`: that's the error code a log line is for.
-const SECRET_KEYS = ['password', 'newPassword', 'token', 'secret', 'otp', 'authorization', 'cookie', 'phone', 'mobile',
-  'email', 'pan', 'gstin', 'aadhaar', 'accountNumber', 'ifsc', 'salary', 'bankAccount'];
-export const REDACT_PATHS = [...SECRET_KEYS, ...SECRET_KEYS.map((k) => `*.${k}`), 'req.headers.authorization',
-  'req.headers.cookie', 'res.headers["set-cookie"]'];
-
 // Each shape is replaced by its label. Order matters: a GSTIN holds a PAN, and an email may hold digits.
 const SHAPES: [RegExp, string][] = [
+  // Whatever follows Bearer or Basic is a credential, digits or not.
+  [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [token]'],
   [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]'],
   [/\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/g, '[gstin]'],
   [/\b[A-Z]{5}\d{4}[A-Z]\b/g, '[pan]'],
@@ -29,7 +24,9 @@ export function scrubText(text: string): string {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TOKEN = /^(?=.*\d)[A-Za-z0-9_-]{16,}$/;
+// A route word is short; 20 or more URL-safe characters is a token, with or without a digit. Shorter ones count only
+// with a digit, so "invoices" stays a word.
+const TOKEN = /^(?:[A-Za-z0-9_-]{20,}|(?=.*\d)[A-Za-z0-9_-]{16,})$/;
 
 /** A request path as a route template, for logs and alert keys: no query string, ids as :id, tokens as :token.
  * The router's own template wins when there is one (M1-08 passes it); this is for paths no route matched. */

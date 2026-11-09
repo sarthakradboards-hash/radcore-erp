@@ -37,7 +37,10 @@ export function describeError(err: unknown): ErrorDescription {
   const name = err instanceof Error ? err.name : typeof err;
   const raw = err instanceof Error ? err.message : String(err);
   // "Failed query: insert into ..." is Drizzle; a statement's text is never logged, only that a query failed.
-  const message = scrubText(/^Failed query:/.test(raw) ? 'Failed query' : raw.split(/\r?\n\s*params:/)[0] ?? '');
+  // A quoted span is the input being complained about: PostgreSQL's 22P02 (`invalid input syntax for type integer:
+  // "Asha Rao"`) and JSON.parse (`"Asha Rao 98..." is not valid JSON`). The shape stays, the value goes.
+  const cut = /^Failed query:/.test(raw) ? 'Failed query' : raw.split(/\r?\n\s*params:/)[0] ?? '';
+  const message = scrubText(cut.replace(/"[^"\n]*"|'[^'\n]*'/g, '"…"'));
   const out: ErrorDescription = { name, message };
   const pg = pgError(err);
   if (pg) for (const k of PG_FIELDS) { const v = field(pg, k); if (v !== undefined) out[k] = v; }
