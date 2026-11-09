@@ -147,6 +147,9 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
     expect(await attempt("insert into fixture_units (code, label) values ('stores', 'Stores')")).toBe('23505');
     expect(await attempt("insert into fixture_units (code, label) values ('st_ore', 'Other')")).toBe('23505');
     expect(await attempt("insert into fixture_units (code, label) values ('kg', 'STORE')")).toBe('23505');
+    expect(await attempt("insert into fixture_units (code, label) values ('kg', ' Store ')")).toBe('23505');
+    expect(await attempt("insert into fixture_units (code, label) values ('room', 'Store Room'), ('hall', 'store \t room')"))
+      .toBe('23505');
     expect(await attempt("insert into fixture_units (code, label) values ('Bad Code', 'Bad')")).toBe('23514');
   });
 

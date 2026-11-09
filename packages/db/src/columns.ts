@@ -80,7 +80,7 @@ export const radcoreTable = <TName extends string, TColumns extends Record<strin
 /**
  * A list that grows or that people edit (ADR-005 §4): `code` (a pattern CHECK), `label`, `active`. Two generated keys,
  * each with a unique index, keep names apart: `code_key` drops case, underscores and one trailing `s`, so `store` and
- * `stores` can't both exist (RC-044); `label_key` drops case.
+ * `stores` can't both exist (RC-044); `label_key` drops case and folds runs of whitespace, so `Store  Room ` is `store room`.
  */
 export const lookupTable = <TName extends string, TColumns extends Record<string, PgColumnBuilderBase>>(
   name: TName,
@@ -90,7 +90,7 @@ export const lookupTable = <TName extends string, TColumns extends Record<string
   label: boundedText().notNull(),
   active: boolean().notNull().default(true),
   codeKey: text().notNull().generatedAlwaysAs(sql`regexp_replace(replace(lower(code), '_', ''), 's$', '')`),
-  labelKey: text().notNull().generatedAlwaysAs(sql`lower(label)`),
+  labelKey: text().notNull().generatedAlwaysAs(sql`lower(btrim(regexp_replace(label, '[[:space:]]+', ' ', 'g')))`),
   ...columns,
 }, (t) => [
   check(`ck_${name}_code`, sql`${t.code} ~ '^[a-z][a-z0-9_]*$'`),
