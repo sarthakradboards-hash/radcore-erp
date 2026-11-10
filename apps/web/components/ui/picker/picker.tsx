@@ -11,6 +11,7 @@ import { Command } from 'cmdk';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import '../form/form.css'; // .kit-field
 import './picker.css';
+import { t } from '../../../lib/i18n/index.ts';
 
 type Props<T> = {
   label: string;
@@ -74,8 +75,8 @@ export function Picker<T>({ label, hint, value, onChange, query, onQueryChange, 
           onValueChange={(text) => { setOpen(true); onQueryChange(text); }} />
         {/* Pressing an option would blur the input and close the list before the click lands. */}
         <Command.List ref={list} hidden={!shown} onMouseDown={(e) => e.preventDefault()}>
-          {loading && options.length === 0 ? <Command.Loading>Searching…</Command.Loading> : null}
-          {!loading && error === null ? <Command.Empty>Nothing matches “{query.trim()}”</Command.Empty> : null}
+          {loading && options.length === 0 ? <Command.Loading>{t('kit.picker.searching')}</Command.Loading> : null}
+          {!loading && error === null ? <Command.Empty>{t('kit.picker.none', { query: query.trim() })}</Command.Empty> : null}
           {options.map((option) => (
             <Command.Item key={optionKey(option)} value={optionKey(option)} onSelect={() => choose(option)}>
               <span>{optionLabel(option)}</span>
@@ -85,7 +86,7 @@ export function Picker<T>({ label, hint, value, onChange, query, onQueryChange, 
         </Command.List>
       </Command>
       {hint === undefined ? null : <p id={hintId} className="kit-field-hint">{hint}</p>}
-      {error === null ? null : <p role="alert" className="kit-field-error">The search could not be run. Try again.</p>}
+      {error === null ? null : <p role="alert" className="kit-field-error">{t('kit.picker.error')}</p>}
     </div>
   );
 }

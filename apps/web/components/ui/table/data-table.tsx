@@ -6,6 +6,7 @@ import { rowSortingFeature, tableFeatures, useTable, type ColumnDef, type RowDat
 import { useId, useMemo, type ReactNode } from 'react';
 import '../form/form.css'; // .kit-button
 import './table.css';
+import { t } from '../../../lib/i18n/index.ts';
 
 const features = tableFeatures({ rowSortingFeature });
 
@@ -44,7 +45,7 @@ type Props<T> = {
   empty?: string;
 };
 
-export function DataTable<T extends RowData>({ caption, columns, rowKey, list, sort, onSortChange, empty = 'Nothing to show yet' }: Props<T>) {
+export function DataTable<T extends RowData>({ caption, columns, rowKey, list, sort, onSortChange, empty = t('kit.table.empty') }: Props<T>) {
   const captionId = useId();
   const defs = useMemo(() => columns.map((c): ColumnDef<typeof features, T> => ({
     id: c.id, header: c.header, accessorFn: () => null, enableSorting: c.sortable === true,
@@ -97,22 +98,22 @@ export function DataTable<T extends RowData>({ caption, columns, rowKey, list, s
               </tr>
             ))}
             {list.items.length === 0 && list.error === null ? (
-              <tr><td colSpan={columns.length}>{list.isPending ? 'Loading…' : empty}</td></tr>
+              <tr><td colSpan={columns.length}>{list.isPending ? t('loading') : empty}</td></tr>
             ) : null}
           </tbody>
         </table>
       </div>
       {list.error === null ? null : (
         <div role="alert" className="kit-form-alert kit-table-error">
-          The list could not be loaded.{' '}
-          <button type="button" className="kit-button" onClick={list.refetch}>Try again</button>
+          {t('kit.table.error')}{' '}
+          <button type="button" className="kit-button" onClick={list.refetch}>{t('kit.table.retry')}</button>
         </div>
       )}
       <div className="kit-table-foot">
-        <p role="status">{list.items.length === 0 ? '' : `${list.items.length} shown`}</p>
+        <p role="status">{list.items.length === 0 ? '' : t('kit.table.shown', { count: String(list.items.length) })}</p>
         {list.hasNextPage ? (
           <button type="button" className="kit-button" onClick={list.fetchNextPage}
-            disabled={list.isFetchingNextPage} aria-busy={list.isFetchingNextPage}>Show more</button>
+            disabled={list.isFetchingNextPage} aria-busy={list.isFetchingNextPage}>{t('kit.table.more')}</button>
         ) : null}
       </div>
     </div>
