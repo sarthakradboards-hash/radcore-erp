@@ -29,7 +29,34 @@ const TOO_BIG = 'The file needs too much memory to read. Split it and import eac
 
 /** Reads an uploaded CSV or .xlsx file (read.ts's parseTable) in a worker with no credentials, a memory cap and a
  * time limit. Every refusal is an ImportFileError. */
-export function readTable(bytes: Uint8Array, limits: Limits = ISOLATE_LIMITS): Promise<Table> {
+export async function readTable(bytes: Uint8Array, limits: Limits = ISOLATE_LIMITS): Promise<Table> {
+  await turn();
+  try {
+    return await inWorker(bytes, limits);
+  } finally {
+    release();
+  }
+}
+
+// At most MAX_WORKERS files are parsed at once in a process, each worker within its caps; the rest wait. A freed
+// place is handed straight to the next in line, so a new call can't slip in between and go over.
+const MAX_WORKERS = 2;
+let running = 0;
+const waiting: (() => void)[] = [];
+const turn = async (): Promise<void> => {
+  if (running < MAX_WORKERS) {
+    running++;
+    return;
+  }
+  await new Promise<void>((resolve) => waiting.push(resolve));
+};
+const release = (): void => {
+  const next = waiting.shift();
+  if (next) next();
+  else running--;
+};
+
+function inWorker(bytes: Uint8Array, limits: Limits): Promise<Table> {
   return new Promise<Table>((resolve, reject) => {
     const worker = new Worker(new URL(import.meta.url), {
       workerData: { radcoreImport: true, bytes } satisfies Job,
@@ -42,8 +69,8 @@ export function readTable(bytes: Uint8Array, limits: Limits = ISOLATE_LIMITS): P
       if (done) return;
       done = true;
       clearTimeout(timer);
-      fn();
-      void worker.terminate();
+      // Answered once the worker has stopped, so its place (and its memory) is free before the next one starts.
+      void worker.terminate().finally(fn);
     };
     const timer = setTimeout(() => settle(() => reject(new ImportFileError(TOO_LONG))), limits.timeoutMs);
     worker.once('message', (r: Reply) => settle(() => {
