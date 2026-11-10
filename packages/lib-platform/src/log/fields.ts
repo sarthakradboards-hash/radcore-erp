@@ -5,8 +5,13 @@ import { scrubText } from './scrub.ts';
 
 // A key is redacted when one of its words (split on camelCase, snake_case, kebab-case and dots) is one of these:
 // leadName, customer_phone, emailAddress, bankAccountNumber and dateOfBirth all are; companyId and panel aren't.
-const SENSITIVE = new Set(['name', 'phone', 'mobile', 'email', 'pan', 'gstin', 'aadhaar', 'account', 'ifsc', 'address',
-  'salary', 'dob', 'birth', 'upi', 'password', 'passwd', 'token', 'secret', 'otp', 'cookie', 'authorization', 'auth']);
+const SENSITIVE = new Set(['name', 'phone', 'mobile', 'email', 'pan', 'gstin', 'aadhaar', 'aadhar', 'account', 'ifsc',
+  'address', 'salary', 'dob', 'birth', 'upi', 'password', 'passwd', 'token', 'secret', 'otp', 'cookie', 'authorization',
+  'auth']);
+// A `name` that names a thing in the system, not a person: jobName, queue_name, tablename, hostname.
+const SYSTEM = new Set(['job', 'queue', 'table', 'column', 'file', 'host', 'service', 'route', 'event', 'schema',
+  'constraint', 'index', 'type', 'class', 'model', 'field', 'key', 'step', 'task', 'process', 'app', 'module',
+  'setting', 'bucket', 'path', 'dir', 'template', 'report', 'sheet']);
 // Keys that carry what a line is for, never personal data.
 const SAFE = new Set(['service', 'route', 'requestId', 'method', 'status', 'code', 'table', 'column', 'constraint',
   'routine', 'level', 'time', 'msg']);
@@ -16,12 +21,18 @@ const MAX_ITEMS = 50;
 // An acronym run is a word of its own: PANNumber is `pan number`, IFSCCode `ifsc code`.
 const words = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
   .toLowerCase().split(/[\s_.\-]+/);
-// A key written as one lower-case run (firstname, username, phonenumber, emailid) is matched by its parts too: a
-// `name` ending, or a start that can't be anything else. Short words such as `pan` aren't, so `panel` stays.
-const ENDS = ['name'];
-const STARTS = ['phone', 'mobile', 'email', 'password', 'aadhaar', 'gstin', 'address', 'salary', 'token', 'secret'];
-const compound = (w: string) => ENDS.some((e) => w.endsWith(e)) || STARTS.some((s) => w.startsWith(s));
-const sensitive = (key: string) => !SAFE.has(key) && words(key).some((w) => SENSITIVE.has(w) || compound(w));
+// A key written as one lower-case run is matched by its parts too: a `name` ending (firstname), or one of these words
+// at either end (phonenumber, workemail, accesstoken). Short words such as `pan` aren't, so `panel` stays.
+const LONG = ['phone', 'mobile', 'email', 'password', 'aadhaar', 'aadhar', 'gstin', 'address', 'salary', 'token',
+  'secret'];
+const personName = (before: string) => !SYSTEM.has(before);
+const sensitiveWord = (w: string, before: string) => {
+  if (w === 'name') return personName(before);
+  if (SENSITIVE.has(w)) return true;
+  if (w.endsWith('name')) return personName(w.slice(0, -'name'.length));
+  return LONG.some((s) => w.startsWith(s) || w.endsWith(s));
+};
+const sensitive = (key: string) => !SAFE.has(key) && words(key).some((w, i, ws) => sensitiveWord(w, ws[i - 1] ?? ''));
 
 /** A value as a log line may carry it. */
 function safeValue(value: unknown, depth = 0): unknown {
