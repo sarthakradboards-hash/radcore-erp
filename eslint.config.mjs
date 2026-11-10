@@ -40,6 +40,7 @@ export const L1_EXTRA_NAMES = {
   'packages/db/src/conditions.ts': ['notInArray'],
   'packages/db/src/module-tx.ts': ['getOperators', 'getOrderByOperators', 'is', 'getTableName'],
   'packages/db/src/migrate.ts': ['drizzle', 'migrate'],
+  'packages/lib-platform/src/db/client.ts': ['drizzle'],
 };
 
 const msg = (tag, adr, text) => `[${tag}] ${text} (${adr}).`;

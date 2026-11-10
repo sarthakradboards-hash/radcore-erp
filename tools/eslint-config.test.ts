@@ -25,6 +25,7 @@ it('each zone is exactly the ADR-002 table', () => {
     'packages/db/src/conditions.ts': ['notInArray'],
     'packages/db/src/module-tx.ts': ['getOperators', 'getOrderByOperators', 'is', 'getTableName'],
     'packages/db/src/migrate.ts': ['drizzle', 'migrate'],
+    'packages/lib-platform/src/db/client.ts': ['drizzle'],
   });
   expect(REQUEST_CONTEXT_HELPER).toBe('applyRequestContext');
 });

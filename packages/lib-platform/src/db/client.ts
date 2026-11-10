@@ -1,5 +1,7 @@
 // The database pool and the job queue (ADR-002 L4's one place for the driver and pg-boss) and the health ping.
-// RAD-28 builds the pool; RAD-26 opens transactions on it. RAD-44 builds the queue.
+// RAD-28 builds the pool; RAD-26 builds the Drizzle client on it. RAD-44 builds the queue.
+import { SCHEMA, type Database as Drizzle } from '@radcore/db/schema';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { PgBoss } from 'pg-boss';
 import type { Config } from '../config.ts';
@@ -44,6 +46,14 @@ export function createPool(db: Database, log: Logger): pg.Pool {
   // the process; with one, the pool discards that connection and opens a new one on next use.
   pool.on('error', (err) => log.error('database connection lost; the pool will reconnect', err));
   return pool;
+}
+
+/**
+ * The Drizzle client on the pool (RAD-26), with every module's tables and relations. Transactions open on it through
+ * the runtime entry only. The schema argument is for tests with tables of their own.
+ */
+export function createDatabase(pool: pg.Pool, schema: Readonly<Record<string, unknown>> = SCHEMA): Drizzle {
+  return drizzle({ client: pool, schema, casing: 'snake_case' });
 }
 
 /**

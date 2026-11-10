@@ -7,7 +7,8 @@ import type { JobDefinition, QueueSettings } from './jobs.ts';
 import type { Logger } from './log.ts';
 import { createLog } from './log/logger.ts';
 
-export { createHealthCheck, createJobQueue } from './db/client.ts';
+export { createDatabase, createHealthCheck, createJobQueue } from './db/client.ts';
+export { runInTransaction } from './db/transaction.ts';
 export type { Logger } from './log.ts';
 
 type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };
