@@ -24,7 +24,7 @@ export const REQUEST_CONTEXT_HELPER = 'applyRequestContext';
 /** ADR-002 "Each rule's zone": the exact files where each rule is off. Pinned by tools/eslint-config.test.ts. */
 export const ZONES = {
   'radcore/no-query-strings': [VIEW_FILES, REQUEST_CONTEXT],
-  'radcore/no-raw-execution': [REQUEST_CONTEXT],
+  'radcore/no-raw-execution': [REQUEST_CONTEXT, 'packages/db/src/migrate.ts'],
   'radcore/no-driver': [DB_CLIENT, 'packages/db/src/migrate.ts'],
   'radcore/tables-in-schema': TABLE_FILES,
   'radcore/views-in-views': [VIEW_FILES],
@@ -39,6 +39,7 @@ export const L1_EXTRA_NAMES = {
   'packages/db/src/*/relations.ts': ['relations'],
   'packages/db/src/conditions.ts': ['notInArray'],
   'packages/db/src/module-tx.ts': ['getOperators', 'getOrderByOperators', 'is', 'getTableName'],
+  'packages/db/src/migrate.ts': ['drizzle', 'migrate'],
 };
 
 const msg = (tag, adr, text) => `[${tag}] ${text} (${adr}).`;
@@ -246,7 +247,8 @@ export default tseslint.config(
   { files: [REQUEST_CONTEXT], rules: on('radcore/no-sql', { ...L1_ZONE, helper: REQUEST_CONTEXT_HELPER }) },
   ...Object.entries(L1_EXTRA_NAMES).map(([file, names]) =>
     ({ files: [file], rules: on('radcore/no-sql', { allowNames: [...L1_ALLOW, ...names] }) })),
-  { files: [`**/*.test.${EXT}`], rules: on('radcore/no-sql', { ...L1_BASE, importExpressions: false }) },
+  // Within L1's own scope only (apps/ and packages/): tools/ is repo tooling, not server code.
+  { files: [`apps/**/*.test.${EXT}`, `packages/**/*.test.${EXT}`], rules: on('radcore/no-sql', { ...L1_BASE, importExpressions: false }) },
 
   // Server code: L2, L3, L5, L8, each off only in its zone.
   { files: SERVER, ignores: ZONES['radcore/no-query-strings'], rules: on('radcore/no-query-strings') },
