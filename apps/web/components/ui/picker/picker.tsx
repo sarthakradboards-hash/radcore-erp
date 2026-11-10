@@ -32,11 +32,28 @@ type Props<T> = {
 export function Picker<T>({ label, hint, value, onChange, query, onQueryChange, options, optionKey, optionLabel,
   optionDetail, loading = false, error = null }: Props<T>) {
   const [open, setOpen] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const hintId = useId();
   const shown = open && query.trim() !== '';
   // cmdk always marks its input expanded; say whether the list is really showing.
   useEffect(() => { input.current?.setAttribute('aria-expanded', String(shown)); });
+  // cmdk sets aria-activedescendant only after an arrow press, so the option it highlights by itself when results
+  // arrive (the only one, often) was never announced (e2e, RAD-54). This follows its highlight instead.
+  useEffect(() => {
+    const box = input.current;
+    const options = list.current;
+    if (box === null || options === null) return;
+    const follow = () => {
+      const id = options.hidden ? undefined : options.querySelector('[cmdk-item][data-selected="true"]')?.id;
+      if (id === undefined || id === '') box.removeAttribute('aria-activedescendant');
+      else box.setAttribute('aria-activedescendant', id);
+    };
+    const watch = new MutationObserver(follow);
+    watch.observe(options, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-selected', 'hidden'] });
+    follow();
+    return () => watch.disconnect();
+  }, []);
 
   const choose = (option: T) => {
     onChange(option);
@@ -56,7 +73,7 @@ export function Picker<T>({ label, hint, value, onChange, query, onQueryChange, 
           onFocus={(e) => e.currentTarget.select()} onBlur={() => setOpen(false)}
           onValueChange={(text) => { setOpen(true); onQueryChange(text); }} />
         {/* Pressing an option would blur the input and close the list before the click lands. */}
-        <Command.List hidden={!shown} onMouseDown={(e) => e.preventDefault()}>
+        <Command.List ref={list} hidden={!shown} onMouseDown={(e) => e.preventDefault()}>
           {loading && options.length === 0 ? <Command.Loading>Searching…</Command.Loading> : null}
           {!loading && error === null ? <Command.Empty>Nothing matches “{query.trim()}”</Command.Empty> : null}
           {options.map((option) => (
