@@ -37,7 +37,8 @@ const asOperator = async <T extends pg.QueryResultRow>(text: string, values: unk
 };
 
 describe.skipIf(!url)('jobs on pg-boss', () => {
-  it('the worker process starts the job queue on the migrated schema, and stops cleanly', async () => {
+  // Windows has no SIGTERM: kill() ends the child without running its handler, so there's no clean stop to see.
+  it.skipIf(process.platform === 'win32')('the worker process starts the job queue on the migrated schema, and stops cleanly', async () => {
     const worker = spawn(process.execPath, ['apps/worker/src/main.ts'],
       { env: { PATH: process.env['PATH'], ...testSettings({ DATABASE_URL: databaseUrl() }) } });
     const out: string[] = [];
@@ -51,6 +52,28 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
       worker.kill('SIGTERM');
     }
     expect((await exited)[0]).toBe(0);
+  }, 60_000);
+
+  it('two workers starting together both create the same queues and run', async () => {
+    const job = defineJob({ ...name(), principal: system, input: z.object({}).loose() }, async () => undefined);
+    const [a, b] = [createJobQueue(database(), logger()), createJobQueue(database(), logger())];
+    const stops = await Promise.all([runJobs(a, [job], logger()), runJobs(b, [job], logger())]);
+    await Promise.all(stops.map((s) => s.stop()));
+    expect(await asOperator(`select name from ${SCHEMA}.queue where name = $1`, [job.name])).toEqual([{ name: job.name }]);
+  }, 60_000);
+
+  it('refuses to start a job whose overlap guard changed, since pg-boss would keep the old policy', async () => {
+    const { name: jobName } = name();
+    const before = defineJob({ name: jobName, principal: system, input: z.object({}).loose() }, async () => undefined);
+    await (await runJobs(createJobQueue(database(), logger()), [before], logger())).stop();
+    const after = defineJob({ name: jobName, principal: system, input: z.object({}).loose(), oneAtATime: true },
+      async () => undefined);
+    const queue = createJobQueue(database(), logger());
+    try {
+      await expect(runJobs(queue, [after], logger())).rejects.toThrow(/policy change needs a new queue name/);
+    } finally {
+      await queue.stop({ graceful: false });
+    }
   }, 60_000);
 
   it('runs a job, and a delete-on-complete job leaves no row', async () => {
