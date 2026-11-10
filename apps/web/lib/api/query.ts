@@ -3,8 +3,8 @@
 // through these four hooks. The option builders are exported so the tests drive them with TanStack's own observers.
 import type { Contract } from '@radcore/lib-common';
 import {
-  infiniteQueryOptions, keepPreviousData, QueryCache, QueryClient, queryOptions, useInfiniteQuery, useMutation,
-  useQuery, useQueryClient,
+  infiniteQueryOptions, keepPreviousData, onlineManager, QueryCache, QueryClient, queryOptions, useInfiniteQuery,
+  useMutation, useQuery, useQueryClient,
 } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { z } from 'zod';
@@ -18,11 +18,17 @@ type ListParams<C extends Contract> = In<C> extends ListIn ? Omit<In<C>, 'after'
 type Item<C extends Contract> = Out<C> extends { items: readonly (infer T)[] } ? T : never;
 type Page<C extends Contract> = { items: Item<C>[]; next: string | null };
 
+// Any answer from the server, a refusal included, proves the connection is up, whatever the browser's flag says.
+const answered = <T>(p: Promise<T>): Promise<T> => p.then(
+  (value) => { onlineManager.setOnline(true); return value; },
+  (error: unknown) => { if (error instanceof ApiError) onlineManager.setOnline(true); throw error; },
+);
+
 // callContract's options depend on the contract's transaction, which a generic C can't resolve; these two say which.
-const read = (c: Contract, input: unknown, signal: AbortSignal) =>
-  (callContract as (c: Contract, i: unknown, o: { signal: AbortSignal }) => Promise<unknown>)(c, input, { signal });
-const write = (c: Contract, input: unknown, idempotencyKey: string) =>
-  (callContract as (c: Contract, i: unknown, o: { idempotencyKey: string }) => Promise<unknown>)(c, input, { idempotencyKey });
+const read = (c: Contract, input: unknown, signal: AbortSignal) => answered(
+  (callContract as (c: Contract, i: unknown, o: { signal: AbortSignal }) => Promise<unknown>)(c, input, { signal }));
+const write = (c: Contract, input: unknown, idempotencyKey: string) => answered(
+  (callContract as (c: Contract, i: unknown, o: { idempotencyKey: string }) => Promise<unknown>)(c, input, { idempotencyKey }));
 
 /** A query's key starts with the contract's route, so `invalidates: [listParties]` refreshes every page of it. */
 export const keyOf = (c: Contract, input?: unknown) => (input === undefined ? [c.method, c.path] : [c.method, c.path, input]);

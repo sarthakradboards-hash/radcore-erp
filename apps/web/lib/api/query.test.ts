@@ -1,7 +1,7 @@
 // The data layer's rules (M1-42), driven through TanStack's own observers, so no DOM is needed:
 // RC-133 the retry key, RC-188 search, paging and the bounded cache.
 import { defineContract, listInput, listOf } from '@radcore/lib-common';
-import { InfiniteQueryObserver, MutationObserver, QueryObserver } from '@tanstack/react-query';
+import { InfiniteQueryObserver, MutationObserver, onlineManager, QueryObserver } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { ApiError } from '../api-client.ts';
@@ -167,6 +167,32 @@ describe('RC-188: server search', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(fetch).not.toHaveBeenCalled();
     unsubscribe();
+  });
+});
+
+describe('the online state heals from a server answer (e2e on RAD-52)', () => {
+  afterEach(() => onlineManager.setOnline(true));
+  // networkMode 'always' lets the request run while the state says offline, as a stuck state would otherwise block it.
+  const save = (client: ReturnType<typeof makeQueryClient>) => new MutationObserver(client,
+    { ...apiMutationOptions(client, createParty, createSubmitKey()), networkMode: 'always' }).mutate({ name: 'A' });
+
+  it('a success or a refusal marks it online', async () => {
+    const replies = [json(200, { id: 'p1', name: 'A' }), failure(500)];
+    stubFetch(async () => replies.shift()!);
+    const client = makeQueryClient();
+    onlineManager.setOnline(false);
+    await save(client);
+    expect(onlineManager.isOnline()).toBe(true);
+    onlineManager.setOnline(false);
+    await expect(save(client)).rejects.toBeInstanceOf(ApiError);
+    expect(onlineManager.isOnline()).toBe(true);
+  });
+
+  it('a network failure does not', async () => {
+    stubFetch(async () => { throw new TypeError('Failed to fetch'); });
+    onlineManager.setOnline(false);
+    await expect(save(makeQueryClient())).rejects.toBeInstanceOf(TypeError);
+    expect(onlineManager.isOnline()).toBe(false);
   });
 });
 
