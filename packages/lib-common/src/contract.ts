@@ -29,11 +29,26 @@ export type ErrorEnvelope<C extends string = string> = Omit<z.infer<typeof error
 
 /** The most rows one page may ask for (ADR-002 §4, RC-176). */
 export const MAX_LIMIT = 200;
+/** The most characters a cursor may hold; encodeCursor refuses a sort key that would go past it. */
+export const MAX_CURSOR_LENGTH = 512;
 /** An opaque paging cursor: base64url of the sort key. Clients only send back what they were given (M1-29). */
-export const cursorString = () => z.string().regex(/^[A-Za-z0-9_-]{1,512}$/, 'Not a page cursor');
-/** A list's input: `{ filter, after?, limit }`, with `next` from the previous page sent back as `after`. */
-export const listInput = <F extends z.ZodType>(filter: F) =>
-  z.object({ filter, after: cursorString().optional(), limit: z.number().int().min(1).max(MAX_LIMIT) });
+export const cursorString = () =>
+  z.string().regex(new RegExp(`^[A-Za-z0-9_-]{1,${String(MAX_CURSOR_LENGTH)}}$`), 'Not a page cursor');
+/**
+ * A list's sort, as ui-2's DataTable (RAD-54) reports it: `{ column, desc }`. `column` is one of the contract's
+ * sortable columns, so any other is invalid_input on ['sort', 'column']. The repo maps it to a database column through
+ * a fixed object (`{ name: parties.name }`), so the client's text never reaches SQL or a column lookup.
+ */
+export const sortInput = <const C extends readonly [string, ...string[]]>(columns: C) =>
+  z.strictObject({ column: z.enum(columns), desc: z.boolean() });
+const listBase = { after: cursorString().optional(), limit: z.number().int().min(1).max(MAX_LIMIT) };
+/**
+ * A list's input: `{ filter, sort?, after?, limit }`, with `next` from the previous page sent back as `after`. `sort`
+ * is a sibling of `filter`, optional: left out, the contract's own default order applies. A list declared without
+ * sortable columns refuses any `sort` sent to it.
+ */
+export const listInput = <F extends z.ZodType, S extends z.ZodType = z.ZodNever>(filter: F, sort?: S) =>
+  z.object({ filter, sort: (sort ?? z.never()).optional(), ...listBase });
 // Passwords (ADR-001 §7a, M1-14). The schemas set only the cap: the minimum length, the bundled list and Pwned
 // Passwords are the new-password check's, which the generic handler runs before the transaction on a field
 // marked newPassword(), and a refusal is password_rejected (too_short, breached or same_as_old).

@@ -71,6 +71,13 @@
       "when": 1794304342331,
       "tag": "0009_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794305252510,
+      "tag": "0010_jobs_outbox",
+      "breakpoints": true
     }
   ]
 }
