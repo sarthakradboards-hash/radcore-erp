@@ -1,15 +1,15 @@
 // The one generic route handler (M1-08, ADR-001 §6): every `session` and `public` route runs the same steps, so a
 // route is only its contract and its service.
 //   principal ─► input (contract.input) ─► a write's Idempotency-Key ─► route permission (contract.perm)
-//   ─► one transaction of the contract's kind, with its statement timeout (RC-080) ─► service(ctx, input)
-//   ─► output checked against contract.output before commit, camelCase as is (RC-199) ─► commit ─► 200
+//   ─► one transaction of the contract's kind, with its statement timeout (RC-080)
+//   ─► a write claims its saved-once key (M1-09): an earlier committed answer is replayed here ─► service(ctx, input)
+//   ─► output checked against contract.output, camelCase as is (RC-199) ─► a write keeps its answer ─► commit ─► 200
 //   ─► errors mapped by code: a thrown AppError's code or a PostgreSQL SQLSTATE, never message text (RC-216)
-// Still to come, each with its ticket: origin and rate guards (M1-21), sessions (RAD-32), saved-once's claim and
-// replay (M1-09; the key is already required, so writes fail closed), the three key-exempt routes (RAD-61),
+// Still to come, each with its ticket: origin and rate guards (M1-21), sessions (RAD-32), the key-exempt routes (RAD-61),
 // pii() masking (M1-22), Settings in Ctx (RAD-48), and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, PLATFORM_ERRORS, readInput, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, describeError, type Principal } from '@radcore/lib-platform';
+import { AppError, claimSavedOnce, describeError, type Principal } from '@radcore/lib-platform';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import type { Route } from './route.ts';
@@ -111,9 +111,14 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           send(res, platform(principal === null ? 'signed_out' : 'forbidden'), requestId);
           return;
         }
+        const key = req.get('idempotency-key') ?? '';
         const output = await runInTransaction(deps.db, contract.tx, principal ?? PUBLIC, requestId, async (ctx) => {
+          // Saved-once (M1-09): a write claims its key first, in this transaction, and replays an earlier answer.
+          const once = contract.tx.readOnly ? null : await claimSavedOnce(ctx, { route, key, input: input.value });
+          if (once?.replay === true) return once.answer;
           const checked = contract.output.safeParse(await service(ctx, input.value));
           if (!checked.success) throw new OutputMismatch(`${route}: the output doesn't match its contract`);
+          await once?.keep(checked.data);
           return checked.data;
         });
         res.status(200).json(output);
