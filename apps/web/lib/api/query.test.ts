@@ -62,6 +62,33 @@ describe('RC-133: one Idempotency-Key per submit', () => {
     await obs.mutate({ name: 'Asha' });
     expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);
   });
+
+  it('treats idempotency_mismatch as already saved: the error reaches the form, the lists refresh, the key renews', async () => {
+    const mismatch = json(409, { code: 'idempotency_mismatch', message: 'Already saved', issues: [], requestId: 'r' });
+    const replies = [mismatch, json(200, { id: 'p2', name: 'Asha B' })];
+    const fetch = stubFetch(async () => replies.shift()!);
+    const client = makeQueryClient();
+    const listKey = keyOf(listParties, { filter: {}, limit: 50 });
+    client.setQueryData(listKey, { pages: [], pageParams: [] });
+    const obs = new MutationObserver(client, apiMutationOptions(client, createParty, createSubmitKey(), [listParties]));
+
+    await expect(obs.mutate({ name: 'Asha B' })).rejects.toMatchObject({ code: 'idempotency_mismatch' });
+    expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);
+    await obs.mutate({ name: 'Asha B' });
+    const [first, second] = fetch.mock.calls.map(([, init]) => keyHeader(init));
+    expect(second).not.toBe(first);
+  });
+
+  it('keeps the key after any other refusal', async () => {
+    const replies = [json(409, { code: 'conflict', message: 'Changed', issues: [], requestId: 'r' }), json(200, { id: 'p1', name: 'A' })];
+    const fetch = stubFetch(async () => replies.shift()!);
+    const client = makeQueryClient();
+    const obs = new MutationObserver(client, apiMutationOptions(client, createParty, createSubmitKey()));
+    await expect(obs.mutate({ name: 'A' })).rejects.toBeInstanceOf(ApiError);
+    await obs.mutate({ name: 'A' });
+    const [first, second] = fetch.mock.calls.map(([, init]) => keyHeader(init));
+    expect(second).toBe(first);
+  });
 });
 
 describe('RC-188: lists', () => {

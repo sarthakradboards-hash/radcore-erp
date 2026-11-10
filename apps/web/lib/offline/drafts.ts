@@ -5,6 +5,9 @@
 import { useEffect } from 'react';
 
 const PREFIX = 'radcore:draft:';
+// Never stored, at any depth: a settings form with an SMTP password or an integration's API key. Sign-in, second-factor
+// and password forms go further and never autosave at all (RAD-55), since their short field names ("code") can't be told apart.
+const SECRET = /password|passcode|passphrase|secret|token|api[-_]?key/i;
 const keyFor = (user: string, form: string) => `${PREFIX}${user}:${form}`;
 
 // Storage can be missing or refuse (private mode, quota): a draft is a convenience, so it never breaks the form.
@@ -21,7 +24,8 @@ export const drafts = {
     } catch { return null; }
   },
   save(user: string, form: string, value: unknown): void {
-    try { store()?.setItem(keyFor(user, form), JSON.stringify(value)); } catch { /* full or blocked: skip */ }
+    const json = JSON.stringify(value, (k, v: unknown) => (SECRET.test(k) ? undefined : v));
+    try { store()?.setItem(keyFor(user, form), json); } catch { /* full or blocked: skip */ }
   },
   clear(user: string, form: string): void {
     try { store()?.removeItem(keyFor(user, form)); } catch { /* blocked: nothing stored */ }

@@ -28,6 +28,14 @@ it('saves, loads and clears a draft per user and form', () => {
   expect(drafts.load('u1', 'invoice')).toEqual({ total: '10.00' });
 });
 
+it('never stores a password, secret, token or API key, at any depth', () => {
+  vi.stubGlobal('sessionStorage', memoryStorage());
+  drafts.save('u1', 'mail-settings', {
+    host: 'smtp.example.in', smtpPassword: 'p4ss', clientSecret: 's', shopify: { apiKey: 'k', accessToken: 't', shop: 'x' },
+  });
+  expect(drafts.load('u1', 'mail-settings')).toEqual({ host: 'smtp.example.in', shopify: { shop: 'x' } });
+});
+
 it("clears only that user's drafts at sign-out", () => {
   vi.stubGlobal('sessionStorage', memoryStorage());
   drafts.save('u1', 'party', { name: 'Asha' });

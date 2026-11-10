@@ -98,13 +98,21 @@ export function createSubmitKey(make: () => string = () => crypto.randomUUID()) 
 }
 
 export const apiMutationOptions = <C extends Contract>(client: QueryClient, c: C, key: ReturnType<typeof createSubmitKey>,
-  invalidates: readonly Contract[] = []) => ({
-  mutationFn: (input: In<C>) => write(c, input, key.current) as Promise<Out<C>>,
-  onSuccess: async () => {
+  invalidates: readonly Contract[] = []) => {
+  const saved = async () => {
     key.renew();
     await Promise.all(invalidates.map((r) => client.invalidateQueries({ queryKey: keyOf(r) })));
-  },
-});
+  };
+  return {
+    mutationFn: (input: In<C>) => write(c, input, key.current) as Promise<Out<C>>,
+    onSuccess: saved,
+    // The first attempt was saved but its answer was lost, and the form changed since. The error still reaches the
+    // form ("already saved"), and the next submit is a new save with a new key, not the same refusal again.
+    onError: async (error: Error) => {
+      if (error instanceof ApiError && error.code === 'idempotency_mismatch') await saved();
+    },
+  };
+};
 
 /**
  * One read. `error` is an ApiError when the server answered, or another Error when it couldn't be reached.
