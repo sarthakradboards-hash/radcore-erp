@@ -18,6 +18,7 @@ const REQUEST_CONTEXT = 'packages/db/src/request-context.ts';
 const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/columns.ts'];
 const DB_CLIENT = 'packages/lib-platform/src/db/client.ts';
 const OUTBOUND_CLIENT = 'packages/lib-platform/src/http/outbound.ts';
+const IMPORT_ISOLATE = 'packages/lib-platform/src/import/isolate.ts';
 /** The one function in request-context.ts whose body may use `sql` (ADR-002 §3). */
 export const REQUEST_CONTEXT_HELPER = 'applyRequestContext';
 
@@ -30,6 +31,8 @@ export const ZONES = {
   'radcore/views-in-views': [VIEW_FILES],
   'radcore/outbound-only': [OUTBOUND_CLIENT],
 };
+/** L8's import list lifted by one module in exactly these files, with the rest of L8 still on (ADR-002). */
+export const L8_LIFTED = { [IMPORT_ISOLATE]: ['worker_threads'] };
 /** L1's SQL zone: `sql` allowed in its positions (plus `sql` on the allowlist). L1 itself is never off. */
 export const L1_SQL_ZONE = [VIEW_FILES, ...TABLE_FILES, REQUEST_CONTEXT];
 const L1_ALLOW = ['and', 'or', 'not', 'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'isNull', 'isNotNull', 'inArray', 'between',
@@ -40,6 +43,7 @@ export const L1_EXTRA_NAMES = {
   'packages/db/src/conditions.ts': ['notInArray'],
   'packages/db/src/module-tx.ts': ['getOperators', 'getOrderByOperators', 'is', 'getTableName'],
   'packages/db/src/migrate.ts': ['drizzle', 'migrate'],
+  'packages/lib-platform/src/db/client.ts': ['drizzle'],
 };
 
 const msg = (tag, adr, text) => `[${tag}] ${text} (${adr}).`;
@@ -49,6 +53,12 @@ const SQL_SHAPE = String.raw`/\bselect\b[\s\S]*\bfrom\b|\binsert\W+into\b|\bupda
 const DEFINE = '/^define(Route|Webhook|Job|Export|Import|Approval)$/';
 const RAW_EXEC = '/^(execute|unsafe|query)$/';
 const L8 = msg('L8', 'ADR-002', `Outside calls and module loading go through ${OUTBOUND_CLIENT}`);
+const L8_MODULES = ['undici', 'axios', 'got', 'node-fetch', 'ws', 'http', 'https', 'http2', 'net', 'tls', 'dgram',
+  'child_process', 'module', 'worker_threads', 'vm', 'inspector', 'cluster'];
+// outbound.ts's raw https transport sends without the client's origin and address checks. Only
+// tools/outbound-tls.test.ts, which isn't server code, may import it (RAD-44, auditor-2).
+const L8_TRANSPORT = { source: '(^|/)outbound(\\.ts)?$', names: ['nodeTransport'], message: L8 };
+const l8Imports = (modules) => [{ source: `^(node:)?(${modules.join('|')})(/.*)?$`, message: L8 }, L8_TRANSPORT];
 // E6: a name that holds money, a rate or a quantity: the whole name (`total`), a camelCase, ALL-CAPS or snake_case
 // ending (`grandTotal`, `totalGST`, `unit_price`), singular or plural. `generate` and `separate` don't match. A word
 // in SUFFIX_ONLY counts only as a camelCase ending, so a page's `limit` and `MAX_LIMIT` are numbers but `creditLimit`
@@ -123,8 +133,7 @@ export const OPTIONS = {
       "ObjectPattern > Property[key.value='getBuiltinModule']",
       "ObjectPattern > Property[key.quasis.0.value.cooked='getBuiltinModule']",
     ].map((selector) => ({ selector, message: L8 })),
-    imports: [{ source: '^(node:)?(undici|axios|got|node-fetch|ws|http|https|http2|net|tls|dgram|child_process|module'
-      + '|worker_threads|vm|inspector|cluster)(/.*)?$', message: L8 }],
+    imports: l8Imports(L8_MODULES),
   },
   'radcore/tables-in-schema': {
     imports: [{ source: '^drizzle-orm/pg-core(/.*)?$',
@@ -262,6 +271,8 @@ export default tseslint.config(
     'no-eval': 'error', 'no-new-func': 'error', 'no-implied-eval': 'error',
   } },
   { files: SERVER, ignores: ZONES['radcore/outbound-only'], rules: on('radcore/outbound-only') },
+  ...Object.entries(L8_LIFTED).map(([file, lifted]) => ({ files: [file], rules: on('radcore/outbound-only',
+    { ...OPTIONS['radcore/outbound-only'], imports: l8Imports(L8_MODULES.filter((m) => !lifted.includes(m))) }) })),
 
   // Everywhere: L4, L6, L9a, L9b.
   { files: ALL, ignores: ZONES['radcore/no-driver'], rules: on('radcore/no-driver') },

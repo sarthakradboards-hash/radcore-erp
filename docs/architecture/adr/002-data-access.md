@@ -120,17 +120,25 @@ wraps the request's Drizzle transaction and exposes only:
 | Member | What it allows |
 |---|---|
 | `query.<own tables>` | relational reads. Its `where` and `orderBy` callbacks receive operator objects with `sql` removed, both in the type and in the object passed at run time |
-| `select()` | the query builder, reading own tables, relations and views |
+| `select()` | the query builder, reading own tables, relations and views. It isn't checked at run time: what it can read is limited by D7, since only the owning library can import a table |
 | `insert`, `update`, `delete` | **own tables only**, checked by type and at run time against the module's table set |
-| `transaction(cb)` | a savepoint. `cb` receives **the same module object**, never Drizzle's raw `PgTransaction` |
+| `transaction(cb)` | a savepoint. `cb` receives a **new module object of the same module**, with its own handle that ends with the savepoint, never Drizzle's raw `PgTransaction` |
 
 - It has no `execute`, no `_`, no `$with` and no driver handle. Those members don't exist on the object, so a cast
-  can't reach them.
+  can't reach them. Every builder it hands out, and every builder those return, has no `session` and no `_`
+  members, no `config` and no `dialect` either, and refuses to be changed (set, define, delete), so a cast can't
+  reach the pool's client through one or clear a `where` a guard has checked.
+- **It works only while its transaction does.** The module object and its builders look the transaction up each time
+  they run, so one kept past commit or rollback (a `forEach(async ...)` is enough) throws instead of running on a
+  client already back in the pool. A savepoint's object ends with the savepoint.
+- `query.<key>` checks that the client's table under that key is the module's own, so two modules using one key
+  can't read each other's table.
 - **Writes are always bounded.** The wrapper also wraps the builders that `update(...).set(...)` and `delete(...)`
   return:
   - `.where(cond)` throws `UnboundedWriteError` when `cond` is `undefined`, which is what `and(undefined, ...)`
     returns when every optional filter is empty;
-  - running an update or delete with no `.where()` also throws.
+  - running an update or delete with no `.where()` also throws, whichever member runs it: `then`, `catch`,
+    `finally`, `execute`, `prepare` or `_prepare`.
 - **No empty exclusion.** Drizzle 0.45.4's `notInArray(col, [])` returns `sql\`true\`` (`conditions.ts:327`), which
   would make a whole-table write. `notInArray` is not on L1's allowlist. Code uses `notInNonEmpty(col, list)` from
   `packages/db`, which throws on an empty list.
@@ -186,10 +194,12 @@ zone list differs from the table below. Widening a zone means amending this ADR 
 | Rule | Off only in |
 |---|---|
 | L1 (no `sql` outside its positions) | none. In the zone files, L1 allows `sql` only in the positions listed in §3 |
-| L1's `drizzle-orm` value allowlist: extra names in exactly these files, with the rest of L1 still on | `packages/db/src/*/relations.ts`: `relations`. `packages/db/src/conditions.ts` (home of `notInNonEmpty`): `notInArray`. `packages/db/src/module-tx.ts` (the module-transaction wrapper, §4): `getOperators`, `getOrderByOperators`, `is`, `getTableName`. `packages/db/src/migrate.ts` (the migrator, RAD-25): `drizzle` and `migrate`, from `drizzle-orm/node-postgres` and its `/migrator`. |
+| L1's `drizzle-orm` value allowlist: extra names in exactly these files, with the rest of L1 still on | `packages/db/src/*/relations.ts`: `relations`. `packages/db/src/conditions.ts` (home of `notInNonEmpty`): `notInArray`. `packages/db/src/module-tx.ts` (the module-transaction wrapper, §4): `getOperators`, `getOrderByOperators`, `is`, `getTableName`. `packages/db/src/migrate.ts` (the migrator, RAD-25): `drizzle` and `migrate`, from `drizzle-orm/node-postgres` and its `/migrator`. `packages/lib-platform/src/db/client.ts` (the L4 file, RAD-26): `drizzle`, to build the client on the pool from `@radcore/db/schema`'s `SCHEMA`. |
 | L2 (no query strings) | `packages/db/views/<name>.ts`, `packages/db/src/request-context.ts` |
 | L3 (no raw execution) | `packages/db/src/request-context.ts`, `packages/db/src/migrate.ts` (the migrator, RAD-25; L2 stays on there). drizzle's migrator takes no lock, so the file makes exactly one raw call, the session advisory lock on `hashtextextended(MIGRATION_LOCK_KEY, 0)`, and the reviewer of any change to the file checks that it still does. tools/migrate.test.ts pins it. The lock and drizzle's migrator share one `pg.Client`, closed in `finally`. `lock_timeout` is 5 s, so a second runner fails after 5 s with "another migration is running". The partition top-up takes the same lock, with the same exported key (ADR-005 §8). The migrations themselves run through drizzle's migrator. |
 | L4 (no driver) | `packages/lib-platform/src/db/client.ts` (pool, transactions, pg-boss), `packages/db/src/migrate.ts` (the migrator) |
+| L8 (outside calls only through the guarded client) | `packages/lib-platform/src/http/outbound.ts` |
+| L8's import list: one module lifted in exactly this file, with the rest of L8 still on | `packages/lib-platform/src/import/isolate.ts` (the file-import worker, ADR-003 §7, which is both the worker's starter and its entry): `node:worker_threads`. The worker gets `env: {}`, `resourceLimits` and a wall-clock timeout that calls `terminate()`. |
 | L9a (tables declared only in the schema) | `packages/db/src/*/tables.ts`, `packages/db/src/columns.ts` |
 | L9b (views declared only in views) | `packages/db/views/<name>.ts` |
 
@@ -204,7 +214,7 @@ zone list differs from the table below. Widening a zone means amending this ADR 
 | L5 | **early warning on updates and deletes.** `eslint-plugin-drizzle` `enforce-update-with-where` and `enforce-delete-with-where`, with `drizzleObjectName: ['tx', 'db']`. | an obvious `tx.delete(table)` or `tx.update(table).set(...)` with no `where`. The runtime guard in §4 catches the rest. |
 | L6 | **no raw HTML.** `react/no-danger` (error) in `apps/web`. Everywhere: assignments to `innerHTML` and `outerHTML`; calls to `insertAdjacentHTML`, `document.write`, `document.writeln` and `setHTMLUnsafe`; and the JSX attribute `srcDoc`. | any way of putting unparsed HTML on a page |
 | L7 | **only the apps open transactions.** dependency-cruiser: `@radcore/lib-platform/runtime` imported only from `apps/api` and `apps/worker`. | a library opens its own transaction |
-| L8 | **outside calls go through the guarded client.** In server code, except `packages/lib-platform/src/http/outbound.ts`: the globals `fetch`, `WebSocket`, `XMLHttpRequest`; `globalThis.fetch` and `global.fetch`; imports matching `undici`, `axios`, `got`, `node-fetch`, `ws`, `http`, `https`, `http2`, `net`, `tls`, `dgram`, `child_process` (and their `node:` forms); and `createRequire` from `node:module`. | server code makes a network call, or loads a module, any other way |
+| L8 | **outside calls go through the guarded client.** In server code, except `packages/lib-platform/src/http/outbound.ts`: the globals `fetch`, `WebSocket`, `XMLHttpRequest`; `globalThis.fetch` and `global.fetch`; imports matching `undici`, `axios`, `got`, `node-fetch`, `ws`, `http`, `https`, `http2`, `net`, `tls`, `dgram`, `child_process`, `worker_threads`, `vm`, `inspector`, `cluster`, `module` (and their `node:` forms); `process.getBuiltinModule`; and importing `nodeTransport` from that file, its raw https transport, which sends without the client's checks (only `tools/outbound-tls.test.ts` uses it, RAD-44). | server code makes a network call, or loads a module, any other way |
 | L9a | **tables are declared only in the schema.** Imports of `pgTable`, `pgSchema` and `pgEnum` from `drizzle-orm/pg-core`. ADR-005 uses no enums, so the schema test also fails on any `pgEnum`. | anything outside L9a's zone declares a handle on a table, another module's or a system one such as `pg_stat_activity` |
 | L9b | **views are declared only in views.** Imports of `pgView` and `pgMaterializedView` from `drizzle-orm/pg-core`. | a view is declared anywhere but its own file in `views/` |
 

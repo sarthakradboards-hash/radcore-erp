@@ -12,11 +12,36 @@
 
 body {
   margin: 0;
+  /* The layout asks for the full screen (viewport-fit=cover), so keep content clear of the notch and home bar. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background: var(--surface);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-md);
   line-height: 1.5;
+}
+
+/*
+ * The body's notch padding scrolls away, so anything stuck to the top of the screen keeps clear of the notch
+ * itself: RAD-52's offline banner now, the shell's header next. `body` outranks the banner's own `top: 0`
+ * wherever each rule sits in this file.
+ */
+body .offline-banner { top: env(safe-area-inset-top); }
+
+/* The error, not-found and loading screens. */
+.page-message { max-width: 40rem; margin: var(--space-8) auto; padding: 0 var(--space-4); }
+.page-message h1 { font-size: var(--text-lg); }
+
+/*
+ * Below the supported-browser floor (Chrome and Edge 123, Safari 17.5, Firefox 120: decisions.md, 7 Nov) the tokens
+ * don't resolve, so the app would show with no colours or focus ring. light-dark() is the newest feature the floor
+ * rests on, so CSS alone swaps the page for a plain message. Plain colours here, since the tokens are what's missing.
+ */
+.browser-floor { display: none; }
+@supports not (color: light-dark(#000, #fff)) {
+  body > * { display: none; }
+  body > .browser-floor { display: block; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; color: #000; }
+  body { background: #fff; }
 }
 
 /* Token colours on bare controls: the browser's own dark button face fails 4.5:1 against --text. */
@@ -46,6 +71,18 @@ a { color: var(--accent); text-decoration: underline; text-underline-offset: 0.1
   border: 0;
 }
 
+/* lib/offline/offline-banner.tsx: shown at the top of every screen while the browser is offline. */
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-raised);
+  color: var(--text);
+  border-bottom: 3px solid var(--warn);
+}
+
 /* High-contrast mode drops backgrounds, so selection needs an edge as well as a fill. */
 @media (forced-colors: active) {
   [aria-selected="true"], [aria-current]:not([aria-current="false"]) {
@@ -54,11 +91,11 @@ a { color: var(--accent); text-decoration: underline; text-underline-offset: 0.1
   }
 }
 
-/* A spinner or indeterminate bar opts out with data-motion="essential": a busy state must still move. */
+/* A spinner or indeterminate bar opts out with data-motion="essential", children included: a busy state must still move. */
 @media (prefers-reduced-motion: reduce) {
-  :not([data-motion="essential"]),
-  :not([data-motion="essential"])::before,
-  :not([data-motion="essential"])::after {
+  :not([data-motion="essential"], [data-motion="essential"] *),
+  :not([data-motion="essential"], [data-motion="essential"] *)::before,
+  :not([data-motion="essential"], [data-motion="essential"] *)::after {
     animation-duration: 0.01ms !important;
     animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
