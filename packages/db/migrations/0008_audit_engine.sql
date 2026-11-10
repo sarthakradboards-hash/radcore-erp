@@ -230,6 +230,9 @@ SELECT radcore.audit_attach('invites', array['token_hash']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('password_resets', array['token_hash']);
 --> statement-breakpoint
+-- saved-once (RAD-27) keeps each write's answer to replay it: the answer and the input's hash stay out of the audit.
+SELECT radcore.audit_attach('saved_once', array['input_hash', 'answer']);
+--> statement-breakpoint
 
 -- A record opened in full, logged as its own short write after the read commits (ADR-005 §7c). No principal or time
 -- argument: they come from the request context and now(), so the app can append an access row but not say who or

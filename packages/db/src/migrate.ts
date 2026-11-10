@@ -39,7 +39,7 @@ export async function migrate(url: string, migrationsFolder = MIGRATIONS_FOLDER)
     }
     await drizzleMigrate(drizzle({ client }), { migrationsFolder, migrationsSchema: 'drizzle', migrationsTable: '__drizzle_migrations' });
     // ADR-005 §8: the partition top-up, on every deploy and in the test setup, under the same lock. It's idempotent,
-    // and keeps LOG_MONTHS_AHEAD future months for each log. A test's partial folder may stop before migration 0007.
+    // and keeps LOG_MONTHS_AHEAD future months for each log. A test's partial folder may stop before migration 0008.
     if (migrationsFolder === MIGRATIONS_FOLDER) {
       await client.query('select radcore.add_log_partitions($1)', [LOG_MONTHS_AHEAD]);
     }

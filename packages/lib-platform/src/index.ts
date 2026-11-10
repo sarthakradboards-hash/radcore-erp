@@ -17,5 +17,6 @@ export { describeError, type ErrorDescription } from './log/safe-error.ts';
 export { routeOf, scrubText } from './log/scrub.ts';
 export { createSecrets, expiringBefore, SecretPlaceMismatch, type SecretPlace, type Secrets } from './secrets.ts';
 export { defineSetting, settingRow, Settings, type SettingDef, type SettingRow } from './settings.ts';
+export { claimSavedOnce, SAVED_ONCE_KEEP_MS, type SavedOnce, type SavedOnceClaim, type SavedOnceClass } from './saved-once.ts';
 export { FILE_KINDS, type FileKind } from './files/kinds.ts';
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
