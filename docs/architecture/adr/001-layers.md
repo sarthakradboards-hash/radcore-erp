@@ -350,14 +350,20 @@ the server. The form shows the same rules but decides nothing.
     NIST SP 800-63B-4 requires 15 for a password used alone.
   - Admin and owner get the same minimum. One rule is simpler, and the strongest accounts are no place to relax it.
 - **No composition rules and no forced expiry.** Spaces and pasting are allowed, so a passphrase works.
-- **Not a breached password.** The server hashes the password with SHA-1 and sends only the first five hex
-  characters to the Pwned Passwords range API (ADR-004), through the outbound client (ADR-002 L8), with
-  `Add-Padding: true` and a 3-second timeout. It refuses the password if the rest of the hash is in the answer.
-  If the check can't be made, the password is refused for now, with a reason that says to try again: the check
-  fails closed. The password itself never leaves the server.
+- **Not a common or breached password** (ADR-003 §3). Two checks, in this order:
+  - **Always: the bundled list.** The whole password, lower-cased, is compared with a list of common passwords
+    shipped with the app. This list is NIST's required blocklist, so the rule holds even with no network.
+  - **Then: Pwned Passwords** (ADR-004). The server hashes the password with SHA-1 and sends only the first five
+    hex characters to the range API, through the outbound client (ADR-002 L8), with `Add-Padding: true` and a
+    3-second timeout. It refuses the password if the rest of the hash is in the answer. The password itself never
+    leaves the server.
+  - **If Pwned Passwords can't answer**, the password stands on the bundled list alone. The server logs
+    `breached_check_skipped` and raises an alert, at most one an hour (RAD-44's alerts). Refusing every password
+    instead would block invites and resets for the length of the outage, and a reset is how a locked-out person
+    gets back in.
 - **Not the current password**, on a change or a reset.
-- A refusal is `password_rejected`, with the reason on the password field: `too_short`, `breached`,
-  `check_unavailable` or `same_as_old`. The contract's schema checks only the 256 maximum. zod counts UTF-16
+- A refusal is `password_rejected`, with the reason on the password field: `too_short`, `breached` or
+  `same_as_old`. The contract's schema checks only the 256 maximum. zod counts UTF-16
   units, not code points, so the service applies these rules, and a short password gets `too_short`, never
   `invalid_input`.
 - Sign-in checks only the stored hash, never these rules, so a rule change never locks anyone out.
