@@ -2,12 +2,17 @@
 
 import { onlineManager } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
+import { watchOnline } from './online.ts';
 
 const subscribe = (onChange: () => void) => {
   const unsubscribe = onlineManager.subscribe(onChange);
-  // The subscription starts a frame after hydration; a connection lost in that gap fired no event we heard.
-  if (!navigator.onLine) onlineManager.setOnline(false);
-  return unsubscribe;
+  // The subscription starts a frame after hydration, so events in that gap were missed: read the flag now, and keep
+  // re-checking it, so neither a missed event nor a wrong reading can stick.
+  const stopWatching = watchOnline();
+  return () => {
+    stopWatching();
+    unsubscribe();
+  };
 };
 
 /**
