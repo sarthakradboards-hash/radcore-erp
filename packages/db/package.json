@@ -27,6 +27,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@radcore/lib-common": "*",
     "drizzle-orm": "0.45.4",
     "pg": "8.23.1"
   }
