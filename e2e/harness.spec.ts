@@ -56,3 +56,44 @@ test('a serious accessibility issue is reported', async ({ page }) => {
   await page.evaluate('document.querySelector("main").append(document.createElement("input"))');
   expect(await seriousA11yIssues(page)).toEqual([expect.stringMatching(/^label: /)]);
 });
+
+// The CSP checks run in WebKit too, which refuses string evaluates under our CSP: so a function, typed by hand, since
+// this project has no DOM lib.
+type El = { nonce: string; textContent: string };
+type Doc = { scripts: El[]; createElement(tag: 'style' | 'script'): El; head: { append(node: unknown): void } };
+const plantUnNoncedStyle = () => {
+  const doc = (globalThis as unknown as { document: Doc }).document;
+  const style = doc.createElement('style');
+  style.textContent = 'main { outline: 1px solid red }';
+  doc.head.append(style);
+};
+// The page's own script (it carries the response's nonce, as the app's chunks do) evaluates a string, as zod's JIT
+// probe did on RAD-52. Deferred, because the browser exempts code run inside Playwright's evaluate from the eval check.
+const plantEvalProbe = () => {
+  const doc = (globalThis as unknown as { document: Doc }).document;
+  const script = doc.createElement('script');
+  script.nonce = doc.scripts[0]!.nonce;
+  script.textContent = 'setTimeout(() => { try { Function("")(); } catch {} })';
+  doc.head.append(script);
+};
+
+test('a CSP violation is recorded, with the directive and what was blocked', async ({ page, pageProblems }) => {
+  await page.goto('/');
+  // A <style> without the response's nonce: style-src allows only nonced elements (RAD-56).
+  await page.evaluate(plantUnNoncedStyle);
+  await expect.poll(() => pageProblems).toContainEqual(expect.stringMatching(/^CSP violation: style-src(-elem)? blocked inline in /));
+  pageProblems.length = 0; // Firefox also logs it as a console error.
+});
+
+test('an eval the CSP blocks is recorded, in Chromium too, which never logs it to the console', async ({ page, pageProblems }) => {
+  await page.goto('/');
+  await page.evaluate(plantEvalProbe);
+  await expect.poll(() => pageProblems).toContainEqual(expect.stringMatching(/^CSP violation: script-src blocked eval in /));
+  pageProblems.length = 0;
+});
+
+test('a page that keeps to the CSP records no violation', async ({ page, pageProblems }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  expect(pageProblems).toEqual([]);
+});
