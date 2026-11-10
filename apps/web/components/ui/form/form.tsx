@@ -1,7 +1,7 @@
 'use client';
 // The one form (M1-43, RC-187): React Hook Form, checked with the contract's own zod schema, so the form and the API
 // refuse the same things (RC-186). A refused save puts each issue of the error envelope on its field (ADR-001 §7a).
-// The Idempotency-Key belongs to the caller's mutation (ui's useApiMutation), which keeps it across retries.
+// The Idempotency-Key belongs to the caller's mutation (lib/api/query.ts useApiMutation), which keeps it across retries.
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { FormProvider, useForm, useFormContext, type DefaultValues, type FieldValues } from 'react-hook-form';
@@ -34,7 +34,7 @@ type FormProps<I extends FieldValues, O extends FieldValues> = {
   /** The contract's input schema, or a part of it (`contract.input.pick(...)`). */
   schema: z.ZodType<O, I>;
   defaultValues: DefaultValues<I>;
-  /** Sends the save. Throwing an ApiError puts its issues on the fields. */
+  /** Sends the save, usually `useApiMutation(contract).submit`. Throwing an ApiError puts its issues on the fields. */
   onSubmit: (values: O) => Promise<unknown>;
   /** Said to screen readers once the save succeeds, or false to say nothing. */
   saved?: string | false;
