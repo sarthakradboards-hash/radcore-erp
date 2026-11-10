@@ -1,5 +1,5 @@
 {
-  "id": "cf8ec8f3-f840-48e5-97d3-359c09f05000",
+  "id": "b442cef6-47a9-43c1-9427-7515327f1c4c",
   "prevId": "497a5ce8-69e1-4381-9909-157ed2a89fa0",
   "version": "7",
   "dialect": "postgresql",
@@ -246,6 +246,120 @@
         "ck_password_resets_token_hash": {
           "name": "ck_password_resets_token_hash",
           "value": "\"radcore\".\"password_resets\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.saved_once": {
+      "name": "saved_once",
+      "schema": "radcore",
+      "columns": {
+        "principal": {
+          "name": "principal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route": {
+          "name": "route",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_hash": {
+          "name": "input_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "answer": {
+          "name": "answer",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kept": {
+          "name": "kept",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_saved_once_expires_at": {
+          "name": "ix_saved_once_expires_at",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "pk_saved_once": {
+          "name": "pk_saved_once",
+          "columns": [
+            "principal",
+            "route",
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_saved_once_input_hash": {
+          "name": "ck_saved_once_input_hash",
+          "value": "\"radcore\".\"saved_once\".\"input_hash\" ~ '^[0-9a-f]{64}$'"
         }
       },
       "isRLSEnabled": false
@@ -548,7 +662,7 @@
           "notNull": false
         }
       },
-      "definition": "select n.nspname::text as schema_name, t.typname::text as type_name\n  from pg_catalog.pg_type t\n  join pg_catalog.pg_namespace n on n.oid = t.typnamespace\n  where t.typtype = 'e'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'",
+      "definition": "select n.nspname::text as schema_name, t.typname::text as type_name\n  from pg_catalog.pg_type t\n  join pg_catalog.pg_namespace n on n.oid = t.typnamespace\n  where t.typtype = 'e'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'",
       "name": "v_schema_enums",
       "schema": "radcore",
       "isExisting": false,
@@ -575,7 +689,7 @@
           "notNull": false
         }
       },
-      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, k.conname::text as constraint_name\n  from pg_catalog.pg_constraint k\n  join pg_catalog.pg_class c on c.oid = k.conrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where k.contype = 'f'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_index i\n      where i.indrelid = k.conrelid\n        and array_to_string((i.indkey::int2[])[0:cardinality(k.conkey) - 1], ',') = array_to_string(k.conkey, ','))",
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, k.conname::text as constraint_name\n  from pg_catalog.pg_constraint k\n  join pg_catalog.pg_class c on c.oid = k.conrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where k.contype = 'f'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_index i\n      where i.indrelid = k.conrelid\n        and array_to_string((i.indkey::int2[])[0:cardinality(k.conkey) - 1], ',') = array_to_string(k.conkey, ','))",
       "name": "v_schema_fk_without_index",
       "schema": "radcore",
       "isExisting": false,
@@ -596,7 +710,7 @@
           "notNull": false
         }
       },
-      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and (select count(*) from pg_catalog.pg_attribute a\n      where a.attrelid = c.oid and not a.attisdropped\n        and a.attname in ('created_at', 'created_by', 'updated_at', 'updated_by')) < 4",
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'\n    and (select count(*) from pg_catalog.pg_attribute a\n      where a.attrelid = c.oid and not a.attisdropped\n        and a.attname in ('created_at', 'created_by', 'updated_at', 'updated_by')) < 4",
       "name": "v_schema_missing_audit",
       "schema": "radcore",
       "isExisting": false,
@@ -623,7 +737,7 @@
           "notNull": false
         }
       },
-      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, a.attname::text as column_name\n  from pg_catalog.pg_attribute a\n  join pg_catalog.pg_class c on c.oid = a.attrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition and a.attnum > 0 and not a.attisdropped\n    and a.atttypid = 'pg_catalog.numeric'::pg_catalog.regtype\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_constraint k\n      where k.conrelid = c.oid and k.contype = 'c' and k.conname = 'ck_' || c.relname || '_' || a.attname)",
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, a.attname::text as column_name\n  from pg_catalog.pg_attribute a\n  join pg_catalog.pg_class c on c.oid = a.attrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition and a.attnum > 0 and not a.attisdropped\n    and a.atttypid = 'pg_catalog.numeric'::pg_catalog.regtype\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_constraint k\n      where k.conrelid = c.oid and k.contype = 'c' and k.conname = 'ck_' || c.relname || '_' || a.attname)",
       "name": "v_schema_numeric_without_check",
       "schema": "radcore",
       "isExisting": false,

@@ -78,10 +78,12 @@ describe.skipIf(!url)('the sign-in credential step', () => {
   it('signs in with the right password, whatever the address case, and clears earlier failures', async () => {
     const s = await service();
     const user = await addUser('active', await s.passwords.hash(PASSWORD));
-    await s.lockout.failed(user.email);
+    await s.lockout.attempt(user.email);
     expect(await s.run(` ${user.email.toUpperCase()} `, PASSWORD)).toEqual({ userId: user.id, next: 'done' });
-    for (let i = 0; i < LOCKOUT.points; i++) await s.lockout.failed(user.email);
-    expect(await s.lockout.lockedFor(user.email)).toBe(0);
+    // The success cleared both earlier attempts: the address has its whole allowance again.
+    const waits: number[] = [];
+    for (let i = 0; i < LOCKOUT.points; i++) waits.push(await s.lockout.attempt(user.email));
+    expect(waits).toEqual(Array(LOCKOUT.points).fill(0));
   });
 
   it('answers a second factor for a person whose role needs one (D-19)', async () => {
@@ -102,17 +104,17 @@ describe.skipIf(!url)('the sign-in credential step', () => {
       await s.failure(invited.email, PASSWORD)]).toEqual(['invalid_credentials', 'invalid_credentials', 'invalid_credentials']);
     // The unknown and the invited are checked against the dummy, so each costs one full verify.
     expect(s.verify.mock.calls.map(([stored]) => stored === null)).toEqual([false, true, true]);
-    // Each sign-in counted one failure: LOCKOUT.points more go past the allowance and lock all three alike.
+    // Each sign-in counted one attempt: the rest of the allowance, then one more, locks all three alike.
     for (const email of [active.email, unknown, invited.email]) {
-      for (let i = 0; i < LOCKOUT.points; i++) await s.lockout.failed(email);
-      expect(await s.lockout.lockedFor(email)).toBeGreaterThan(0);
+      for (let i = 1; i < LOCKOUT.points; i++) await s.lockout.attempt(email);
+      expect(await s.lockout.attempt(email)).toBeGreaterThan(0);
     }
   });
 
   it('refuses a locked address before checking anything, saying when to retry', async () => {
     const s = await service();
     const user = await addUser('active', await s.passwords.hash(PASSWORD));
-    for (let i = 0; i <= LOCKOUT.points; i++) await s.lockout.failed(user.email);
+    for (let i = 0; i < LOCKOUT.points; i++) await s.lockout.attempt(user.email);
     const refused = await s.run(user.email, PASSWORD).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(AppError);
     expect([(refused as AppError).code, (refused as AppError).retryAfterSeconds]).toEqual(['account_locked', expect.any(Number)]);

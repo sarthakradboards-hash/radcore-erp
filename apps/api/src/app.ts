@@ -6,7 +6,7 @@ import { mountRoutes, type HandlerDeps } from './http/handler.ts';
 import type { Route } from './http/route.ts';
 
 /** The routes and what the handler needs to run them; without it, the app serves only /health. */
-export type Api = Omit<HandlerDeps, 'log'> & { routes: readonly Route[] };
+export type Api = Omit<HandlerDeps, 'log' | 'publicOrigin'> & { routes: readonly Route[] };
 
 export function createApp(config: Config, log: Logger, api?: Api): express.Express {
   const app = express();
@@ -22,7 +22,9 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
       res.status(503).json({ ok: false });
     }
   });
-  if (api !== undefined) mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate });
+  if (api !== undefined) {
+    mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin });
+  }
   return app;
 }
 

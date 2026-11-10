@@ -52,7 +52,7 @@ describe.skipIf(!url)('the shared rate-limit store', () => {
   it('keeps no email address in the store, only its hash', async () => {
     const lockout = createLockout(store.limiter({ prefix: prefix(), ...LOCKOUT }));
     const email = `Asha.${randomBytes(3).toString('hex')}@Example.in`;
-    await lockout.failed(email);
+    await lockout.attempt(email);
     const c = new pg.Client({ connectionString: superUrl });
     await c.connect();
     try {
@@ -65,16 +65,24 @@ describe.skipIf(!url)('the shared rate-limit store', () => {
     }
   });
 
-  // RAD-64: a lock is short and ends on its own; a reset or a success clears it. The numbers are production's.
-  it('locks an address after its failures, whatever its case, and clears on success', async () => {
+  // RAD-64: 10 attempts per address; the 11th is refused and the lock ends on its own. The numbers are production's.
+  it('lets 10 attempts through for an address, whatever its case, refuses the 11th, and starts again after a success', async () => {
     expect(LOCKOUT).toEqual({ points: 10, windowSeconds: 900, blockSeconds: 900 });
     const lockout = createLockout(store.limiter({ prefix: prefix(), ...LOCKOUT }));
     const email = `ravi.${randomBytes(3).toString('hex')}@example.in`;
-    for (let i = 0; i < LOCKOUT.points; i++) await lockout.failed(email);
-    expect(await lockout.lockedFor(email.toUpperCase())).toBe(0);
-    expect(await lockout.failed(` ${email.toUpperCase()} `)).toBeGreaterThan(890);
-    expect(await lockout.lockedFor(email)).toBeGreaterThan(890);
-    await lockout.clear(email);
-    expect(await lockout.lockedFor(email)).toBe(0);
+    const waits: number[] = [];
+    for (let i = 0; i < LOCKOUT.points; i++) waits.push(await lockout.attempt(i % 2 === 0 ? email : ` ${email.toUpperCase()} `));
+    expect(waits).toEqual(Array(LOCKOUT.points).fill(0));
+    expect(await lockout.attempt(email)).toBeGreaterThan(890);
+    await lockout.succeeded(email);
+    expect(await lockout.attempt(email)).toBe(0);
+  });
+
+  // The auditor's MUST on #82: counting before the check means a burst can't all pass a check made before any counted.
+  it('lets at most 10 of 20 parallel attempts on one address through', async () => {
+    const lockout = createLockout(store.limiter({ prefix: prefix(), ...LOCKOUT }));
+    const email = `burst.${randomBytes(3).toString('hex')}@example.in`;
+    const waits = await Promise.all(Array.from({ length: 20 }, () => lockout.attempt(email)));
+    expect(waits.filter((w) => w === 0)).toHaveLength(LOCKOUT.points);
   });
 });

@@ -43,6 +43,8 @@ const offListExempt = defineContract({ method: 'POST', path: '/notes/quick', aut
   idempotency: 'exempt', tx: write, input: z.object({}), output: z.object({}) });
 const offListNoAnswer = defineContract({ method: 'POST', path: '/notes/secret', auth: 'session', perm: 'notes:write',
   storesAnswer: false, tx: write, input: z.object({}), output: z.object({}) });
+// Every write comes from the app's own origin (ADR-001 §7a, M1-21), as the browser sends it.
+const ORIGIN = config().publicOrigin;
 const user = (permissions: string[]): Principal => ({ kind: 'user', userId: 'u-1', permissions });
 const PERSONAL = 'Asha Rao';
 
@@ -93,7 +95,7 @@ describe.skipIf(!url)('the generic route handler', () => {
   // Every write carries its saved-once key (ADR-001 §7a): a UUID, new per submit.
   const post = (base: string, body: unknown, key: string | null = randomUUID()) => fetch(`${base}/notes`, {
     method: 'POST', body: JSON.stringify(body),
-    headers: { 'content-type': 'application/json', ...(key === null ? {} : { 'idempotency-key': key }) } });
+    headers: { 'content-type': 'application/json', origin: ORIGIN, ...(key === null ? {} : { 'idempotency-key': key }) } });
   const count = async (body: string) => Number((await pool.query(`select count(*) from ${fixture.schemaName}.notes where body = $1`,
     [body])).rows[0]?.count);
   const envelope = { code: expect.any(String), message: expect.any(String), issues: expect.any(Array), requestId: expect.any(String) };
@@ -239,7 +241,8 @@ describe.skipIf(!url)('the generic route handler', () => {
     const service = vi.fn(insert);
     signOutService.mockClear();
     await serve(user(['session:read', 'notes:write']), service, async (base) => {
-      const out = await fetch(`${base}/sign-out`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+      const out = await fetch(`${base}/sign-out`, { method: 'POST', body: '{}',
+        headers: { 'content-type': 'application/json', origin: ORIGIN } });
       expect(out.status).toBe(200);
       const res = await post(base, { body: 'keyless', n: 1 }, null);
       expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([400, 'idempotency_key_required']);
@@ -268,7 +271,7 @@ describe.skipIf(!url)('the generic route handler', () => {
   it('answers a body that is not JSON 400 invalid_input', async () => {
     await serve(user(['notes:write']), insert, async (base) => {
       const res = await fetch(`${base}/notes`, { method: 'POST', body: '{not json',
-        headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() } });
+        headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID(), origin: ORIGIN } });
       expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([400, 'invalid_input']);
     });
   });
@@ -311,4 +314,57 @@ it("refuses to mount a route that declares either saved-once flag outside lib-pl
   expect(() => app(defineRoute(offListExempt, async () => ({})))).toThrow(/KEY_EXEMPT_ROUTES/);
   expect(() => app(defineRoute(offListNoAnswer, async () => ({})))).toThrow(/ANSWER_NOT_STORED_ROUTES/);
   expect(() => app(defineRoute(exemptSignOut, async () => ({})))).not.toThrow();
+});
+
+// M1-21, RC-165: a write needs Origin to be exactly PUBLIC_ORIGIN, the key-exempt routes above all: they send no
+// custom header, so a cross-site form post makes no CORS preflight (login CSRF). The guard answers before the
+// principal, the body or a transaction, so these need no database.
+describe('the write-Origin check', () => {
+  const signIn = defineContract({ method: 'POST', path: '/sign-in', auth: 'public', rateLimit: 'sign-in', perm: null,
+    idempotency: 'exempt', tx: write, input: z.object({ email: z.string() }), output: z.object({}) });
+  const service = vi.fn(async () => ({}));
+  const authenticate = vi.fn(async () => null);
+
+  async function send(origin: string | null, body = '{}') {
+    const app = createApp(config(), logger(), { db: createDatabase(new pg.Pool()), authenticate,
+      routes: [defineRoute(signIn, service), defineRoute(getNote, async (_ctx, { id }) => ({ noteId: id, bodyText: '' }))] });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/sign-in`, { method: 'POST', body,
+        headers: { 'content-type': 'application/x-www-form-urlencoded', ...(origin === null ? {} : { origin }) } });
+      return { status: res.status, code: ((await res.json()) as { code: string }).code };
+    } finally {
+      await server.stop();
+    }
+  }
+
+  it.each<[string, string | null]>([
+    ['a cross-site form post', 'https://evil.example'],
+    ['a write with no Origin (RC-165)', null],
+    ["the browser's opaque origin", 'null'],
+  ])('refuses %s to /sign-in with 403 forbidden, before anything else runs', async (_, origin) => {
+    service.mockClear();
+    authenticate.mockClear();
+    expect(await send(origin)).toEqual({ status: 403, code: 'forbidden' });
+    expect(authenticate).not.toHaveBeenCalled();
+    expect(service).not.toHaveBeenCalled();
+  });
+
+  it('lets a same-origin post to /sign-in through the guard, to be checked as usual', async () => {
+    // Past the guard, the body is read: a form body isn't the contract's JSON, so it answers 400, not 403.
+    expect(await send(ORIGIN, 'email=asha%40example.com')).toEqual({ status: 400, code: 'invalid_input' });
+  });
+
+  it('asks no Origin of a read', async () => {
+    const app = createApp(config(), logger(), { db: createDatabase(new pg.Pool()), authenticate: async () => null,
+      routes: [defineRoute(getNote, async (_ctx, { id }) => ({ noteId: id, bodyText: '' }))] });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      // Past the guard with no Origin, the read stops at the session check (401), not the guard (403).
+      const res = await fetch(`http://127.0.0.1:${server.port}/notes/n1`);
+      expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([401, 'signed_out']);
+    } finally {
+      await server.stop();
+    }
+  });
 });
