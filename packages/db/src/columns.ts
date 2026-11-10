@@ -101,7 +101,7 @@ export const lookupTable = <TName extends string, TColumns extends Record<string
 /**
  * A trigram index on a searched text column, for a table's extra config: `trigramIndex('ix_parties_name_trgm', t.name)`.
  * lists.ts's searchWords (ILIKE '%…%') can then use it instead of reading every row (RC-160). pg_trgm is in its own
- * schema, radcore_ext (ADR-005 §7c, migration 0005_pg_trgm), so the operator class is named with it.
+ * schema, radcore_ext (ADR-005 §7c, migration 0006_pg_trgm), so the operator class is named with it.
  */
 export const trigramIndex = (name: string, column: ExtraConfigColumn) =>
   index(name).using('gin', column.op('radcore_ext.gin_trgm_ops'));

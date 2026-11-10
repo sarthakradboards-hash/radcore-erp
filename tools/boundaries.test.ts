@@ -6,15 +6,15 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { cruise } from 'dependency-cruiser';
 import { ESLint } from 'eslint';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const FIXTURES = 'tools/boundary-fixtures';
 // Type-aware linting builds a TypeScript program on first use; a cold CI runner can take a while.
 const LINT_TIMEOUT = 180_000;
-// T1 is proved with M1-08 (ADR-001 Enforcement).
 const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6',
-  'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b'];
-const CONTROLS = { depcruise: 'ok-allowed-imports', eslint: 'ok-lint-zones' };
+  'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b', 'T1'];
+const CONTROLS = { depcruise: 'ok-allowed-imports', eslint: 'ok-lint-zones', tsc: 'ok-opaque-tx' };
 
 // The dependency-cruiser fixtures, each with the one rule it must fail. Every other fixture runs through ESLint.
 const DEPCRUISE_RULE: Record<string, string> = {
@@ -103,11 +103,26 @@ const dirs = readdirSync(FIXTURES).filter((d) => statSync(join(FIXTURES, d)).isD
 // ADR-003's `C*` fixtures are dependency data, not source; tools/deps.test.ts runs them.
 const fixtures = dirs.filter((d) => !d.startsWith('ok-') && !/^C\d+-/.test(d));
 const tagOf = (dir: string) => dir.split('-')[0] ?? '';
-const eslintFixtures = fixtures.filter((d) => !(d in DEPCRUISE_RULE));
+// T1 is a type rule: TypeScript checks it (ADR-001 Enforcement), with the repo's compiler options.
+const tscFixtures = fixtures.filter((d) => tagOf(d) === 'T1');
+const eslintFixtures = fixtures.filter((d) => !(d in DEPCRUISE_RULE) && tagOf(d) !== 'T1');
 
 // Lint a fixture folder with the repo's config, from inside the folder, so the config's globs see mirrored paths.
 const lint = (dir: string) =>
   new ESLint({ cwd: resolve(FIXTURES, dir), overrideConfigFile: resolve('eslint.config.mjs') }).lintFiles(['.']);
+
+const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+  (e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith('.ts') ? [resolve(dir, e.name)] : []));
+const compilerOptions = ts.parseJsonConfigFileContent(ts.readConfigFile('tsconfig.base.json', ts.sys.readFile).config,
+  ts.sys, resolve('.')).options;
+// The type errors in a fixture folder's own files.
+const typeErrors = (dir: string): string[] => {
+  const roots = files(join(FIXTURES, dir));
+  const program = ts.createProgram(roots, compilerOptions);
+  return ts.getPreEmitDiagnostics(program)
+    .filter((d) => d.file !== undefined && roots.includes(resolve(d.file.fileName)))
+    .map((d) => `TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
+};
 
 // The fixture prefix is on only for this test (.dependency-cruiser.cjs).
 process.env['RADCORE_BOUNDARY_FIXTURES'] = '1';
@@ -142,6 +157,16 @@ describe('boundary fixtures', () => {
     const errors = (await lint(CONTROLS.eslint)).flatMap((r) =>
       r.messages.filter((m) => m.severity === 2).map((m) => `${r.filePath}: ${m.ruleId} ${m.message}`));
     expect(errors).toEqual([]);
+  }, LINT_TIMEOUT);
+
+  it('lets a service hand ctx.tx to its own module transaction (T1)', () => {
+    expect(typeErrors(CONTROLS.tsc)).toEqual([]);
+  }, LINT_TIMEOUT);
+
+  // A member that doesn't exist (2339), or a foreign table refused by type (2345); not, say, an unresolved import.
+  it.each(tscFixtures)('%s fails tsc', (d) => {
+    const errors = typeErrors(d);
+    expect(errors.filter((e) => /^TS(2339|2345) /.test(e)), errors.join('\n')).not.toHaveLength(0);
   }, LINT_TIMEOUT);
 
   it.each(eslintFixtures)('%s fails ESLint', async (d) => {

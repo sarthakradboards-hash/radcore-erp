@@ -143,7 +143,7 @@ describe.skipIf(!url)('list conditions on PostgreSQL', () => {
 });
 
 // RC-160: a search's ILIKE '%…%' served by a trigram index. pg_trgm is in radcore_ext (ADR-005 §7c, migration
-// 0005_pg_trgm), where neither login has USAGE; the index works without it.
+// 0006_pg_trgm), where neither login has USAGE; the index works without it.
 const trgm = pgSchema('trgm_fixture');
 const parties = trgm.table('parties', { id: uuid().primaryKey(), name: text().notNull() },
   (t) => [trigramIndex('ix_parties_name_trgm', t.name)]);

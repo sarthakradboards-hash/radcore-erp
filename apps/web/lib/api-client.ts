@@ -28,8 +28,11 @@ export type ReadOptions = { signal?: AbortSignal };
 /** A write sends the key the form made once for this submit, and keeps it across retries (ADR-001 §7a, A-0).
  * @public client API: its first callers are ui's forms (RAD-53), so knip sees no use yet. */
 export type WriteOptions = { idempotencyKey: string; signal?: AbortSignal };
-type OptionsOf<C extends Contract> = C['tx']['readOnly'] extends true ? [options?: ReadOptions] : [options: WriteOptions];
-type Call<C extends Contract> = C['tx']['readOnly'] extends true
+// A read, or one of the key-exempt writes (sign-in and sign-out, ADR-001 §7a), takes no Idempotency-Key.
+type NoKey<C extends Contract> = C['tx']['readOnly'] extends true ? true
+  : [NonNullable<C['idempotency']>] extends [never] ? false : true;
+type OptionsOf<C extends Contract> = NoKey<C> extends true ? [options?: ReadOptions] : [options: WriteOptions];
+type Call<C extends Contract> = NoKey<C> extends true
   ? (input: z.input<C['input']>, options?: ReadOptions) => Promise<z.output<C['output']>>
   : (input: z.input<C['input']>, options: WriteOptions) => Promise<z.output<C['output']>>;
 export type Client<T extends Record<string, Contract>> = { readonly [K in keyof T]: Call<T[K]> };
@@ -48,7 +51,7 @@ async function call(c: Contract, input: unknown, o: CallOptions = {}): Promise<u
   const checked = checkInput(c, input);
   if (!checked.ok) throw new ApiError(400, { ...checked.error, requestId: '' });
   const headers: Record<string, string> = { accept: 'application/json' };
-  if (!c.tx.readOnly) {
+  if (!c.tx.readOnly && c.idempotency !== 'exempt') {
     // Fail closed, as the server does (RC-132): no key, no write.
     if (o.idempotencyKey === undefined || !UUID.test(o.idempotencyKey)) {
       throw new ApiError(400, { code: 'idempotency_key_required', message: 'This save needs its retry key', issues: [], requestId: '' });
