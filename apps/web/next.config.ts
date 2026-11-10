@@ -16,6 +16,17 @@ const SECURITY_HEADERS = [
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' },
 ];
 
+// Development and CI have no Caddy, so the browser's /api calls reach the api through Next; deployed, Caddy routes
+// /api (ADR-004). An allow-list, like lib-platform's config: an unset, misspelled or 'review' APP_ENV gets no rewrite.
+// Next fixes rewrites at `next build`, so the APP_ENV and API_INTERNAL_URL at build time decide, not a later restart.
+const DEV_CI = ['development', 'ci'];
+const apiRewrites = () => {
+  const api = process.env['API_INTERNAL_URL'];
+  return DEV_CI.includes(process.env['APP_ENV'] ?? '') && api
+    ? [{ source: '/api/:path*', destination: `${api.replace(/\/$/, '')}/:path*` }]
+    : [];
+};
+
 const config: NextConfig = {
   // ADR-003 §2: files come from S3 by presigned URL, so image optimisation is off and sharp is never loaded.
   images: { unoptimized: true },
@@ -23,6 +34,7 @@ const config: NextConfig = {
   agentRules: false,
   poweredByHeader: false,
   headers: async () => [{ source: '/:path*', headers: SECURITY_HEADERS }],
+  rewrites: async () => apiRewrites(),
 };
 
 export default config;

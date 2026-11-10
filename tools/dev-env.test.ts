@@ -49,6 +49,13 @@ it('never overwrites an existing .env, and appends only the settings it lacks', 
   expect(readFileSync(file, 'utf8')).toBe(text);
 });
 
+// RAD-50: web's server reads /me from the api's dev port.
+it("points web at the api's dev port", () => {
+  const file = tmp();
+  writeDevEnv(file);
+  expect(parse(file)['API_INTERNAL_URL']).toBe('http://127.0.0.1:3001');
+});
+
 // RAD-28: `npm run dev` must start under the settings check.
 it.each(['api', 'worker'] as const)('writes settings the %s accepts', (proc) => {
   const file = tmp();
