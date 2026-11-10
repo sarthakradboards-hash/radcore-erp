@@ -16,5 +16,5 @@ await startProcess('worker', async ({ config, pool, log }) => {
   const queue = createJobQueue(config.database, log);
   const running = await runJobs(queue, jobs, log, { alert });
   // Stopped in this order: the relay finishes its pass while the queue can still take its jobs (ADR-002 §4).
-  return [startHeartbeat(config.heartbeatUrl, log), startOutboxRelay(createDatabase(pool), queue, log), running];
+  return [startHeartbeat(config.heartbeatUrl, log), startOutboxRelay(createDatabase(pool), queue, log, { alert }), running];
 });

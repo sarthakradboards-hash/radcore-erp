@@ -14,6 +14,6 @@ export const vNumericWithoutCheck = radcore.view('v_schema_numeric_without_check
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
   where c.relkind in ('r', 'p') and not c.relispartition and a.attnum > 0 and not a.attisdropped
     and a.atttypid = 'pg_catalog.numeric'::pg_catalog.regtype
-    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'
+    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'
     and not exists (select 1 from pg_catalog.pg_constraint k
       where k.conrelid = c.oid and k.contype = 'c' and k.conname = 'ck_' || c.relname || '_' || a.attname)`);

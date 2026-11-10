@@ -82,7 +82,7 @@ describe.skipIf(!url)('the outbox', () => {
     // The crash: the job reached pg-boss, but the delete didn't commit, so the row is back.
     await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(contract, { n: 7 }));
     await pool.query('update radcore.jobs_outbox set id = $1 where request_id = $2', [id, requestId]);
-    expect(await relayOutbox(db, queue, logger())).toBeGreaterThanOrEqual(1);
+    expect((await relayOutbox(db, queue, logger())).sent).toBeGreaterThanOrEqual(1);
     expect(await outboxFor(requestId)).toEqual([]);
     expect(await jobsWithIds([id])).toBe(1);
   }, 60_000);
@@ -99,23 +99,45 @@ describe.skipIf(!url)('the outbox', () => {
     expect(await jobsWithIds(ids)).toBe(6);
   }, 60_000);
 
-  it('leaves a job pg-boss can\'t take (no such queue) for later, logs it once, and relays the rest', async () => {
-    // A contract no worker runs, so pg-boss has no queue for it.
-    const lost = { ...name(), principal: { kind: 'system', name: 'test', permissions: [] }, input: z.object({}) } as const;
-    const requestId = randomUUID();
-    await runInTransaction(db, WRITE, user, requestId, async (ctx) => {
-      await ctx.jobs.send(lost, {});
-      await ctx.jobs.send(contract, { n: 9 });
+  // A contract no worker runs, so pg-boss has no queue for it: every send of it fails.
+  const poison = () => ({ ...name(), principal: { kind: 'system', name: 'test', permissions: [] }, input: z.object({}) } as const);
+
+  it('never lets rows it can\'t queue block the jobs behind them (100+ ahead of a good one)', async () => {
+    const lost = poison();
+    const before = randomUUID();
+    const after = randomUUID();
+    await runInTransaction(db, WRITE, user, before, async (ctx) => {
+      for (let i = 0; i < 101; i += 1) await ctx.jobs.send(lost, {});
     });
-    const log = logger();
-    const reported = new Set<string>();
+    await send(5, after);
+    const [good] = await outboxFor(after);
     try {
-      await relayOutbox(db, queue, log, { reported });
-      await relayOutbox(db, queue, log, { reported });
-      expect((await outboxFor(requestId)).map((r) => r.name)).toEqual([lost.name]);
-      expect(log.error).toHaveBeenCalledTimes(1);
+      // The first pass takes the 100 oldest, all poison, and backs each off; the next one reaches the good job.
+      expect(await relayOutbox(db, queue, logger())).toEqual({ taken: 100, sent: 0 });
+      await relayOutbox(db, queue, logger());
+      expect(await outboxFor(after)).toEqual([]);
+      expect(await jobsWithIds([good?.id ?? ''])).toBe(1);
+      const backedOff = await pool.query<{ n: number }>(
+        'select count(*)::int as n from radcore.jobs_outbox where request_id = $1 and attempts = 1 and next_attempt_at > now()', [before]);
+      expect(backedOff.rows[0]?.n).toBe(101);
+    } finally {
+      await pool.query('delete from radcore.jobs_outbox where request_id = $1', [before]);
+    }
+  }, 60_000);
+
+  it('sets a row aside after its last try, with one alert, and takes it no more', async () => {
+    const requestId = randomUUID();
+    await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(poison(), {}));
+    const [row] = await outboxFor(requestId);
+    const alert = vi.fn<(message: string) => Promise<void>>(async () => undefined);
+    const options = { maxAttempts: 2, backoff: () => 0, alert };
+    try {
+      for (let pass = 0; pass < 3; pass += 1) await relayOutbox(db, queue, logger(), options);
+      const [state] = (await pool.query<{ attempts: number; dead: boolean }>(
+        'select attempts, dead_at is not null as dead from radcore.jobs_outbox where id = $1', [row?.id])).rows;
+      expect(state).toEqual({ attempts: 2, dead: true });
+      expect(alert.mock.calls.map((c) => c[0]).filter((m) => m.includes(row?.id ?? '-'))).toHaveLength(1);
     } finally {
       await pool.query('delete from radcore.jobs_outbox where request_id = $1', [requestId]);
     }
-  }, 60_000);
-});
+  }, 60_000);});
