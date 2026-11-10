@@ -11,3 +11,11 @@ export const FILE_KINDS = {
 } as const satisfies Record<string, { maxBytes: number; types: readonly string[] }>;
 
 export type FileKind = keyof typeof FILE_KINDS;
+
+/** Files the server writes itself, never uploaded by a browser: no presigned policy, so no size limit of their own;
+ * the export's row cap and its size-limited volume bound them (RAD-47). */
+export const SERVER_FILE_KINDS = {
+  export: { types: ['text/csv', XLSX] },
+} as const satisfies Record<string, { types: readonly string[] }>;
+
+export type ServerFileKind = keyof typeof SERVER_FILE_KINDS;
