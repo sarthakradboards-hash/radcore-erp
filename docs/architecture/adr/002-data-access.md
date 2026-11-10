@@ -122,11 +122,12 @@ wraps the request's Drizzle transaction and exposes only:
 | `query.<own tables>` | relational reads. Its `where` and `orderBy` callbacks receive operator objects with `sql` removed, both in the type and in the object passed at run time |
 | `select()` | the query builder, reading own tables, relations and views. It isn't checked at run time: what it can read is limited by D7, since only the owning library can import a table |
 | `insert`, `update`, `delete` | **own tables only**, checked by type and at run time against the module's table set |
-| `transaction(cb)` | a savepoint. `cb` receives **the same module object**, never Drizzle's raw `PgTransaction` |
+| `transaction(cb)` | a savepoint. `cb` receives a **new module object of the same module**, with its own handle that ends with the savepoint, never Drizzle's raw `PgTransaction` |
 
 - It has no `execute`, no `_`, no `$with` and no driver handle. Those members don't exist on the object, so a cast
   can't reach them. Every builder it hands out, and every builder those return, has no `session` and no `_`
-  members either, so a cast can't reach the pool's client through one.
+  members, no `config` and no `dialect` either, and refuses to be changed (set, define, delete), so a cast can't
+  reach the pool's client through one or clear a `where` a guard has checked.
 - **It works only while its transaction does.** The module object and its builders look the transaction up each time
   they run, so one kept past commit or rollback (a `forEach(async ...)` is enough) throws instead of running on a
   client already back in the pool. A savepoint's object ends with the savepoint.
