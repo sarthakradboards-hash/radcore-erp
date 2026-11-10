@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type { AppEnv } from '../config.ts';
 import type { Logger } from '../log.ts';
 
-export const COMMON_PASSWORDS_FILE = join(import.meta.dirname, '..', '..', 'data', 'common-passwords.txt');
+const COMMON_PASSWORDS_FILE = join(import.meta.dirname, '..', '..', 'data', 'common-passwords.txt');
 /** A few hand-made entries for development and tests: never enough for a deployed api. */
 export const COMMON_PASSWORDS_FIXTURE = join(import.meta.dirname, 'fixtures', 'common-passwords.txt');
 const DEPLOYED: readonly AppEnv[] = ['staging', 'production'];

@@ -56,8 +56,9 @@ describe.skipIf(!url)('setting a password', () => {
     const outcome = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) =>
       (e instanceof AppError ? [e.code, ...e.issues.map((i) => i.code)].join(':') : String(e)));
     const user = async (status: 'invited' | 'active') => (await asAdmin<{ id: string }>(`insert into radcore.users (email,
-      display_name, status, password_hash, password_set_at) values ($1, 'Test', $2, $3, $4) returning id`, [email, status,
-      status === 'active' ? await passwords.hash(OLD) : null, status === 'active' ? new Date() : null]))[0]?.id ?? '';
+      display_name, status, password_hash, password_set_at) values ($1, 'Test', $2, $3,
+      case when $3::text is null then null else now() end) returning id`, [email, status,
+      status === 'active' ? await passwords.hash(OLD) : null]))[0]?.id ?? '';
     const link = async (table: 'invites' | 'password_resets', userId: string, expiresInSeconds = 3600) => {
       const token = randomBytes(32).toString('base64url');
       await asAdmin(`insert into radcore.${table} (user_id, token_hash, expires_at) values ($1, $2, now() + make_interval(secs => $3))`,

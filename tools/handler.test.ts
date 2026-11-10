@@ -3,7 +3,7 @@
 // before commit, camelCase as is, and errors mapped by code: a thrown code or a SQLSTATE, never message text.
 // Here in tools/ because server code may not call fetch (ADR-002 L8). The tables live in a schema of this file's own.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { defineContract } from '@radcore/lib-common';
+import { defineContract, newPassword } from '@radcore/lib-common';
 import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { sql } from 'drizzle-orm';
 import { integer, pgSchema, text, uuid } from 'drizzle-orm/pg-core';
@@ -286,6 +286,44 @@ describe.skipIf(!url)('the generic route handler', () => {
       expect(lines).toEqual([`POST /notes failed (request ${requestId})`]);
       expect(JSON.stringify(log.error.mock.calls.map(([m]) => m))).not.toContain(PERSONAL);
     });
+  });
+});
+
+// ADR-001 §7a (RAD-32): a field marked newPassword() is checked before the transaction opens, so the check's network
+// call never holds a transaction or a pooled connection, and a refusal never reaches the service.
+describe.skipIf(!url)('the new-password check before the transaction', () => {
+  const setPassword = defineContract({ method: 'POST', path: '/passwords', auth: 'session', perm: 'notes:write',
+    tx: { readOnly: false, isolation: 'read committed' }, input: z.object({ password: newPassword() }), output: z.object({}),
+    errors: ['password_rejected'] });
+  const check = vi.fn(async (p: string) => (p.length < 15 ? 'too_short' as const : p.includes('breach') ? 'breached' as const : null));
+
+  it('refuses a short or breached password with password_rejected on its field, before the service and the transaction', async () => {
+    const pool = new pg.Pool({ connectionString: url, max: 1 });
+    const service = vi.fn(async () => ({}));
+    const app = createApp(config(), logger(), { db: createDatabase(pool), authenticate: async () => user(['notes:write']),
+      newPasswordCheck: check, routes: [defineRoute(setPassword, service)] });
+    const server = await listen(app, 0, '127.0.0.1');
+    const send = async (password: string) => {
+      const res = await fetch(`http://127.0.0.1:${server.port}/passwords`, { method: 'POST', body: JSON.stringify({ password }),
+        headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID(), origin: ORIGIN } });
+      const body = (await res.json()) as { code?: string; issues?: { path: unknown[]; code: string }[] };
+      return [res.status, body.code, body.issues?.map((i) => [i.path, i.code])];
+    };
+    try {
+      expect(await send('too short')).toEqual([422, 'password_rejected', [[['password'], 'too_short']]]);
+      expect(await send('a breach of the lighthouse')).toEqual([422, 'password_rejected', [[['password'], 'breached']]]);
+      expect(service).not.toHaveBeenCalled();
+      expect(await send('the lighthouse keeps its own time')).toEqual([200, undefined, undefined]);
+      expect(service).toHaveBeenCalledTimes(1);
+    } finally {
+      await server.stop();
+      await pool.end();
+    }
+  });
+
+  it('refuses to mount a newPassword() field without a check to run (fails closed)', () => {
+    expect(() => createApp(config(), logger(), { db: createDatabase(new pg.Pool()), authenticate: async () => null,
+      routes: [defineRoute(setPassword, async () => ({}))] })).toThrow(/new-password check/);
   });
 });
 

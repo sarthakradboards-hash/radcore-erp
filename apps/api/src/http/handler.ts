@@ -8,7 +8,7 @@
 // Still to come, each with its ticket: rate guards (M1-21), sessions (RAD-32), pii() masking (M1-22), Settings in Ctx
 // (RAD-48), and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
-import { BUSINESS_RULE_STATUS, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
+import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
 import { AppError, claimSavedOnce, describeError, originAllowed, type Principal } from '@radcore/lib-platform';
 import { ANSWER_NOT_STORED_ROUTES, KEY_EXEMPT_ROUTES } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
@@ -24,7 +24,19 @@ export type HandlerDeps = {
   authenticate: (req: Request) => Promise<Principal | null>;
   /** PUBLIC_ORIGIN: the one origin a write may come from (ADR-001 §7a). */
   publicOrigin: string;
+  /** The new-password check (lib-platform's createNewPasswordCheck), run before the transaction on every field marked
+   * newPassword(). A route with such a field refuses to mount without it. */
+  newPasswordCheck?: ((password: string) => Promise<'too_short' | 'breached' | null>) | undefined;
 };
+
+// What the person reads under the field when the new-password check refuses (ADR-001 §7a).
+const PASSWORD_REFUSALS: Readonly<Record<'too_short' | 'breached', string>> = {
+  too_short: `Use at least ${PASSWORD_MIN_LENGTH} characters`,
+  breached: 'This password is common or has appeared in a data breach. Choose another',
+};
+// The input fields a contract marks newPassword().
+const newPasswordKeys = (input: unknown): string[] => Object.entries((input as { shape?: Record<string, unknown> }).shape ?? {})
+  .filter(([, schema]) => newPasswordFields.has(schema as never)).map(([key]) => key);
 
 // shortcut: a signed-out caller of a public route runs as this principal, with no permissions; M1-23 adds link principals.
 const PUBLIC: Principal = Object.freeze({ kind: 'system', name: 'public', permissions: Object.freeze([]) });
@@ -121,6 +133,10 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
     if (contract.storesAnswer === false && !onList(ANSWER_NOT_STORED_ROUTES, route)) {
       throw new TypeError(`${route}: only ANSWER_NOT_STORED_ROUTES may declare storesAnswer: false (ADR-001 §7a)`);
     }
+    const passwordKeys = newPasswordKeys(contract.input);
+    if (passwordKeys.length > 0 && deps.newPasswordCheck === undefined) {
+      throw new TypeError(`${route}: a newPassword() field needs the new-password check, and none was given`);
+    }
     const handle = async (req: Request, res: Response): Promise<void> => {
       const requestId = randomUUID();
       try {
@@ -143,6 +159,17 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         if (contract.perm !== null && !(principal?.permissions.includes(contract.perm) ?? false)) {
           send(res, platform(principal === null ? 'signed_out' : 'forbidden'), requestId);
           return;
+        }
+        // Before the transaction and the saved-once claim: the check may wait up to 3 s on Pwned Passwords, and must
+        // hold no transaction or pooled connection while it does (ADR-001 §7a).
+        for (const field of passwordKeys) {
+          const value = (input.value as Record<string, unknown>)[field];
+          const refused = typeof value === 'string' ? await deps.newPasswordCheck?.(value) : null;
+          if (refused !== null && refused !== undefined) {
+            send(res, { status: BUSINESS_RULE_STATUS, code: 'password_rejected', message: 'Choose a different password',
+              issues: [{ path: [field], code: refused, message: PASSWORD_REFUSALS[refused] }] }, requestId);
+            return;
+          }
         }
         const key = req.get('idempotency-key') ?? '';
         const output = await runInTransaction(deps.db, contract.tx, principal ?? PUBLIC, requestId, async (ctx) => {

@@ -14,8 +14,8 @@ import { AppError } from '../errors.ts';
 import type { Lockout } from './lockout.ts';
 import type { Passwords } from './passwords.ts';
 
-/** Whether a person's sign-in needs a second factor (D-19: admin and owner). RAD-33 answers it from their role. */
-export type SecondFactorStatus = 'not_required' | 'enrolled' | 'enrolment_required';
+/** Whether a person's sign-in needs a second factor (D-19: admin, owner, accounts and HR). RAD-33 answers it from their role. */
+type SecondFactorStatus = 'not_required' | 'enrolled' | 'enrolment_required';
 export type SignInResult = { userId: string; next: 'done' | 'second_factor' | 'enrol_second_factor' };
 
 type Deps = { passwords: Passwords; lockout: Lockout; secondFactor: (userId: string) => Promise<SecondFactorStatus> };
