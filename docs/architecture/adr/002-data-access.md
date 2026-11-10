@@ -190,6 +190,8 @@ zone list differs from the table below. Widening a zone means amending this ADR 
 | L2 (no query strings) | `packages/db/views/<name>.ts`, `packages/db/src/request-context.ts` |
 | L3 (no raw execution) | `packages/db/src/request-context.ts` |
 | L4 (no driver) | `packages/lib-platform/src/db/client.ts` (pool, transactions, pg-boss), `packages/db/src/migrate.ts` (the migrator) |
+| L8 (outside calls only through the guarded client) | `packages/lib-platform/src/http/outbound.ts` |
+| L8's import list: one module lifted in exactly this file, with the rest of L8 still on | `packages/lib-platform/src/import/isolate.ts` (the file-import worker, ADR-003 §7, which is both the worker's starter and its entry): `node:worker_threads`. The worker gets `env: {}`, `resourceLimits` and a wall-clock timeout that calls `terminate()`. |
 | L9a (tables declared only in the schema) | `packages/db/src/*/tables.ts`, `packages/db/src/columns.ts` |
 | L9b (views declared only in views) | `packages/db/views/<name>.ts` |
 
@@ -204,7 +206,7 @@ zone list differs from the table below. Widening a zone means amending this ADR 
 | L5 | **early warning on updates and deletes.** `eslint-plugin-drizzle` `enforce-update-with-where` and `enforce-delete-with-where`, with `drizzleObjectName: ['tx', 'db']`. | an obvious `tx.delete(table)` or `tx.update(table).set(...)` with no `where`. The runtime guard in §4 catches the rest. |
 | L6 | **no raw HTML.** `react/no-danger` (error) in `apps/web`. Everywhere: assignments to `innerHTML` and `outerHTML`; calls to `insertAdjacentHTML`, `document.write`, `document.writeln` and `setHTMLUnsafe`; and the JSX attribute `srcDoc`. | any way of putting unparsed HTML on a page |
 | L7 | **only the apps open transactions.** dependency-cruiser: `@radcore/lib-platform/runtime` imported only from `apps/api` and `apps/worker`. | a library opens its own transaction |
-| L8 | **outside calls go through the guarded client.** In server code, except `packages/lib-platform/src/http/outbound.ts`: the globals `fetch`, `WebSocket`, `XMLHttpRequest`; `globalThis.fetch` and `global.fetch`; imports matching `undici`, `axios`, `got`, `node-fetch`, `ws`, `http`, `https`, `http2`, `net`, `tls`, `dgram`, `child_process` (and their `node:` forms); and `createRequire` from `node:module`. | server code makes a network call, or loads a module, any other way |
+| L8 | **outside calls go through the guarded client.** In server code, except `packages/lib-platform/src/http/outbound.ts`: the globals `fetch`, `WebSocket`, `XMLHttpRequest`; `globalThis.fetch` and `global.fetch`; imports matching `undici`, `axios`, `got`, `node-fetch`, `ws`, `http`, `https`, `http2`, `net`, `tls`, `dgram`, `child_process`, `worker_threads`, `vm`, `inspector`, `cluster` (and their `node:` forms); and `createRequire` from `node:module`. | server code makes a network call, or loads a module, any other way |
 | L9a | **tables are declared only in the schema.** Imports of `pgTable`, `pgSchema` and `pgEnum` from `drizzle-orm/pg-core`. ADR-005 uses no enums, so the schema test also fails on any `pgEnum`. | anything outside L9a's zone declares a handle on a table, another module's or a system one such as `pg_stat_activity` |
 | L9b | **views are declared only in views.** Imports of `pgView` and `pgMaterializedView` from `drizzle-orm/pg-core`. | a view is declared anywhere but its own file in `views/` |
 

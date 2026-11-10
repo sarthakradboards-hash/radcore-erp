@@ -134,8 +134,9 @@ export async function collectUpload(source: AsyncIterable<Uint8Array>): Promise<
   return Buffer.concat(chunks, size);
 }
 
-/** Reads an uploaded CSV or .xlsx file, chosen by its first bytes, never by its name. */
-export async function readTable(bytes: Uint8Array): Promise<Table> {
+/** Reads an uploaded CSV or .xlsx file, chosen by its first bytes, never by its name. In this thread: callers use
+ * isolate.ts's readTable, which runs this in a worker. */
+export async function parseTable(bytes: Uint8Array): Promise<Table> {
   if (bytes.length > IMPORT_LIMITS.maxBytes) {
     throw new ImportFileError(`The file is larger than ${MB(IMPORT_LIMITS.maxBytes)}. Split it and import each part.`);
   }

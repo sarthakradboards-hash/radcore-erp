@@ -4,10 +4,11 @@
 import { readFileSync } from 'node:fs';
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
-import { L1_EXTRA_NAMES, L1_SQL_ZONE, REQUEST_CONTEXT_HELPER, ZONES } from '../eslint.config.mjs';
+import { L1_EXTRA_NAMES, L1_SQL_ZONE, L8_LIFTED, REQUEST_CONTEXT_HELPER, ZONES } from '../eslint.config.mjs';
 
 const VIEW = 'packages/db/views/!(index|*.test|*.d).ts';
-const PINNED = JSON.parse(readFileSync('tools/eslint-options.json', 'utf8')) as Record<string, { allowNames?: string[] }>;
+const PINNED = JSON.parse(readFileSync('tools/eslint-options.json', 'utf8')) as
+  Record<string, { allowNames?: string[]; imports?: { message: string }[] }>;
 
 it('each zone is exactly the ADR-002 table', () => {
   expect(ZONES).toEqual({
@@ -25,6 +26,7 @@ it('each zone is exactly the ADR-002 table', () => {
     'packages/db/src/conditions.ts': ['notInArray'],
     'packages/db/src/module-tx.ts': ['getOperators', 'getOrderByOperators', 'is', 'getTableName'],
   });
+  expect(L8_LIFTED).toEqual({ 'packages/lib-platform/src/import/isolate.ts': ['worker_threads'] });
   expect(REQUEST_CONTEXT_HELPER).toBe('applyRequestContext');
 });
 
@@ -38,9 +40,13 @@ const LIB = [...SERVER, 'radcore/e4-no-escape', 'radcore/d7-no-db-reexport'];
 const TYPED_E4 = ['no-unsafe-member-access', 'no-unsafe-call', 'no-unsafe-assignment', 'no-unsafe-return', 'no-unsafe-argument']
   .map((r) => `@typescript-eslint/${r}`);
 const without = (list: string[], ...drop: string[]) => list.filter((r) => !drop.includes(r));
+// The import file's isolate: L8 with node:worker_threads (and only that) out of its import list.
+const L8_PINNED = PINNED['radcore/outbound-only'];
+const ISOLATE_L8 = { ...L8_PINNED, imports: [{ message: L8_PINNED?.imports?.[0]?.message,
+  source: '^(node:)?(undici|axios|got|node-fetch|ws|http|https|http2|net|tls|dgram|child_process|module|vm|inspector|cluster)(/.*)?$' }] };
 
 // For each sample: the radcore rules on (beyond L1), L1's options, and whether E4's typed rules apply.
-const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; server: boolean }> = {
+const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; server: boolean; options?: Record<string, object> }> = {
   'packages/db/src/sales/repo.ts': { rules: [...SERVER, 'radcore/e4-no-escape'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/services/invoices.ts': { rules: LIB, l1: L1.base, typed: true, server: true },
   'apps/api/src/routes/sales.ts': { rules: [...SERVER, 'radcore/e1-route-files'], l1: L1.base, typed: false, server: true },
@@ -64,6 +70,9 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
     rules: [...LIB, 'radcore/e3-no-io', 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/rules/tax.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/index.ts': { rules: [...LIB, 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
+  'packages/lib-platform/src/import/isolate.ts': {
+    rules: LIB, l1: L1.base, typed: true, server: true, options: { 'radcore/outbound-only': ISOLATE_L8 } },
+  'packages/lib-platform/src/import/read.ts': { rules: LIB, l1: L1.base, typed: true, server: true },
 };
 
 describe.each(Object.entries(SAMPLES))('%s', (file, want) => {
@@ -72,7 +81,7 @@ describe.each(Object.entries(SAMPLES))('%s', (file, want) => {
     const local = Object.fromEntries(Object.entries(rules).filter(([id]) => id.startsWith('radcore/')));
     const expected = Object.fromEntries([
       ['radcore/no-sql', [2, want.l1]],
-      ...want.rules.map((id) => [id, [2, PINNED[id]]]),
+      ...want.rules.map((id) => [id, [2, want.options?.[id] ?? PINNED[id]]]),
     ]);
     expect(local).toEqual(expected);
   });
