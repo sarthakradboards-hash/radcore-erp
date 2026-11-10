@@ -10,6 +10,8 @@ CREATE VIEW "radcore"."v_schema_audit_columns" AS (with audited as (
   ), columns as (
     select t.relname, a.attname,
       a.attname = any (coalesce(t.keep, '{}')) as kept, a.attname = any (coalesce(t.redact, '{}')) as redacted,
+      a.attname ~ '(hash|secret|token|ciphertext|password)' and a.atttypid not in ('timestamptz'::regtype,
+        'timestamp'::regtype, 'date'::regtype, 'bool'::regtype, 'int4'::regtype, 'int8'::regtype, 'numeric'::regtype) as secret_like,
       a.attname = any (t.keys || array['created_at', 'created_by', 'updated_at', 'updated_by']) as exempt
     from audited t
     join pg_catalog.pg_attribute a on a.attrelid = t.oid and a.attnum > 0 and not a.attisdropped
@@ -20,7 +22,7 @@ CREATE VIEW "radcore"."v_schema_audit_columns" AS (with audited as (
   select relname::text, attname::text, 'kept and redacted' from columns where kept and redacted
   union all
   select relname::text, attname::text, 'a secret not redacted' from columns
-    where attname ~ '(_hash|_secret|_token|ciphertext)$|^password$' and not redacted);--> statement-breakpoint
+    where secret_like and not redacted);--> statement-breakpoint
 CREATE VIEW "radcore"."v_schema_missing_triggers" AS (select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing
   from pg_catalog.pg_class c
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
