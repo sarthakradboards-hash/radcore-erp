@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { getConstructionPlans } from 'pg-boss';
 import { describe, expect, it, vi } from 'vitest';
-import { MIGRATIONS_FOLDER, migrate } from '../packages/db/src/migrate.ts';
+import { MIGRATION_LOCK_KEY, MIGRATIONS_FOLDER, migrate } from '../packages/db/src/migrate.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 // The commit CI compares the migrations with (.github/workflows/ci.yml).
@@ -37,7 +37,7 @@ async function query<T extends pg.QueryResultRow>(dbUrl: string, text: string): 
   }
 }
 const applied = async (dbUrl: string) => (await query<{ n: number }>(dbUrl,
-  "select case when to_regclass('drizzle.__drizzle_migrations') is null then 0 else (select count(*)::int from drizzle.__drizzle_migrations) end as n"))[0]?.n;
+  'select count(*)::int as n from drizzle.__drizzle_migrations'))[0]?.n;
 const hasSchema = async (dbUrl: string, name: string) =>
   (await query<{ ok: boolean }>(dbUrl, `select to_regnamespace('${name}') is not null as ok`))[0]?.ok;
 
@@ -170,12 +170,12 @@ describe.skipIf(!url)('the migration runner', () => {
       const holder = new pg.Client({ connectionString: db });
       await holder.connect();
       try {
-        await holder.query("select pg_advisory_lock(hashtextextended('radcore.migrate', 0))");
+        await holder.query('select pg_advisory_lock(hashtextextended($1, 0))', [MIGRATION_LOCK_KEY]);
         const run = migrate(db);
         await vi.waitFor(async () => expect(await query(db,
           "select 1 from pg_stat_activity where application_name = 'radcore-migrate' and wait_event_type = 'Lock'")).toHaveLength(1));
         expect(await hasSchema(db, 'radcore')).toBe(false);
-        await holder.query("select pg_advisory_unlock(hashtextextended('radcore.migrate', 0))");
+        await holder.query('select pg_advisory_unlock(hashtextextended($1, 0))', [MIGRATION_LOCK_KEY]);
         await run;
       } finally {
         await holder.end();
@@ -183,6 +183,22 @@ describe.skipIf(!url)('the migration runner', () => {
       expect(await applied(db)).toBe(MIGRATIONS);
     });
   });
+
+  // The architect's condition on RAD-25: a second runner waits at most lock_timeout (5 s), then says why it failed.
+  it('fails after 5 s, saying another migration is running, while the lock stays held', async () => {
+    await withDatabase(async (db) => {
+      const holder = new pg.Client({ connectionString: db });
+      await holder.connect();
+      try {
+        await holder.query('select pg_advisory_lock(hashtextextended($1, 0))', [MIGRATION_LOCK_KEY]);
+        // The error maps 55P03 (lock_timeout ran out); the probe test below pins lock_timeout at 5s.
+        await expect(migrate(db)).rejects.toThrow(/another migration is running/);
+      } finally {
+        await holder.end();
+      }
+      expect(await hasSchema(db, 'drizzle')).toBe(false);
+    });
+  }, 20_000);
 
   it('runs once when two runners start together', async () => {
     await withDatabase(async (db) => {

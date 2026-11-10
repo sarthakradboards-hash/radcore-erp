@@ -303,7 +303,9 @@ calendar month in UTC (RC-046).
 - **Partitions are created ahead, by the owner.**
   - The first migration creates 24 months of partitions.
   - Every deploy runs a top-up as the owner, from CI (ADR-004 §3). It is an idempotent step, not a journaled
-    migration, and keeps at least 12 future months, each with its own TRUNCATE trigger.
+    migration, and keeps at least 12 future months, each with its own TRUNCATE trigger. It takes the migrator's
+    advisory lock (`MIGRATION_LOCK_KEY` from `packages/db/src/migrate.ts`, ADR-002), so it never interleaves with
+    a migration.
   - The runtime login can't create, drop or truncate a partition, because it owns none and has no DDL.
 - **The worker only watches.** A scheduled job reads a view of the partitions. It raises an alert when fewer than
   3 future months remain, or when any row sits in the default partition.
