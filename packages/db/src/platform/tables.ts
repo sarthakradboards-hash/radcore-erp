@@ -95,3 +95,19 @@ const linkToken = <TName extends string>(name: TName) => radcoreTable(name, {
 ]);
 export const invites = linkToken('invites');
 export const passwordResets = linkToken('password_resets');
+
+/**
+ * Jobs queued in a write's own transaction (ADR-002 §4, RAD-44, the outbox): `ctx.jobs.send` inserts a row here, so a
+ * save that rolls back queues nothing. The worker's relay hands committed rows to pg-boss, with pg-boss's job id set to
+ * the row's id, and deletes them (ADR-005 §7: a queue). `name` is the job's queue; `data` its checked input;
+ * `principal` and `request_id` say who queued it and in which request, for the job's principal (ADR-001 §6a).
+ */
+export const jobsOutbox = radcoreTable('jobs_outbox', {
+  id: id(),
+  name: text().notNull(),
+  data: jsonb().notNull(),
+  principal: text().notNull(),
+  requestId: text().notNull(),
+}, (t) => [
+  check('ck_jobs_outbox_name', sql`${t.name} ~ '^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$'`),
+]);
