@@ -11,6 +11,8 @@ const en = {
   'loading': 'Loading…',
   'browser.title': 'Please update your browser',
   'browser.body': 'RadCore needs Chrome or Edge 123, Safari 17.5 or Firefox 120, or newer. Your work is safe: update, then sign in again.',
+  'enrol.qrAlt': 'QR code to add RadCore to your authenticator app',
+  'enrol.typeKey': 'Can’t scan it? Type this key into the app instead:',
 } as const;
 
 export type MessageKey = keyof typeof en;
