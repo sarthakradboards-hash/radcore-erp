@@ -113,3 +113,25 @@ test('a page that keeps to the CSP records no violation', async ({ page, pagePro
   await page.waitForLoadState('networkidle');
   expect(pageProblems).toEqual([]);
 });
+
+// RAD-74: the browser's /api reaches the e2e API through the web app's dev/ci rewrite, and a browser write gets past
+// the API's Origin check (RAD-39). The API has no routes yet, so the probe path answers "no such route" once past it.
+test.describe('browser writes reach the API', () => {
+  test.use({ expectedStatuses: [403, 404] });
+
+  test('without an Origin, as only a non-browser sends it, the API refuses the write: /api is the API', async ({ page }) => {
+    const res = await page.request.post('/api/e2e-origin-probe', { data: {} });
+    expect(res.status()).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'forbidden' });
+  });
+
+  test('a browser write, with the page\'s own Origin, gets past the Origin check', async ({ page }) => {
+    await page.goto('/');
+    const answer = await page.evaluate(async () => {
+      const r = await fetch('/api/e2e-origin-probe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      return { status: r.status, body: await r.text() };
+    });
+    expect(answer.status).not.toBe(403);
+    expect(answer.body).not.toContain('Page not found'); // the API answered, not the web app's own 404 page
+  });
+});

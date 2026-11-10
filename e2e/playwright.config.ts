@@ -50,6 +50,9 @@ export default defineConfig({
       // A production build, as people will use it: no dev overlay or hot reload in the page.
       command: `npx next build && npx next start --hostname 127.0.0.1 --port ${WEB_PORT}`,
       cwd: '../apps/web',
+      // The dev/ci /api rewrite (RAD-50, apps/web/next.config.ts) is fixed at `next build`, so the build needs these:
+      // the browser's /api calls then reach the e2e API, as Caddy routes them when deployed (RAD-74).
+      env: { APP_ENV: 'ci', API_INTERNAL_URL: `http://127.0.0.1:${API_PORT}` },
       url: `http://127.0.0.1:${WEB_PORT}`,
       timeout: 180_000,
     },
