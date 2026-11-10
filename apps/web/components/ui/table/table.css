@@ -1,0 +1,26 @@
+/* Tables (M1-44). Tokens only, from styles/tokens.css. */
+.kit-table { display: grid; gap: var(--space-2); }
+.kit-table-scroll { overflow-x: auto; }
+.kit-table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.kit-table table { inline-size: 100%; border-collapse: collapse; }
+.kit-table caption { text-align: start; font-weight: 600; padding-block-end: var(--space-2); }
+.kit-table th, .kit-table td {
+  block-size: var(--row-h);
+  padding: var(--space-1) var(--space-2);
+  border-block-end: 1px solid var(--border-subtle);
+  text-align: start;
+}
+.kit-table .kit-numeric { text-align: end; font-variant-numeric: tabular-nums; }
+.kit-sort {
+  min-block-size: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+}
+.kit-sort:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.kit-table-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.kit-table-foot p { margin: 0; color: var(--text-muted); }

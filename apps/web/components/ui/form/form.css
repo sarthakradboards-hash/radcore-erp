@@ -1,0 +1,37 @@
+/* Forms (M1-43). Tokens only, from styles/tokens.css. */
+.kit-form { display: grid; gap: var(--space-4); max-inline-size: 40rem; }
+.kit-form > .kit-button { justify-self: start; }
+
+.kit-form-alert:empty { display: none; }
+.kit-form-alert {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+}
+
+.kit-field { display: grid; gap: var(--space-1); }
+.kit-field label { font-weight: 600; }
+.kit-field input, .kit-field textarea {
+  min-block-size: var(--field-h);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.kit-field input[readonly] { background-color: var(--surface); }
+.kit-field [aria-invalid="true"] { border-color: var(--danger); border-width: 2px; }
+.kit-field-hint, .kit-field-error { margin: 0; font-size: var(--text-sm); }
+.kit-field-hint { color: var(--text-muted); }
+.kit-field-error { color: var(--danger); }
+
+.kit-button {
+  min-block-size: var(--btn-h);
+  min-inline-size: var(--tap);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.kit-button-primary { background-color: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.kit-button-danger { background-color: var(--danger); color: var(--on-accent); border-color: var(--danger); }
+.kit-button:disabled { cursor: progress; opacity: 0.7; }
+.kit-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
