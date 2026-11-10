@@ -1,6 +1,9 @@
 // Structured logs (RC-077): pino's JSON lines with a level, a time, the service and, inside a request or a job, its
 // request id. Every message is scrubbed and every field goes through safeFields, so no line carries personal data,
 // a token or a failed query's values (RC-007). The process writes to stdout; the host ships it (ADR-004).
+// Log ids, never domain values: neither the key nor the value's shape gives away a personal value under a neutral key,
+// such as `{ customer: 'Asha Rao' }`, so the scrubbing can't catch it. The route handler and every service log only
+// ids: the request id, the route, a record's id (RAD-26).
 import { pino, type DestinationStream, type Level } from 'pino';
 import { safeFields } from './fields.ts';
 import { scrubText } from './scrub.ts';

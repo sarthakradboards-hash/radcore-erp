@@ -4,15 +4,14 @@
 // Here in tools/ because server code may not call fetch (ADR-002 L8). The tables live in a schema of this file's own.
 import { randomBytes } from 'node:crypto';
 import { defineContract } from '@radcore/lib-common';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { sql } from 'drizzle-orm';
 import { integer, pgSchema, text, uuid } from 'drizzle-orm/pg-core';
-import express from 'express';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { listen } from '../apps/api/src/app.ts';
-import { mountRoutes } from '../apps/api/src/http/handler.ts';
+import { testPassword, testSettings } from '@radcore/test-helpers';
+import { createApp, listen } from '../apps/api/src/app.ts';
 import { defineRoute } from '../apps/api/src/http/route.ts';
 import { moduleTx } from '../packages/db/src/module-tx.ts';
 import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
@@ -60,8 +59,7 @@ describe.skipIf(!url)('the generic route handler', () => {
   // A server with these routes, signed in as `principal` (null: signed out); each test gets its own.
   async function serve(principal: Principal | null, addBehaviour: Behaviour, fn: (base: string, log: ReturnType<typeof logger>) => Promise<void>) {
     const log = logger();
-    const app = express();
-    mountRoutes(app, [
+    const app = createApp(config(), log, { db, authenticate: async () => principal, routes: [
       defineRoute(getNote, async (_ctx, { id }) => ({ noteId: id, bodyText: `note ${id}`, internal: 'dropped' })),
       defineRoute(addNote, addBehaviour),
       defineRoute(slow, async (ctx) => {
@@ -70,7 +68,7 @@ describe.skipIf(!url)('the generic route handler', () => {
       }),
       defineRoute(whoAmI, async (ctx) => ({ principal: (await notesTx(ctx).select({ p: sql<string>`current_setting('app.principal')` })
         .from(notes).limit(1))[0]?.p ?? 'none', requestId: ctx.requestId })),
-    ], { db, log, authenticate: async () => principal });
+    ] });
     const server = await listen(app, 0, '127.0.0.1');
     try {
       await fn(`http://127.0.0.1:${server.port}`, log);
@@ -220,9 +218,14 @@ describe.skipIf(!url)('the generic route handler', () => {
 it('refuses to mount a webhook contract, which has its own lane (ADR-001 §6)', () => {
   const hook = defineContract({ method: 'POST', path: '/hooks/x', auth: 'webhook', perm: null, tx: { readOnly: false, isolation: 'read committed' },
     input: z.object({}), output: z.object({}) });
-  expect(() => mountRoutes(express(), [defineRoute(hook, async () => ({}))], { db: createDatabase(new pg.Pool()), log: logger(),
-    authenticate: async () => null })).toThrow(/webhook/);
+  expect(() => createApp(config(), logger(), { db: createDatabase(new pg.Pool()), authenticate: async () => null,
+    routes: [defineRoute(hook, async () => ({}))] })).toThrow(/webhook/);
 });
+
+// The app's settings; the handler's database is the one each test passes in, so this URL is never used.
+function config() {
+  return loadConfig(testSettings({ DATABASE_URL: `postgres://radcore:${testPassword()}@127.0.0.1:1/radcore` }), 'api');
+}
 
 function logger() {
   return { info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() };
