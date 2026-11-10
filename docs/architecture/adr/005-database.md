@@ -262,6 +262,29 @@ They are append-only with explicit reversals:
 - **The owner login** runs migrations and the partition top-up only, from CI. It never sits on the server or in the
   API or worker containers (RC-003, ADR-004 §3). A read-only login, `radcore_read`, serves the restore drill and
   support queries (RC-193).
+- **How the three are made (M1-06).**
+  - **The logins.** A superuser makes them with `npm run db:logins` (`tools/db-logins.ts`). On RDS that's the
+    master user, once, before the first migration. Each login is plain: no superuser, no CREATEROLE, no
+    CREATEDB, no replication, no BYPASSRLS. A login that has one of these is refused, not changed. The owner
+    login gets the database. Passwords are sent as SCRAM verifiers, so none lands in the server log.
+  - **What each may do** is the owner migration `0002_logins.sql`. PUBLIC loses every database privilege
+    (`TEMPORARY` included), and only `radcore_app` and `radcore_read` get `CONNECT`. The owner's default
+    privileges give `radcore_app` `SELECT, INSERT, UPDATE, DELETE` on new tables in `radcore`, and `radcore_read`
+    `SELECT`. `radcore_app` also gets the rows of pg-boss's tables. Neither login owns anything, so neither can
+    alter or drop it.
+  - **Per table.** An append-only table's own migration revokes `UPDATE, DELETE, TRUNCATE`, plus `INSERT` on
+    `audit_log` and `access_log`. A view's migration revokes `INSERT, UPDATE, DELETE`, because a simple view
+    writes as its owner.
+  - **Every partition** gets `REVOKE ALL ... FROM radcore_app, radcore_read`, whether a migration or the
+    top-up (§8) made it. Rows go through the parent, and the owner's default privileges would otherwise let the
+    app insert straight into an `audit_log` partition and forge audit rows.
+  - **The guard.** `tools/logins.test.ts` fails on any append-only table, log or view that `radcore_app` can
+    still write, and on any partition either login holds a privilege on.
+  - **The settings check** refuses `radcore_owner` as `DATABASE_URL` everywhere. In staging and production it
+    requires `radcore_app` there, and refuses a set `MIGRATION_DATABASE_URL`, `DATABASE_ADMIN_URL`,
+    `POSTGRES_PASSWORD` or `RADCORE_OWNER_PASSWORD`.
+  - **pg-boss's index rebuild** needs the index's owner, so the worker's queue runs with `reindex: false`.
+    Rebuilding the job indexes is an owner task.
 
 **Access logging and read-only requests.** A GET runs read-only (ADR-002 §4), so it can't write `access_log`. When
 a GET opens a full record:
@@ -306,6 +329,8 @@ calendar month in UTC (RC-046).
     migration, and keeps at least 12 future months, each with its own TRUNCATE trigger. It takes the migrator's
     advisory lock (`MIGRATION_LOCK_KEY` from `packages/db/src/migrate.ts`, ADR-002), so it never interleaves with
     a migration.
+  - Each new partition, from the first migration or the top-up, gets `REVOKE ALL ... FROM radcore_app,
+    radcore_read` (§7c), so rows reach it only through the parent's grants.
   - The runtime login can't create, drop or truncate a partition, because it owns none and has no DDL.
 - **The worker only watches.** A scheduled job reads a view of the partitions. It raises an alert when fewer than
   3 future months remain, or when any row sits in the default partition.

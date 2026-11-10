@@ -164,3 +164,44 @@ describe('tokens without a digit (auditor-2 SHOULD)', () => {
     expect(scrubText('Authorization: Bearer abcdefghijklmnopqrstuvwxyzABCDEF')).toBe('Authorization: Bearer [token]');
   });
 });
+
+describe('auditor-2 SHOULDs at 8f4a910: messages that carry their input unquoted', () => {
+  const thrown = (f: () => unknown): unknown => {
+    try {
+      f();
+    } catch (e) {
+      return e;
+    }
+    throw new Error('expected a throw');
+  };
+
+  it.each<[string, () => unknown, string]>([
+    // decimal.js 10 writes this exact message (a plain Error); lib-platform doesn't depend on it.
+    ['Decimal', () => { throw new Error('[DecimalError] Invalid argument: Asha Rao'); }, '[DecimalError] Invalid argument: …'],
+    ['BigInt', () => BigInt('Asha Rao'), 'Cannot convert … to a BigInt'],
+    ['RegExp', () => new RegExp('Asha (Rao'), 'Invalid regular expression: /…/: Unterminated group'],
+    ['a time zone', () => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asha Rao' }), 'Invalid time zone specified: …'],
+    ['an encoding', () => Buffer.from('x').toString('Asha Rao' as BufferEncoding), 'Unknown encoding: …'],
+    ['structuredClone', () => structuredClone({ f: () => 'Asha Rao' }), '… could not be cloned.'],
+  ])('drops the input from a %s error and keeps the rest', (_, f, message) => {
+    expect(describeError(thrown(f)).message).toBe(message);
+  });
+});
+
+describe('auditor-2 SHOULDs at 8f4a910: key spellings', () => {
+  const kept = (key: string) => {
+    const { lines, log } = capture();
+    log.info('x', { [key]: 'nightly-close' });
+    return lines[0]?.[key];
+  };
+
+  it.each(['workemail', 'billingaddress', 'apisecret', 'accesstoken', 'aadhar', 'aadharNumber', 'customer_aadhar',
+    'name', 'leadName', 'contact_name', 'firstname'])('redacts %s', (key) => {
+    expect(kept(key)).toBe('[redacted]');
+  });
+
+  it.each(['jobName', 'queueName', 'tableName', 'queue_name', 'tablename', 'hostname', 'fileName', 'panel'])(
+    'keeps %s, which names a thing in the system', (key) => {
+      expect(kept(key)).toBe('nightly-close');
+    });
+});
