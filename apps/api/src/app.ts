@@ -10,6 +10,7 @@ export type Api = Omit<HandlerDeps, 'log'> & { routes: readonly Route[] };
 
 export function createApp(config: Config, log: Logger, api?: Api): express.Express {
   const app = express();
+  app.disable('x-powered-by');
   const databaseAnswers = createHealthCheck(config.database);
   // ADR-004 §2: Caddy sends /api/health here; it answers only if the database does. Rate limit: RAD-39.
   app.get('/health', async (_req, res) => {

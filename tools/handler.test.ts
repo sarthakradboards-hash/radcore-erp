@@ -2,7 +2,7 @@
 // real PostgreSQL. Sign-in, input, permission, one transaction with the contract's timeout, the output checked
 // before commit, camelCase as is, and errors mapped by code: a thrown code or a SQLSTATE, never message text.
 // Here in tools/ because server code may not call fetch (ADR-002 L8). The tables live in a schema of this file's own.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { defineContract } from '@radcore/lib-common';
 import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { sql } from 'drizzle-orm';
@@ -80,8 +80,10 @@ describe.skipIf(!url)('the generic route handler', () => {
     const [row] = await notesTx(ctx).insert(notes).values(input).returning({ id: notes.id });
     return { id: row?.id ?? '' };
   };
-  const post = (base: string, body: unknown) => fetch(`${base}/notes`, { method: 'POST', body: JSON.stringify(body),
-    headers: { 'content-type': 'application/json' } });
+  // Every write carries its saved-once key (ADR-001 §7a): a UUID, new per submit.
+  const post = (base: string, body: unknown, key: string | null = randomUUID()) => fetch(`${base}/notes`, {
+    method: 'POST', body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json', ...(key === null ? {} : { 'idempotency-key': key }) } });
   const count = async (body: string) => Number((await pool.query(`select count(*) from ${fixture.schemaName}.notes where body = $1`,
     [body])).rows[0]?.count);
   const envelope = { code: expect.any(String), message: expect.any(String), issues: expect.any(Array), requestId: expect.any(String) };
@@ -195,9 +197,39 @@ describe.skipIf(!url)('the generic route handler', () => {
     });
   });
 
+  // Saved-once (M1-09) stores and replays answers; until then the key is still required, so writes fail closed (RC-132).
+  it('refuses a write without a UUID idempotency key, before the service runs', async () => {
+    const service = vi.fn(insert);
+    await serve(user(['notes:write']), service, async (base) => {
+      for (const key of [null, 'not-a-uuid']) {
+        const res = await post(base, { body: 'x', n: 1 }, key);
+        expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([400, 'idempotency_key_required']);
+      }
+    });
+    expect(service).not.toHaveBeenCalled();
+  });
+
+  it('marks every answer no-store, and never names the server', async () => {
+    await serve(user(['notes:read']), insert, async (base) => {
+      for (const res of [await fetch(`${base}/notes/n-1`), await post(base, { body: '', n: 1 }), await fetch(`${base}/who`)]) {
+        expect([res.headers.get('cache-control'), res.headers.get('x-powered-by')]).toEqual(['no-store', null]);
+      }
+    });
+  });
+
+  it("answers server_error with the platform's message, never the service's", async () => {
+    await serve(user(['notes:write']), async () => {
+      throw new AppError('server_error', 'pool exhausted on db-7');
+    }, async (base) => {
+      const res = await post(base, { body: 'x', n: 1 });
+      expect([res.status, ((await res.json()) as { message: string }).message]).toEqual([500, 'Something went wrong on our side']);
+    });
+  });
+
   it('answers a body that is not JSON 400 invalid_input', async () => {
     await serve(user(['notes:write']), insert, async (base) => {
-      const res = await fetch(`${base}/notes`, { method: 'POST', body: '{not json', headers: { 'content-type': 'application/json' } });
+      const res = await fetch(`${base}/notes`, { method: 'POST', body: '{not json',
+        headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() } });
       expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([400, 'invalid_input']);
     });
   });

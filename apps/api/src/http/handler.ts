@@ -1,10 +1,11 @@
 // The one generic route handler (M1-08, ADR-001 §6): every `session` and `public` route runs the same steps, so a
 // route is only its contract and its service.
-//   principal ─► input (contract.input) ─► route permission (contract.perm)
+//   principal ─► input (contract.input) ─► a write's Idempotency-Key ─► route permission (contract.perm)
 //   ─► one transaction of the contract's kind, with its statement timeout (RC-080) ─► service(ctx, input)
 //   ─► output checked against contract.output before commit, camelCase as is (RC-199) ─► commit ─► 200
 //   ─► errors mapped by code: a thrown AppError's code or a PostgreSQL SQLSTATE, never message text (RC-216)
-// Still to come, each with its ticket: origin and rate guards (M1-21), sessions (RAD-32), saved-once (M1-09),
+// Still to come, each with its ticket: origin and rate guards (M1-21), sessions (RAD-32), saved-once's claim and
+// replay (M1-09; the key is already required, so writes fail closed), the three key-exempt routes (RAD-61),
 // pii() masking (M1-22), Settings in Ctx (RAD-48), and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, PLATFORM_ERRORS, readInput, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
@@ -55,6 +56,8 @@ const platform = (code: PlatformErrorCode, issues: readonly Issue[] = []): Failu
 /** What a thrown error answers with: by its code only. */
 function failureOf(err: unknown, declared: readonly string[]): Failure {
   if (err instanceof AppError) {
+    // A server error's own text is for the log, never the caller.
+    if (err.code === 'server_error') return platform('server_error');
     if (isPlatform(err.code)) return { ...platform(err.code, err.issues), message: err.message };
     if (declared.includes(err.code)) return { status: BUSINESS_RULE_STATUS, code: err.code, message: err.message, issues: err.issues };
     return platform('server_error');
@@ -72,8 +75,16 @@ class OutputMismatch extends Error {
 const send = (res: Response, f: Failure, requestId: string) =>
   res.status(f.status).json({ code: f.code, message: f.message, issues: f.issues, requestId });
 
+// A UUID, as apps/web makes one per submit (ADR-001 §7a).
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function mountRoutes(app: Express, routes: readonly Route[], deps: HandlerDeps): void {
   const router = express.Router();
+  // An answer is one person's data at one moment: no browser or proxy keeps it.
+  router.use((_req: Request, res: Response, next: NextFunction) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
   router.use(express.json({ limit: '1mb' }));
   for (const { contract, service } of routes) {
     if (contract.auth === 'webhook') throw new TypeError(`${contract.method} ${contract.path}: a webhook takes its own lane (M1-27)`);
@@ -90,6 +101,10 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         const input = readInput(contract, { params: req.params as Record<string, string>, query, body: req.body });
         if (!input.ok) {
           send(res, platform('invalid_input', input.error.issues), requestId);
+          return;
+        }
+        if (!contract.tx.readOnly && !UUID.test(req.get('idempotency-key') ?? '')) {
+          send(res, platform('idempotency_key_required'), requestId);
           return;
         }
         if (contract.perm !== null && !(principal?.permissions.includes(contract.perm) ?? false)) {
