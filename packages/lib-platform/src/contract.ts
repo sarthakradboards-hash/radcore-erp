@@ -67,7 +67,9 @@ export const verifySecondFactor = defineContract({
 export const startSecondFactorEnrolment = defineContract({
   method: 'POST', path: '/sign-in/second-factor/enrolment', auth: 'public', rateLimit: 'sign-in', perm: null,
   storeAnswer: false, tx: write, input: z.object({}),
-  output: z.object({ otpauthUri: z.string(), secret: z.string() }), // the QR (drawn client-side) and typed entry
+  // Only the otpauth URI (ADR-001 §7a, RAD-61): the screen draws the QR from it and reads the secret out of it for
+  // typed entry, so the secret isn't sent a second time.
+  output: z.object({ otpauthUri: z.string().startsWith('otpauth://totp/') }),
   errors: ['sign_in_expired'],
 });
 

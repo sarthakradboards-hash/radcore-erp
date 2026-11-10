@@ -80,6 +80,10 @@ describe('the sign-in and own-session contracts', () => {
 
   it('enrols a second factor: a secret not stored by saved-once, then ten recovery codes that finish signing in', () => {
     expect(startSecondFactorEnrolment.storeAnswer).toBe(false);
+    // Only the otpauth URI (ADR-001 §7a): a separate secret field is dropped, never sent twice.
+    const uri = 'otpauth://totp/RadCore:asha%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=RadCore';
+    expect(startSecondFactorEnrolment.output.parse({ otpauthUri: uri, secret: 'JBSWY3DPEHPK3PXP' })).toEqual({ otpauthUri: uri });
+    expect(startSecondFactorEnrolment.output.safeParse({ otpauthUri: 'https://example.com' }).success).toBe(false);
     expect(confirmSecondFactorEnrolment.idempotency).toBe('exempt');
     expect(confirmSecondFactorEnrolment.output.safeParse({ recoveryCodes: Array(9).fill('a') }).success).toBe(false);
   });
