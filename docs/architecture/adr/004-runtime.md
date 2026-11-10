@@ -215,7 +215,8 @@ the deploy job through SSM:
   names the Hyderabad replica key. Without that, it would copy nothing.
   - A daily canary object is written in Mumbai. The monitor alerts if it hasn't appeared in Hyderabad within an
     hour.
-  - Lifecycle rules abort incomplete uploads after a day, and expire old versions under the retention rule (D-12).
+  - Lifecycle rules abort incomplete uploads after a day. Old versions are kept: D-12 keeps all data, so none
+    expires.
   - A bucket policy denies any request not over TLS.
 - **RDS** has deletion protection on, keeps its automated backups on deletion, and replicates them to `ap-south-2`
   with a key in that region. M8-01 confirms that the Mumbai-to-Hyderabad pair is offered, and sets the retention
@@ -224,7 +225,8 @@ the deploy job through SSM:
   deletion lock (M8).
 - **Files, still open:** the Hyderabad files bucket has no Object Lock yet, and one key protects both regions. Object
   Lock would protect files from one admin as the vault protects backups, but it would also block deleting a
-  person's files on request (DPDP). The choice goes with the retention decision, D-12.
+  person's files on request (DPDP). D-12 keeps everything, so Object Lock no longer conflicts with retention, but
+  it would rule out an erasure on request, which D-09 leaves open. It's decided at M8, after D-09.
 - **Recovery time:** about 30 to 60 minutes to rebuild the server from images and reattach RDS, rehearsed in M8
   (Hosting recommendation §3).
 
