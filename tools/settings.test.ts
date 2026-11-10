@@ -1,11 +1,8 @@
 // RC-161 on a real PostgreSQL 16 database: the settings table holds settings only, keyed `<module>.<name>`, so job
-// state and the period lock can't share its key space. The DDL comes from drizzle-kit, as in tools/schema.test.ts,
-// applied in one transaction that is rolled back. shortcut: until RAD-25's migrator exists the table is generated here.
-import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
+// state and the period lock can't share its key space. The table is the one migration 0002_settings built in the
+// run's database (tools/test-database.ts); every write runs in a transaction that is rolled back.
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import * as schema from '@radcore/db/schema';
-import { radcore } from '../packages/db/src/columns.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 
@@ -19,9 +16,6 @@ describe.skipIf(!url)('settings table on PostgreSQL (RC-161)', () => {
   beforeAll(async () => {
     await client.connect();
     await client.query('begin');
-    const ddl = await generateMigration(generateDrizzleJson({}),
-      generateDrizzleJson({ ...schema, radcore }, undefined, undefined, 'snake_case'));
-    for (const statement of ddl) await client.query(statement);
     await client.query('set local search_path = radcore');
     await client.query("set local app.principal = 'system:test'");
   });
