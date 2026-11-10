@@ -67,7 +67,7 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Envelope encryption | @aws-crypto/client-node | 5.0.2 | Apache-2.0 | the hand-written AES-GCM `secret-box`. KMS keyring in staging and production (`SECRETS_KMS_KEY_ID`); raw AES keyring from `SECRETS_LOCAL_KEY` in development and CI. Each value's encryption context names its table, column and row id, and decryption checks it, so a ciphertext copied into another row won't decrypt. Commitment policy `REQUIRE_ENCRYPT_REQUIRE_DECRYPT`; key rotation by KMS (M1-24) |
 | Rate limits in a shared store | rate-limiter-flexible (PostgreSQL store) | 11.2.3 | ISC | express-rate-limit counting in memory (RC-088). Its table comes from a migration (`tableCreated: true`, since the runtime login has no DDL), and it uses its own small pool in `client.ts`. It fails **closed**: when the store can't be reached, a limited action is refused |
 | File store | @aws-sdk/client-s3 | 3.1156.0 | Apache-2.0 | files in the database or on local disk. Works with SeaweedFS in development and CI (MinIO's image is no longer public; coordinator, 6 Nov) |
-| Presigned URLs | @aws-sdk/s3-request-presigner | 3.1156.0 | Apache-2.0 | none. Files reach the browser by presigned URL (Next row). Same release as client-s3; added by RAD-13 for the dev store's smoke test |
+| Presigned URLs | @aws-sdk/s3-request-presigner, @aws-sdk/s3-presigned-post | 3.1156.0, 3.1156.0 | Apache-2.0 | none. GETs are signed by s3-request-presigner. The browser's upload is a presigned POST from s3-presigned-post, because only a POST policy can hold `content-length-range` (ADR-004 §2). Same release as client-s3 |
 | CSV read and write (streams) | csv-parse, csv-stringify | 7.0.3, 6.9.0 | MIT | hand-written comma split and quadratic amount pattern (RC-118). Exports use csv-stringify's `escape_formulas` (§3) |
 | Text encoding detection | chardet | 2.2.0 | MIT | UTF-8 only (RC-117). Decoding is `TextDecoder` (§1), not iconv-lite |
 | Excel read and write | read-excel-file, write-excel-file | 9.3.12, 4.1.1 | MIT | hand-written `lib/xlsx.ts` writer, and no Excel import at all (RC-117) |
@@ -125,6 +125,11 @@ tests worked from the source text:
 - The outbound guard (ADR-002 L8), on the platform. It uses `node:https` with a custom `lookup` that resolves the
   host and checks the address against a `net.BlockList` of every non-global range (ADR-002's list). The connection
   is pinned to the checked address, and redirects are followed by hand.
+- Upload magic bytes (M1-25, RAD-43), on the platform. Each allowed kind has one signature at fixed offsets in the
+  file's first 1 KB, checked against the kind the upload declared: JPEG, PNG, WebP, HEIC (by `ftyp` brand), PDF, and
+  ZIP for XLSX. A CSV has no signature and must have no NUL byte there. It confirms, it doesn't detect. file-type was
+  the library option, but it recognises hundreds of kinds and inflates ZIP entries in the request process, outside
+  the import isolate (§7). Whether a ZIP is really a workbook is the import parser's question (RAD-46).
 
 What is **not** ours:
 - **The CSV formula guard** is csv-stringify's `escape_formulas: true`. It covers `=`, `+`, `-`, `@`, tab, CR and
