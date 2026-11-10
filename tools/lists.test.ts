@@ -2,11 +2,13 @@
 // finds what it says (RC-203), a date filter is served by its index (RC-202), and keyset pages cover every row once.
 // The fixture table is made by the owner login inside one transaction that is rolled back; this Drizzle declaration
 // only builds the queries.
+import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
 import { desc } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { date, PgDialect, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { trigramIndex } from '../packages/db/src/columns.ts';
 import { after, escapeLike, onDates, onIndiaDays, searchWords } from '../packages/db/src/lists.ts';
 
 const fixture = pgSchema('list_fixture');
@@ -59,6 +61,8 @@ describe('the SQL each condition builds', () => {
         + '"list_fixture"."entries"."id" < $3))',
       params: ['2026-04-02', '2026-04-02', 'b'] });
     expect(() => after([entries.entryDate, entries.id], ['2026-04-02'], 'desc')).toThrow(TypeError);
+    // auditor-2 SHOULD on #69: `col < null` is never true, so a null key value would end the list early.
+    expect(() => after([entries.entryDate, entries.id], [null, 'b'], 'desc')).toThrow(/no null/);
   });
 });
 
@@ -135,5 +139,72 @@ describe.skipIf(!url)('list conditions on PostgreSQL', () => {
     const all = await db.select({ id: entries.id, entryDate: entries.entryDate }).from(entries);
     const order = all.sort((a, b) => (a.entryDate === b.entryDate ? b.id.localeCompare(a.id) : b.entryDate.localeCompare(a.entryDate)));
     expect(seen).toEqual(order.map((r) => r.id));
+  });
+});
+
+// RC-160: a search's ILIKE '%…%' served by a trigram index. pg_trgm is in radcore_ext (ADR-005 §7c, migration
+// 0005_pg_trgm), where neither login has USAGE; the index works without it.
+const trgm = pgSchema('trgm_fixture');
+const parties = trgm.table('parties', { id: uuid().primaryKey(), name: text().notNull() },
+  (t) => [trigramIndex('ix_parties_name_trgm', t.name)]);
+const ddl = async () => generateMigration(generateDrizzleJson({}), generateDrizzleJson({ trgm, parties }, undefined, undefined, 'snake_case'));
+
+it("writes the trigram index with radcore_ext's operator class", async () => {
+  expect(await ddl()).toContain(
+    'CREATE INDEX "ix_parties_name_trgm" ON "trgm_fixture"."parties" USING gin ("name" radcore_ext.gin_trgm_ops);');
+});
+
+const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
+
+it.runIf(process.env['CI'] && !superUrl)('has its superuser test database in CI', () => {
+  expect.fail('TEST_DATABASE_SUPERUSER_URL is not set: in CI the trigram tests must run, not skip');
+});
+
+describe.skipIf(!superUrl)('the trigram index, searched as the app login (RC-160)', () => {
+  const client = new pg.Client({ connectionString: superUrl });
+
+  beforeAll(async () => {
+    await client.connect();
+    await client.query('begin');
+    // Made as the owner would make it, from the helper's own DDL; then read as the app, all in one rolled-back transaction.
+    await client.query('set local role radcore_owner');
+    for (const statement of await ddl()) await client.query(statement);
+    await client.query('grant usage on schema trgm_fixture to radcore_app');
+    await client.query('grant select on trgm_fixture.parties to radcore_app');
+    await client.query(`insert into trgm_fixture.parties (id, name)
+      select gen_random_uuid(), 'Party ' || n from generate_series(1, 500) n`);
+    await client.query("insert into trgm_fixture.parties (id, name) values (gen_random_uuid(), 'Asha Motors')");
+    await client.query('analyze trgm_fixture.parties');
+    await client.query('set local role radcore_app');
+  });
+
+  afterAll(async () => {
+    await client.query('rollback');
+    await client.end();
+  });
+
+  it('finds a partial name through the index, not by reading every row', async () => {
+    await client.query('savepoint plan');
+    try {
+      await client.query('set local enable_seqscan = off');
+      const { rows } = await client.query<{ 'QUERY PLAN': string }>(
+        "explain select id from trgm_fixture.parties where name ilike '%sha mot%'");
+      const plan = rows.map((r) => r['QUERY PLAN']).join('\n');
+      expect(plan).toContain('Bitmap Index Scan on ix_parties_name_trgm');
+      expect(plan).not.toMatch(/Seq Scan/);
+      const found = await client.query<{ name: string }>("select name from trgm_fixture.parties where name ilike '%sha mot%'");
+      expect(found.rows).toEqual([{ name: 'Asha Motors' }]);
+    } finally {
+      await client.query('rollback to savepoint plan');
+    }
+  });
+
+  it("can't call pg_trgm's functions by name", async () => {
+    await client.query('savepoint call');
+    try {
+      await expect(client.query("select radcore_ext.similarity('a', 'b')")).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await client.query('rollback to savepoint call');
+    }
   });
 });
