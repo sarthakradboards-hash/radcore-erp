@@ -9,7 +9,17 @@ import { describe, expect, it } from 'vitest';
 
 const env = process.env;
 
-it.runIf(env['CI'] && !env['S3_ENDPOINT'])('has its object store in CI', () => {
+// Staging's smoke job runs this file against real S3 (S3_REAL_POLICY=1), where there's no dev store to find.
+const REAL_S3 = env['S3_REAL_POLICY'] === '1';
+// A presigned POST of a PDF-shaped body of `size` bytes, with these form fields; the store's answer.
+const post = async (url: string, fields: Record<string, string>, size: number) => {
+  const form = new FormData();
+  for (const [name, value] of Object.entries(fields)) form.append(name, value);
+  form.append('file', new Blob([Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(Math.max(0, size - 9))])]));
+  return (await fetch(url, { method: 'POST', body: form })).status;
+};
+
+it.runIf(env['CI'] && !env['S3_ENDPOINT'] && !REAL_S3)('has its object store in CI', () => {
   expect.fail('S3_ENDPOINT is not set: in CI this smoke test must run, not skip');
 });
 
@@ -90,12 +100,6 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
   });
 
   // ADR-004 §1's smoke test: the presigned POST's conditions are enforced by the store, not only by our code.
-  const post = async (url: string, fields: Record<string, string>, size: number) => {
-    const form = new FormData();
-    for (const [name, value] of Object.entries(fields)) form.append(name, value);
-    form.append('file', new Blob([Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(Math.max(0, size - 9))])]));
-    return (await fetch(url, { method: 'POST', body: form })).status;
-  };
 
   it('takes a presigned POST within its policy, and the store refuses one too big, of another type or key', async () => {
     const { files } = await store();
@@ -110,11 +114,16 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     expect(await files.verifyUpload(upload.key, 'resume')).toEqual({ size: 1024, contentType: 'application/pdf' });
   });
 
-  // Skipped: SeaweedFS accepts a form field the policy doesn't name (204 in CI), where real S3 answers 403. This case
-  // is checked against real S3 on staging instead (RAD-43). Our code never sends such a field; the policy is the
-  // bucket's guard against a browser that does.
-  it.skip('refuses a presigned POST with a field its policy doesn\'t name, such as an ACL (real S3 only)', async () => {
-    const { files } = await store();
+});
+
+// The one policy case SeaweedFS doesn't enforce: it accepts a form field the policy doesn't name (204 in CI), where
+// real S3 answers 403. So this runs only with S3_REAL_POLICY=1, which the staging smoke job sets (M8-09), against the
+// real bucket with the instance role; RAD-43's upload criterion is met when it's green there. Our code never sends
+// such a field; the policy is the bucket's guard against a browser that does. A refused POST stores nothing.
+describe.runIf(REAL_S3)('file store on real S3', () => {
+  it('refuses a presigned POST with a field its policy doesn\'t name, such as an ACL', async () => {
+    const files = createFileStore({ region: env['S3_REGION'] ?? '', bucket: env['S3_BUCKET_FILES'] ?? '', endpoint: null,
+      accessKeyId: null, secretAccessKey: null });
     const upload = await files.presignUpload('resume', 'application/pdf');
     expect(await post(upload.url, { ...upload.fields, acl: 'public-read' }, 1024)).toBe(403);
   });

@@ -12,6 +12,7 @@ describe('attachment', () => {
     ['../../etc/passwd', 'attachment; filename="passwd"; filename*=UTF-8\'\'passwd'],
     ['a"b.csv', 'attachment; filename="a_b.csv"; filename*=UTF-8\'\'a%22b.csv'],
     ['C:\\Users\\asha\\cv.pdf', 'attachment; filename="cv.pdf"; filename*=UTF-8\'\'cv.pdf'],
+    ["O'Brien (1)*.pdf", 'attachment; filename="O\'Brien (1)*.pdf"; filename*=UTF-8\'\'O%27Brien%20%281%29%2A.pdf'],
     ['', 'attachment; filename="file"; filename*=UTF-8\'\'file'],
   ])('names %j safely', (name, header) => {
     expect(attachment(name)).toBe(header);

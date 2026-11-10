@@ -53,7 +53,9 @@ function s3Client(s3: Config['s3']): S3Client {
 export function attachment(filename: string): string {
   const base = filename.split(/[/\\]/).at(-1) ?? '';
   const ascii = base.replace(/[^\x20-\x7e]|["\\]/g, '_').trim() || 'file';
-  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(base || 'file')}`;
+  // RFC 5987's attr-chars exclude ' ( ) *, which encodeURIComponent leaves as they are; ' ends the charset part.
+  const exact = encodeURIComponent(base || 'file').replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${exact}`;
 }
 
 export function createFileStore(s3: Config['s3'], client: S3Client = s3Client(s3)): FileStore {
