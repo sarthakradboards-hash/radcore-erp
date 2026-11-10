@@ -122,6 +122,14 @@ tests worked from the source text:
 
 - GSTIN format and checksum, PAN format, state code from GSTIN (M1-03).
 - Place of supply and the GST split, the cess, the round-off (lib-gst).
+- The common and breached password check (M1-14, RAD-32, ADR-001 §7a), on the platform.
+  - **A bundled list**, always checked. It is a data file in lib-platform: the entries of 15 or more characters
+    from a public common-password list under MIT or CC0 (SecLists' 10-million list is MIT), with its licence
+    notice beside it.
+  - **Then the Pwned Passwords range API**, over the outbound client. An npm client for it would make its own
+    `fetch`, which L8 forbids, and the call is a single GET of `/range/<5 hex>` with a line-by-line read of the
+    answer.
+  - Its tests run on a fake transport and never reach the network.
 - The outbound guard (ADR-002 L8), on the platform. It uses `node:https` with a custom `lookup` that resolves the
   host and checks the address against a `net.BlockList` of every non-global range (ADR-002's list). The connection
   is pinned to the checked address, and redirects are followed by hand.
