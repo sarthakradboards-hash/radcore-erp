@@ -1,0 +1,26 @@
+/* Admin screens (RAD-57). Tokens only, from styles/tokens.css. */
+.admin { display: grid; gap: var(--space-5); padding: var(--space-4); max-inline-size: 90rem; }
+.admin h1, .admin h2 { margin: 0; }
+.admin-nav ul { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.admin-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--tap);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: inherit;
+}
+.admin-nav a[aria-current="page"] { background-color: var(--surface-selected); font-weight: 600; }
+.admin-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; }
+.admin-choices { justify-content: flex-start; }
+.admin-choices [aria-pressed="true"] { background-color: var(--surface-selected); font-weight: 600; }
+.admin-filters { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); align-items: end; }
+.admin-changes { display: grid; gap: var(--space-1); margin: 0; font-size: var(--text-sm); }
+.admin-changes dt { font-weight: 600; }
+.admin-changes dd { margin: 0; overflow-wrap: anywhere; }
+.admin-matrix th[scope="row"] { font-weight: 400; }
+.admin-matrix tbody th[scope="rowgroup"] { background-color: var(--surface); text-align: start; }
+.admin-matrix td { text-align: center; }
+.admin-matrix input[type="checkbox"] { inline-size: 1.25rem; block-size: 1.25rem; }
+.admin-matrix .admin-changed { background-color: var(--surface-selected); }
+.admin-matrix-head { display: grid; gap: var(--space-1); justify-items: center; }

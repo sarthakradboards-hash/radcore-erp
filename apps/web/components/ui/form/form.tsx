@@ -40,13 +40,15 @@ type FormProps<I extends FieldValues, O extends FieldValues> = {
   onSubmit: (values: O) => Promise<unknown>;
   /** Said to screen readers once the save succeeds, or false to say nothing. */
   saved?: string | false;
+  /** The screen's wording for a contract's error codes (`own_account`: "You can't change your own account here"). */
+  messages?: Partial<Record<string, string>>;
   /** The form's accessible name, usually the id of its heading. */
   'aria-labelledby'?: string;
   children: ReactNode;
 };
 
 export function Form<I extends FieldValues, O extends FieldValues>(
-  { schema, defaultValues, onSubmit, saved = 'Saved', children, ...aria }: FormProps<I, O>,
+  { schema, defaultValues, onSubmit, saved = 'Saved', messages, children, ...aria }: FormProps<I, O>,
 ) {
   const [names] = useState<Names>(() => ({ mounted: new Set(), masked: new Set() }));
   const check = zodResolver(schema);
@@ -76,7 +78,7 @@ export function Form<I extends FieldValues, O extends FieldValues>(
       const { fields, rest } = placeIssues(e.envelope.issues, names.mounted);
       fields.forEach(({ name, message }, i) =>
         form.setError(name as never, { type: 'server', message }, { shouldFocus: i === 0 }));
-      const said = SAID[e.code] ?? e.envelope.message;
+      const said = messages?.[e.code] ?? SAID[e.code] ?? e.envelope.message;
       const message = rest.length === 0 ? said : `${said}: ${rest.join('; ')}`;
       form.setError('root.server', { type: e.code, message });
       return;

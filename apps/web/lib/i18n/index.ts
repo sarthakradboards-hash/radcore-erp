@@ -1,6 +1,9 @@
 // Every piece of screen text goes through t() (RC-217). English only for now; Hindi (A-11) adds a second catalogue
 // with the same keys, and the type below makes a missing key a compile error.
+import { admin } from './admin.ts';
+
 const en = {
+  ...admin,
   'error.title': 'Something went wrong',
   'error.body': 'This screen hit a problem. Try again, and if it keeps happening, give your admin the reference below.',
   'error.reference': 'Reference: {id}',
