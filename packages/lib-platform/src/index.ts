@@ -1,6 +1,7 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
 export { principalId, type Ctx, type Principal } from './ctx.ts';
 export { AppError } from './errors.ts';
+export { originAllowed } from './origin.ts';
 export { csvWriter } from './export/csv.ts';
 export { amountCell, checkRows, dateCell, parseAmountCell, parseDateCell, type ImportResult, type RowError } from './import/cells.ts';
 export { collectUpload, decodeText, IMPORT_LIMITS, ImportFileError, sniffDelimiter, type Table } from './import/read.ts';
