@@ -153,7 +153,7 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   |---|---|---|
   | `caniuse-lite` (via browserslist) | CC-BY-4.0 | a data file of browser support tables; attribution is kept in the image's notices |
   | `argparse` (via eslint's js-yaml) | Python-2.0 | permissive; dev tooling only |
-  | `type-fest` (via pg-boss's `serialize-error`) | (MIT OR CC0-1.0), **MIT chosen** | TypeScript type declarations only, no runtime code; both licences are permissive (RAD-44) |
+  | `type-fest` (via pg-boss's serialize-error) | `(MIT OR CC0-1.0)`; chosen: MIT | TypeScript type declarations only, no runtime code; both licences are permissive (RAD-44) |
   | `@img/sharp-libvips-*` (via next's optional `sharp`) | LGPL-3.0-or-later | an unmodified, dynamically linked prebuilt binary. It is never loaded, because image optimisation is off (§2), and the image ships its licence notice. **Confirm with Sarthak.** The alternative is a build that leaves it out |
   | `@img/sharp-win32-*`, `@img/sharp-wasm32` (same `sharp`, bundling libvips) | `Apache-2.0 AND LGPL-3.0-or-later` (wasm32 adds `AND MIT`); chosen: all of them apply | the same libvips binary as the row above, so it stands or falls with it. Added by RAD-13 from the real lockfile |
   | `language-subtag-registry` (via eslint-config-next's `eslint-plugin-jsx-a11y`) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
