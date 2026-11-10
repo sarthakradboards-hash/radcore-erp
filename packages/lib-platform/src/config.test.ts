@@ -1,5 +1,5 @@
 // RC-081: nothing validated configuration at start. Each case is one setting problem the process must refuse.
-import { testPassword, testProductionSettings, testSettings } from '@radcore/test-helpers';
+import { testKmsKeyArn, testPassword, testProductionSettings, testSettings } from '@radcore/test-helpers';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig, type ProcessName } from './index.ts';
 
@@ -89,6 +89,11 @@ describe('refuses to start', () => {
     [{ ALERT_WEBHOOK_URL: 'http://hooks.example.in/T0' }, 'ALERT_WEBHOOK_URL must be a https URL'],
     [{ TURNSTILE_SECRET: 'secret' }, 'TURNSTILE_SECRET is a placeholder'],
     [{ NODE_ENV: 'development' }, 'NODE_ENV must be production when APP_ENV is production'],
+    // RAD-42: the MRK-aware keyring decrypts only with the full ARN, so a bare id, an alias or a single-Region key
+    // would encrypt and then never decrypt.
+    [{ SECRETS_KMS_KEY_ID: `mrk-${'a'.repeat(32)}` }, 'SECRETS_KMS_KEY_ID must be a multi-Region KMS key ARN'],
+    [{ SECRETS_KMS_KEY_ID: 'alias/rc' }, 'SECRETS_KMS_KEY_ID must be a multi-Region KMS key ARN'],
+    [{ SECRETS_KMS_KEY_ID: testKmsKeyArn().replace('/mrk-', '/') }, 'SECRETS_KMS_KEY_ID must be a multi-Region KMS key ARN'],
     [{ NODE_ENV: 'test', APP_ENV: 'staging' }, 'NODE_ENV must be production when APP_ENV is staging'],
     [{ NODE_ENV: undefined, APP_ENV: 'review' }, 'NODE_ENV must be production when APP_ENV is review'],
   ])('in production on %j', (change, why) => {

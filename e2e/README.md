@@ -17,7 +17,8 @@ npm run e2e
   `E2E_WEB_PORT=3110 E2E_API_PORT=3111 npm run e2e`.
 - The servers get `DATABASE_URL` from `E2E_DATABASE_URL`, default `postgres://radcore@127.0.0.1:5432/radcore_e2e`.
   Point it at a database used only for these tests, never the dev one. The API's `/health` must reach it before the
-  run starts (RAD-28); the M1 tickets add migrations and seeded users to it.
+  run starts (RAD-28), and it needs the migrations, since the worker runs pg-boss on its schema (RAD-44):
+  `MIGRATION_DATABASE_URL=postgres://radcore@127.0.0.1:5432/radcore_e2e npm run db:migrate` after each pull.
 - The API and worker check their settings at start. `npm run e2e` writes them to the root `.env` first
   (`npm run dev:env`, which keeps an existing `.env` and adds only missing settings). The servers run with
   `APP_ENV=ci`, since the e2e database URL has no password.

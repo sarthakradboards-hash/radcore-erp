@@ -38,10 +38,12 @@ export default defineConfig({
     },
     {
       name: 'worker',
-      // shortcut: the placeholder worker exits at once, so --watch keeps it running; drop it when M1-26 adds the job loop.
-      command: 'node --env-file=.env --watch apps/worker/src/main.ts',
+      // It runs pg-boss, so the e2e database needs the migrations first (CI's db:migrate step; e2e/README.md).
+      command: 'node --env-file=.env apps/worker/src/main.ts',
       cwd: '..',
       env: serverEnv,
+      // No url to poll, so wait for the line startProcess logs only after the queue starts; a failed start fails the run.
+      wait: { stdout: /worker: started/ },
     },
     {
       name: 'web',
