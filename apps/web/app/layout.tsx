@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { LiveRegion } from '../components/ui/live-region.tsx';
+import { ApiProvider } from '../lib/api/provider.tsx';
 import { t } from '../lib/i18n/index.ts';
+import { OfflineBanner } from '../lib/offline/offline-banner.tsx';
 import '../styles/tokens.css';
 import '../styles/globals.css';
 
@@ -14,7 +16,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en-IN">
       <body>
-        {children}
+        <OfflineBanner />
+        <ApiProvider>{children}</ApiProvider>
         <LiveRegion />
         {/* Shown by CSS alone, and only below the supported-browser floor (decisions.md, 7 Nov). */}
         <div className="browser-floor">
