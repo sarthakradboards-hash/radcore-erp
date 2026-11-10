@@ -15,14 +15,17 @@ const JOB_QUEUE_SCHEMA = 'pgboss';
 
 /**
  * The job queue on its own pool of 4 (ADR-004 §2's connection budget), with the same three timeouts. It never
- * creates or migrates its schema: the runtime login has no DDL (ADR-005).
+ * creates or migrates its schema, and never rebuilds an index: the runtime login has no DDL and owns no index
+ * (ADR-005, RAD-24). Rebuilding pg-boss's job indexes is an owner task.
  */
 export function createJobQueue(db: Database, log: Logger): JobQueue {
   const boss = new PgBoss({
     connectionString: db.url, max: 4, connectionTimeoutMillis: db.poolWaitMs, schema: JOB_QUEUE_SCHEMA,
-    options: `-c statement_timeout=${db.statementTimeoutMs} -c lock_timeout=${db.lockTimeoutMs}`
-      + ` -c idle_in_transaction_session_timeout=${db.idleTxTimeoutMs}`,
-    migrate: false, createSchema: false,
+    // Options the URL carries are kept, as the pool keeps them (the tests run as the app login with `-c role=`).
+    options: [new URL(db.url).searchParams.get('options'), `-c statement_timeout=${db.statementTimeoutMs}`,
+      `-c lock_timeout=${db.lockTimeoutMs}`, `-c idle_in_transaction_session_timeout=${db.idleTxTimeoutMs}`]
+      .filter(Boolean).join(' '),
+    migrate: false, createSchema: false, reindex: false,
   });
   // RC-078: without a listener, pg-boss's 'error' event (a lost connection, a failed poll) would end the process.
   boss.on('error', (err) => log.error('job queue error; it retries on its next poll', err));

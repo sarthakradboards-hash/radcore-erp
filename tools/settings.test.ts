@@ -1,5 +1,5 @@
 // RC-161 on a real PostgreSQL 16 database: the settings table holds settings only, keyed `<module>.<name>`, so job
-// state and the period lock can't share its key space. The table is the one migration 0002_settings built in the
+// state and the period lock can't share its key space. The table is the one migration 0003_settings built in the
 // run's database (tools/test-database.ts); every write runs in a transaction that is rolled back.
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

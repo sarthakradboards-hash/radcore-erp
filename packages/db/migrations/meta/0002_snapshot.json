@@ -1,77 +1,17 @@
 {
-  "id": "afda6c48-a9f0-4605-a57b-eafe02e9eb37",
+  "id": "6a6b1e06-47a2-4913-89d6-987c82fe161b",
   "prevId": "44cc3dfe-f357-4e0b-9c52-1c3e8a0aa1be",
   "version": "7",
   "dialect": "postgresql",
-  "tables": {
-    "radcore.settings": {
-      "name": "settings",
-      "schema": "radcore",
-      "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_settings_key": {
-          "name": "ck_settings_key",
-          "value": "\"radcore\".\"settings\".\"key\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'"
-        }
-      },
-      "isRLSEnabled": false
-    }
-  },
+  "tables": {},
   "enums": {},
   "schemas": {
     "radcore": "radcore"
   },
-  "sequences": {},
-  "roles": {},
-  "policies": {},
   "views": {
     "radcore.v_schema_enums": {
+      "name": "v_schema_enums",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -87,12 +27,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, t.typname::text as type_name\n  from pg_catalog.pg_type t\n  join pg_catalog.pg_namespace n on n.oid = t.typnamespace\n  where t.typtype = 'e'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'",
-      "name": "v_schema_enums",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_fk_without_index": {
+      "name": "v_schema_fk_without_index",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -114,12 +54,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, k.conname::text as constraint_name\n  from pg_catalog.pg_constraint k\n  join pg_catalog.pg_class c on c.oid = k.conrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where k.contype = 'f'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_index i\n      where i.indrelid = k.conrelid\n        and array_to_string((i.indkey::int2[])[0:cardinality(k.conkey) - 1], ',') = array_to_string(k.conkey, ','))",
-      "name": "v_schema_fk_without_index",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_missing_audit": {
+      "name": "v_schema_missing_audit",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -135,12 +75,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'\n    and (select count(*) from pg_catalog.pg_attribute a\n      where a.attrelid = c.oid and not a.attisdropped\n        and a.attname in ('created_at', 'created_by', 'updated_at', 'updated_by')) < 4",
-      "name": "v_schema_missing_audit",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_numeric_without_check": {
+      "name": "v_schema_numeric_without_check",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -162,12 +102,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, a.attname::text as column_name\n  from pg_catalog.pg_attribute a\n  join pg_catalog.pg_class c on c.oid = a.attrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition and a.attnum > 0 and not a.attisdropped\n    and a.atttypid = 'pg_catalog.numeric'::pg_catalog.regtype\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_constraint k\n      where k.conrelid = c.oid and k.contype = 'c' and k.conname = 'ck_' || c.relname || '_' || a.attname)",
-      "name": "v_schema_numeric_without_check",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_public_relations": {
+      "name": "v_schema_public_relations",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -183,12 +123,13 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p', 'v', 'm') and n.nspname = 'public'",
-      "name": "v_schema_public_relations",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     }
   },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
   "_meta": {
     "columns": {},
     "schemas": {},
