@@ -75,6 +75,42 @@ describe.skipIf(!url)('the module transaction', () => {
     });
   });
 
+  // catch and finally run the query through then; prepare and _prepare are what execute uses.
+  it('refuses every way to run an update or delete before its filter, and hides each builder session', async () => {
+    await inRollback(async (ctx) => {
+      const t = ownTx(ctx);
+      expect(await t.update(own).set({ n: 0 }).catch((e: unknown) => (e as Error).name)).toBe('UnboundedWriteError');
+      expect(await failure(t.delete(own).finally(() => undefined))).toBe('UnboundedWriteError');
+      expect(() => t.delete(own).prepare('p')).toThrow(UnboundedWriteError);
+      const builders = [t.insert(own), t.insert(own).values({ n: 1 }), t.select().from(own), t.update(own),
+        t.update(own).set({ n: 1 }), t.delete(own), t.query.own.findMany()] as unknown as Record<string, unknown>[];
+      expect(builders.map((b) => [b['session'], b['_'], b['_prepare']])).toEqual(builders.map(() => [undefined, undefined, undefined]));
+      expect((await t.select({ n: own.n }).from(own)).map((r) => r.n).sort()).toEqual([1, 2]);
+    });
+  });
+
+  // A forEach(async ...) is enough to run a builder after its transaction has gone back to the pool.
+  it('refuses a module object, builder or savepoint kept past its transaction', async () => {
+    const kept: { t?: ReturnType<typeof ownTx>; pending?: PromiseLike<unknown>; savepoint?: ReturnType<typeof ownTx> } = {};
+    await openTransaction(db, write, who, async (tx) => {
+      kept.t = ownTx({ tx });
+      kept.pending = kept.t.insert(own).values({ n: 77 });
+      await kept.t.transaction(async (s) => {
+        kept.savepoint = s;
+      });
+      expect(() => kept.savepoint?.insert(own)).toThrow(/ended/);
+    });
+    expect(() => kept.t?.insert(own)).toThrow(/ended/);
+    expect(await failure(Promise.resolve(kept.pending))).toBe('Error');
+    expect(Number((await pool.query(`select count(*) from ${fixture.schemaName}.own_items where n = 77`)).rows[0]?.count)).toBe(0);
+  });
+
+  it('refuses query.<key> when the client holds another table under that key', async () => {
+    const mixed = createDatabase(pool, { own: other });
+    expect(await failure(openTransaction(mixed, read, who, (tx) => ownTx({ tx }).query.own.findMany().then(() => undefined))))
+      .toBe('ForeignTableError');
+  });
+
   it('keeps the same guards inside a savepoint, which gets a module transaction, not the raw one', async () => {
     await inRollback(async (ctx) => {
       await ownTx(ctx).transaction(async (t) => {
