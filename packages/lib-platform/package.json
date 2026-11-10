@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@aws-crypto/client-node": "5.0.2",
+    "@radcore/lib-common": "*",
     "chardet": "2.2.0",
     "csv-parse": "7.0.3",
     "pg": "8.23.1",

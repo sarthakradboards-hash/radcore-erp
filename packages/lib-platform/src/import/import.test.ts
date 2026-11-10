@@ -4,8 +4,8 @@ import { Readable } from 'node:stream';
 import { crc32 } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { amountCell, checkRows, collectUpload, decodeText, IMPORT_LIMITS, ImportFileError, parseAmountCell, readTable,
-  sniffDelimiter } from '../index.ts';
+import { amountCell, checkRows, collectUpload, dateCell, decodeText, IMPORT_LIMITS, ImportFileError, parseAmountCell,
+  parseDateCell, readTable, sniffDelimiter } from '../index.ts';
 
 const utf8 = (s: string) => new TextEncoder().encode(s);
 const NS = 'http://schemas.openxmlformats.org';
@@ -154,5 +154,29 @@ describe('RC-118: every row is either a value or its errors', () => {
   it('names a missing column once', async () => {
     const r = checkRows(await readTable(utf8('Narration\nTea\n')), Row);
     expect(r).toEqual({ rows: [], errors: [{ row: 1, column: 'Amount', message: 'The file has no column called Amount' }] });
+  });
+});
+
+describe('RC-118: dates are read day first and strictly, and a bad one is that row\'s error', () => {
+  it.each([['07-11-2026', '2026-11-07'], ['7/11/2026', '2026-11-07'], ['07.11.2026', '2026-11-07'],
+    ['07 Nov 2026', '2026-11-07'], ['7-November-2026', '2026-11-07'], ['1 Sept 2026', '2026-09-01'],
+    ['2026-11-07', '2026-11-07'], [' 29-02-2028 ', '2028-02-29']])('reads "%s" as %s', (cell, date) => {
+    expect(parseDateCell(cell)).toBe(date);
+  });
+
+  it.each(['31-02-2026', '29-02-2026', '13/13/2026', '07-11-26', '07-11/2026', '2026/11/07', '07 Nox 2026', 'Nov 7 2026',
+    '', 'tomorrow'])('refuses "%s"', (cell) => {
+    expect(parseDateCell(cell)).toBeUndefined();
+  });
+
+  it('keeps every row: a bad date is reported on its row, never dropped', async () => {
+    const Row = z.object({ Date: dateCell(), Amount: amountCell() });
+    const t = await readTable(utf8('Date,Amount\n07-11-2026,"9,111.00"\n31-02-2026,10\n07-11-26,12\n08 Nov 2026,5\n'));
+    const r = checkRows(t, Row);
+    expect(r.rows).toEqual([{ row: 2, value: { Date: '2026-11-07', Amount: '9111.00' } },
+      { row: 5, value: { Date: '2026-11-08', Amount: '5' } }]);
+    expect(r.errors).toEqual([
+      { row: 3, column: 'Date', message: '"31-02-2026" isn\'t a real date. Write it as DD-MM-YYYY' },
+      { row: 4, column: 'Date', message: '"07-11-26" isn\'t a real date. Write it as DD-MM-YYYY' }]);
   });
 });

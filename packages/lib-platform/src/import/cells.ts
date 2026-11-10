@@ -1,5 +1,6 @@
 // From cells to values, with an error per row (M1-28, RC-118). No row vanishes: each is either a value or a list of
 // what is wrong with it, by row number and column, so a person can fix the file and import it again.
+import { dateString } from '@radcore/lib-common';
 import { z } from 'zod';
 import type { Table } from './read.ts';
 
@@ -25,6 +26,45 @@ export const amountCell = () => z.string().transform((cell, ctx) => {
   const v = parseAmountCell(cell);
   if (v === undefined) {
     ctx.addIssue({ code: 'custom', message: `"${cell.slice(0, 30)}" isn't an amount` });
+    return z.NEVER;
+  }
+  return v;
+});
+
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october',
+  'november', 'december'];
+const monthOf = (word: string) => {
+  const w = word.toLowerCase();
+  const i = MONTHS.findIndex((m) => w === m || w === m.slice(0, 3) || (m === 'september' && w === 'sept'));
+  return i < 0 ? undefined : String(i + 1);
+};
+
+/**
+ * The YYYY-MM-DD a date cell holds, or undefined if it isn't a real date (RC-118). Day first, as Indian files write
+ * it: "07-11-2026", "7/11/2026", "07.11.2026", "07 Nov 2026", "7-November-2026", and Excel's own "2026-11-07". A
+ * two-digit year and month-first order are refused, not guessed, and 31-02-2026 fails lib-common's dateString.
+ */
+export function parseDateCell(cell: string): string | undefined {
+  const s = cell.trim();
+  let parts: [string | undefined, string | undefined, string | undefined] | undefined;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  const dmy = /^(\d{1,2})([-/.])(\d{1,2})\2(\d{4})$/.exec(s);
+  const named = /^(\d{1,2})[-\s]([A-Za-z]{3,9})[-\s,]+(\d{4})$/.exec(s);
+  if (iso) parts = [iso[1], iso[2], iso[3]];
+  else if (dmy) parts = [dmy[4], dmy[3], dmy[1]];
+  else if (named?.[2] !== undefined) parts = [named[3], monthOf(named[2]), named[1]];
+  const [y, m, d] = parts ?? [];
+  if (y === undefined || m === undefined || d === undefined) return undefined;
+  const date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  return DATE.safeParse(date).success ? date : undefined;
+}
+const DATE = dateString();
+
+/** A zod cell schema for a date: checks it is a real date and gives YYYY-MM-DD, for a row schema. */
+export const dateCell = () => z.string().transform((cell, ctx) => {
+  const v = parseDateCell(cell);
+  if (v === undefined) {
+    ctx.addIssue({ code: 'custom', message: `"${cell.slice(0, 30)}" isn't a real date. Write it as DD-MM-YYYY` });
     return z.NEVER;
   }
   return v;
