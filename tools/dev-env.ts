@@ -14,6 +14,8 @@ const settings = () => [
   'DB_POOL_MAX=10', 'DB_POOL_WAIT_MS=5000', 'DB_STATEMENT_TIMEOUT_MS=15000', 'DB_LOCK_TIMEOUT_MS=5000',
   'DB_IDLE_TX_TIMEOUT_MS=10000', 'S3_BUCKET_FILES=radcore-files', `SECRETS_LOCAL_KEY=${secret()}`,
   'TURNSTILE_SITE_KEY=1x00000000000000000000AA', 'LOG_LEVEL=info',
+  // Where web's server reads the session from the api (ADR-004 §5): the api's own dev port (API_PORT, default 3001).
+  'API_INTERNAL_URL=http://127.0.0.1:3001',
 ];
 
 export function writeDevEnv(file = '.env'): boolean {
