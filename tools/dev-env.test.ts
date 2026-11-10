@@ -18,6 +18,14 @@ it('generates distinct random credentials', () => {
   expect(env['POSTGRES_PASSWORD']).not.toBe(env['S3_SECRET_ACCESS_KEY']);
   expect(env['DATABASE_URL']).toBe(`postgres://radcore:${env['POSTGRES_PASSWORD']}@127.0.0.1:5432/radcore`);
   expect(env['S3_ENDPOINT']).toBe('http://127.0.0.1:8333');
+  expect(env['MIGRATION_DATABASE_URL']).toBe(env['DATABASE_URL']);
+});
+
+it('adds MIGRATION_DATABASE_URL to an .env from before RAD-25, as its DATABASE_URL', () => {
+  const file = tmp();
+  writeFileSync(file, 'DATABASE_URL=postgres://radcore:old@127.0.0.1:5432/radcore\n');
+  writeDevEnv(file);
+  expect(parse(file)['MIGRATION_DATABASE_URL']).toBe('postgres://radcore:old@127.0.0.1:5432/radcore');
 });
 
 const parse = (file: string): Record<string, string> => Object.fromEntries(readFileSync(file, 'utf8').split('\n')

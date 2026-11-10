@@ -1,7 +1,17 @@
 {
   "comment": "ADR-003 §6: every lockfile entry with an install script. CI runs `npm rebuild` only for entries with rebuild: true.",
   "packages": {
-    "fsevents": { "rebuild": false, "reason": "macOS file watching for dev tools; ships its prebuilt binary, the script only rebuilds it." },
-    "unrs-resolver": { "rebuild": false, "reason": "Resolver for eslint-config-next; its postinstall only fetches a binary when the prebuilt optional package is missing." }
+    "fsevents": {
+      "rebuild": false,
+      "reason": "macOS file watching for dev tools; ships its prebuilt binary, the script only rebuilds it."
+    },
+    "unrs-resolver": {
+      "rebuild": false,
+      "reason": "Resolver for eslint-config-next; its postinstall only fetches a binary when the prebuilt optional package is missing."
+    },
+    "esbuild": {
+      "rebuild": false,
+      "reason": "Bundler under drizzle-kit (and vitest); its binary comes as a prebuilt @esbuild/<platform> optional package, and the postinstall only checks it."
+    }
   }
 }

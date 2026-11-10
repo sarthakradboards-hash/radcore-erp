@@ -66,8 +66,8 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Second factor (TOTP) | otpauth | 9.5.2 | MIT | nothing (RC-055). Required for admin and owner (D-19). Settings: SHA-1, 6 digits, 30-second steps, a window of ±1 step, and a 20-byte random secret kept by the secrets library. The last accepted step is stored, so a code is refused if it's reused. Attempts are limited per account, and recovery codes are stored as Argon2id hashes (M1-15) |
 | Envelope encryption | @aws-crypto/client-node | 5.0.2 | Apache-2.0 | the hand-written AES-GCM `secret-box`. KMS keyring in staging and production (`SECRETS_KMS_KEY_ID`); raw AES keyring from `SECRETS_LOCAL_KEY` in development and CI. Each value's encryption context names its table, column and row id, and decryption checks it, so a ciphertext copied into another row won't decrypt. Commitment policy `REQUIRE_ENCRYPT_REQUIRE_DECRYPT`; key rotation by KMS (M1-24) |
 | Rate limits in a shared store | rate-limiter-flexible (PostgreSQL store) | 11.2.3 | ISC | express-rate-limit counting in memory (RC-088). Its table comes from a migration (`tableCreated: true`, since the runtime login has no DDL), and it uses its own small pool in `client.ts`. It fails **closed**: when the store can't be reached, a limited action is refused |
-| File store | @aws-sdk/client-s3 | 3.1155.0 | Apache-2.0 | files in the database or on local disk. Works with SeaweedFS in development and CI (MinIO's image is no longer public; coordinator, 6 Nov) |
-| Presigned URLs | @aws-sdk/s3-request-presigner | 3.1155.0 | Apache-2.0 | none. Files reach the browser by presigned URL (Next row). Same release as client-s3; added by RAD-13 for the dev store's smoke test |
+| File store | @aws-sdk/client-s3 | 3.1156.0 | Apache-2.0 | files in the database or on local disk. Works with SeaweedFS in development and CI (MinIO's image is no longer public; coordinator, 6 Nov) |
+| Presigned URLs | @aws-sdk/s3-request-presigner | 3.1156.0 | Apache-2.0 | none. Files reach the browser by presigned URL (Next row). Same release as client-s3; added by RAD-13 for the dev store's smoke test |
 | CSV read and write (streams) | csv-parse, csv-stringify | 7.0.3, 6.9.0 | MIT | hand-written comma split and quadratic amount pattern (RC-118). Exports use csv-stringify's `escape_formulas` (§3) |
 | Text encoding detection | chardet | 2.2.0 | MIT | UTF-8 only (RC-117). Decoding is `TextDecoder` (§1), not iconv-lite |
 | Excel read and write | read-excel-file, write-excel-file | 9.3.12, 4.1.1 | MIT | hand-written `lib/xlsx.ts` writer, and no Excel import at all (RC-117) |
@@ -153,6 +153,7 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   |---|---|---|
   | `caniuse-lite` (via browserslist) | CC-BY-4.0 | a data file of browser support tables; attribution is kept in the image's notices |
   | `argparse` (via eslint's js-yaml) | Python-2.0 | permissive; dev tooling only |
+  | `type-fest` (via pg-boss's serialize-error) | `(MIT OR CC0-1.0)`; chosen: MIT | TypeScript type declarations only, no runtime code; both licences are permissive (RAD-44) |
   | `@img/sharp-libvips-*` (via next's optional `sharp`) | LGPL-3.0-or-later | an unmodified, dynamically linked prebuilt binary. It is never loaded, because image optimisation is off (§2), and the image ships its licence notice. **Confirm with Sarthak.** The alternative is a build that leaves it out |
   | `@img/sharp-win32-*`, `@img/sharp-wasm32` (same `sharp`, bundling libvips) | `Apache-2.0 AND LGPL-3.0-or-later` (wasm32 adds `AND MIT`); chosen: all of them apply | the same libvips binary as the row above, so it stands or falls with it. Added by RAD-13 from the real lockfile |
   | `language-subtag-registry` (via eslint-config-next's `eslint-plugin-jsx-a11y`) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
@@ -193,6 +194,13 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   - The exception covers the packages Vercel published as that release: `next`, `eslint-config-next`,
     `@next/env`, `@next/eslint-plugin-next` and the `@next/swc-*` binaries.
   - `eslint-config-next` must match `next`'s version.
+
+**A known advisory C5 lets through (not an exception):**
+- `esbuild` 0.18.20, pulled in by drizzle-kit through `@esbuild-kit/core-utils`, is in the range of
+  GHSA-67mh-4wv8-2f99. That advisory is moderate: esbuild's dev server answers requests from any website.
+- It's a dev dependency, used only when drizzle-kit generates migrations. Its dev server is never started or
+  served, so C5's moderate threshold for production packages doesn't apply.
+- Recheck it when drizzle-kit is upgraded.
 
 ### 6. The install path
 

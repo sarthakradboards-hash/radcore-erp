@@ -124,7 +124,8 @@ const restrict = (description) => ({
  * L1, no `sql` outside its positions (ADR-002 §3). Options:
  *   allowNames: the value imports allowed from drizzle-orm and its subpaths other than pg-core (on everywhere)
  *   zone: in the SQL zone files. A `sql` tag may then be the direct argument of a drizzle `check()`, a drizzle
- *         column's `.default()` or `.generatedAlwaysAs()`, or `pgView(...).as()`, and the file may export only
+ *         column's `.default()` or `.generatedAlwaysAs()`, or `pgView(...).as()` (in a views file also
+ *         `radcore.view(...).as()`, on the schema imported from exactly '../src/columns.ts'), and the file may export only
  *         drizzle declarations (tables, views, columns), so no zone file can hand out an SQL value of its own
  *   helper: in request-context.ts, the one function whose body may use `sql`
  *   importExpressions: false in test files, which may use import() for mocking
@@ -134,6 +135,7 @@ const noSql = {
   create(context) {
     const o = { importExpressions: true, ...context.options[0] };
     const report = (node, message) => context.report({ node, messageId: 'm', data: { message: `[L1] ${message} (ADR-002).` } });
+    const inViews = /[\\/]views[\\/][^\\/]+$/.test(context.filename);
     const allowedCall = (call) => {
       const c = call.callee;
       if (c.type === 'Identifier') return c.name === 'check' && fromDrizzle(context, c);
@@ -141,7 +143,19 @@ const noSql = {
       if (['default', 'generatedAlwaysAs'].includes(c.property.name)) return fromDrizzle(context, c.object);
       // `pgView(...).as()`, also through options such as `.with({ securityInvoker: true })` or `.withNoData()`.
       const root = c.property.name === 'as' && c.object.type === 'CallExpression' ? chainRoot(c.object) : null;
-      return Boolean(root && ['pgView', 'pgMaterializedView'].includes(root.name) && fromDrizzle(context, root));
+      if (!root) return false;
+      if (['pgView', 'pgMaterializedView'].includes(root.name)) return fromDrizzle(context, root);
+      // `radcore.view(...).as()`: a view in the schema columns.ts declares (ADR-005 §7c), and only in a views file.
+      // Exactly the real file's named `radcore` export. A views file sits directly in packages/db/views, so this
+      // specifier can only be packages/db/src/columns.ts. Any other `columns.ts`, or a namespace import's `view`,
+      // could be a look-alike that hands the `sql` back.
+      const m = root.parent;
+      const d = findVariable(context.sourceCode.getScope(root), root.name)?.defs[0];
+      const named = d?.type === 'ImportBinding' && d.node.type === 'ImportSpecifier'
+        && (d.node.imported.name ?? d.node.imported.value) === 'radcore';
+      return inViews && named && m.type === 'MemberExpression' && m.object === root && !m.computed
+        && ['view', 'materializedView'].includes(m.property.name) && m.parent.type === 'CallExpression'
+        && m.parent.callee === m && ['../src/columns.ts', '../src/columns'].includes(importSource(context, root) ?? '');
     };
     const inHelper = (node) => {
       for (let p = node.parent; p; p = p.parent) if (p.type === 'FunctionDeclaration' && p.id?.name === o.helper) return true;
@@ -154,8 +168,13 @@ const noSql = {
       if (node.parent.type === 'ImportSpecifier') return node.parent.imported.name === node.parent.local.name;
       if (o.helper && inHelper(node)) return true;
       const tt = node.parent;
-      return tt.type === 'TaggedTemplateExpression' && tt.tag === node && tt.parent.type === 'CallExpression'
-        && tt.parent.arguments.includes(tt) && allowedCall(tt.parent);
+      if (tt.type !== 'TaggedTemplateExpression' || tt.tag !== node) return false;
+      // `sql\`... ${n}\`.inlineParams()` renders a number into DDL as a literal, not a `$1` bind parameter (a CHECK's
+      // cap or length); it then stands where the bare template would.
+      const p = tt.parent;
+      const arg = p.type === 'MemberExpression' && p.object === tt && !p.computed && p.property.name === 'inlineParams'
+        && p.parent.type === 'CallExpression' && p.parent.callee === p && p.parent.arguments.length === 0 ? p.parent : tt;
+      return arg.parent.type === 'CallExpression' && arg.parent.arguments.includes(arg) && allowedCall(arg.parent);
     };
     const isDataKey = (n) => n.parent.type === 'Property' && n.parent.key === n && !n.parent.computed
       && !n.parent.shorthand && n.parent.parent.type === 'ObjectExpression';
@@ -163,7 +182,6 @@ const noSql = {
     // What a zone file may export: a drizzle declaration (a table, schema table, creator table, view or column, but
     // never a `check`), an object of them (audit columns), or a function that returns one.
     // A relative import counts only from another zone file (whose own exports this rule already limits).
-    const inViews = /[\\/]views[\\/][^\\/]+$/.test(context.filename);
     const fromZoneFile = (id) => {
       const src = importSource(context, id) ?? '';
       if (!/^\.\.?\//.test(src)) return false;
@@ -306,6 +324,13 @@ const noTableExports = {
     // Structure only: array and tuple elements, never a generic's type arguments. drizzle types a row as
     // `InferSelectModel<Table<T>>`, so following type arguments would find a table inside every plain row type.
     const elements = (type) => (checker.isArrayType(type) || checker.isTupleType(type) ? checker.getTypeArguments(type) : []);
+    // A table or transaction type is declared in drizzle-orm or in our own packages/db, so the walk enters other
+    // packages' types only through their type arguments: a zod schema's methods return more zod types, and walking
+    // them ran ESLint out of memory on every entry that exports a schema (M1-04). TypeScript's own lib is walked in
+    // full, for Promise<SalesTx>.
+    const FOREIGN = /[\\/]node_modules[\\/](?!drizzle-orm[\\/]|typescript[\\/]lib[\\/])/;
+    const foreign = (sym) => (sym?.declarations?.length ?? 0) > 0
+      && sym.declarations.every((d) => FOREIGN.test(d.getSourceFile().fileName));
     const carries = (type, best, depth) => {
       if (!type || depth > MAX_DEPTH) return false;
       // Keep the shallowest depth a type was reached at, so a deeper first visit can't hide a shallower one.
@@ -315,6 +340,11 @@ const noTableExports = {
       for (const sym of [type.getSymbol(), type.aliasSymbol]) {
         const name = sym?.getName();
         if (name && (names.includes(name) || tx.test(name))) return true;
+      }
+      // Into another package's type, only through what we passed it: AsyncLocalStorage<SalesTx> holds a transaction.
+      if (foreign(type.aliasSymbol ?? type.getSymbol())) {
+        const args = [...(type.aliasTypeArguments ?? []), ...(type.target ? checker.getTypeArguments(type) : [])];
+        return args.some((t) => carries(t, best, depth + 1));
       }
       const awaited = checker.getAwaitedType(type);
       const next = [
