@@ -47,6 +47,18 @@ a { color: var(--accent); text-decoration: underline; text-underline-offset: 0.1
 }
 
 /* High-contrast mode drops backgrounds, so selection needs an edge as well as a fill. */
+/* lib/offline/offline-banner.tsx: shown at the top of every screen while the browser is offline. */
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-raised);
+  color: var(--text);
+  border-bottom: 3px solid var(--warn);
+}
+
 @media (forced-colors: active) {
   [aria-selected="true"], [aria-current]:not([aria-current="false"]) {
     outline: 2px solid Highlight;

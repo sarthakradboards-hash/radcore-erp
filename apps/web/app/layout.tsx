@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { LiveRegion } from '../components/ui/live-region.tsx';
+import { ApiProvider } from '../lib/api/provider.tsx';
+import { OfflineBanner } from '../lib/offline/offline-banner.tsx';
 import '../styles/tokens.css';
 import '../styles/globals.css';
 
@@ -12,7 +14,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en-IN">
       <body>
-        {children}
+        <OfflineBanner />
+        <ApiProvider>{children}</ApiProvider>
         <LiveRegion />
       </body>
     </html>
