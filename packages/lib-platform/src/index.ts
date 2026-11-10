@@ -1,4 +1,5 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
+export { csvWriter } from './export/csv.ts';
 export { defineJob, type JobContract, type JobDefinition, type JobMeta, type JobPrincipal } from './jobs.ts';
 export {
   createOutbound, isGlobalUnicast, OutboundRefused, type Outbound, type OutboundInit, type OutboundOptions, type OutboundResponse,
