@@ -29,7 +29,7 @@ that builds it.
 
 **How the rules are tested (M1-05).** The schema tests run in CI against a database migrated from zero on
 PostgreSQL 16. They read `pg_catalog` through views in `packages/db/views/` (the SQL zone), because Drizzle's
-metadata has no triggers or grants. The pg-boss and migration schemas are excluded.
+metadata has no triggers or grants. The pg-boss, migration and rate-limit schemas are excluded: each holds a library's own table, which carries no audit columns (the rate-limit store, `ratelimit.limits`, is rate-limiter-flexible's, ADR-003, RAD-32).
 
 ### 1. Types and precision (M1-05)
 
