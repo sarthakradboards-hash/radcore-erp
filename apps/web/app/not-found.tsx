@@ -1,12 +1,15 @@
-// Placeholder from RAD-56; RAD-50 replaces it.
-// Replaces Next's built-in page, which styles itself with style attributes that the CSP (proxy.ts) blocks.
+// Our own page, because Next's built-in one styles itself with a <style> element that the CSP (proxy.ts) blocks.
 import Link from 'next/link';
+import { t } from '../lib/i18n/index.ts';
+
+export const metadata = { title: `${t('notFound.title')} · RadCore` };
 
 export default function NotFound() {
   return (
-    <main>
-      <h1>Page not found</h1>
-      <p><Link href="/">Go to the home page</Link></p>
+    <main className="page-message">
+      <h1>{t('notFound.title')}</h1>
+      <p>{t('notFound.body')}</p>
+      <p><Link href="/">{t('notFound.home')}</Link></p>
     </main>
   );
 }
