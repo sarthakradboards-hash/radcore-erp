@@ -30,6 +30,9 @@ const declarations = (css: string): Decl[] => {
 const HEX = '#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})';
 const COLOUR = new RegExp(`^light-dark\\(\\s*(${HEX})\\s*,\\s*(${HEX})\\s*\\)$`);
 const LENGTH = /^-?(?:\d+|\d*\.\d+)(?:rem|em|px|%)?$/;
+// A font-family list ends with a generic family, so a colour named in a --font-* token ("red") isn't one.
+const FAMILY = '(?:"[^"]+"|-?[A-Za-z][\\w-]*)';
+const FONTS = new RegExp(`^(?:${FAMILY}\\s*,\\s*)*(?:sans-serif|serif|monospace|system-ui|ui-sans-serif|ui-serif|ui-monospace)$`);
 const expand = (hex: string): string => (hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex);
 
 // Colour tokens per block. Anything that isn't a colour pair, a length, a number or a font list is an error,
@@ -42,7 +45,7 @@ const read = (css: string) => {
     if (colour) {
       if (!blocks.has(block)) blocks.set(block, new Map());
       blocks.get(block)!.set(name.slice(2), { light: expand(colour[1]!), dark: expand(colour[2]!) });
-    } else if (!name.startsWith('--') || !(LENGTH.test(value) || name.startsWith('--font-'))) {
+    } else if (!name.startsWith('--') || !(LENGTH.test(value) || (name.startsWith('--font-') && FONTS.test(value)))) {
       errors.push(`${block} { ${name}: ${value} } is not a light-dark() pair of opaque hex colours, a length, a number or a font list`);
     }
   }
@@ -107,7 +110,7 @@ describe('the token guard', () => {
   it.each([
     ['--tint: color-mix(in srgb, red, blue);'], ['--alias: var(--text);'], ['--x: red;'], ['--x: transparent;'],
     ['--x: hwb(0 0% 0%);'], ['--x: lab(50 0 0);'], ['--x: lch(50 0 0);'], ['--x: light-dark(#ff000080, #000);'],
-    ['--x: light-dark(rgb(0 0 0), #fff);'], ['color: red;'],
+    ['--x: light-dark(rgb(0 0 0), #fff);'], ['color: red;'], ['--font-colour: red;'], ['--font-x: #ff0000;'],
   ])('refuses %s and names it', (decl) => {
     expect(withRoot(decl).join('\n')).toContain(decl.slice(0, decl.indexOf(':')));
   });
