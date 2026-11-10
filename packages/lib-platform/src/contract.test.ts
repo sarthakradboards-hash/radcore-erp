@@ -1,11 +1,13 @@
 // RAD-34's /me contract, declared ahead of the sessions service: its shape is what ui builds RAD-50, RAD-52 and
 // RAD-55 against, and the same schema refuses a bad answer on both sides.
-import { requestFor } from '@radcore/lib-common';
+import { newPasswordFields, requestFor } from '@radcore/lib-common';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import * as contracts from './contract.ts';
 import {
-  ANSWER_NOT_STORED_ROUTES, confirmSecondFactorEnrolment, endMySession, getMe, KEY_EXEMPT_ROUTES, listMySessions,
-  requestPasswordReset, signIn, signOut, startSecondFactorEnrolment, verifySecondFactor,
+  acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, confirmSecondFactorEnrolment, endMySession, getMe,
+  KEY_EXEMPT_ROUTES, listMySessions, resetPassword,
+  requestPasswordReset, signIn, startSecondFactorEnrolment, verifySecondFactor,
 } from './contract.ts';
 
 const me = {
@@ -52,14 +54,34 @@ describe('the sign-in and own-session contracts', () => {
 
   it("lists exactly the routes that declare each saved-once flag (ADR-001 §7a's fixed lists)", () => {
     expect(declared.filter((c) => c.idempotency === 'exempt').map(route).sort()).toEqual([...KEY_EXEMPT_ROUTES].sort());
-    expect(declared.filter((c) => c.storeAnswer === false).map(route)).toEqual([...ANSWER_NOT_STORED_ROUTES]);
+    expect(declared.filter((c) => c.storesAnswer === false).map(route)).toEqual([...ANSWER_NOT_STORED_ROUTES]);
     expect(KEY_EXEMPT_ROUTES).toHaveLength(4);
   });
 
-  it('keeps reads on session:read and your own writes on session:write (RAD-32)', () => {
-    expect([getMe, listMySessions].map((c) => c.perm)).toEqual(['session:read', 'session:read']);
-    expect([signOut, endMySession].map((c) => c.perm)).toEqual(['session:write', 'session:write']);
-    expect(declared.filter((c) => !c.tx.readOnly && c.auth === 'session').every((c) => c.perm === 'session:write')).toBe(true);
+  it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
+    expect(declared.filter((c) => c.auth === 'session').map((c) => [route(c), c.perm])).toEqual([
+      ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
+      ['GET /me/sessions', 'session:read'], ['DELETE /me/sessions/:id', 'session:read']]);
+  });
+
+  it('marks exactly the three new-password fields for the check before the transaction (ADR-001 §7a)', () => {
+    const marked = declared.flatMap((c) => (c.input instanceof z.ZodObject
+      ? Object.entries(c.input.shape as Record<string, z.ZodType>).filter(([, s]) => newPasswordFields.has(s))
+        .map(([field]) => `${route(c)} ${field}`)
+      : []));
+    expect(marked).toEqual(['POST /invites/accept password', 'POST /password-reset password', 'POST /me/password newPassword']);
+  });
+
+  it('sets a password from an invite or a reset with the token in the body, and changes one with the current one', () => {
+    const token = 'k'.repeat(43);
+    // The schema has only the cap: a short password reaches the check, which answers password_rejected (too_short).
+    expect(acceptInvite.input.safeParse({ token, password: 'short' }).success).toBe(true);
+    expect(resetPassword.input.safeParse({ token, password: 'x'.repeat(1025) }).success).toBe(false);
+    expect(acceptInvite.input.safeParse({ token: 'too-short', password: 'a long enough passphrase' }).success).toBe(false);
+    expect([acceptInvite, resetPassword].map((c) => c.errors)).toEqual([['link_expired', 'password_rejected'],
+      ['link_expired', 'password_rejected']]);
+    expect(changePassword.errors).toEqual(['invalid_credentials', 'password_rejected']);
+    expect(changePassword.output.parse({ otherSessionsEnded: 2 })).toEqual({ otherSessionsEnded: 2 });
   });
 
   it('answers sign-in in two steps, and gives an unknown email and a wrong password one code', () => {
@@ -79,7 +101,7 @@ describe('the sign-in and own-session contracts', () => {
   });
 
   it('enrols a second factor: a secret not stored by saved-once, then ten recovery codes that finish signing in', () => {
-    expect(startSecondFactorEnrolment.storeAnswer).toBe(false);
+    expect(startSecondFactorEnrolment.storesAnswer).toBe(false);
     // Only the otpauth URI (ADR-001 §7a): a separate secret field is dropped, never sent twice.
     const uri = 'otpauth://totp/RadCore:asha%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=RadCore';
     expect(startSecondFactorEnrolment.output.parse({ otpauthUri: uri, secret: 'JBSWY3DPEHPK3PXP' })).toEqual({ otpauthUri: uri });

@@ -34,6 +34,22 @@ export const cursorString = () => z.string().regex(/^[A-Za-z0-9_-]{1,512}$/, 'No
 /** A list's input: `{ filter, after?, limit }`, with `next` from the previous page sent back as `after`. */
 export const listInput = <F extends z.ZodType>(filter: F) =>
   z.object({ filter, after: cursorString().optional(), limit: z.number().int().min(1).max(MAX_LIMIT) });
+// Passwords (ADR-001 §7a, M1-14). The schemas set only the cap: the minimum length, the bundled list and Pwned
+// Passwords are the new-password check's, which the generic handler runs before the transaction on a field
+// marked newPassword(), and a refusal is password_rejected (too_short, breached or same_as_old).
+/** A new password's minimum, counted as Unicode code points after NFC normalisation (see passwordLength). */
+export const PASSWORD_MIN_LENGTH = 15;
+/** Every password field's cap, sign-in included, in the UTF-16 units zod counts: a password that could be set can
+ * always be typed at sign-in. */
+export const PASSWORD_MAX_LENGTH = 1024;
+/** A password's length as the rule counts it: code points of its NFC form, which is also what gets hashed. */
+export const passwordLength = (password: string): number => [...password.normalize('NFC')].length;
+/** The fields the new-password check runs on. */
+export const newPasswordFields = z.registry<{ check: 'new_password' }>();
+/** A password a person is setting: invite accept, reset and change. Only those three routes may use it (M1-19). */
+export const newPassword = () => z.string().max(PASSWORD_MAX_LENGTH).register(newPasswordFields, { check: 'new_password' });
+/** A password typed to prove who you are: sign-in, and the current password on a change. No rule but the cap. */
+export const passwordString = () => z.string().min(1).max(PASSWORD_MAX_LENGTH);
 /** A search box's text, sent as `filter.search` (RAD-52's useApiSearch). The server splits it into words. */
 export const searchText = () => z.string().max(100, 'Search for at most 100 characters');
 /** A date filter, `filter.from` to `filter.to`, both included and either one optional (M1-29). */
@@ -73,7 +89,7 @@ export type ContractSpec<M extends Method, I extends z.ZodType, O extends z.ZodT
   idempotency?: X;
   /** A write whose answer holds a secret: saved-once claims the key but stores no answer, and a repeat gets 409
    * `answer_not_kept` (ADR-001 §7a, RAD-32). Only the routes on lib-platform's fixed list may declare it. */
-  storeAnswer?: false;
+  storesAnswer?: false;
 };
 export type Contract<M extends Method = Method, I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType,
   E extends string = string, X extends Idempotency = Idempotency> =
@@ -110,11 +126,11 @@ export function defineContract<const M extends Method, I extends z.ZodType, O ex
   if (spec.method === 'GET' && !spec.tx.readOnly) throw new TypeError(`${at}: a GET must be read-only`);
   if (!spec.tx.readOnly && spec.tx.isolation !== 'read committed') throw new TypeError(`${at}: a write is read committed`);
   // Both concern saved-once, which only a write has; an exempt route stores nothing, so the two never go together.
-  if (spec.tx.readOnly && (spec.idempotency !== undefined || spec.storeAnswer !== undefined)) {
-    throw new TypeError(`${at}: only a write declares idempotency or storeAnswer`);
+  if (spec.tx.readOnly && (spec.idempotency !== undefined || spec.storesAnswer !== undefined)) {
+    throw new TypeError(`${at}: only a write declares idempotency or storesAnswer`);
   }
-  if (spec.idempotency !== undefined && spec.storeAnswer !== undefined) {
-    throw new TypeError(`${at}: an exempt route stores no answer, so it doesn't declare storeAnswer`);
+  if (spec.idempotency !== undefined && spec.storesAnswer !== undefined) {
+    throw new TypeError(`${at}: an exempt route stores no answer, so it doesn't declare storesAnswer`);
   }
   const ms = spec.tx.statementTimeoutMs;
   // 0 would switch the timeout off (RC-080); the configured maximum is checked by the handler (M1-08).
