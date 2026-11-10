@@ -324,6 +324,11 @@
       {
         "source": "^(node:)?(undici|axios|got|node-fetch|ws|http|https|http2|net|tls|dgram|child_process|module|worker_threads|vm|inspector|cluster)(/.*)?$",
         "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
+      },
+      {
+        "source": "(^|/)outbound(\\.ts)?$",
+        "names": ["nodeTransport"],
+        "message": "[L8] Outside calls and module loading go through packages/lib-platform/src/http/outbound.ts (ADR-002)."
       }
     ]
   },

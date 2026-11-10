@@ -35,7 +35,7 @@ describe('createAlerter', () => {
   it('logs the alert and posts it to the webhook, logging the origin only', async () => {
     const log = logger();
     const t = fake();
-    await createAlerter(HOOK, log, t.transport)('job x failed after all its attempts (job 1)');
+    await createAlerter(HOOK, log, { transport: t.transport })('job x failed after all its attempts (job 1)');
     expect(t.sent).toEqual([{ url: HOOK, method: 'POST', body: '{"text":"job x failed after all its attempts (job 1)"}' }]);
     expect(log.info).toHaveBeenCalledWith('outbound alert: POST https://hooks.example.in 200');
     expect(lines(log)).not.toContain('/services/');
@@ -43,17 +43,31 @@ describe('createAlerter', () => {
 
   it('logs a webhook that refuses or can\'t be reached, without throwing', async () => {
     const log = logger();
-    await createAlerter(HOOK, log, fake(500).transport)('first');
+    await createAlerter(HOOK, log, { transport: fake(500).transport })('first');
     const down = fake();
     down.transport.send = async () => {
       throw new Error('connect ECONNREFUSED');
     };
-    await createAlerter(HOOK, log, down.transport)('second');
+    await createAlerter(HOOK, log, { transport: down.transport })('second');
     expect(log.error.mock.calls.map((c) => c[0])).toEqual(['ALERT: first',
       'alert: the webhook answered 500, so the alert above was not delivered', 'ALERT: second',
       'outbound alert: POST https://hooks.example.in the request failed',
       'alert: the webhook could not be reached, so the alert above was not delivered']);
     expect(lines(log)).not.toContain('/services/');
+  });
+
+  it('posts at most the burst per window, then one notice, and logs every alert', async () => {
+    vi.useFakeTimers();
+    const log = logger();
+    const t = fake();
+    const alert = createAlerter(HOOK, log, { transport: t.transport, burst: 2, windowMs: 60_000 });
+    for (const n of [1, 2, 3, 4]) await alert(`job ${n} failed`);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await alert('job 5 failed');
+    expect(t.sent.map((s) => s.body)).toEqual(['job 1 failed', 'job 2 failed',
+      'more than 2 alerts within 1 minutes: the rest until then are in the logs only', 'job 5 failed']
+      .map((text) => JSON.stringify({ text })));
+    expect(log.error.mock.calls.map((c) => c[0]).filter((m) => m.startsWith('ALERT: '))).toHaveLength(5);
   });
 });
 
