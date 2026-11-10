@@ -111,7 +111,9 @@ const within = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => new Pro
 const agent = new Agent({ keepAlive: false });
 
 /** DNS through the system resolver; the socket through node:https, pinned to the checked address. */
-const nodeTransport: Transport = {
+// Exported for tools/outbound-tls.test.ts only, which runs it against a real TLS server. It isn't on lib-platform's
+// entry: a send without createOutbound's checks would skip the origin and address rules.
+export const nodeTransport: Transport = {
   resolve: (hostname) => dnsLookup(hostname, { all: true, verbatim: true }),
   send: (url, to, { method, headers, body, signal, maxBytes }) => new Promise((resolve, reject) => {
     // Whatever the hostname resolves to now, the socket goes to the address that was checked.
@@ -124,8 +126,15 @@ const nodeTransport: Transport = {
       let size = 0;
       res.on('data', (chunk: Buffer) => {
         size += chunk.length;
-        if (size > maxBytes) req.destroy(new Error(`the response is larger than ${maxBytes} bytes`));
-        else chunks.push(chunk);
+        if (size <= maxBytes) {
+          chunks.push(chunk);
+          return;
+        }
+        // Reject here: once the whole response has arrived, 'end' still fires after a destroy, and would resolve with
+        // the chunks kept so far (none, for a single oversized chunk) as if nothing were wrong.
+        reject(new Error(`the response is larger than ${maxBytes} bytes`));
+        res.destroy();
+        req.destroy();
       });
       res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
       res.on('error', reject);
