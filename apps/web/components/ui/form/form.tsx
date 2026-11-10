@@ -73,6 +73,8 @@ export function Form<I extends FieldValues, O extends FieldValues>(
         form.setError('root.server', { type: 'offline', message: OFFLINE });
         return;
       }
+      // The signed-out dialog says this and keeps the typed values; an alert here would outlive signing in again.
+      if (e.code === 'signed_out') return;
       const { fields, rest } = placeIssues(e.envelope.issues, names.mounted);
       fields.forEach(({ name, message }, i) =>
         form.setError(name as never, { type: 'server', message }, { shouldFocus: i === 0 }));
