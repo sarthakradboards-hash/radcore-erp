@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  checkInput, dateRange, defineContract, errorEnvelope, gstinString, idString, listInput, listOf, MAX_LIMIT, readInput,
+  checkInput, dateRange, defineContract, errorEnvelope, gstinString, idString, listInput, listOf, MAX_CURSOR_LENGTH, MAX_LIMIT,
+  readInput, sortInput,
   newPassword, newPasswordFields, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, passwordLength, passwordString, requestFor,
   searchText,
 } from './index.ts';
@@ -198,5 +199,40 @@ describe('passwords (ADR-001 §7a, M1-14)', () => {
   it('marks a new-password field for the check, and a typed password not', () => {
     expect(newPasswordFields.has(newPassword())).toBe(true);
     expect(newPasswordFields.has(passwordString())).toBe(false);
+  });
+});
+
+// RAD-47, ui-2's shape for RAD-54's DataTable: sort is a sibling of filter, `{ column, desc }`, its column one of the
+// contract's own sortable columns.
+describe('list sort', () => {
+  const Party = z.object({ id: idString(), name: z.string() });
+  const parties = defineContract({
+    method: 'GET', path: '/accounts/parties', auth: 'session', perm: 'parties:read',
+    tx: { readOnly: true, isolation: 'read committed' },
+    input: listInput(z.object({}), sortInput(['name', 'city', 'creditLimit'])), output: listOf(Party),
+  });
+  const issuesOf = (input: unknown) => {
+    const r = checkInput(parties, input);
+    return r.ok ? [] : r.error.issues.map((i) => i.path.join('.'));
+  };
+
+  it('carries { column, desc } beside filter through ?input=, and leaves it out when not sent', () => {
+    const input = { filter: {}, sort: { column: 'city', desc: true }, limit: 50 };
+    const query = new URL(requestFor(parties, input).path, 'http://x').searchParams.get('input') ?? undefined;
+    expect(readInput(parties, { params: {}, query })).toEqual({ ok: true, value: input });
+    expect(issuesOf({ filter: {}, limit: 50 })).toEqual([]);
+  });
+
+  it('refuses a column outside the allowlist on sort.column, and anything else in sort', () => {
+    expect(issuesOf({ filter: {}, sort: { column: 'password_hash', desc: false }, limit: 50 })).toEqual(['sort.column']);
+    expect(issuesOf({ filter: {}, sort: { column: 'name', desc: 'yes' }, limit: 50 })).toEqual(['sort.desc']);
+    expect(issuesOf({ filter: {}, sort: { column: 'name', desc: false, nulls: 'last' }, limit: 50 })).toEqual(['sort']);
+  });
+
+  it('refuses a sort sent to a list declared without sortable columns, and takes none', () => {
+    const plain = listInput(z.object({}));
+    expect(plain.safeParse({ filter: {}, limit: 10 }).success).toBe(true);
+    expect(plain.safeParse({ filter: {}, sort: { column: 'name', desc: false }, limit: 10 }).success).toBe(false);
+    expect(MAX_CURSOR_LENGTH).toBe(512);
   });
 });
