@@ -127,9 +127,33 @@ describe('RC-007 review: messages that quote their input', () => {
     } catch (e) {
       err = e;
     }
-    const d = describeError(err);
-    expect(d.name).toBe('SyntaxError');
-    expect(d.message).not.toMatch(/Asha|9876/);
+    expect(describeError(err)).toMatchObject({ name: 'SyntaxError', message: 'The text is not valid JSON' });
+  });
+
+  it.each(['{"name": Asha Rao, "phone": "98765"}', '{"name": "Asha', '["Asha Rao"'])(
+    'gives every JSON.parse failure one fixed message (auditor-2 SHOULD): %s', (body) => {
+      let err: unknown;
+      try {
+        JSON.parse(body);
+      } catch (e) {
+        err = e;
+      }
+      expect(describeError(err).message).toBe('The text is not valid JSON');
+    });
+});
+
+describe('key spellings the word split missed (auditor-2 SHOULD)', () => {
+  it.each(['PANNumber', 'IFSCCode', 'GSTINValue', 'firstname', 'username', 'fullname', 'phonenumber', 'emailid'])(
+    'redacts %s', (key) => {
+      const { lines, log } = capture();
+      log.info('x', { [key]: 'Asha Rao' });
+      expect(lines[0]?.[key]).toBe('[redacted]');
+    });
+
+  it.each(['panel', 'companyId', 'requestId', 'planCode', 'qty'])('keeps %s', (key) => {
+    const { lines, log } = capture();
+    log.info('x', { [key]: 'c1' });
+    expect(lines[0]?.[key]).toBe('c1');
   });
 });
 

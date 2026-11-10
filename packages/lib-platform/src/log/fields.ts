@@ -13,8 +13,15 @@ const SAFE = new Set(['service', 'route', 'requestId', 'method', 'status', 'code
 const MAX_DEPTH = 6;
 const MAX_ITEMS = 50;
 
-const words = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s_.\-]+/);
-const sensitive = (key: string) => !SAFE.has(key) && words(key).some((w) => SENSITIVE.has(w));
+// An acronym run is a word of its own: PANNumber is `pan number`, IFSCCode `ifsc code`.
+const words = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+  .toLowerCase().split(/[\s_.\-]+/);
+// A key written as one lower-case run (firstname, username, phonenumber, emailid) is matched by its parts too: a
+// `name` ending, or a start that can't be anything else. Short words such as `pan` aren't, so `panel` stays.
+const ENDS = ['name'];
+const STARTS = ['phone', 'mobile', 'email', 'password', 'aadhaar', 'gstin', 'address', 'salary', 'token', 'secret'];
+const compound = (w: string) => ENDS.some((e) => w.endsWith(e)) || STARTS.some((s) => w.startsWith(s));
+const sensitive = (key: string) => !SAFE.has(key) && words(key).some((w) => SENSITIVE.has(w) || compound(w));
 
 /** A value as a log line may carry it. */
 function safeValue(value: unknown, depth = 0): unknown {
