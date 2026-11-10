@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  checkInput, defineContract, errorEnvelope, gstinString, idString, listInput, listOf, MAX_LIMIT, readInput, requestFor,
+  checkInput, dateRange, defineContract, errorEnvelope, gstinString, idString, listInput, listOf, MAX_LIMIT, readInput,
+  requestFor, searchText,
 } from './index.ts';
 
 const Party = z.object({ id: idString(), name: z.string(), gstin: gstinString().nullable() });
@@ -127,4 +128,29 @@ describe('retryAfterSeconds (RAD-61)', () => {
     expect(errorEnvelope.safeParse({ ...env, code, retryAfterSeconds }).success).toBe(ok);
   });
   it('is optional', () => expect(errorEnvelope.safeParse({ ...env, code: 'rate_limited' }).success).toBe(true));
+});
+
+describe('list filters (M1-29)', () => {
+  const Filter = z.object({ search: searchText().optional(), dates: dateRange() });
+  const list = defineContract({
+    method: 'GET', path: '/accounts/entries', auth: 'session', perm: 'entries:read',
+    tx: { readOnly: true, isolation: 'read committed' }, input: listInput(Filter), output: listOf(z.object({ id: idString() })),
+  });
+
+  it('carries the search text as filter.search and a date range through ?input=, unchanged', () => {
+    const input = { filter: { search: '50% a_b', dates: { from: '2026-04-01', to: '2026-04-30' } }, limit: 50 };
+    const query = new URL(requestFor(list, input).path, 'http://x').searchParams.get('input') ?? undefined;
+    expect(readInput(list, { params: {}, query })).toEqual({ ok: true, value: input });
+  });
+
+  it('refuses a range that ends before it starts, a date that is not real, and a search past 100 characters', () => {
+    const issues = (filter: unknown) => {
+      const r = checkInput(list, { filter, limit: 10 });
+      return r.ok ? [] : r.error.issues.map((i) => i.path.join('.'));
+    };
+    expect(issues({ dates: { from: '2026-04-30', to: '2026-04-01' } })).toEqual(['filter.dates.to']);
+    expect(issues({ dates: { from: '2026-02-30' } })).toEqual(['filter.dates.from']);
+    expect(issues({ search: 'x'.repeat(101), dates: {} })).toEqual(['filter.search']);
+    expect(issues({ dates: { from: '2026-04-01' } })).toEqual([]);
+  });
 });

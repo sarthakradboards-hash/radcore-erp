@@ -4,6 +4,7 @@
 // The wire rules live here too, so the handler and the client can't encode a request two ways: requestFor builds
 // it, readInput reads it back and checks it.
 import { z } from 'zod';
+import { dateString } from './dates.ts';
 
 /** ADR-001 §7a: the platform's error codes and their HTTP status. A contract adds its own, answered as 422. */
 export const PLATFORM_ERRORS = {
@@ -33,6 +34,12 @@ export const cursorString = () => z.string().regex(/^[A-Za-z0-9_-]{1,512}$/, 'No
 /** A list's input: `{ filter, after?, limit }`, with `next` from the previous page sent back as `after`. */
 export const listInput = <F extends z.ZodType>(filter: F) =>
   z.object({ filter, after: cursorString().optional(), limit: z.number().int().min(1).max(MAX_LIMIT) });
+/** A search box's text, sent as `filter.search` (RAD-52's useApiSearch). The server splits it into words. */
+export const searchText = () => z.string().max(100, 'Search for at most 100 characters');
+/** A date filter, `filter.from` to `filter.to`, both included and either one optional (M1-29). */
+export const dateRange = () => z.object({ from: dateString().optional(), to: dateString().optional() })
+  .refine((r) => r.from === undefined || r.to === undefined || r.from <= r.to,
+    { error: 'The start date is after the end date', path: ['to'] });
 /** A list's output: `{ items, next }`, `next` null on the last page. There is no total count (RC-176). */
 export const listOf = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), next: z.string().nullable() });
 
