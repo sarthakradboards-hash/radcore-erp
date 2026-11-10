@@ -4,7 +4,8 @@
 import { ConfigError, loadConfig, type Config, type ProcessName } from './config.ts';
 import { createPool, type JobQueue, type Pool } from './db/client.ts';
 import type { JobDefinition, QueueSettings } from './jobs.ts';
-import { consoleLogger, type Logger } from './log.ts';
+import type { Logger } from './log.ts';
+import { createLog } from './log/logger.ts';
 
 export { createHealthCheck, createJobQueue } from './db/client.ts';
 export type { Logger } from './log.ts';
@@ -60,11 +61,15 @@ export type Host = {
 export const STOP_GRACE_MS = 25_000;
 
 type Start = (deps: { config: Config; pool: Pool; log: Logger }) => Promise<Stoppable[]>;
+const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
 /** Check the settings, open the pool, run `start`, and stop everything cleanly on SIGTERM or SIGINT. */
 export async function startProcess(name: ProcessName, start: Start,
-  { host = process, log = consoleLogger, graceMs = STOP_GRACE_MS }: { host?: Host; log?: Logger; graceMs?: number } = {},
+  { host = process, log: given, graceMs = STOP_GRACE_MS }: { host?: Host; log?: Logger; graceMs?: number } = {},
 ): Promise<void> {
+  // The logger is needed before the settings are checked, to report them; an unknown LOG_LEVEL logs at info and
+  // loadConfig then refuses it.
+  const log = given ?? createLog({ level: LOG_LEVELS.find((l) => l === host.env['LOG_LEVEL']) ?? 'info', service: name });
   let config: Config;
   try {
     config = loadConfig(host.env, name);

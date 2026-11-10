@@ -1,8 +1,9 @@
-import { startProcess } from '@radcore/lib-platform/runtime';
+// The worker (ADR-001 §8, RAD-44): runs every job on pg-boss. pg-boss's schema comes from the migrations (0001,
+// RAD-25), so run `npm run db:migrate` first; without it the worker refuses to start ("pg-boss is not installed").
+import type { JobDefinition } from '@radcore/lib-platform';
+import { createJobQueue, runJobs, startProcess } from '@radcore/lib-platform/runtime';
 
-await startProcess('worker', async ({ log }) => {
-  // shortcut: no jobs until RAD-44 (pg-boss), so this timer keeps the process up until it is stopped, as pg-boss will.
-  const idle = setInterval(() => undefined, 60_000);
-  log.info('worker: started, no jobs yet');
-  return [{ name: 'idle timer', stop: async () => clearInterval(idle) }];
-});
+// Each module's job file in ./jobs/ (ADR-001 §8) default-exports its defineJob list; spread them in here.
+const jobs: readonly JobDefinition[] = [];
+
+await startProcess('worker', async ({ config, log }) => [await runJobs(createJobQueue(config.database, log), jobs, log)]);

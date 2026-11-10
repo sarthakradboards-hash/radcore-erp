@@ -1,26 +1,28 @@
 // RAD-44 (RC-082) on real pg-boss and PostgreSQL 16: jobs run, retry into the dead-letter alert, keep their overlap
 // guard and timeout, follow their schedule, and a delete-on-complete job leaves no row behind. Runs where
-// TEST_DATABASE_URL is set (CI's test job). Here in tools/ because creating pg-boss's schema is DDL, which the app
-// never runs: until RAD-25's owner migration exists, this test installs it from pg-boss's own construction plan.
+// TEST_DATABASE_URL is set (CI's test job), on the schema migration 0001 built (RAD-25): the app runs no DDL, so these
+// fail if the migrations stop providing it. Here in tools/ because it reads pg-boss's tables as an operator would.
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { loadConfig } from '@radcore/lib-platform';
 import { defineJob } from '@radcore/lib-platform';
 import { createJobQueue, runJobs } from '@radcore/lib-platform/runtime';
 import { factory, testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
-import { getConstructionPlans } from 'pg-boss';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 const url = process.env['TEST_DATABASE_URL'];
 const SCHEMA = 'pgboss';
 const name = factory((f) => ({ name: `test.job-${f.tag}` }));
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
-const database = () => {
+const databaseUrl = () => {
   const u = new URL(url ?? '');
   // The test database uses trust auth; config wants a password, which the server ignores.
   u.password = testPassword();
-  return loadConfig(testSettings({ DATABASE_URL: u.toString() }), 'worker').database;
+  return u.toString();
 };
+const database = () => loadConfig(testSettings({ DATABASE_URL: databaseUrl() }), 'worker').database;
 const system = { kind: 'system', name: 'test', permissions: [] } as const;
 
 // Query the queue's own tables, as an operator would; the app never does.
@@ -35,10 +37,21 @@ const asOperator = async <T extends pg.QueryResultRow>(text: string, values: unk
 };
 
 describe.skipIf(!url)('jobs on pg-boss', () => {
-  beforeAll(async () => {
-    const [found] = await asOperator<{ n: string }>('select count(*) as n from pg_namespace where nspname = $1', [SCHEMA]);
-    if (found?.n === '0') await asOperator(getConstructionPlans(SCHEMA));
-  });
+  it('the worker process starts the job queue on the migrated schema, and stops cleanly', async () => {
+    const worker = spawn(process.execPath, ['apps/worker/src/main.ts'],
+      { env: { PATH: process.env['PATH'], ...testSettings({ DATABASE_URL: databaseUrl() }) } });
+    const out: string[] = [];
+    worker.stdout.on('data', (b: Buffer) => out.push(b.toString()));
+    worker.stderr.on('data', (b: Buffer) => out.push(b.toString()));
+    const exited = once(worker, 'exit');
+    try {
+      await vi.waitFor(() => expect(out.join('')).toContain('worker: started'), { timeout: 30_000, interval: 250 });
+      expect(out.join('')).toContain('job queue: running 0 job(s)');
+    } finally {
+      worker.kill('SIGTERM');
+    }
+    expect((await exited)[0]).toBe(0);
+  }, 60_000);
 
   it('runs a job, and a delete-on-complete job leaves no row', async () => {
     const queue = createJobQueue(database(), logger());
