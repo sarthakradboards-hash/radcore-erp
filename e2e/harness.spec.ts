@@ -131,7 +131,8 @@ test.describe('browser writes reach the API', () => {
       const r = await fetch('/api/e2e-origin-probe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       return { status: r.status, body: await r.text() };
     });
-    expect(answer.status).not.toBe(403);
-    expect(answer.body).not.toContain('Page not found'); // the API answered, not the web app's own 404 page
+    // The API's own answer for a route it doesn't have, past the guard: not 403, not the web app's 404 page, not a
+    // 5xx from an API that's down. Update it when the API gets its own not-found answer.
+    expect(answer).toEqual({ status: 404, body: expect.stringContaining('Cannot POST /e2e-origin-probe') });
   });
 });
