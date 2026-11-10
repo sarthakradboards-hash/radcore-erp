@@ -28,11 +28,11 @@ describe.skipIf(!url)('the outbox', () => {
   const queue = createJobQueue(settings(), logger());
   const ran = vi.fn<(input: { n: number }) => void>();
   const contract = { ...name(), principal: { kind: 'system', name: 'test', permissions: [] }, input: z.object({ n: z.number() }) } as const;
-  const job = defineJob(contract, async (input) => { ran(input); });
+  const job = defineJob(contract, async (_ctx, input) => { ran(input); });
   const stops: { stop(): Promise<void> }[] = [];
 
   beforeAll(async () => {
-    stops.push(await runJobs(queue, [job], logger()));
+    stops.push(await runJobs(queue, [job], logger(), { db }));
   });
   afterAll(async () => {
     for (const s of stops) await s.stop();
