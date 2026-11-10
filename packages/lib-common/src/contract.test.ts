@@ -82,6 +82,26 @@ describe('the request goes and comes back the same way', () => {
       .toEqual({ ok: true, value: { id: ID } });
   });
 
+  // auditor-2's MUST on #37: one encoding per method, whatever the handler passes in.
+  it('refuses a write whose input comes in ?input=, even with a body beside it', () => {
+    const query = JSON.stringify({ name: 'from-query' });
+    for (const sent of [{ params: {}, query, body: { name: 'from-body' } }, { params: {}, query }]) {
+      expect(readInput(createParty, sent)).toEqual({ ok: false, error: { code: 'invalid_input',
+        message: 'Some of what was sent needs correcting',
+        issues: [{ path: [], code: 'input_in_url', message: 'A POST sends its input in the body, not the URL' }] } });
+    }
+    expect(readInput(createParty, { params: {}, body: { name: 'from-body' } })).toEqual({ ok: true, value: { name: 'from-body' } });
+  });
+
+  it('takes the input of a read or a removal only in ?input=, never in a body', () => {
+    const removeParty = defineContract({ method: 'DELETE', path: '/accounts/parties/:id', auth: 'session',
+      perm: 'parties:write', tx: { readOnly: false, isolation: 'read committed' }, input: z.object({ id: idString() }),
+      output: z.object({}) });
+    expect(readInput(removeParty, { params: { id: ID }, body: { id: 'other' } })).toEqual({ ok: true, value: { id: ID } });
+    expect(readInput(listParties, { params: {}, body: { filter: { q: 'body' }, limit: 5 } }))
+      .toMatchObject({ ok: false, error: { code: 'invalid_input' } });
+  });
+
   it('answers bad JSON and a limit over 200 with invalid_input', () => {
     expect(readInput(listParties, { params: {}, query: '{oops' })).toMatchObject({ ok: false, error: { code: 'invalid_input' } });
     const r = checkInput(listParties, { filter: {}, limit: MAX_LIMIT + 1 });

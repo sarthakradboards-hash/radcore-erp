@@ -141,7 +141,13 @@ export function checkInput<I extends z.ZodType>(c: { readonly input: I }, raw: u
 /** The handler's side of requestFor: the path parameters, `?input=` or the body, read back and checked. */
 export function readInput<I extends z.ZodType>(c: Pick<Contract, 'method' | 'params'> & { readonly input: I }, sent: {
   params: Readonly<Record<string, string>>; query?: string | undefined; body?: unknown }): InputResult<z.output<I>> {
-  let raw: unknown = c.method === 'GET' || c.method === 'DELETE' ? undefined : sent.body;
+  const inUrl = c.method === 'GET' || c.method === 'DELETE';
+  // One encoding per method: a write's input is its body only, so it never lands in an access log or a browser's
+  // history, and what is checked is what the service gets.
+  if (!inUrl && sent.query !== undefined) {
+    return invalid([{ path: [], code: 'input_in_url', message: `A ${c.method} sends its input in the body, not the URL` }]);
+  }
+  let raw: unknown = inUrl ? undefined : sent.body;
   if (sent.query !== undefined) {
     try {
       raw = JSON.parse(sent.query);
