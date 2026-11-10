@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { omitFields, placeIssues, unshownErrors } from './issues.ts';
+import { formAlert, omitFields, placeIssues, unshownErrors } from './issues.ts';
 
 const issue = (path: (string | number)[], message: string) => ({ path, code: 'custom', message });
 
@@ -12,6 +12,18 @@ describe('placeIssues', () => {
     ], mounted);
     expect(got.fields).toEqual([{ name: 'lines.0.qty', message: 'Too many' }, { name: 'name', message: 'Taken' }]);
     expect(got.rest).toEqual(['Not a GSTIN', 'Period is locked']);
+  });
+});
+
+describe('formAlert', () => {
+  it('says what the server said, with the issues no field shows', () => {
+    expect(formAlert('conflict', 'Changed by someone else', [])).toBe('Changed by someone else');
+    expect(formAlert('invalid', 'Check the form', ['Not a GSTIN', 'Period is locked']))
+      .toBe('Check the form: Not a GSTIN; Period is locked');
+  });
+
+  it('says nothing for signed_out, which the signed-out dialog handles (RC-147)', () => {
+    expect(formAlert('signed_out', 'Sign in again.', [])).toBeNull();
   });
 });
 
