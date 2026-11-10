@@ -23,9 +23,10 @@ body {
 
 /*
  * The body's notch padding scrolls away, so anything stuck to the top of the screen keeps clear of the notch
- * itself: RAD-52's offline banner now, the shell's header next.
+ * itself: RAD-52's offline banner now, the shell's header next. `body` outranks the banner's own `top: 0`
+ * wherever each rule sits in this file.
  */
-.offline-banner { top: env(safe-area-inset-top); }
+body .offline-banner { top: env(safe-area-inset-top); }
 
 /* The error, not-found and loading screens. */
 .page-message { max-width: 40rem; margin: var(--space-8) auto; padding: 0 var(--space-4); }
