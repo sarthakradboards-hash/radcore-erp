@@ -7,9 +7,12 @@ export class AppError extends Error {
   override name = 'AppError';
   readonly code: string;
   readonly issues: readonly Issue[];
-  constructor(code: string, message: string, issues: readonly Issue[] = []) {
+  /** Whole seconds until a retry can succeed: only on rate_limited and account_locked (ADR-001 §7a). */
+  readonly retryAfterSeconds: number | undefined;
+  constructor(code: string, message: string, issues: readonly Issue[] = [], retryAfterSeconds?: number) {
     super(message);
     this.code = code;
     this.issues = issues;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }

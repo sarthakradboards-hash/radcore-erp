@@ -170,6 +170,22 @@ describe.skipIf(!url)('the generic route handler', () => {
     expect(await count(body)).toBe(0);
   });
 
+  // ADR-001 §7a (RAD-61): only rate_limited and account_locked say when to retry, in the body and in Retry-After.
+  it('answers account_locked with retryAfterSeconds and the same Retry-After header, and other codes with neither', async () => {
+    let thrown = new AppError('account_locked', 'Locked for now', [], 840);
+    await serve(user(['notes:write']), async () => {
+      throw thrown;
+    }, async (base) => {
+      const locked = await post(base, { body: 'x', n: 1 });
+      expect([locked.status, locked.headers.get('retry-after'), ((await locked.json()) as { retryAfterSeconds?: number }).retryAfterSeconds])
+        .toEqual([429, '840', 840]);
+      thrown = new AppError('not_found', 'Gone', [], 840);
+      const other = await post(base, { body: 'x', n: 1 });
+      expect([other.status, other.headers.get('retry-after'), 'retryAfterSeconds' in ((await other.json()) as object)])
+        .toEqual([404, null, false]);
+    });
+  });
+
   it('maps a platform code to its status, and a code the contract does not list to 500', async () => {
     let code = 'not_found';
     await serve(user(['notes:write']), async () => {

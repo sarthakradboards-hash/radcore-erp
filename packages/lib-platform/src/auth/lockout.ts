@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { normaliseEmail } from '@radcore/lib-common';
 import type { Limiter } from '../db/client.ts';
 
-/** M1-14's numbers: 10 failed sign-ins within 15 minutes lock that address for 15 minutes. */
+/** M1-14's numbers: 10 failed sign-ins are allowed within 15 minutes; the next one locks that address for 15 minutes. */
 export const LOCKOUT = Object.freeze({ points: 10, windowSeconds: 900, blockSeconds: 900 });
 
 export type Lockout = {

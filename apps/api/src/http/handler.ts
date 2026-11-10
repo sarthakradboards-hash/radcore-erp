@@ -8,7 +8,7 @@
 // replay (M1-09; the key is already required, so writes fail closed), the three key-exempt routes (RAD-61),
 // pii() masking (M1-22), Settings in Ctx (RAD-48), and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
-import { BUSINESS_RULE_STATUS, PLATFORM_ERRORS, readInput, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
+import { BUSINESS_RULE_STATUS, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
 import { AppError, describeError, type Principal } from '@radcore/lib-platform';
 import { ANSWER_NOT_STORED_ROUTES, KEY_EXEMPT_ROUTES } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
@@ -51,7 +51,7 @@ const MESSAGES: Readonly<Record<PlatformErrorCode, string>> = {
 
 const isPlatform = (code: string): code is PlatformErrorCode => Object.hasOwn(PLATFORM_ERRORS, code);
 
-type Failure = { status: number; code: string; message: string; issues: readonly Issue[] };
+type Failure = { status: number; code: string; message: string; issues: readonly Issue[]; retryAfterSeconds?: number };
 const platform = (code: PlatformErrorCode, issues: readonly Issue[] = []): Failure =>
   ({ status: PLATFORM_ERRORS[code], code, message: MESSAGES[code], issues });
 
@@ -60,7 +60,14 @@ function failureOf(err: unknown, declared: readonly string[]): Failure {
   if (err instanceof AppError) {
     // A server error's own text is for the log, never the caller.
     if (err.code === 'server_error') return platform('server_error');
-    if (isPlatform(err.code)) return { ...platform(err.code, err.issues), message: err.message };
+    if (isPlatform(err.code)) {
+      const failure: Failure = { ...platform(err.code, err.issues), message: err.message };
+      // Only the codes lib-common lets say when to retry (ADR-001 §7a), in whole seconds.
+      if (RETRY_AFTER_CODES.includes(err.code) && err.retryAfterSeconds !== undefined) {
+        failure.retryAfterSeconds = Math.ceil(err.retryAfterSeconds);
+      }
+      return failure;
+    }
     if (declared.includes(err.code)) return { status: BUSINESS_RULE_STATUS, code: err.code, message: err.message, issues: err.issues };
     return platform('server_error');
   }
@@ -74,8 +81,12 @@ class OutputMismatch extends Error {
   override name = 'OutputMismatch';
 }
 
-const send = (res: Response, f: Failure, requestId: string) =>
-  res.status(f.status).json({ code: f.code, message: f.message, issues: f.issues, requestId });
+const send = (res: Response, f: Failure, requestId: string) => {
+  // The screen and any HTTP client read one value: the body's retryAfterSeconds and Retry-After agree (RAD-61).
+  if (f.retryAfterSeconds !== undefined) res.set('Retry-After', String(f.retryAfterSeconds));
+  res.status(f.status).json({ code: f.code, message: f.message, issues: f.issues, requestId,
+    ...(f.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: f.retryAfterSeconds }) });
+};
 
 // A UUID, as apps/web makes one per submit (ADR-001 §7a).
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
