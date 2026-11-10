@@ -16,5 +16,5 @@ export { describeError, type ErrorDescription } from './log/safe-error.ts';
 export { routeOf, scrubText } from './log/scrub.ts';
 export { createSecrets, expiringBefore, SecretPlaceMismatch, type SecretPlace, type Secrets } from './secrets.ts';
 export { defineSetting, settingRow, Settings, type SettingDef, type SettingRow } from './settings.ts';
-export { FILE_KINDS, type FileKind } from './files/kinds.ts';
+export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './files/kinds.ts';
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';

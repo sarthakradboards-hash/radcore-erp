@@ -4,6 +4,9 @@
 import { CreateBucketCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { attachment, createFileStore } from '@radcore/lib-platform';
 import { describe, expect, it } from 'vitest';
 
@@ -97,6 +100,24 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     const key = `photo/${randomUUID()}`;
     await put(key, '<html>not a picture</html>', 'image/png');
     await expect(files.verifyUpload(key, 'photo')).rejects.toThrow('upload refused: the file doesn\'t begin the way a image/png must');
+  });
+
+  it('streams a server-written file to a key it makes, and serves it back (RAD-47\'s export)', async () => {
+    const { files } = await store();
+    const dir = mkdtempSync(join(tmpdir(), 'radcore-put-'));
+    const csv = 'number,total\nINV-1,1250.50\n';
+    try {
+      const path = join(dir, 'invoices.csv');
+      writeFileSync(path, csv);
+      const { key, size } = await files.putFile('export', path, 'text/csv');
+      expect(key).toMatch(/^export\/[0-9a-f-]{36}$/);
+      expect(size).toBe(Buffer.byteLength(csv));
+      const get = await fetch(await files.downloadUrl(key, 'invoices.csv'));
+      expect(get.headers.get('content-type')).toBe('text/csv');
+      expect(await get.text()).toBe(csv);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   // ADR-004 §1's smoke test: the presigned POST's conditions are enforced by the store, not only by our code.

@@ -2,11 +2,13 @@
 // presigned links, so neither the API nor the database ever holds a whole file (RC-191). The client's endpoint comes
 // only from settings (ADR-003 §7).
 import { randomUUID } from 'node:crypto';
-import { GetObjectCommand, HeadObjectCommand, NotFound, S3Client } from '@aws-sdk/client-s3';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { GetObjectCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Config } from '../config.ts';
-import { FILE_KINDS, type FileKind } from './kinds.ts';
+import { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './kinds.ts';
 import { confirmsType, MAGIC_BYTES } from './magic.ts';
 
 /** How long a download link works. */
@@ -23,6 +25,10 @@ export type FileStore = {
   /** A 5-minute presigned POST for one new file of `kind` and type `contentType`, at a key the server makes. The
    * bucket refuses a bigger file, another type, another key or any extra field (ADR-004 §2). */
   presignUpload(kind: FileKind, contentType: string): Promise<{ key: string; url: string; fields: Record<string, string> }>;
+  /** The server's own upload, such as a finished export (RAD-47): streams the local file at `path`, after the work's
+   * transaction has committed, to a new key `<kind>/<uuid>` the store makes. The file's size is known, so one
+   * PutObject streams it, and no process holds the whole file in memory (ADR-004 §2). */
+  putFile(kind: ServerFileKind, path: string, contentType: string): Promise<{ key: string; size: number }>;
 };
 
 /** An uploaded file that doesn't fit its kind. The message names the rule, never the file's name or content. */
@@ -97,6 +103,18 @@ export function createFileStore(s3: Config['s3'], client: S3Client = s3Client(s3
       const { url, fields } = await createPresignedPost(client, { Bucket, Key: key, Expires: UPLOAD_SECONDS,
         Fields: { 'Content-Type': contentType }, Conditions: [['content-length-range', 1, rule.maxBytes]] });
       return { key, url, fields };
+    },
+
+    async putFile(kind, path, contentType) {
+      // A caller's mistake, not a person's: the server chose the type.
+      if (!(SERVER_FILE_KINDS[kind].types as readonly string[]).includes(contentType)) {
+        throw new TypeError(`a ${kind} file can't be ${JSON.stringify(contentType)}`);
+      }
+      const { size } = await stat(path);
+      const key = `${kind}/${randomUUID()}`;
+      await client.send(new PutObjectCommand({ Bucket, Key: key, Body: createReadStream(path), ContentLength: size,
+        ContentType: contentType }));
+      return { key, size };
     },
   };
 }

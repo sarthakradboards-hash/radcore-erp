@@ -52,6 +52,10 @@ describe('createFileStore', () => {
     await expect(createFileStore(s3()).presignUpload('resume', 'image/png')).rejects.toThrow(UploadRefused);
   });
 
+  it('refuses a server file of a type its kind doesn\'t take, before reading it or reaching S3', async () => {
+    await expect(createFileStore(s3()).putFile('export', 'no-such-file.csv', 'application/pdf')).rejects.toThrow(TypeError);
+  });
+
   it('refuses a key made for another kind before reaching S3', async () => {
     await expect(createFileStore(s3()).verifyUpload('import/1f0c', 'photo')).rejects.toThrow(UploadRefused);
   });
