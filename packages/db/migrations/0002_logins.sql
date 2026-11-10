@@ -2,7 +2,8 @@
 -- may do. The logins exist before this runs (tools/db-logins.ts), and the owner login radcore_owner runs it.
 -- Neither login owns anything, so neither can alter or drop it, and neither gets CREATE anywhere.
 -- An append-only table's migration revokes UPDATE, DELETE and TRUNCATE from radcore_app (audit_log and access_log
--- INSERT too), and a view's revokes INSERT, UPDATE and DELETE; tools/logins.test.ts fails on one that doesn't.
+-- INSERT too), a view's revokes INSERT, UPDATE and DELETE, and every partition gets REVOKE ALL from both logins;
+-- tools/logins.test.ts fails on one that doesn't.
 
 -- No temporary tables (ADR-005 §7c), and only the two logins may connect besides the owner.
 DO $$

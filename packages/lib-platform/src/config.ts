@@ -141,9 +141,12 @@ export function loadConfig(env: Env, proc: ProcessName): Config {
     if (login === 'radcore_owner') problems.push('DATABASE_URL must not be the owner login radcore_owner');
     else if (deployed && login !== 'radcore_app') problems.push(`DATABASE_URL must be the runtime login radcore_app when APP_ENV is ${appEnv}`);
   }
-  // Development's .env holds it for `npm run db:migrate`; a deployed api or worker never gets it (ADR-004 §3).
-  if (deployed && env['MIGRATION_DATABASE_URL'] !== undefined) {
-    problems.push(`MIGRATION_DATABASE_URL must not be set when APP_ENV is ${appEnv} (the owner login runs only from CI)`);
+  // Development's .env holds these for `npm run db:logins` and `db:migrate`; a deployed api or worker never gets the
+  // owner's or the superuser's credentials (ADR-004 §3).
+  for (const name of ['MIGRATION_DATABASE_URL', 'DATABASE_ADMIN_URL', 'POSTGRES_PASSWORD', 'RADCORE_OWNER_PASSWORD']) {
+    if (deployed && env[name] !== undefined) {
+      problems.push(`${name} must not be set when APP_ENV is ${appEnv} (the owner and superuser logins run only from CI)`);
+    }
   }
   if (problems.length > 0) throw new ConfigError(problems);
 

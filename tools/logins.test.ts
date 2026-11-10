@@ -2,30 +2,44 @@
 // migrations made; the app login reads and writes rows but changes no structure and rewrites no ledger; the read-only
 // login only reads. Each test acts as a login with SET ROLE inside a transaction it rolls back, so it leaves nothing.
 import { randomBytes } from 'node:crypto';
+import { loadConfig } from '@radcore/lib-platform';
+import { createJobQueue } from '@radcore/lib-platform/runtime';
+import { testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
-import { PgBoss } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
 
-const url = process.env['TEST_DATABASE_URL'];
+// A superuser on the test database, so each test can switch between the three logins.
+const url = process.env['TEST_DATABASE_SUPERUSER_URL'];
+// What every other database test gets: the runtime login (tools/test-database.ts).
+const appUrl = process.env['TEST_DATABASE_URL'];
+// The test server uses trust auth; the settings check wants a password, which the server ignores.
+const withPassword = (u: string) => {
+  const parsed = new URL(u);
+  parsed.password = testPassword();
+  return parsed.toString();
+};
 
-// ADR-005 §7's append-only tables, exactly. A partition counts as its parent.
+// ADR-005 §7's append-only tables, exactly.
 const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'unit_events', 'payment_allocations',
   'credit_applications', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
 // Written only by triggers and record_access, never by an INSERT from the app.
 const NO_INSERT = ['audit_log', 'access_log'];
+const EVERY = 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
 
-// Anything in radcore the app login could change that it must not: an append-only table it can update, delete or
-// truncate, a log it can insert into, or a view it can write through (a simple view writes as its owner).
-const WRITABLE = `
+// Anything in radcore a login could reach that it must not:
+// - an append-only table the app can update, delete or truncate, or a log it can insert into;
+// - a view the app can write through (a simple view writes as its owner);
+// - a partition either login holds any privilege on. Rows go through the parent, so a partition has no grants: the
+//   owner's default privileges would otherwise let the app insert straight into an audit_log partition the top-up made.
+const EXPOSED = `
   select c.relname from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
-  left join pg_inherits i on i.inhrelid = c.oid
-  left join pg_class p on p.oid = i.inhparent
   where n.nspname = 'radcore' and (
-    (coalesce(p.relname, c.relname) = any($1) and c.relkind in ('r', 'p')
-      and has_table_privilege('radcore_app', c.oid, 'UPDATE, DELETE, TRUNCATE'))
-    or (coalesce(p.relname, c.relname) = any($2) and has_table_privilege('radcore_app', c.oid, 'INSERT'))
-    or (c.relkind in ('v', 'm') and has_table_privilege('radcore_app', c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')))
+    (c.relname = any($1) and has_table_privilege('radcore_app', c.oid, 'UPDATE, DELETE, TRUNCATE'))
+    or (c.relname = any($2) and has_table_privilege('radcore_app', c.oid, 'INSERT'))
+    or (c.relkind in ('v', 'm') and has_table_privilege('radcore_app', c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE'))
+    or (c.relispartition and (has_table_privilege('radcore_app', c.oid, '${EVERY}')
+      or has_table_privilege('radcore_read', c.oid, '${EVERY}'))))
   order by 1`;
 
 async function inRollback(fn: (c: pg.Client) => Promise<void>) {
@@ -139,31 +153,34 @@ describe.skipIf(!url)('the three logins', () => {
     });
   });
 
-  it('leave no append-only table, log or view writable by the app login', async () => {
+  it('leave no append-only table, log, view or partition open to the app or read-only login', async () => {
     await inRollback(async (c) => {
-      expect((await c.query(WRITABLE, [APPEND_ONLY, NO_INSERT])).rows).toEqual([]);
-      // The check finds an append-only table, a log and a view made without their revokes.
+      const exposed = async () => (await c.query<{ relname: string }>(EXPOSED, [APPEND_ONLY, NO_INSERT])).rows.map((r) => r.relname);
+      expect(await exposed()).toEqual([]);
+      // The check finds each of them made without its revokes, the way the owner's default privileges leave them.
       await c.query('set local role radcore_owner');
       await c.query('create table radcore.journal_lines (id int)');
-      await c.query('create table radcore.audit_log (id int)');
-      await c.query('revoke update, delete, truncate on radcore.audit_log from radcore_app');
       await c.query('create view radcore.journal_view as select * from radcore.journal_lines');
-      expect((await c.query(WRITABLE, [APPEND_ONLY, NO_INSERT])).rows.map((r: { relname: string }) => r.relname))
-        .toEqual(['audit_log', 'journal_lines', 'journal_view']);
+      await c.query('create table radcore.audit_log (id int, at date not null) partition by range (at)');
+      await c.query('revoke update, delete, truncate on radcore.audit_log from radcore_app');
+      await c.query("create table radcore.audit_log_2026_11 partition of radcore.audit_log for values from ('2026-11-01') to ('2026-12-01')");
+      await c.query("create table radcore.audit_log_2026_12 partition of radcore.audit_log for values from ('2026-12-01') to ('2027-01-01')");
+      await c.query('revoke all on radcore.audit_log_2026_12 from radcore_app, radcore_read');
+      expect(await exposed()).toEqual(['audit_log', 'audit_log_2026_11', 'journal_lines', 'journal_view']);
     });
   });
 
-  // ADR-004 §2: the worker runs pg-boss as the app login, so its queue work, maintenance included, needs no DDL.
-  it("runs pg-boss's queue work as the app login", async () => {
-    const u = new URL(url ?? '');
-    u.searchParams.set('options', '-c role=radcore_app');
-    const boss = new PgBoss({ connectionString: u.toString(), schema: 'pgboss', migrate: false, createSchema: false,
-      supervise: false, schedule: false });
+  // ADR-004 §2: the worker runs pg-boss as the app login, through lib-platform's own queue settings. Rebuilding the
+  // job indexes needs their owner, so it's off there (reindex: false) and an owner task instead.
+  it("runs pg-boss's queue work and maintenance as the app login", async () => {
+    const boss = createJobQueue(loadConfig(testSettings({ DATABASE_URL: withPassword(appUrl ?? '') }), 'worker').database,
+      { info: () => undefined, error: () => undefined });
     const errors: unknown[] = [];
     boss.on('error', (e) => errors.push(e));
     const queue = `test.logins-${randomBytes(4).toString('hex')}`;
     await boss.start();
     try {
+      expect((await boss.getDb().executeSql('select current_user as login')).rows).toEqual([{ login: 'radcore_app' }]);
       await boss.createQueue(queue);
       const id = await boss.send(queue, { n: 1 });
       const [job] = await boss.fetch(queue);

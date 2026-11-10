@@ -53,7 +53,11 @@ migrations as `radcore_owner` (`MIGRATION_DATABASE_URL`), and support queries as
 - An append-only table's migration (ADR-005 §7) adds
   `REVOKE UPDATE, DELETE, TRUNCATE ON radcore.<table> FROM radcore_app` (and `INSERT` for `audit_log` and
   `access_log`). A view's migration adds `REVOKE INSERT, UPDATE, DELETE ON radcore.<view> FROM radcore_app`,
-  because a simple view writes as its owner. `tools/logins.test.ts` fails on any it misses.
+  because a simple view writes as its owner. Every partition, from a migration or the partition top-up, gets
+  `REVOKE ALL ON radcore.<partition> FROM radcore_app, radcore_read`: rows go through the parent.
+  `tools/logins.test.ts` fails on any it misses.
+- The database tests get `TEST_DATABASE_URL` as the runtime login. A test that makes its own tables uses
+  `TEST_DATABASE_OWNER_URL`, and one that switches between logins uses `TEST_DATABASE_SUPERUSER_URL`.
 
 ## Migrations
 
