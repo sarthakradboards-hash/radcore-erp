@@ -111,7 +111,8 @@ describe('the migration files', () => {
   // ADR-002: L3 is off in migrate.ts for the advisory lock only.
   it('migrate.ts makes exactly one raw call, the lock', () => {
     const source = readFileSync(join(MIGRATIONS_FOLDER, '..', 'src', 'migrate.ts'), 'utf8');
-    expect(source.match(/\.(query|execute|unsafe)\(/g)).toEqual(['.query(']);
+    // \b, not \(, so a generic call such as client.query<Row>( counts too.
+    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query']);
   });
 
   it("creates pg-boss's schema from pg-boss's own construction plan (ADR-002 §4)", () => {
@@ -202,7 +203,11 @@ describe.skipIf(!url)('the migration runner', () => {
 
   it('runs once when two runners start together', async () => {
     await withDatabase(async (db) => {
-      await Promise.all([migrate(db), migrate(db)]);
+      // The second waits up to 5 s, so once the migrations take longer it fails, and says why.
+      const runs = await Promise.allSettled([migrate(db), migrate(db)]);
+      expect(runs.filter((r) => r.status === 'fulfilled').length).toBeGreaterThanOrEqual(1);
+      expect(runs.flatMap((r) => (r.status === 'rejected' ? [String(r.reason)] : []))
+        .filter((reason) => !/another migration is running/.test(reason))).toEqual([]);
       expect(await applied(db)).toBe(MIGRATIONS);
     });
   });

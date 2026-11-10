@@ -1,12 +1,33 @@
-// The database pool (ADR-002 L4's one place for the driver) and the health ping. RAD-28 builds the pool;
-// RAD-26 opens transactions on it.
+// The database pool and the job queue (ADR-002 L4's one place for the driver and pg-boss) and the health ping.
+// RAD-28 builds the pool; RAD-26 opens transactions on it. RAD-44 builds the queue.
 import pg from 'pg';
+import { PgBoss } from 'pg-boss';
 import type { Config } from '../config.ts';
 import type { Logger } from '../log.ts';
 
 type Database = Config['database'];
 /** The pool's type, so nothing else needs to import the driver (L4). */
 export type Pool = pg.Pool;
+/** The queue's type, so nothing else imports pg-boss (L4). */
+export type JobQueue = PgBoss;
+/** pg-boss's own tables live in this schema, created by an owner migration (ADR-002 §4), never by the app. */
+const JOB_QUEUE_SCHEMA = 'pgboss';
+
+/**
+ * The job queue on its own pool of 4 (ADR-004 §2's connection budget), with the same three timeouts. It never
+ * creates or migrates its schema: the runtime login has no DDL (ADR-005).
+ */
+export function createJobQueue(db: Database, log: Logger): JobQueue {
+  const boss = new PgBoss({
+    connectionString: db.url, max: 4, connectionTimeoutMillis: db.poolWaitMs, schema: JOB_QUEUE_SCHEMA,
+    options: `-c statement_timeout=${db.statementTimeoutMs} -c lock_timeout=${db.lockTimeoutMs}`
+      + ` -c idle_in_transaction_session_timeout=${db.idleTxTimeoutMs}`,
+    migrate: false, createSchema: false,
+  });
+  // RC-078: without a listener, pg-boss's 'error' event (a lost connection, a failed poll) would end the process.
+  boss.on('error', (err) => log.error('job queue error; it retries on its next poll', err));
+  return boss;
+}
 
 const connection = (db: Database) => ({
   connectionString: db.url,
