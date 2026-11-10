@@ -210,6 +210,8 @@ The one generic handler (`apps/api/src/http/`, M1-08) runs every `session` and `
 ```
 request ─► origin and rate guards ─► principal (§6a: session, or a link token) ─► parse input (contract.input)
         ─► route permission (contract.perm) for that principal
+        ─► new-password check, only on a field marked newPassword() (§7a): length, the bundled list,
+           Pwned Passwords. It runs outside any transaction, with no pooled connection held
         ─► one transaction with statement, lock and idle timeouts; Ctx built
         ─► saved-once claim (writes only): insert (principal, route, key, input hash) under a unique constraint
         ─► service(ctx, input) ─► record-scope checks inside the service: ctx.can(...)
@@ -344,8 +346,11 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
 
 **Passwords** (M1-14, RAD-32). A new password, set from an invite, a reset or a change, must pass these rules on
 the server. The form shows the same rules but decides nothing.
-- **At least 15 characters** (`PASSWORD_MIN_LENGTH` in lib-common), at most 256. Length counts Unicode code points
-  after NFC normalisation, and the NFC form is what gets hashed; sign-in normalises the same way.
+- **At least 15 characters** (`PASSWORD_MIN_LENGTH` in lib-common). Length counts Unicode code points after NFC
+  normalisation, and the NFC form is what gets hashed; sign-in normalises the same way.
+  - The only upper bound is the schema's cap, `PASSWORD_MAX_LENGTH` = 1024 UTF-16 units, which zod counts. It
+    applies to every password field, sign-in included, so a password that could be set can always be typed at
+    sign-in. 1024 units is at least 512 code points, well above NIST's 64.
   - Most roles sign in with the password alone (D-19 adds the second factor for admin and owner only), and
     NIST SP 800-63B-4 requires 15 for a password used alone.
   - Admin and owner get the same minimum. One rule is simpler, and the strongest accounts are no place to relax it.
@@ -362,10 +367,19 @@ the server. The form shows the same rules but decides nothing.
     instead would block invites and resets for the length of the outage, and a reset is how a locked-out person
     gets back in.
 - **Not the current password**, on a change or a reset.
+- **Checked before the transaction** (§8). A contract marks its new-password field with lib-common's
+  `newPassword()`: invite accept, reset and change. The generic handler checks such a field after the route
+  permission and before it opens the transaction and claims the saved-once key. It checks the length, the bundled
+  list and Pwned Passwords.
+  - A refusal answers at once, with no transaction opened. The 3-second call never holds a transaction or a pooled
+    connection.
+  - A request that passes goes on as usual. A retried key repeats the check, which is harmless, and then replays
+    or runs as saved-once says.
+  - The service checks only `same_as_old`, because it needs the stored hash.
+  - The permission manifest test (M1-19) fails on a `newPassword()` field outside those three routes.
 - A refusal is `password_rejected`, with the reason on the password field: `too_short`, `breached` or
-  `same_as_old`. The contract's schema checks only the 256 maximum. zod counts UTF-16
-  units, not code points, so the service applies these rules, and a short password gets `too_short`, never
-  `invalid_input`.
+  `same_as_old`, never `invalid_input`. The schema's `.min()` would count UTF-16 units, so `newPassword()` sets
+  only the 1024 cap and leaves the length rule to the check.
 - Sign-in checks only the stored hash, never these rules, so a rule change never locks anyone out.
 
 **Your own account** (RAD-32). The routes that act only on the caller's own session and password (`/me`, sign-out,
@@ -449,7 +463,8 @@ proves that a rolled-back save queues nothing; ADR-003 names the queue library. 
 **No network call inside a transaction.** A service that needs an outside call, such as an e-invoice IRN or a
 WhatsApp send, queues a job. The job makes the call (with the provider's idempotency key where the provider has
 one) and records the result in its own transaction. A rolled-back invoice therefore never leaves an IRN behind,
-and a slow provider never holds a transaction open past the idle timeout.
+and a slow provider never holds a transaction open past the idle timeout. The one outside call a request makes
+itself, the breached-password check, runs in the generic handler before the transaction opens (§6, §7a).
 
 ### 8b. Platform engines, module functions
 
