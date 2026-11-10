@@ -25,6 +25,10 @@ export function useFieldName(name: string, kind: keyof Names = 'mounted') {
 }
 
 const OFFLINE = 'RadCore could not be reached. Check the connection, then try again.';
+// Codes whose message the form words itself. The mutation (RAD-52) has already renewed the key and refreshed lists.
+const SAID: Partial<Record<string, string>> = {
+  idempotency_mismatch: 'This was already saved; check the list before saving again.',
+};
 
 type FormProps<I extends FieldValues, O extends FieldValues> = {
   /** The contract's input schema, or a part of it (`contract.input.pick(...)`). */
@@ -61,7 +65,8 @@ export function Form<I extends FieldValues, O extends FieldValues>(
       const { fields, rest } = placeIssues(e.envelope.issues, names.mounted);
       fields.forEach(({ name, message }, i) =>
         form.setError(name as never, { type: 'server', message }, { shouldFocus: i === 0 }));
-      const message = rest.length === 0 ? e.envelope.message : `${e.envelope.message}: ${rest.join('; ')}`;
+      const said = SAID[e.code] ?? e.envelope.message;
+      const message = rest.length === 0 ? said : `${said}: ${rest.join('; ')}`;
       form.setError('root.server', { type: e.code, message });
       return;
     }

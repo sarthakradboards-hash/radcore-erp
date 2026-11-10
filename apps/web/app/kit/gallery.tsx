@@ -28,12 +28,16 @@ export function Gallery() {
       <h1>UI kit</h1>
 
       <h2 id="party-form">Edit party</h2>
-      <p>The name &quot;Taken&quot; is refused on the field; &quot;Elsewhere&quot; is refused on a field not on screen.</p>
+      <p>The name &quot;Taken&quot; is refused on the field, &quot;Elsewhere&quot; on a field not on screen, and
+        &quot;Again&quot; as a save already made.</p>
       <Form aria-labelledby="party-form" schema={party}
         defaultValues={{ name: 'Asha Traders', phone: '••••••3210', limit: '50000.00', note: '' }}
         onSubmit={async (values) => {
           if (values.name === 'Taken') throw refuse([{ path: ['name'], message: 'Another party has this name' }]);
           if (values.name === 'Elsewhere') throw refuse([{ path: ['gstin'], message: 'The GSTIN is not valid' }]);
+          if (values.name === 'Again') {
+            throw new ApiError(409, { code: 'idempotency_mismatch', message: 'Key reused', issues: [], requestId: 'kit' });
+          }
           setSent(JSON.stringify(values));
         }}>
         <TextField name="name" label="Name" autoComplete="off" />
