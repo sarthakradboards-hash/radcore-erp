@@ -34,6 +34,7 @@ production.
 | Files | Amazon S3: bill photos, resumes, statements, exports. Versioning on, public access blocked, encrypted with KMS, replicated to Hyderabad (§4) | S3, Mumbai |
 | Jobs | pg-boss tables in the same PostgreSQL. No other queue service. | RDS |
 | Mail | Amazon SES in Mumbai, for invites, password resets and alerts to people. Its client library is added under ADR-003 §4 by the first ticket that sends mail (M1-14) | SES |
+| Breached passwords | the Pwned Passwords range API (`api.pwnedpasswords.com`): free, no key, no rate limit. `api` calls it through the outbound client only when someone sets a password, and sends only the first five hex characters of the password's SHA-1, with padding (ADR-001 §7a, RAD-32) | Outside service |
 | Monitoring | a small separate server watching health and heartbeats from outside (RC-083) | Outside the app server |
 
 The same major versions run everywhere:

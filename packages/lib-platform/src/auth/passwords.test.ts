@@ -37,6 +37,16 @@ describe('passwords', () => {
     expect((await createPasswords()).dummy).not.toBe(passwords.dummy);
   });
 
+  // ADR-001 §7a: the NFC form is what's hashed, so the same password typed on two keyboards signs in either way.
+  it('hashes and checks the NFC form, so a composed and a decomposed spelling are one password', async () => {
+    const passwords = await createPasswords();
+    const composed = 'café au lait, no sugar';
+    const decomposed = 'café au lait, no sugar';
+    expect(composed).not.toBe(decomposed);
+    expect(await passwords.verify(await passwords.hash(decomposed), composed)).toEqual({ ok: true, rehash: false });
+    expect(await passwords.verify(await passwords.hash(composed), decomposed)).toEqual({ ok: true, rehash: false });
+  });
+
   it('refuses a string that is not an Argon2id hash rather than throwing', async () => {
     const passwords = await createPasswords();
     expect(await passwords.verify('not a hash', 'x')).toEqual({ ok: false, rehash: false });

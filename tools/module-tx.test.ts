@@ -8,6 +8,8 @@ import { ForeignTableError, moduleTx, UnboundedWriteError } from '../packages/db
 import { openTransaction, type Database } from '../packages/db/src/schema.ts';
 import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
 import { runInTransaction } from '../packages/lib-platform/src/db/transaction.ts';
+import { defineSetting } from '../packages/lib-platform/src/settings.ts';
+import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { integer, pgSchema, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
@@ -173,13 +175,38 @@ describe.skipIf(!url)('the module transaction', () => {
   it('runs a service with a frozen Ctx of three members, as the named principal', async () => {
     const principal = { kind: 'user', userId: 'u-1', permissions: ['sales:read'] } as const;
     const rows = await runInTransaction(db, read, principal, 'req-9', async (ctx) => {
-      expect([Object.isFrozen(ctx), Object.keys(ctx).sort()]).toEqual([true, ['principal', 'requestId', 'tx']]);
+      expect([Object.isFrozen(ctx), Object.keys(ctx).sort()]).toEqual([true, ['principal', 'requestId', 'settings', 'tx']]);
       return ownTx(ctx).select({ p: sql<string>`current_setting('app.principal')`, r: sql<string>`current_setting('app.request_id')` })
         .from(own).limit(1);
     });
     expect(rows).toEqual([{ p: 'user:u-1', r: 'req-9' }]);
     expect(await runInTransaction(db, read, { kind: 'system', name: 'nightly', permissions: [] }, 'req-10', (ctx) =>
       ownTx(ctx).select({ p: sql<string>`current_setting('app.principal')` }).from(own).limit(1))).toEqual([{ p: 'system:nightly' }]);
+  });
+
+  // RAD-48's mechanism: one read of the settings table when the Ctx is built, typed values from memory after.
+  it("gives the service the settings read once at the start of its transaction, and each one's default when unset", async () => {
+    const stored = defineSetting(`platform.test_${randomBytes(4).toString('hex')}`, z.number().int(), 1);
+    const unset = defineSetting(`platform.test_${randomBytes(4).toString('hex')}`, z.string(), 'fallback');
+    // Settings rows carry audit columns, so the insert says who made it.
+    const asTest = async (text: string, values: unknown[]) => {
+      const c = await pool.connect();
+      try {
+        await c.query('begin');
+        await c.query("set local app.principal = 'system:test'");
+        await c.query(text, values);
+        await c.query('commit');
+      } finally {
+        c.release();
+      }
+    };
+    await asTest('insert into radcore.settings (key, value) values ($1, $2)', [stored.key, JSON.stringify(7)]);
+    try {
+      expect(await runInTransaction(db, read, { kind: 'system', name: 'test', permissions: [] }, 'req-11',
+        async (ctx) => [ctx.settings.get(stored), ctx.settings.get(unset)])).toEqual([7, 'fallback']);
+    } finally {
+      await asTest('delete from radcore.settings where key = $1', [stored.key]);
+    }
   });
 
   it('cancels a statement past the contract timeout, and refuses a write in a read-only transaction', async () => {

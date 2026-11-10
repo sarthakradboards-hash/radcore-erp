@@ -1,5 +1,6 @@
 // Password hashing (M1-14, RC-090, ADR-003): Argon2id at OWASP's minimum cost, the same in every environment. A hash
-// made with other parameters is rehashed at the next sign-in. A password is never logged, stored or returned.
+// made with other parameters is rehashed at the next sign-in. A password is never logged, stored or returned. What's
+// hashed and checked is the password's NFC form (ADR-001 §7a), so its spelling in Unicode doesn't matter.
 import { randomBytes } from 'node:crypto';
 import { hash, parseOptions, verify, type Options, type ParsedHashOptions } from '@node-rs/argon2';
 
@@ -33,11 +34,11 @@ export async function createPasswords(): Promise<Passwords> {
   const dummy = await hash(randomBytes(32).toString('base64url'), PASSWORD_HASH);
   return Object.freeze({
     dummy,
-    hash: (password: string) => hash(password, PASSWORD_HASH),
+    hash: (password: string) => hash(password.normalize('NFC'), PASSWORD_HASH),
     async verify(stored: string | null, password: string): Promise<Verified> {
       let ok = false;
       try {
-        ok = await verify(stored ?? dummy, password);
+        ok = await verify(stored ?? dummy, password.normalize('NFC'));
       } catch {
         // Not an Argon2 hash: a corrupt row refuses the sign-in, it doesn't fail the request.
         ok = false;
