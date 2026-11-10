@@ -42,6 +42,9 @@ const config = () => {
   return loadConfig(testSettings({ DATABASE_URL: u.toString() }), 'api');
 };
 
+// Every write comes from the app's own origin (ADR-001 §7a, RAD-39), as the browser sends it.
+const ORIGIN = () => config().publicOrigin;
+
 describe.skipIf(!url)('saved-once through the generic handler', () => {
   const pool = new pg.Pool({ connectionString: url, max: 4 });
   const db = createDatabase(pool, { orders });
@@ -88,7 +91,7 @@ describe.skipIf(!url)('saved-once through the generic handler', () => {
   }
   const order = async (base: string, key: string, body: unknown, user = 'u-1') => {
     const res = await fetch(`${base}/orders`, { method: 'POST', body: JSON.stringify(body),
-      headers: { 'content-type': 'application/json', 'idempotency-key': key, 'x-user': user } });
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, 'x-user': user, origin: ORIGIN() } });
     return { status: res.status, body: await res.json() as Record<string, unknown> };
   };
   const rowsFor = async (key: string) => (await pool.query<{ principal: string; route: string; kept: boolean; hours: number }>(
@@ -164,7 +167,7 @@ describe.skipIf(!url)('saved-once through the generic handler', () => {
     await serve(async (base, runs) => {
       const key = randomUUID();
       const send = () => fetch(`${base}/sign-in/second-factor/enrolment`, { method: 'POST', body: '{}',
-        headers: { 'content-type': 'application/json', 'idempotency-key': key } });
+        headers: { 'content-type': 'application/json', 'idempotency-key': key, origin: ORIGIN() } });
       const first = await send();
       expect(await first.json()).toEqual({ secret: 'otpauth-secret-1' });
       const again = await send();
@@ -179,7 +182,7 @@ describe.skipIf(!url)('saved-once through the generic handler', () => {
 
   it('claims nothing for a key-exempt route, which needs no key and runs each time', async () => {
     await serve(async (base, runs) => {
-      const send = () => fetch(`${base}/sign-out`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+      const send = () => fetch(`${base}/sign-out`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json', origin: ORIGIN() } });
       expect([(await send()).status, (await send()).status]).toEqual([200, 200]);
       expect(runs()).toBe(2);
       const [{ n } = { n: -1 }] = (await pool.query<{ n: number }>(

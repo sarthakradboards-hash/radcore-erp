@@ -5,10 +5,11 @@
 //   ─► a write claims its saved-once key (M1-09): an earlier committed answer is replayed here ─► service(ctx, input)
 //   ─► output checked against contract.output, camelCase as is (RC-199) ─► a write keeps its answer ─► commit ─► 200
 //   ─► errors mapped by code: a thrown AppError's code or a PostgreSQL SQLSTATE, never message text (RC-216)
-// Still to come, each with its ticket: origin and rate guards (M1-21), sessions (RAD-32), pii() masking (M1-22), Settings in Ctx (RAD-48), and webhooks' own lane (M1-27).
+// Still to come, each with its ticket: rate guards (M1-21), sessions (RAD-32), pii() masking (M1-22), Settings in Ctx
+// (RAD-48), and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, PLATFORM_ERRORS, readInput, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, describeError, type Principal } from '@radcore/lib-platform';
+import { AppError, claimSavedOnce, describeError, originAllowed, type Principal } from '@radcore/lib-platform';
 import { ANSWER_NOT_STORED_ROUTES, KEY_EXEMPT_ROUTES } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
@@ -21,6 +22,8 @@ export type HandlerDeps = {
   log: Logger;
   /** Who sent the request: the session's user, or null when signed out. Sessions arrive with RAD-32. */
   authenticate: (req: Request) => Promise<Principal | null>;
+  /** PUBLIC_ORIGIN: the one origin a write may come from (ADR-001 §7a). */
+  publicOrigin: string;
 };
 
 // shortcut: a signed-out caller of a public route runs as this principal, with no permissions; M1-23 adds link principals.
@@ -86,6 +89,15 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
   router.use((_req: Request, res: Response, next: NextFunction) => {
     res.set('Cache-Control', 'no-store');
     next();
+  });
+  // The origin guard comes first (ADR-001 §6, M1-21): a write from anywhere but the app's own origin, or with no
+  // Origin, is refused before its body is read, the key-exempt routes included (login CSRF, RC-165).
+  router.use((req: Request, res: Response, next: NextFunction) => {
+    if (originAllowed(req.method, req.get('origin'), deps.publicOrigin)) {
+      next();
+      return;
+    }
+    send(res, platform('forbidden'), randomUUID());
   });
   router.use(express.json({ limit: '1mb' }));
   for (const { contract, service } of routes) {
