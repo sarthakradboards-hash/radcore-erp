@@ -11,7 +11,8 @@ import { getConstructionPlans } from 'pg-boss';
 import { describe, expect, it, vi } from 'vitest';
 import { MIGRATION_LOCK_KEY, MIGRATIONS_FOLDER, migrate } from '../packages/db/src/migrate.ts';
 
-const url = process.env['TEST_DATABASE_URL'];
+// The server's admin login: each test makes a database of its own.
+const url = process.env['TEST_DATABASE_ADMIN_URL'];
 // The commit CI compares the migrations with (.github/workflows/ci.yml).
 const base = process.env['MIGRATIONS_BASE'];
 
@@ -75,7 +76,7 @@ async function withFolder(keep: number, extra: string[], fn: (dir: string) => Pr
 }
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
-  expect.fail('TEST_DATABASE_URL is not set: in CI the migration tests must run, not skip');
+  expect.fail('TEST_DATABASE_ADMIN_URL is not set: in CI the migration tests must run, not skip');
 });
 
 describe('the migration files', () => {

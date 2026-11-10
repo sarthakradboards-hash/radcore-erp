@@ -44,13 +44,18 @@ jobs:
           node-version-file: .nvmrc
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Migrations, as their own step before the apps start (RAD-25)
+      - name: The three logins, made by the superuser (RAD-24)
+        run: npm run db:logins
+        env:
+          DATABASE_ADMIN_URL: postgres://radcore@127.0.0.1:5432/radcore_e2e
+      - name: Migrations as the owner login, as their own step before the apps start (RAD-25)
         run: npm run db:migrate
         env:
-          MIGRATION_DATABASE_URL: postgres://radcore@127.0.0.1:5432/radcore_e2e
-      - run: npm run e2e
+          MIGRATION_DATABASE_URL: postgres://radcore_owner@127.0.0.1:5432/radcore_e2e
+      - name: The apps run as the runtime login
+        run: npm run e2e
         env:
-          E2E_DATABASE_URL: postgres://radcore@127.0.0.1:5432/radcore_e2e
+          E2E_DATABASE_URL: postgres://radcore_app@127.0.0.1:5432/radcore_e2e
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

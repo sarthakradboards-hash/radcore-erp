@@ -86,10 +86,11 @@ describe('names', () => {
   });
 });
 
-const url = process.env['TEST_DATABASE_URL'];
+// The owner login: the fixtures below are tables, views and a schema of their own (RAD-24).
+const url = process.env['TEST_DATABASE_OWNER_URL'];
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
-  expect.fail('TEST_DATABASE_URL is not set: in CI the schema tests must run, not skip');
+  expect.fail('TEST_DATABASE_OWNER_URL is not set: in CI the schema tests must run, not skip');
 });
 
 describe.skipIf(!url)('schema rules on PostgreSQL', () => {
