@@ -13,7 +13,8 @@ import { integer, pgSchema, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const url = process.env['TEST_DATABASE_URL'];
+// The owner login: this file makes a schema and tables of its own (RAD-24).
+const url = process.env['TEST_DATABASE_OWNER_URL'];
 const fixture = pgSchema(`mtx_${randomBytes(6).toString('hex')}`);
 const own = fixture.table('own_items', { id: uuid().primaryKey().defaultRandom(), n: integer().notNull() });
 const other = fixture.table('other_items', { id: uuid().primaryKey().defaultRandom(), n: integer().notNull() });
@@ -28,7 +29,7 @@ const failure = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) =>
 
 describe.skipIf(!url)('the module transaction', () => {
   const pool = new pg.Pool({ connectionString: url, max: 2 });
-  let db: Database;
+  const db: Database = createDatabase(pool, { own, other });
 
   beforeAll(async () => {
     await pool.query(`create schema ${fixture.schemaName}`);
@@ -36,7 +37,6 @@ describe.skipIf(!url)('the module transaction', () => {
       await pool.query(`create table ${fixture.schemaName}.${t} (id uuid primary key default gen_random_uuid(), n int not null)`);
     }
     await pool.query(`insert into ${fixture.schemaName}.own_items (n) values (1), (2)`);
-    db = createDatabase(pool, { own, other });
   });
 
   afterAll(async () => {
