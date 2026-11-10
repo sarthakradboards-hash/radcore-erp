@@ -6,6 +6,9 @@ type Settings = Record<string, string | undefined>;
 /** A database password the settings check accepts: 20 characters, not a placeholder. */
 export const testPassword = (): string => 'p'.repeat(20);
 
+/** A multi-Region KMS key ARN in the form production needs (ADR-004 §4), for a key that doesn't exist. */
+export const testKmsKeyArn = (): string => `arn:aws:kms:ap-south-1:${'1'.repeat(12)}:key/mrk-${'a'.repeat(32)}`;
+
 /** Every setting a development api needs; `overrides` replace or remove (with `undefined`) single ones. */
 export function testSettings(overrides: Settings = {}): Settings {
   return {
@@ -26,7 +29,7 @@ export function testProductionSettings(overrides: Settings = {}): Settings {
     TRUST_PROXY: '172.30.0.2, 172.30.0.3',
     DATABASE_URL: `postgres://radcore_app:${testPassword()}@db.example.in:5432/radcore?sslmode=verify-full`,
     S3_REGION: 'ap-south-1', S3_ENDPOINT: undefined, S3_ACCESS_KEY_ID: undefined, S3_SECRET_ACCESS_KEY: undefined,
-    SECRETS_LOCAL_KEY: undefined, SECRETS_KMS_KEY_ID: 'mrk-test', MAIL_FROM: 'erp@example.in',
+    SECRETS_LOCAL_KEY: undefined, SECRETS_KMS_KEY_ID: testKmsKeyArn(), MAIL_FROM: 'erp@example.in',
     TURNSTILE_SECRET: 't'.repeat(24), ALERT_WEBHOOK_URL: 'https://alerts.example.in/hook',
     HEARTBEAT_URL: 'https://monitor.example.in/beat',
     ...overrides,
