@@ -1,5 +1,6 @@
 // What every journey imports instead of @playwright/test. Each test fails if the page logged a console error, threw,
-// or had a request fail or answer 4xx/5xx, so no journey has to remember to check. `expectAccessible` is the axe scan.
+// broke the Content Security Policy, or had a request fail or answer 4xx/5xx, so no journey has to remember to check.
+// `expectAccessible` is the axe scan.
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test as base, type Page } from '@playwright/test';
 
@@ -25,6 +26,11 @@ export const test = base.extend<Options & Fixtures>({
         if (m.type() === 'error' && !m.text().startsWith('Failed to load resource:')) problems.push(`console error: ${m.text()}`);
       });
       page.on('pageerror', (e) => problems.push(`uncaught: ${e.message}`));
+      // Chromium never logs a CSP violation to the console (Firefox does), so listen for the event itself, on every
+      // page this test opens (RAD-72). Firefox then reports one violation twice, which fails the test all the same.
+      await page.exposeFunction('__e2eCspViolation', (v: string) => problems.push(`CSP violation: ${v}`));
+      await page.addInitScript(`document.addEventListener('securitypolicyviolation', (e) => window.__e2eCspViolation(
+        e.violatedDirective + ' blocked ' + (e.blockedURI || 'inline') + ' in ' + (e.sourceFile || 'the page')))`);
       page.on('requestfailed', (r) => {
         const error = r.failure()?.errorText ?? '';
         // Aborted on purpose: Next cancels prefetches and superseded requests when the page navigates.
@@ -34,7 +40,7 @@ export const test = base.extend<Options & Fixtures>({
         if (r.status() >= 400 && !expected(r.status())) problems.push(`HTTP ${r.status()}: ${r.request().method()} ${r.url()}`);
       });
       await use(problems);
-      expect(problems, 'console errors and failed requests').toEqual([]);
+      expect(problems, 'console errors, CSP violations and failed requests').toEqual([]);
     },
     { auto: true },
   ],
