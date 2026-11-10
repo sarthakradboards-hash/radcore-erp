@@ -1,0 +1,50 @@
+/* Dialogs and menus (M1-43). Tokens only, from styles/tokens.css. */
+.kit-overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); }
+
+.kit-dialog {
+  position: fixed;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: -50% -50%;
+  inline-size: min(36rem, calc(100vw - 2 * var(--space-4)));
+  max-block-size: calc(100dvh - 2 * var(--space-4));
+  overflow: auto;
+  padding: var(--space-6);
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border-field);
+  border-radius: var(--radius-md);
+}
+.kit-dialog-title { margin: 0 0 var(--space-4); padding-inline-end: var(--tap); font-size: var(--text-lg); }
+.kit-dialog-close {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  inline-size: var(--tap);
+  block-size: var(--tap);
+  font-size: var(--text-lg);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.kit-menu {
+  min-inline-size: 12rem;
+  padding: var(--space-1);
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border-field);
+  border-radius: var(--radius-md);
+}
+.kit-menu-item {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--tap);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  outline: none;
+}
+.kit-menu-item[data-highlighted] { background: var(--surface-selected); }
+.kit-menu-item[data-disabled] { color: var(--text-muted); cursor: not-allowed; }
+/* Radix moves focus onto the item, so the ring has to be drawn here. */
+.kit-menu-item:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
