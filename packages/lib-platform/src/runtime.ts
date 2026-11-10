@@ -2,11 +2,51 @@
 // RAD-28: settings are checked before anything starts (RC-081), a stray error or a lost database connection doesn't
 // end the process (RC-078), and a stop signal lets work in flight finish before exit (RC-079).
 import { ConfigError, loadConfig, type Config, type ProcessName } from './config.ts';
-import { createPool, type Pool } from './db/client.ts';
+import { createPool, type JobQueue, type Pool } from './db/client.ts';
+import type { JobDefinition, QueueSettings } from './jobs.ts';
 import { consoleLogger, type Logger } from './log.ts';
 
-export { createHealthCheck } from './db/client.ts';
+export { createHealthCheck, createJobQueue } from './db/client.ts';
 export type { Logger } from './log.ts';
+
+type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };
+// pg-boss's create_queue is a plain insert: create a missing queue, and bring an existing one's options up to date.
+const ensureQueue = async (queue: JobQueue, name: string, { policy, retries, ...rest }: QueueOptions): Promise<void> => {
+  const options = { ...rest, retryLimit: retries };
+  if ((await queue.getQueue(name)) === null) await queue.createQueue(name, { policy, ...options });
+  else await queue.updateQueue(name, options);
+};
+
+/**
+ * RAD-44 (RC-082): start the queue and run every job: its queue with its retries, timeout, overlap guard and clean-up,
+ * its dead-letter queue with the alert, and its schedule. Returns how to stop: no new work, attempts in flight finish.
+ */
+export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], log: Logger,
+  stopTimeoutMs = 20_000): Promise<Stoppable> {
+  await queue.start();
+  for (const job of jobs) {
+    const { deadLetter, ...settings } = job.settings;
+    // Dead letters keep the job's clean-up, so a deleteOnComplete payload doesn't linger there either.
+    await ensureQueue(queue, deadLetter, { ...settings, policy: 'standard', retries: 0 });
+    await ensureQueue(queue, job.name, job.settings);
+    await queue.work(job.name, async ([attempt]) => {
+      if (attempt === undefined) return;
+      await job.handle(attempt.data, attempt.id);
+      // pg-boss then marks the job complete with an update that finds no row; the payload is already gone.
+      if (job.deleteOnComplete) await queue.deleteJob(job.name, attempt.id);
+    });
+    await queue.work(deadLetter, async ([dead]) => {
+      if (dead === undefined) return;
+      // shortcut: the alert is an error log line, never the payload; RAD-66's outbound client sends it to
+      // ALERT_WEBHOOK_URL once it exists.
+      log.error(`ALERT: job ${job.name} failed after all its attempts (job ${dead.id})`);
+      if (job.deleteOnComplete) await queue.deleteJob(deadLetter, dead.id);
+    });
+    if (job.every !== null) await queue.schedule(job.name, job.every);
+  }
+  log.info(`job queue: running ${jobs.length} job(s)`);
+  return { name: 'job queue', stop: () => queue.stop({ graceful: true, timeout: stopTimeoutMs }) };
+}
 
 /** Something the process stops on the way out, in the order the app returns them; the pool is closed last. */
 export type Stoppable = { name: string; stop(): Promise<void> };

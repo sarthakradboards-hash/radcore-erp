@@ -21,7 +21,7 @@ describe.skipIf(!url)('test database', () => {
       const row = rows[0];
       expect(Number(row?.version) / 10000 | 0).toBe(16);
       expect(row?.name).toMatch(/^radcore_test_[0-9a-f]{32}$/);
-      // No migrations exist until RAD-25; then this counts what they create from empty.
+      // The migrations ran (RAD-25), and every table they make is in `radcore` (ADR-005 §7c), so `public` stays empty.
       expect(Number(row?.tables)).toBe(0);
     } finally {
       await client.end();

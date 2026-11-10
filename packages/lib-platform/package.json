@@ -12,9 +12,11 @@
     "./runtime": "./src/runtime.ts"
   },
   "dependencies": {
+    "@aws-crypto/client-node": "5.0.2",
     "chardet": "2.2.0",
     "csv-parse": "7.0.3",
     "pg": "8.23.1",
+    "pg-boss": "12.38.0",
     "read-excel-file": "9.3.12",
     "zod": "4.6.7"
   },

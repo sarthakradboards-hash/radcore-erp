@@ -21,14 +21,19 @@ export function writeDevEnv(file = '.env'): boolean {
     const text = readFileSync(file, 'utf8');
     const have = new Set(text.split(/\r?\n/).map((l) => l.split('=', 1)[0]));
     const missing = settings().filter((l) => !have.has(l.split('=', 1)[0]));
+    // An .env from before RAD-25: the migrations run as the same compose superuser.
+    const db = /^DATABASE_URL=(.*)$/m.exec(text)?.[1];
+    if (db && !have.has('MIGRATION_DATABASE_URL')) missing.push(`MIGRATION_DATABASE_URL=${db}`);
     if (missing.length > 0) appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}${missing.join('\n')}\n`);
     return false;
   }
   const pg = secret();
   const lines = [
     '# Local development only. DATABASE_URL is the compose superuser; the runtime login (M1-06) is a different one.',
+    '# MIGRATION_DATABASE_URL (`npm run db:migrate`) is the owner login in production, and the same superuser here.',
     `POSTGRES_PASSWORD=${pg}`,
     `DATABASE_URL=postgres://radcore:${pg}@127.0.0.1:5432/radcore`,
+    `MIGRATION_DATABASE_URL=postgres://radcore:${pg}@127.0.0.1:5432/radcore`,
     `S3_ENDPOINT=http://127.0.0.1:8333`,
     `S3_REGION=us-east-1`,
     `S3_ACCESS_KEY_ID=${accessKeyId()}`,

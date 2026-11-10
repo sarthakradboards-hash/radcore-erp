@@ -13,7 +13,7 @@ const PINNED = JSON.parse(readFileSync('tools/eslint-options.json', 'utf8')) as
 it('each zone is exactly the ADR-002 table', () => {
   expect(ZONES).toEqual({
     'radcore/no-query-strings': [VIEW, 'packages/db/src/request-context.ts'],
-    'radcore/no-raw-execution': ['packages/db/src/request-context.ts'],
+    'radcore/no-raw-execution': ['packages/db/src/request-context.ts', 'packages/db/src/migrate.ts'],
     'radcore/no-driver': ['packages/lib-platform/src/db/client.ts', 'packages/db/src/migrate.ts'],
     'radcore/tables-in-schema': ['packages/db/src/*/tables.ts', 'packages/db/src/columns.ts'],
     'radcore/views-in-views': [VIEW],
@@ -25,6 +25,7 @@ it('each zone is exactly the ADR-002 table', () => {
     'packages/db/src/*/relations.ts': ['relations'],
     'packages/db/src/conditions.ts': ['notInArray'],
     'packages/db/src/module-tx.ts': ['getOperators', 'getOrderByOperators', 'is', 'getTableName'],
+    'packages/db/src/migrate.ts': ['drizzle', 'migrate'],
   });
   expect(L8_LIFTED).toEqual({ 'packages/lib-platform/src/import/isolate.ts': ['worker_threads'] });
   expect(REQUEST_CONTEXT_HELPER).toBe('applyRequestContext');

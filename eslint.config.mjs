@@ -25,7 +25,7 @@ export const REQUEST_CONTEXT_HELPER = 'applyRequestContext';
 /** ADR-002 "Each rule's zone": the exact files where each rule is off. Pinned by tools/eslint-config.test.ts. */
 export const ZONES = {
   'radcore/no-query-strings': [VIEW_FILES, REQUEST_CONTEXT],
-  'radcore/no-raw-execution': [REQUEST_CONTEXT],
+  'radcore/no-raw-execution': [REQUEST_CONTEXT, 'packages/db/src/migrate.ts'],
   'radcore/no-driver': [DB_CLIENT, 'packages/db/src/migrate.ts'],
   'radcore/tables-in-schema': TABLE_FILES,
   'radcore/views-in-views': [VIEW_FILES],
@@ -42,6 +42,7 @@ export const L1_EXTRA_NAMES = {
   'packages/db/src/*/relations.ts': ['relations'],
   'packages/db/src/conditions.ts': ['notInArray'],
   'packages/db/src/module-tx.ts': ['getOperators', 'getOrderByOperators', 'is', 'getTableName'],
+  'packages/db/src/migrate.ts': ['drizzle', 'migrate'],
 };
 
 const msg = (tag, adr, text) => `[${tag}] ${text} (${adr}).`;

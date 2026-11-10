@@ -86,9 +86,13 @@ jobs:
     env:
       # tools/test-database.ts makes one fresh database from this for the whole run (RC-005).
       TEST_DATABASE_ADMIN_URL: postgres://radcore@127.0.0.1:5432/postgres
+      # tools/migrate.test.ts compares the migrations with the base commit's (RAD-25).
+      MIGRATIONS_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The base commit, for MIGRATIONS_BASE.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
