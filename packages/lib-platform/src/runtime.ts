@@ -10,11 +10,18 @@ export { createHealthCheck, createJobQueue } from './db/client.ts';
 export type { Logger } from './log.ts';
 
 type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };
-// pg-boss's create_queue is a plain insert: create a missing queue, and bring an existing one's options up to date.
+// Create the queue if it's missing, then bring its options up to date. pg-boss's create_queue is INSERT … ON CONFLICT
+// DO NOTHING under an advisory lock, so two workers starting together both succeed. updateQueue can't change a
+// policy, so a changed one is refused rather than silently kept.
 const ensureQueue = async (queue: JobQueue, name: string, { policy, retries, ...rest }: QueueOptions): Promise<void> => {
   const options = { ...rest, retryLimit: retries };
-  if ((await queue.getQueue(name)) === null) await queue.createQueue(name, { policy, ...options });
-  else await queue.updateQueue(name, options);
+  await queue.createQueue(name, { policy, ...options });
+  const stored = (await queue.getQueue(name))?.policy;
+  if (stored !== policy) {
+    throw new Error(`job queue ${name} has policy ${String(stored)} but the job now declares ${policy}; `
+      + 'a policy change needs a new queue name');
+  }
+  await queue.updateQueue(name, options);
 };
 
 /**
