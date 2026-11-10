@@ -81,4 +81,32 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     await expect(files.verifyUpload(empty, 'resume')).rejects.toThrow('upload refused: the file is empty');
     await expect(files.verifyUpload(none, 'resume')).rejects.toThrow('upload refused: nothing was uploaded');
   });
+
+  it('refuses a file whose first bytes don\'t match its declared type', async () => {
+    const { put, files } = await store();
+    const key = `photo/${randomUUID()}`;
+    await put(key, '<html>not a picture</html>', 'image/png');
+    await expect(files.verifyUpload(key, 'photo')).rejects.toThrow('upload refused: the file doesn\'t begin the way a image/png must');
+  });
+
+  // ADR-004 §1's smoke test: the presigned POST's conditions are enforced by the store, not only by our code.
+  it('takes a presigned POST within its policy, and the store refuses one outside it', async () => {
+    const { files } = await store();
+    const send = async (fields: Record<string, string>, size: number) => {
+      const form = new FormData();
+      for (const [name, value] of Object.entries(fields)) form.append(name, value);
+      form.append('file', new Blob([Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(Math.max(0, size - 9))])]));
+      return (await fetch(upload.url, { method: 'POST', body: form })).status;
+    };
+    const upload = await files.presignUpload('resume', 'application/pdf');
+    const limit = 5 * 1024 * 1024;
+    expect({
+      within: await send(upload.fields, 1024),
+      tooBig: await send(upload.fields, limit + 1),
+      otherType: await send({ ...upload.fields, 'Content-Type': 'text/html' }, 1024),
+      otherKey: await send({ ...upload.fields, key: `resume/${randomUUID()}` }, 1024),
+      extraField: await send({ ...upload.fields, acl: 'public-read' }, 1024),
+    }).toEqual({ within: 204, tooBig: 400, otherType: 403, otherKey: 403, extraField: 403 });
+    expect(await files.verifyUpload(upload.key, 'resume')).toEqual({ size: 1024, contentType: 'application/pdf' });
+  });
 });
