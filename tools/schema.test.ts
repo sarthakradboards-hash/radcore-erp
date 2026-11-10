@@ -107,7 +107,7 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
     await client.query("set local app.principal = 'system:test'");
     // The helper fixtures get their triggers as a real table's migration gives them (RAD-30, ADR-005 §5).
     // Every column listed, as a real table's migration lists them: these are all business values, so all kept.
-    await client.query("select radcore.audit_attach('fixture_units', keep => array['label', 'code_key', 'label_key'])");
+    await client.query("select radcore.audit_attach('fixture_units', keep => array['label', 'active', 'code_key', 'label_key'])");
     await client.query(`select radcore.audit_attach('fixture_lines', keep => array['unit_code', 'amount', 'balance',
       'foreign_amount', 'line_price', 'line_qty', 'stock_qty', 'tax', 'cess', 'fx', 'note', 'short_note'])`);
     // Rows every test may rely on; each test's own writes run in a savepoint, so the shuffled order doesn't matter.
