@@ -18,6 +18,8 @@ export type Secrets = {
   decrypt(ciphertext: string, place: SecretPlace): Promise<string>;
   /** Decrypt and encrypt again under the current key: a new data key, wrapped by today's key (rotation). */
   reencrypt(ciphertext: string, place: SecretPlace): Promise<string>;
+  /** The key new values are wrapped by, stored next to each ciphertext (RAD-65): the KMS key ARN, or `local:<ring>`. */
+  readonly keyId: string;
 };
 
 // The SDK signs with an ECDSA key it puts in the context itself; nothing else may be there but ours.
@@ -60,6 +62,7 @@ const contextOf = (place: SecretPlace): Record<string, string> =>
 export function createSecrets(keys: Config['secrets']): Secrets {
   const ring = keyring(keys);
   const secrets: Secrets = {
+    keyId: keys.kmsKeyId ?? `local:${LOCAL_RING_NAME}`,
     async encrypt(value, place) {
       const { result } = await encrypt(ring, value, { encryptionContext: contextOf(place) });
       return result.toString('base64');

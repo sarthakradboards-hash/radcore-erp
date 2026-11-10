@@ -148,8 +148,11 @@ describe.skipIf(!url)('the three logins', () => {
         update: 'update radcore.notes set id = 3',
         delete: 'delete from radcore.notes',
         queue: 'select * from pgboss.job',
+        // RAD-65: not even the ciphertexts.
+        secrets: 'select * from radcore.secrets',
         temp: 'create temp table t (x int)',
-      })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, temp: DENIED });
+      })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, secrets: DENIED,
+        temp: DENIED });
     });
   });
 

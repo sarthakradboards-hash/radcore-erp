@@ -55,8 +55,9 @@ describe('createSecrets', () => {
       .toThrow(/exactly one/);
   });
 
-  it('builds the KMS keyring from a multi-Region key ARN without calling KMS', () => {
-    expect(() => createSecrets({ kmsKeyId: testKmsKeyArn(), localKey: null })).not.toThrow();
+  it('builds the KMS keyring from a multi-Region key ARN without calling KMS, and names the key it wraps with', () => {
+    expect(createSecrets({ kmsKeyId: testKmsKeyArn(), localKey: null }).keyId).toBe(testKmsKeyArn());
+    expect(local().keyId).toBe('local:secrets-local-v1');
   });
 
   // The MRK-aware strict keyring encrypts with these but decrypts only with the full ARN (auditor-2, RAD-42).
