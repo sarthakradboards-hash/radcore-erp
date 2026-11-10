@@ -57,6 +57,20 @@
       "when": 1794302621248,
       "tag": "0007_saved_once",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794304340143,
+      "tag": "0008_guard_skips_ratelimit",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794304342331,
+      "tag": "0009_rate_limits",
+      "breakpoints": true
     }
   ]
 }
