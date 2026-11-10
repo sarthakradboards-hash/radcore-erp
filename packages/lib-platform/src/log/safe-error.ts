@@ -17,6 +17,16 @@ export type ErrorDescription = {
 };
 
 const JSON_MESSAGE = 'The text is not valid JSON';
+// Messages that carry their input without quotes (Node 26 and decimal.js, as each writes them). The input goes, the
+// rest of the message stays.
+const UNQUOTED: [RegExp, string][] = [
+  [/^\[DecimalError\] ([^:\n]*): [\s\S]*$/, '[DecimalError] $1: …'],
+  [/^Cannot convert [\s\S]* to a BigInt$/, 'Cannot convert … to a BigInt'],
+  [/^Invalid regular expression: [\s\S]*: ([^:\n]*)$/, 'Invalid regular expression: /…/: $1'],
+  [/^Invalid time zone specified: [\s\S]*$/, 'Invalid time zone specified: …'],
+  [/^Unknown encoding: [\s\S]*$/, 'Unknown encoding: …'],
+  [/^[\s\S]* could not be cloned\.$/, '… could not be cloned.'],
+];
 const PG_FIELDS = ['code', 'table', 'column', 'constraint', 'routine'] as const;
 const field = (o: object, k: string): string | undefined => {
   const v: unknown = (o as Record<string, unknown>)[k];
@@ -43,7 +53,8 @@ export function describeError(err: unknown): ErrorDescription {
   const cut = /^Failed query:/.test(raw) ? 'Failed query' : raw.split(/\r?\n\s*params:/)[0] ?? '';
   // JSON.parse's messages quote the body they failed on, so they're replaced whole rather than masked.
   const json = err instanceof SyntaxError && /\bJSON\b/.test(raw);
-  const message = json ? JSON_MESSAGE : scrubText(cut.replace(/"[^"\n]*"|'[^'\n]*'/g, '"…"'));
+  const unquoted = UNQUOTED.reduce((m, [shape, keep]) => m.replace(shape, keep), cut);
+  const message = json ? JSON_MESSAGE : scrubText(unquoted.replace(/"[^"\n]*"|'[^'\n]*'/g, '"…"'));
   const out: ErrorDescription = { name, message };
   const pg = pgError(err);
   if (pg) for (const k of PG_FIELDS) { const v = field(pg, k); if (v !== undefined) out[k] = v; }

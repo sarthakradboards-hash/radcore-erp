@@ -15,8 +15,9 @@ export async function migrate(url: string, migrationsFolder = MIGRATIONS_FOLDER)
   const client = new pg.Client({
     connectionString: url,
     application_name: 'radcore-migrate',
-    // Rows a migration writes are recorded as this principal (ADR-005 §5).
-    options: '-c app.principal=system:migrate',
+    // Rows a migration writes are recorded as this principal (ADR-005 §5). Options the URL carries are kept: the test
+    // setup migrates as the owner login with `-c role=radcore_owner` (RAD-24).
+    options: [new URL(url).searchParams.get('options'), '-c app.principal=system:migrate'].filter(Boolean).join(' '),
     // A second runner waits 5 s for the lock below, then fails (CI serialises deploys, ADR-004 §3), and a migration
     // never queues long behind live traffic.
     lock_timeout: 5_000,

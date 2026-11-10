@@ -19,8 +19,22 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1794283980417,
-      "tag": "0002_secrets",
+      "when": 1794282722100,
+      "tag": "0002_logins",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794284449441,
+      "tag": "0003_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794289309576,
+      "tag": "0004_secrets",
       "breakpoints": true
     }
   ]
