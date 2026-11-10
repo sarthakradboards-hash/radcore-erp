@@ -308,7 +308,7 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   | 401 | `signed_out` | no session, or it has ended |
   | 403 | `forbidden` | the principal lacks the route's permission |
   | 404 | `not_found` | the record doesn't exist, **or it is outside the principal's scope**. Both get the same answer, so a person can't learn that a record they may not see exists (M1-17) |
-  | 409 | `conflict`, `idempotency_mismatch` | a version clash, or a key reused with another body |
+  | 409 | `conflict`, `idempotency_mismatch`, `answer_not_kept` | a version clash; a key reused with another body; a key repeated on a route that keeps no answer (§7a) |
   | 422 | the contract's own codes, such as `credit_limit_exceeded` | a business rule refused it |
   | 429 | `rate_limited`, `account_locked` | too many requests from one client IP, or too many failed sign-ins for one email address (M1-14) |
   | 500 | `server_error` | the message is generic and the detail is in the log under `requestId` |
@@ -331,7 +331,8 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   - A password-reset request gets the same answer, in the same time, whatever address is typed (RAD-68, M1-14).
     It always just queues the reset, through the outbox (ADR-002 §4). The worker looks the address up and sends
     the email only if an account has it, at most once per address in a short window, so the form can't flood
-    anyone's inbox. The request counts against the per-IP `rate_limited` limit.
+    anyone's inbox. The request counts against the per-IP `rate_limited` limit. A reset job is deleted as soon as
+    it completes, with no archive, so no list of typed addresses is kept.
 - **The lockout trade-off** (RAD-64). Anyone who knows a person's email address can lock them out by failing to
   sign in as them. These limit it (M1-14 sets the numbers):
   - a lock is short and ends on its own, with `retryAfterSeconds` saying when;
@@ -341,24 +342,61 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
 
   A permanent lock would make that attack worse, so there is none.
 
+**Passwords** (M1-14, RAD-32). A new password, set from an invite, a reset or a change, must pass these rules on
+the server. The form shows the same rules but decides nothing.
+- **At least 15 characters** (`PASSWORD_MIN_LENGTH` in lib-common), at most 256. Length counts Unicode code points
+  after NFC normalisation, and the NFC form is what gets hashed; sign-in normalises the same way.
+  - Most roles sign in with the password alone (D-19 adds the second factor for admin and owner only), and
+    NIST SP 800-63B-4 requires 15 for a password used alone.
+  - Admin and owner get the same minimum. One rule is simpler, and the strongest accounts are no place to relax it.
+- **No composition rules and no forced expiry.** Spaces and pasting are allowed, so a passphrase works.
+- **Not a breached password.** The server hashes the password with SHA-1 and sends only the first five hex
+  characters to the Pwned Passwords range API (ADR-004), through the outbound client (ADR-002 L8), with
+  `Add-Padding: true` and a 3-second timeout. It refuses the password if the rest of the hash is in the answer.
+  If the check can't be made, the password is refused for now, with a reason that says to try again: the check
+  fails closed. The password itself never leaves the server.
+- **Not the current password**, on a change or a reset.
+- A refusal is `password_rejected`, with the reason on the password field: `too_short`, `breached`,
+  `check_unavailable` or `same_as_old`. The contract's schema checks only the 256 maximum. zod counts UTF-16
+  units, not code points, so the service applies these rules, and a short password gets `too_short`, never
+  `invalid_input`.
+- Sign-in checks only the stored hash, never these rules, so a rule change never locks anyone out.
+
+**Your own account** (RAD-32). The routes that act only on the caller's own session and password (`/me`, sign-out,
+password change, the person's sessions) use one key, `session:read`, which every role holds. Ending the current
+session from the sessions list is refused with `current_session`: sign-out does that, because it clears the cookie.
+
 **Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
 - It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
   new one only after a success (Design notes A-0).
 - A write without it is refused with `idempotency_key_required`, so the protection fails closed (RC-132).
 - The server scopes the key as §6 says.
-- **Three routes are exempt** (RAD-61): sign-in, sign-out, and the second-factor verify step (M1-14, M1-15,
-  M1-16). Their answer sets or clears the session cookie, and a stored answer replayed for a repeated key can't
-  do that.
+- **Four routes are exempt** (RAD-61, RAD-32): sign-in, sign-out, the second-factor verify step, and confirming a
+  second-factor enrolment during sign-in (M1-14, M1-15, M1-16). Their answer sets or clears the session cookie,
+  and a stored answer replayed for a repeated key can't do that.
   - Each declares `idempotency: 'exempt'` on its route. It's exempt from the key only: the write-Origin check
     (M1-21) and the rate limits still apply.
-  - The generic handler accepts the declaration only from those three routes, a fixed list in lib-platform, and
+  - The generic handler accepts the declaration only from those four routes, a fixed list in lib-platform, and
     refuses to start otherwise. The permission manifest test (M1-19) fails on any other route that declares it.
   - Repeating one is harmless. A second sign-in starts another session, listed under the person's sessions; a
-    second sign-out finds no session; a TOTP code already used is refused (ADR-003).
+    second sign-out finds no session; a TOTP code already used is refused (ADR-003); a second enrolment confirm
+    finds no pending enrolment and is refused.
   - **A recovery code goes through the verify step** (RAD-64, M1-15). The verify step takes either a TOTP code or
     a recovery code. A recovery code is just another kind of second factor, so one route finishes the second step
-    and sets the cookie, and the exempt list stays at three. A recovery code is used once: the second use is
+    and sets the cookie, and the exempt list doesn't grow for it. A recovery code is used once: the second use is
     refused like a reused TOTP code.
+  - **Confirming an enrolment finishes signing in** (RAD-32, M1-15). It proves the password (step 1) and the new
+    factor (its first code), which is what the verify step proves. Without it, the person would wait up to 30
+    seconds for a fresh code, because the one they just used is spent. If its answer is lost, the person signs in
+    again and makes new recovery codes from their account (M1-15).
+- **Answers that hold a secret aren't stored** (RAD-32). A route whose answer holds a secret declares
+  `storesAnswer: false`: starting a second-factor enrolment (the new TOTP secret) and making new recovery codes.
+  - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
+    secret is never at rest in the saved-once table.
+  - A repeated key after a commit gets 409 `answer_not_kept`, and the client starts again with a new key.
+  - The generic handler accepts the flag only from those two routes, a fixed list in lib-platform, and the
+    permission manifest test (M1-19) fails on any other route that declares it.
+  - Confirming an enrolment returns the recovery codes too, but it is exempt, so it stores nothing anyway.
 
 **Links that carry a token** (RAD-61). Invite and password-reset links carry their token in the URL fragment
 (`/invite#token=…`), never in the path or the query string. Browsers don't send a fragment to the server or in
