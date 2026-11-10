@@ -17,6 +17,7 @@
     "@radcore/lib-common": "*",
     "chardet": "2.2.0",
     "csv-parse": "7.0.3",
+    "csv-stringify": "6.9.0",
     "drizzle-orm": "0.45.4",
     "pg": "8.23.1",
     "pg-boss": "12.38.0",

@@ -92,6 +92,22 @@ test('an eval the CSP blocks is recorded, in Chromium too, which never logs it t
   pageProblems.length = 0;
 });
 
+test('a popup is watched too: its CSP violation and its console error are recorded', async ({ page, pageProblems }) => {
+  await page.goto('/');
+  const [popup] = await Promise.all([
+    page.waitForEvent('popup'),
+    page.evaluate(() => { (globalThis as unknown as { open(url: string): unknown }).open('/'); }),
+  ]);
+  await popup.waitForLoadState();
+  await popup.evaluate(plantUnNoncedStyle);
+  await popup.evaluate(() => console.error('planted in the popup'));
+  await expect.poll(() => pageProblems).toEqual(expect.arrayContaining([
+    expect.stringMatching(/^CSP violation: style-src(-elem)? blocked inline in /),
+    'console error: planted in the popup',
+  ]));
+  pageProblems.length = 0;
+});
+
 test('a page that keeps to the CSP records no violation', async ({ page, pageProblems }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');

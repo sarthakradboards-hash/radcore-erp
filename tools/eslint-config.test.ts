@@ -45,7 +45,8 @@ const without = (list: string[], ...drop: string[]) => list.filter((r) => !drop.
 // The import file's isolate: L8 with node:worker_threads (and only that) out of its import list.
 const L8_PINNED = PINNED['radcore/outbound-only'];
 const ISOLATE_L8 = { ...L8_PINNED, imports: [{ message: L8_PINNED?.imports?.[0]?.message,
-  source: '^(node:)?(undici|axios|got|node-fetch|ws|http|https|http2|net|tls|dgram|child_process|module|vm|inspector|cluster)(/.*)?$' }] };
+  source: '^(node:)?(undici|axios|got|node-fetch|ws|http|https|http2|net|tls|dgram|child_process|module|vm|inspector|cluster)(/.*)?$' },
+L8_PINNED?.imports?.[1]] };
 
 // For each sample: the radcore rules on (beyond L1), L1's options, and whether E4's typed rules apply.
 const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; server: boolean; options?: Record<string, object> }> = {

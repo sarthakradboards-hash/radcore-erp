@@ -55,7 +55,10 @@ const RAW_EXEC = '/^(execute|unsafe|query)$/';
 const L8 = msg('L8', 'ADR-002', `Outside calls and module loading go through ${OUTBOUND_CLIENT}`);
 const L8_MODULES = ['undici', 'axios', 'got', 'node-fetch', 'ws', 'http', 'https', 'http2', 'net', 'tls', 'dgram',
   'child_process', 'module', 'worker_threads', 'vm', 'inspector', 'cluster'];
-const l8Imports = (modules) => [{ source: `^(node:)?(${modules.join('|')})(/.*)?$`, message: L8 }];
+// outbound.ts's raw https transport sends without the client's origin and address checks. Only
+// tools/outbound-tls.test.ts, which isn't server code, may import it (RAD-44, auditor-2).
+const L8_TRANSPORT = { source: '(^|/)outbound(\\.ts)?$', names: ['nodeTransport'], message: L8 };
+const l8Imports = (modules) => [{ source: `^(node:)?(${modules.join('|')})(/.*)?$`, message: L8 }, L8_TRANSPORT];
 // E6: a name that holds money, a rate or a quantity: the whole name (`total`), a camelCase, ALL-CAPS or snake_case
 // ending (`grandTotal`, `totalGST`, `unit_price`), singular or plural. `generate` and `separate` don't match. A word
 // in SUFFIX_ONLY counts only as a camelCase ending, so a page's `limit` and `MAX_LIMIT` are numbers but `creditLimit`
