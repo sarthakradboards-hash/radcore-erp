@@ -308,7 +308,7 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   | 401 | `signed_out` | no session, or it has ended |
   | 403 | `forbidden` | the principal lacks the route's permission |
   | 404 | `not_found` | the record doesn't exist, **or it is outside the principal's scope**. Both get the same answer, so a person can't learn that a record they may not see exists (M1-17) |
-  | 409 | `conflict`, `idempotency_mismatch` | a version clash, or a key reused with another body |
+  | 409 | `conflict`, `idempotency_mismatch`, `answer_not_kept` | a version clash, a key reused with another body, or a repeated key whose answer held a secret and wasn't kept |
   | 422 | the contract's own codes, such as `credit_limit_exceeded` | a business rule refused it |
   | 429 | `rate_limited`, `account_locked` | too many requests from one client IP, or too many failed sign-ins for one email address (M1-14) |
   | 500 | `server_error` | the message is generic and the detail is in the log under `requestId` |
@@ -346,19 +346,25 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   new one only after a success (Design notes A-0).
 - A write without it is refused with `idempotency_key_required`, so the protection fails closed (RC-132).
 - The server scopes the key as §6 says.
-- **Three routes are exempt** (RAD-61): sign-in, sign-out, and the second-factor verify step (M1-14, M1-15,
-  M1-16). Their answer sets or clears the session cookie, and a stored answer replayed for a repeated key can't
-  do that.
+- **Four routes are exempt** (RAD-61, RAD-32): sign-in, sign-out, the second-factor verify step, and confirming a
+  second-factor enrolment during sign-in (M1-14, M1-15, M1-16). Their answer sets or clears the session cookie, and
+  a stored answer replayed for a repeated key can't do that.
   - Each declares `idempotency: 'exempt'` on its route. It's exempt from the key only: the write-Origin check
     (M1-21) and the rate limits still apply.
-  - The generic handler accepts the declaration only from those three routes, a fixed list in lib-platform, and
+  - The generic handler accepts the declaration only from those routes, a fixed list in lib-platform, and
     refuses to start otherwise. The permission manifest test (M1-19) fails on any other route that declares it.
   - Repeating one is harmless. A second sign-in starts another session, listed under the person's sessions; a
-    second sign-out finds no session; a TOTP code already used is refused (ADR-003).
+    second sign-out finds no session; a TOTP code already used is refused (ADR-003); a second enrolment confirm
+    finds no pending enrolment and is refused.
   - **A recovery code goes through the verify step** (RAD-64, M1-15). The verify step takes either a TOTP code or
     a recovery code. A recovery code is just another kind of second factor, so one route finishes the second step
-    and sets the cookie, and the exempt list stays at three. A recovery code is used once: the second use is
+    and sets the cookie, and the exempt list doesn't grow for it. A recovery code is used once: the second use is
     refused like a reused TOTP code.
+- **Answers that hold a secret aren't stored** (RAD-32). A route whose answer holds a secret (a new TOTP secret, new
+  recovery codes) declares `storeAnswer: false`. Saved-once still claims its key, so a repeat can't run the work
+  twice, but stores no answer: a repeated key after a commit gets 409 `answer_not_kept`, and the client starts
+  again with a new key. The generic handler accepts the flag only from a fixed list in lib-platform, and the
+  permission manifest test (M1-19) fails on any other route that declares it.
 
 **Links that carry a token** (RAD-61). Invite and password-reset links carry their token in the URL fragment
 (`/invite#token=…`), never in the path or the query string. Browsers don't send a fragment to the server or in

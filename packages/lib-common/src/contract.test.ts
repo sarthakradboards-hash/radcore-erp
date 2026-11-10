@@ -154,3 +154,25 @@ describe('list filters (M1-29)', () => {
     expect(issues({ dates: { from: '2026-04-01' } })).toEqual([]);
   });
 });
+
+describe('the saved-once flags (ADR-001 §7a, RAD-32)', () => {
+  const base = { method: 'POST', path: '/x', auth: 'session', perm: 'x:write',
+    tx: { readOnly: false, isolation: 'read committed' }, input: z.object({}), output: z.object({}) } as const;
+
+  it('lets a write declare a key exemption or an answer that is not stored, and keeps it on the contract', () => {
+    expect(defineContract({ ...base, idempotency: 'exempt' }).idempotency).toBe('exempt');
+    expect(defineContract({ ...base, storeAnswer: false }).storeAnswer).toBe(false);
+  });
+
+  it('refuses either flag on a read, and the two together', () => {
+    const untyped = defineContract as (spec: object) => unknown;
+    const read = { ...base, method: 'GET', tx: { readOnly: true, isolation: 'read committed' } };
+    expect(() => untyped({ ...read, idempotency: 'exempt' })).toThrow(/only a write/);
+    expect(() => untyped({ ...read, storeAnswer: false })).toThrow(/only a write/);
+    expect(() => untyped({ ...base, idempotency: 'exempt', storeAnswer: false })).toThrow(/stores no answer/);
+  });
+
+  it('has answer_not_kept as a platform code answered 409', () => {
+    expect(errorEnvelope.safeParse({ code: 'answer_not_kept', message: 'm', issues: [], requestId: 'r' }).success).toBe(true);
+  });
+});
