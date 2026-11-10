@@ -3,7 +3,7 @@
 // minute (REFRESH_MS, RAD-52), so a permission change or a session end shows without a reload.
 import { createContext, use, type ReactNode } from 'react';
 import { REFRESH_MS, useApiQuery } from '../../lib/api/query.ts';
-import { getMe } from '../../lib/session/get-me.ts';
+import { getMe } from '@radcore/lib-platform/contract';
 import type { Me } from '../../lib/session/read-me.ts';
 
 const MeContext = createContext<Me | null>(null);

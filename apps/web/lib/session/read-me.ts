@@ -1,9 +1,9 @@
 // The session, read on the web server before the first byte (RC-214: no "Loading..." round trip). ADR-004 §3: web's
 // server components call only read contracts on the api, at API_INTERNAL_URL, passing on the person's cookie and the
 // client address Caddy gave them. Imported only by server components (app/(app)/layout.tsx).
+import { getMe } from '@radcore/lib-platform/contract';
 import type { z } from 'zod';
 import { ApiError, createClient } from '../api-client.ts';
-import { getMe } from './get-me.ts';
 
 export type Me = z.output<typeof getMe.output>;
 
