@@ -246,7 +246,8 @@ export default tseslint.config(
   { files: [REQUEST_CONTEXT], rules: on('radcore/no-sql', { ...L1_ZONE, helper: REQUEST_CONTEXT_HELPER }) },
   ...Object.entries(L1_EXTRA_NAMES).map(([file, names]) =>
     ({ files: [file], rules: on('radcore/no-sql', { allowNames: [...L1_ALLOW, ...names] }) })),
-  { files: [`**/*.test.${EXT}`], rules: on('radcore/no-sql', { ...L1_BASE, importExpressions: false }) },
+  // Within L1's own scope only (apps/ and packages/): tools/ is repo tooling, not server code.
+  { files: [`apps/**/*.test.${EXT}`, `packages/**/*.test.${EXT}`], rules: on('radcore/no-sql', { ...L1_BASE, importExpressions: false }) },
 
   // Server code: L2, L3, L5, L8, each off only in its zone.
   { files: SERVER, ignores: ZONES['radcore/no-query-strings'], rules: on('radcore/no-query-strings') },

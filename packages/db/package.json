@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=26.13.0 <27" },
+  "engines": {
+    "node": ">=26.13.0 <27"
+  },
   "exports": {
     "./platform": "./src/platform/index.ts",
     "./hr": "./src/hr/index.ts",
@@ -21,5 +23,10 @@
     "./request-context": "./src/request-context.ts",
     "./migrate": "./src/migrate.ts"
   },
-  "scripts": { "test": "vitest run --passWithNoTests" }
+  "scripts": {
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.4"
+  }
 }

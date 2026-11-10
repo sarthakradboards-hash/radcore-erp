@@ -153,6 +153,7 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   |---|---|---|
   | `caniuse-lite` (via browserslist) | CC-BY-4.0 | a data file of browser support tables; attribution is kept in the image's notices |
   | `argparse` (via eslint's js-yaml) | Python-2.0 | permissive; dev tooling only |
+  | `type-fest` (via pg-boss's `serialize-error`) | (MIT OR CC0-1.0), **MIT chosen** | TypeScript type declarations only, no runtime code; both licences are permissive (RAD-44) |
   | `@img/sharp-libvips-*` (via next's optional `sharp`) | LGPL-3.0-or-later | an unmodified, dynamically linked prebuilt binary. It is never loaded, because image optimisation is off (§2), and the image ships its licence notice. **Confirm with Sarthak.** The alternative is a build that leaves it out |
   | `@img/sharp-win32-*`, `@img/sharp-wasm32` (same `sharp`, bundling libvips) | `Apache-2.0 AND LGPL-3.0-or-later` (wasm32 adds `AND MIT`); chosen: all of them apply | the same libvips binary as the row above, so it stands or falls with it. Added by RAD-13 from the real lockfile |
   | `language-subtag-registry` (via eslint-config-next's `eslint-plugin-jsx-a11y`) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
@@ -193,6 +194,13 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   - The exception covers the packages Vercel published as that release: `next`, `eslint-config-next`,
     `@next/env`, `@next/eslint-plugin-next` and the `@next/swc-*` binaries.
   - `eslint-config-next` must match `next`'s version.
+
+**A known advisory C5 lets through (not an exception):**
+- `esbuild` 0.18.20, pulled in by drizzle-kit through `@esbuild-kit/core-utils`, is in the range of
+  GHSA-67mh-4wv8-2f99. That advisory is moderate: esbuild's dev server answers requests from any website.
+- It's a dev dependency, used only when drizzle-kit generates migrations. Its dev server is never started or
+  served, so C5's moderate threshold for production packages doesn't apply.
+- Recheck it when drizzle-kit is upgraded.
 
 ### 6. The install path
 
