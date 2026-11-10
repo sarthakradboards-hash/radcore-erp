@@ -2,6 +2,7 @@
 
 import { onlineManager } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
+import { t } from '../i18n/index.ts';
 
 const subscribe = (onChange: () => void) => {
   const unsubscribe = onlineManager.subscribe(onChange);
@@ -20,7 +21,7 @@ export function OfflineBanner() {
   const online = useSyncExternalStore(subscribe, () => onlineManager.isOnline(), () => true);
   return (
     <div role="status" className={online ? 'visually-hidden' : 'offline-banner'}>
-      {online ? '' : "You're offline. What you've typed stays on this page, and saves are sent when you're back online."}
+      {online ? '' : t('offline.banner')}
     </div>
   );
 }

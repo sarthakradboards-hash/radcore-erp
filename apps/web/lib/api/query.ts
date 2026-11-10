@@ -119,7 +119,7 @@ export const apiMutationOptions = <C extends Contract>(client: QueryClient, c: C
  * @public UI-kit API: first callers are RAD-50 (the shell's /me refresh), RAD-53 and RAD-54.
  */
 export function useApiQuery<C extends Contract>(c: C, input: In<C>,
-  opts: { enabled?: boolean; refetchInterval?: number } = {}) {
+  opts: { enabled?: boolean; refetchInterval?: number; staleTime?: number; initialData?: Out<C> } = {}) {
   return useQuery({ ...apiQueryOptions(c, input), ...opts });
 }
 

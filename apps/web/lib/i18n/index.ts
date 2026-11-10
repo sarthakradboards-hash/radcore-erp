@@ -11,6 +11,11 @@ const en = {
   'loading': 'Loading…',
   'browser.title': 'Please update your browser',
   'browser.body': 'RadCore needs Chrome or Edge 123, Safari 17.5 or Firefox 120, or newer. Your work is safe: update, then sign in again.',
+  'offline.banner': "You're offline. What you've typed stays on this page, and saves are sent when you're back online.",
+  'shell.skip': 'Skip to the main content',
+  'shell.menu': 'Main menu',
+  'shell.signedInAs': 'Signed in as {name}',
+  'nav.home': 'Home',
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -28,6 +28,37 @@ body {
  */
 body .offline-banner { top: env(safe-area-inset-top); }
 
+/* components/shell: the signed-in frame. The header's height is shared with scroll-padding, so a focused field or
+   a jumped-to heading is never hidden under it (WCAG 2.4.11). */
+:root { --shell-header-h: 3.5rem; }
+html { scroll-padding-top: calc(env(safe-area-inset-top) + var(--shell-header-h) + var(--space-2)); }
+.shell-header {
+  position: sticky;
+  top: env(safe-area-inset-top);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-block-size: var(--shell-header-h);
+  padding: 0 var(--space-4);
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.shell-header ul { display: flex; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+/* Menu links are standalone targets, so they get the full tap size (WCAG 2.5.8, A-6). */
+.shell-header a { display: inline-flex; align-items: center; min-block-size: var(--tap); padding: 0 var(--space-3);
+  border-radius: var(--radius-sm); }
+.shell-header a[aria-current="page"] { background: var(--surface-selected); color: var(--text); }
+.shell-user { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
+#main { display: block; padding: var(--space-4); }
+#main:focus { outline: none; }
+
+/* Hidden until a keyboard user tabs to it, then shown at the top. */
+.skip-link { position: absolute; left: var(--space-2); top: -100vh; z-index: 20; padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised); color: var(--accent); }
+.skip-link:focus { top: calc(env(safe-area-inset-top) + var(--space-2)); }
+
 /* The error, not-found and loading screens. */
 .page-message { max-width: 40rem; margin: var(--space-8) auto; padding: 0 var(--space-4); }
 .page-message h1 { font-size: var(--text-lg); }
