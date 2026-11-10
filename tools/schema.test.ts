@@ -3,10 +3,13 @@
 // enums (RC-044), no name over 63 bytes, and nothing in `public` (§7c). Fixture tables prove each rule fires, and the helpers' CHECKs refuse
 // what they should (RC-024, NaN included).
 //
-// The DDL comes from drizzle-kit's own generator, applied inside one transaction that is rolled back, so this file
-// leaves the run's database as it found it. shortcut: until RAD-25's migrator exists the schema is generated here;
-// RAD-25 points these checks at the migrated database.
+// The real schema is the run's database, migrated from zero by `npm run db:migrate` (tools/test-database.ts, RAD-25).
+// The fixtures come from drizzle-kit's own generator as a diff on top of it, applied inside one transaction that is
+// rolled back, so this file leaves the database as it found it.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
+import type { DrizzleSnapshotJSON } from 'drizzle-kit/api';
 import { getTableConfig, index, numeric, pgSchema, text, uuid, type PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -15,6 +18,7 @@ import * as views from '@radcore/db/views';
 import {
   boundedText, foreignMoney, fxRate, id, lookupTable, money, percent, qty, radcore, radcoreTable, unitPrice,
 } from '../packages/db/src/columns.ts';
+import { MIGRATIONS_FOLDER } from '../packages/db/src/migrate.ts';
 
 // Tables built with the helpers: they must pass every rule.
 const fixtureUnits = lookupTable('fixture_units');
@@ -59,6 +63,19 @@ function longNames(ts: PgTable[]): string[] {
   });
 }
 
+// What drizzle.config.ts generates migrations from.
+const real = { ...schema, ...views, radcore };
+const snapshotOf = (objects: Record<string, unknown>) => generateDrizzleJson(objects, undefined, undefined, 'snake_case');
+const journal = JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8')) as { entries: { idx: number }[] };
+
+describe('migrations', () => {
+  it('are up to date with the schema: `npx drizzle-kit generate` would write nothing', async () => {
+    const last = String(journal.entries.at(-1)?.idx ?? 0).padStart(4, '0');
+    const committed = JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, 'meta', `${last}_snapshot.json`), 'utf8')) as DrizzleSnapshotJSON;
+    expect(await generateMigration(committed, snapshotOf(real))).toEqual([]);
+  });
+});
+
 describe('names', () => {
   it('has no constraint or index name over 63 bytes in the schema or the helper fixtures', () => {
     expect(longNames([...tables(schema), fixtureUnits, fixtureLines])).toEqual([]);
@@ -81,9 +98,8 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
   beforeAll(async () => {
     await client.connect();
     await client.query('begin');
-    const objects = { ...schema, ...views, radcore, fixtureUnits, fixtureLines, bad, badParents, badRawNumbers, badChildren, badColour };
-    const ddl = await generateMigration(generateDrizzleJson({}),
-      generateDrizzleJson(objects, undefined, undefined, 'snake_case'));
+    const fixtures = { fixtureUnits, fixtureLines, bad, badParents, badRawNumbers, badChildren, badColour };
+    const ddl = await generateMigration(snapshotOf(real), snapshotOf({ ...real, ...fixtures }));
     for (const statement of ddl) await client.query(statement);
     // As the runtime logins will (ADR-005 §7c): unqualified names resolve in `radcore` only, never in `public`.
     await client.query('set local search_path = radcore');
@@ -95,6 +111,11 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
   afterAll(async () => {
     await client.query('rollback');
     await client.end();
+  });
+
+  it('reads the database the migrations built from zero', async () => {
+    const { rows: [row] } = await client.query<{ n: number }>('select count(*)::int as n from drizzle.__drizzle_migrations');
+    expect(row?.n).toBe(journal.entries.length);
   });
 
   const rows = async (view: string) => (await client.query<Record<string, string>>(`select * from ${view}`)).rows;

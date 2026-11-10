@@ -38,11 +38,25 @@ npm run typecheck
 npm run deps:check # ADR-003 C2 to C9: Node version, pins, licences, the approved list, lockfile, age
 npm run knip       # unused files, exports and dependencies (C1)
 npm run db:up      # PostgreSQL 16 and SeaweedFS (S3), on 127.0.0.1 only (needs Docker)
+npm run db:migrate # the migrations, as the owner login (MIGRATION_DATABASE_URL); run after db:up and each pull
 ```
 
 `npm run dev` and `npm run db:up` first write `.env` with new random credentials if it doesn't exist. `.env` is
 git-ignored; never commit it. Each lint rule has a violating fixture in `tools/boundary-fixtures/`, and
 `npm test` fails if any fixture stops failing.
+
+## Migrations
+
+- Change the schema in `packages/db`, then run `npx drizzle-kit generate --name <what>`. For hand-written SQL,
+  run `npx drizzle-kit generate --custom --name <what>` and fill in the empty file. Commit the `.sql` file and
+  `meta/`.
+- Never edit a migration that has merged. Add a new one.
+- **After merging dev, if dev gained a migration your branch doesn't have, regenerate yours.** Delete your `.sql`
+  file and its journal entry and snapshot, then run `generate` again, so your migration comes after dev's.
+  - drizzle applies a migration only if its journal `when` is later than the last one applied, so an older `when`
+    would be skipped silently on every database that is already migrated.
+  - `tools/migrate.test.ts` fails when the journal is out of order. In CI it also compares with the base commit:
+    each new migration must be dated after the newest one there, and merged migrations must be unchanged.
 
 ## Tests
 
