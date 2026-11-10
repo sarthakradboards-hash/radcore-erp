@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import { createApp, listen } from '../apps/api/src/app.ts';
+import type { HandlerDeps } from '../apps/api/src/http/handler.ts';
 import { defineRoute } from '../apps/api/src/http/route.ts';
 import { moduleTx } from '../packages/db/src/module-tx.ts';
 import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
@@ -35,6 +36,13 @@ const slow = defineContract({ method: 'GET', path: '/slow', auth: 'session', per
 const whoAmI = defineContract({ method: 'GET', path: '/who', auth: 'session', perm: 'notes:read', tx: read,
   input: z.object({}), output: z.object({ principal: z.string(), requestId: z.string() }) });
 
+// ADR-001 §7a: a key-exempt write, on a route of lib-platform's fixed list; and one that isn't on it.
+const exemptSignOut = defineContract({ method: 'POST', path: '/sign-out', auth: 'session', perm: 'session:read',
+  idempotency: 'exempt', tx: write, input: z.object({}), output: z.object({}) });
+const offListExempt = defineContract({ method: 'POST', path: '/notes/quick', auth: 'session', perm: 'notes:write',
+  idempotency: 'exempt', tx: write, input: z.object({}), output: z.object({}) });
+const offListNoAnswer = defineContract({ method: 'POST', path: '/notes/secret', auth: 'session', perm: 'notes:write',
+  storesAnswer: false, tx: write, input: z.object({}), output: z.object({}) });
 const user = (permissions: string[]): Principal => ({ kind: 'user', userId: 'u-1', permissions });
 const PERSONAL = 'Asha Rao';
 
@@ -62,6 +70,7 @@ describe.skipIf(!url)('the generic route handler', () => {
     const app = createApp(config(), log, { db, authenticate: async () => principal, routes: [
       defineRoute(getNote, async (_ctx, { id }) => ({ noteId: id, bodyText: `note ${id}`, internal: 'dropped' })),
       defineRoute(addNote, addBehaviour),
+      defineRoute(exemptSignOut, signOutService),
       defineRoute(slow, async (ctx) => {
         await notesTx(ctx).select({ x: sql`pg_sleep(1)` }).from(notes).limit(1);
         return {};
@@ -80,6 +89,7 @@ describe.skipIf(!url)('the generic route handler', () => {
     const [row] = await notesTx(ctx).insert(notes).values(input).returning({ id: notes.id });
     return { id: row?.id ?? '' };
   };
+  const signOutService = vi.fn(async () => ({}));
   // Every write carries its saved-once key (ADR-001 §7a): a UUID, new per submit.
   const post = (base: string, body: unknown, key: string | null = randomUUID()) => fetch(`${base}/notes`, {
     method: 'POST', body: JSON.stringify(body),
@@ -209,6 +219,19 @@ describe.skipIf(!url)('the generic route handler', () => {
     expect(service).not.toHaveBeenCalled();
   });
 
+  it('runs a key-exempt write without a key, and still refuses any other write without one (ADR-001 §7a)', async () => {
+    const service = vi.fn(insert);
+    signOutService.mockClear();
+    await serve(user(['session:read', 'notes:write']), service, async (base) => {
+      const out = await fetch(`${base}/sign-out`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+      expect(out.status).toBe(200);
+      const res = await post(base, { body: 'keyless', n: 1 }, null);
+      expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([400, 'idempotency_key_required']);
+    });
+    expect(signOutService).toHaveBeenCalledTimes(1);
+    expect(service).not.toHaveBeenCalled();
+  });
+
   it('marks every answer no-store, and never names the server', async () => {
     await serve(user(['notes:read']), insert, async (base) => {
       for (const res of [await fetch(`${base}/notes/n-1`), await post(base, { body: '', n: 1 }), await fetch(`${base}/who`)]) {
@@ -262,3 +285,14 @@ function config() {
 function logger() {
   return { info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() };
 }
+
+// ADR-001 §7a: the handler refuses to start with an exemption or a kept-nothing answer off lib-platform's fixed lists.
+// Mounting checks the routes before any request, so this needs no database.
+it("refuses to mount a route that declares either saved-once flag outside lib-platform's fixed lists", () => {
+  // Nothing is served, so no database is needed.
+  const app = (route: ReturnType<typeof defineRoute>) =>
+    createApp(config(), logger(), { db: undefined as unknown as HandlerDeps['db'], authenticate: async () => null, routes: [route] });
+  expect(() => app(defineRoute(offListExempt, async () => ({})))).toThrow(/KEY_EXEMPT_ROUTES/);
+  expect(() => app(defineRoute(offListNoAnswer, async () => ({})))).toThrow(/ANSWER_NOT_STORED_ROUTES/);
+  expect(() => app(defineRoute(exemptSignOut, async () => ({})))).not.toThrow();
+});

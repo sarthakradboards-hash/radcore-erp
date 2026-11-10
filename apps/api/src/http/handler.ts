@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, PLATFORM_ERRORS, readInput, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
 import { AppError, describeError, type Principal } from '@radcore/lib-platform';
+import { ANSWER_NOT_STORED_ROUTES, KEY_EXEMPT_ROUTES } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import type { Route } from './route.ts';
@@ -78,6 +79,7 @@ const send = (res: Response, f: Failure, requestId: string) =>
 
 // A UUID, as apps/web makes one per submit (ADR-001 §7a).
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const onList = (list: readonly string[], route: string): boolean => list.includes(route);
 
 export function mountRoutes(app: Express, routes: readonly Route[], deps: HandlerDeps): void {
   const router = express.Router();
@@ -90,6 +92,13 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
   for (const { contract, service } of routes) {
     if (contract.auth === 'webhook') throw new TypeError(`${contract.method} ${contract.path}: a webhook takes its own lane (M1-27)`);
     const route = `${contract.method} ${contract.path}`;
+    // ADR-001 §7a: only the fixed lists may skip the key or keep no answer, or the handler refuses to start.
+    if (contract.idempotency === 'exempt' && !onList(KEY_EXEMPT_ROUTES, route)) {
+      throw new TypeError(`${route}: only KEY_EXEMPT_ROUTES may declare idempotency: 'exempt' (ADR-001 §7a)`);
+    }
+    if (contract.storesAnswer === false && !onList(ANSWER_NOT_STORED_ROUTES, route)) {
+      throw new TypeError(`${route}: only ANSWER_NOT_STORED_ROUTES may declare storesAnswer: false (ADR-001 §7a)`);
+    }
     const handle = async (req: Request, res: Response): Promise<void> => {
       const requestId = randomUUID();
       try {
@@ -104,7 +113,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           send(res, platform('invalid_input', input.error.issues), requestId);
           return;
         }
-        if (!contract.tx.readOnly && !UUID.test(req.get('idempotency-key') ?? '')) {
+        // A key-exempt route sets or clears the session cookie, which a stored answer can't (ADR-001 §7a).
+        if (!contract.tx.readOnly && contract.idempotency !== 'exempt' && !UUID.test(req.get('idempotency-key') ?? '')) {
           send(res, platform('idempotency_key_required'), requestId);
           return;
         }
