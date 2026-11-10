@@ -13,6 +13,16 @@ const en = {
   'browser.body': 'RadCore needs Chrome or Edge 123, Safari 17.5 or Firefox 120, or newer. Your work is safe: update, then sign in again.',
   'enrol.qrAlt': 'QR code to add RadCore to your authenticator app',
   'enrol.typeKey': 'Can’t scan it? Type this key into the app instead:',
+  'error.offline': 'RadCore could not be reached. Check the connection, then try again.',
+  'auth.signOut': 'Sign out',
+  'auth.signOutFailed': 'Couldn’t sign out: RadCore could not be reached. Check the connection, then try again.',
+  'sessions.title': 'Where you’re signed in',
+  'sessions.lastSeen': 'Last used {when}',
+  'sessions.thisDevice': 'This device',
+  'sessions.end': 'End',
+  'sessions.endNamed': 'End the session on {device}',
+  'sessions.ended': 'Ended the session on {device}',
+  'sessions.more': 'Show more',
 } as const;
 
 export type MessageKey = keyof typeof en;
