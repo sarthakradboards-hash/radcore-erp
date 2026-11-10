@@ -7,6 +7,8 @@
 // - the same key with another body is refused, and the key is scoped to the principal and the route, so one person's
 //   key can't replay another's answer;
 // - the answer is stored in the same transaction as the work, so a crash after commit can't lose it.
+// Every signed-out caller of a public route runs as one principal, `system:public`, so their keys share one scope:
+// a public route's answer must hold nothing personal, since anyone who learned the key could replay it.
 import { createHash } from 'node:crypto';
 import { platformTx, savedOnce } from '@radcore/db/platform';
 import { and, eq } from 'drizzle-orm';
