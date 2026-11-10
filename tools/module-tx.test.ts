@@ -84,7 +84,13 @@ describe.skipIf(!url)('the module transaction', () => {
       expect(() => t.delete(own).prepare('p')).toThrow(UnboundedWriteError);
       const builders = [t.insert(own), t.insert(own).values({ n: 1 }), t.select().from(own), t.update(own),
         t.update(own).set({ n: 1 }), t.delete(own), t.query.own.findMany()] as unknown as Record<string, unknown>[];
-      expect(builders.map((b) => [b['session'], b['_'], b['_prepare']])).toEqual(builders.map(() => [undefined, undefined, undefined]));
+      expect(builders.map((b) => [b['session'], b['_'], b['_prepare'], b['config'], b['dialect']]))
+        .toEqual(builders.map(() => [undefined, undefined, undefined, undefined, undefined]));
+      // A where a guard checked can't be cleared afterwards through a cast.
+      const filtered = t.update(own).set({ n: 0 }).where(eq(own.n, 1)) as unknown as Record<string, unknown>;
+      expect(() => { filtered['config'] = {}; }).toThrow(TypeError);
+      expect(() => Object.defineProperty(filtered, 'config', { value: {} })).toThrow(TypeError);
+      expect(() => delete filtered['where']).toThrow(TypeError);
       expect((await t.select({ n: own.n }).from(own)).map((r) => r.n).sort()).toEqual([1, 2]);
     });
   });

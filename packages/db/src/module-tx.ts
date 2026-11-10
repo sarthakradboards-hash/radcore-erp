@@ -65,8 +65,13 @@ const unbounded = (what: string) => new UnboundedWriteError(`${what} needs a fil
 
 // Every member that runs the query. catch and finally call then, and _prepare is what execute uses.
 const RUNS = new Set<PropertyKey>(['then', 'catch', 'finally', 'execute', 'prepare', '_prepare']);
-// A builder holds its session, and with it the pool's client; nothing outside Drizzle may reach either.
-const hidden = (prop: PropertyKey) => prop === 'session' || (typeof prop === 'string' && prop.startsWith('_'));
+// A builder holds its session (and with it the pool's client), its config (the where a guard checked) and its dialect;
+// nothing outside Drizzle may reach them.
+const hidden = (prop: PropertyKey) => prop === 'session' || prop === 'config' || prop === 'dialect'
+  || (typeof prop === 'string' && prop.startsWith('_'));
+const sealed = (): never => {
+  throw new TypeError("A module transaction's builders can't be changed from outside");
+};
 const isBuilder = (v: unknown): v is object => typeof v === 'object' && v !== null && 'session' in v;
 
 /**
@@ -78,6 +83,10 @@ const isBuilder = (v: unknown): v is object => typeof v === 'object' && v !== nu
 function seal<B extends object>(builder: B, alive: () => void, write?: string): B {
   let filtered = write === undefined;
   const proxy: B = new Proxy(builder, {
+    set: sealed,
+    defineProperty: sealed,
+    deleteProperty: sealed,
+    setPrototypeOf: sealed,
     get(target, prop) {
       if (hidden(prop)) return undefined;
       const value: unknown = (target as Record<PropertyKey, unknown>)[prop];
