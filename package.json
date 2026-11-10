@@ -37,8 +37,10 @@
     "eslint-plugin-drizzle": "0.2.3",
     "knip": "6.42.1",
     "pg": "8.23.1",
+    "pg-boss": "12.38.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.0",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "zod": "4.6.7"
   }
 }
