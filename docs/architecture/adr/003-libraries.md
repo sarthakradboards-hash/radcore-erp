@@ -194,6 +194,13 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
     `@next/env`, `@next/eslint-plugin-next` and the `@next/swc-*` binaries.
   - `eslint-config-next` must match `next`'s version.
 
+**A known advisory C5 lets through (not an exception):**
+- `esbuild` 0.18.20, pulled in by drizzle-kit through `@esbuild-kit/core-utils`, is in the range of
+  GHSA-67mh-4wv8-2f99. That advisory is moderate: esbuild's dev server answers requests from any website.
+- It's a dev dependency, used only when drizzle-kit generates migrations. Its dev server is never started or
+  served, so C5's moderate threshold for production packages doesn't apply.
+- Recheck it when drizzle-kit is upgraded.
+
 ### 6. The install path
 
 The rules above mean nothing if installing runs someone else's code. So:
