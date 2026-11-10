@@ -31,8 +31,10 @@ npm run e2e
   `flow-01-walk-in.spec.ts`, `flow-02-…`. Auth and permission journeys are `auth-*.spec.ts`.
 - Import `test`, `expect` and `expectAccessible` from `./fixtures.ts`, never from `@playwright/test`. Then every
   test fails on a console error, an uncaught error, a Content Security Policy violation, or a request that fails or
-  answers 4xx/5xx, without asking. CSP violations are caught from the browser's `securitypolicyviolation` event,
-  since Chromium never logs them to the console.
+  answers 4xx/5xx, without asking. That covers every page of the test's browser context, popups and new tabs
+  included. CSP violations are caught from the browser's `securitypolicyviolation` event, since Chromium never logs
+  them to the console. A violation inside a web worker fires in the worker, not the page, so the guard doesn't see
+  it: whoever adds the first worker extends the guard to it.
   Requests the browser aborts itself (Next cancels prefetches on navigation) don't count. A journey that expects
   a status says so: `test.use({ expectedStatuses: [401] })`.
 - Call `expectAccessible(page)` on each new screen the journey reaches. It fails on serious or critical WCAG 2.2
