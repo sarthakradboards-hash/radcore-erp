@@ -1,6 +1,6 @@
 // lib-platform's tables (ADR-001 §3). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { isNotNull, sql } from 'drizzle-orm';
-import { check, index, jsonb, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, index, jsonb, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, radcoreTable } from '../columns.ts';
 
 /**
@@ -32,6 +32,29 @@ export const secrets = radcoreTable('secrets', {
 }, (t) => [
   check('ck_secrets_name', sql`${t.name} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'`),
   index('ix_secrets_expires_at').on(t.expiresAt).where(isNotNull(t.expiresAt)),
+]);
+
+/**
+ * Saved-once (ADR-001 §6, §7a; RAD-27, RC-132): one row per write a principal sent with an Idempotency-Key, claimed in
+ * the write's own transaction under the primary key, so a second request with the same key waits for the first and
+ * then replays its answer, or runs if the first rolled back.
+ * - `input_hash` is the SHA-256 of the checked input: the same key with another body is refused.
+ * - `answer` is the checked output, kept only when `kept`; a route whose answer holds a secret claims the key and
+ *   keeps nothing (`storesAnswer: false`, RAD-32).
+ * - `expires_at` is when the clean-up job may delete the row: 48 hours for a screen's write, 30 days for sync.
+ */
+export const savedOnce = radcoreTable('saved_once', {
+  principal: text().notNull(),
+  route: text().notNull(),
+  key: uuid().notNull(),
+  inputHash: text().notNull(),
+  answer: jsonb(),
+  kept: boolean().notNull().default(false),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+}, (t) => [
+  primaryKey({ name: 'pk_saved_once', columns: [t.principal, t.route, t.key] }),
+  check('ck_saved_once_input_hash', sql`${t.inputHash} ~ '^[0-9a-f]{64}$'`),
+  index('ix_saved_once_expires_at').on(t.expiresAt),
 ]);
 
 /**

@@ -2,6 +2,7 @@ export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } f
 export { principalId, type Ctx, type Principal } from './ctx.ts';
 export { AppError } from './errors.ts';
 export { decodeCursor, encodeCursor, type SortKey } from './lists.ts';
+export { originAllowed } from './origin.ts';
 export { csvWriter } from './export/csv.ts';
 export { amountCell, checkRows, dateCell, parseAmountCell, parseDateCell, type ImportResult, type RowError } from './import/cells.ts';
 export { collectUpload, decodeText, IMPORT_LIMITS, ImportFileError, sniffDelimiter, type Table } from './import/read.ts';
@@ -16,5 +17,6 @@ export { describeError, type ErrorDescription } from './log/safe-error.ts';
 export { routeOf, scrubText } from './log/scrub.ts';
 export { createSecrets, expiringBefore, SecretPlaceMismatch, type SecretPlace, type Secrets } from './secrets.ts';
 export { defineSetting, settingRow, Settings, type SettingDef, type SettingRow } from './settings.ts';
+export { claimSavedOnce, SAVED_ONCE_KEEP_MS, type SavedOnce, type SavedOnceClaim, type SavedOnceClass } from './saved-once.ts';
 export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './files/kinds.ts';
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
