@@ -42,6 +42,7 @@ const MESSAGES: Readonly<Record<PlatformErrorCode, string>> = {
   not_found: 'Not found',
   conflict: 'Someone else changed this at the same time. Please try again',
   idempotency_mismatch: 'This idempotency key was used for a different request',
+  answer_not_kept: 'That answer was shown once and is not kept. Please start again',
   rate_limited: 'Too many requests. Please wait a moment',
   account_locked: 'This account is locked for now',
   server_error: 'Something went wrong on our side',

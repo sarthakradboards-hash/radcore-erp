@@ -1,9 +1,9 @@
 // RC-186, web side: the form's submit goes through createClient, which checks the input with the contract's own
 // schema, so a bad GSTIN is refused with the same issue as the API (apps/api/src/gstin-proof.test.ts) and never sent.
 import { defineContract, gstinString, listInput, listOf } from '@radcore/lib-common';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { z } from 'zod';
-import { ApiError, callContract, createClient } from './api-client';
+import { ApiError, callContract, createClient, type Client, type ReadOptions, type WriteOptions } from './api-client';
 
 const Party = z.object({ id: z.string(), name: z.string() });
 const contracts = {
@@ -106,5 +106,35 @@ describe('review additions', () => {
     const { api } = setup(reply(429, env));
     await expect(api.listParties({ filter: {}, limit: 5 })).rejects.toMatchObject({ code: 'rate_limited',
       envelope: { retryAfterSeconds: 60 } });
+  });
+});
+
+// ADR-001 §7a (RAD-32): sign-in and sign-out set or clear the session cookie, so they take no Idempotency-Key.
+describe('a key-exempt write', () => {
+  const signIn = defineContract({
+    method: 'POST', path: '/sign-in', auth: 'public', rateLimit: 'sign-in', perm: null, idempotency: 'exempt',
+    tx: { readOnly: false, isolation: 'read committed' }, input: z.object({ email: z.string() }),
+    output: z.object({ next: z.literal('done') }),
+  });
+
+  it('is sent with no key, and its call needs no options', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => reply(200, { next: 'done' }));
+    const api = createClient({ signIn }, { fetch });
+    expect(await api.signIn({ email: 'asha@example.com' })).toEqual({ next: 'done' });
+    expect(fetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty('idempotency-key');
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({ method: 'POST', body: '{"email":"asha@example.com"}' });
+  });
+
+  it('types the exempt call with read options, and every other write with its key', () => {
+    type Api = Client<{ signIn: typeof signIn } & typeof contracts>;
+    expectTypeOf<Parameters<Api['signIn']>[1]>().toEqualTypeOf<ReadOptions | undefined>();
+    expectTypeOf<Parameters<Api['createParty']>[1]>().toEqualTypeOf<WriteOptions>();
+  });
+
+  it('still refuses another write sent without its key, sending nothing', async () => {
+    const { fetch, api } = setup(reply(200, {}));
+    const keyless = api.createParty as (input: unknown) => Promise<unknown>; // as plain JavaScript would call it
+    await expect(keyless({ name: 'A', gstin: '27AAPFU0939F1ZV' })).rejects.toMatchObject({ code: 'idempotency_key_required' });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
