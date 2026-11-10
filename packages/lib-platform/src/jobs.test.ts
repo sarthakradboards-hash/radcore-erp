@@ -1,7 +1,8 @@
 // RC-082: every job has retries, a timeout, an optional overlap guard and a dead-letter queue, declared as data.
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { defineJob, queueSettings, type JobContract } from './jobs.ts';
+import type { Principal } from './ctx.ts';
+import { defineJob, queueSettings, type JobContract, type OpenJob } from './jobs.ts';
 
 const contract = (over: Partial<JobContract<{ n: number }>> = {}): JobContract<{ n: number }> => ({
   name: 'sales.shopify-order', principal: { kind: 'system', name: 'online-orders', permissions: ['sales:write'] },
@@ -33,14 +34,32 @@ describe('queueSettings', () => {
 });
 
 describe('defineJob', () => {
-  it('checks the payload against the input schema, then runs the service with the job id and principal', async () => {
+  // A stand-in for the worker's transaction: records who it would open as. The real Ctx reaching the service is
+  // proved on PostgreSQL (tools/jobs.test.ts).
+  const opener = () => {
+    const opened: { principal: Principal; jobId: string }[] = [];
+    const open: OpenJob = async (principal, jobId) => {
+      opened.push({ principal, jobId });
+    };
+    return { open, opened };
+  };
+
+  it('checks the payload first, then runs the service in a transaction as the contract\'s system principal', async () => {
     const service = vi.fn(async () => undefined);
     const job = defineJob(contract(), service);
-    await job.handle({ n: 1 }, 'job-1');
-    expect(service).toHaveBeenCalledWith({ n: 1 },
-      { jobId: 'job-1', principal: { kind: 'system', name: 'online-orders', permissions: ['sales:write'] } });
-    await expect(job.handle({ n: 'one' }, 'job-2')).rejects.toThrow();
-    expect(service).toHaveBeenCalledTimes(1);
+    const { open, opened } = opener();
+    await job.handle({ n: 1 }, 'job-1', open);
+    expect(opened).toEqual([{ principal: { kind: 'system', name: 'online-orders', permissions: ['sales:write'] }, jobId: 'job-1' }]);
+    await expect(job.handle({ n: 'one' }, 'job-2', open)).rejects.toThrow();
+    expect(opened).toHaveLength(1);
+  });
+
+  it('runs a job for a user as nobody until its enqueuer is rechecked (RAD-44 step 3b): it fails closed', async () => {
+    const service = vi.fn(async () => undefined);
+    const { open, opened } = opener();
+    await expect(defineJob(contract({ principal: { kind: 'user' } }), service).handle({ n: 1 }, 'job-3', open))
+      .rejects.toThrow(/can't run until its enqueuer is rechecked/);
+    expect([opened, service.mock.calls]).toEqual([[], []]);
   });
 
   it('carries the schedule and delete-on-complete for the worker', () => {

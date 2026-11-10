@@ -11,9 +11,11 @@
 // a public route's answer must hold nothing personal, since anyone who learned the key could replay it.
 import { createHash } from 'node:crypto';
 import { platformTx, savedOnce } from '@radcore/db/platform';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
+import { z } from 'zod';
 import { principalId, type Ctx } from './ctx.ts';
 import { AppError } from './errors.ts';
+import type { JobContract } from './jobs.ts';
 
 const HOUR_MS = 3_600_000;
 /** How long a claimed key is kept before the clean-up job deletes it: a screen retries within minutes, while an
@@ -72,4 +74,22 @@ export async function claimSavedOnce(ctx: Ctx, claim: SavedOnceClaim): Promise<S
     throw new AppError('answer_not_kept', 'This was already done, and its answer is not kept. Please start again');
   }
   return { replay: true, answer: earlier.answer };
+}
+
+/**
+ * The clean-up job (RAD-27): deletes every claimed key past its `expires_at`, so a stored answer is kept no longer than
+ * its class allows. Hourly, one run at a time, as a system principal that holds no permissions (it touches only
+ * platform's own table). Declared in apps/worker/src/jobs/platform.ts.
+ */
+export const savedOnceCleanup: JobContract<object | null> = {
+  name: 'platform.saved-once-cleanup',
+  principal: { kind: 'system', name: 'saved-once-cleanup', permissions: [] },
+  // A schedule sends no payload.
+  input: z.strictObject({}).nullable(),
+  every: '17 * * * *',
+  oneAtATime: true,
+};
+
+export async function cleanSavedOnce(ctx: Ctx): Promise<void> {
+  await platformTx(ctx).delete(savedOnce).where(lt(savedOnce.expiresAt, new Date()));
 }

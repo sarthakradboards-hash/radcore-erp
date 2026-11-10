@@ -8,7 +8,7 @@ import { FormProvider, useForm, useFormContext, type DefaultValues, type FieldEr
 import type { z } from 'zod';
 import { ApiError } from '../../../lib/api-client.ts';
 import { announce } from '../live-region.tsx';
-import { omitFields, placeIssues, unshownErrors } from './issues.ts';
+import { formAlert, omitFields, placeIssues, unshownErrors } from './issues.ts';
 import './form.css';
 
 type Names = { mounted: Set<string>; masked: Set<string> };
@@ -78,9 +78,8 @@ export function Form<I extends FieldValues, O extends FieldValues>(
       const { fields, rest } = placeIssues(e.envelope.issues, names.mounted);
       fields.forEach(({ name, message }, i) =>
         form.setError(name as never, { type: 'server', message }, { shouldFocus: i === 0 }));
-      const said = SAID[e.code] ?? e.envelope.message;
-      const message = rest.length === 0 ? said : `${said}: ${rest.join('; ')}`;
-      form.setError('root.server', { type: e.code, message });
+      const message = formAlert(e.code, SAID[e.code] ?? e.envelope.message, rest);
+      if (message !== null) form.setError('root.server', { type: e.code, message });
       return;
     }
     if (saved !== false) announce(saved);

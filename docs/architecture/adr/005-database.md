@@ -29,7 +29,9 @@ that builds it.
 
 **How the rules are tested (M1-05).** The schema tests run in CI against a database migrated from zero on
 PostgreSQL 16. They read `pg_catalog` through views in `packages/db/views/` (the SQL zone), because Drizzle's
-metadata has no triggers or grants. The pg-boss, migration and rate-limit schemas are excluded: each holds a library's own table, which carries no audit columns (the rate-limit store, `ratelimit.limits`, is rate-limiter-flexible's, ADR-003, RAD-32).
+metadata has no triggers or grants. The pg-boss, migration and rate-limit schemas are excluded: each holds a
+library's own table, which carries no audit columns (the rate-limit store, `ratelimit.limits`, is
+rate-limiter-flexible's, ADR-003, RAD-32).
 
 ### 1. Types and precision (M1-05)
 
@@ -263,21 +265,23 @@ They are append-only with explicit reversals:
   API or worker containers (RC-003, ADR-004 §3). A read-only login, `radcore_read`, serves the restore drill and
   support queries (RC-193).
 - **How the three are made (M1-06).**
-  - **The logins.** A superuser makes them with `npm run db:logins` (`tools/db-logins.ts`). On RDS that's the
-    master user, once, before the first migration. Each login is plain: no superuser, no CREATEROLE, no
+  - **The logins.** A superuser, or on RDS the master user, makes them with `npm run db:logins`
+    (`tools/db-logins.ts`), once, before the first migration. Each login is plain: no superuser, no CREATEROLE, no
     CREATEDB, no replication, no BYPASSRLS. A login that has one of these is refused, not changed. The owner
     login gets the database. Passwords are sent as SCRAM verifiers, so none lands in the server log.
   - **What each may do** is the owner migration `0002_logins.sql`. PUBLIC loses every database privilege
-    (`TEMPORARY` included), and only `radcore_app` and `radcore_read` get `CONNECT`. The owner's default
-    privileges give `radcore_app` `SELECT, INSERT, UPDATE, DELETE` on new tables in `radcore`, and `radcore_read`
-    `SELECT`. `radcore_app` also gets the rows of pg-boss's tables. Neither login owns anything, so neither can
-    alter or drop it.
+    (`TEMPORARY` included), and besides the owner only `radcore_app` and `radcore_read` get `CONNECT`. The
+    owner's default privileges give `radcore_app` `SELECT, INSERT, UPDATE, DELETE` on new tables in `radcore`, and
+    `radcore_read` `SELECT`. `radcore_app` also gets the rows of pg-boss's tables and of `ratelimit.limits`
+    (RAD-32); `radcore_read` gets neither. Neither login owns anything, so neither can alter or drop it.
   - **Per table.** An append-only table's own migration revokes `UPDATE, DELETE, TRUNCATE`, plus `INSERT` on
     `audit_log` and `access_log`. A view's migration revokes `INSERT, UPDATE, DELETE`, because a simple view
     writes as its owner.
   - **Every partition** gets `REVOKE ALL ... FROM radcore_app, radcore_read`, whether a migration or the
     top-up (§8) made it. Rows go through the parent, and the owner's default privileges would otherwise let the
     app insert straight into an `audit_log` partition and forge audit rows.
+  - **Closed to the read-only login:** `radcore.secrets` (RAD-65). Its migration revokes everything from
+    `radcore_read`, and `tools/logins.test.ts` checks it.
   - **The guard.** `tools/logins.test.ts` fails on any append-only table, log or view that `radcore_app` can
     still write, and on any partition either login holds a privilege on.
   - **The settings check** refuses `radcore_owner` as `DATABASE_URL` everywhere. In staging and production it
@@ -348,8 +352,8 @@ calendar month in UTC (RC-046).
 
   The moved rows are re-stamped by the audit trigger, so the migration records `system:migrate` and the recovery's
   time; their own `occurred_at` stays as it was.
-- **Retention.** Old partitions are detached and dropped only by an owner migration under the retention rule
-  (D-12), never by the application.
+- **Retention.** Partitions are never dropped: D-12 keeps all data permanently. Dropping one would take a change to
+  D-12 and an owner migration, never the application.
 - **Drizzle.** Drizzle can't declare a partitioned table, so these three are created by hand-written migrations
   (`drizzle-kit generate --custom`). Their Drizzle declarations exist only for typed reads, and live in a file
   outside the schema glob in `drizzle.config.ts`, which also sets `casing: 'snake_case'`. M1-05 confirms that

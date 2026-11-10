@@ -1,6 +1,6 @@
 // lib-platform's tables (ADR-001 §3). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
-import { isNotNull, sql } from 'drizzle-orm';
-import { boolean, check, index, jsonb, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { isNotNull, isNull, sql } from 'drizzle-orm';
+import { boolean, check, index, integer, jsonb, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, radcoreTable } from '../columns.ts';
 
 /**
@@ -95,3 +95,28 @@ const linkToken = <TName extends string>(name: TName) => radcoreTable(name, {
 ]);
 export const invites = linkToken('invites');
 export const passwordResets = linkToken('password_resets');
+
+/**
+ * Jobs queued in a write's own transaction (ADR-002 §4, RAD-44, the outbox): `ctx.jobs.send` inserts a row here, so a
+ * save that rolls back queues nothing. The worker's relay hands committed rows to pg-boss, with pg-boss's job id set to
+ * the row's id, and deletes them (ADR-005 §7: a queue). `name` is the job's queue; `data` its checked input;
+ * `principal` and `request_id` say who queued it and in which request, for the job's principal (ADR-001 §6a).
+ * A row pg-boss won't take is tried again later, not first: `attempts` counts the failures, `next_attempt_at` backs it
+ * off, and after the last try `dead_at` sets it aside with an alert, so a bad row never blocks the jobs behind it.
+ * The read-only login can't read this table (its migration revokes radcore_read's SELECT): payloads may be personal.
+ */
+export const jobsOutbox = radcoreTable('jobs_outbox', {
+  id: id(),
+  name: text().notNull(),
+  data: jsonb().notNull(),
+  principal: text().notNull(),
+  requestId: text().notNull(),
+  attempts: integer().notNull().default(0),
+  nextAttemptAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  deadAt: timestamp({ withTimezone: true }),
+}, (t) => [
+  check('ck_jobs_outbox_name', sql`${t.name} ~ '^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$'`),
+  check('ck_jobs_outbox_attempts', sql`${t.attempts} >= 0`),
+  // The relay's pass reads the live rows that are due, oldest first.
+  index('ix_jobs_outbox_due').on(t.nextAttemptAt).where(isNull(t.deadAt)),
+]);

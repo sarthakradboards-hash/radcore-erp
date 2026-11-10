@@ -2,15 +2,18 @@
 // RAD-28: settings are checked before anything starts (RC-081), a stray error or a lost database connection doesn't
 // end the process (RC-078), and a stop signal lets work in flight finish before exit (RC-079).
 import { createAlerter, type Alerter } from './alerts.ts';
+import type { Database } from '@radcore/db/schema';
 import { ConfigError, loadConfig, type Config, type ProcessName } from './config.ts';
 import { createPool, type JobQueue, type Pool } from './db/client.ts';
-import type { JobDefinition, QueueSettings } from './jobs.ts';
+import { runInTransaction } from './db/transaction.ts';
+import type { JobDefinition, OpenJob, QueueSettings } from './jobs.ts';
 import type { Logger } from './log.ts';
 import { createLog } from './log/logger.ts';
 
 export { createAlerter, startHeartbeat, type Alerter } from './alerts.ts';
 export { createDatabase, createHealthCheck, createJobQueue } from './db/client.ts';
 export { runInTransaction } from './db/transaction.ts';
+export { relayOutbox, startOutboxRelay } from './outbox.ts';
 export type { Logger } from './log.ts';
 
 type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };
@@ -33,8 +36,12 @@ const ensureQueue = async (queue: JobQueue, name: string, { policy, retries, ...
  * its dead-letter queue with the alert, and its schedule. Returns how to stop: no new work, attempts in flight finish.
  */
 export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], log: Logger,
-  { alert = createAlerter(null, log), stopTimeoutMs = 20_000 }: { alert?: Alerter; stopTimeoutMs?: number } = {},
+  { db, alert = createAlerter(null, log), stopTimeoutMs = 20_000 }: { db: Database; alert?: Alerter; stopTimeoutMs?: number },
 ): Promise<Stoppable> {
+  // Each attempt is one write transaction as the job's principal, its job id as the request id: its writes commit
+  // together or not at all, and audit rows name the job (ADR-001 §6a, RAD-44 step 3).
+  const open: OpenJob = (principal, jobId, work) =>
+    runInTransaction(db, { readOnly: false, isolation: 'read committed' }, principal, jobId, work);
   await queue.start();
   for (const job of jobs) {
     const { deadLetter, ...settings } = job.settings;
@@ -43,7 +50,7 @@ export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], l
     await ensureQueue(queue, job.name, job.settings);
     await queue.work(job.name, async ([attempt]) => {
       if (attempt === undefined) return;
-      await job.handle(attempt.data, attempt.id);
+      await job.handle(attempt.data, attempt.id, open);
       // pg-boss then marks the job complete with an update that finds no row; the payload is already gone.
       if (job.deleteOnComplete) await queue.deleteJob(job.name, attempt.id);
     });
