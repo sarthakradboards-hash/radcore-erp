@@ -21,6 +21,12 @@ const ip = z.union([z.ipv4(), z.ipv6()]);
 const localKey = z.string().refine((v) => /^[A-Za-z0-9+/_-]+={0,2}$/.test(v) && Buffer.from(v, 'base64').length >= 32,
   { message: 'must be at least 32 random bytes, base64 encoded' });
 const text = z.string().min(1);
+/**
+ * A multi-Region KMS key's full ARN (ADR-004 §4). The SDK's MRK-aware strict keyring encrypts with a bare `mrk-…` id
+ * or an alias, but decrypts only when the configured id is the full ARN, so anything else would make every stored
+ * secret unreadable (auditor-2, RAD-42).
+ */
+export const MULTI_REGION_KEY_ARN = /^arn:aws[a-z-]*:kms:[a-z]{2}(-[a-z]+)+-\d:\d{12}:key\/mrk-[0-9a-f]{32}$/;
 
 // Each setting's format, and where it is required (ADR-004 §5's "Required in" and "Read by" columns).
 const SETTINGS = {
@@ -39,7 +45,7 @@ const SETTINGS = {
   S3_ENDPOINT: { format: url(/^https?:$/), in: DEV_CI },
   S3_ACCESS_KEY_ID: { format: text, in: DEV_CI },
   S3_SECRET_ACCESS_KEY: { format: text, in: DEV_CI, secret: true },
-  SECRETS_KMS_KEY_ID: { format: text, in: DEPLOYED },
+  SECRETS_KMS_KEY_ID: { format: z.string().regex(MULTI_REGION_KEY_ARN, 'must be a multi-Region KMS key ARN (…:key/mrk-…)'), in: DEPLOYED },
   SECRETS_LOCAL_KEY: { format: localKey, in: LOCAL_KEY_ENVS, secret: true },
   MAIL_FROM: { format: z.email(), in: DEPLOYED },
   TURNSTILE_SITE_KEY: { format: text, in: ALL, by: 'api' },
