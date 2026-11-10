@@ -127,7 +127,7 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
 
   it('finds no rule broken outside the fixture schema (the real schema and the helper fixtures)', async () => {
     for (const view of ['v_schema_numeric_without_check', 'v_schema_fk_without_index', 'v_schema_missing_audit', 'v_schema_enums',
-      'v_schema_public_relations', 'v_schema_missing_triggers']) {
+      'v_schema_public_relations', 'v_schema_missing_triggers', 'v_schema_unredacted_secrets']) {
       expect((await rows(view)).filter(outside('guard_bad')), view).toEqual([]);
     }
   });

@@ -13,7 +13,11 @@ export const MIGRATION_LOCK_KEY = 'radcore.migrate';
 /** The future months each log keeps a partition for, after every deploy's top-up (ADR-005 §8). */
 export const LOG_MONTHS_AHEAD = 12;
 
-export async function migrate(url: string, migrationsFolder = MIGRATIONS_FOLDER): Promise<void> {
+/**
+ * Applies the migrations, then tops up the log partitions under the same lock (ADR-005 §8). A test that migrates a
+ * partial copy of the folder, which may stop before the partitions' function exists, passes `topUp: false`.
+ */
+export async function migrate(url: string, { migrationsFolder = MIGRATIONS_FOLDER, topUp = true } = {}): Promise<void> {
   const client = new pg.Client({
     connectionString: url,
     application_name: 'radcore-migrate',
@@ -39,8 +43,8 @@ export async function migrate(url: string, migrationsFolder = MIGRATIONS_FOLDER)
     }
     await drizzleMigrate(drizzle({ client }), { migrationsFolder, migrationsSchema: 'drizzle', migrationsTable: '__drizzle_migrations' });
     // ADR-005 §8: the partition top-up, on every deploy and in the test setup, under the same lock. It's idempotent,
-    // and keeps LOG_MONTHS_AHEAD future months for each log. A test's partial folder may stop before migration 0008.
-    if (migrationsFolder === MIGRATIONS_FOLDER) {
+    // and keeps LOG_MONTHS_AHEAD future months for each log.
+    if (topUp) {
       await client.query('select radcore.add_log_partitions($1)', [LOG_MONTHS_AHEAD]);
     }
   } finally {

@@ -23,7 +23,7 @@ const withPassword = (u: string) => {
 const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'unit_events', 'payment_allocations',
   'credit_applications', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
 // Written only by triggers and record_access, never by an INSERT from the app.
-const NO_INSERT = ['audit_log', 'access_log'];
+const NO_INSERT = ['audit_log', 'access_log', 'event_log'];
 const EVERY = 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
 
 // Anything in radcore a login could reach that it must not:

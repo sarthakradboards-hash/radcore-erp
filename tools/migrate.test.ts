@@ -141,7 +141,7 @@ describe.skipIf(!url)('the migration runner', () => {
 
   it('upgrades a database an earlier release migrated', async () => {
     await withDatabase(async (db) => {
-      await withFolder(1, [], (dir) => migrate(db, dir));
+      await withFolder(1, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
       expect(await applied(db)).toBe(1);
       expect(await hasSchema(db, 'pgboss')).toBe(false);
       await migrate(db);
@@ -153,7 +153,7 @@ describe.skipIf(!url)('the migration runner', () => {
   it('is forward-only: an earlier release on a newer database changes nothing', async () => {
     await withDatabase(async (db) => {
       await migrate(db);
-      await withFolder(1, [], (dir) => migrate(db, dir));
+      await withFolder(1, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
       expect(await applied(db)).toBe(MIGRATIONS);
     });
   });
@@ -161,7 +161,7 @@ describe.skipIf(!url)('the migration runner', () => {
   it('applies nothing when one pending migration fails', async () => {
     await withDatabase(async (db) => {
       await withFolder(MIGRATIONS, ['create table public.probe (x int);', 'select from no_such_table;'], async (dir) => {
-        await expect(migrate(db, dir)).rejects.toThrow(/no_such_table/);
+        await expect(migrate(db, { migrationsFolder: dir, topUp: false })).rejects.toThrow(/no_such_table/);
       });
       expect(await applied(db)).toBe(0);
       expect(await hasSchema(db, 'radcore')).toBe(false);
@@ -219,7 +219,7 @@ describe.skipIf(!url)('the migration runner', () => {
     await withDatabase(async (db) => {
       await withFolder(MIGRATIONS, ["create table public.probe as select current_setting('app.principal') as principal,"
         + " current_setting('lock_timeout') as lock_timeout, current_setting('statement_timeout') as statement_timeout;"],
-      (dir) => migrate(db, dir));
+      (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
       expect(await query(db, 'select * from public.probe'))
         .toEqual([{ principal: 'system:migrate', lock_timeout: '5s', statement_timeout: '15min' }]);
     });

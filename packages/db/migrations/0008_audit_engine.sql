@@ -56,6 +56,8 @@ END $$;
 CREATE TABLE radcore.audit_log (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   occurred_at timestamptz NOT NULL DEFAULT now(),
+  -- The order of writes: every row in one transaction has the same occurred_at (now() is its start).
+  seq bigserial NOT NULL,
   table_name text NOT NULL,
   record_id text NOT NULL,
   op text NOT NULL CONSTRAINT ck_audit_log_op CHECK (op IN ('insert', 'update', 'delete')),
@@ -72,6 +74,8 @@ CREATE TABLE radcore.audit_log (
 CREATE TABLE radcore.access_log (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   occurred_at timestamptz NOT NULL DEFAULT now(),
+  -- The order of writes: every row in one transaction has the same occurred_at (now() is its start).
+  seq bigserial NOT NULL,
   record_table text NOT NULL,
   record_id text NOT NULL,
   login_name text NOT NULL DEFAULT session_user,
@@ -87,6 +91,8 @@ CREATE TABLE radcore.access_log (
 CREATE TABLE radcore.event_log (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   occurred_at timestamptz NOT NULL DEFAULT now(),
+  -- The order of writes: every row in one transaction has the same occurred_at (now() is its start).
+  seq bigserial NOT NULL,
   kind text NOT NULL,
   detail jsonb NOT NULL DEFAULT '{}',
   login_name text NOT NULL DEFAULT session_user,
@@ -113,8 +119,9 @@ BEGIN
   END LOOP;
 END $$;
 --> statement-breakpoint
--- Written only by the audit trigger and record_access, never by an INSERT from the app (ADR-005 §7c).
-REVOKE INSERT ON radcore.audit_log, radcore.access_log FROM radcore_app;
+-- Written only by the audit trigger, record_access and (RAD-31) record_event, never by an INSERT from the app
+-- (ADR-005 §7c).
+REVOKE INSERT ON radcore.audit_log, radcore.access_log, radcore.event_log FROM radcore_app;
 --> statement-breakpoint
 
 -- The months each log has a partition for, from this month to `months_ahead` months on, in UTC. Idempotent: the
@@ -160,8 +167,9 @@ SELECT radcore.add_log_partitions(23);
 --> statement-breakpoint
 
 -- Every write to an audited table, as one audit_log row. The trigger's arguments, set by audit_attach: the primary
--- key's columns, then the columns written as "[redacted]". An update records only the columns that changed, old and
--- new, leaving out the updated_* stamps; an update that changed nothing else writes no row.
+-- key's columns, then the columns written as "[redacted]". An insert records the new row and a delete the old one;
+-- an update only the columns that changed, old and new. The four audit columns are left out (the row's principal and
+-- occurred_at say who and when), so an update that changed nothing else writes no row.
 CREATE FUNCTION radcore.audit_row() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, radcore, pg_temp AS $$
 DECLARE
@@ -180,13 +188,14 @@ BEGIN
   SELECT string_agg(this_row ->> k.c, ',' ORDER BY k.n) INTO rid FROM unnest(keys) WITH ORDINALITY AS k(c, n);
   IF TG_OP = 'UPDATE' THEN
     FOR col IN SELECT jsonb_object_keys(new_row) LOOP
-      CONTINUE WHEN col IN ('updated_at', 'updated_by') OR (new_row -> col) IS NOT DISTINCT FROM (old_row -> col);
+      CONTINUE WHEN col IN ('created_at', 'created_by', 'updated_at', 'updated_by')
+        OR (new_row -> col) IS NOT DISTINCT FROM (old_row -> col);
       changed := changed || jsonb_build_object(col, CASE WHEN col = ANY (redact) THEN '"[redacted]"'::jsonb
         ELSE jsonb_build_object('old', old_row -> col, 'new', new_row -> col) END);
     END LOOP;
     IF changed = '{}'::jsonb THEN RETURN NULL; END IF;
   ELSE
-    changed := this_row;
+    changed := this_row - array['created_at', 'created_by', 'updated_at', 'updated_by'];
     FOREACH col IN ARRAY redact LOOP
       IF changed ? col THEN changed := jsonb_set(changed, array[col], '"[redacted]"'); END IF;
     END LOOP;
@@ -198,7 +207,10 @@ END $$;
 
 -- What every table's migration calls (this one, for the tables already made): the who-and-when trigger and the audit
 -- trigger, with the columns to redact. The schema test fails on a table in radcore without both (ADR-005 §5).
-CREATE FUNCTION radcore.audit_attach(table_name text, redact text[] DEFAULT '{}') RETURNS void LANGUAGE plpgsql
+-- `capture => false` gives only the who-and-when trigger: for platform bookkeeping written on every request, which
+-- ADR-005 §7c names (saved_once now).
+CREATE FUNCTION radcore.audit_attach(table_name text, redact text[] DEFAULT '{}', capture boolean DEFAULT true)
+RETURNS void LANGUAGE plpgsql
 SET search_path = pg_catalog, radcore, pg_temp AS $$
 DECLARE
   rel regclass := format('radcore.%I', table_name)::regclass;
@@ -215,6 +227,7 @@ BEGIN
     WHERE NOT EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = rel AND a.attname = c AND NOT a.attisdropped);
   IF missing IS NOT NULL THEN RAISE EXCEPTION '% has no column % to redact', table_name, missing; END IF;
   EXECUTE format('CREATE TRIGGER stamp_who_when BEFORE INSERT OR UPDATE ON %s FOR EACH ROW EXECUTE FUNCTION radcore.stamp_who_when()', rel);
+  IF NOT capture THEN RETURN; END IF;
   EXECUTE format('CREATE TRIGGER audit_row AFTER INSERT OR UPDATE OR DELETE ON %s FOR EACH ROW EXECUTE FUNCTION radcore.audit_row(%L, %L)',
     rel, keys, array_to_string(redact, ','));
 END $$;
@@ -230,8 +243,8 @@ SELECT radcore.audit_attach('invites', array['token_hash']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('password_resets', array['token_hash']);
 --> statement-breakpoint
--- saved-once (RAD-27) keeps each write's answer to replay it: the answer and the input's hash stay out of the audit.
-SELECT radcore.audit_attach('saved_once', array['input_hash', 'answer']);
+-- saved-once (RAD-27) is bookkeeping on every write: its guarded work is audited, its own rows only stamped.
+SELECT radcore.audit_attach('saved_once', capture => false);
 --> statement-breakpoint
 
 -- A record opened in full, logged as its own short write after the read commits (ADR-005 §7c). No principal or time

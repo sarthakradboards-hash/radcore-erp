@@ -142,10 +142,10 @@ Actions with its own AWS role, assumed through OIDC (no stored keys). That role 
 2. opens an SSM port-forwarding session through the server to RDS, which isn't public;
 3. runs the `migrate` image in CI with the owner login. TLS is still verified through the tunnel: `ssl.servername`
    is the RDS endpoint name, so `verify-full` checks the right certificate. It runs under `lock_timeout = 5s` and a
-   statement timeout, so a migration never queues behind live traffic for long;
-4. runs the partition top-up (ADR-005 §8) the same way;
-5. closes the session;
-6. tells the server, through SSM, to pull the new images **by digest** and swap containers.
+   statement timeout, so a migration never queues behind live traffic for long. The same step tops up the log
+   partitions under the same lock (ADR-005 §8);
+4. closes the session;
+5. tells the server, through SSM, to pull the new images **by digest** and swap containers.
 
 Deploys are serialised: one GitHub Actions concurrency group per environment, with `cancel-in-progress: false`, so
 two deploys never overlap and a running one is never cut off. The previous five image digests are kept.

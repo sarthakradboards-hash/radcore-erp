@@ -1,5 +1,5 @@
 {
-  "id": "477e0764-9b5d-4715-8cf1-2c45a84bfcea",
+  "id": "b0cdc068-8223-4cb1-8fec-a0bb5a7717b2",
   "prevId": "a634c96b-8108-4880-bcac-012aaf1d8efb",
   "version": "7",
   "dialect": "postgresql",
@@ -737,7 +737,7 @@
           "notNull": false
         }
       },
-      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext') and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore' and c.relname in ('audit_log', 'access_log', 'event_log'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')\n    and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore'\n      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
       "name": "v_schema_missing_triggers",
       "schema": "radcore",
       "isExisting": false,
@@ -787,6 +787,27 @@
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p', 'v', 'm') and n.nspname = 'public'",
       "name": "v_schema_public_relations",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
+    "radcore.v_schema_unredacted_secrets": {
+      "columns": {
+        "tableName": {
+          "name": "tableName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "columnName": {
+          "name": "columnName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select c.relname::text as table_name, a.attname::text as column_name\n  from pg_catalog.pg_trigger g\n  join pg_catalog.pg_class c on c.oid = g.tgrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped\n  where g.tgname = 'audit_row' and not g.tgisinternal and n.nspname = 'radcore'\n    and a.attname ~ '(hash|secret|token|ciphertext|password)'\n    and not (a.attname = any (string_to_array(split_part(encode(g.tgargs, 'escape'), '\\000', 2), ',')))",
+      "name": "v_schema_unredacted_secrets",
       "schema": "radcore",
       "isExisting": false,
       "materialized": false

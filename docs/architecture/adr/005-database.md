@@ -239,8 +239,10 @@ They are append-only with explicit reversals:
   it.
 - **The runtime login** (M1-06):
   - It has no `UPDATE`, `DELETE` or `TRUNCATE` on the append-only tables, no DDL anywhere, and **no `INSERT` on
-    `audit_log` or `access_log`**.
+    `audit_log`, `access_log` or `event_log`**.
   - The audit log is written only by triggers.
+  - The event log is written only through `record_event` (RAD-31), a `SECURITY DEFINER` function like
+    `record_access`.
   - The access log is written only through one `SECURITY DEFINER` function, `record_access(record_table,
     record_id)`. It takes **no** principal or time argument: it reads the principal from the request context and
     the time from `now()` itself. The runtime login can therefore append an access row, but can't alter one or
@@ -259,6 +261,14 @@ They are append-only with explicit reversals:
 
   `api` and `worker` share `radcore_app`, so separate logins per process are an option for M1-06 if the audit needs
   to tell them apart.
+- **What an audit row holds** (RAD-30). `table_name`, `record_id`, `op` and `changed` (jsonb): an insert's new row,
+  an update's changed columns as old and new, or a delete's old row. The four audit columns are left out, and an
+  update that changes nothing else writes no row. A table's secret and hash columns, listed when its trigger is
+  attached, are written as the string `[redacted]`. Personal data is kept in full and masked when read, by the same
+  `pii()` rules as the record.
+- **Platform bookkeeping written on every request** (`saved_once` now; the outbox and a session's last-seen time when
+  they come) gets the who-and-when trigger only. The schema test names each such table, and adding one is an ADR-005
+  change.
 - **The owner login** runs migrations and the partition top-up only, from CI. It never sits on the server or in the
   API or worker containers (RC-003, ADR-004 §3). A read-only login, `radcore_read`, serves the restore drill and
   support queries (RC-193).
@@ -329,10 +339,9 @@ calendar month in UTC (RC-046).
   top-up.
 - **Partitions are created ahead, by the owner.**
   - The first migration creates 24 months of partitions.
-  - Every deploy runs a top-up as the owner, from CI (ADR-004 §3). It is an idempotent step, not a journaled
-    migration, and keeps at least 12 future months, each with its own TRUNCATE trigger. It takes the migrator's
-    advisory lock (`MIGRATION_LOCK_KEY` from `packages/db/src/migrate.ts`, ADR-002), so it never interleaves with
-    a migration.
+  - The top-up runs inside `migrate()`, after the migrations, under the same lock (`radcore.add_log_partitions`,
+    ADR-002 L3), on every deploy and in the test setup. It is idempotent, keeps `LOG_MONTHS_AHEAD` = 12 future
+    months, and gives each new partition its revokes and TRUNCATE trigger.
   - Each new partition, from the first migration or the top-up, gets `REVOKE ALL ... FROM radcore_app,
     radcore_read` (§7c), so rows reach it only through the parent's grants.
   - The runtime login can't create, drop or truncate a partition, because it owns none and has no DDL.
