@@ -13,6 +13,9 @@
   },
   "dependencies": {
     "@aws-crypto/client-node": "5.0.2",
+    "@aws-sdk/client-s3": "3.1156.0",
+    "@aws-sdk/s3-presigned-post": "3.1156.0",
+    "@aws-sdk/s3-request-presigner": "3.1156.0",
     "@radcore/db": "*",
     "@radcore/lib-common": "*",
     "chardet": "2.2.0",
