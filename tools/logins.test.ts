@@ -161,8 +161,10 @@ describe.skipIf(!url)('the three logins', () => {
         queue: 'select * from pgboss.job',
         // RAD-65: not even the ciphertexts.
         secrets: 'select * from radcore.secrets',
+        // RAD-44: job payloads may be personal (a reset address).
+        outbox: 'select * from radcore.jobs_outbox',
         temp: 'create temp table t (x int)',
-      })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, secrets: DENIED,
+      })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, secrets: DENIED, outbox: DENIED,
         temp: DENIED });
     });
   });
