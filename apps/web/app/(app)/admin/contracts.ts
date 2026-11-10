@@ -126,3 +126,21 @@ export const listAuditedTables = defineContract({
   method: 'GET', path: '/admin/audit/tables', auth: 'session', perm: 'audit:read', tx: read,
   input: z.object({}), output: z.object({ tables: z.array(z.string()) }),
 });
+
+const securityEventKind = z.enum(['sign_in', 'sign_in_failed', 'password_changed', 'second_factor_changed', 'export', 'download']);
+export type SecurityEventKind = z.infer<typeof securityEventKind>;
+
+/** Asked for on RAD-31 (backend-2), the audit viewer's second tab. */
+export const listSecurityEvents = defineContract({
+  method: 'GET', path: '/admin/security-events', auth: 'session', perm: 'audit:read', tx: read,
+  input: listInput(z.object({
+    occurred: dateRange(), kind: securityEventKind.optional(), principal: z.string().max(80).optional(),
+  })),
+  output: listOf(z.object({
+    id: idString(), occurredAt: momentString(), kind: securityEventKind,
+    principal: z.object({ kind: z.enum(['user', 'system', 'link']), id: z.string(), displayName: z.string().nullable() }).nullable(),
+    device: z.string().max(80), detail: z.record(z.string(), z.json()),
+  })),
+  errors: ['range_too_long'],
+});
+export type SecurityEvent = z.infer<typeof listSecurityEvents.output>['items'][number];

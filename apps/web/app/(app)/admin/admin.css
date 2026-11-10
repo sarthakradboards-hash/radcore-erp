@@ -24,3 +24,7 @@
 .admin-matrix input[type="checkbox"] { inline-size: 1.25rem; block-size: 1.25rem; }
 .admin-matrix .admin-changed { background-color: var(--surface-selected); }
 .admin-matrix-head { display: grid; gap: var(--space-1); justify-items: center; }
+.admin-tabs { display: grid; gap: var(--space-4); }
+.admin-tabs [role="tab"][data-state="active"] { background-color: var(--surface-selected); font-weight: 600; }
+.admin-tabs [role="tabpanel"] { display: grid; gap: var(--space-4); }
+.admin-tabs [role="tabpanel"][hidden] { display: none; }
