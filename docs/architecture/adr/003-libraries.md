@@ -86,7 +86,7 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | UI primitives (dialog, popover, select, tabs, menu) | radix-ui | 1.8.1 | MIT | hand-made `Modal`, `Tabs`, menus in `ui.tsx` |
 | Server data and writes | @tanstack/react-query | 5.104.5 | MIT | hand-written `useGet` cache and `useSaving` |
 | Tables, long lists | @tanstack/react-table, @tanstack/react-virtual | 9.3.1, 3.14.21 | MIT | hand-made `Table` |
-| Forms | react-hook-form, @hookform/resolvers | 7.90.0, 6.0.0 | MIT | hand-made `Form` internals |
+| Forms | react-hook-form, @hookform/resolvers | 7.90.0, 6.0.1 | MIT | hand-made `Form` internals |
 | Combobox (server search) | cmdk | 1.1.1 | MIT | pickers that loaded a fixed slice (RC-086). Last release March 2025: stable and small (§4) |
 | QR code for second-factor enrolment | qrcode | 1.5.4 | MIT | nothing (M1-15 is new). **Browser only**: it draws the `otpauth://` URI as SVG on the enrolment screen, so the secret never goes to an outside QR service. The SVG is shown through an `<img>` with a `data:` URL, not inserted as HTML (ADR-002 L6); web's Content-Security-Policy, set in `apps/web/proxy.ts` (M1-46), allows `data:` images (`img-src 'self' blob: data:`). Last release August 2024: a finished, widely used library with no open advisory (§4). Its `yargs` dependency serves only its command-line tool and doesn't reach the browser bundle. Checked on npm and OSV on 7 Nov 2026, with its dependencies: no advisory. Row added ahead of the PR that installs it, by the coordinator's decision (RAD-61) |
 
@@ -141,10 +141,12 @@ tests worked from the source text:
 
 What is **not** ours:
 - **The CSV formula guard** is csv-stringify's `escape_formulas: true`. It covers `=`, `+`, `-`, `@`, tab, CR and
-  their full-width forms. A cell that is a strict decimal or date string (`^-?\d+(\.\d+)?$`, `^\d{4}-\d{2}-\d{2}$`)
-  can't be a formula. For those cells the export's `cast` returns `{ value, escape_formulas: false }`, which
-  csv-stringify applies to that cell alone, so `-1250.50` stays a number. Every other cell is escaped. M1-29 tests
-  both cases.
+  their full-width forms. A cell that is a strict decimal, date or E.164 phone string (`^-?\d+(\.\d+)?$`,
+  `^\d{4}-\d{2}-\d{2}$`, `^\+[1-9]\d{7,14}$`) can't be a formula: it has no letters or brackets, so a spreadsheet
+  can at most read it as a number. For those cells the export's `cast` returns `{ value, escape_formulas: false }`,
+  which csv-stringify applies to that cell alone, so `-1250.50` stays a number and a phone gets no apostrophe
+  (RC-203). A spreadsheet may show such a phone as a number without its `+`, but the file holds the exact text.
+  Every other cell is escaped. M1-29 tests each case, including `+91abc` and a full-width `＋91…` still escaped.
 - **Envelope encryption** is the AWS Encryption SDK (§2).
 
 ### 4. Adding or changing a dependency

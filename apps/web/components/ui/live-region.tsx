@@ -20,7 +20,6 @@ function set(message: Message): void {
 /**
  * Says `text` to screen readers, for example `announce('Saved')` after a save succeeds.
  * A modal dialog makes the page's region inert, so dialog content mounts its own <LiveRegion /> (RAD-53).
- * @public UI-kit API: its first callers are RAD-53's forms, so knip sees no use yet.
  */
 export function announce(text: string): void {
   const id = current.id + 1;
