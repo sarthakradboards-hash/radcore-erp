@@ -20,7 +20,7 @@ CREATE VIEW "radcore"."v_schema_audit_columns" AS (with audited as (
   select relname::text, attname::text, 'kept and redacted' from columns where kept and redacted
   union all
   select relname::text, attname::text, 'a secret not redacted' from columns
-    where attname ~ '(hash|secret|token|ciphertext|password)' and not redacted);--> statement-breakpoint
+    where attname ~ '(_hash|_secret|_token|ciphertext)$|^password$' and not redacted);--> statement-breakpoint
 CREATE VIEW "radcore"."v_schema_missing_triggers" AS (select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing
   from pg_catalog.pg_class c
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace

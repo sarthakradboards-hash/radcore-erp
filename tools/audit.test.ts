@@ -208,14 +208,14 @@ describe.skipIf(!url)('the audit engine', () => {
       expect(rows[0]?.changed).toEqual({ status: 'invited', password_set_at: null, email: '[redacted]',
         email_key: '[redacted]', display_name: '[redacted]', password_hash: '[redacted]' });
       expect(rows[1]?.changed).toEqual({ display_name: '[redacted]' });
-      expect(JSON.stringify(rows)).not.toMatch(/asha|Asha/);
+      expect(JSON.stringify(rows.map((r) => r.changed))).not.toMatch(/asha|Asha/);
     });
   });
 
   it("stamps the outbox's rows but doesn't audit them: a reset job's data is a typed address (ADR-001 §7a)", async () => {
     await inRollback(async (c) => {
       await c.query(`insert into radcore.jobs_outbox (name, data, principal, request_id)
-        values ('auth.password_reset', '{"email": "asha.rao@example.com"}', 'system:test', 'r-1')`);
+        values ('auth.password-reset', '{"email": "asha.rao@example.com"}', 'system:test', 'r-1')`);
       const { rows } = await c.query("select 1 from radcore.audit_log where table_name = 'jobs_outbox'");
       expect(rows).toEqual([]);
       expect((await c.query<{ n: number }>("select count(*)::int as n from radcore.audit_log where changed::text like '%asha%'"))

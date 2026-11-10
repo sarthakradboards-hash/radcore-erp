@@ -81,7 +81,16 @@ describe.skipIf(!url)('the outbox', () => {
     await relayOutbox(db, queue, logger());
     // The crash: the job reached pg-boss, but the delete didn't commit, so the row is back.
     await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(contract, { n: 7 }));
-    await pool.query('update radcore.jobs_outbox set id = $1 where request_id = $2', [id, requestId]);
+    // The who-and-when stamp needs a principal (RA005, RAD-30).
+    const c = await pool.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      await c.query('update radcore.jobs_outbox set id = $1 where request_id = $2', [id, requestId]);
+      await c.query('commit');
+    } finally {
+      c.release();
+    }
     expect((await relayOutbox(db, queue, logger())).sent).toBeGreaterThanOrEqual(1);
     expect(await outboxFor(requestId)).toEqual([]);
     expect(await jobsWithIds([id])).toBe(1);

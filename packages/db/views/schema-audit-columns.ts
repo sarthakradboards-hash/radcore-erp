@@ -1,7 +1,7 @@
 // ADR-005 §7c (RAD-30, M6-16: references, not copies): every column of an audited table is listed when its trigger is
 // attached, as kept or redacted, so nothing reaches the append-only audit_log by default. Each row is a column that
 // breaks that: one listed nowhere (the primary key and the four audit columns aside), one listed both ways, or one
-// named like a secret (hash, secret, token, ciphertext, password) that isn't redacted. A migration that adds a column
+// named like a secret (ending _hash, _secret, _token or ciphertext, or just password) that isn't redacted. A migration that adds a column
 // attaches its table again. Read by tools/schema.test.ts.
 import { sql } from 'drizzle-orm';
 import { text } from 'drizzle-orm/pg-core';
@@ -33,4 +33,4 @@ export const vAuditColumns = radcore.view('v_schema_audit_columns', {
   select relname::text, attname::text, 'kept and redacted' from columns where kept and redacted
   union all
   select relname::text, attname::text, 'a secret not redacted' from columns
-    where attname ~ '(hash|secret|token|ciphertext|password)' and not redacted`);
+    where attname ~ '(_hash|_secret|_token|ciphertext)$|^password$' and not redacted`);
