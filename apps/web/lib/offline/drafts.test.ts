@@ -54,6 +54,11 @@ it('never throws when storage is missing, full or holds junk', () => {
   full.setItem = () => { throw new DOMException('full', 'QuotaExceededError'); };
   vi.stubGlobal('sessionStorage', full);
   expect(() => drafts.save('u1', 'party', {})).not.toThrow();
+  vi.stubGlobal('sessionStorage', memoryStorage());
+  const cyclic: Record<string, unknown> = {};
+  cyclic['self'] = cyclic;
+  expect(() => drafts.save('u1', 'party', cyclic)).not.toThrow();
+  expect(() => drafts.save('u1', 'party', { n: 1n })).not.toThrow();
   const junk = memoryStorage();
   junk.setItem('radcore:draft:u1:party', '{not json');
   vi.stubGlobal('sessionStorage', junk);

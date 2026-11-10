@@ -24,8 +24,9 @@ export const drafts = {
     } catch { return null; }
   },
   save(user: string, form: string, value: unknown): void {
-    const json = JSON.stringify(value, (k, v: unknown) => (SECRET.test(k) ? undefined : v));
-    try { store()?.setItem(keyFor(user, form), json); } catch { /* full or blocked: skip */ }
+    try {
+      store()?.setItem(keyFor(user, form), JSON.stringify(value, (k, v: unknown) => (SECRET.test(k) ? undefined : v)));
+    } catch { /* full, blocked, or a value JSON can't hold: skip */ }
   },
   clear(user: string, form: string): void {
     try { store()?.removeItem(keyFor(user, form)); } catch { /* blocked: nothing stored */ }

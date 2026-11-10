@@ -3,7 +3,12 @@
 import { onlineManager } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 
-const subscribe = (onChange: () => void) => onlineManager.subscribe(onChange);
+const subscribe = (onChange: () => void) => {
+  const unsubscribe = onlineManager.subscribe(onChange);
+  // The subscription starts a frame after hydration; a connection lost in that gap fired no event we heard.
+  if (!navigator.onLine) onlineManager.setOnline(false);
+  return unsubscribe;
+};
 
 /**
  * Says when the browser is offline (RC-149). While offline, TanStack pauses saves and sends them, with the same
