@@ -20,3 +20,4 @@ export { defineSetting, settingRow, Settings, type SettingDef, type SettingRow }
 export { claimSavedOnce, cleanSavedOnce, SAVED_ONCE_KEEP_MS, savedOnceCleanup, type SavedOnce, type SavedOnceClaim, type SavedOnceClass } from './saved-once.ts';
 export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './files/kinds.ts';
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
+export { cleanOutbox, outboxCleanup } from './outbox.ts';

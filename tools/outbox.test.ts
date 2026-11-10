@@ -140,4 +140,48 @@ describe.skipIf(!url)('the outbox', () => {
     } finally {
       await pool.query('delete from radcore.jobs_outbox where request_id = $1', [requestId]);
     }
+  }, 60_000);
+
+  // ADR-001 §6a's "job for a user", end to end through the outbox: it runs as the person who queued it, loaded when
+  // it runs, and only while they still hold its permission.
+  const forUser = () => ({ ...name(), principal: { kind: 'user', perm: 'invoices:export' }, input: z.object({}) } as const);
+  const person = (permissions: string[]) => ({ kind: 'user', userId: 'u-1', permissions }) as const;
+
+  it('runs a job queued by a person as that person, loaded when it runs', async () => {
+    const q = createJobQueue(settings(), logger());
+    const job = forUser();
+    const seen = vi.fn<(principal: unknown) => void>();
+    const load = vi.fn(async (by: string) => (by === 'user:u-1' ? person(['invoices:export']) : null));
+    const stop = await runJobs(q, [defineJob(job, async (ctx) => { seen(ctx.principal); })], logger(), { db, loadPrincipal: load });
+    try {
+      await runInTransaction(db, WRITE, user, randomUUID(), (ctx) => ctx.jobs.send(job, {}));
+      await relayOutbox(db, q, logger());
+      await vi.waitFor(() => expect(seen).toHaveBeenCalledWith(person(['invoices:export'])), { timeout: 30_000, interval: 250 });
+      expect(load).toHaveBeenCalledWith('user:u-1');
+    } finally {
+      await stop.stop();
+    }
+  }, 60_000);
+
+  it('refuses a job queued by a person who lost its permission: it never runs, isn\'t retried, and alerts once', async () => {
+    const q = createJobQueue(settings(), logger());
+    const job = forUser();
+    const ranAs = vi.fn();
+    const alert = vi.fn<(message: string) => Promise<void>>(async () => undefined);
+    const stop = await runJobs(q, [defineJob(job, async () => { ranAs(); })], logger(),
+      { db, alert, loadPrincipal: async () => person(['invoices:read']) });
+    const requestId = randomUUID();
+    try {
+      await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(job, {}));
+      const [row] = await outboxFor(requestId);
+      await relayOutbox(db, q, logger());
+      await vi.waitFor(async () => expect((await pool.query<{ state: string; retries: number }>(
+        'select state, retry_count as retries from pgboss.job where id = $1', [row?.id])).rows).toEqual([{ state: 'completed', retries: 0 }]),
+      { timeout: 30_000, interval: 250 });
+      expect(ranAs).not.toHaveBeenCalled();
+      expect(alert.mock.calls.map((c) => c[0])).toEqual([
+        `job ${job.name} refused (job ${row?.id ?? ''}): ${job.name}: user:u-1 no longer holds invoices:export`]);
+    } finally {
+      await stop.stop();
+    }
   }, 60_000);});

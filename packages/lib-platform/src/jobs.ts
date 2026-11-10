@@ -1,15 +1,15 @@
 // Background jobs declared as data (RAD-44, ADR-001 §8, RC-082): each job contract names its queue, its principal
 // (ADR-001 §6a), its input schema, and how it retries, times out, overlaps and is kept. The worker runs them on
 // pg-boss (runtime.ts). Jobs are declared in apps/worker/src/jobs/ with defineJob(contract, service), like routes.
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { Ctx, Principal } from './ctx.ts';
 
 /** Who a job runs as (ADR-001 §6a): its service gets a Ctx for that principal (RAD-44 step 3). */
 export type JobPrincipal =
   /** A schedule or webhook: every record, but only these permissions. */
   | { kind: 'system'; name: string; permissions: readonly string[] }
-  /** Queued during a person's request: their permissions, checked again when the job runs. */
-  | { kind: 'user' };
+  /** Queued during a person's request: run as that person, with this permission checked again when it runs. */
+  | { kind: 'user'; perm: string };
 
 export type JobContract<I> = {
   /** Queue name: lower-case words joined by dots or hyphens, like `sales.shopify-order`. */
@@ -35,6 +35,18 @@ export type JobContract<I> = {
 
 export type JobMeta = { jobId: string };
 
+/** What pg-boss holds for every job: its input and who queued it (`user:<id>` or `system:<name>`, ADR-001 §6a). */
+export type JobEnvelope = { input: unknown; by: string };
+const ENVELOPE = z.object({ input: z.unknown(), by: z.string().min(1) });
+
+/** The person a job was queued by, as they are now: null when they're gone (RAD-35 provides it; until then, null). */
+export type LoadPrincipal = (by: string) => Promise<Principal | null>;
+
+/** A job that can't run as its enqueuer: they're gone, or no longer hold its permission. It isn't retried. */
+export class JobRefused extends Error {
+  override name = 'JobRefused';
+}
+
 /** How the worker runs a job's service: in one transaction, with a Ctx for principal (runtime.ts). */
 export type OpenJob = (principal: Principal, jobId: string, work: (ctx: Ctx) => Promise<void>) => Promise<void>;
 
@@ -45,8 +57,8 @@ export type JobDefinition = {
   every: string | null;
   deleteOnComplete: boolean;
   settings: QueueSettings;
-  /** Checks the payload against the contract's input schema, then runs the service through open. */
-  handle(data: unknown, jobId: string, open: OpenJob): Promise<void>;
+  /** Checks the envelope and its input, settles who the job runs as, then runs the service through open. */
+  handle(data: unknown, jobId: string, open: OpenJob, load: LoadPrincipal): Promise<void>;
 };
 
 /** What pg-boss gets for the queue (its Queue options). */
@@ -85,17 +97,24 @@ export function queueSettings(c: JobContract<unknown>): QueueSettings {
 }
 
 /**
- * The principal a job's Ctx runs as. A system job runs as its contract names it. A job for a user runs as the person
- * who queued it, rechecked when it runs; until that lands (RAD-44 step 3b) it fails closed, never running as anyone.
+ * The principal a job's Ctx runs as (ADR-001 §6a). A system job runs as its contract names it. A job for a user runs
+ * as the person who queued it, loaded as they are now: if they're gone, or no longer hold the job's permission, it is
+ * refused rather than run (a revoked permission fails the job, with the dead-letter alert).
  */
-function principalOf(name: string, p: JobPrincipal): Principal {
+async function principalOf(name: string, p: JobPrincipal, by: string, load: LoadPrincipal): Promise<Principal> {
   if (p.kind === 'system') return Object.freeze({ kind: 'system', name: p.name, permissions: Object.freeze([...p.permissions]) });
-  throw new Error(`${name}: a job for a user can't run until its enqueuer is rechecked (RAD-44 step 3b)`);
+  const who = by.startsWith('user:') ? await load(by) : null;
+  if (who === null) throw new JobRefused(`${name}: queued by ${by}, who can't be loaded as a person now`);
+  if (!who.permissions.includes(p.perm)) throw new JobRefused(`${name}: ${by} no longer holds ${p.perm}`);
+  return who;
 }
-
 export function defineJob<I>(contract: JobContract<I>,
   service: (ctx: Ctx, input: I, meta: JobMeta) => Promise<void>): JobDefinition {
   const settings = queueSettings(contract);
+  // A schedule has no person behind it, so a scheduled job runs as a system principal.
+  if (contract.every !== undefined && contract.principal.kind !== 'system') {
+    throw new Error(`${contract.name}: a scheduled job must declare a system principal`);
+  }
   return {
     name: contract.name,
     principal: contract.principal,
@@ -103,9 +122,11 @@ export function defineJob<I>(contract: JobContract<I>,
     deleteOnComplete: contract.deleteOnComplete === true,
     settings,
     // The payload is checked before any transaction opens; the service's writes commit or roll back together.
-    handle: async (data, jobId, open) => {
-      const input = contract.input.parse(data);
-      await open(principalOf(contract.name, contract.principal), jobId, (ctx) => service(ctx, input, { jobId }));
+    handle: async (data, jobId, open, load) => {
+      const { input: raw, by } = ENVELOPE.parse(data);
+      const input = contract.input.parse(raw);
+      const principal = await principalOf(contract.name, contract.principal, by, load);
+      await open(principal, jobId, (ctx) => service(ctx, input, { jobId }));
     },
   };
 }
