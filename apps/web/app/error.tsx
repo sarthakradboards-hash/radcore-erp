@@ -1,6 +1,6 @@
 'use client';
 // A screen that fails is replaced by this, inside the root layout, so the rest of the app keeps working (RC-159).
-// Forms keep their typing as drafts (lib/offline/drafts.ts), so "Try again" brings it back.
+// Typed work survives through the forms' draft autosave (RAD-52, used by RAD-53's forms), not through this screen.
 import { useEffect } from 'react';
 import { t } from '../lib/i18n/index.ts';
 

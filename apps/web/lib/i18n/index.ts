@@ -2,7 +2,7 @@
 // with the same keys, and the type below makes a missing key a compile error.
 const en = {
   'error.title': 'Something went wrong',
-  'error.body': 'Your unsaved typing is kept as a draft on this device. Try again, and if it keeps happening, give your admin the reference below.',
+  'error.body': 'This screen hit a problem. Try again, and if it keeps happening, give your admin the reference below.',
   'error.reference': 'Reference: {id}',
   'error.retry': 'Try again',
   'notFound.title': 'Page not found',
@@ -17,5 +17,6 @@ export type MessageKey = keyof typeof en;
 
 /** The English text for `key`, with `{name}` placeholders filled from `vars`. */
 export function t(key: MessageKey, vars: Readonly<Record<string, string>> = {}): string {
-  return en[key].replace(/\{(\w+)\}/g, (whole, name: string) => vars[name] ?? whole);
+  // Own keys only, so a placeholder named like an Object.prototype member ({constructor}) isn't filled from it.
+  return en[key].replace(/\{(\w+)\}/g, (whole, name: string) => (Object.hasOwn(vars, name) ? vars[name]! : whole));
 }
