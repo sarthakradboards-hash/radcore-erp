@@ -3,12 +3,13 @@
 // through these four hooks. The option builders are exported so the tests drive them with TanStack's own observers.
 import type { Contract } from '@radcore/lib-common';
 import {
-  infiniteQueryOptions, keepPreviousData, onlineManager, QueryCache, QueryClient, queryOptions, useInfiniteQuery,
-  useMutation, useQuery, useQueryClient,
+  infiniteQueryOptions, keepPreviousData, MutationCache, onlineManager, QueryCache, QueryClient, queryOptions,
+  useInfiniteQuery, useMutation, useQuery, useQueryClient,
 } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, callContract } from '../api-client.ts';
+import { noteSignedOut } from '../session/signed-out.ts';
 
 type In<C extends Contract> = z.input<C['input']>;
 type Out<C extends Contract> = z.output<C['output']>;
@@ -41,9 +42,10 @@ export const MAX_QUERIES = 200;
  */
 export const REFRESH_MS = 60_000;
 
-/** One client per browser tab. A refusal (4xx) isn't retried; a network failure or a 5xx is, twice. */
+/** One client per browser tab. A refusal (4xx) isn't retried; a network failure or a 5xx is, twice.
+ * Any read or save answered signed_out opens the signed-out dialog (RAD-55). */
 export function makeQueryClient(): QueryClient {
-  const cache = new QueryCache();
+  const cache = new QueryCache({ onError: noteSignedOut });
   cache.subscribe((event) => {
     if (event.type !== 'added') return;
     for (const q of cache.getAll()) { // insertion order, oldest first
@@ -53,6 +55,7 @@ export function makeQueryClient(): QueryClient {
   });
   return new QueryClient({
     queryCache: cache,
+    mutationCache: new MutationCache({ onError: noteSignedOut }),
     defaultOptions: {
       queries: { retry: (failures, error) => failures < 2 && !(error instanceof ApiError && error.status < 500) },
     },

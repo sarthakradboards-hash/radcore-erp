@@ -3,7 +3,7 @@
 import { cursorString } from '@radcore/lib-common';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { AppError, decodeCursor, encodeCursor } from './index.ts';
+import { AppError, decodeCursor, encodeCursor, sortedCursor } from './index.ts';
 
 // ADR-002's worked example: a newest-first invoice list keyed on (invoiceDate, id).
 const InvoiceKey = z.strictObject({ invoiceDate: z.iso.date(), id: z.uuid() });
@@ -44,4 +44,43 @@ describe('the page cursor', () => {
     const edited = { ...key, invoiceDate: '2020-01-01' };
     expect(decodeCursor(InvoiceKey, encodeCursor(edited))).toEqual(edited);
   });
+});
+
+const refusedBadCursor = (f: () => unknown) => {
+  let thrown: unknown;
+  try {
+    f();
+  } catch (e) {
+    thrown = e;
+  }
+  expect(thrown).toMatchObject({ code: 'invalid_input', issues: [{ path: ['after'], code: 'bad_cursor' }] });
+};
+
+describe('the cursor of a sorted list (RAD-47)', () => {
+  const byCity = { column: 'city', desc: false };
+
+  it('carries the sort column, its direction, the value and the id, and comes back under the same sort', () => {
+    const last = { ...byCity, value: 'Pune', id: key.id };
+    expect(decodeCursor(sortedCursor(byCity, z.string()), encodeCursor(last))).toEqual(last);
+  });
+
+  it.each<[string, { column: string; desc: boolean }]>([
+    ['another column', { column: 'name', desc: false }],
+    ['the other direction', { column: 'city', desc: true }],
+  ])('refuses a cursor made under %s, since a new sort starts from page one', (_, sort) => {
+    refusedBadCursor(() => decodeCursor(sortedCursor(sort, z.string()), encodeCursor({ ...byCity, value: 'Pune', id: key.id })));
+  });
+
+  it("refuses a value of the wrong type for the column", () => {
+    const byLimit = { column: 'creditLimit', desc: true };
+    refusedBadCursor(() => decodeCursor(sortedCursor(byLimit, z.string().regex(/^\d+\.\d{2}$/)),
+      encodeCursor({ ...byLimit, value: 'lots', id: key.id })));
+  });
+});
+
+// auditor-2 on #83: a sort key long enough to pass the cursor's 512 characters would make page 2 answer 400. It's
+// refused when the cursor is made instead, so the list's own test finds it.
+it('refuses to make a cursor past 512 characters, so a long sort key shows up in its own test', () => {
+  expect(() => encodeCursor({ partyName: 'x'.repeat(400), id: key.id })).toThrow(/at most 512/);
+  expect(encodeCursor({ partyName: 'x'.repeat(300), id: key.id }).length).toBeLessThanOrEqual(512);
 });

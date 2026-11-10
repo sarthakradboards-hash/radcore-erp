@@ -11,4 +11,4 @@ export const vEnums = radcore.view('v_schema_enums', {
   from pg_catalog.pg_type t
   join pg_catalog.pg_namespace n on n.oid = t.typnamespace
   where t.typtype = 'e'
-    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle') and left(n.nspname, 3) <> 'pg_'`);
+    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'`);

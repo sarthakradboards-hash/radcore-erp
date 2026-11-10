@@ -106,8 +106,10 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
     await client.query('set local search_path = radcore');
     await client.query("set local app.principal = 'system:test'");
     // The helper fixtures get their triggers as a real table's migration gives them (RAD-30, ADR-005 §5).
-    await client.query("select radcore.audit_attach('fixture_units')");
-    await client.query("select radcore.audit_attach('fixture_lines')");
+    // Every column listed, as a real table's migration lists them: these are all business values, so all kept.
+    await client.query("select radcore.audit_attach('fixture_units', keep => array['label', 'code_key', 'label_key'])");
+    await client.query(`select radcore.audit_attach('fixture_lines', keep => array['unit_code', 'amount', 'balance',
+      'foreign_amount', 'line_price', 'line_qty', 'stock_qty', 'tax', 'cess', 'fx', 'note', 'short_note'])`);
     // Rows every test may rely on; each test's own writes run in a savepoint, so the shuffled order doesn't matter.
     await client.query("insert into fixture_units (code, label) values ('nos', 'Numbers'), ('store', 'Store')");
   });
@@ -127,7 +129,7 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
 
   it('finds no rule broken outside the fixture schema (the real schema and the helper fixtures)', async () => {
     for (const view of ['v_schema_numeric_without_check', 'v_schema_fk_without_index', 'v_schema_missing_audit', 'v_schema_enums',
-      'v_schema_public_relations', 'v_schema_missing_triggers', 'v_schema_unredacted_secrets']) {
+      'v_schema_public_relations', 'v_schema_missing_triggers', 'v_schema_audit_columns']) {
       expect((await rows(view)).filter(outside('guard_bad')), view).toEqual([]);
     }
   });

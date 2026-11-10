@@ -54,8 +54,9 @@ describe.skipIf(!url)('the audit engine', () => {
       const rows = await auditOf(c, 'settings', 'sales.invoice_prefix');
       expect(rows.map((r) => [r.op, r.created_by])).toEqual([['insert', 'user:asha'], ['update', 'user:asha'], ['delete', 'user:asha']]);
       // One transaction, so one occurred_at: seq is what keeps the order (auditor-2 on #90).
-      expect(rows[0]?.changed).toEqual({ key: 'sales.invoice_prefix', value: 'INV' }); // no audit columns
-      expect(rows[2]?.changed).toEqual({ key: 'sales.invoice_prefix', value: 'RB' });
+      // Only the listed columns: the key is record_id already, and the four audit columns are the row's own.
+      expect(rows[0]?.changed).toEqual({ value: 'INV' });
+      expect(rows[2]?.changed).toEqual({ value: 'RB' });
       expect(rows[1]?.changed).toEqual({ value: { old: 'INV', new: 'RB' } });
     });
   });
@@ -197,16 +198,54 @@ describe.skipIf(!url)('the audit engine', () => {
     });
   });
 
-  // auditor-2 on #90: the redaction list is fixed when the table is attached, so a secret column added later would go
-  // into the append-only log in full. The schema view finds it.
-  it('flags a secret column added to an audited table without redacting it', async () => {
+  // M6-16, references not copies: personal data never reaches the append-only log, only that it changed.
+  it("writes a person's email and name as [redacted], and keeps their status", async () => {
     await inRollback(async (c) => {
-      const unredacted = async () => (await c.query<{ table_name: string; column_name: string }>(
-        'select table_name, column_name from radcore.v_schema_unredacted_secrets order by 1, 2')).rows;
-      expect(await unredacted()).toEqual([]);
+      const { rows: [u] } = await c.query<{ id: string }>(
+        "insert into radcore.users (email, display_name) values ('asha.rao@example.com', 'Asha Rao') returning id");
+      await c.query("update radcore.users set display_name = 'Asha R.' where id = $1", [u?.id]);
+      const rows = await auditOf(c, 'users', u?.id ?? '');
+      expect(rows[0]?.changed).toEqual({ status: 'invited', password_set_at: null, email: '[redacted]',
+        email_key: '[redacted]', display_name: '[redacted]', password_hash: '[redacted]' });
+      expect(rows[1]?.changed).toEqual({ display_name: '[redacted]' });
+      expect(JSON.stringify(rows)).not.toMatch(/asha|Asha/);
+    });
+  });
+
+  it("stamps the outbox's rows but doesn't audit them: a reset job's data is a typed address (ADR-001 §7a)", async () => {
+    await inRollback(async (c) => {
+      await c.query(`insert into radcore.jobs_outbox (name, data, principal, request_id)
+        values ('auth.password_reset', '{"email": "asha.rao@example.com"}', 'system:test', 'r-1')`);
+      const { rows } = await c.query("select 1 from radcore.audit_log where table_name = 'jobs_outbox'");
+      expect(rows).toEqual([]);
+      expect((await c.query<{ n: number }>("select count(*)::int as n from radcore.audit_log where changed::text like '%asha%'"))
+        .rows[0]?.n).toBe(0);
+    });
+  });
+
+  it('refuses to attach a table with a column left unlisted, or listed both ways', async () => {
+    await inRollback(async (c) => {
       await c.query('set local role radcore_owner');
-      await c.query('alter table radcore.users add column totp_secret text');
-      expect(await unredacted()).toEqual([{ table_name: 'users', column_name: 'totp_secret' }]);
+      expect(await outcome(c, "select radcore.audit_attach('settings')")).toBe('P0001');
+      expect(await outcome(c, "select radcore.audit_attach('settings', keep => array['value'], redact => array['value'])"))
+        .toBe('P0001');
+      expect(await outcome(c, "select radcore.audit_attach('settings', keep => array['value', 'nope'])")).toBe('P0001');
+    });
+  });
+
+  // auditor-2 and the architect on #90: the lists are fixed when the table is attached, so a column added later would
+  // go into the append-only log in full. The schema view finds it, by name for a secret.
+  it('flags a column added to an audited table without attaching it again', async () => {
+    await inRollback(async (c) => {
+      const problems = async () => (await c.query<{ table_name: string; column_name: string; problem: string }>(
+        'select table_name, column_name, problem from radcore.v_schema_audit_columns order by 1, 2, 3')).rows;
+      expect(await problems()).toEqual([]);
+      await c.query('set local role radcore_owner');
+      await c.query('alter table radcore.users add column totp_secret text, add column nickname text');
+      expect(await problems()).toEqual([
+        { table_name: 'users', column_name: 'nickname', problem: 'unlisted' },
+        { table_name: 'users', column_name: 'totp_secret', problem: 'a secret not redacted' },
+        { table_name: 'users', column_name: 'totp_secret', problem: 'unlisted' }]);
     });
   });
 });

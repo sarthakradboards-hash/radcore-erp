@@ -29,7 +29,7 @@ that builds it.
 
 **How the rules are tested (M1-05).** The schema tests run in CI against a database migrated from zero on
 PostgreSQL 16. They read `pg_catalog` through views in `packages/db/views/` (the SQL zone), because Drizzle's
-metadata has no triggers or grants. The pg-boss and migration schemas are excluded.
+metadata has no triggers or grants. The pg-boss, migration and rate-limit schemas are excluded: each holds a library's own table, which carries no audit columns (the rate-limit store, `ratelimit.limits`, is rate-limiter-flexible's, ADR-003, RAD-32).
 
 ### 1. Types and precision (M1-05)
 
@@ -261,14 +261,12 @@ They are append-only with explicit reversals:
 
   `api` and `worker` share `radcore_app`, so separate logins per process are an option for M1-06 if the audit needs
   to tell them apart.
-- **What an audit row holds** (RAD-30). `table_name`, `record_id`, `op` and `changed` (jsonb): an insert's new row,
-  an update's changed columns as old and new, or a delete's old row. The four audit columns are left out, and an
-  update that changes nothing else writes no row. A table's secret and hash columns, listed when its trigger is
-  attached, are written as the string `[redacted]`. Personal data is kept in full and masked when read, by the same
-  `pii()` rules as the record.
-- **Platform bookkeeping written on every request** (`saved_once` now; the outbox and a session's last-seen time when
-  they come) gets the who-and-when trigger only. The schema test names each such table, and adding one is an ADR-005
-  change.
+- **What an audit row holds** (RAD-30, M6-16: references, not copies). `table_name`, `record_id`, `seq`, `op`, and
+  `changed` as jsonb (an insert's new row, an update's changed columns as old and new, or a delete's old row), without
+  the four who-and-when columns. Each column of an audited table is listed at `audit_attach` as `keep` (recorded) or
+  `redact` (written as `[redacted]`). Secrets, hashes and all personal data are redacted, and the schema test fails on
+  an unlisted column. An update that changes nothing kept or redacted writes no row. Machinery tables (`saved_once`,
+  `jobs_outbox`) get the who-and-when trigger only.
 - **The owner login** runs migrations and the partition top-up only, from CI. It never sits on the server or in the
   API or worker containers (RC-003, ADR-004 §3). A read-only login, `radcore_read`, serves the restore drill and
   support queries (RC-193).

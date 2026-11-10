@@ -90,9 +90,9 @@ describe.skipIf(!url)('the three logins', () => {
     await inRollback(async (c) => {
       const { rows } = await c.query(`
         select pg_get_userbyid(datdba) as owner from pg_database where datname = current_database()
-        union select pg_get_userbyid(nspowner) from pg_namespace where nspname in ('radcore', 'pgboss', 'drizzle')
+        union select pg_get_userbyid(nspowner) from pg_namespace where nspname in ('radcore', 'pgboss', 'drizzle', 'ratelimit')
         union select pg_get_userbyid(c.relowner) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-          where n.nspname in ('radcore', 'pgboss', 'drizzle')`);
+          where n.nspname in ('radcore', 'pgboss', 'drizzle', 'ratelimit')`);
       expect(rows).toEqual([{ owner: 'radcore_owner' }]);
     });
   });
