@@ -63,6 +63,24 @@ html { scroll-padding-top: calc(env(safe-area-inset-top) + var(--shell-header-h)
 .page-message { max-width: 40rem; margin: var(--space-8) auto; padding: 0 var(--space-4); }
 .page-message h1 { font-size: var(--text-lg); }
 
+/* app/(auth): the sign-in, invite and reset pages. */
+.auth-page { max-width: 28rem; margin: var(--space-8) auto; padding: 0 var(--space-4); }
+.auth-page h1 { font-size: var(--text-lg); }
+.auth-notice { padding: var(--space-2) var(--space-3); border-inline-start: 3px solid var(--warn); background: var(--surface-raised); }
+.auth-switch { margin-block-start: var(--space-3); min-block-size: var(--tap); }
+.enrolment-qr { margin: var(--space-4) 0; }
+.enrolment-qr-placeholder { inline-size: 192px; block-size: 192px; }
+.recovery-codes ol { columns: 2; font-family: var(--font-mono); }
+
+/* components/auth: the sessions list and sign-out. Buttons get the full tap size (WCAG 2.5.8). */
+.session-list { margin: 0 0 var(--space-4); padding: 0; list-style: none; }
+.session-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); }
+.session-device { font-weight: 600; }
+.session-when { color: var(--text-muted); font-size: var(--text-sm); }
+.session-list li > :last-child { margin-inline-start: auto; }
+.session-list button, .sign-out { min-block-size: var(--tap); padding: 0 var(--space-4); border-radius: var(--radius-sm); }
+
 /*
  * Below the supported-browser floor (Chrome and Edge 123, Safari 17.5, Firefox 120: decisions.md, 7 Nov) the tokens
  * don't resolve, so the app would show with no colours or focus ring. light-dark() is the newest feature the floor

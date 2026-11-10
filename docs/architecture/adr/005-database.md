@@ -29,7 +29,7 @@ that builds it.
 
 **How the rules are tested (M1-05).** The schema tests run in CI against a database migrated from zero on
 PostgreSQL 16. They read `pg_catalog` through views in `packages/db/views/` (the SQL zone), because Drizzle's
-metadata has no triggers or grants. The pg-boss and migration schemas are excluded.
+metadata has no triggers or grants. The pg-boss, migration and rate-limit schemas are excluded: each holds a library's own table, which carries no audit columns (the rate-limit store, `ratelimit.limits`, is rate-limiter-flexible's, ADR-003, RAD-32).
 
 ### 1. Types and precision (M1-05)
 
@@ -285,6 +285,10 @@ They are append-only with explicit reversals:
     `POSTGRES_PASSWORD` or `RADCORE_OWNER_PASSWORD`.
   - **pg-boss's index rebuild** needs the index's owner, so the worker's queue runs with `reindex: false`.
     Rebuilding the job indexes is an owner task.
+- **Extensions.** Only trusted extensions, each named here: `pg_trgm` (RAD-47, the list search index). The owner
+  migration creates them in the schema `radcore_ext`, where neither login has `USAGE`, so neither can call their
+  functions; index scans don't need it. Their member objects belong to the bootstrap superuser, so the owner's
+  default `REVOKE EXECUTE` doesn't reach them, and the missing `USAGE` does that job.
 
 **Access logging and read-only requests.** A GET runs read-only (ADR-002 §4), so it can't write `access_log`. When
 a GET opens a full record:

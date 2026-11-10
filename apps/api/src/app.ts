@@ -2,9 +2,15 @@
 import express from 'express';
 import { createHealthCheck, type Logger, type Stoppable } from '@radcore/lib-platform/runtime';
 import type { Config } from '@radcore/lib-platform';
+import { mountRoutes, type HandlerDeps } from './http/handler.ts';
+import type { Route } from './http/route.ts';
 
-export function createApp(config: Config, log: Logger): express.Express {
+/** The routes and what the handler needs to run them; without it, the app serves only /health. */
+export type Api = Omit<HandlerDeps, 'log' | 'publicOrigin'> & { routes: readonly Route[] };
+
+export function createApp(config: Config, log: Logger, api?: Api): express.Express {
   const app = express();
+  app.disable('x-powered-by');
   const databaseAnswers = createHealthCheck(config.database);
   // ADR-004 §2: Caddy sends /api/health here; it answers only if the database does. Rate limit: RAD-39.
   app.get('/health', async (_req, res) => {
@@ -16,6 +22,9 @@ export function createApp(config: Config, log: Logger): express.Express {
       res.status(503).json({ ok: false });
     }
   });
+  if (api !== undefined) {
+    mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin });
+  }
   return app;
 }
 

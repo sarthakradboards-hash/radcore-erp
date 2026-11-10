@@ -67,7 +67,7 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Envelope encryption | @aws-crypto/client-node | 5.0.2 | Apache-2.0 | the hand-written AES-GCM `secret-box`. KMS keyring in staging and production (`SECRETS_KMS_KEY_ID`); raw AES keyring from `SECRETS_LOCAL_KEY` in development and CI. Each value's encryption context names its table, column and row id, and decryption checks it, so a ciphertext copied into another row won't decrypt. Commitment policy `REQUIRE_ENCRYPT_REQUIRE_DECRYPT`; key rotation by KMS (M1-24) |
 | Rate limits in a shared store | rate-limiter-flexible (PostgreSQL store) | 11.2.3 | ISC | express-rate-limit counting in memory (RC-088). Its table comes from a migration (`tableCreated: true`, since the runtime login has no DDL), and it uses its own small pool in `client.ts`. It fails **closed**: when the store can't be reached, a limited action is refused |
 | File store | @aws-sdk/client-s3 | 3.1156.0 | Apache-2.0 | files in the database or on local disk. Works with SeaweedFS in development and CI (MinIO's image is no longer public; coordinator, 6 Nov) |
-| Presigned URLs | @aws-sdk/s3-request-presigner | 3.1156.0 | Apache-2.0 | none. Files reach the browser by presigned URL (Next row). Same release as client-s3; added by RAD-13 for the dev store's smoke test |
+| Presigned URLs | @aws-sdk/s3-request-presigner, @aws-sdk/s3-presigned-post | 3.1156.0, 3.1156.0 | Apache-2.0 | none. GETs are signed by s3-request-presigner. The browser's upload is a presigned POST from s3-presigned-post, because only a POST policy can hold `content-length-range` (ADR-004 §2). Same release as client-s3 |
 | CSV read and write (streams) | csv-parse, csv-stringify | 7.0.3, 6.9.0 | MIT | hand-written comma split and quadratic amount pattern (RC-118). Exports use csv-stringify's `escape_formulas` (§3) |
 | Text encoding detection | chardet | 2.2.0 | MIT | UTF-8 only (RC-117). Decoding is `TextDecoder` (§1), not iconv-lite |
 | Excel read and write | read-excel-file, write-excel-file | 9.3.12, 4.1.1 | MIT | hand-written `lib/xlsx.ts` writer, and no Excel import at all (RC-117) |
@@ -86,7 +86,7 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | UI primitives (dialog, popover, select, tabs, menu) | radix-ui | 1.8.1 | MIT | hand-made `Modal`, `Tabs`, menus in `ui.tsx` |
 | Server data and writes | @tanstack/react-query | 5.104.5 | MIT | hand-written `useGet` cache and `useSaving` |
 | Tables, long lists | @tanstack/react-table, @tanstack/react-virtual | 9.3.1, 3.14.21 | MIT | hand-made `Table` |
-| Forms | react-hook-form, @hookform/resolvers | 7.90.0, 6.0.0 | MIT | hand-made `Form` internals |
+| Forms | react-hook-form, @hookform/resolvers | 7.90.0, 6.0.1 | MIT | hand-made `Form` internals |
 | Combobox (server search) | cmdk | 1.1.1 | MIT | pickers that loaded a fixed slice (RC-086). Last release March 2025: stable and small (§4) |
 | QR code for second-factor enrolment | qrcode | 1.5.4 | MIT | nothing (M1-15 is new). **Browser only**: it draws the `otpauth://` URI as SVG on the enrolment screen, so the secret never goes to an outside QR service. The SVG is shown through an `<img>` with a `data:` URL, not inserted as HTML (ADR-002 L6); web's Content-Security-Policy, set in `apps/web/proxy.ts` (M1-46), allows `data:` images (`img-src 'self' blob: data:`). Last release August 2024: a finished, widely used library with no open advisory (§4). Its `yargs` dependency serves only its command-line tool and doesn't reach the browser bundle. Checked on npm and OSV on 7 Nov 2026, with its dependencies: no advisory. Row added ahead of the PR that installs it, by the coordinator's decision (RAD-61) |
 
@@ -122,16 +122,31 @@ tests worked from the source text:
 
 - GSTIN format and checksum, PAN format, state code from GSTIN (M1-03).
 - Place of supply and the GST split, the cess, the round-off (lib-gst).
+- The common and breached password check (M1-14, RAD-32, ADR-001 §7a), on the platform.
+  - **A bundled list**, always checked. It is a data file in lib-platform: the entries of 15 or more characters
+    from a public common-password list under MIT or CC0 (SecLists' 10-million list is MIT), with its licence
+    notice beside it.
+  - **Then the Pwned Passwords range API**, over the outbound client. An npm client for it would make its own
+    `fetch`, which L8 forbids, and the call is a single GET of `/range/<5 hex>` with a line-by-line read of the
+    answer.
+  - Its tests run on a fake transport and never reach the network.
 - The outbound guard (ADR-002 L8), on the platform. It uses `node:https` with a custom `lookup` that resolves the
   host and checks the address against a `net.BlockList` of every non-global range (ADR-002's list). The connection
   is pinned to the checked address, and redirects are followed by hand.
+- Upload magic bytes (M1-25, RAD-43), on the platform. Each allowed kind has one signature at fixed offsets in the
+  file's first 1 KB, checked against the kind the upload declared: JPEG, PNG, WebP, HEIC (by `ftyp` brand), PDF, and
+  ZIP for XLSX. A CSV has no signature and must have no NUL byte there. It confirms, it doesn't detect. file-type was
+  the library option, but it recognises hundreds of kinds and inflates ZIP entries in the request process, outside
+  the import isolate (§7). Whether a ZIP is really a workbook is the import parser's question (RAD-46).
 
 What is **not** ours:
 - **The CSV formula guard** is csv-stringify's `escape_formulas: true`. It covers `=`, `+`, `-`, `@`, tab, CR and
-  their full-width forms. A cell that is a strict decimal or date string (`^-?\d+(\.\d+)?$`, `^\d{4}-\d{2}-\d{2}$`)
-  can't be a formula. For those cells the export's `cast` returns `{ value, escape_formulas: false }`, which
-  csv-stringify applies to that cell alone, so `-1250.50` stays a number. Every other cell is escaped. M1-29 tests
-  both cases.
+  their full-width forms. A cell that is a strict decimal, date or E.164 phone string (`^-?\d+(\.\d+)?$`,
+  `^\d{4}-\d{2}-\d{2}$`, `^\+[1-9]\d{7,14}$`) can't be a formula: it has no letters or brackets, so a spreadsheet
+  can at most read it as a number. For those cells the export's `cast` returns `{ value, escape_formulas: false }`,
+  which csv-stringify applies to that cell alone, so `-1250.50` stays a number and a phone gets no apostrophe
+  (RC-203). A spreadsheet may show such a phone as a number without its `+`, but the file holds the exact text.
+  Every other cell is escaped. M1-29 tests each case, including `+91abc` and a full-width `＋91…` still escaped.
 - **Envelope encryption** is the AWS Encryption SDK (§2).
 
 ### 4. Adding or changing a dependency

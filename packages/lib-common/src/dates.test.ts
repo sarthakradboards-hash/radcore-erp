@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  clockFrom, dateString, financialYear, formatDate, formatMoment, indiaDate, indiaTimeToMoment, isRealDate,
+  addDays, clockFrom, dateString, financialYear, formatDate, formatMoment, indiaDate, indiaTimeToMoment, isRealDate,
   momentString, momentToIndiaTime, period, periodsOf, serverClock,
 } from './index.ts';
 
@@ -93,4 +93,18 @@ describe('display', () => {
 
 it('runs on a device outside India (vitest.config.ts)', () => {
   expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('America/Los_Angeles');
+});
+
+describe('addDays', () => {
+  it.each([
+    ['2026-02-28', 1, '2026-03-01'], ['2028-02-28', 1, '2028-02-29'], ['2026-12-31', 1, '2027-01-01'],
+    ['2026-03-01', -1, '2026-02-28'], ['2026-11-07', 0, '2026-11-07'], ['2026-03-31', 30, '2026-04-30'],
+  ])('%s plus %i days is %s', (date, days, want) => {
+    expect(addDays(date, days)).toBe(want);
+  });
+
+  it('refuses a date that is not real and a part of a day', () => {
+    expect(() => addDays('2026-02-30', 1)).toThrow(RangeError);
+    expect(() => addDays('2026-02-28', 0.5)).toThrow(RangeError);
+  });
 });

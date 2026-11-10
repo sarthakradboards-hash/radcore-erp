@@ -2,8 +2,8 @@
 // `sql` appears only as a CHECK's, a default's or a generated column's argument.
 import { sql } from 'drizzle-orm';
 import type { BuildExtraConfigColumns } from 'drizzle-orm';
-import { boolean, check, numeric, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { PgColumnBuilderBase, PgTableExtraConfigValue } from 'drizzle-orm/pg-core';
+import { boolean, check, index, numeric, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import type { ExtraConfigColumn, PgColumnBuilderBase, PgTableExtraConfigValue } from 'drizzle-orm/pg-core';
 
 /** The one schema every table and view lives in (ADR-005 §7c); the trigger functions' search_path names it, `public` is unused. */
 export const radcore = pgSchema('radcore');
@@ -97,3 +97,11 @@ export const lookupTable = <TName extends string, TColumns extends Record<string
   uniqueIndex(`ux_${name}_code_key`).on(t.codeKey),
   uniqueIndex(`ux_${name}_label_key`).on(t.labelKey),
 ]);
+
+/**
+ * A trigram index on a searched text column, for a table's extra config: `trigramIndex('ix_parties_name_trgm', t.name)`.
+ * lists.ts's searchWords (ILIKE '%…%') can then use it instead of reading every row (RC-160). pg_trgm is in its own
+ * schema, radcore_ext (ADR-005 §7c, migration 0006_pg_trgm), so the operator class is named with it.
+ */
+export const trigramIndex = (name: string, column: ExtraConfigColumn) =>
+  index(name).using('gin', column.op('radcore_ext.gin_trgm_ops'));

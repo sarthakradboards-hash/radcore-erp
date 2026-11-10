@@ -1,7 +1,10 @@
 // The database pool and the job queue (ADR-002 L4's one place for the driver and pg-boss) and the health ping.
-// RAD-28 builds the pool; RAD-26 opens transactions on it. RAD-44 builds the queue.
+// RAD-28 builds the pool; RAD-26 builds the Drizzle client on it. RAD-44 builds the queue.
+import { SCHEMA, type Database as Drizzle } from '@radcore/db/schema';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { PgBoss } from 'pg-boss';
+import { RateLimiterPostgres, RateLimiterRes } from 'rate-limiter-flexible';
 import type { Config } from '../config.ts';
 import type { Logger } from '../log.ts';
 
@@ -50,6 +53,14 @@ export function createPool(db: Database, log: Logger): pg.Pool {
 }
 
 /**
+ * The Drizzle client on the pool (RAD-26), with every module's tables and relations. Transactions open on it through
+ * the runtime entry only. The schema argument is for tests with tables of their own.
+ */
+export function createDatabase(pool: pg.Pool, schema: Readonly<Record<string, unknown>> = SCHEMA): Drizzle {
+  return drizzle({ client: pool, schema, casing: 'snake_case' });
+}
+
+/**
  * Proves the database answers: opens a new connection (TLS, authentication, startup) and closes it. A pooled idle
  * connection could look alive after the database went away, so the ping never borrows one. No SQL is sent (L2, L3).
  */
@@ -85,5 +96,63 @@ export function createHealthCheck(db: Database,
     pending = run;
     last = run;
     return run;
+  };
+}
+
+/** One use of the shared store: a key prefix, how many points a key gets per window, and how long a key that used
+ * them all is held. */
+type LimitSpec = { prefix: string; points: number; windowSeconds: number; blockSeconds: number };
+
+/** Counts uses per key. Each answer is how many seconds the key must wait, 0 when it may go now. */
+export type Limiter = {
+  wait(key: string): Promise<number>;
+  /** Counts one use and answers the wait after it. */
+  hit(key: string): Promise<number>;
+  reset(key: string): Promise<void>;
+};
+
+export type LimiterStore = { limiter(spec: LimitSpec): Limiter; end(): Promise<void> };
+
+const seconds = (ms: number) => Math.max(1, Math.ceil(ms / 1000));
+
+/**
+ * The shared rate-limit store (ADR-003, RAD-32): rate-limiter-flexible on PostgreSQL, in `ratelimit.limits` (migration
+ * 0007), on its own pool of 2 (ADR-004's connection budget). It fails closed: when the store can't be reached, every
+ * answer is the whole block, so a limited action is refused. RAD-39 builds its per-IP limits on the same store.
+ */
+export function createLimiterStore(db: Database, log: Logger): LimiterStore {
+  const pool = new pg.Pool({ ...connection(db), max: 2 });
+  pool.on('error', (err) => log.error('rate-limit store connection lost; the pool will reconnect', err));
+  return {
+    limiter({ prefix, points, windowSeconds, blockSeconds }: LimitSpec): Limiter {
+      const rl = new RateLimiterPostgres({ storeClient: pool, schemaName: 'ratelimit', tableName: 'limits',
+        tableCreated: true, keyPrefix: prefix, points, duration: windowSeconds, blockDuration: blockSeconds });
+      const closed = (err: unknown): number => {
+        log.error(`rate-limit store did not answer for ${prefix}; refusing (fails closed)`, err);
+        return blockSeconds;
+      };
+      return {
+        async wait(key) {
+          try {
+            const res = await rl.get(key);
+            return res !== null && res.consumedPoints > points ? seconds(res.msBeforeNext) : 0;
+          } catch (err) {
+            return closed(err);
+          }
+        },
+        async hit(key) {
+          try {
+            await rl.consume(key);
+            return 0;
+          } catch (err) {
+            return err instanceof RateLimiterRes ? seconds(err.msBeforeNext) : closed(err);
+          }
+        },
+        async reset(key) {
+          await rl.delete(key);
+        },
+      };
+    },
+    end: () => pool.end(),
   };
 }
