@@ -40,7 +40,7 @@ export const secrets = radcoreTable('secrets', {
  * then replays its answer, or runs if the first rolled back.
  * - `input_hash` is the SHA-256 of the checked input: the same key with another body is refused.
  * - `answer` is the checked output, kept only when `kept`; a route whose answer holds a secret claims the key and
- *   keeps nothing (`storeAnswer: false`, RAD-32).
+ *   keeps nothing (`storesAnswer: false`, RAD-32).
  * - `expires_at` is when the clean-up job may delete the row: 48 hours for a screen's write, 30 days for sync.
  */
 export const savedOnce = radcoreTable('saved_once', {

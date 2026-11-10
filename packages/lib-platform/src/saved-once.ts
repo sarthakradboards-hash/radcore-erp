@@ -28,7 +28,7 @@ export type SavedOnceClaim = {
   input: unknown;
   class?: SavedOnceClass;
   /** false for a route whose answer holds a secret (RAD-32): the key is claimed, the answer never stored. */
-  storeAnswer?: boolean;
+  storesAnswer?: boolean;
 };
 
 /** Either the earlier answer to replay, or a fresh claim, whose answer `keep` stores before commit. */
@@ -53,7 +53,7 @@ export async function claimSavedOnce(ctx: Ctx, claim: SavedOnceClaim): Promise<S
     return {
       replay: false,
       keep: async (answer) => {
-        if (claim.storeAnswer === false) return;
+        if (claim.storesAnswer === false) return;
         await tx.update(savedOnce).set({ answer, kept: true }).where(thisKey);
       },
     };
