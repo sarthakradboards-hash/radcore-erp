@@ -37,13 +37,27 @@ npm run lint       # ESLint (ADR-001 E rules, ADR-002 L rules) and dependency-cr
 npm run typecheck
 npm run deps:check # ADR-003 C2 to C9: Node version, pins, licences, the approved list, lockfile, age
 npm run knip       # unused files, exports and dependencies (C1)
-npm run db:up      # PostgreSQL 16 and SeaweedFS (S3), on 127.0.0.1 only (needs Docker)
+npm run db:up      # PostgreSQL 16 and SeaweedFS (S3), on 127.0.0.1 only (needs Docker), then the three logins
 npm run db:migrate # the migrations, as the owner login (MIGRATION_DATABASE_URL); run after db:up and each pull
 ```
 
 `npm run dev` and `npm run db:up` first write `.env` with new random credentials if it doesn't exist. `.env` is
 git-ignored; never commit it. Each lint rule has a violating fixture in `tools/boundary-fixtures/`, and
 `npm test` fails if any fixture stops failing.
+
+**The database logins** (RAD-24, ADR-005 §7c). The api and worker run as `radcore_app` (`DATABASE_URL`), the
+migrations as `radcore_owner` (`MIGRATION_DATABASE_URL`), and support queries as `radcore_read`
+(`DATABASE_READ_URL`). The compose superuser (`DATABASE_ADMIN_URL`) only makes the logins (`npm run db:logins`).
+- An `.env` from before RAD-24 has none of this, and its database was migrated as the superuser. Run
+  `docker compose -f compose.dev.yml down -v`, delete `.env`, then `npm run db:up` and `npm run db:migrate`.
+- An append-only table's migration (ADR-005 §7) adds
+  `REVOKE UPDATE, DELETE, TRUNCATE ON radcore.<table> FROM radcore_app` (and `INSERT` for `audit_log` and
+  `access_log`). A view's migration adds `REVOKE INSERT, UPDATE, DELETE ON radcore.<view> FROM radcore_app`,
+  because a simple view writes as its owner. Every partition, from a migration or the partition top-up, gets
+  `REVOKE ALL ON radcore.<partition> FROM radcore_app, radcore_read`: rows go through the parent.
+  `tools/logins.test.ts` fails on any it misses.
+- The database tests get `TEST_DATABASE_URL` as the runtime login. A test that makes its own tables uses
+  `TEST_DATABASE_OWNER_URL`, and one that switches between logins uses `TEST_DATABASE_SUPERUSER_URL`.
 
 ## Migrations
 
@@ -78,7 +92,7 @@ To run the database tests locally, start compose and point the suite at it:
 
 ```bash
 npm run db:up
-TEST_DATABASE_ADMIN_URL="$(grep ^DATABASE_URL= .env | cut -d= -f2-)" npm test
+TEST_DATABASE_ADMIN_URL="$(grep ^DATABASE_ADMIN_URL= .env | cut -d= -f2-)" npm test
 ```
 
 ## Commit identity

@@ -100,6 +100,23 @@ describe('refuses to start', () => {
     expect(problems({ ...production(), ...change }).join('\n')).toContain(why);
   });
 
+  // RAD-24 (RC-003): the api and worker never hold the owner login, and run as the runtime login when deployed.
+  it.each([
+    [{ MIGRATION_DATABASE_URL: `postgres://radcore_owner:${PG_PASSWORD}@db.example.in/radcore` }, 'MIGRATION_DATABASE_URL must not be set when APP_ENV is production'],
+    [{ DATABASE_ADMIN_URL: `postgres://postgres:${PG_PASSWORD}@db.example.in/radcore` }, 'DATABASE_ADMIN_URL must not be set when APP_ENV is production'],
+    [{ POSTGRES_PASSWORD: PG_PASSWORD }, 'POSTGRES_PASSWORD must not be set when APP_ENV is production'],
+    [{ RADCORE_OWNER_PASSWORD: PG_PASSWORD }, 'RADCORE_OWNER_PASSWORD must not be set when APP_ENV is production'],
+    [{ DATABASE_URL: `postgres://radcore_owner:${PG_PASSWORD}@db.example.in/radcore?sslmode=verify-full` }, 'DATABASE_URL must not be the owner login radcore_owner'],
+    [{ DATABASE_URL: `postgres://postgres:${PG_PASSWORD}@db.example.in/radcore?sslmode=verify-full` }, 'DATABASE_URL must be the runtime login radcore_app'],
+  ])('holds no owner login in production: %j', (change, why) => {
+    expect(problems({ ...production(), ...change }, 'worker').join('\n')).toContain(why);
+  });
+
+  it('refuses the owner login as DATABASE_URL in development too', () => {
+    expect(problems(dev({ DATABASE_URL: `postgres://radcore_owner:${PG_PASSWORD}@127.0.0.1:5432/radcore` })))
+      .toEqual(['DATABASE_URL must not be the owner login radcore_owner']);
+  });
+
   it('asks each process only for what it reads', () => {
     expect(problems({ ...production(), HEARTBEAT_URL: undefined }, 'api')).toEqual([]);
     expect(problems({ ...production(), HEARTBEAT_URL: undefined }, 'worker')).toEqual(['HEARTBEAT_URL is required when APP_ENV is production (read by worker)']);

@@ -1,1 +1,1 @@
-export {};
+export * from './platform/tables.ts';

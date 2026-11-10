@@ -16,16 +16,22 @@ it('generates distinct random credentials', () => {
   expect(env['S3_ACCESS_KEY_ID']).toMatch(/^[A-Z0-9]{20}$/);
   expect(env['S3_SECRET_ACCESS_KEY']).toMatch(SECRET);
   expect(env['POSTGRES_PASSWORD']).not.toBe(env['S3_SECRET_ACCESS_KEY']);
-  expect(env['DATABASE_URL']).toBe(`postgres://radcore:${env['POSTGRES_PASSWORD']}@127.0.0.1:5432/radcore`);
   expect(env['S3_ENDPOINT']).toBe('http://127.0.0.1:8333');
-  expect(env['MIGRATION_DATABASE_URL']).toBe(env['DATABASE_URL']);
 });
 
-it('adds MIGRATION_DATABASE_URL to an .env from before RAD-25, as its DATABASE_URL', () => {
+// RAD-24: the compose superuser only makes the logins; the api and worker run as the runtime login.
+it('writes a URL for each of the three logins, each with its own password', () => {
   const file = tmp();
-  writeFileSync(file, 'DATABASE_URL=postgres://radcore:old@127.0.0.1:5432/radcore\n');
   writeDevEnv(file);
-  expect(parse(file)['MIGRATION_DATABASE_URL']).toBe('postgres://radcore:old@127.0.0.1:5432/radcore');
+  const env = parse(file);
+  const at = (login: string, password = '') => `postgres://${login}:${password}@127.0.0.1:5432/radcore`;
+  expect(env['DATABASE_ADMIN_URL']).toBe(at('radcore', env['POSTGRES_PASSWORD']));
+  expect(env['DATABASE_URL']).toBe(at('radcore_app', env['RADCORE_APP_PASSWORD']));
+  expect(env['MIGRATION_DATABASE_URL']).toBe(at('radcore_owner', env['RADCORE_OWNER_PASSWORD']));
+  expect(env['DATABASE_READ_URL']).toBe(at('radcore_read', env['RADCORE_READ_PASSWORD']));
+  const passwords = ['POSTGRES_PASSWORD', 'RADCORE_OWNER_PASSWORD', 'RADCORE_APP_PASSWORD', 'RADCORE_READ_PASSWORD'].map((k) => env[k]);
+  expect(passwords.filter((p) => SECRET.test(p ?? ''))).toHaveLength(4);
+  expect(new Set(passwords).size).toBe(4);
 });
 
 const parse = (file: string): Record<string, string> => Object.fromEntries(readFileSync(file, 'utf8').split('\n')
