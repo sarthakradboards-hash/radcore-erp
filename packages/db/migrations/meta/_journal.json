@@ -22,6 +22,13 @@
       "when": 1794282722100,
       "tag": "0002_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794284449441,
+      "tag": "0003_settings",
+      "breakpoints": true
     }
   ]
 }
