@@ -1,7 +1,7 @@
 'use client';
 // Fake saves stand in for the API: each answers the way a refusing route does, with the error envelope (ADR-001 §7a).
 import { moneyString } from '@radcore/lib-common';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import { Dialog } from '../../components/ui/dialog/dialog.tsx';
 import { Menu } from '../../components/ui/dialog/menu.tsx';
@@ -18,7 +18,7 @@ const refuse = (issues: { path: string[]; message: string }[]) => new ApiError(4
   issues: issues.map((i) => ({ ...i, code: 'custom' })),
 });
 
-export function Gallery() {
+export function Gallery({ children }: { children: ReactNode }) {
   const [sent, setSent] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
@@ -64,6 +64,7 @@ export function Gallery() {
         description="Sign in again to carry on. Nothing you typed is lost.">
         <button type="button" className="kit-button kit-button-primary" onClick={() => setSignedOut(false)}>Sign in again</button>
       </Dialog>
+      {children}
     </main>
   );
 }
