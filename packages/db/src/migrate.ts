@@ -10,6 +10,8 @@ import pg from 'pg';
 export const MIGRATIONS_FOLDER = join(import.meta.dirname, '..', 'migrations');
 // The advisory lock's key, hashed by hashtextextended(key, 0). The partition top-up takes the same lock (ADR-005 §8).
 export const MIGRATION_LOCK_KEY = 'radcore.migrate';
+/** The future months each log keeps a partition for, after every deploy's top-up (ADR-005 §8). */
+export const LOG_MONTHS_AHEAD = 12;
 
 export async function migrate(url: string, migrationsFolder = MIGRATIONS_FOLDER): Promise<void> {
   const client = new pg.Client({
@@ -26,7 +28,7 @@ export async function migrate(url: string, migrationsFolder = MIGRATIONS_FOLDER)
   await client.connect();
   try {
     try {
-      // ADR-002 L3's one exception in this file.
+      // ADR-002 L3's exceptions in this file: this lock, and the partition top-up below.
       await client.query('select pg_advisory_lock(hashtextextended($1, 0))', [MIGRATION_LOCK_KEY]);
     } catch (error) {
       // 55P03 lock_not_available: lock_timeout ran out.
@@ -36,6 +38,11 @@ export async function migrate(url: string, migrationsFolder = MIGRATIONS_FOLDER)
       throw error;
     }
     await drizzleMigrate(drizzle({ client }), { migrationsFolder, migrationsSchema: 'drizzle', migrationsTable: '__drizzle_migrations' });
+    // ADR-005 §8: the partition top-up, on every deploy and in the test setup, under the same lock. It's idempotent,
+    // and keeps LOG_MONTHS_AHEAD future months for each log. A test's partial folder may stop before migration 0007.
+    if (migrationsFolder === MIGRATIONS_FOLDER) {
+      await client.query('select radcore.add_log_partitions($1)', [LOG_MONTHS_AHEAD]);
+    }
   } finally {
     // Closing the session releases the lock.
     await client.end();

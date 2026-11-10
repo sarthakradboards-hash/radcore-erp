@@ -109,11 +109,13 @@ describe('the migration files', () => {
       !== lf(readFileSync(join(MIGRATIONS_FOLDER, `${m.tag}.sql`), 'utf8'))).map((m) => m.tag)).toEqual([]);
   });
 
-  // ADR-002: L3 is off in migrate.ts for the advisory lock only.
-  it('migrate.ts makes exactly one raw call, the lock', () => {
+  // ADR-002: L3 is off in migrate.ts for the advisory lock and the partition top-up under it (ADR-005 §8) only.
+  it('migrate.ts makes exactly two raw calls, the lock and the partition top-up', () => {
     const source = readFileSync(join(MIGRATIONS_FOLDER, '..', 'src', 'migrate.ts'), 'utf8');
     // \b, not \(, so a generic call such as client.query<Row>( counts too.
-    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query']);
+    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query', '.query']);
+    expect(source.match(/query\('([^']*)'/g)).toEqual(["query('select pg_advisory_lock(hashtextextended($1, 0))'",
+      "query('select radcore.add_log_partitions($1)'"]);
   });
 
   it("creates pg-boss's schema from pg-boss's own construction plan (ADR-002 §4)", () => {

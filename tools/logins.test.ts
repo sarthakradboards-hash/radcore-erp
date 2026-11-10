@@ -175,12 +175,12 @@ describe.skipIf(!url)('the three logins', () => {
       await c.query('set local role radcore_owner');
       await c.query('create table radcore.journal_lines (id int)');
       await c.query('create view radcore.journal_view as select * from radcore.journal_lines');
-      await c.query('create table radcore.audit_log (id int, at date not null) partition by range (at)');
-      await c.query('revoke update, delete, truncate on radcore.audit_log from radcore_app');
-      await c.query("create table radcore.audit_log_2026_11 partition of radcore.audit_log for values from ('2026-11-01') to ('2026-12-01')");
-      await c.query("create table radcore.audit_log_2026_12 partition of radcore.audit_log for values from ('2026-12-01') to ('2027-01-01')");
-      await c.query('revoke all on radcore.audit_log_2026_12 from radcore_app, radcore_read');
-      expect(await exposed()).toEqual(['audit_log', 'audit_log_2026_11', 'journal_lines', 'journal_view']);
+      // The real audit_log (RAD-30) given back an INSERT, and a month added without its revokes.
+      await c.query('grant insert on radcore.audit_log to radcore_app');
+      await c.query("create table radcore.audit_log_2099_01 partition of radcore.audit_log for values from ('2099-01-01') to ('2099-02-01')");
+      await c.query("create table radcore.audit_log_2099_02 partition of radcore.audit_log for values from ('2099-02-01') to ('2099-03-01')");
+      await c.query('revoke all on radcore.audit_log_2099_02 from radcore_app, radcore_read');
+      expect(await exposed()).toEqual(['audit_log', 'audit_log_2099_01', 'journal_lines', 'journal_view']);
     });
   });
 

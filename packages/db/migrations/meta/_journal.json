@@ -50,6 +50,20 @@
       "when": 1794300930131,
       "tag": "0006_pg_trgm",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794303188487,
+      "tag": "0007_audit_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794303270395,
+      "tag": "0008_schema_missing_triggers",
+      "breakpoints": true
     }
   ]
 }
