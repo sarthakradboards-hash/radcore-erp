@@ -14,7 +14,8 @@ export function Menu({ label, items }: { label: string; items: readonly MenuItem
   // dialog it opens loses focus to that button, leaving keyboard users outside the dialog.
   const chosen = useRef<(() => void) | null>(null);
   return (
-    <DropdownMenu.Root>
+    // Not modal: a modal menu aria-hides a page that still has focusable controls (axe aria-hidden-focus).
+    <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger className="kit-button">{label}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="kit-menu" align="end" sideOffset={4}
