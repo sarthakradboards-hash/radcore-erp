@@ -16,6 +16,17 @@ export function placeIssues(issues: readonly Issue[], mounted: ReadonlySet<strin
   return { fields, rest };
 }
 
+/** The check's errors that no mounted field shows (a schema that requires a masked or missing field), as
+ * "name: message", so the form can say why it won't save instead of doing nothing. */
+export function unshownErrors(errors: object, mounted: ReadonlySet<string>, path: string[] = []): string[] {
+  return Object.entries(errors).flatMap(([key, error]: [string, unknown]) => {
+    if (error === null || typeof error !== 'object') return [];
+    const name = [...path, key];
+    if (!('message' in error) || typeof error.message !== 'string') return unshownErrors(error, mounted, name);
+    return mounted.has(name.join('.')) ? [] : [`${name.join('.')}: ${error.message}`];
+  });
+}
+
 /** A copy of `values` without the fields at `names`, so a masked value is never validated or sent (ADR-001 §7a). */
 export function omitFields<T>(values: T, names: Iterable<string>): T {
   let out: unknown = values;

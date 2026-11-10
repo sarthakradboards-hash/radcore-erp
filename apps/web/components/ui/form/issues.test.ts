@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { omitFields, placeIssues } from './issues.ts';
+import { omitFields, placeIssues, unshownErrors } from './issues.ts';
 
 const issue = (path: (string | number)[], message: string) => ({ path, code: 'custom', message });
 
@@ -12,6 +12,20 @@ describe('placeIssues', () => {
     ], mounted);
     expect(got.fields).toEqual([{ name: 'lines.0.qty', message: 'Too many' }, { name: 'name', message: 'Taken' }]);
     expect(got.rest).toEqual(['Not a GSTIN', 'Period is locked']);
+  });
+});
+
+describe('unshownErrors', () => {
+  it('names the check errors no mounted field can show, nested and in lists too', () => {
+    const errors = {
+      name: { type: 'too_small', message: 'Enter a name' },
+      phone: { type: 'invalid_type', message: 'Required' },
+      bank: { account: { type: 'invalid_type', message: 'Required' } },
+      lines: [{ qty: { type: 'custom', message: 'Too many' } }, { qty: { type: 'custom', message: 'Hidden' } }],
+    };
+    expect(unshownErrors(errors, new Set(['name', 'lines.0.qty'])))
+      .toEqual(['phone: Required', 'bank.account: Required', 'lines.1.qty: Hidden']);
+    expect(unshownErrors({}, new Set())).toEqual([]);
   });
 });
 

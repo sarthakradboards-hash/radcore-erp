@@ -4,11 +4,11 @@
 // The Idempotency-Key belongs to the caller's mutation (lib/api/query.ts useApiMutation), which keeps it across retries.
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { FormProvider, useForm, useFormContext, type DefaultValues, type FieldValues } from 'react-hook-form';
+import { FormProvider, useForm, useFormContext, type DefaultValues, type FieldErrors, type FieldValues } from 'react-hook-form';
 import type { z } from 'zod';
 import { ApiError } from '../../../lib/api-client.ts';
 import { announce } from '../live-region.tsx';
-import { omitFields, placeIssues } from './issues.ts';
+import { omitFields, placeIssues, unshownErrors } from './issues.ts';
 import './form.css';
 
 type Names = { mounted: Set<string>; masked: Set<string> };
@@ -25,13 +25,15 @@ export function useFieldName(name: string, kind: keyof Names = 'mounted') {
 }
 
 const OFFLINE = 'RadCore could not be reached. Check the connection, then try again.';
+const UNSHOWN = 'This screen cannot save: it needs something it does not show. Please report it';
 // Codes whose message the form words itself. The mutation (RAD-52) has already renewed the key and refreshed lists.
 const SAID: Partial<Record<string, string>> = {
   idempotency_mismatch: 'This was already saved; check the list before saving again.',
 };
 
 type FormProps<I extends FieldValues, O extends FieldValues> = {
-  /** The contract's input schema, or a part of it (`contract.input.pick(...)`). */
+  /** The contract's input schema, or a part of it (`contract.input.pick(...)`). A masked field is never sent, so
+   * leave it out (`.omit(...)`) or make it `.optional()`; a schema that requires one cannot save (the alert says so). */
   schema: z.ZodType<O, I>;
   defaultValues: DefaultValues<I>;
   /** Sends the save, usually `useApiMutation(contract).submit`. Throwing an ApiError puts its issues on the fields. */
@@ -51,7 +53,16 @@ export function Form<I extends FieldValues, O extends FieldValues>(
   const form = useForm<I, unknown, O>({
     defaultValues,
     // Masked fields are left out before the check, so they are neither validated nor sent.
-    resolver: (values, context, options) => check(omitFields(values, names.masked), context, options),
+    resolver: async (values, context, options) => {
+      const result = await check(omitFields(values, names.masked), context, options);
+      const unshown = unshownErrors(result.errors, names.mounted);
+      if (unshown.length === 0) return result;
+      // No field on screen can show these, so without the alert the save would silently do nothing.
+      // The cast: TypeScript can't see that `root` is a FieldErrors key while I is generic.
+      const errors = { ...result.errors,
+        root: { server: { type: 'check', message: `${UNSHOWN}: ${unshown.join('; ')}` } } } as FieldErrors<I>;
+      return { values: {}, errors };
+    },
   });
 
   const submit = form.handleSubmit(async (values) => {
