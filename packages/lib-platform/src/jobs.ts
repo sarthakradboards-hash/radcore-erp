@@ -2,8 +2,9 @@
 // (ADR-001 §6a), its input schema, and how it retries, times out, overlaps and is kept. The worker runs them on
 // pg-boss (runtime.ts). Jobs are declared in apps/worker/src/jobs/ with defineJob(contract, service), like routes.
 import type { z } from 'zod';
+import type { Ctx, Principal } from './ctx.ts';
 
-/** Who a job runs as (ADR-001 §6a). Enforced through Ctx once M1-08 lands; declared on every job now. */
+/** Who a job runs as (ADR-001 §6a): its service gets a Ctx for that principal (RAD-44 step 3). */
 export type JobPrincipal =
   /** A schedule or webhook: every record, but only these permissions. */
   | { kind: 'system'; name: string; permissions: readonly string[] }
@@ -32,7 +33,10 @@ export type JobContract<I> = {
   deleteOnComplete?: boolean;
 };
 
-export type JobMeta = { jobId: string; principal: JobPrincipal };
+export type JobMeta = { jobId: string };
+
+/** How the worker runs a job's service: in one transaction, with a Ctx for principal (runtime.ts). */
+export type OpenJob = (principal: Principal, jobId: string, work: (ctx: Ctx) => Promise<void>) => Promise<void>;
 
 /** A job contract with the service that does the work. The worker runs these; nothing else calls `handle`. */
 export type JobDefinition = {
@@ -41,8 +45,8 @@ export type JobDefinition = {
   every: string | null;
   deleteOnComplete: boolean;
   settings: QueueSettings;
-  /** Checks the payload against the contract's input schema, then runs the service. */
-  handle(data: unknown, jobId: string): Promise<void>;
+  /** Checks the payload against the contract's input schema, then runs the service through open. */
+  handle(data: unknown, jobId: string, open: OpenJob): Promise<void>;
 };
 
 /** What pg-boss gets for the queue (its Queue options). */
@@ -80,7 +84,17 @@ export function queueSettings(c: JobContract<unknown>): QueueSettings {
   };
 }
 
-export function defineJob<I>(contract: JobContract<I>, service: (input: I, meta: JobMeta) => Promise<void>): JobDefinition {
+/**
+ * The principal a job's Ctx runs as. A system job runs as its contract names it. A job for a user runs as the person
+ * who queued it, rechecked when it runs; until that lands (RAD-44 step 3b) it fails closed, never running as anyone.
+ */
+function principalOf(name: string, p: JobPrincipal): Principal {
+  if (p.kind === 'system') return Object.freeze({ kind: 'system', name: p.name, permissions: Object.freeze([...p.permissions]) });
+  throw new Error(`${name}: a job for a user can't run until its enqueuer is rechecked (RAD-44 step 3b)`);
+}
+
+export function defineJob<I>(contract: JobContract<I>,
+  service: (ctx: Ctx, input: I, meta: JobMeta) => Promise<void>): JobDefinition {
   const settings = queueSettings(contract);
   return {
     name: contract.name,
@@ -88,7 +102,10 @@ export function defineJob<I>(contract: JobContract<I>, service: (input: I, meta:
     every: contract.every ?? null,
     deleteOnComplete: contract.deleteOnComplete === true,
     settings,
-    // shortcut: runs the service with the principal as data; M1-08 builds Ctx and rechecks the enqueuer's permissions.
-    handle: async (data, jobId) => service(contract.input.parse(data), { jobId, principal: contract.principal }),
+    // The payload is checked before any transaction opens; the service's writes commit or roll back together.
+    handle: async (data, jobId, open) => {
+      const input = contract.input.parse(data);
+      await open(principalOf(contract.name, contract.principal), jobId, (ctx) => service(ctx, input, { jobId }));
+    },
   };
 }

@@ -3,13 +3,16 @@
 // schema comes from the migrations (0001, RAD-25), so run `npm run db:migrate` first; without it the worker refuses
 // to start ("pg-boss is not installed").
 import type { JobDefinition } from '@radcore/lib-platform';
-import { createAlerter, createJobQueue, runJobs, startHeartbeat, startProcess } from '@radcore/lib-platform/runtime';
+import {
+  createAlerter, createDatabase, createJobQueue, runJobs, startHeartbeat, startProcess,
+} from '@radcore/lib-platform/runtime';
+import platform from './jobs/platform.ts';
 
 // Each module's job file in ./jobs/ (ADR-001 §8) default-exports its defineJob list; spread them in here.
-const jobs: readonly JobDefinition[] = [];
+const jobs: readonly JobDefinition[] = [...platform];
 
-await startProcess('worker', async ({ config, log }) => {
+await startProcess('worker', async ({ config, pool, log }) => {
   const alert = createAlerter(config.alertWebhookUrl, log);
-  const queue = await runJobs(createJobQueue(config.database, log), jobs, log, { alert });
+  const queue = await runJobs(createJobQueue(config.database, log), jobs, log, { db: createDatabase(pool), alert });
   return [startHeartbeat(config.heartbeatUrl, log), queue];
 });
