@@ -5,11 +5,11 @@
 //   ─► a write claims its saved-once key (M1-09): an earlier committed answer is replayed here ─► service(ctx, input)
 //   ─► output checked against contract.output, camelCase as is (RC-199) ─► a write keeps its answer ─► commit ─► 200
 //   ─► errors mapped by code: a thrown AppError's code or a PostgreSQL SQLSTATE, never message text (RC-216)
-// Still to come, each with its ticket: origin and rate guards (M1-21), sessions (RAD-32), the key-exempt routes (RAD-61),
-// pii() masking (M1-22), Settings in Ctx (RAD-48), and webhooks' own lane (M1-27).
+// Still to come, each with its ticket: origin and rate guards (M1-21), sessions (RAD-32), pii() masking (M1-22), Settings in Ctx (RAD-48), and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, PLATFORM_ERRORS, readInput, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
 import { AppError, claimSavedOnce, describeError, type Principal } from '@radcore/lib-platform';
+import { ANSWER_NOT_STORED_ROUTES, KEY_EXEMPT_ROUTES } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import type { Route } from './route.ts';
@@ -42,6 +42,7 @@ const MESSAGES: Readonly<Record<PlatformErrorCode, string>> = {
   not_found: 'Not found',
   conflict: 'Someone else changed this at the same time. Please try again',
   idempotency_mismatch: 'This idempotency key was used for a different request',
+  answer_not_kept: 'That answer was shown once and is not kept. Please start again',
   rate_limited: 'Too many requests. Please wait a moment',
   account_locked: 'This account is locked for now',
   server_error: 'Something went wrong on our side',
@@ -77,6 +78,7 @@ const send = (res: Response, f: Failure, requestId: string) =>
 
 // A UUID, as apps/web makes one per submit (ADR-001 §7a).
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const onList = (list: readonly string[], route: string): boolean => list.includes(route);
 
 export function mountRoutes(app: Express, routes: readonly Route[], deps: HandlerDeps): void {
   const router = express.Router();
@@ -89,6 +91,13 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
   for (const { contract, service } of routes) {
     if (contract.auth === 'webhook') throw new TypeError(`${contract.method} ${contract.path}: a webhook takes its own lane (M1-27)`);
     const route = `${contract.method} ${contract.path}`;
+    // ADR-001 §7a: only the fixed lists may skip the key or keep no answer, or the handler refuses to start.
+    if (contract.idempotency === 'exempt' && !onList(KEY_EXEMPT_ROUTES, route)) {
+      throw new TypeError(`${route}: only KEY_EXEMPT_ROUTES may declare idempotency: 'exempt' (ADR-001 §7a)`);
+    }
+    if (contract.storesAnswer === false && !onList(ANSWER_NOT_STORED_ROUTES, route)) {
+      throw new TypeError(`${route}: only ANSWER_NOT_STORED_ROUTES may declare storesAnswer: false (ADR-001 §7a)`);
+    }
     const handle = async (req: Request, res: Response): Promise<void> => {
       const requestId = randomUUID();
       try {
@@ -103,7 +112,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           send(res, platform('invalid_input', input.error.issues), requestId);
           return;
         }
-        if (!contract.tx.readOnly && !UUID.test(req.get('idempotency-key') ?? '')) {
+        // A key-exempt route sets or clears the session cookie, which a stored answer can't (ADR-001 §7a).
+        if (!contract.tx.readOnly && contract.idempotency !== 'exempt' && !UUID.test(req.get('idempotency-key') ?? '')) {
           send(res, platform('idempotency_key_required'), requestId);
           return;
         }
@@ -114,7 +124,9 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         const key = req.get('idempotency-key') ?? '';
         const output = await runInTransaction(deps.db, contract.tx, principal ?? PUBLIC, requestId, async (ctx) => {
           // Saved-once (M1-09): a write claims its key first, in this transaction, and replays an earlier answer.
-          const once = contract.tx.readOnly ? null : await claimSavedOnce(ctx, { route, key, input: input.value });
+          // A key-exempt route sends no key and claims none; a route whose answer holds a secret claims and keeps nothing.
+          const once = contract.tx.readOnly || contract.idempotency === 'exempt' ? null
+            : await claimSavedOnce(ctx, { route, key, input: input.value, storesAnswer: contract.storesAnswer !== false });
           if (once?.replay === true) return once.answer;
           const checked = contract.output.safeParse(await service(ctx, input.value));
           if (!checked.success) throw new OutputMismatch(`${route}: the output doesn't match its contract`);

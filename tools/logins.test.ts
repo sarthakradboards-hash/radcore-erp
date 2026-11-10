@@ -97,6 +97,17 @@ describe.skipIf(!url)('the three logins', () => {
     });
   });
 
+  // ADR-005 §7c (RAD-47): pg_trgm's functions keep PUBLIC's EXECUTE, so what closes them is that neither login may
+  // use the schema they live in.
+  it('keep pg_trgm in radcore_ext, which neither login may use', async () => {
+    await inRollback(async (c) => {
+      const { rows } = await c.query(`select n.nspname as schema, pg_get_userbyid(n.nspowner) as owner,
+        has_schema_privilege('radcore_app', n.oid, 'USAGE') as app, has_schema_privilege('radcore_read', n.oid, 'USAGE') as read
+        from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pg_trgm'`);
+      expect(rows).toEqual([{ schema: 'radcore_ext', owner: 'radcore_owner', app: false, read: false }]);
+    });
+  });
+
   // The ticket's proof. journal_lines doesn't exist yet (M2-03), so this makes it the way its migration will: as the
   // owner, then the append-only revoke. ADR-005 §7's triggers (M1-12) refuse the owner's own UPDATE and DELETE too.
   it("the app login can't drop, alter or delete a journal line (RC-003)", async () => {

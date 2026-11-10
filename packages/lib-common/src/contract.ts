@@ -9,7 +9,7 @@ import { dateString } from './dates.ts';
 /** ADR-001 §7a: the platform's error codes and their HTTP status. A contract adds its own, answered as 422. */
 export const PLATFORM_ERRORS = {
   invalid_input: 400, idempotency_key_required: 400, signed_out: 401, forbidden: 403, not_found: 404,
-  conflict: 409, idempotency_mismatch: 409, rate_limited: 429, account_locked: 429, server_error: 500,
+  conflict: 409, idempotency_mismatch: 409, answer_not_kept: 409, rate_limited: 429, account_locked: 429, server_error: 500,
 } as const;
 export type PlatformErrorCode = keyof typeof PLATFORM_ERRORS;
 export const BUSINESS_RULE_STATUS = 422;
@@ -34,6 +34,22 @@ export const cursorString = () => z.string().regex(/^[A-Za-z0-9_-]{1,512}$/, 'No
 /** A list's input: `{ filter, after?, limit }`, with `next` from the previous page sent back as `after`. */
 export const listInput = <F extends z.ZodType>(filter: F) =>
   z.object({ filter, after: cursorString().optional(), limit: z.number().int().min(1).max(MAX_LIMIT) });
+// Passwords (ADR-001 §7a, M1-14). The schemas set only the cap: the minimum length, the bundled list and Pwned
+// Passwords are the new-password check's, which the generic handler runs before the transaction on a field
+// marked newPassword(), and a refusal is password_rejected (too_short, breached or same_as_old).
+/** A new password's minimum, counted as Unicode code points after NFC normalisation (see passwordLength). */
+export const PASSWORD_MIN_LENGTH = 15;
+/** Every password field's cap, sign-in included, in the UTF-16 units zod counts: a password that could be set can
+ * always be typed at sign-in. */
+export const PASSWORD_MAX_LENGTH = 1024;
+/** A password's length as the rule counts it: code points of its NFC form, which is also what gets hashed. */
+export const passwordLength = (password: string): number => [...password.normalize('NFC')].length;
+/** The fields the new-password check runs on. */
+export const newPasswordFields = z.registry<{ check: 'new_password' }>();
+/** A password a person is setting: invite accept, reset and change. Only those three routes may use it (M1-19). */
+export const newPassword = () => z.string().max(PASSWORD_MAX_LENGTH).register(newPasswordFields, { check: 'new_password' });
+/** A password typed to prove who you are: sign-in, and the current password on a change. No rule but the cap. */
+export const passwordString = () => z.string().min(1).max(PASSWORD_MAX_LENGTH);
 /** A search box's text, sent as `filter.search` (RAD-52's useApiSearch). The server splits it into words. */
 export const searchText = () => z.string().max(100, 'Search for at most 100 characters');
 /** A date filter, `filter.from` to `filter.to`, both included and either one optional (M1-29). */
@@ -54,7 +70,11 @@ type Access =
   | { auth: 'public'; rateLimit: string; perm: PermissionKey | null }
   | { auth: 'webhook'; perm: null };
 
-export type ContractSpec<M extends Method, I extends z.ZodType, O extends z.ZodType, E extends string> = Access & {
+/** `'exempt'` only on a route whose answer sets or clears the session cookie (ADR-001 §7a). */
+export type Idempotency = 'exempt' | undefined;
+
+export type ContractSpec<M extends Method, I extends z.ZodType, O extends z.ZodType, E extends string,
+  X extends Idempotency = undefined> = Access & {
   method: M;
   /** Lower-case segments and `:name` parameters, each a key of the input: "/sales/invoices/:id". */
   path: string;
@@ -64,9 +84,16 @@ export type ContractSpec<M extends Method, I extends z.ZodType, O extends z.ZodT
   output: O;
   /** The business-rule codes this route may answer with (422), beyond the platform's. */
   errors?: readonly E[];
+  /** A write that needs no Idempotency-Key, because a stored answer can't set a cookie. Only the routes on
+   * lib-platform's fixed list may declare it (ADR-001 §7a); the web client then sends no key. */
+  idempotency?: X;
+  /** A write whose answer holds a secret: saved-once claims the key but stores no answer, and a repeat gets 409
+   * `answer_not_kept` (ADR-001 §7a, RAD-32). Only the routes on lib-platform's fixed list may declare it. */
+  storesAnswer?: false;
 };
 export type Contract<M extends Method = Method, I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType,
-  E extends string = string> = Readonly<ContractSpec<M, I, O, E> & { errors: readonly E[]; params: readonly string[] }>;
+  E extends string = string, X extends Idempotency = Idempotency> =
+  Readonly<ContractSpec<M, I, O, E, X> & { errors: readonly E[]; params: readonly string[] }>;
 
 const PATH = /^(\/([a-z0-9]+(-[a-z0-9]+)*|:[a-z][A-Za-z0-9]*))+$/;
 const CODE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
@@ -88,7 +115,8 @@ function wireExact(name: string, schema: z.ZodType): void {
 
 /** Declares a route. Throws at load time on a contract that breaks a wire or transaction rule. */
 export function defineContract<const M extends Method, I extends z.ZodType, O extends z.ZodType,
-  const E extends string = never>(spec: ContractSpec<M, I, O, E>): Contract<M, I, O, E> {
+  const E extends string = never, const X extends Idempotency = undefined>(spec: ContractSpec<M, I, O, E, X>):
+  Contract<M, I, O, E, X> {
   const at = `${spec.method} ${spec.path}`;
   if (!PATH.test(spec.path)) throw new TypeError(`${at}: the path must be lower-case segments and :params`);
   const params = spec.path.split('/').filter((s) => s.startsWith(':')).map((s) => s.slice(1));
@@ -97,6 +125,13 @@ export function defineContract<const M extends Method, I extends z.ZodType, O ex
   // The types already say this; these also hold for a contract built without them.
   if (spec.method === 'GET' && !spec.tx.readOnly) throw new TypeError(`${at}: a GET must be read-only`);
   if (!spec.tx.readOnly && spec.tx.isolation !== 'read committed') throw new TypeError(`${at}: a write is read committed`);
+  // Both concern saved-once, which only a write has; an exempt route stores nothing, so the two never go together.
+  if (spec.tx.readOnly && (spec.idempotency !== undefined || spec.storesAnswer !== undefined)) {
+    throw new TypeError(`${at}: only a write declares idempotency or storesAnswer`);
+  }
+  if (spec.idempotency !== undefined && spec.storesAnswer !== undefined) {
+    throw new TypeError(`${at}: an exempt route stores no answer, so it doesn't declare storesAnswer`);
+  }
   const ms = spec.tx.statementTimeoutMs;
   // 0 would switch the timeout off (RC-080); the configured maximum is checked by the handler (M1-08).
   if (ms !== undefined && !(Number.isInteger(ms) && ms > 0)) throw new TypeError(`${at}: statementTimeoutMs must be a positive integer`);

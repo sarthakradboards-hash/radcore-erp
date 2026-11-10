@@ -105,6 +105,14 @@ export function period(date: string): Span {
   return { start: `${label}-01`, end: `${label}-${pad(lastDay(y, m))}`, label };
 }
 
+/** A date some whole days on, or back if negative: addDays("2026-02-28", 1) is "2026-03-01". Calendar days, no zone. */
+export function addDays(date: string, days: number): string {
+  checkDate(date);
+  if (!Number.isInteger(days)) throw new RangeError(`Not a whole number of days: ${String(days)}`);
+  const d = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)) + days));
+  return `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
 /** The periods of a financial year, April to March. */
 export function periodsOf(fy: Span): Span[] {
   const { y } = ymd(fy.start);

@@ -28,6 +28,12 @@ const placeOrder = defineContract({ method: 'POST', path: '/orders', auth: 'sess
 const countOrders = defineContract({ method: 'GET', path: '/orders/count', auth: 'session', perm: 'orders:write',
   tx: { readOnly: true, isolation: 'read committed' }, input: z.object({}), output: z.object({ n: z.number() }) });
 
+// Two routes on lib-platform's fixed lists (ADR-001 §7a), at their real paths, since the handler refuses others.
+const enrol = defineContract({ method: 'POST', path: '/sign-in/second-factor/enrolment', auth: 'session', perm: 'orders:write',
+  storesAnswer: false, tx: write, input: z.object({}), output: z.object({ secret: z.string() }) });
+const signOut = defineContract({ method: 'POST', path: '/sign-out', auth: 'session', perm: 'orders:write',
+  idempotency: 'exempt', tx: write, input: z.object({}), output: z.object({ n: z.number() }) });
+
 const asUser = (userId: string): Principal => ({ kind: 'user', userId, permissions: ['orders:write'] });
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
 const config = () => {
@@ -64,6 +70,14 @@ describe.skipIf(!url)('saved-once through the generic handler', () => {
           return { id: row?.id ?? '', n: runs };
         }),
         defineRoute(countOrders, async (ctx) => ({ n: (await ordersTx(ctx).select({ id: orders.id }).from(orders)).length })),
+        defineRoute(enrol, async () => {
+          runs += 1;
+          return { secret: `otpauth-secret-${runs}` };
+        }),
+        defineRoute(signOut, async () => {
+          runs += 1;
+          return { n: runs };
+        }),
       ] });
     const server = await listen(app, 0, '127.0.0.1');
     try {
@@ -143,6 +157,34 @@ describe.skipIf(!url)('saved-once through the generic handler', () => {
       expect(theirs.status).toBe(200);
       expect(theirs.body['id']).not.toBe(mine.body['id']);
       expect(runs()).toBe(2);
+    });
+  });
+
+  it('claims the key of a route whose answer holds a secret, keeps no answer, and refuses a repeat (RAD-32)', async () => {
+    await serve(async (base, runs) => {
+      const key = randomUUID();
+      const send = () => fetch(`${base}/sign-in/second-factor/enrolment`, { method: 'POST', body: '{}',
+        headers: { 'content-type': 'application/json', 'idempotency-key': key } });
+      const first = await send();
+      expect(await first.json()).toEqual({ secret: 'otpauth-secret-1' });
+      const again = await send();
+      expect(again.status).toBe(409);
+      expect((await again.json() as { code: string }).code).toBe('answer_not_kept');
+      expect(runs()).toBe(1);
+      const [row] = (await pool.query<{ kept: boolean; answer: unknown }>(
+        'select kept, answer from radcore.saved_once where key = $1', [key])).rows;
+      expect(row).toEqual({ kept: false, answer: null });
+    });
+  });
+
+  it('claims nothing for a key-exempt route, which needs no key and runs each time', async () => {
+    await serve(async (base, runs) => {
+      const send = () => fetch(`${base}/sign-out`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+      expect([(await send()).status, (await send()).status]).toEqual([200, 200]);
+      expect(runs()).toBe(2);
+      const [{ n } = { n: -1 }] = (await pool.query<{ n: number }>(
+        "select count(*)::int as n from radcore.saved_once where route = 'POST /sign-out'")).rows;
+      expect(n).toBe(0);
     });
   });
 

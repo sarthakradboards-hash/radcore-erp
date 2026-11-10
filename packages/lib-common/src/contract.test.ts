@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   checkInput, dateRange, defineContract, errorEnvelope, gstinString, idString, listInput, listOf, MAX_LIMIT, readInput,
-  requestFor, searchText,
+  newPassword, newPasswordFields, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, passwordLength, passwordString, requestFor,
+  searchText,
 } from './index.ts';
 
 const Party = z.object({ id: idString(), name: z.string(), gstin: gstinString().nullable() });
@@ -152,5 +153,50 @@ describe('list filters (M1-29)', () => {
     expect(issues({ dates: { from: '2026-02-30' } })).toEqual(['filter.dates.from']);
     expect(issues({ search: 'x'.repeat(101), dates: {} })).toEqual(['filter.search']);
     expect(issues({ dates: { from: '2026-04-01' } })).toEqual([]);
+  });
+});
+
+describe('the saved-once flags (ADR-001 §7a, RAD-32)', () => {
+  const base = { method: 'POST', path: '/x', auth: 'session', perm: 'x:write',
+    tx: { readOnly: false, isolation: 'read committed' }, input: z.object({}), output: z.object({}) } as const;
+
+  it('lets a write declare a key exemption or an answer that is not stored, and keeps it on the contract', () => {
+    expect(defineContract({ ...base, idempotency: 'exempt' }).idempotency).toBe('exempt');
+    expect(defineContract({ ...base, storesAnswer: false }).storesAnswer).toBe(false);
+  });
+
+  it('refuses either flag on a read, and the two together', () => {
+    const untyped = defineContract as (spec: object) => unknown;
+    const read = { ...base, method: 'GET', tx: { readOnly: true, isolation: 'read committed' } };
+    expect(() => untyped({ ...read, idempotency: 'exempt' })).toThrow(/only a write/);
+    expect(() => untyped({ ...read, storesAnswer: false })).toThrow(/only a write/);
+    expect(() => untyped({ ...base, idempotency: 'exempt', storesAnswer: false })).toThrow(/stores no answer/);
+  });
+
+  it('has answer_not_kept as a platform code answered 409', () => {
+    expect(errorEnvelope.safeParse({ code: 'answer_not_kept', message: 'm', issues: [], requestId: 'r' }).success).toBe(true);
+  });
+});
+
+describe('passwords (ADR-001 §7a, M1-14)', () => {
+  it('counts a password as code points of its NFC form, so an accent or an emoji is one character', () => {
+    expect(passwordLength('é')).toBe(1); // e and a combining accent: é after NFC
+    expect(passwordLength('😀')).toBe(1); // two UTF-16 units, one code point
+    expect(passwordLength('correct horse')).toBe(13);
+    expect(PASSWORD_MIN_LENGTH).toBe(15);
+  });
+
+  it('caps every password field at 1024 UTF-16 units, and leaves the minimum to the check', () => {
+    expect(PASSWORD_MAX_LENGTH).toBe(1024);
+    expect(newPassword().safeParse('short').success).toBe(true); // too_short is the check's answer, not invalid_input
+    expect(newPassword().safeParse('😀'.repeat(512)).success).toBe(true); // 512 code points, 1024 units
+    expect(newPassword().safeParse('x'.repeat(1025)).success).toBe(false);
+    expect(passwordString().safeParse('').success).toBe(false);
+    expect(passwordString().safeParse('x'.repeat(1024)).success).toBe(true);
+  });
+
+  it('marks a new-password field for the check, and a typed password not', () => {
+    expect(newPasswordFields.has(newPassword())).toBe(true);
+    expect(newPasswordFields.has(passwordString())).toBe(false);
   });
 });
