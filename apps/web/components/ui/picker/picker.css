@@ -1,0 +1,35 @@
+/* Pickers (M1-44). Tokens only, from styles/tokens.css. */
+/* cmdk hides its label for screen readers only; a picker's label is shown like every other field's. */
+.kit-picker [cmdk-label] {
+  position: static !important;
+  inline-size: auto !important;
+  block-size: auto !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  clip: auto !important;
+  white-space: normal !important;
+  font-weight: 600;
+}
+.kit-picker [cmdk-root] { display: grid; gap: var(--space-1); position: relative; }
+.kit-picker [cmdk-input] {
+  min-block-size: var(--field-h);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.kit-picker [cmdk-list] {
+  max-block-size: 20rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-field);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-raised);
+}
+.kit-picker [cmdk-list][hidden] { display: none; }
+.kit-picker [cmdk-item], .kit-picker [cmdk-empty], .kit-picker [cmdk-loading] {
+  display: grid;
+  min-block-size: var(--tap);
+  align-content: center;
+  padding: var(--space-1) var(--space-3);
+}
+.kit-picker [cmdk-item] { cursor: pointer; }
+.kit-picker [cmdk-item][data-selected="true"] { background-color: var(--surface-selected); }
+.kit-picker-detail { font-size: var(--text-sm); color: var(--text-muted); }
