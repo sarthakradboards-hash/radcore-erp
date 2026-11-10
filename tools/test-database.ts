@@ -1,11 +1,13 @@
 // Vitest global setup: one fresh PostgreSQL database per test run, never one per test file (RC-005).
 // With TEST_DATABASE_ADMIN_URL set (CI's PostgreSQL 16 service, or `npm run db:up` locally), it creates
-// radcore_test_<random>, runs the migrations into it (`npm run db:migrate`, RAD-25), hands it to every test file
-// as TEST_DATABASE_URL, and drops it when the run ends. Without it, database tests skip.
+// radcore_test_<random>, makes the three logins and gives the owner the database (RAD-24), runs the migrations into it
+// as the owner (`npm run db:migrate`, RAD-25), hands it to every test file as TEST_DATABASE_URL (the admin login, which
+// tests narrow with SET ROLE), and drops it when the run ends. Without it, database tests skip.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
+import { ensureLogins } from './db-logins.ts';
 
 const admin = (url: string) => new pg.Client({ connectionString: url });
 
@@ -23,10 +25,14 @@ export default async function setup() {
   url.pathname = `/${name}`;
   // Workers start after global setup, so they inherit this.
   process.env['TEST_DATABASE_URL'] = url.toString();
+  await ensureLogins(url.toString());
+  // As the owner login, as in CI's deploy, but through the admin session: no password needed on a local server.
+  const owner = new URL(url);
+  owner.searchParams.set('options', '-c role=radcore_owner');
 
   const scripts = (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string> }).scripts ?? {};
   if (scripts['db:migrate']) {
-    const r = spawnSync('npm run db:migrate', { stdio: 'inherit', shell: true, env: { ...process.env, MIGRATION_DATABASE_URL: url.toString() } });
+    const r = spawnSync('npm run db:migrate', { stdio: 'inherit', shell: true, env: { ...process.env, MIGRATION_DATABASE_URL: owner.toString() } });
     if (r.status !== 0) throw new Error('db:migrate failed on the fresh test database');
   }
 

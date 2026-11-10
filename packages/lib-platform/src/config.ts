@@ -130,6 +130,14 @@ export function loadConfig(env: Env, proc: ProcessName): Config {
     if (PLACEHOLDER.test(password)) problems.push('DATABASE_URL has a placeholder password');
     // CI's throwaway database uses trust auth; everywhere else the password is generated.
     if (appEnv !== 'ci' && password.length < 16) problems.push('DATABASE_URL needs a password of at least 16 characters');
+    // RAD-24 (RC-003): the api and worker never hold the owner login (ADR-005 §7c).
+    const login = decodeURIComponent(u.username);
+    if (login === 'radcore_owner') problems.push('DATABASE_URL must not be the owner login radcore_owner');
+    else if (deployed && login !== 'radcore_app') problems.push(`DATABASE_URL must be the runtime login radcore_app when APP_ENV is ${appEnv}`);
+  }
+  // Development's .env holds it for `npm run db:migrate`; a deployed api or worker never gets it (ADR-004 §3).
+  if (deployed && env['MIGRATION_DATABASE_URL'] !== undefined) {
+    problems.push(`MIGRATION_DATABASE_URL must not be set when APP_ENV is ${appEnv} (the owner login runs only from CI)`);
   }
   if (problems.length > 0) throw new ConfigError(problems);
 
