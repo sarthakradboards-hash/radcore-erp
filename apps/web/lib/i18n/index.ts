@@ -1,9 +1,10 @@
 // Every piece of screen text goes through t() (RC-217). English only for now; Hindi (A-11) adds a second catalogue
 // with the same keys, and the type below makes a missing key a compile error.
+import { admin } from './admin.ts';
 import { kit } from './kit.ts';
 
-const en = {
-  ...kit,
+/** The app's own text; the admin screens' and the kit's are in admin.ts and kit.ts. */
+export const core = {
   'error.title': 'Something went wrong',
   'error.body': 'This screen hit a problem. Try again, and if it keeps happening, give your admin the reference below.',
   'error.reference': 'Reference: {id}',
@@ -64,6 +65,10 @@ const en = {
   'password.changed': 'Your password is changed. Other devices signed out: {count}.',
   'password.changedShort': 'Password changed',
 } as const;
+
+// Spreading lets a later key silently replace an earlier one (TypeScript allows it), so index.test.ts checks that the
+// catalogues share no key: a clash once put the account page's words on the admin Sessions page.
+const en = { ...core, ...admin, ...kit } as const;
 
 export type MessageKey = keyof typeof en;
 
