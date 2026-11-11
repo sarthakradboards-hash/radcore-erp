@@ -41,13 +41,15 @@ type FormProps<I extends FieldValues, O extends FieldValues> = {
   onSubmit: (values: O) => Promise<unknown>;
   /** Said to screen readers once the save succeeds, or false to say nothing. */
   saved?: string | false;
+  /** The screen's wording for a contract's error codes (`own_account`: "You can't change your own account here"). */
+  messages?: Partial<Record<string, string>>;
   /** The form's accessible name, usually the id of its heading. */
   'aria-labelledby'?: string;
   children: ReactNode;
 };
 
 export function Form<I extends FieldValues, O extends FieldValues>(
-  { schema, defaultValues, onSubmit, saved = t('kit.form.saved'), children, ...aria }: FormProps<I, O>,
+  { schema, defaultValues, onSubmit, saved = t('kit.form.saved'), messages, children, ...aria }: FormProps<I, O>,
 ) {
   const [names] = useState<Names>(() => ({ mounted: new Set(), masked: new Set() }));
   const check = zodResolver(schema);
@@ -77,7 +79,7 @@ export function Form<I extends FieldValues, O extends FieldValues>(
       const { fields, rest } = placeIssues(e.envelope.issues, names.mounted);
       fields.forEach(({ name, message }, i) =>
         form.setError(name as never, { type: 'server', message }, { shouldFocus: i === 0 }));
-      const message = formAlert(e.code, SAID[e.code] ?? e.envelope.message, rest);
+      const message = formAlert(e.code, messages?.[e.code] ?? SAID[e.code] ?? e.envelope.message, rest);
       if (message !== null) form.setError('root.server', { type: e.code, message });
       return;
     }
