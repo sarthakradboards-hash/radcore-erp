@@ -21,41 +21,53 @@ jobs:
   e2e:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # Playwright's own image at the lockfile's Playwright version, pinned by digest: the three browsers and their OS
+    # packages come with it, so nothing apt-installs at job time and a slow mirror can't hang the job (RAD-78).
+    # tools/e2e-image.test.ts fails if this tag and the lockfile's Playwright drift apart: bump them together.
+    # --user 1001 is the runner's own user, as Playwright documents: Firefox refuses to run as root in a HOME
+    # (/github/home) that root doesn't own.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      options: --user 1001
     services:
       # The e2e database: the production major version, same image as compose.dev.yml. Trust auth with no password,
-      # since the container lives only as long as this job on a throwaway runner.
+      # since the container lives only as long as this job on a throwaway runner. The job runs in a container, so it
+      # reaches the database by the service's name, `postgres`, not through a port on the runner.
       postgres:
         image: postgres:16.14-alpine3.23@sha256:42b8b8b29c8a4e933d88943e5b03001a78794905cf786e6e7634e9f2abd5a0d3
         env:
           POSTGRES_USER: radcore
           POSTGRES_DB: radcore_e2e
           POSTGRES_HOST_AUTH_METHOD: trust
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U radcore -d radcore_e2e"
           --health-interval 2s --health-timeout 5s --health-retries 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        timeout-minutes: 3
         with:
           node-version-file: .nvmrc
+      # Setup has its own caps, well under the job's, so a slow download fails here by name, not at 15 minutes.
       - run: npm ci
-      - run: npx playwright install --with-deps chromium firefox webkit
+        timeout-minutes: 5
       - name: The three logins, made by the superuser (RAD-24)
         run: npm run db:logins
+        timeout-minutes: 2
         env:
-          DATABASE_ADMIN_URL: postgres://radcore@127.0.0.1:5432/radcore_e2e
+          DATABASE_ADMIN_URL: postgres://radcore@postgres:5432/radcore_e2e
       - name: Migrations as the owner login, as their own step before the apps start (RAD-25)
         run: npm run db:migrate
+        timeout-minutes: 2
         env:
-          MIGRATION_DATABASE_URL: postgres://radcore_owner@127.0.0.1:5432/radcore_e2e
+          MIGRATION_DATABASE_URL: postgres://radcore_owner@postgres:5432/radcore_e2e
       - name: The apps run as the runtime login
         run: npm run e2e
         env:
-          E2E_DATABASE_URL: postgres://radcore_app@127.0.0.1:5432/radcore_e2e
+          E2E_DATABASE_URL: postgres://radcore_app@postgres:5432/radcore_e2e
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

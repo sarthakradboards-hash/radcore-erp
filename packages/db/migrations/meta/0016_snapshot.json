@@ -1,24 +1,56 @@
 {
-  "id": "9fd8e851-3f34-4d3c-b582-ec565d5196a2",
-  "prevId": "eba89c44-32f4-4728-95ec-12d5b4ce955d",
+  "id": "0a243822-1620-4fcb-a721-01a68b9a2bef",
+  "prevId": "23b66986-5e7f-48ba-9019-81eb3d88637e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "radcore.bootstrap": {
-      "name": "bootstrap",
+    "radcore.files": {
+      "name": "files",
       "schema": "radcore",
       "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
+        "id": {
+          "name": "id",
           "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "store_key": {
+          "name": "store_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
         },
         "created_at": {
           "name": "created_at",
@@ -50,11 +82,11 @@
         }
       },
       "indexes": {
-        "ux_bootstrap_user_id": {
-          "name": "ux_bootstrap_user_id",
+        "ux_files_store_key": {
+          "name": "ux_files_store_key",
           "columns": [
             {
-              "expression": "user_id",
+              "expression": "store_key",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -66,29 +98,30 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "bootstrap_user_id_users_id_fk": {
-          "name": "bootstrap_user_id_users_id_fk",
-          "tableFrom": "bootstrap",
-          "tableTo": "users",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_bootstrap_key": {
-          "name": "ck_bootstrap_key",
-          "value": "\"radcore\".\"bootstrap\".\"key\" = 'first_admin'"
+        "ck_files_filename": {
+          "name": "ck_files_filename",
+          "value": "char_length(\"radcore\".\"files\".\"filename\") <= 255"
+        },
+        "ck_files_kind": {
+          "name": "ck_files_kind",
+          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import')"
+        },
+        "ck_files_status": {
+          "name": "ck_files_status",
+          "value": "\"radcore\".\"files\".\"status\" in ('pending', 'checking', 'ready', 'refused')"
+        },
+        "ck_files_store_key": {
+          "name": "ck_files_store_key",
+          "value": "\"radcore\".\"files\".\"store_key\" ~ ('^' || \"radcore\".\"files\".\"kind\" || '/[0-9a-f-]{36}$')"
+        },
+        "ck_files_size": {
+          "name": "ck_files_size",
+          "value": "(\"radcore\".\"files\".\"status\" <> 'ready' or \"radcore\".\"files\".\"size\" is not null) and (\"radcore\".\"files\".\"size\" is null or \"radcore\".\"files\".\"size\" > 0)"
         }
       },
       "isRLSEnabled": false

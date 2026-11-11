@@ -496,9 +496,9 @@ takes two optional steps; `before(input, deps)` is the first.
 **A call that needs what the transaction decided goes in its `afterCommit` step** (RAD-32). `afterCommit(result,
 again)` runs after the service's transaction commits, with the service's result; `again` opens one more transaction,
 as the same principal, to record the outcome. The outcome is recorded through `again` only after the call has
-succeeded; the service never records it as done ("sent"), since the call may still fail. A retry runs the service again, so the service makes the step safe to
-repeat: the password-reset email, its first user, dedupes on its job id, and a link minted but never mailed is spent
-and replaced.
+succeeded; the service never records it as done ("sent"), since the call may still fail. A retry runs the service
+again, so the service makes the step safe to repeat: the password-reset email, its first user, dedupes on its job id,
+and a link minted but never mailed is spent and replaced.
 
 ### 8b. Platform engines, module functions
 

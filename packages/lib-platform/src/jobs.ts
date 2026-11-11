@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import type { Alerter } from './alerts.ts';
 import type { Ctx, Principal } from './ctx.ts';
+import type { FileStore } from './files/store.ts';
 
 /** Who a job runs as (ADR-001 §6a): its service gets a Ctx for that principal (RAD-44 step 3). */
 export type JobPrincipal =
@@ -52,8 +53,13 @@ export class JobRefused extends Error {
 /** How the worker runs a job's service: in one transaction, with a Ctx for principal (runtime.ts). */
 export type OpenJob = (principal: Principal, jobId: string, work: (ctx: Ctx) => Promise<void>) => Promise<void>;
 
-/** What the worker gives a job to run with: its transaction, how to load the enqueuer, and the alerter. */
-type JobRun = { open: OpenJob; load: LoadPrincipal; alert: Alerter };
+/** What the worker gives a job to run with: its transaction, how to load the enqueuer, the alerter, and the file
+ * store when the process has one (RAD-43). */
+type JobRun = { open: OpenJob; load: LoadPrincipal; alert: Alerter; files?: FileStore };
+
+/** Work a job does before its transaction opens, because it reaches the network (ADR-001 §8): checking an upload in
+ * S3, say. Its result reaches the service as `meta.before`. */
+export type BeforeJob<I, B> = (input: I, outside: { files: FileStore }) => Promise<B>;
 
 /** A job contract with the service that does the work. The worker runs these; nothing else calls `handle`. */
 export type JobDefinition = {
@@ -113,8 +119,11 @@ async function principalOf(name: string, p: JobPrincipal, by: string, load: Load
   if (!who.permissions.includes(p.perm)) throw new JobRefused(`${name}: ${by} no longer holds ${p.perm}`);
   return who;
 }
-/** A job's optional steps around its transaction (ADR-001 §8). backend-3's `before` (RAD-43) joins this object. */
-export type JobSteps<R> = {
+/** A job's optional steps around its transaction (ADR-001 §8). */
+export type JobSteps<I, B, R> = {
+  /** The network work a job does first, outside any transaction (RAD-43's upload check); its answer reaches the
+   * service as `meta.before`. */
+  before?: BeforeJob<I, B>;
   /**
    * Runs after the service's transaction commits, with what the service returned: the place for an outside call that
    * needs what the transaction decided (the reset email's recipient and link). `again` opens one more transaction, as
@@ -124,8 +133,9 @@ export type JobSteps<R> = {
 };
 
 /** A job's contract, its service, and its optional steps around the service's transaction. */
-export function defineJob<I, R = void>(contract: JobContract<I>,
-  service: (ctx: Ctx, input: I, meta: JobMeta) => Promise<R>, { afterCommit }: JobSteps<R> = {}): JobDefinition {
+export function defineJob<I, B = undefined, R = void>(contract: JobContract<I>,
+  service: (ctx: Ctx, input: I, meta: JobMeta & { before: B }) => Promise<R>,
+  { before, afterCommit }: JobSteps<I, B, R> = {}): JobDefinition {
   const settings = queueSettings(contract);
   // A schedule has no person behind it, so a scheduled job runs as a system principal.
   if (contract.every !== undefined && contract.principal.kind !== 'system') {
@@ -138,13 +148,17 @@ export function defineJob<I, R = void>(contract: JobContract<I>,
     deleteOnComplete: contract.deleteOnComplete === true,
     settings,
     // The payload is checked before any transaction opens; the service's writes commit or roll back together.
-    handle: async (data, jobId, { open, load, alert }) => {
+    handle: async (data, jobId, { open, load, alert, files }) => {
       const { input: raw, by } = ENVELOPE.parse(data);
       const input = contract.input.parse(raw);
       const principal = await principalOf(contract.name, contract.principal, by, load);
+      if (before !== undefined && files === undefined) throw new Error(`${contract.name}: this worker has no file store`);
+      // Outside any transaction: no connection is held while it waits on the network.
+      // Without a `before`, B is undefined, so this is B either way.
+      const done = (before === undefined || files === undefined ? undefined : await before(input, { files })) as B;
       const ran: { result?: R } = {};
       await open(principal, jobId, async (ctx) => {
-        ran.result = await service(ctx, input, { jobId, alert });
+        ran.result = await service(ctx, input, { jobId, alert, before: done });
       });
       if (afterCommit !== undefined) await afterCommit(ran.result as R, (work) => open(principal, jobId, work));
     },

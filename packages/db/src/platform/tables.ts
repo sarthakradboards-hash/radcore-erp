@@ -162,3 +162,28 @@ export const bootstrap = radcoreTable('bootstrap', {
   check('ck_bootstrap_key', sql`${t.key} = 'first_admin'`),
   uniqueIndex('ux_bootstrap_user_id').on(t.userId),
 ]);
+
+/**
+ * Files people upload (RAD-43, ADR-004 §2, RC-096, RC-191); an export is RAD-47's own row. The bytes live in S3, under
+ * `store_key` (`<kind>/<uuid>`, made by the server); this row is what the app knows about them. A browser upload is
+ * `pending` until the person confirms it, `checking` while a job checks it in S3 (size, type, magic bytes: a network
+ * call, so never inside a request's transaction, ADR-001 §8), then `ready` or `refused`. Only a ready file downloads.
+ * `filename` is the name the person gave it, shown on download. Kept permanently, like all data (D-12): there's no
+ * deletion job. Audited like any record.
+ */
+export const files = radcoreTable('files', {
+  id: id(),
+  kind: text().notNull(),
+  storeKey: text().notNull(),
+  filename: boundedText({ max: 255 }).notNull(),
+  contentType: text().notNull(),
+  size: integer(),
+  status: text().notNull().default('pending'),
+}, (t) => [
+  uniqueIndex('ux_files_store_key').on(t.storeKey),
+  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import')`),
+  check('ck_files_status', sql`${t.status} in ('pending', 'checking', 'ready', 'refused')`),
+  check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
+  // A ready file has its checked size.
+  check('ck_files_size', sql`(${t.status} <> 'ready' or ${t.size} is not null) and (${t.size} is null or ${t.size} > 0)`),
+]);

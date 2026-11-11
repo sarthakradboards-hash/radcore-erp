@@ -3,6 +3,7 @@
 // `ctx.tx` has no members, so a service can only hand it to its own module transaction (`salesTx(ctx)`) (T1).
 import type { Tx } from '@radcore/db/schema';
 import type { z } from 'zod';
+import type { FileStore } from './files/store.ts';
 import type { Settings } from './settings.ts';
 
 /** Who a request or job runs as (ADR-001 §6a). Link principals arrive with M1-23. */
@@ -19,6 +20,12 @@ export type Jobs = {
   send<I>(job: QueuedJob<I>, input: I): Promise<void>;
 };
 
+/**
+ * The file store's two signing calls (RAD-43, ADR-001 §8): they sign locally and send nothing, so they're safe inside a
+ * transaction. Checking an upload and the server's own put reach S3, so they run outside one (a job, or after commit).
+ */
+export type Files = Pick<FileStore, 'presignUpload' | 'downloadUrl'>;
+
 export type Ctx = {
   readonly tx: Tx;
   readonly principal: Principal;
@@ -28,6 +35,8 @@ export type Ctx = {
   readonly settings: Settings;
   /** `ctx.jobs.send(contract, input)`: the job runs after this transaction commits, never if it rolls back. */
   readonly jobs: Jobs;
+  /** `ctx.files.presignUpload(kind, type)` and `ctx.files.downloadUrl(key, name)`: links, never bytes. */
+  readonly files: Files;
 };
 
 /** How audit rows and `app.principal` name a principal: `user:<id>` or `system:<name>`. */

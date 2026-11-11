@@ -1,9 +1,131 @@
 {
-  "id": "eba89c44-32f4-4728-95ec-12d5b4ce955d",
+  "id": "23b66986-5e7f-48ba-9019-81eb3d88637e",
   "prevId": "6196bf42-7f90-4a6b-a670-7f9dfaf48a00",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "radcore.files": {
+      "name": "files",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "store_key": {
+          "name": "store_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_files_store_key": {
+          "name": "ux_files_store_key",
+          "columns": [
+            {
+              "expression": "store_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_files_filename": {
+          "name": "ck_files_filename",
+          "value": "char_length(\"radcore\".\"files\".\"filename\") <= 255"
+        },
+        "ck_files_kind": {
+          "name": "ck_files_kind",
+          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import')"
+        },
+        "ck_files_status": {
+          "name": "ck_files_status",
+          "value": "\"radcore\".\"files\".\"status\" in ('pending', 'checking', 'ready', 'refused')"
+        },
+        "ck_files_store_key": {
+          "name": "ck_files_store_key",
+          "value": "\"radcore\".\"files\".\"store_key\" ~ ('^' || \"radcore\".\"files\".\"kind\" || '/[0-9a-f-]{36}$')"
+        },
+        "ck_files_size": {
+          "name": "ck_files_size",
+          "value": "(\"radcore\".\"files\".\"status\" <> 'ready' or \"radcore\".\"files\".\"size\" is not null) and (\"radcore\".\"files\".\"size\" is null or \"radcore\".\"files\".\"size\" > 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "radcore.invites": {
       "name": "invites",
       "schema": "radcore",
@@ -35,18 +157,6 @@
         },
         "used_at": {
           "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "job_id": {
-          "name": "job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sent_at": {
-          "name": "sent_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -86,21 +196,6 @@
           "columns": [
             {
               "expression": "token_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ux_invites_job_id": {
-          "name": "ux_invites_job_id",
-          "columns": [
-            {
-              "expression": "job_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -307,18 +402,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "job_id": {
-          "name": "job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -354,21 +437,6 @@
           "columns": [
             {
               "expression": "token_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ux_password_resets_job_id": {
-          "name": "ux_password_resets_job_id",
-          "columns": [
-            {
-              "expression": "job_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
