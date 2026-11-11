@@ -125,3 +125,15 @@ export const jobsOutbox = radcoreTable('jobs_outbox', {
   // The relay's pass reads the live rows that are due, oldest first.
   index('ix_jobs_outbox_due').on(t.nextAttemptAt).where(isNull(t.deadAt)),
 ]);
+
+/**
+ * The first admin (ADR-004 §3, RC-021): one permanent row, made by the bootstrap-admin command, so its invite is minted
+ * once ever and a later deploy can't mint another. The runtime login may add it, never change or remove it.
+ */
+export const bootstrap = radcoreTable('bootstrap', {
+  key: text().primaryKey(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_bootstrap_key', sql`${t.key} = 'first_admin'`),
+  uniqueIndex('ux_bootstrap_user_id').on(t.userId),
+]);
