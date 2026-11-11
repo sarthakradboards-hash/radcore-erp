@@ -125,15 +125,23 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
   });
 
   const rows = async (view: string) => (await client.query<Record<string, string>>(`select * from ${view}`)).rows;
-  // The app's own schemas. Other test files make short-lived schemas of their own (saved-once's, module-tx's), which
-  // the guard may see mid-run; they're not the real schema, so they're left out here.
-  const REAL = ['radcore', 'public'];
-  const inRealSchema = (r: Record<string, string>) => REAL.includes(r['schema_name'] ?? '');
+  // Test fixtures: this file's guard_bad, and the short-lived schemas other test files make, each named test_…, which
+  // the guard may see mid-run. Every other schema is checked, so a schema added later is guarded from its first day.
+  const FIXTURE = /^(guard_bad|test_[a-z0-9_]+)$/;
+  const notFixture = (r: Record<string, string>) => !FIXTURE.test(r['schema_name'] ?? '');
+  // Every schema the database may hold. One not here, and not a fixture, fails: add it here, deliberately.
+  const KNOWN = ['radcore', 'public', 'drizzle', 'pgboss', 'ratelimit', 'radcore_ext'];
+
+  it('holds no schema it doesn’t know, besides the fixtures', async () => {
+    const { rows: found } = await client.query<{ name: string }>(`select nspname::text as name from pg_namespace
+      where nspname not in ('pg_catalog', 'information_schema') and left(nspname, 3) <> 'pg_' order by 1`);
+    expect(found.map((r) => r.name).filter((n) => !FIXTURE.test(n) && !KNOWN.includes(n))).toEqual([]);
+  });
 
   it('finds no rule broken outside the fixture schema (the real schema and the helper fixtures)', async () => {
     for (const view of ['v_schema_numeric_without_check', 'v_schema_fk_without_index', 'v_schema_missing_audit', 'v_schema_enums',
       'v_schema_public_relations', 'v_schema_missing_triggers', 'v_schema_audit_columns']) {
-      expect((await rows(view)).filter(inRealSchema), view).toEqual([]);
+      expect((await rows(view)).filter(notFixture), view).toEqual([]);
     }
   });
 

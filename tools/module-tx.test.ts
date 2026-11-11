@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // The owner login: this file makes a schema and tables of its own (RAD-24).
 const url = process.env['TEST_DATABASE_OWNER_URL'];
-const fixture = pgSchema(`mtx_${randomBytes(6).toString('hex')}`);
+const fixture = pgSchema(`test_mtx_${randomBytes(6).toString('hex')}`);
 const own = fixture.table('own_items', { id: uuid().primaryKey().defaultRandom(), n: integer().notNull() });
 const other = fixture.table('other_items', { id: uuid().primaryKey().defaultRandom(), n: integer().notNull() });
 const ownTx = moduleTx({ own });
