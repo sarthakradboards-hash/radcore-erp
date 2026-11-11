@@ -4,7 +4,7 @@ import * as tables from './tables.ts';
 
 export { notInNonEmpty } from '../conditions.ts';
 export * from './tables.ts';
-export { eventLog } from './logs.ts';
+export { auditLog, eventLog } from './logs.ts';
 export { after, onIndiaDays } from '../lists.ts';
 
 /** platform's module transaction: `platformTx(ctx)` reads, and writes only, platform's own tables (ADR-002 §4). */
