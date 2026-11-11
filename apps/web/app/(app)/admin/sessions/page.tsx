@@ -23,33 +23,33 @@ export default function SessionsPage() {
   const [ending, setEnding] = useState<AdminSession | null>(null);
 
   const columns: Column<AdminSession>[] = [
-    { id: 'person', header: t('sessions.col.person'), cell: (s) => s.user.displayName },
-    { id: 'device', header: t('sessions.col.device'), cell: (s) => s.device },
-    { id: 'started', header: t('sessions.col.started'), cell: (s) => formatMoment(s.createdAt) },
-    { id: 'seen', header: t('sessions.col.seen'), cell: (s) => formatMoment(s.lastSeenAt) },
-    { id: 'ends', header: t('sessions.col.ends'), cell: (s) => formatMoment(endsBy(s)) },
-    { id: 'action', header: t('sessions.col.action'), cell: (s) => (s.current ? t('sessions.current') : (
+    { id: 'person', header: t('admin.sessions.col.person'), cell: (s) => s.user.displayName },
+    { id: 'device', header: t('admin.sessions.col.device'), cell: (s) => s.device },
+    { id: 'started', header: t('admin.sessions.col.started'), cell: (s) => formatMoment(s.createdAt) },
+    { id: 'seen', header: t('admin.sessions.col.seen'), cell: (s) => formatMoment(s.lastSeenAt) },
+    { id: 'ends', header: t('admin.sessions.col.ends'), cell: (s) => formatMoment(endsBy(s)) },
+    { id: 'action', header: t('admin.sessions.col.action'), cell: (s) => (s.current ? t('admin.sessions.current') : (
       <button type="button" className="kit-button" onClick={() => setEnding(s)}
-        aria-label={t('sessions.end.label', { name: s.user.displayName, device: s.device })}>{t('sessions.end')}</button>
+        aria-label={t('admin.sessions.end.label', { name: s.user.displayName, device: s.device })}>{t('admin.sessions.end')}</button>
     )) },
   ];
 
   const vars = { name: ending?.user.displayName ?? '', device: ending?.device ?? '' };
   return (
     <>
-      <h1>{t('sessions.title')}</h1>
+      <h1>{t('admin.sessions.title')}</h1>
       <div className="admin-toolbar">
-        <Picker label={t('sessions.person')} hint={t('sessions.person.hint')} query={query} onQueryChange={setQuery}
+        <Picker label={t('admin.sessions.person')} hint={t('admin.sessions.person.hint')} query={query} onQueryChange={setQuery}
           options={found.items} loading={found.isFetching} error={found.error} value={person} onChange={setPerson}
           optionKey={(u) => u.id} optionLabel={(u) => u.displayName} optionDetail={(u) => u.email} />
         {person === null ? null : (
-          <button type="button" className="kit-button" onClick={() => setPerson(null)}>{t('sessions.clear')}</button>
+          <button type="button" className="kit-button" onClick={() => setPerson(null)}>{t('admin.sessions.clear')}</button>
         )}
       </div>
-      <DataTable caption={t('sessions.title')} columns={columns} rowKey={(s) => s.id} list={list} empty={t('sessions.empty')} />
+      <DataTable caption={t('admin.sessions.title')} columns={columns} rowKey={(s) => s.id} list={list} empty={t('admin.sessions.empty')} />
       <ConfirmDialog open={ending !== null} onOpenChange={(open) => { if (!open) setEnding(null); }}
-        title={t('sessions.end.title', vars)} body={t('sessions.end.body')} action={t('sessions.end')}
-        done={t('sessions.end.done')} onConfirm={async () => { await end.submit({ id: ending?.id ?? '' }); }} />
+        title={t('admin.sessions.end.title', vars)} body={t('admin.sessions.end.body')} action={t('admin.sessions.end')}
+        done={t('admin.sessions.end.done')} onConfirm={async () => { await end.submit({ id: ending?.id ?? '' }); }} />
     </>
   );
 }

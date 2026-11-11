@@ -54,8 +54,8 @@ export default function PermissionsPage() {
 
   return (
     <>
-      <h1>{t('perms.title')}</h1>
-      <p>{t('perms.intro')}</p>
+      <h1>{t('admin.perms.title')}</h1>
+      <p>{t('admin.perms.intro')}</p>
       {q.error === null ? null : (
         <div role="alert" className="kit-form-alert">
           {t('error.title')}{' '}
@@ -64,31 +64,31 @@ export default function PermissionsPage() {
       )}
       {m === undefined ? <p>{t('loading')}</p> : (
         <>
-          <p role="status">{editing === null ? '' : t('perms.editing', { role: editing.name })}</p>
+          <p role="status">{editing === null ? '' : t('admin.perms.editing', { role: editing.name })}</p>
           {editing === null ? null : (
             <div className="kit-actions admin-choices">
               <button type="button" className="kit-button kit-button-primary" onClick={() => setAsking(true)}>
-                {t('perms.save', { role: editing.name })}
+                {t('admin.perms.save', { role: editing.name })}
               </button>
-              <button type="button" className="kit-button" onClick={() => setEditing(null)}>{t('perms.discard')}</button>
+              <button type="button" className="kit-button" onClick={() => setEditing(null)}>{t('admin.perms.discard')}</button>
             </div>
           )}
           <div className="kit-table">
             <div className="kit-table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
               <table className="admin-matrix">
-                <caption id={captionId}>{t('perms.caption')}</caption>
+                <caption id={captionId}>{t('admin.perms.caption')}</caption>
                 <thead>
                   <tr>
-                    <th scope="col">{t('perms.col.permission')}</th>
+                    <th scope="col">{t('admin.perms.col.permission')}</th>
                     {m.roles.map((r) => (
                       <th key={r.key} scope="col">
                         <span className="admin-matrix-head">
                           {r.name}
-                          {!r.editable ? <span className="kit-field-hint">{t('perms.locked')}</span>
+                          {!r.editable ? <span className="kit-field-hint">{t('admin.perms.locked')}</span>
                             : editing === null ? (
-                              <button type="button" className="kit-button" aria-label={t('perms.edit', { role: r.name })}
+                              <button type="button" className="kit-button" aria-label={t('admin.perms.edit', { role: r.name })}
                                 onClick={() => setEditing({ key: r.key, name: r.name, grants: new Set(r.grants) })}>
-                                {t('perms.edit.short')}
+                                {t('admin.perms.edit.short')}
                               </button>
                             ) : null}
                         </span>
@@ -109,7 +109,7 @@ export default function PermissionsPage() {
                           return (
                             <td key={r.key} className={mine && checked !== held ? 'admin-changed' : undefined}>
                               <input type="checkbox" checked={checked} disabled={!mine} onChange={() => toggle(p.key)}
-                                aria-label={t('perms.grant', { role: r.name, permission: p.label })} />
+                                aria-label={t('admin.perms.grant', { role: r.name, permission: p.label })} />
                             </td>
                           );
                         })}
@@ -123,8 +123,8 @@ export default function PermissionsPage() {
         </>
       )}
       <ReasonDialog open={asking} onOpenChange={setAsking} messages={MESSAGES} onConfirm={confirm}
-        title={t('perms.reason.title', { role: editing?.name ?? '' })} action={t('perms.save', { role: editing?.name ?? '' })}
-        done={t('perms.saved', { role: editing?.name ?? '' })} />
+        title={t('admin.perms.reason.title', { role: editing?.name ?? '' })} action={t('admin.perms.save', { role: editing?.name ?? '' })}
+        done={t('admin.perms.saved', { role: editing?.name ?? '' })} />
     </>
   );
 }

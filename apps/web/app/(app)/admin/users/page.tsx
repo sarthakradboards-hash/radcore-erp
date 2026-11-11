@@ -49,104 +49,104 @@ export default function UsersPage() {
   const actions = (u: AdminUser): MenuItem[] => {
     const act = (kind: Acting['kind']) => () => setActing({ kind, user: u });
     return [
-      ...(u.status === 'disabled' ? [] : [{ label: t('users.role.change'), onSelect: act('role') }]),
-      ...(u.status === 'invited' ? [{ label: t('users.resend'), onSelect: act('resend') }] : []),
-      ...(u.status === 'active' ? [{ label: t('users.endSessions'), onSelect: act('sessions') }] : []),
+      ...(u.status === 'disabled' ? [] : [{ label: t('admin.users.role.change'), onSelect: act('role') }]),
+      ...(u.status === 'invited' ? [{ label: t('admin.users.resend'), onSelect: act('resend') }] : []),
+      ...(u.status === 'active' ? [{ label: t('admin.users.endSessions'), onSelect: act('sessions') }] : []),
       u.status === 'disabled'
-        ? { label: t('users.reactivate'), onSelect: act('reactivate') }
-        : { label: t('users.deactivate'), onSelect: act('deactivate') },
+        ? { label: t('admin.users.reactivate'), onSelect: act('reactivate') }
+        : { label: t('admin.users.deactivate'), onSelect: act('deactivate') },
     ];
   };
 
   const columns: Column<AdminUser>[] = [
-    { id: 'name', header: t('users.col.name'), cell: (u) => (u.self ? t('users.you', { name: u.displayName }) : u.displayName) },
-    { id: 'email', header: t('users.col.email'), cell: (u) => u.email },
-    { id: 'role', header: t('users.col.role'), cell: (u) => roleName(u.role) },
-    { id: 'status', header: t('users.col.status'), cell: (u) => t(`users.status.${u.status}`) },
-    { id: 'factor', header: t('users.col.factor'), cell: (u) => t(`users.factor.${u.secondFactor}`) },
+    { id: 'name', header: t('admin.users.col.name'), cell: (u) => (u.self ? t('admin.users.you', { name: u.displayName }) : u.displayName) },
+    { id: 'email', header: t('admin.users.col.email'), cell: (u) => u.email },
+    { id: 'role', header: t('admin.users.col.role'), cell: (u) => roleName(u.role) },
+    { id: 'status', header: t('admin.users.col.status'), cell: (u) => t(`admin.users.status.${u.status}`) },
+    { id: 'factor', header: t('admin.users.col.factor'), cell: (u) => t(`admin.users.factor.${u.secondFactor}`) },
     // Your own row has no actions: nobody changes their own role or account here (M1-18).
-    { id: 'actions', header: t('users.col.actions'), cell: (u) => (u.self ? null
-      : <Menu label={t('users.actionsFor', { name: u.displayName })} items={actions(u)} />) },
+    { id: 'actions', header: t('admin.users.col.actions'), cell: (u) => (u.self ? null
+      : <Menu label={t('admin.users.actionsFor', { name: u.displayName })} items={actions(u)} />) },
   ];
 
   const user = acting?.user;
   const name = user?.displayName ?? '';
   return (
     <>
-      <h1>{t('users.title')}</h1>
+      <h1>{t('admin.users.title')}</h1>
       <div className="admin-toolbar">
         <form role="search" className="admin-toolbar" onSubmit={(e) => { e.preventDefault(); setSearch(typed.trim()); }}>
           <div className="kit-field">
-            <label htmlFor="users-search">{t('users.search')}</label>
+            <label htmlFor="users-search">{t('admin.users.search')}</label>
             <input id="users-search" type="search" value={typed} maxLength={100} onChange={(e) => setTyped(e.target.value)} />
           </div>
-          <button type="submit" className="kit-button">{t('audit.apply')}</button>
+          <button type="submit" className="kit-button">{t('admin.audit.apply')}</button>
         </form>
         <button type="button" className="kit-button kit-button-primary" onClick={() => setInviting(true)}>
-          {t('users.invite')}
+          {t('admin.users.invite')}
         </button>
       </div>
-      <ChoiceButtons<Show> label={t('users.status')} value={show} onChange={setShow} options={[
-        { value: 'all', label: t('users.status.all') }, { value: 'active', label: t('users.status.active') },
-        { value: 'invited', label: t('users.status.invited') }, { value: 'disabled', label: t('users.status.disabled') },
+      <ChoiceButtons<Show> label={t('admin.users.status')} value={show} onChange={setShow} options={[
+        { value: 'all', label: t('admin.users.status.all') }, { value: 'active', label: t('admin.users.status.active') },
+        { value: 'invited', label: t('admin.users.status.invited') }, { value: 'disabled', label: t('admin.users.status.disabled') },
       ]} />
-      <DataTable caption={t('users.title')} columns={columns} rowKey={(u) => u.id} list={list} empty={t('users.empty')} />
+      <DataTable caption={t('admin.users.title')} columns={columns} rowKey={(u) => u.id} list={list} empty={t('admin.users.empty')} />
 
-      <Dialog open={inviting} onOpenChange={setInviting} title={t('users.invite.title')} description={t('users.invite.hint')}>
-        <Form schema={inviteUser.input.extend({ role: z.string().min(1, t('users.invite.pickRole')) })}
+      <Dialog open={inviting} onOpenChange={setInviting} title={t('admin.users.invite.title')} description={t('admin.users.invite.hint')}>
+        <Form schema={inviteUser.input.extend({ role: z.string().min(1, t('admin.users.invite.pickRole')) })}
           defaultValues={{ email: '', displayName: '', role: '' }} saved={false} messages={MESSAGES}
           onSubmit={async (v) => {
             await invite.submit(v);
             setInviting(false);
-            later(t('users.invite.sent', { email: v.email }));
+            later(t('admin.users.invite.sent', { email: v.email }));
           }}>
-          <TextField name="email" label={t('users.invite.email')} type="email" autoComplete="off" />
-          <TextField name="displayName" label={t('users.invite.name')} autoComplete="off" />
-          <RadioField name="role" label={t('users.invite.role')} options={roleOptions(roles)} />
+          <TextField name="email" label={t('admin.users.invite.email')} type="email" autoComplete="off" />
+          <TextField name="displayName" label={t('admin.users.invite.name')} autoComplete="off" />
+          <RadioField name="role" label={t('admin.users.invite.role')} options={roleOptions(roles)} />
           <div className="kit-actions">
             <CloseButton>{t('admin.cancel')}</CloseButton>
-            <SubmitButton>{t('users.invite.send')}</SubmitButton>
+            <SubmitButton>{t('admin.users.invite.send')}</SubmitButton>
           </div>
         </Form>
       </Dialog>
 
-      <Dialog open={acting?.kind === 'role'} onOpenChange={close} title={t('users.role.title', { name })}
-        description={t('users.role.hint')}>
+      <Dialog open={acting?.kind === 'role'} onOpenChange={close} title={t('admin.users.role.title', { name })}
+        description={t('admin.users.role.hint')}>
         {user === undefined ? null : (
           <Form schema={setUserRole.input.pick({ role: true, reason: true })} saved={false} messages={MESSAGES}
             defaultValues={{ role: user.role, reason: '' }}
             onSubmit={async (v) => {
               await changeRole.submit({ id: user.id, ...v });
               setActing(null);
-              later(t('users.role.done', { name, role: roleName(v.role) }));
+              later(t('admin.users.role.done', { name, role: roleName(v.role) }));
             }}>
-            <RadioField name="role" label={t('users.invite.role')} options={roleOptions(roles)} />
+            <RadioField name="role" label={t('admin.users.invite.role')} options={roleOptions(roles)} />
             <TextAreaField name="reason" label={t('admin.reason')} />
             <div className="kit-actions">
               <CloseButton>{t('admin.cancel')}</CloseButton>
-              <SubmitButton>{t('users.role.save')}</SubmitButton>
+              <SubmitButton>{t('admin.users.role.save')}</SubmitButton>
             </div>
           </Form>
         )}
       </Dialog>
 
       <ReasonDialog open={acting?.kind === 'deactivate'} onOpenChange={close} messages={MESSAGES}
-        title={t('users.deactivate.title', { name })} action={t('users.deactivate')}
-        done={t('users.deactivate.done', { name })}
+        title={t('admin.users.deactivate.title', { name })} action={t('admin.users.deactivate')}
+        done={t('admin.users.deactivate.done', { name })}
         onConfirm={(reason) => deactivate.submit({ id: user?.id ?? '', reason })} />
       <ReasonDialog open={acting?.kind === 'reactivate'} onOpenChange={close} messages={MESSAGES}
-        title={t('users.reactivate.title', { name })} action={t('users.reactivate')}
-        done={t('users.reactivate.done', { name })}
+        title={t('admin.users.reactivate.title', { name })} action={t('admin.users.reactivate')}
+        done={t('admin.users.reactivate.done', { name })}
         onConfirm={(reason) => reactivate.submit({ id: user?.id ?? '', reason })} />
       <ConfirmDialog open={acting?.kind === 'resend'} onOpenChange={close}
-        title={t('users.resend.title', { name })} body={t('users.resend.body')} action={t('users.resend')}
-        done={t('users.resent', { name })} onConfirm={async () => { await resend.submit({ id: user?.id ?? '' }); }} />
+        title={t('admin.users.resend.title', { name })} body={t('admin.users.resend.body')} action={t('admin.users.resend')}
+        done={t('admin.users.resent', { name })} onConfirm={async () => { await resend.submit({ id: user?.id ?? '' }); }} />
       <ConfirmDialog open={acting?.kind === 'sessions'} onOpenChange={close}
-        title={t('users.endSessions.title', { name })} body={t('users.endSessions.body')}
-        action={t('users.endSessions.confirm')} done=""
+        title={t('admin.users.endSessions.title', { name })} body={t('admin.users.endSessions.body')}
+        action={t('admin.users.endSessions.confirm')} done=""
         onConfirm={async () => {
           const { ended } = await signOut.submit({ id: user?.id ?? '' });
-          return t('users.endSessions.done', { name, count: String(ended) });
+          return t('admin.users.endSessions.done', { name, count: String(ended) });
         }} />
     </>
   );

@@ -8,20 +8,20 @@ import { useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 
 const columns: Column<Role>[] = [
-  { id: 'name', header: t('roles.col.name'), cell: (r) => r.name },
-  { id: 'description', header: t('roles.col.description'), cell: (r) => r.description },
-  { id: 'people', header: t('roles.col.people'), cell: (r) => r.userCount, numeric: true },
-  { id: 'factor', header: t('roles.col.factor'),
-    cell: (r) => t(r.secondFactorRequired ? 'roles.factor.required' : 'roles.factor.optional') },
+  { id: 'name', header: t('admin.roles.col.name'), cell: (r) => r.name },
+  { id: 'description', header: t('admin.roles.col.description'), cell: (r) => r.description },
+  { id: 'people', header: t('admin.roles.col.people'), cell: (r) => r.userCount, numeric: true },
+  { id: 'factor', header: t('admin.roles.col.factor'),
+    cell: (r) => t(r.secondFactorRequired ? 'admin.roles.factor.required' : 'admin.roles.factor.optional') },
 ];
 
 export default function RolesPage() {
   const q = useApiQuery(listRoles, {});
   return (
     <>
-      <h1>{t('roles.title')}</h1>
-      <p>{t('roles.intro')}</p>
-      <DataTable caption={t('roles.title')} columns={columns} rowKey={(r) => r.key} list={{
+      <h1>{t('admin.roles.title')}</h1>
+      <p>{t('admin.roles.intro')}</p>
+      <DataTable caption={t('admin.roles.title')} columns={columns} rowKey={(r) => r.key} list={{
         items: q.data?.roles ?? [], hasNextPage: false, fetchNextPage: () => undefined, isFetchingNextPage: false,
         isPending: q.isPending, error: q.error, refetch: () => void q.refetch(),
       }} />
