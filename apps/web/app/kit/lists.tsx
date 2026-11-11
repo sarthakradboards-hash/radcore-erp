@@ -10,6 +10,7 @@ import { VIEWS, type View } from './views.ts';
 
 type Party = { id: string; name: string; city: string; limit: string };
 type Page = { items: Party[]; next: string | null };
+type SortBy = 'name' | 'city' | 'limit';
 
 const NAMES = ['Asha', 'Bharat', 'Chandra', 'Devi', 'Eknath', 'Farida', 'Gopal'];
 const CITIES = ['Pune', 'Nagpur', 'Indore', 'Surat', 'Mysuru'];
@@ -22,7 +23,7 @@ const PARTIES: Party[] = Array.from({ length: 2100 }, (_, i) => {
 const wait = () => new Promise((resolve) => setTimeout(resolve, 150));
 
 /** The fake list route: search (every word), order, then a page after the cursor (here, just a row index). */
-async function listParties(o: { search?: string; sort?: Sort; after?: string; limit: number }): Promise<Page> {
+async function listParties(o: { search?: string; sort?: Sort<SortBy>; after?: string; limit: number }): Promise<Page> {
   await wait();
   const words = (o.search ?? '').toLowerCase().split(/\s+/).filter(Boolean);
   const found = PARTIES.filter((p) => words.every((w) => `${p.name} ${p.city}`.toLowerCase().includes(w)));
@@ -40,7 +41,7 @@ async function listParties(o: { search?: string; sort?: Sort; after?: string; li
   return { items: found.slice(start, end), next: end < found.length ? String(end) : null };
 }
 
-const COLUMNS: Column<Party>[] = [
+const COLUMNS: Column<Party, SortBy>[] = [
   { id: 'name', header: 'Name', cell: (p) => p.name, sortable: true },
   { id: 'city', header: 'City', cell: (p) => p.city, sortable: true },
   { id: 'limit', header: 'Credit limit (₹)', cell: (p) => p.limit, sortable: true, numeric: true },
@@ -49,7 +50,7 @@ const COLUMNS: Column<Party>[] = [
 export function Lists({ initialView }: { initialView: View }) {
   const [view, setView] = useSavedView<View>('kit', initialView);
   const [fetched, setFetched] = useState<string[]>([]);
-  const [sort, setSort] = useState<Sort>({ column: 'name', desc: false });
+  const [sort, setSort] = useState<Sort<SortBy>>({ column: 'name', desc: false });
 
   const list = useInfiniteQuery({
     queryKey: ['kit', 'parties', sort],

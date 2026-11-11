@@ -10,10 +10,12 @@
 import { randomUUID } from 'node:crypto';
 import { jobsOutbox, platformTx } from '@radcore/db/platform';
 import type { Database } from '@radcore/db/schema';
-import { and, asc, eq, inArray, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, lte } from 'drizzle-orm';
+import { z } from 'zod';
 import { createAlerter, type Alerter } from './alerts.ts';
-import type { Principal } from './ctx.ts';
+import type { Ctx, Principal } from './ctx.ts';
 import type { JobQueue } from './db/client.ts';
+import type { JobContract, JobEnvelope } from './jobs.ts';
 import { runInTransaction } from './db/transaction.ts';
 import type { Logger } from './log.ts';
 
@@ -43,13 +45,16 @@ export async function relayOutbox(db: Database, queue: JobQueue, log: Logger, op
   const result = await runInTransaction(db, WRITE, RELAY, randomUUID(), async (ctx) => {
     const tx = platformTx(ctx);
     const now = new Date();
-    const rows = await tx.select({ id: jobsOutbox.id, name: jobsOutbox.name, data: jobsOutbox.data, attempts: jobsOutbox.attempts })
+    const rows = await tx.select({ id: jobsOutbox.id, name: jobsOutbox.name, data: jobsOutbox.data,
+      principal: jobsOutbox.principal, attempts: jobsOutbox.attempts })
       .from(jobsOutbox).where(and(isNull(jobsOutbox.deadAt), lte(jobsOutbox.nextAttemptAt, now)))
       .orderBy(asc(jobsOutbox.nextAttemptAt)).limit(batch).for('update', { skipLocked: true });
     const sent: string[] = [];
     for (const row of rows) {
       try {
-        await queue.send(row.name, row.data as object, { id: row.id });
+        // The enqueuer travels with the job, so it runs as them (ADR-001 §6a).
+        const envelope: JobEnvelope = { input: row.data, by: row.principal };
+        await queue.send(row.name, envelope, { id: row.id });
         sent.push(row.id);
       } catch (err) {
         const attempts = row.attempts + 1;
@@ -90,4 +95,20 @@ export function startOutboxRelay(db: Database, queue: JobQueue, log: Logger,
     clearInterval(timer);
     await state.pass;
   } };
+}
+
+/** How long a set-aside row is kept for someone to look into before the clean-up deletes it: payloads may be personal. */
+const SET_ASIDE_KEEP_MS = 30 * 86_400_000;
+
+/** Deletes set-aside outbox rows past their keep (auditor-2, RAD-44). Daily, one run at a time, as a system principal. */
+export const outboxCleanup: JobContract<object | null> = {
+  name: 'platform.outbox-cleanup',
+  principal: { kind: 'system', name: 'outbox-cleanup', permissions: [] },
+  input: z.strictObject({}).nullable(),
+  every: '41 3 * * *',
+  oneAtATime: true,
+};
+
+export async function cleanOutbox(ctx: Ctx): Promise<void> {
+  await platformTx(ctx).delete(jobsOutbox).where(lt(jobsOutbox.deadAt, new Date(Date.now() - SET_ASIDE_KEEP_MS)));
 }

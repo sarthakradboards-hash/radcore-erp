@@ -6,7 +6,7 @@ import type { Database } from '@radcore/db/schema';
 import { ConfigError, loadConfig, type Config, type ProcessName } from './config.ts';
 import { createPool, type JobQueue, type Pool } from './db/client.ts';
 import { runInTransaction } from './db/transaction.ts';
-import type { JobDefinition, OpenJob, QueueSettings } from './jobs.ts';
+import { JobRefused, type JobDefinition, type JobEnvelope, type LoadPrincipal, type OpenJob, type QueueSettings } from './jobs.ts';
 import type { Logger } from './log.ts';
 import { createLog } from './log/logger.ts';
 
@@ -15,6 +15,10 @@ export { createDatabase, createHealthCheck, createJobQueue } from './db/client.t
 export { runInTransaction } from './db/transaction.ts';
 export { relayOutbox, startOutboxRelay } from './outbox.ts';
 export type { Logger } from './log.ts';
+
+// shortcut: no person can be loaded until RAD-35 (M1-17) provides the loader, so every job for a user is refused (fails
+// closed); the worker passes RAD-35's loader then.
+const refuseEveryone: LoadPrincipal = async () => null;
 
 type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };
 // Create the queue if it's missing, then bring its options up to date. pg-boss's create_queue is INSERT … ON CONFLICT
@@ -36,7 +40,8 @@ const ensureQueue = async (queue: JobQueue, name: string, { policy, retries, ...
  * its dead-letter queue with the alert, and its schedule. Returns how to stop: no new work, attempts in flight finish.
  */
 export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], log: Logger,
-  { db, alert = createAlerter(null, log), stopTimeoutMs = 20_000 }: { db: Database; alert?: Alerter; stopTimeoutMs?: number },
+  { db, alert = createAlerter(null, log), stopTimeoutMs = 20_000, loadPrincipal = refuseEveryone }:
+  { db: Database; alert?: Alerter; stopTimeoutMs?: number; loadPrincipal?: LoadPrincipal },
 ): Promise<Stoppable> {
   // Each attempt is one write transaction as the job's principal, its job id as the request id: its writes commit
   // together or not at all, and audit rows name the job (ADR-001 §6a, RAD-44 step 3).
@@ -50,7 +55,13 @@ export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], l
     await ensureQueue(queue, job.name, job.settings);
     await queue.work(job.name, async ([attempt]) => {
       if (attempt === undefined) return;
-      await job.handle(attempt.data, attempt.id, open);
+      try {
+        await job.handle(attempt.data, attempt.id, open, loadPrincipal);
+      } catch (err) {
+        if (!(err instanceof JobRefused)) throw err;
+        // Its enqueuer can't run it any more: retrying won't change that, so it ends here, with the alert.
+        await alert(`job ${job.name} refused (job ${attempt.id}): ${err.message}`);
+      }
       // pg-boss then marks the job complete with an update that finds no row; the payload is already gone.
       if (job.deleteOnComplete) await queue.deleteJob(job.name, attempt.id);
     });
@@ -60,7 +71,10 @@ export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], l
       await alert(`job ${job.name} failed after all its attempts (job ${dead.id})`);
       if (job.deleteOnComplete) await queue.deleteJob(deadLetter, dead.id);
     });
-    if (job.every !== null) await queue.schedule(job.name, job.every);
+    if (job.every !== null && job.principal.kind === 'system') {
+      const envelope: JobEnvelope = { input: null, by: `system:${job.principal.name}` };
+      await queue.schedule(job.name, job.every, envelope);
+    }
   }
   log.info(`job queue: running ${jobs.length} job(s)`);
   return { name: 'job queue', stop: () => queue.stop({ graceful: true, timeout: stopTimeoutMs }) };

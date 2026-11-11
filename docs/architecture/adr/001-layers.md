@@ -351,9 +351,10 @@ the server. The form shows the same rules but decides nothing.
   - The only upper bound is the schema's cap, `PASSWORD_MAX_LENGTH` = 1024 UTF-16 units, which zod counts. It
     applies to every password field, sign-in included, so a password that could be set can always be typed at
     sign-in. 1024 units is at least 512 code points, well above NIST's 64.
-  - Most roles sign in with the password alone (D-19 adds the second factor for admin and owner only), and
-    NIST SP 800-63B-4 requires 15 for a password used alone.
-  - Admin and owner get the same minimum. One rule is simpler, and the strongest accounts are no place to relax it.
+  - D-19 adds the second factor for admin, owner, accounts and HR. Every other role signs in with the password
+    alone, and NIST SP 800-63B-4 requires 15 for a password used alone.
+  - The four roles with a second factor get the same minimum. One rule is simpler, and the accounts that move money
+    and run payroll are no place to relax it.
 - **No composition rules and no forced expiry.** Spaces and pasting are allowed, so a passphrase works.
 - **Not a common or breached password** (ADR-003 §3). Two checks, in this order:
   - **Always: the bundled list.** The whole password, lower-cased, is compared with a list of common passwords

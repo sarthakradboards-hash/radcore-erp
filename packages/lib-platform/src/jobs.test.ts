@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type { Principal } from './ctx.ts';
-import { defineJob, queueSettings, type JobContract, type OpenJob } from './jobs.ts';
+import { defineJob, JobRefused, queueSettings, type JobContract, type OpenJob } from './jobs.ts';
 
 const contract = (over: Partial<JobContract<{ n: number }>> = {}): JobContract<{ n: number }> => ({
   name: 'sales.shopify-order', principal: { kind: 'system', name: 'online-orders', permissions: ['sales:write'] },
@@ -44,24 +44,45 @@ describe('defineJob', () => {
     return { open, opened };
   };
 
-  it('checks the payload first, then runs the service in a transaction as the contract\'s system principal', async () => {
+  const nobody = async () => null;
+  const asUser = (permissions: string[]): Principal => ({ kind: 'user', userId: 'u-1', permissions });
+
+  it('checks the envelope and the payload first, then runs a system job as its contract\'s principal', async () => {
     const service = vi.fn(async () => undefined);
     const job = defineJob(contract(), service);
     const { open, opened } = opener();
-    await job.handle({ n: 1 }, 'job-1', open);
+    await job.handle({ input: { n: 1 }, by: 'system:online-orders' }, 'job-1', open, nobody);
     expect(opened).toEqual([{ principal: { kind: 'system', name: 'online-orders', permissions: ['sales:write'] }, jobId: 'job-1' }]);
-    await expect(job.handle({ n: 'one' }, 'job-2', open)).rejects.toThrow();
+    await expect(job.handle({ input: { n: 'one' }, by: 'system:x' }, 'job-2', open, nobody)).rejects.toThrow();
+    // A bare payload, not an envelope, never runs either.
+    await expect(job.handle({ n: 1 }, 'job-3', open, nobody)).rejects.toThrow();
     expect(opened).toHaveLength(1);
   });
 
-  it('runs a job for a user as nobody until its enqueuer is rechecked (RAD-44 step 3b): it fails closed', async () => {
-    const service = vi.fn(async () => undefined);
+  it('runs a job for a user as that person, loaded now, when they still hold its permission (ADR-001 §6a)', async () => {
     const { open, opened } = opener();
-    await expect(defineJob(contract({ principal: { kind: 'user' } }), service).handle({ n: 1 }, 'job-3', open))
-      .rejects.toThrow(/can't run until its enqueuer is rechecked/);
-    expect([opened, service.mock.calls]).toEqual([[], []]);
+    const load = vi.fn(async () => asUser(['invoices:export']));
+    await defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' } }), async () => undefined)
+      .handle({ input: { n: 1 }, by: 'user:u-1' }, 'job-4', open, load);
+    expect(load).toHaveBeenCalledWith('user:u-1');
+    expect(opened).toEqual([{ principal: asUser(['invoices:export']), jobId: 'job-4' }]);
   });
 
+  it.each([
+    ['who lost the permission', 'user:u-1', async () => asUser(['invoices:read'])],
+    ['who is gone', 'user:u-1', async () => null],
+    ['that no person queued', 'system:online-orders', async () => asUser(['invoices:export'])],
+  ])('refuses a job for a user %s, without opening a transaction', async (_why, by, load) => {
+    const { open, opened } = opener();
+    await expect(defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' } }), async () => undefined)
+      .handle({ input: { n: 1 }, by }, 'job-5', open, load)).rejects.toThrow(JobRefused);
+    expect(opened).toEqual([]);
+  });
+
+  it('refuses a scheduled job that would run as a user', () => {
+    expect(() => defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' }, every: '* * * * *' }),
+      async () => undefined)).toThrow(/scheduled job must declare a system principal/);
+  });
   it('carries the schedule and delete-on-complete for the worker', () => {
     const job = defineJob(contract({ every: '* * * * *', deleteOnComplete: true }), async () => undefined);
     expect(job).toMatchObject({ name: 'sales.shopify-order', every: '* * * * *', deleteOnComplete: true });
