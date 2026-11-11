@@ -5,6 +5,8 @@ import {
   searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
+
+export { downloadExport, EXPORT_MAX_ROWS, getExport } from './export/contract.ts';
 import { FILE_KINDS, type FileKind } from './files/kinds.ts';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */
@@ -381,27 +383,6 @@ export const photoFiles = fileContracts('photo');
 export const resumeFiles = fileContracts('resume');
 export const statementFiles = fileContracts('statement');
 export const importFiles = fileContracts('import');
-
-/** An export's row cap (RAD-47, ADR-002 Exports): just under a spreadsheet's 1,048,576 rows, so any export opens
- * whole. Past it the export fails `too_large` and keeps no file; it's never cut short (RC-086). */
-export const EXPORT_MAX_ROWS = 1_000_000;
-const exportStatus = z.enum(['queued', 'ready', 'failed']);
-
-/** An export's progress, for the person who started it; anyone else's id answers not_found. `failure` says why a
- * failed one failed: `too_large` means more than EXPORT_MAX_ROWS rows, so the screen asks to narrow the filter. */
-export const getExport = defineContract({
-  method: 'GET', path: '/exports/:id', auth: 'session', perm: 'session:read', tx: read,
-  input: z.object({ id: idString() }),
-  output: z.object({ status: exportStatus, rows: z.number().int().nonnegative().nullable(),
-    failure: z.enum(['too_large', 'failed']).nullable() }),
-});
-
-/** A short-lived link that downloads a ready export as an attachment, for the person who started it; recorded as a
- * `download` security event (RC-031). Not yet ready, or failed: not_ready. */
-export const downloadExport = defineContract({
-  method: 'POST', path: '/exports/:id/download', auth: 'session', perm: 'session:read', tx: write,
-  input: z.object({ id: idString() }), output: z.object({ url: z.string() }), errors: ['not_ready'],
-});
 
 /** ADR-001 §7a's fixed lists, as "METHOD /path". The generic handler accepts `idempotency: 'exempt'` and
  * `storesAnswer: false` only from these routes, and the permission manifest test (M1-19) fails on any other. */

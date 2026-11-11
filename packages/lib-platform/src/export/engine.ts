@@ -4,11 +4,11 @@
 // past EXPORT_MAX_ROWS, or when the volume fills, it fails `too_large` and keeps no file.
 import { createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import { finished } from 'node:stream/promises';
+import { pipeline } from 'node:stream/promises';
 import { dataExports, platformTx } from '@radcore/db/platform';
 import { and, eq } from 'drizzle-orm';
 import type { z } from 'zod';
-import { EXPORT_MAX_ROWS, type downloadExport, type getExport } from '../contract.ts';
+import { EXPORT_MAX_ROWS, type downloadExport, type getExport } from './contract.ts';
 import { principalId, type Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import { recordSecurityEvent } from '../security-events.ts';
@@ -49,8 +49,8 @@ const PAGE = 1_000;
 export async function writeExportFile<F>(ctx: Ctx, def: ExportDefinition<F>, filter: F, path: string,
   cap: number = EXPORT_MAX_ROWS): Promise<number> {
   const csv = csvWriter(def.columns);
-  const out = csv.pipe(createWriteStream(path));
-  const done = finished(out);
+  // pipeline closes the file on success and destroys both streams on any error, so nothing is left open.
+  const done = pipeline(csv, createWriteStream(path));
   let rows = 0;
   try {
     let after: string | undefined;
@@ -67,7 +67,7 @@ export async function writeExportFile<F>(ctx: Ctx, def: ExportDefinition<F>, fil
     await done;
     return rows;
   } catch (error) {
-    csv.destroy();
+    csv.destroy(error instanceof Error ? error : new Error('export failed'));
     await done.catch(() => undefined);
     await rm(path, { force: true });
     if ((error as { code?: string }).code === 'ENOSPC') throw new ExportTooLarge(`${def.kind}: the export volume is full`);
