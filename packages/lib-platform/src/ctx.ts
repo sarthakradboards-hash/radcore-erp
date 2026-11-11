@@ -2,7 +2,7 @@
 // the settings.
 // `ctx.tx` has no members, so a service can only hand it to its own module transaction (`salesTx(ctx)`) (T1).
 import type { Tx } from '@radcore/db/schema';
-import type { JobContract } from './jobs.ts';
+import type { z } from 'zod';
 import type { Settings } from './settings.ts';
 
 /** Who a request or job runs as (ADR-001 §6a). Link principals arrive with M1-23. */
@@ -10,10 +10,13 @@ export type Principal =
   | { readonly kind: 'user'; readonly userId: string; readonly permissions: readonly string[] }
   | { readonly kind: 'system'; readonly name: string; readonly permissions: readonly string[] };
 
+/** What send needs of a job contract (jobs.ts's JobContract has it); named here so ctx.ts imports no jobs.ts (D1). */
+type QueuedJob<I> = { readonly name: string; readonly input: z.ZodType<I> };
+
 /** Queues jobs in the caller's transaction, through the outbox (ADR-002 §4): a save that rolls back queues nothing. */
 export type Jobs = {
   /** Checks input against the job's own schema now, so a bad payload fails the save, not the job later. */
-  send<I>(job: JobContract<I>, input: I): Promise<void>;
+  send<I>(job: QueuedJob<I>, input: I): Promise<void>;
 };
 
 export type Ctx = {
