@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { AUDIT_RANGE_MAX_DAYS, securityEvent, type listSecurityEvents } from './contract.ts';
 import type { Ctx } from './ctx.ts';
 import { AppError } from './errors.ts';
-import { decodeCursor, encodeCursor } from './lists.ts';
+import { decodeCursor, encodeCursor, isoMoment, momentKey } from './lists.ts';
 
 export type SecurityEvent = z.input<typeof securityEvent>;
 
@@ -27,7 +27,7 @@ export async function recordSecurityEvent(ctx: Ctx, event: SecurityEvent, subjec
 }
 
 // The page key: occurred_at, then seq, which orders the rows of one transaction (they share occurred_at).
-const pageKey = z.strictObject({ occurredAt: z.iso.datetime({ offset: true }), seq: z.number().int().positive() });
+const pageKey = z.strictObject({ occurredAt: momentKey(), seq: z.number().int().positive() });
 type Input = z.output<typeof listSecurityEvents.input>;
 type Output = z.input<typeof listSecurityEvents.output>;
 
@@ -55,13 +55,13 @@ export async function listSecurityEventsPage(ctx: Ctx, input: Input): Promise<Ou
   return {
     items: page.map((r) => ({
       id: r.id,
-      occurredAt: new Date(r.occurredAt).toISOString(),
+      occurredAt: isoMoment(r.occurredAt),
       principal: principalOf(r.userId, r.displayName, r.createdBy),
       device: r.device ?? '',
       ...securityEvent.parse({ kind: r.kind, detail: r.detail }),
     })),
     next: rows.length > input.limit && last
-      ? encodeCursor({ occurredAt: new Date(last.occurredAt).toISOString(), seq: last.seq }) : null,
+      ? encodeCursor({ occurredAt: last.occurredAt, seq: last.seq }) : null,
   };
 }
 

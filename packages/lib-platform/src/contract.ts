@@ -285,7 +285,9 @@ export const listAuditedTables = defineContract({
   input: z.object({}), output: z.object({ tables: z.array(z.string()) }),
 });
 
-/** The security events (RAD-31, RC-031). A new kind is a migration too: event_log's CHECK lists them. */
+/** The security events (RAD-31, RC-031). A new kind is a migration too: event_log's CHECK lists them. Kinds, and the
+ * values of each detail's enums, are only ever added: the list parses every stored row with these schemas, so one
+ * removed or renamed would fail the old pages that hold it (auditor-2 on #109). */
 export const SECURITY_EVENT_KINDS = ['sign_in', 'sign_in_failed', 'password_changed', 'second_factor_changed', 'export',
   'download'] as const;
 const securityEventKind = z.enum(SECURITY_EVENT_KINDS);
