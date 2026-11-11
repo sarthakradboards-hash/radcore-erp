@@ -125,12 +125,15 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
   });
 
   const rows = async (view: string) => (await client.query<Record<string, string>>(`select * from ${view}`)).rows;
-  const outside = (schemaName: string) => (r: Record<string, string>) => r['schema_name'] !== schemaName;
+  // The app's own schemas. Other test files make short-lived schemas of their own (saved-once's, module-tx's), which
+  // the guard may see mid-run; they're not the real schema, so they're left out here.
+  const REAL = ['radcore', 'public'];
+  const inRealSchema = (r: Record<string, string>) => REAL.includes(r['schema_name'] ?? '');
 
   it('finds no rule broken outside the fixture schema (the real schema and the helper fixtures)', async () => {
     for (const view of ['v_schema_numeric_without_check', 'v_schema_fk_without_index', 'v_schema_missing_audit', 'v_schema_enums',
       'v_schema_public_relations', 'v_schema_missing_triggers', 'v_schema_audit_columns']) {
-      expect((await rows(view)).filter(outside('guard_bad')), view).toEqual([]);
+      expect((await rows(view)).filter(inRealSchema), view).toEqual([]);
     }
   });
 

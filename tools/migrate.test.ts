@@ -126,7 +126,9 @@ describe('the migration files', () => {
   });
 });
 
-describe.skipIf(!url)('the migration runner', () => {
+// Each test migrates a whole empty database (eleven migrations, the audit engine's among them), alongside the rest of
+// the suite: 5 s isn't enough under that load.
+describe.skipIf(!url)('the migration runner', { timeout: 30_000 }, () => {
   it('migrates an empty database, and a second run finds nothing to do', async () => {
     await withDatabase(async (db) => {
       await migrate(db);
