@@ -69,9 +69,9 @@ out.
   - Limits by kind: photos 10 MB, resumes 5 MB, bank statements 15 MB, import files 25 MB (M1-25).
   - After upload, a job copies the object from `incoming/<kind>/<uuid>` to `<kind>/<uuid>`, which no POST policy
     names, once (a retried job checks the copy it already made), then checks the copy's size, type and magic bytes,
-    and removes the upload. Only that checked copy is ever
-    downloaded, so bytes posted again to the upload key while its policy lasts never reach a reader (RAD-43). A
-    refused copy stays where it is, never served: only a file checked as ready gets a download link.
+    and removes the upload. Only that checked copy is ever downloaded, so bytes posted again to the upload key while
+    its policy lasts never reach a reader (RAD-43). A refused copy stays where it is, never served: only a file
+    checked as ready gets a download link.
   - Downloads are short-lived presigned GETs with `Content-Disposition: attachment`.
   - Neither the API nor the database holds a whole file.
 - **Connections.** The API and worker connect straight to RDS from their own pools: no transaction-mode pooler,
@@ -222,8 +222,9 @@ the deploy job through SSM:
   names the Hyderabad replica key. Without that, it would copy nothing.
   - A daily canary object is written in Mumbai. The monitor alerts if it hasn't appeared in Hyderabad within an
     hour.
-  - Lifecycle rules abort incomplete uploads after a day. Old versions are kept: D-12 keeps all data, so none
-    expires.
+  - Lifecycle rules abort incomplete uploads after a day, and expire everything under `incoming/` after a day,
+    current and old versions alike: an upload is working data, and its checked copy is the record (D-12). Old
+    versions elsewhere are kept: D-12 keeps all data, so none expires.
   - A bucket policy denies any request not over TLS.
 - **RDS** has deletion protection on, keeps its automated backups on deletion, and replicates them to `ap-south-2`
   with a key in that region. M8-01 confirms that the Mumbai-to-Hyderabad pair is offered, and sets the retention
