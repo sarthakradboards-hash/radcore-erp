@@ -143,11 +143,20 @@ export function createFileStore(s3: Config['s3'], client: S3Client = s3Client(s3
       const rule = FILE_KINDS[kind];
       // First a copy of the upload as it is now: the browser may POST again to its key until the policy expires, but
       // what's checked, and later downloaded, is this copy, so bytes posted after the check never reach a reader.
-      await client.send(new CopyObjectCommand({ Bucket, Key: key, CopySource: `${Bucket}/${INCOMING}${key}` }))
-        .catch((err: unknown) => {
-          // A retry after an earlier attempt removed the upload checks the copy that attempt made.
-          if (!(err instanceof S3ServiceException && err.$metadata.httpStatusCode === 404)) throw err;
-        });
+      // The copy is made once: a retried job (it can rerun even after the file was recorded ready) checks the copy
+      // already made, and never copies newer bytes over it (auditor). Only this job writes `key`, so nothing races
+      // between the HEAD and the copy.
+      const copied = await client.send(new HeadObjectCommand({ Bucket, Key: key })).then(() => true, (err: unknown) => {
+        if (err instanceof NotFound) return false;
+        throw err;
+      });
+      if (!copied) {
+        await client.send(new CopyObjectCommand({ Bucket, Key: key, CopySource: `${Bucket}/${INCOMING}${key}` }))
+          .catch((err: unknown) => {
+            // Nothing was uploaded: the check below says so.
+            if (!(err instanceof S3ServiceException && err.$metadata.httpStatusCode === 404)) throw err;
+          });
+      }
       try {
         const meta = await client.send(new HeadObjectCommand({ Bucket, Key: key })).catch((err: unknown) => {
           if (err instanceof NotFound) throw new UploadRefused('nothing was uploaded');

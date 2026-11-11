@@ -68,7 +68,8 @@ out.
   bucket's CORS allows `POST` from `PUBLIC_ORIGIN` only (ADR-001 §7a).
   - Limits by kind: photos 10 MB, resumes 5 MB, bank statements 15 MB, import files 25 MB (M1-25).
   - After upload, a job copies the object from `incoming/<kind>/<uuid>` to `<kind>/<uuid>`, which no POST policy
-    names, then checks the copy's size, type and magic bytes, and removes the upload. Only that checked copy is ever
+    names, once (a retried job checks the copy it already made), then checks the copy's size, type and magic bytes,
+    and removes the upload. Only that checked copy is ever
     downloaded, so bytes posted again to the upload key while its policy lasts never reach a reader (RAD-43). A
     refused copy stays where it is, never served: only a file checked as ready gets a download link.
   - Downloads are short-lived presigned GETs with `Content-Disposition: attachment`.

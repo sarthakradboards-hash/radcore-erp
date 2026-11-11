@@ -112,13 +112,15 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     expect(await files.verifyUpload(ok, 'resume')).toEqual({ size: 15, contentType: 'application/pdf' });
   });
 
-  it('serves the bytes it checked, even when the browser posts other bytes to its upload key afterwards', async () => {
+  it('serves the bytes it checked, even when the browser posts other bytes afterwards and the job runs again', async () => {
     const { files } = await store();
     const upload = await files.presignUpload('resume', 'application/pdf');
     expect(await post(upload.url, upload.fields, 1024)).toBe(204);
     await files.verifyUpload(upload.key, 'resume');
     // Within the policy's five minutes, the same fields again: a bigger body that begins the same way.
     expect(await post(upload.url, upload.fields, 2048)).toBe(204);
+    // The job retried after it recorded the file ready: it checks its copy, and copies nothing new over it (auditor).
+    expect(await files.verifyUpload(upload.key, 'resume')).toEqual({ size: 1024, contentType: 'application/pdf' });
     const get = await fetch(await files.downloadUrl(upload.key, 'cv.pdf'));
     expect((await get.arrayBuffer()).byteLength).toBe(1024);
   });
