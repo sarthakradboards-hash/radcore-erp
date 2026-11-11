@@ -1,11 +1,11 @@
 {
-  "id": "1bac7f90-110d-4fb9-98ed-9112fe7cff4e",
+  "id": "23b66986-5e7f-48ba-9019-81eb3d88637e",
   "prevId": "6196bf42-7f90-4a6b-a670-7f9dfaf48a00",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "radcore.approvals": {
-      "name": "approvals",
+    "radcore.files": {
+      "name": "files",
       "schema": "radcore",
       "columns": {
         "id": {
@@ -21,23 +21,29 @@
           "primaryKey": false,
           "notNull": true
         },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_hash": {
-          "name": "version_hash",
+        "store_key": {
+          "name": "store_key",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "requested_by": {
-          "name": "requested_by",
+        "filename": {
+          "name": "filename",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -45,24 +51,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -94,51 +82,17 @@
         }
       },
       "indexes": {
-        "ux_approvals_pending": {
-          "name": "ux_approvals_pending",
+        "ux_files_store_key": {
+          "name": "ux_files_store_key",
           "columns": [
             {
-              "expression": "kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
+              "expression": "store_key",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"radcore\".\"approvals\".\"decided_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_approvals_kind_status": {
-          "name": "ix_approvals_kind_status",
-          "columns": [
-            {
-              "expression": "kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -149,25 +103,25 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_approvals_reason": {
-          "name": "ck_approvals_reason",
-          "value": "char_length(\"radcore\".\"approvals\".\"reason\") <= 500"
+        "ck_files_filename": {
+          "name": "ck_files_filename",
+          "value": "char_length(\"radcore\".\"files\".\"filename\") <= 255"
         },
-        "ck_approvals_kind": {
-          "name": "ck_approvals_kind",
-          "value": "\"radcore\".\"approvals\".\"kind\" ~ '^[a-z][a-z0-9-]*$'"
+        "ck_files_kind": {
+          "name": "ck_files_kind",
+          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import')"
         },
-        "ck_approvals_version_hash": {
-          "name": "ck_approvals_version_hash",
-          "value": "\"radcore\".\"approvals\".\"version_hash\" ~ '^[0-9a-f]{64}$'"
+        "ck_files_status": {
+          "name": "ck_files_status",
+          "value": "\"radcore\".\"files\".\"status\" in ('pending', 'checking', 'ready', 'refused')"
         },
-        "ck_approvals_status": {
-          "name": "ck_approvals_status",
-          "value": "\"radcore\".\"approvals\".\"status\" in ('pending', 'approved', 'rejected', 'superseded')"
+        "ck_files_store_key": {
+          "name": "ck_files_store_key",
+          "value": "\"radcore\".\"files\".\"store_key\" ~ ('^' || \"radcore\".\"files\".\"kind\" || '/[0-9a-f-]{36}$')"
         },
-        "ck_approvals_decided": {
-          "name": "ck_approvals_decided",
-          "value": "(\"radcore\".\"approvals\".\"status\" = 'pending') = (\"radcore\".\"approvals\".\"decided_at\" is null)\n    and (\"radcore\".\"approvals\".\"status\" in ('approved', 'rejected')) = (\"radcore\".\"approvals\".\"decided_by\" is not null)\n    and (\"radcore\".\"approvals\".\"decided_by\" is null or \"radcore\".\"approvals\".\"decided_by\" <> \"radcore\".\"approvals\".\"requested_by\")"
+        "ck_files_size": {
+          "name": "ck_files_size",
+          "value": "(\"radcore\".\"files\".\"status\" <> 'ready' or \"radcore\".\"files\".\"size\" is not null) and (\"radcore\".\"files\".\"size\" is null or \"radcore\".\"files\".\"size\" > 0)"
         }
       },
       "isRLSEnabled": false

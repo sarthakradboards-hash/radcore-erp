@@ -5,6 +5,7 @@ import {
   searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
+import { FILE_KINDS, type FileKind } from './files/kinds.ts';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */
 const permissionKeys = z.array(z.string().regex(/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/, 'Not a permission key')).max(500).refine((keys) => keys.every((k, i) => i === 0 || (keys[i - 1] ?? '') < k),
@@ -320,6 +321,10 @@ export const SECURITY_EVENT_ROUTES = {
   'POST /invites/accept': ['password_changed'],
   'POST /password-reset': ['password_changed'],
   'POST /me/password': ['password_changed'],
+  'POST /files/photo/:id/download': ['download'],
+  'POST /files/resume/:id/download': ['download'],
+  'POST /files/statement/:id/download': ['download'],
+  'POST /files/import/:id/download': ['download'],
 } as const satisfies Record<string, readonly (typeof SECURITY_EVENT_KINDS)[number][]>;
 
 /** Security events (RAD-31's event_log), newest first on (occurred_at desc, seq desc), the audit viewer's second tab.
@@ -374,9 +379,52 @@ export const approvalContracts = <K extends string>(kind: K, perm: `${string}:${
   });
 };
 
+ * A kind of uploaded file's three routes (RAD-43, RC-096): each kind has its own `<kind>_files:read` and `:write`, so a
+ * role that may attach bill photos can't open statements. The browser uploads straight to S3 (RC-191):
+ * 1. startUpload: a 5-minute presigned POST for one file of an allowed type, and the file's id (status `pending`);
+ * 2. the browser POSTs the file to `url` with `fields`;
+ * 3. confirmUpload: the file is `checking` while a job checks its size, type and first bytes in S3;
+ * 4. downloadLink: a 60-second link, for a `ready` file only, recorded as a `download` security event. A file still checking answers `not_ready`; one the
+ *    check refused answers `upload_refused`.
+ * Every answer is `Cache-Control: no-store` (the handler's), and so is the download itself (the link's).
+ */
+const fileContracts = <K extends FileKind>(kind: K) => {
+  const types = [...FILE_KINDS[kind].types] as [string, ...string[]];
+  const params = z.object({ id: idString() });
+  return Object.freeze({
+    startUpload: defineContract({
+      method: 'POST', path: `/files/${kind}`, auth: 'session', perm: `${kind}_files:write`, tx: write,
+      input: z.object({
+        // The name it's shown and downloaded under; never a path or a key.
+        filename: z.string().trim().min(1, 'Name the file').max(255).regex(/^[^\p{Cc}]+$/u, 'Not a file name'),
+        contentType: z.enum(types, { error: 'This kind of file isn\'t accepted here' }),
+      }),
+      output: z.object({ id: idString(), url: z.url(), fields: z.record(z.string(), z.string()) }),
+    }),
+    confirmUpload: defineContract({
+      method: 'POST', path: `/files/${kind}/:id/confirm`, auth: 'session', perm: `${kind}_files:write`, tx: write,
+      input: params, output: z.object({ status: z.literal('checking') }), errors: ['not_pending'],
+    }),
+    // A POST in a write transaction: each link records a `download` security event (RC-031), which a read-only
+    // transaction can't write. The browser sends a new Idempotency-Key per click.
+    downloadLink: defineContract({
+      method: 'POST', path: `/files/${kind}/:id/download`, auth: 'session', perm: `${kind}_files:read`, tx: write,
+      // The answer is a live presigned link: saved-once keeps the key but never the link (RC-132), so a repeated key
+      // answers answer_not_kept and the browser asks again with a new one.
+      storesAnswer: false,
+      input: params, output: z.object({ url: z.url() }), errors: ['not_ready', 'upload_refused'],
+    }),
+  });
+};
+export const photoFiles = fileContracts('photo');
+export const resumeFiles = fileContracts('resume');
+export const statementFiles = fileContracts('statement');
+export const importFiles = fileContracts('import');
+
 /** ADR-001 §7a's fixed lists, as "METHOD /path". The generic handler accepts `idempotency: 'exempt'` and
  * `storesAnswer: false` only from these routes, and the permission manifest test (M1-19) fails on any other. */
 export const KEY_EXEMPT_ROUTES = ['POST /sign-in', 'POST /sign-out', 'POST /sign-in/second-factor',
   'POST /sign-in/second-factor/enrolment/confirm'] as const;
 // shortcut: M1-15's signed-in "new recovery codes" route joins this list when it is declared.
-export const ANSWER_NOT_STORED_ROUTES = ['POST /sign-in/second-factor/enrolment'] as const;
+export const ANSWER_NOT_STORED_ROUTES = ['POST /sign-in/second-factor/enrolment', 'POST /files/photo/:id/download',
+  'POST /files/resume/:id/download', 'POST /files/statement/:id/download', 'POST /files/import/:id/download'] as const;
