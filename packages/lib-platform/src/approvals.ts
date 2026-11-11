@@ -2,7 +2,7 @@
 // a second person approves or rejects it. The engine knows no module (ADR-001 §8b): each kind supplies its
 // ApprovalSpec, which says what version of the record is being approved and what approval or rejection does.
 //   request ─► the record's version, hashed ─► a pending row (an older pending request for it is superseded)
-//   decide  ─► lock the request ─► the record, locked and within the approver's scope (else not_found) ─► still pending
+//   decide  ─► the record, locked and within the approver's scope (else not_found) ─► lock the request ─► still pending
 //           ─► not the requester ─► the approver's account predates the request
 //           ─► approve only: the record still hashes to the requested version, and the approver's screen saw it
 //           ─► record the decision (only while still pending) ─► the module's approved() or rejected(), same transaction
@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { approvals, platformTx, users } from '@radcore/db/platform';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { approvalContracts } from './contract.ts';
+import type { approvalContracts } from './approval-contracts.ts';
 import { principalId, type Ctx } from './ctx.ts';
 import { AppError } from './errors.ts';
 import { defineRoute, type Route } from './route.ts';
@@ -117,14 +117,18 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
   if (ctx.principal.kind !== 'user') throw new AppError('forbidden', 'Only a person can decide an approval');
   const me = principalId(ctx.principal);
   const tx = platformTx(ctx);
-  // Locked, so two people deciding at once are taken one after the other, and the second finds it decided.
+  const [found] = await tx.select({ recordId: approvals.recordId }).from(approvals)
+    .where(and(eq(approvals.id, id), eq(approvals.kind, spec.kind)));
+  if (found === undefined) throw notFound();
+  // The record first, locked, then the request: requestApproval locks in the same order, so a request and a decision
+  // at once never deadlock (auditor). Outside the approver's scope the record is not found, for either decision.
+  const version = await spec.version(ctx, found.recordId, { forUpdate: true });
+  if (version === null) throw notFound();
+  // The request locked too, so two people deciding at once are taken one after the other: the second finds it decided.
   const [request] = await tx.select({ recordId: approvals.recordId, versionHash: approvals.versionHash,
     requestedBy: approvals.requestedBy, requestedAt: approvals.createdAt, decidedAt: approvals.decidedAt })
-    .from(approvals).where(and(eq(approvals.id, id), eq(approvals.kind, spec.kind))).for('update');
+    .from(approvals).where(eq(approvals.id, id)).for('update');
   if (request === undefined) throw notFound();
-  // The record, locked, and only if it's within the approver's scope: otherwise it's not found, for either decision.
-  const version = await spec.version(ctx, request.recordId, { forUpdate: true });
-  if (version === null) throw notFound();
   if (request.decidedAt !== null) throw notPending();
   if (request.requestedBy === me) throw new AppError('own_request', 'You asked for this, so someone else must decide it');
   const [account] = await tx.select({ createdAt: users.createdAt }).from(users).where(eq(users.id, ctx.principal.userId));
