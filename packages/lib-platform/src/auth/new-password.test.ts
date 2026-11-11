@@ -72,6 +72,16 @@ describe('the new-password check', () => {
     }
   });
 
+  // The auditor's SHOULD on #100: the alert goes out on its own, so a slow alert channel never holds up a password.
+  it('answers without waiting for the alert to be sent', async () => {
+    const down: Outbound = { request: async () => { throw new Error('timed out'); } };
+    const stuck = vi.fn(() => new Promise<void>(() => undefined));
+    const check = createNewPasswordCheck({ common: new Set(), outbound: down, alert: stuck,
+      log: { info: () => undefined, error: () => undefined }, now: () => 0 });
+    expect(await check(LONG)).toBe(null);
+    expect(stuck).toHaveBeenCalledTimes(1);
+  });
+
   // ADR-001 §7a: refusing every password while the API is down would block invites and resets.
   it('lets the bundled list decide alone when the API cannot answer, logging it and alerting at most once an hour', async () => {
     const clock = { now: 0 };

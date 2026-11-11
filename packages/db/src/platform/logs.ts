@@ -4,17 +4,19 @@
 import { bigint, inet, jsonb, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { radcore } from '../columns.ts';
 
-/** The audit log (RAD-30): read by maker-checker for who changed a record or its parts (RAD-38). Only the columns
- * those reads use; `owner_id` is a part row's record (audit_attach's `owner =>`). */
+/** Every change to an audited table (RAD-30): written only by the audit trigger, read by listAuditTrail, and by
+ * maker-checker for who changed a record or its parts (RAD-38). `owner_id` is a part row's record (audit_attach's `owner =>`). */
 export const auditLog = radcore.table('audit_log', {
   id: uuid().notNull(),
-  // As a string, like event_log's: the database's microseconds, compared as they are.
+  // As a string, as lists.ts's onIndiaDays and after compare it, keeping the microseconds (momentKey).
   occurredAt: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
   // Taken at insert, from one sequence: the order rows were written, which occurred_at (a transaction's start) isn't.
   seq: bigint({ mode: 'number' }).notNull(),
   tableName: text().notNull(),
   recordId: text().notNull(),
   ownerId: text(),
+  op: text().notNull(),
+  changed: jsonb().notNull(),
   createdBy: text().notNull(),
 });
 

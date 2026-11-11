@@ -119,9 +119,23 @@ async function principalOf(name: string, p: JobPrincipal, by: string, load: Load
   if (!who.permissions.includes(p.perm)) throw new JobRefused(`${name}: ${by} no longer holds ${p.perm}`);
   return who;
 }
-/** A job: its contract, its service, and optionally the network work it does first, outside the transaction. */
-export function defineJob<I, B = undefined>(contract: JobContract<I>,
-  service: (ctx: Ctx, input: I, meta: JobMeta & { before: B }) => Promise<void>, before?: BeforeJob<I, B>): JobDefinition {
+/** A job's optional steps around its transaction (ADR-001 §8). */
+export type JobSteps<I, B, R> = {
+  /** The network work a job does first, outside any transaction (RAD-43's upload check); its answer reaches the
+   * service as `meta.before`. */
+  before?: BeforeJob<I, B>;
+  /**
+   * Runs after the service's transaction commits, with what the service returned: the place for an outside call that
+   * needs what the transaction decided (the reset email's recipient and link). `again` opens one more transaction, as
+   * the same principal, to record the call's outcome. A retry runs the service again, which makes this safe to repeat.
+   */
+  afterCommit?: (result: R, again: (work: (ctx: Ctx) => Promise<void>) => Promise<void>) => Promise<void>;
+};
+
+/** A job's contract, its service, and its optional steps around the service's transaction. */
+export function defineJob<I, B = undefined, R = void>(contract: JobContract<I>,
+  service: (ctx: Ctx, input: I, meta: JobMeta & { before: B }) => Promise<R>,
+  { before, afterCommit }: JobSteps<I, B, R> = {}): JobDefinition {
   const settings = queueSettings(contract);
   // A schedule has no person behind it, so a scheduled job runs as a system principal.
   if (contract.every !== undefined && contract.principal.kind !== 'system') {
@@ -142,7 +156,11 @@ export function defineJob<I, B = undefined>(contract: JobContract<I>,
       // Outside any transaction: no connection is held while it waits on the network.
       // Without a `before`, B is undefined, so this is B either way.
       const done = (before === undefined || files === undefined ? undefined : await before(input, { files })) as B;
-      await open(principal, jobId, (ctx) => service(ctx, input, { jobId, alert, before: done }));
+      const ran: { result?: R } = {};
+      await open(principal, jobId, async (ctx) => {
+        ran.result = await service(ctx, input, { jobId, alert, before: done });
+      });
+      if (afterCommit !== undefined) await afterCommit(ran.result as R, (work) => open(principal, jobId, work));
     },
   };
 }

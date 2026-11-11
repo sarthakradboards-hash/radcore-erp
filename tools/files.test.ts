@@ -58,7 +58,7 @@ describe.skipIf(!url)('uploaded files', () => {
     "select name, data, principal from radcore.jobs_outbox where data->>'id' = $1", [id])).rows;
   // The worker's run of the check job: the store's check first, then its own transaction.
   const runCheck = (input: unknown, verify: FileStore['verifyUpload']) =>
-    defineJob(fileCheck, recordFileCheck, checkUpload).handle({ input, by: 'system:file-check' }, randomUUID(), {
+    defineJob(fileCheck, recordFileCheck, { before: checkUpload }).handle({ input, by: 'system:file-check' }, randomUUID(), {
       open: (principal, jobId, work) => runInTransaction(db, { readOnly: false, isolation: 'read committed' }, principal, jobId, work),
       load: async () => null, alert: async () => undefined, files: store(verify),
     });

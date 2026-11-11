@@ -18,7 +18,7 @@ import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
 
 // The owner login: this file makes a schema and a table of its own (RAD-24).
 const url = process.env['TEST_DATABASE_OWNER_URL'];
-const fixture = pgSchema(`handler_${randomBytes(6).toString('hex')}`);
+const fixture = pgSchema(`test_handler_${randomBytes(6).toString('hex')}`);
 const notes = fixture.table('notes', { id: uuid().primaryKey().defaultRandom(), body: text().notNull(), n: integer().notNull() });
 const notesTx = moduleTx({ notes });
 

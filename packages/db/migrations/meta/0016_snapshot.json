@@ -1,177 +1,9 @@
 {
-  "id": "b3f6c8de-c851-478f-9a8f-93fbf188a6b2",
+  "id": "0a243822-1620-4fcb-a721-01a68b9a2bef",
   "prevId": "23b66986-5e7f-48ba-9019-81eb3d88637e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "radcore.approvals": {
-      "name": "approvals",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_hash": {
-          "name": "version_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "requested_by": {
-          "name": "requested_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_approvals_pending": {
-          "name": "ux_approvals_pending",
-          "columns": [
-            {
-              "expression": "kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"radcore\".\"approvals\".\"decided_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_approvals_kind_status": {
-          "name": "ix_approvals_kind_status",
-          "columns": [
-            {
-              "expression": "kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_approvals_reason": {
-          "name": "ck_approvals_reason",
-          "value": "char_length(\"radcore\".\"approvals\".\"reason\") <= 500"
-        },
-        "ck_approvals_kind": {
-          "name": "ck_approvals_kind",
-          "value": "\"radcore\".\"approvals\".\"kind\" ~ '^[a-z][a-z0-9-]*$'"
-        },
-        "ck_approvals_version_hash": {
-          "name": "ck_approvals_version_hash",
-          "value": "\"radcore\".\"approvals\".\"version_hash\" ~ '^[0-9a-f]{64}$'"
-        },
-        "ck_approvals_status": {
-          "name": "ck_approvals_status",
-          "value": "\"radcore\".\"approvals\".\"status\" in ('pending', 'approved', 'rejected', 'superseded')"
-        },
-        "ck_approvals_decided": {
-          "name": "ck_approvals_decided",
-          "value": "(\"radcore\".\"approvals\".\"status\" = 'pending') = (\"radcore\".\"approvals\".\"decided_at\" is null)\n    and (\"radcore\".\"approvals\".\"status\" in ('approved', 'rejected')) = (\"radcore\".\"approvals\".\"decided_by\" is not null)\n    and (\"radcore\".\"approvals\".\"decided_by\" is null or \"radcore\".\"approvals\".\"decided_by\" <> \"radcore\".\"approvals\".\"requested_by\")"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "radcore.files": {
       "name": "files",
       "schema": "radcore",
@@ -329,6 +161,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "job_id": {
+          "name": "job_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -364,6 +208,21 @@
           "columns": [
             {
               "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ux_invites_job_id": {
+          "name": "ux_invites_job_id",
+          "columns": [
+            {
+              "expression": "job_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -570,6 +429,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "job_id": {
+          "name": "job_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -605,6 +476,21 @@
           "columns": [
             {
               "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ux_password_resets_job_id": {
+          "name": "ux_password_resets_job_id",
+          "columns": [
+            {
+              "expression": "job_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
