@@ -42,3 +42,7 @@ npm run e2e
 - Find elements the way a person does: `getByRole`, `getByLabel`, `getByText`. No CSS classes or test ids unless
   there is no accessible name to use, which is itself worth raising.
 - `harness.spec.ts` proves each guard still catches what it promises, for its own reason. Keep it passing.
+- `kit.spec.ts` drives the UI kit gallery at `/kit` (forms, menu and dialogs, the table, the saved view, the picker),
+  which the web server turns on with `KIT_PAGE=1`. It is the one spec that also runs in Firefox and WebKit: widgets
+  are where engines differ. When the kit changes, change the gallery and this spec together.
+- Specs run code in the browser through `page.evaluate`, so `e2e/` has its own `tsconfig.json` with the DOM's types.

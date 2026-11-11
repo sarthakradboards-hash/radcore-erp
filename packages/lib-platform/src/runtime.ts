@@ -12,6 +12,7 @@ import { createLog } from './log/logger.ts';
 import { startOutboxRelay } from './outbox.ts';
 
 export { createAlerter, startHeartbeat, type Alerter } from './alerts.ts';
+export { newPasswordCheckFor } from './auth/new-password.ts';
 export { createDatabase, createHealthCheck } from './db/client.ts';
 export { runInTransaction } from './db/transaction.ts';
 export { relayOutbox } from './outbox.ts';
