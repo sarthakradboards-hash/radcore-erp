@@ -1,5 +1,9 @@
 // lib-platform's own routes (ADR-001 §6): declarations only.
-import { defineRoute, listSecurityEventsPage } from '@radcore/lib-platform';
-import { listSecurityEvents } from '@radcore/lib-platform/contract';
+import { defineRoute, listAuditedTablesList, listAuditTrailPage, listSecurityEventsPage } from '@radcore/lib-platform';
+import { listAuditedTables, listAuditTrail, listSecurityEvents } from '@radcore/lib-platform/contract';
 
-export default [defineRoute(listSecurityEvents, listSecurityEventsPage)];
+export default [
+  defineRoute(listAuditTrail, listAuditTrailPage),
+  defineRoute(listAuditedTables, listAuditedTablesList),
+  defineRoute(listSecurityEvents, listSecurityEventsPage),
+];

@@ -98,6 +98,11 @@ describe.skipIf(!url)('the audit engine', () => {
 
   it('keeps every log append-only: the app can write none of them, and the owner is refused with RA001 (ADR-005 §7)', async () => {
     await inRollback(async (c) => {
+      // The owner's TRUNCATE below takes ACCESS EXCLUSIVE on each log and every partition. Taken a table at a time,
+      // with this transaction already holding a partition through its own audit row, it can deadlock (40P01) with a
+      // test file writing audit rows at the same moment. Locking all three logs first, before anything else, makes
+      // those writers wait for this rollback instead (the coordinator on RAD-30, seen under the full parallel suite).
+      await c.query('lock table radcore.audit_log, radcore.access_log, radcore.event_log in access exclusive mode');
       await c.query("insert into radcore.settings (key, value) values ('ops.w', '1')"); // one audit row to aim at
       const { rows: parts } = await c.query<{ name: string }>(`select c.relname as name from pg_inherits i
         join pg_class c on c.oid = i.inhrelid join pg_class p on p.oid = i.inhparent where p.relname = any($1) order by 1`, [LOGS]);

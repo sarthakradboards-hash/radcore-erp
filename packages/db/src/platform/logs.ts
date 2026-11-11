@@ -4,6 +4,19 @@
 import { bigint, inet, jsonb, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { radcore } from '../columns.ts';
 
+/** Every change to an audited table (RAD-30): written only by the audit trigger, read by listAuditTrail. */
+export const auditLog = radcore.table('audit_log', {
+  id: uuid().notNull(),
+  // As a string, as lists.ts's onIndiaDays and after compare it, keeping the microseconds (momentKey).
+  occurredAt: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+  seq: bigint({ mode: 'number' }).notNull(),
+  tableName: text().notNull(),
+  recordId: text().notNull(),
+  op: text().notNull(),
+  changed: jsonb().notNull(),
+  createdBy: text().notNull(),
+});
+
 /** Security events (RAD-31): written only through record_event, read by listSecurityEvents. */
 export const eventLog = radcore.table('event_log', {
   id: uuid().notNull(),
