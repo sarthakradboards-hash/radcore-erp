@@ -49,6 +49,29 @@ export function TextAreaField({ name, label, hint, ...native }: Common & Native<
   );
 }
 
+/** One choice from a short, fixed list, as radio buttons: picking one only fills the form, which acts on Submit
+ * (RC-148). A long or searched list uses the Picker instead. `disabled` options are the server's (a role you may
+ * not grant), shown so the person sees why. */
+export function RadioField({ name, label, hint, options }: Common & {
+  options: readonly { value: string; label: string; detail?: ReactNode; disabled?: boolean }[];
+}) {
+  const { id, error, control } = useField(name);
+  return (
+    <fieldset className="kit-field kit-radios" aria-describedby={described(id, hint, error)}
+      aria-invalid={error !== undefined}>
+      <legend>{label}</legend>
+      {hint !== undefined && <p id={`${id}-hint`} className="kit-field-hint">{hint}</p>}
+      {options.map((o) => (
+        <label key={o.value} className="kit-radio">
+          <input type="radio" value={o.value} disabled={o.disabled} {...control} />
+          <span>{o.label}{o.detail === undefined ? null : <span className="kit-field-hint">{o.detail}</span>}</span>
+        </label>
+      ))}
+      {error?.message !== undefined && <p id={`${id}-error`} className="kit-field-error">{error.message}</p>}
+    </fieldset>
+  );
+}
+
 /** A value the server masked for this person (a phone number, bank details). Shown read-only and never sent back:
  * the form leaves it out before checking and submitting, and edit contracts leave out-of-body fields alone (§7a). */
 export function MaskedField({ name, label, hint }: Common) {
