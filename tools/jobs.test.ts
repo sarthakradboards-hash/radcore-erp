@@ -123,8 +123,9 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
     const exited = once(worker, 'exit');
     try {
       await vi.waitFor(() => expect(out.join('')).toContain('worker: started'), { timeout: 30_000, interval: 250 });
-      // Every job in the worker's list, counted from the list, so a new platform job doesn't need this test changed.
-      expect(out.join('')).toContain(`job queue: running ${platformJobs.length} job(s)`);
+      // What the worker runs: its job files' list, plus the jobs built at start with what only start-up has (RAD-32's
+      // reset email). Counted from the list, so a new job doesn't need this line changed.
+      expect(out.join('')).toContain(`job queue: running ${platformJobs.length + 1} job(s)`);
     } finally {
       worker.kill('SIGTERM');
     }

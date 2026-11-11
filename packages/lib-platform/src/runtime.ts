@@ -13,7 +13,10 @@ import { createLog } from './log/logger.ts';
 import { startOutboxRelay } from './outbox.ts';
 
 export { createAlerter, startHeartbeat, type Alerter } from './alerts.ts';
+export { runBootstrapAdmin } from './auth/bootstrap.ts';
 export { newPasswordCheckFor } from './auth/new-password.ts';
+export { passwordResetEmailJob } from './auth/reset-email.ts';
+export { mailerFor } from './mail.ts';
 export { createDatabase, createHealthCheck } from './db/client.ts';
 export { startFileStore } from './files/store.ts';
 export { runInTransaction } from './db/transaction.ts';

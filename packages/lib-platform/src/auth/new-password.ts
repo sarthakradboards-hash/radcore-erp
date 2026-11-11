@@ -57,7 +57,9 @@ export function createNewPasswordCheck({ common, outbound, alert, log, now }: Ne
       log.error('breached_check_skipped');
       if (alertedAt === null || now() - alertedAt >= ALERT_EVERY_MS) {
         alertedAt = now();
-        await alert('Pwned Passwords did not answer: new passwords are checked against the bundled list only');
+        // Sent on its own: a slow alert channel must never hold up a person setting a password.
+        alert('Pwned Passwords did not answer: new passwords are checked against the bundled list only')
+          .catch((err: unknown) => log.error('breached_check_alert_failed', err));
       }
       return null;
     }

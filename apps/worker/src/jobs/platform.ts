@@ -6,4 +6,4 @@ import {
 
 export default [defineJob(savedOnceCleanup, cleanSavedOnce), defineJob(outboxCleanup, cleanOutbox),
   defineJob(secretsExpiryWatch, watchSecretExpiry), defineJob(webhookStuckWatch, watchStuckDeliveries),
-  defineJob(fileCheck, recordFileCheck, checkUpload)];
+  defineJob(fileCheck, recordFileCheck, { before: checkUpload })];
