@@ -4,14 +4,16 @@ import { createApp, listen } from './app.ts';
 import fileRoutes from './routes/files.ts';
 import platform from './routes/platform.ts';
 
+// Each module's route file (apps/api/src/routes/<module>.ts) default-exports its defineRoute list; spread them in here.
+const ROUTES = [...fileRoutes, ...platform];
+
 await startProcess('api', async ({ config, pool, log }) => {
   const db = createDatabase(pool);
   const files = await startFileStore(config.s3, log);
   const auth = await createAuth(config, log);
   const session = sessionCookieFor(config.publicOrigin);
-  // Each module's route file (apps/api/src/routes/<module>.ts) joins this list as modules land.
-  const routes = [...platform, ...auth.routes, ...fileRoutes];
-  const api = { db, routes, newPasswordCheck: newPasswordCheckFor(config, log), files: files.store,
+  // Sign-in and the password routes are built at start, with Argon2id and the lockout store (createAuth).
+  const api = { db, routes: [...ROUTES, ...auth.routes], newPasswordCheck: newPasswordCheckFor(config, log), files: files.store,
     // GET /me isn't activity: the shell reads it every minute, and that mustn't keep an idle session alive (RAD-52).
     authenticate: (req: { get(name: string): string | undefined }, route: string) =>
       authenticateSession(db, session.tokenIn(req.get('cookie')), { touch: route !== 'GET /me' }) };
