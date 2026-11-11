@@ -174,15 +174,23 @@ describe.skipIf(!url)('sign-in sessions', () => {
       .toEqual([null, 'sign_out', true]);
   });
 
-  it('records a locked account once per lock window, however many times the address is tried', async () => {
+  // RAD-64's sameness: a known and an unknown address, tried past the lock, write the same rows, so neither the
+  // answers nor the work done tell anyone whether an account has the address.
+  it('records every refusal alike for a known and an unknown locked address', async () => {
     const s = await setup();
+    const unknown = `nobody.${randomBytes(4).toString('hex')}@example.in`;
     const set = vi.fn();
-    for (let i = 0; i < LOCKOUT.points + 3; i += 1) {
-      await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, incoming: null, set, clear: vi.fn() } },
-        { email: s.email, password: 'not the password at all' }).catch((e: unknown) => e));
+    for (const email of [s.email, unknown]) {
+      for (let i = 0; i < LOCKOUT.points + 3; i += 1) {
+        await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, incoming: null, set, clear: vi.fn() } },
+          { email, password: 'not the password at all' }).catch((e: unknown) => e));
+      }
     }
-    const reasons = (await s.events()).map((e) => (e.detail as { reason: string }).reason);
-    expect(reasons).toEqual([...Array<string>(LOCKOUT.points).fill('invalid_credentials'), 'account_locked']);
+    const rows = await asAdmin<{ known: boolean; reason: string }>(`select user_id is not null as known, detail ->> 'reason' as reason
+      from radcore.event_log where device = $1 order by occurred_at, seq`, [s.device]);
+    const reasons = (known: boolean) => rows.filter((r) => r.known === known).map((r) => r.reason);
+    const expected = [...Array<string>(LOCKOUT.points).fill('invalid_credentials'), ...Array<string>(3).fill('account_locked')];
+    expect([reasons(true), reasons(false)]).toEqual([expected, expected]);
   });
 
   it('answers /me with the person, their permissions and when this session ends', async () => {

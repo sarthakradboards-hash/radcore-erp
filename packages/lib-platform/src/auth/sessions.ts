@@ -5,7 +5,7 @@
 // change. Each end is one session_ended security event per session; a sign-in is sign_in (ADR-005 §7c).
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { idString, normaliseEmail } from '@radcore/lib-common';
-import { after, eventLog, platformTx, sessions, users } from '@radcore/db/platform';
+import { after, platformTx, sessions, users } from '@radcore/db/platform';
 import type { Database } from '@radcore/db/schema';
 import { and, desc, eq, gt, isNull, ne, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
@@ -15,7 +15,6 @@ import { runInTransaction } from '../db/transaction.ts';
 import { AppError, RecordedRefusal } from '../errors.ts';
 import { decodeCursor, encodeCursor, isoMoment, momentKey } from '../lists.ts';
 import { recordSecurityEvent } from '../security-events.ts';
-import { LOCKOUT } from './lockout.ts';
 import type { SignInResult } from './sign-in.ts';
 
 export const SESSION_IDLE_SECONDS = 30 * 60;
@@ -123,17 +122,6 @@ type Credentials = (ctx: Ctx, input: In<typeof signIn>) => Promise<SignInResult>
 const FAILED = ['invalid_credentials', 'account_locked'] as const;
 const isFailure = (code: string): code is (typeof FAILED)[number] => (FAILED as readonly string[]).includes(code);
 
-// Whether this account's lock is already on record. A locked address is refused on every try and event_log keeps
-// every row for good (D-12), so a lock is recorded once per lock window. An address no account has can't be told
-// apart this way; the per-IP limit (RAD-39) bounds those rows. The lockout caps an account's failures in a window at
-// its points plus this one row, so reading them all is cheap.
-async function lockOnRecord(ctx: Ctx, userId: string): Promise<boolean> {
-  const since = new Date(Date.now() - LOCKOUT.blockSeconds * 1000).toISOString();
-  const failures = await platformTx(ctx).select({ detail: eventLog.detail }).from(eventLog)
-    .where(and(eq(eventLog.userId, userId), eq(eventLog.kind, 'sign_in_failed'), gt(eventLog.occurredAt, since)));
-  return failures.some((f) => (f.detail as { reason?: unknown }).reason === 'account_locked');
-}
-
 /**
  * POST /sign-in over the credential step (createSignIn). A success with nothing more to prove starts a session and
  * sets its cookie; a failure is recorded, and that record commits though the answer is a refusal.
@@ -148,10 +136,10 @@ export function signInService(credentials: Credentials) {
       if (!(err instanceof AppError) || !isFailure(err.code)) throw err;
       const [known] = await platformTx(ctx).select({ id: users.id }).from(users)
         .where(eq(users.emailKey, normaliseEmail(input.email))).limit(1);
-      if (err.code !== 'account_locked' || known === undefined || !(await lockOnRecord(ctx, known.id))) {
-        await recordSecurityEvent(ctx, { kind: 'sign_in_failed', detail: { reason: err.code } },
-          { userId: known?.id ?? null, device: cookie.device });
-      }
+      // Every refusal is recorded, known address or not, so both do the same work and timing can't tell them apart
+      // (RAD-64). The per-IP limit (RAD-39) bounds how many rows one source can add.
+      await recordSecurityEvent(ctx, { kind: 'sign_in_failed', detail: { reason: err.code } },
+        { userId: known?.id ?? null, device: cookie.device });
       throw new RecordedRefusal(err.code, err.message, err.issues, err.retryAfterSeconds);
     }
     // shortcut: second_factor and enrol_second_factor set RAD-33's pending-sign-in cookie, which lands with it.

@@ -247,6 +247,9 @@ They are append-only with explicit reversals:
     `SECURITY DEFINER` function like `record_access`. The app chooses `user_id`, the account the event concerns, as
     it chooses `record_access`'s record: it's trusted code, and the row's principal and time stay the database's
     own. `detail` holds references only and is at most 2 KB; `kind` is one of a CHECKed list.
+  - Every refused sign-in adds a row, so a locked address being tried adds one per try. Nothing dedupes them: a
+    known and an unknown address must do the same work (RAD-64). The per-IP limit (RAD-39) bounds the rows one
+    source can add, and each is under 2 KB (RAD-34).
   - The access log is written only through one `SECURITY DEFINER` function, `record_access(record_table,
     record_id)`. It takes **no** principal or time argument: it reads the principal from the request context and
     the time from `now()` itself. The runtime login can therefore append an access row, but can't alter one or

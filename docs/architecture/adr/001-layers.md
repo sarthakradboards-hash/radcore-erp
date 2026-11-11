@@ -401,8 +401,9 @@ stored.
 - A request whose cookie names an ended or expired session gets 401 `signed_out`, and the cookie is cleared with it,
   sign-out's included.
 - A sign-in is a `sign_in` security event, and each session that ends is a `session_ended` event with the reason.
-  A locked account's `sign_in_failed` (`account_locked`) is recorded once per lock window, since every row is kept.
-  For an address no account has, the per-IP limit bounds the rows instead.
+  Every refused sign-in is a `sign_in_failed` row, a locked address's included, whether or not an account has the
+  address: recording only some would make a known address do different work, and timing would tell (RAD-64). The
+  per-IP limit (RAD-39) bounds the rows one source can add (ADR-005 §7c).
 - **Only the key-exempt routes touch the cookie.** The handler gives just those routes `ctx.cookie`, and sets or
   clears the cookie only after the transaction commits, so a rolled-back sign-in sets nothing.
 - **A failed sign-in is still recorded.** Its service throws `RecordedRefusal`. On a key-exempt route the handler
