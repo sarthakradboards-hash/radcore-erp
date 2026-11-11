@@ -14,7 +14,7 @@
     "dev": "node tools/dev.ts",
     "dev:env": "node tools/dev-env.ts",
     "test": "vitest run --sequence.shuffle",
-    "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p e2e/tsconfig.json",
     "lint": "eslint . && depcruise packages apps --config .dependency-cruiser.cjs",
     "db:up": "npm run dev:env && docker compose -f compose.dev.yml up -d --wait && npm run db:logins",
     "db:logins": "node --env-file-if-exists=.env tools/db-logins.ts",

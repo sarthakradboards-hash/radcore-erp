@@ -1,8 +1,8 @@
 // The one transaction opener the apps use (ADR-002 §4): the generic route handler and the job runner call it, and
 // nothing else can, because only the runtime entry exports it (L7).
-import { platformTx, settings as settingsTable } from '@radcore/db/platform';
+import { jobsOutbox, platformTx, settings as settingsTable } from '@radcore/db/platform';
 import { openTransaction, type Database, type TxSpec } from '@radcore/db/schema';
-import { principalId, type Ctx, type Principal } from '../ctx.ts';
+import { principalId, type Ctx, type Jobs, type Principal } from '../ctx.ts';
 import { Settings } from '../settings.ts';
 
 /**
@@ -13,6 +13,13 @@ export function runInTransaction<R>(db: Database, spec: TxSpec, principal: Princ
   fn: (ctx: Ctx) => Promise<R>): Promise<R> {
   return openTransaction(db, spec, { principal: principalId(principal), requestId }, async (tx) => {
     const rows = await platformTx({ tx }).select({ key: settingsTable.key, value: settingsTable.value }).from(settingsTable);
-    return fn(Object.freeze({ tx, principal, requestId, settings: new Settings(rows) }));
+    // The outbox row is written with the request's own transaction: it commits or rolls back with the save.
+    const jobs: Jobs = Object.freeze({
+      send: async (job, input) => {
+        await platformTx({ tx }).insert(jobsOutbox).values({ name: job.name, data: job.input.parse(input),
+          principal: principalId(principal), requestId });
+      },
+    });
+    return fn(Object.freeze({ tx, principal, requestId, settings: new Settings(rows), jobs }));
   });
 }

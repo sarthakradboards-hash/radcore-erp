@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { SignedOutDialog } from '../components/auth/signed-out-dialog.tsx';
 import { LiveRegion } from '../components/ui/live-region.tsx';
 import { ApiProvider } from '../lib/api/provider.tsx';
 import { t } from '../lib/i18n/index.ts';
@@ -17,7 +18,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en-IN">
       <body>
         <OfflineBanner />
-        <ApiProvider>{children}</ApiProvider>
+        <ApiProvider>
+          {children}
+          <SignedOutDialog />
+        </ApiProvider>
         <LiveRegion />
         {/* Shown by CSS alone, and only below the supported-browser floor (decisions.md, 7 Nov). */}
         <div className="browser-floor">

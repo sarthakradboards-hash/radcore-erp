@@ -3,13 +3,15 @@
 // The fixture table is made by the owner login inside one transaction that is rolled back; this Drizzle declaration
 // only builds the queries.
 import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
-import { desc } from 'drizzle-orm';
+import { asc, desc } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { date, PgDialect, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { trigramIndex } from '../packages/db/src/columns.ts';
 import { after, escapeLike, onDates, onIndiaDays, searchWords } from '../packages/db/src/lists.ts';
+import { decodeCursor, encodeCursor, sortedCursor } from '../packages/lib-platform/src/lists.ts';
+import { z } from 'zod';
 
 const fixture = pgSchema('list_fixture');
 const entries = fixture.table('entries', {
@@ -121,6 +123,30 @@ describe.skipIf(!url)('list conditions on PostgreSQL', () => {
     } finally {
       await client.query('rollback to savepoint plan');
     }
+  });
+
+  // RAD-47's sort convention, as a list service runs it: sort.column maps to a database column through a fixed object,
+  // never the client's text, and the cursor carries the sort with the last row's value and id.
+  it('pages a sorted list through every row once, across ties, with the cursor carrying the sort', async () => {
+    const SORTABLE = { name: entries.name, date: entries.entryDate };
+    const sort = { column: 'date', desc: false } as const;
+    const column = SORTABLE[sort.column];
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let pages = 0; pages < 10; pages++) {
+      const key: { value: string; id: string } | undefined =
+        cursor === null ? undefined : decodeCursor(sortedCursor(sort, z.iso.date()), cursor);
+      const rows: { id: string; value: string }[] = await db.select({ id: entries.id, value: entries.entryDate }).from(entries)
+        .where(after([column, entries.id], key ? [key.value, key.id] : undefined, sort.desc ? 'desc' : 'asc'))
+        .orderBy(asc(column), asc(entries.id)).limit(3 + 1);
+      const page = rows.slice(0, 3);
+      seen.push(...page.map((r) => r.id));
+      const last = page.at(-1);
+      cursor = rows.length > 3 && last ? encodeCursor({ ...sort, value: last.value, id: last.id }) : null;
+      if (cursor === null) break;
+    }
+    const all = await db.select({ id: entries.id, value: entries.entryDate }).from(entries).orderBy(asc(column), asc(entries.id));
+    expect(seen).toEqual(all.map((r) => r.id));
   });
 
   it('pages newest first through every row once, across ties on the date', async () => {

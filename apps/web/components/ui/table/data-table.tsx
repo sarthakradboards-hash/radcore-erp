@@ -4,23 +4,30 @@
 // the server says there is no next page, so no list stops at a fixed size (RC-086).
 import { rowSortingFeature, tableFeatures, useTable, type ColumnDef, type RowData, type SortingState } from '@tanstack/react-table';
 import { useId, useMemo, type ReactNode } from 'react';
+import type { z } from 'zod';
 import '../form/form.css'; // .kit-button
 import './table.css';
+import { t } from '../../../lib/i18n/index.ts';
 
 const features = tableFeatures({ rowSortingFeature });
 
-export type Column<T> = {
-  id: string;
+type ColumnBase<T> = {
   header: string;
   cell: (row: T) => ReactNode;
-  /** The server can order the list by this column. */
-  sortable?: boolean;
   /** Right-aligned, for amounts and counts. */
   numeric?: boolean;
 };
+/** A column. Only one of the list contract's sortable columns (K, from its sortInput) may be marked sortable. */
+export type Column<T, K extends string = string> =
+  | (ColumnBase<T> & { id: string; sortable?: false })
+  | (ColumnBase<T> & { id: K; sortable: true });
 
 /** The order the list is asked for. The screen puts it in the list's params, so a change starts from page one. */
-export type Sort = { column: string; desc: boolean };
+export type Sort<K extends string = string> = { column: K; desc: boolean };
+
+/** A list contract's sort, from its sortInput: `useState<SortOf<typeof listParties>>()`. */
+export type SortOf<C extends { readonly input: z.ZodType }> =
+  NonNullable<z.input<C['input']> extends { sort?: infer S } ? S : never>;
 
 /** What `useApiList` returns, or the part of it the table reads. */
 type ListView<T> = {
@@ -33,18 +40,20 @@ type ListView<T> = {
   refetch: () => void;
 };
 
-type Props<T> = {
+type Props<T, K extends string> = {
   caption: string;
-  columns: readonly Column<T>[];
+  columns: readonly Column<T, K>[];
   rowKey: (row: T) => string;
   list: ListView<T>;
-  sort?: Sort;
-  onSortChange?: (sort: Sort) => void;
+  sort?: Sort<K>;
+  onSortChange?: (sort: Sort<K>) => void;
   /** Shown when the list has no rows. */
   empty?: string;
 };
 
-export function DataTable<T extends RowData>({ caption, columns, rowKey, list, sort, onSortChange, empty = 'Nothing to show yet' }: Props<T>) {
+export function DataTable<T extends RowData, K extends string = string>(
+  { caption, columns, rowKey, list, sort, onSortChange, empty = t('kit.table.empty') }: Props<T, K>,
+) {
   const captionId = useId();
   const defs = useMemo(() => columns.map((c): ColumnDef<typeof features, T> => ({
     id: c.id, header: c.header, accessorFn: () => null, enableSorting: c.sortable === true,
@@ -57,7 +66,8 @@ export function DataTable<T extends RowData>({ caption, columns, rowKey, list, s
     state: { sorting },
     onSortingChange: (change) => {
       const [next] = typeof change === 'function' ? change(sorting) : change;
-      if (next !== undefined) onSortChange?.({ column: next.id, desc: next.desc });
+      // Only a sortable column can be sorted, and the Column type keeps those ids to K.
+      if (next !== undefined) onSortChange?.({ column: next.id as K, desc: next.desc });
     },
   });
   const byId = new Map(columns.map((c) => [c.id, c]));
@@ -97,22 +107,22 @@ export function DataTable<T extends RowData>({ caption, columns, rowKey, list, s
               </tr>
             ))}
             {list.items.length === 0 && list.error === null ? (
-              <tr><td colSpan={columns.length}>{list.isPending ? 'Loading…' : empty}</td></tr>
+              <tr><td colSpan={columns.length}>{list.isPending ? t('loading') : empty}</td></tr>
             ) : null}
           </tbody>
         </table>
       </div>
       {list.error === null ? null : (
         <div role="alert" className="kit-form-alert kit-table-error">
-          The list could not be loaded.{' '}
-          <button type="button" className="kit-button" onClick={list.refetch}>Try again</button>
+          {t('kit.table.error')}{' '}
+          <button type="button" className="kit-button" onClick={list.refetch}>{t('kit.table.retry')}</button>
         </div>
       )}
       <div className="kit-table-foot">
-        <p role="status">{list.items.length === 0 ? '' : `${list.items.length} shown`}</p>
+        <p role="status">{list.items.length === 0 ? '' : t('kit.table.shown', { count: String(list.items.length) })}</p>
         {list.hasNextPage ? (
           <button type="button" className="kit-button" onClick={list.fetchNextPage}
-            disabled={list.isFetchingNextPage} aria-busy={list.isFetchingNextPage}>Show more</button>
+            disabled={list.isFetchingNextPage} aria-busy={list.isFetchingNextPage}>{t('kit.table.more')}</button>
         ) : null}
       </div>
     </div>

@@ -63,7 +63,7 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Logging | pino, pino-http | 10.4.0, 11.0.0 | MIT | `console` plus the home-made error log and alerts (RC-158). pino-http's last release was October 2025: it's a thin adapter maintained by pino's own team, with no open advisory (§4) |
 | Background jobs | pg-boss | 12.38.0 | MIT | the in-process job loop with no queue, retry, timeout or overlap guard (RC-082). Fed by the outbox relay (ADR-002 §4). Built with `migrate: false`; its schema comes from a hand-written owner migration |
 | Password hashing | @node-rs/argon2 | 2.2.2 | MIT | bcryptjs. Argon2id with m = 19,456 KiB, t = 2, p = 1 (the OWASP minimum), rehashed on sign-in when the parameters change. v2's users are invited fresh (M1-14), so no v1 hash is migrated and bcryptjs isn't needed. Prebuilt binaries, so no compiler toolchain |
-| Second factor (TOTP) | otpauth | 9.5.2 | MIT | nothing (RC-055). Required for admin and owner (D-19). Settings: SHA-1, 6 digits, 30-second steps, a window of ±1 step, and a 20-byte random secret kept by the secrets library. The last accepted step is stored, so a code is refused if it's reused. Attempts are limited per account, and recovery codes are stored as Argon2id hashes (M1-15) |
+| Second factor (TOTP) | otpauth | 9.5.2 | MIT | nothing (RC-055). Required for admin, owner, accounts and HR (D-19, widened 10 Nov). Settings: SHA-1, 6 digits, 30-second steps, a window of ±1 step, and a 20-byte random secret kept by the secrets library. The last accepted step is stored, so a code is refused if it's reused. Attempts are limited per account, and recovery codes are stored as Argon2id hashes (M1-15) |
 | Envelope encryption | @aws-crypto/client-node | 5.0.2 | Apache-2.0 | the hand-written AES-GCM `secret-box`. KMS keyring in staging and production (`SECRETS_KMS_KEY_ID`); raw AES keyring from `SECRETS_LOCAL_KEY` in development and CI. Each value's encryption context names its table, column and row id, and decryption checks it, so a ciphertext copied into another row won't decrypt. Commitment policy `REQUIRE_ENCRYPT_REQUIRE_DECRYPT`; key rotation by KMS (M1-24) |
 | Rate limits in a shared store | rate-limiter-flexible (PostgreSQL store) | 11.2.3 | ISC | express-rate-limit counting in memory (RC-088). Its table comes from a migration (`tableCreated: true`, since the runtime login has no DDL), and it uses its own small pool in `client.ts`. It fails **closed**: when the store can't be reached, a limited action is refused |
 | File store | @aws-sdk/client-s3 | 3.1156.0 | Apache-2.0 | files in the database or on local disk. Works with SeaweedFS in development and CI (MinIO's image is no longer public; coordinator, 6 Nov) |
@@ -169,9 +169,9 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   | `caniuse-lite` (via browserslist) | CC-BY-4.0 | a data file of browser support tables; attribution is kept in the image's notices |
   | `argparse` (via eslint's js-yaml) | Python-2.0 | permissive; dev tooling only |
   | `type-fest` (via pg-boss's serialize-error) | `(MIT OR CC0-1.0)`; chosen: MIT | TypeScript type declarations only, no runtime code; both licences are permissive (RAD-44) |
-  | `@img/sharp-libvips-*` (via next's optional `sharp`) | LGPL-3.0-or-later | an unmodified, dynamically linked prebuilt binary. It is never loaded, because image optimisation is off (§2), and the image ships its licence notice. **Confirm with Sarthak.** The alternative is a build that leaves it out |
+  | `@img/sharp-libvips-*` (via next's optional sharp) | LGPL-3.0-or-later | an unmodified, dynamically linked prebuilt binary. It is never loaded, because image optimisation is off (§2), and the image ships its licence notice. **Confirm with Sarthak.** The alternative is a build that leaves it out |
   | `@img/sharp-win32-*`, `@img/sharp-wasm32` (same `sharp`, bundling libvips) | `Apache-2.0 AND LGPL-3.0-or-later` (wasm32 adds `AND MIT`); chosen: all of them apply | the same libvips binary as the row above, so it stands or falls with it. Added by RAD-13 from the real lockfile |
-  | `language-subtag-registry` (via eslint-config-next's `eslint-plugin-jsx-a11y`) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
+  | `language-subtag-registry` (via eslint-config-next's eslint-plugin-jsx-a11y) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
 
 - **Maintenance:** a release in the last 12 months, or a stated reason in its row (decimal.js, pino-http, cmdk and
   eslint-plugin-drizzle carry one). It must have no open advisory without a fix (C5). Its install scripts, if any,
@@ -260,6 +260,9 @@ that opens a connection or fetches something is named here with its rule:
 - **Encoding detection:** chardet reads only a file's first 64 KB.
 - **Isolation:** each file is parsed in a `worker_threads` worker with `resourceLimits` and no database or S3
   credentials.
+  - The worker bounds memory and time. It isn't a sandbox: a worker thread shares the process, so code running in
+    a compromised parser could still read `/proc/self/environ`. `env: {}` keeps credentials out of the worker's
+    `process.env`, which is what an ordinary bug or a logged error would reach (RAD-46).
 
 ## CI checks (for M0-08)
 

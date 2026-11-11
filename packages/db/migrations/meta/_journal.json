@@ -57,6 +57,41 @@
       "when": 1794302621248,
       "tag": "0007_saved_once",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794304340143,
+      "tag": "0008_guard_skips_ratelimit",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794304342331,
+      "tag": "0009_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794305252510,
+      "tag": "0010_jobs_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794319511579,
+      "tag": "0011_audit_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794319612208,
+      "tag": "0012_schema_audit_views",
+      "breakpoints": true
     }
   ]
 }

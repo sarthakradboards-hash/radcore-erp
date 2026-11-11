@@ -42,7 +42,12 @@ npm run db:migrate # the migrations, as the owner login (MIGRATION_DATABASE_URL)
 ```
 
 `npm run dev` and `npm run db:up` first write `.env` with new random credentials if it doesn't exist. `.env` is
-git-ignored; never commit it. Each lint rule has a violating fixture in `tools/boundary-fixtures/`, and
+git-ignored; never commit it.
+
+**Open the app at http://127.0.0.1:3000**, not `localhost:3000`. That's `.env`'s `PUBLIC_ORIGIN`, and the api
+refuses any write whose `Origin` differs (403, RAD-39). In development and CI the browser's `/api/…` calls go
+through the web app to the api at `API_INTERNAL_URL` (a rewrite in `apps/web/next.config.ts`); deployed, Caddy
+routes `/api` instead. The web app reads the same root `.env` as the api and worker (`apps/web/scripts/dev.ts`). Each lint rule has a violating fixture in `tools/boundary-fixtures/`, and
 `npm test` fails if any fixture stops failing.
 
 **The database logins** (RAD-24, ADR-005 §7c). The api and worker run as `radcore_app` (`DATABASE_URL`), the
