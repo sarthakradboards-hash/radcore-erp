@@ -7,7 +7,7 @@ import {
 import { z } from 'zod';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */
-const permissionKeys = z.array(z.string()).refine((keys) => keys.every((k, i) => i === 0 || (keys[i - 1] ?? '') < k),
+const permissionKeys = z.array(z.string().regex(/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/, 'Not a permission key')).max(500).refine((keys) => keys.every((k, i) => i === 0 || (keys[i - 1] ?? '') < k),
   { error: 'Permission keys are sorted and appear once each' });
 
 /**
@@ -191,10 +191,12 @@ export const deactivateUser = defineContract({
   errors: ['own_account', 'last_admin', 'already_disabled'],
 });
 
-/** Back to active, or to invited if no password was ever set. */
+/** Back to active, or to invited if no password was ever set. role_not_grantable: only an admin reactivates an
+ * admin (RC-033). */
 export const reactivateUser = defineContract({
   method: 'POST', path: '/admin/users/:id/reactivate', auth: 'session', perm: 'users:write', tx: write,
-  input: z.object({ id: idString(), reason: reason() }), output: z.object({ status: userStatus }), errors: ['not_disabled'],
+  input: z.object({ id: idString(), reason: reason() }), output: z.object({ status: userStatus }),
+  errors: ['not_disabled', 'role_not_grantable'],
 });
 
 /** The roles, unpaged. `grantable`: may the caller give this role to someone. */

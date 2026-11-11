@@ -160,6 +160,7 @@ describe('the admin contracts', () => {
     expect(inviteUser.errors).toEqual(['email_taken', 'role_not_grantable']);
     expect(setUserRole.errors).toEqual(['own_account', 'role_not_grantable', 'last_admin']);
     expect(deactivateUser.errors).toEqual(['own_account', 'last_admin', 'already_disabled']);
+    expect(reactivateUser.errors).toEqual(['not_disabled', 'role_not_grantable']); // only an admin reactivates an admin
     expect(setRolePermissions.errors).toEqual(['role_not_editable', 'matrix_changed', 'unknown_permission']);
     expect([endSession.errors, endUserSessions.errors]).toEqual([['current_session'], ['own_account']]);
   });
@@ -188,6 +189,9 @@ describe('the admin contracts', () => {
     expect(okFor(setRolePermissions, { ...save, grants: ['sales:write', 'parties:read'] })).toBe(false);
     expect(okFor(setRolePermissions, { ...save, grants: ['sales:write', 'sales:write'] })).toBe(false);
     expect(okFor(setRolePermissions, { ...save, key: 'Sales!', grants: [] })).toBe(false);
+    expect(okFor(setRolePermissions, { ...save, grants: ['everything'] })).toBe(false); // module:action only
+    expect(okFor(setRolePermissions, { ...save, grants: Array.from({ length: 501 }, (_, i) => `m${String(i).padStart(3, '0')}:read`) }))
+      .toBe(false);
   });
 
   it('read the audit trail and security events only within a stated date range', () => {
