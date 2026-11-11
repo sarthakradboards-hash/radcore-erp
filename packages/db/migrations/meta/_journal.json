@@ -92,6 +92,13 @@
       "when": 1794319612208,
       "tag": "0012_schema_audit_views",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794384895200,
+      "tag": "0013_security_events",
+      "breakpoints": true
     }
   ]
 }

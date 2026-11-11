@@ -1,7 +1,7 @@
 // lib-platform's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every
 // contract file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  defineContract, emailString, idString, listInput, listOf, momentString, newPassword, passwordString,
+  dateString, defineContract, emailString, idString, listInput, listOf, momentString, newPassword, passwordString,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 
@@ -137,6 +137,35 @@ export const listMySessions = defineContract({
 export const endMySession = defineContract({
   method: 'DELETE', path: '/me/sessions/:id', auth: 'session', perm: 'session:read', tx: write,
   input: z.object({ id: idString() }), output: z.object({}), errors: ['current_session'],
+});
+
+/** The security events RAD-31 records (RC-031). A new kind is a migration too: event_log's CHECK lists them. */
+export const SECURITY_EVENT_KINDS = ['sign_in', 'sign_in_failed', 'password_changed', 'second_factor_changed', 'export',
+  'download'] as const;
+/** The audit viewer's date range: both ends required, at most this many days, so a read stays in a few partitions. */
+export const AUDIT_RANGE_MAX_DAYS = 92;
+
+/**
+ * GET /admin/security-events (RAD-31, ui-2's shape for RAD-57's second tab), audit:read. Newest first, keyset on
+ * (occurredAt desc, id desc). `principal` is the account the event concerns, null for a failed sign-in that matched
+ * nobody. `detail` holds references only, never a typed email, password, code or token (M6-16).
+ */
+export const listSecurityEvents = defineContract({
+  method: 'GET', path: '/admin/security-events', auth: 'session', perm: 'audit:read', tx: read,
+  input: listInput(z.object({
+    occurred: z.object({ from: dateString(), to: dateString() })
+      .refine((r) => r.from <= r.to, { error: 'The start date is after the end date', path: ['to'] }),
+    kind: z.enum(SECURITY_EVENT_KINDS).optional(),
+    principal: idString().optional(), // a user id
+  })),
+  output: listOf(z.object({
+    id: idString(), occurredAt: momentString(), kind: z.enum(SECURITY_EVENT_KINDS),
+    principal: z.object({ kind: z.enum(['user', 'system', 'link']), id: z.string(), displayName: z.string().nullable() })
+      .nullable(),
+    device: z.string().max(80), // empty when the request had none
+    detail: z.record(z.string(), z.json()),
+  })),
+  errors: ['range_too_long'],
 });
 
 /** ADR-001 §7a's fixed lists, as "METHOD /path". The generic handler accepts `idempotency: 'exempt'` and
