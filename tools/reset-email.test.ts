@@ -58,7 +58,8 @@ describe.skipIf(!url)('the password-reset email job', () => {
       sent.push(m);
     }) };
     const job = passwordResetEmailJob({ mailer, publicOrigin: ORIGIN });
-    const run = (jobId: string, address = email) => job.handle({ input: { email: address }, by: 'system:password-reset' }, jobId, open, async () => null);
+    const run = (jobId: string, address = email) => job.handle({ input: { email: address }, by: 'system:password-reset' }, jobId,
+      { open, load: async () => null, alert: async () => undefined });
     const rows = async () => asAdmin<{ token_hash: string; used: boolean; sent: boolean; job_id: string | null }>(
       `select r.token_hash, r.used_at is not null as used, r.sent_at is not null as sent, r.job_id::text from radcore.password_resets r
        join radcore.users u on u.id = r.user_id where u.email = $1 order by r.created_at, r.id`, [email]);
