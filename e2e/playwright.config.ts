@@ -6,6 +6,8 @@ import { defineConfig, devices } from '@playwright/test';
 const WEB_PORT = Number(process.env['E2E_WEB_PORT'] ?? 3100);
 const API_PORT = Number(process.env['E2E_API_PORT'] ?? 3101);
 const CI = Boolean(process.env['CI']);
+// SeaweedFS's origin, as dev uses (tools/dev-env.ts). Nothing listens there in e2e: files-csp.spec.ts answers for it.
+const FILES_ORIGIN = 'http://127.0.0.1:8333';
 // The e2e database, never the dev one: tests will write to it once there are tables (M1).
 const DATABASE_URL = process.env['E2E_DATABASE_URL'] ?? 'postgres://radcore_app@127.0.0.1:5432/radcore_e2e';
 // The api and worker refuse to start without ADR-004 §5's settings (RAD-28). `npm run e2e` writes them to the root
@@ -59,7 +61,8 @@ export default defineConfig({
       // The dev/ci /api rewrite (RAD-50, apps/web/next.config.ts) is fixed at `next build`, so the build needs these:
       // the browser's /api calls then reach the e2e API, as Caddy routes them when deployed (RAD-74).
       // KIT_PAGE turns on /kit, the UI kit gallery kit.spec.ts drives (RAD-75); kit-guard allows it only in dev and CI.
-      env: { APP_ENV: 'ci', API_INTERNAL_URL: `http://127.0.0.1:${API_PORT}`, KIT_PAGE: '1' },
+      // S3_FILES_ORIGIN: the one origin the CSP lets the page upload to (RAD-43); files-csp.spec.ts stubs it.
+      env: { APP_ENV: 'ci', API_INTERNAL_URL: `http://127.0.0.1:${API_PORT}`, KIT_PAGE: '1', S3_FILES_ORIGIN: FILES_ORIGIN },
       url: `http://127.0.0.1:${WEB_PORT}`,
       timeout: 180_000,
     },

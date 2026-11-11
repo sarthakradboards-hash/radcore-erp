@@ -10,7 +10,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { trigramIndex } from '../packages/db/src/columns.ts';
 import { after, escapeLike, onDates, onIndiaDays, searchWords } from '../packages/db/src/lists.ts';
-import { decodeCursor, encodeCursor, sortedCursor } from '../packages/lib-platform/src/lists.ts';
+import { decodeCursor, encodeCursor, momentKey, sortedCursor } from '../packages/lib-platform/src/lists.ts';
 import { z } from 'zod';
 
 const fixture = pgSchema('list_fixture');
@@ -165,6 +165,26 @@ describe.skipIf(!url)('list conditions on PostgreSQL', () => {
     const all = await db.select({ id: entries.id, entryDate: entries.entryDate }).from(entries);
     const order = all.sort((a, b) => (a.entryDate === b.entryDate ? b.id.localeCompare(a.id) : b.entryDate.localeCompare(a.entryDate)));
     expect(seen).toEqual(order.map((r) => r.id));
+  });
+
+  // auditor-2 on #109: every row here was written in one transaction, so all share now() to the microsecond. Paged one
+  // at a time on (at, id) through the cursor, each must come once: a key cut to milliseconds would skip the rest.
+  it('pages rows of one transaction one at a time on a timestamp key, through the cursor, skipping none', async () => {
+    const pageKey = z.strictObject({ at: momentKey(), id: z.uuid() });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let pages = 0; pages < 20; pages++) {
+      const key: { at: string; id: string } | undefined = cursor === null ? undefined : decodeCursor(pageKey, cursor);
+      const rows: { id: string; at: string }[] = await db.select({ id: entries.id, at: entries.at }).from(entries)
+        .where(after([entries.at, entries.id], key ? [key.at, key.id] : undefined, 'desc'))
+        .orderBy(desc(entries.at), desc(entries.id)).limit(1 + 1);
+      const last = rows[0];
+      if (last) seen.push(last.id);
+      cursor = rows.length > 1 && last ? encodeCursor({ at: last.at, id: last.id }) : null;
+      if (cursor === null) break;
+    }
+    expect(seen).toHaveLength(11);
+    expect(new Set(seen).size).toBe(11);
   });
 });
 

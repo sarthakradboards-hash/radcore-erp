@@ -259,6 +259,7 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 | `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` | connection timeouts (ADR-002 §4) | no | all | Parameter Store | api, worker |
 | `S3_REGION`, `S3_BUCKET_FILES` | where files live | no | all | Parameter Store | api, worker |
 | `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | the S3-compatible dev server (SeaweedFS) in development and CI only | **yes** | development, CI | generated `.env` / CI | api, worker |
+| `S3_FILES_ORIGIN` | the files bucket's origin as the browser sees it: `https://<bucket>.s3.<region>.amazonaws.com`, or SeaweedFS's `http://127.0.0.1:8333` in development and CI. `web`'s CSP lets pages upload to it (`connect-src`, `form-action`) and show previews from it (`img-src`), and allows no other outside origin (RAD-43) | no | all | Parameter Store | web |
 | `SECRETS_KMS_KEY_ID` | the multi-Region KMS key that wraps the secrets library's data keys | no | staging, production | Parameter Store | api, worker |
 | `SECRETS_LOCAL_KEY` | stand-in for KMS in development, CI and the test copy, at least 32 random bytes | **yes** | development, CI, review | generated `.env` / CI / Vercel (§7) | api, worker |
 | `MAIL_FROM` | the sender address for invites and resets (a verified SES identity) | no | staging, production | Parameter Store | api, worker |
@@ -272,6 +273,7 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 **Start-up refuses when:**
 - `SECRETS_KMS_KEY_ID` and `SECRETS_LOCAL_KEY` aren't exactly one of them set;
 - `S3_ENDPOINT` or static S3 keys are set in staging or production;
+- `S3_FILES_ORIGIN` (in `web`) isn't an origin alone (no path or wildcard), or isn't `https://` outside development and CI;
 - `APP_ENV` is `development` or `ci` while `NODE_ENV` is `production`;
 - a setting its column marks as required is missing;
 - the database URL doesn't verify TLS in staging or production.

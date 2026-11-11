@@ -11,7 +11,7 @@ const F = process.env.RADCORE_BOUNDARY_FIXTURES === '1' ? '^(?:tools/boundary-fi
 const NODE_MODULES = '^(node_modules|(apps|packages)/[^/]+/node_modules)/';
 const pkg = (names) => `${F}packages/(${names.join('|')})/`;
 const ENTRIES = `${F}packages/(lib-[^/]+/src/(index|contract)\\.ts|lib-platform/src/runtime\\.ts`
-  + '|db/(src/[^/]+/index\\.ts|views/index\\.ts|src/(schema|request-context|migrate)\\.ts)|test-helpers/src/index\\.ts)$';
+  + '|db/(src/[^/]+/index\\.ts|views/index\\.ts|src/(schema|request-context|log-writers|migrate)\\.ts)|test-helpers/src/index\\.ts)$';
 const NODE_BUILTIN = `^(node:)?(${builtinModules.join('|')})$`;
 // D5: what a contract may never reach. lib-platform's contract may reach its other browser-safe files, so only its
 // `.` and `./runtime` count. Another library's `.` counts too: ADR-001 §2 lets a contract import only zod, lib-common
@@ -88,7 +88,7 @@ module.exports = {
     { name: 'D7-tables-only-from-libraries', severity: 'error', from: { pathNot: pkg(['lib-[^/]+', 'db']) },
       to: { path: `${F}packages/db/src/[^/]+/index\\.ts$` } },
     { name: 'D7-platform-entries', severity: 'error', from: { pathNot: pkg(['lib-platform', 'db']) },
-      to: { path: `${F}packages/db/src/(platform/index|schema|request-context|migrate)\\.ts$` } },
+      to: { path: `${F}packages/db/src/(platform/index|schema|request-context|log-writers|migrate)\\.ts$` } },
     { name: 'D8-apps-no-db', severity: 'error', from: { path: `${F}apps/(api|worker)/` }, to: { path: pkg(['db']) } },
     { name: 'D9-no-http-in-packages', severity: 'error', from: { path: `${F}packages/` },
       to: { path: ['(^|/)node_modules/(express|next)/', `${F}apps/`] } },
