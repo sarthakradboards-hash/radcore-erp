@@ -482,16 +482,22 @@ itself, the breached-password check, runs in the generic handler before the tran
 - **Each process builds its store once,** from `config.s3`, in the `api` and `worker` mains, and hands it to
   `runInTransaction`. There's no process-wide registry, so a test passes its own store.
 
-**A job's outside call goes in its `before` step** (RAD-43). `defineJob(contract, service, before)` takes an
-optional `before(input, deps)`.
+**A job's outside call goes in its `before` step** (RAD-43). `defineJob(contract, service, { before, afterCommit })`
+takes two optional steps; `before(input, deps)` is the first.
 - **When it runs.** The worker calls it outside any transaction, after rechecking the job's principal (§6a), so a
   revoked permission stops the job before anything leaves the process.
 - **Its result.** The service gets the result as `meta.before` and records it in the job's own transaction. A
   retry runs `before` again, so a call with side effects there carries the provider's idempotency key.
 - **What it can reach.** `deps` holds the worker's clients for outside calls: `files` (the whole store) today, and
   the outbound client when the first provider job needs it.
-- **No other route.** The `before` step is the only way a job reaches the network. Its first user is the upload
-  check.
+- **No other route.** The `before` and `afterCommit` steps are the only ways a job reaches the network. `before`'s
+  first user is the upload check.
+
+**A call that needs what the transaction decided goes in its `afterCommit` step** (RAD-32). `afterCommit(result,
+again)` runs after the service's transaction commits, with the service's result; `again` opens one more transaction,
+as the same principal, to record the outcome. A retry runs the service again, so the service makes the step safe to
+repeat: the password-reset email, its first user, dedupes on its job id, and a link minted but never mailed is spent
+and replaced.
 
 ### 8b. Platform engines, module functions
 

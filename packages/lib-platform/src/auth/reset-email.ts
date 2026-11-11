@@ -53,7 +53,7 @@ export function passwordResetEmailJob({ mailer, publicOrigin }: { mailer: Mailer
     const token = randomBytes(32).toString('base64url');
     await tx.insert(passwordResets).values({ userId: user.id, tokenHash: sha256(token), expiresAt: secondsFromNow(LINK_SECONDS), jobId });
     return { to: user.email, token, jobId };
-  }, async (toSend, again) => {
+  }, { afterCommit: async (toSend, again) => {
     if (toSend === null) return;
     // The token is in the fragment, which browsers never send to a server (ADR-001 §7a). Neither mailer logs this text.
     await mailer.send({ to: toSend.to, subject: 'Reset your RadCore password', text: [
@@ -63,5 +63,5 @@ export function passwordResetEmailJob({ mailer, publicOrigin }: { mailer: Mailer
     await again(async (ctx) => {
       await platformTx(ctx).update(passwordResets).set({ sentAt: new Date() }).where(eq(passwordResets.jobId, toSend.jobId));
     });
-  });
+  } });
 }

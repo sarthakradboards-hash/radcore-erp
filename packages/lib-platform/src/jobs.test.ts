@@ -93,12 +93,12 @@ describe('defineJob', () => {
         steps.push('service');
         return `item ${input.n}`;
       },
-      async (result, again) => {
+      { afterCommit: async (result, again) => {
         steps.push(`after ${result}`);
         await again(async () => {
           steps.push('second');
         });
-      });
+      } });
     await job.handle({ input: { n: 2 }, by: 'system:x' }, 'job-9', { open, load: nobody, alert: async () => undefined });
     expect(steps).toEqual(['open job-9', 'service', 'commit', 'after item 2', 'open job-9', 'second', 'commit']);
   });

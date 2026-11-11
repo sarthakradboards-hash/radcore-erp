@@ -113,14 +113,19 @@ async function principalOf(name: string, p: JobPrincipal, by: string, load: Load
   if (!who.permissions.includes(p.perm)) throw new JobRefused(`${name}: ${by} no longer holds ${p.perm}`);
   return who;
 }
-/**
- * A job's contract and service. `afterCommit`, when given, runs after the service's transaction commits, with what the
- * service returned: the place for a call to an outside service (an email), which never runs inside a transaction
- * (ADR-001 §8). It may open one more transaction, as the same principal, to record the call's result.
- */
+/** A job's optional steps around its transaction (ADR-001 §8). backend-3's `before` (RAD-43) joins this object. */
+export type JobSteps<R> = {
+  /**
+   * Runs after the service's transaction commits, with what the service returned: the place for an outside call that
+   * needs what the transaction decided (the reset email's recipient and link). `again` opens one more transaction, as
+   * the same principal, to record the call's outcome. A retry runs the service again, which makes this safe to repeat.
+   */
+  afterCommit?: (result: R, again: (work: (ctx: Ctx) => Promise<void>) => Promise<void>) => Promise<void>;
+};
+
+/** A job's contract, its service, and its optional steps around the service's transaction. */
 export function defineJob<I, R = void>(contract: JobContract<I>,
-  service: (ctx: Ctx, input: I, meta: JobMeta) => Promise<R>,
-  afterCommit?: (result: R, again: (work: (ctx: Ctx) => Promise<void>) => Promise<void>) => Promise<void>): JobDefinition {
+  service: (ctx: Ctx, input: I, meta: JobMeta) => Promise<R>, { afterCommit }: JobSteps<R> = {}): JobDefinition {
   const settings = queueSettings(contract);
   // A schedule has no person behind it, so a scheduled job runs as a system principal.
   if (contract.every !== undefined && contract.principal.kind !== 'system') {
