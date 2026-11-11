@@ -1,7 +1,8 @@
 // lib-platform's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every
 // contract file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  defineContract, emailString, idString, listInput, listOf, momentString, newPassword, passwordString,
+  dateRange, defineContract, emailString, idString, listInput, listOf, momentString, newPassword, passwordString,
+  searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 
@@ -137,6 +138,153 @@ export const listMySessions = defineContract({
 export const endMySession = defineContract({
   method: 'DELETE', path: '/me/sessions/:id', auth: 'session', perm: 'session:read', tx: write,
   input: z.object({ id: idString() }), output: z.object({}), errors: ['current_session'],
+});
+
+// The admin routes (RAD-57's screens), declared ahead of their services, to ui-2's shapes on RAD-32, RAD-34,
+// RAD-36, RAD-30 and RAD-31. Admin only: users:*, roles:* and audit:read. The server decides every
+// self-escalation rule (M1-18) and says so in flags (`self`, `grantable`, `editable`) and named refusals; the
+// screens only show them. Every change that removes access or power takes a typed reason, kept in its audit row.
+const roleKey = () => z.string().regex(/^[a-z][a-z_]{1,31}$/, 'Not a role');
+const reason = () => z.string().trim().min(1, 'Say why, in your own words').max(500);
+const userStatus = z.enum(['invited', 'active', 'disabled']); // the users table's own check
+const principalOut = z.object({ kind: z.enum(['user', 'system', 'link']), id: z.string(), displayName: z.string().nullable() });
+
+/** People, any status. `self` marks the caller's own row: no role change or deactivate there. */
+export const listUsers = defineContract({
+  method: 'GET', path: '/admin/users', auth: 'session', perm: 'users:read', tx: read,
+  input: listInput(z.object({ search: searchText().optional(), status: userStatus.optional(), role: roleKey().optional() }),
+    sortInput(['displayName', 'email', 'lastSignInAt'])),
+  output: listOf(z.object({
+    id: idString(), displayName: z.string(), email: z.string(), status: userStatus, role: roleKey(),
+    lastSignInAt: momentString().nullable(), secondFactor: z.enum(['not_required', 'enrolled', 'not_enrolled']), // D-19
+    self: z.boolean(),
+  })),
+});
+
+/** Sends an invite link (the worker emails it); the person sets their own password (M1-14). The answer holds no
+ * token or link. role_not_grantable: only admin grants admin (M1-18). */
+export const inviteUser = defineContract({
+  method: 'POST', path: '/admin/users', auth: 'session', perm: 'users:write', tx: write,
+  input: z.object({ email: emailString(), displayName: z.string().trim().min(1, 'Enter a name').max(120), role: roleKey() }),
+  output: z.object({ id: idString() }), errors: ['email_taken', 'role_not_grantable'],
+});
+
+/** A new link for an invited person; the old one stops working. */
+export const resendInvite = defineContract({
+  method: 'POST', path: '/admin/users/:id/invite', auth: 'session', perm: 'users:write', tx: write,
+  input: z.object({ id: idString() }), output: z.object({}), errors: ['not_invited'],
+});
+
+/** Ends that person's sessions (M1-16). Nobody changes their own role (M1-18). */
+export const setUserRole = defineContract({
+  method: 'PUT', path: '/admin/users/:id/role', auth: 'session', perm: 'users:write', tx: write,
+  input: z.object({ id: idString(), role: roleKey(), reason: reason() }),
+  output: z.object({ sessionsEnded: z.number().int().nonnegative() }),
+  errors: ['own_account', 'role_not_grantable', 'last_admin'],
+});
+
+/** Disabled: every session ends and open invite and reset links stop working. */
+export const deactivateUser = defineContract({
+  method: 'POST', path: '/admin/users/:id/deactivate', auth: 'session', perm: 'users:write', tx: write,
+  input: z.object({ id: idString(), reason: reason() }),
+  output: z.object({ sessionsEnded: z.number().int().nonnegative() }),
+  errors: ['own_account', 'last_admin', 'already_disabled'],
+});
+
+/** Back to active, or to invited if no password was ever set. */
+export const reactivateUser = defineContract({
+  method: 'POST', path: '/admin/users/:id/reactivate', auth: 'session', perm: 'users:write', tx: write,
+  input: z.object({ id: idString(), reason: reason() }), output: z.object({ status: userStatus }), errors: ['not_disabled'],
+});
+
+/** The roles, unpaged. `grantable`: may the caller give this role to someone. */
+export const listRoles = defineContract({
+  method: 'GET', path: '/admin/roles', auth: 'session', perm: 'roles:read', tx: read, input: z.object({}),
+  output: z.object({ roles: z.array(z.object({
+    key: roleKey(), name: z.string(), description: z.string(), userCount: z.number().int().nonnegative(),
+    secondFactorRequired: z.boolean(), grantable: z.boolean(),
+  })) }),
+});
+
+/** The whole matrix. A role is `editable: false` when it is admin (it holds every permission) or the caller's own
+ * role; `version` changes on every matrix write, so two admins can't overwrite each other. */
+export const getPermissionMatrix = defineContract({
+  method: 'GET', path: '/admin/permissions', auth: 'session', perm: 'roles:read', tx: read, input: z.object({}),
+  output: z.object({
+    version: z.string(),
+    permissions: z.array(z.object({ key: z.string(), module: z.string(), label: z.string() })),
+    roles: z.array(z.object({ key: roleKey(), name: z.string(), editable: z.boolean(), grants: permissionKeys })),
+  }),
+});
+
+/** Replaces one role's grants. It applies at once in every process (RC-095) and is audited with its reason. */
+export const setRolePermissions = defineContract({
+  method: 'PUT', path: '/admin/roles/:key/permissions', auth: 'session', perm: 'roles:write', tx: write,
+  input: z.object({ key: roleKey(), grants: permissionKeys, version: z.string(), reason: reason() }),
+  output: z.object({ version: z.string() }), errors: ['role_not_editable', 'matrix_changed', 'unknown_permission'],
+});
+
+/** Every live session, or one person's, newest activity first. No IP, as on listMySessions. */
+export const listSessions = defineContract({
+  method: 'GET', path: '/admin/sessions', auth: 'session', perm: 'users:read', tx: read,
+  input: listInput(z.object({ userId: idString().optional() })),
+  output: listOf(z.object({
+    id: idString(), user: z.object({ id: idString(), displayName: z.string() }),
+    createdAt: momentString(), lastSeenAt: momentString(), idleExpiresAt: momentString(), absoluteExpiresAt: momentString(),
+    device: z.string().max(80), current: z.boolean(),
+  })),
+});
+
+/** Ends anyone's session (M1-16). Your own current one answers current_session: that's sign-out. */
+export const endSession = defineContract({
+  method: 'DELETE', path: '/admin/sessions/:id', auth: 'session', perm: 'users:write', tx: write,
+  input: z.object({ id: idString() }), output: z.object({}), errors: ['current_session'],
+});
+
+/** "Sign out everywhere" for one person, such as after a lost phone. Not your own account: use your sessions page. */
+export const endUserSessions = defineContract({
+  method: 'POST', path: '/admin/users/:id/sessions/end', auth: 'session', perm: 'users:write', tx: write,
+  input: z.object({ id: idString() }), output: z.object({ ended: z.number().int().nonnegative() }), errors: ['own_account'],
+});
+
+const auditOp = z.enum(['insert', 'update', 'delete']);
+/** The audit trail (RAD-30 part 2), newest first, keyset on (occurred_at desc, id desc). The date range is required,
+ * so a read prunes to a few month partitions; range_too_long caps it. A secret column's value is "[redacted]". */
+export const listAuditTrail = defineContract({
+  method: 'GET', path: '/admin/audit', auth: 'session', perm: 'audit:read', tx: read,
+  input: listInput(z.object({
+    occurred: dateRange(),
+    tableName: z.string().regex(/^[a-z][a-z0-9_]{0,62}$/, 'Choose a table from the list').optional(),
+    recordId: z.string().max(64).optional(),
+    principal: z.string().max(80).optional(), // a user id, "system:<name>" or a link id (ADR-001 §6a)
+    op: auditOp.optional(),
+  })),
+  output: listOf(z.object({
+    id: idString(), occurredAt: momentString(), principal: principalOut,
+    tableName: z.string(), recordId: z.string(), op: auditOp,
+    // insert: new only; update: old and new for each changed column; delete: old only
+    changed: z.record(z.string(), z.object({ old: z.json().optional(), new: z.json().optional() })),
+  })),
+  errors: ['range_too_long'],
+});
+
+/** The audited tables, for the viewer's filter. */
+export const listAuditedTables = defineContract({
+  method: 'GET', path: '/admin/audit/tables', auth: 'session', perm: 'audit:read', tx: read,
+  input: z.object({}), output: z.object({ tables: z.array(z.string()) }),
+});
+
+const securityEventKind = z.enum(['sign_in', 'sign_in_failed', 'password_changed', 'second_factor_changed', 'export', 'download']);
+/** Security events (RAD-31's event_log), newest first, the audit viewer's second tab. `detail` never holds a
+ * password, code or token; `principal` is null for a failed sign-in that matched nobody. */
+export const listSecurityEvents = defineContract({
+  method: 'GET', path: '/admin/security-events', auth: 'session', perm: 'audit:read', tx: read,
+  input: listInput(z.object({ occurred: dateRange(), kind: securityEventKind.optional(), principal: z.string().max(80).optional() })),
+  output: listOf(z.object({
+    id: idString(), occurredAt: momentString(), kind: securityEventKind, principal: principalOut.nullable(),
+    device: z.string().max(80), detail: z.record(z.string(), z.json()),
+  })),
+  errors: ['range_too_long'],
 });
 
 /** ADR-001 §7a's fixed lists, as "METHOD /path". The generic handler accepts `idempotency: 'exempt'` and
