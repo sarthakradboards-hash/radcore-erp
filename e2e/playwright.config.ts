@@ -26,7 +26,13 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // Every spec runs in Chromium. The UI kit runs in Firefox and WebKit too (RAD-75): its widgets are where engines
+  // differ. The harness self-checks stay Chromium-only; some check Chromium's own error texts.
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: /kit\.spec\.ts$/ },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /kit\.spec\.ts$/ },
+  ],
   // Never reuse a server already on a port: it may be another checkout's code. A busy port fails the run instead.
   webServer: [
     {
@@ -52,7 +58,8 @@ export default defineConfig({
       cwd: '../apps/web',
       // The dev/ci /api rewrite (RAD-50, apps/web/next.config.ts) is fixed at `next build`, so the build needs these:
       // the browser's /api calls then reach the e2e API, as Caddy routes them when deployed (RAD-74).
-      env: { APP_ENV: 'ci', API_INTERNAL_URL: `http://127.0.0.1:${API_PORT}` },
+      // KIT_PAGE turns on /kit, the UI kit gallery kit.spec.ts drives (RAD-75); kit-guard allows it only in dev and CI.
+      env: { APP_ENV: 'ci', API_INTERNAL_URL: `http://127.0.0.1:${API_PORT}`, KIT_PAGE: '1' },
       url: `http://127.0.0.1:${WEB_PORT}`,
       timeout: 180_000,
     },

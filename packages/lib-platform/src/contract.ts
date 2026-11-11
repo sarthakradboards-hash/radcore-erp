@@ -7,7 +7,7 @@ import {
 import { z } from 'zod';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */
-const permissionKeys = z.array(z.string()).refine((keys) => keys.every((k, i) => i === 0 || (keys[i - 1] ?? '') < k),
+const permissionKeys = z.array(z.string().regex(/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/, 'Not a permission key')).max(500).refine((keys) => keys.every((k, i) => i === 0 || (keys[i - 1] ?? '') < k),
   { error: 'Permission keys are sorted and appear once each' });
 
 /**
@@ -27,7 +27,7 @@ export const getMe = defineContract({
       idleExpiresAt: momentString(), // moves forward on activity
       absoluteExpiresAt: momentString(), // never moves
     }),
-    secondFactor: z.enum(['not_required', 'enrolled', 'enrolment_required']), // D-19: admin and owner only
+    secondFactor: z.enum(['not_required', 'enrolled', 'enrolment_required']), // D-19 (widened 10 Nov): admin, owner, accounts and HR
   }),
 });
 
@@ -48,8 +48,8 @@ export const signIn = defineContract({
   input: z.object({ email: emailString(), password: passwordString() }), // no length rule on sign-in
   output: z.discriminatedUnion('next', [
     z.object({ next: z.literal('done') }),
-    z.object({ next: z.literal('second_factor') }), // D-19: admin or owner with a factor enrolled
-    z.object({ next: z.literal('enrol_second_factor') }), // D-19: admin or owner without one yet
+    z.object({ next: z.literal('second_factor') }), // D-19: a role that needs one, with a factor enrolled
+    z.object({ next: z.literal('enrol_second_factor') }), // D-19: a role that needs one, without one yet
   ]),
   errors: ['invalid_credentials'], // the same answer for an unknown email and a wrong password
 });
@@ -156,7 +156,7 @@ export const listUsers = defineContract({
     sortInput(['displayName', 'email', 'lastSignInAt'])),
   output: listOf(z.object({
     id: idString(), displayName: z.string(), email: z.string(), status: userStatus, role: roleKey(),
-    lastSignInAt: momentString().nullable(), secondFactor: z.enum(['not_required', 'enrolled', 'not_enrolled']), // D-19
+    lastSignInAt: momentString().nullable(), secondFactor: z.enum(['not_required', 'enrolled', 'enrolment_required']), // D-19, as getMe
     self: z.boolean(),
   })),
 });
@@ -183,18 +183,21 @@ export const setUserRole = defineContract({
   errors: ['own_account', 'role_not_grantable', 'last_admin'],
 });
 
-/** Disabled: every session ends and open invite and reset links stop working. */
+/** Disabled: every session ends and open invite and reset links stop working. role_not_grantable: only an admin
+ * deactivates an admin. */
 export const deactivateUser = defineContract({
   method: 'POST', path: '/admin/users/:id/deactivate', auth: 'session', perm: 'users:write', tx: write,
   input: z.object({ id: idString(), reason: reason() }),
   output: z.object({ sessionsEnded: z.number().int().nonnegative() }),
-  errors: ['own_account', 'last_admin', 'already_disabled'],
+  errors: ['own_account', 'last_admin', 'already_disabled', 'role_not_grantable'],
 });
 
-/** Back to active, or to invited if no password was ever set. */
+/** Back to active, or to invited if no password was ever set. role_not_grantable: only an admin reactivates an
+ * admin (RC-033). */
 export const reactivateUser = defineContract({
   method: 'POST', path: '/admin/users/:id/reactivate', auth: 'session', perm: 'users:write', tx: write,
-  input: z.object({ id: idString(), reason: reason() }), output: z.object({ status: userStatus }), errors: ['not_disabled'],
+  input: z.object({ id: idString(), reason: reason() }), output: z.object({ status: userStatus }),
+  errors: ['not_disabled', 'role_not_grantable'],
 });
 
 /** The roles, unpaged. `grantable`: may the caller give this role to someone. */
@@ -217,11 +220,13 @@ export const getPermissionMatrix = defineContract({
   }),
 });
 
-/** Replaces one role's grants. It applies at once in every process (RC-095) and is audited with its reason. */
+/** Replaces one role's grants. It applies at once in every process (RC-095) and is audited with its reason.
+ * permission_not_held: nobody grants a key they don't hold themselves. */
 export const setRolePermissions = defineContract({
   method: 'PUT', path: '/admin/roles/:key/permissions', auth: 'session', perm: 'roles:write', tx: write,
   input: z.object({ key: roleKey(), grants: permissionKeys, version: z.string(), reason: reason() }),
-  output: z.object({ version: z.string() }), errors: ['role_not_editable', 'matrix_changed', 'unknown_permission'],
+  output: z.object({ version: z.string() }),
+  errors: ['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held'],
 });
 
 /** Every live session, or one person's, newest activity first. No IP, as on listMySessions. */

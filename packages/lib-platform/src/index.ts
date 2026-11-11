@@ -22,3 +22,4 @@ export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } fro
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
 export { cleanOutbox, outboxCleanup } from './outbox.ts';
 export { listSecurityEventsPage, recordSecurityEvent, type EventSubject, type SecurityEvent } from './security-events.ts';
+export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';

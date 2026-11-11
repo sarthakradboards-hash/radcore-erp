@@ -43,7 +43,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium firefox webkit
       - name: The three logins, made by the superuser (RAD-24)
         run: npm run db:logins
         env:

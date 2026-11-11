@@ -1,0 +1,20 @@
+// The UI kit's own text (RAD-53, RAD-54), merged into the English catalogue in index.ts (RC-217).
+export const kit = {
+  'kit.form.offline': 'RadCore could not be reached. Check the connection, then try again.',
+  'kit.form.unshown': 'This screen cannot save: it needs something it does not show. Please report it',
+  'kit.form.alreadySaved': 'This was already saved; check the list before saving again.',
+  'kit.form.saved': 'Saved',
+  'kit.dialog.close': 'Close',
+  'kit.reason.required': 'Say why, in your own words',
+  'kit.reason.label': 'Reason',
+  'kit.reason.hint': 'Kept with the record and shown in its history.',
+  'kit.reason.keep': 'Keep it',
+  'kit.table.empty': 'Nothing to show yet',
+  'kit.table.error': 'The list could not be loaded.',
+  'kit.table.retry': 'Try again',
+  'kit.table.shown': '{count} shown',
+  'kit.table.more': 'Show more',
+  'kit.picker.searching': 'Searching…',
+  'kit.picker.none': 'Nothing matches “{query}”',
+  'kit.picker.error': 'The search could not be run. Try again.',
+} as const;
