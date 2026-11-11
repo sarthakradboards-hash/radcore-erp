@@ -5,7 +5,7 @@ import { defineApproval, versionHash, type ApprovalSpec } from './approvals.ts';
 import { approvalContracts } from './contract.ts';
 
 const spec = (kind: string): ApprovalSpec => ({
-  kind, version: async () => null, approved: async () => undefined, rejected: async () => undefined,
+  kind, table: 'purchase_orders', version: async () => null, approved: async () => undefined, rejected: async () => undefined,
 });
 
 describe('versionHash', () => {

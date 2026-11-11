@@ -3,13 +3,14 @@
 // ApprovalSpec, which says what version of the record is being approved and what approval or rejection does.
 //   request ─► the record's version, hashed ─► a pending row (an older pending request for it is superseded)
 //   decide  ─► the record, locked and within the approver's scope (else not_found) ─► lock the request ─► still pending
-//           ─► not the requester ─► the approver's account predates the request
+//           ─► not the requester, and no change by them to the record or its parts since its last approval (audit log)
+//           ─► the approver's account predates the request
 //           ─► approve only: the record still hashes to the requested version, and the approver's screen saw it
 //           ─► record the decision (only while still pending) ─► the module's approved() or rejected(), same transaction
 // A module's route file spreads `...defineApproval(contracts, spec)` (ADR-001 §8b), with its `approvalContracts`.
 import { createHash } from 'node:crypto';
-import { approvals, platformTx, users } from '@radcore/db/platform';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { approvals, auditLog, platformTx, users } from '@radcore/db/platform';
+import { and, asc, eq, gt, inArray, isNull, like, max, or } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { approvalContracts } from './approval-contracts.ts';
 import { principalId, type Ctx } from './ctx.ts';
@@ -23,6 +24,11 @@ export type ApprovalVersion = z.output<ReturnType<typeof z.json>>;
 export type ApprovalSpec<V extends ApprovalVersion = ApprovalVersion> = {
   /** Lower-case words joined by hyphens, the same as its approvalContracts' kind. */
   readonly kind: string;
+  /** The record's own table (`purchase_orders`), audited, keyed by the record's id. */
+  readonly table: string;
+  /** Its part tables (`purchase_order_lines`), each attached with `owner =>` its record's key column, so their audit
+   * rows carry the record's id. A change to a part is a change to the record (ADR-001 §8b). */
+  readonly parts?: readonly string[];
   /**
    * Exactly what the approver is shown and approves, as plain JSON values (money and quantities as strings): the
    * figures, not the whole row. With `forUpdate`, it locks the record's row, so nothing changes it between the check
@@ -130,7 +136,9 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
     .from(approvals).where(eq(approvals.id, id)).for('update');
   if (request === undefined) throw notFound();
   if (request.decidedAt !== null) throw notPending();
-  if (request.requestedBy === me) throw new AppError('own_request', 'You asked for this, so someone else must decide it');
+  if (request.requestedBy === me || (await makersSinceApproval(ctx, spec, request.recordId)).includes(me)) {
+    throw new AppError('own_request', 'You asked for this or changed it, so someone else must decide it');
+  }
   const [account] = await tx.select({ createdAt: users.createdAt }).from(users).where(eq(users.id, ctx.principal.userId));
   if (account === undefined || account.createdAt >= request.requestedAt) {
     throw new AppError('approver_too_new', 'Your account was made after this request, so you can\'t decide it');
@@ -147,6 +155,28 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
   if (input.decision === 'approve') await spec.approved(ctx, request.recordId);
   else await spec.rejected(ctx, request.recordId, input.reason);
   return { status };
+}
+
+/**
+ * Everyone who changed the record or one of its parts since its last approval, or ever if it was never approved, as
+ * the audit log records them (ADR-001 §8b): the record's own rows, and its parts' rows by owner_id. Only people: a
+ * job isn't a maker. The last approval's time is its own audit row's, the database's clock like every other row's, so
+ * what the approving transaction itself wrote (approved()) is at that time, not after it.
+ */
+async function makersSinceApproval<V extends ApprovalVersion>(ctx: Ctx, spec: ApprovalSpec<V>, recordId: string): Promise<string[]> {
+  const tx = platformTx(ctx);
+  const approved = (await tx.select({ id: approvals.id }).from(approvals)
+    .where(and(eq(approvals.kind, spec.kind), eq(approvals.recordId, recordId), eq(approvals.status, 'approved')))).map((r) => r.id);
+  const [last] = approved.length === 0 ? [] : await tx.select({ at: max(auditLog.occurredAt) }).from(auditLog)
+    .where(and(eq(auditLog.tableName, 'approvals'), inArray(auditLog.recordId, approved)));
+  const parts = spec.parts ?? [];
+  const rows = await tx.select({ by: auditLog.createdBy }).from(auditLog).where(and(
+    last?.at == null ? undefined : gt(auditLog.occurredAt, last.at),
+    like(auditLog.createdBy, 'user:%'),
+    or(and(eq(auditLog.tableName, spec.table), eq(auditLog.recordId, recordId)),
+      parts.length === 0 ? undefined : and(inArray(auditLog.tableName, [...parts]), eq(auditLog.ownerId, recordId)))))
+    .groupBy(auditLog.createdBy);
+  return rows.map((r) => r.by);
 }
 
 type ApprovalContracts = ReturnType<typeof approvalContracts>;
