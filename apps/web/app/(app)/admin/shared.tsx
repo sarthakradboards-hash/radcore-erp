@@ -1,6 +1,7 @@
 'use client';
 // Pieces the admin screens share (RAD-57). The server decides who may do what (M1-14 to M1-18): the screens only
 // grey out what its flags say and word its error codes; they hold no permission rule of their own.
+import { AUDIT_RANGE_MAX_DAYS } from '@radcore/lib-platform/contract';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { z } from 'zod';
@@ -32,9 +33,10 @@ export function AdminNav() {
 }
 
 const CODES = ['own_account', 'last_admin', 'role_not_grantable', 'email_taken', 'role_not_editable', 'matrix_changed',
-  'unknown_permission', 'current_session', 'range_too_long'] as const;
+  'unknown_permission', 'permission_not_held', 'current_session'] as const;
 /** The admin contracts' error codes in the screen's words, for Form's and ReasonDialog's `messages`. */
 export const MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`admin.err.${c}`)]));
+MESSAGES['range_too_long'] = t('admin.err.range_too_long', { days: String(AUDIT_RANGE_MAX_DAYS) });
 // A refusal that only means the list on screen was stale (someone else got there first).
 for (const c of ['not_invited', 'already_disabled', 'not_disabled']) MESSAGES[c] = t('admin.listStale');
 

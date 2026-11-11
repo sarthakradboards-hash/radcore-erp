@@ -3,6 +3,7 @@
 // and second-factor changes, exports), each newest first, paged and filtered. Values arrive as the server sends them:
 // personal data this person may not see is already masked, and secrets read "[redacted]"; the screen never unmasks.
 // Filters apply on "Show", so typing doesn't fetch, and each tab keeps its own while the other is open.
+import { listAuditedTables, listAuditTrail, listSecurityEvents, listUsers } from '@radcore/lib-platform/contract';
 import { addDays, dateString, formatMoment, indiaDate } from '@radcore/lib-common';
 import { Tabs } from 'radix-ui';
 import { useState, type ReactNode } from 'react';
@@ -14,11 +15,8 @@ import { DataTable, type Column } from '../../../../components/ui/table/data-tab
 import { ApiError } from '../../../../lib/api-client.ts';
 import { useApiList, useApiQuery, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
-import {
-  listAuditedTables, listAuditTrail, listSecurityEvents, listUsers, type AdminUser, type AuditOp, type AuditRow,
-  type SecurityEvent, type SecurityEventKind,
-} from '../contracts.ts';
 import { ChoiceButtons, MESSAGES } from '../shared.tsx';
+import type { AdminUser, AuditOp, AuditRow, SecurityEvent, SecurityEventKind } from '../types.ts';
 
 const range = { from: dateString(), to: dateString() };
 const ordered = <T extends { from: string; to: string }>(f: T) => f.from <= f.to;
@@ -36,7 +34,7 @@ function useLastMonth() {
 }
 
 type Principal = AuditRow['principal'];
-const who = (p: Principal | null) => (p === null ? t('audit.unknown') : p.kind === 'system' ? t('audit.system', { name: p.id.replace(/^system:/, '') })
+const who = (p: Principal | null) => (p === null ? t('events.noAccount') : p.kind === 'system' ? t('audit.system', { name: p.id.replace(/^system:/, '') })
   : p.kind === 'link' ? t('audit.link', { id: p.id }) : p.displayName ?? t('audit.unknown'));
 
 const show = (v: unknown) => (v === undefined ? t('audit.none') : typeof v === 'string' ? v : JSON.stringify(v));

@@ -1,10 +1,11 @@
 'use client';
 // Roles (RAD-57, M1-17): the eleven roles, who holds them, and which need the second factor (D-19). Read-only: a
 // person's role is changed on People, and what a role may do on Permissions.
+import { listRoles } from '@radcore/lib-platform/contract';
+import type { Role } from '../types.ts';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
-import { listRoles, type Role } from '../contracts.ts';
 
 const columns: Column<Role>[] = [
   { id: 'name', header: t('roles.col.name'), cell: (r) => r.name },

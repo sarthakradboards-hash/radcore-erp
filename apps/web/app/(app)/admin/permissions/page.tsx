@@ -2,13 +2,14 @@
 // The permission matrix (RAD-57, M1-18): permissions down the side, roles across. One role is changed at a time and
 // saved with a reason, so each audit row is one role's change. The server marks which roles may be changed
 // (`editable`: never admin, never your own role) and refuses the rest; a stale version is refused, not overwritten.
+import { getPermissionMatrix, setRolePermissions } from '@radcore/lib-platform/contract';
 import { useId, useState } from 'react';
 import { ReasonDialog } from '../../../../components/ui/dialog/reason-dialog.tsx';
 import { ApiError } from '../../../../lib/api-client.ts';
 import { useApiMutation, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
-import { getPermissionMatrix, setRolePermissions, type Matrix } from '../contracts.ts';
 import { MESSAGES } from '../shared.tsx';
+import type { Matrix } from '../types.ts';
 import '../../../../components/ui/table/table.css';
 
 type Editing = { key: string; name: string; grants: ReadonlySet<string> };

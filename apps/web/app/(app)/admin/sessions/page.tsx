@@ -1,14 +1,15 @@
 'use client';
 // Sessions (RAD-57, M1-16): every live session, or one person's, and ending one. Your own current session is ended
 // by signing out, so it has no End button (the server refuses it as current_session anyway).
+import { endSession, listSessions, listUsers } from '@radcore/lib-platform/contract';
 import { formatMoment } from '@radcore/lib-common';
 import { useState } from 'react';
 import { Picker } from '../../../../components/ui/picker/picker.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList, useApiMutation, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
-import { endSession, listSessions, listUsers, type AdminSession, type AdminUser } from '../contracts.ts';
 import { ConfirmDialog } from '../shared.tsx';
+import type { AdminSession, AdminUser } from '../types.ts';
 
 /** A session ends at whichever comes first: idle time running out, or its absolute limit. */
 const endsBy = (s: AdminSession) => (Date.parse(s.idleExpiresAt) < Date.parse(s.absoluteExpiresAt) ? s.idleExpiresAt : s.absoluteExpiresAt);

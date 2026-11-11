@@ -1,6 +1,7 @@
 'use client';
 // People (RAD-57, M1-14, M1-16, M1-18): invite, change a role, deactivate and reactivate, sign out everywhere.
 // The server says what may be done (`self`, a role's `grantable`) and refuses the rest with a named code.
+import { deactivateUser, endUserSessions, inviteUser, listRoles, listSessions, listUsers, reactivateUser, resendInvite, setUserRole } from '@radcore/lib-platform/contract';
 import { useState } from 'react';
 import { z } from 'zod';
 import { Dialog, CloseButton } from '../../../../components/ui/dialog/dialog.tsx';
@@ -12,11 +13,8 @@ import { announce } from '../../../../components/ui/live-region.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList, useApiMutation, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
-import {
-  deactivateUser, endUserSessions, inviteUser, listRoles, listSessions, listUsers, reactivateUser, resendInvite,
-  setUserRole, type AdminUser, type Role, type UserStatus,
-} from '../contracts.ts';
 import { ChoiceButtons, ConfirmDialog, MESSAGES } from '../shared.tsx';
+import type { AdminUser, Role, UserStatus } from '../types.ts';
 
 type Show = 'all' | UserStatus;
 type Acting = { kind: 'role' | 'deactivate' | 'reactivate' | 'resend' | 'sessions'; user: AdminUser };
