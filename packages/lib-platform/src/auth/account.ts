@@ -2,14 +2,17 @@
 // changing your own. The new-password rules (length, the bundled list, Pwned Passwords) ran before the transaction,
 // in the handler; these services check only same_as_old, since that needs the stored hash. A link is single-use and
 // expires, its token is found by its SHA-256, and an unknown, used or expired link gets one answer. Neither an invite
-// nor a reset starts a session: the person signs in afterwards, second factor included (RAD-64 item 2).
+// nor a reset starts a session: the person signs in afterwards, second factor included (RAD-64 item 2). A reset ends
+// every session the person has, and a change all but this one (RAD-34); each records password_changed (RAD-31).
 import { createHash } from 'node:crypto';
 import { invites, passwordResets, platformTx, users } from '@radcore/db/platform';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
+import { recordSecurityEvent } from '../security-events.ts';
 import type { Lockout } from './lockout.ts';
 import type { Passwords } from './passwords.ts';
+import { endSessionsOf } from './sessions.ts';
 
 type Deps = { passwords: Passwords; lockout: Lockout };
 
@@ -32,10 +35,11 @@ export function createAccount({ passwords, lockout }: Deps) {
       await tx.update(invites).set({ usedAt: now }).where(eq(invites.id, row.inviteId));
       await tx.update(users).set({ passwordHash: await passwords.hash(password), passwordSetAt: now, status: 'active' })
         .where(eq(users.id, row.userId));
+      await recordSecurityEvent(ctx, { kind: 'password_changed', detail: { how: 'invite' } }, { userId: row.userId, device: null });
       return {};
     },
 
-    /** Also clears the address's lock, and spends every other reset link the person holds. RAD-34 ends their sessions. */
+    /** Also clears the address's lock, and spends every other reset link the person holds. Ends all their sessions. */
     async resetPassword(ctx: Ctx, { token, password }: { token: string; password: string }): Promise<Record<string, never>> {
       const tx = platformTx(ctx);
       const [row] = await tx.select({ userId: users.id, email: users.email, hash: users.passwordHash }).from(passwordResets)
@@ -49,6 +53,8 @@ export function createAccount({ passwords, lockout }: Deps) {
       await tx.update(passwordResets).set({ usedAt: now })
         .where(and(eq(passwordResets.userId, row.userId), isNull(passwordResets.usedAt)));
       await tx.update(users).set({ passwordHash: await passwords.hash(password), passwordSetAt: now }).where(eq(users.id, row.userId));
+      await endSessionsOf(ctx, row.userId, 'password_reset');
+      await recordSecurityEvent(ctx, { kind: 'password_changed', detail: { how: 'reset' } }, { userId: row.userId, device: null });
       await lockout.succeeded(row.email);
       return {};
     },
@@ -70,8 +76,10 @@ export function createAccount({ passwords, lockout }: Deps) {
       if (currentPassword.normalize('NFC') === newPassword.normalize('NFC')) throw sameAsOld('newPassword');
       await tx.update(users).set({ passwordHash: await passwords.hash(newPassword), passwordSetAt: new Date() })
         .where(eq(users.id, ctx.principal.userId));
-      // shortcut: sessions arrive with RAD-34, which ends the person's other sessions here and counts them.
-      return { otherSessionsEnded: 0 };
+      await recordSecurityEvent(ctx, { kind: 'password_changed', detail: { how: 'change' } },
+        { userId: ctx.principal.userId, device: null });
+      return { otherSessionsEnded: await endSessionsOf(ctx, ctx.principal.userId, 'password_changed',
+        { keep: ctx.principal.sessionId }) };
     },
   });
 }

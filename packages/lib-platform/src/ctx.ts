@@ -7,7 +7,9 @@ import type { Settings } from './settings.ts';
 
 /** Who a request or job runs as (ADR-001 §6a). Link principals arrive with M1-23. */
 export type Principal =
-  | { readonly kind: 'user'; readonly userId: string; readonly permissions: readonly string[] }
+  | { readonly kind: 'user'; readonly userId: string; readonly permissions: readonly string[];
+      /** The sign-in session the request came with (RAD-34): "this device" in the sessions list. */
+      readonly sessionId?: string }
   | { readonly kind: 'system'; readonly name: string; readonly permissions: readonly string[] };
 
 /** What send needs of a job contract (jobs.ts's JobContract has it); named here so ctx.ts imports no jobs.ts (D1). */
@@ -19,6 +21,14 @@ export type Jobs = {
   send<I>(job: QueuedJob<I>, input: I): Promise<void>;
 };
 
+/** The session cookie, on the key-exempt routes only (ADR-001 §7a): set or cleared once the transaction commits. */
+export type SessionCookie = {
+  /** The request's short user-agent summary ("Chrome on Android"), with no IP. */
+  readonly device: string;
+  set(token: string, expires: Date): void;
+  clear(): void;
+};
+
 export type Ctx = {
   readonly tx: Tx;
   readonly principal: Principal;
@@ -28,6 +38,8 @@ export type Ctx = {
   readonly settings: Settings;
   /** `ctx.jobs.send(contract, input)`: the job runs after this transaction commits, never if it rolls back. */
   readonly jobs: Jobs;
+  /** Only on sign-in and sign-out's routes (the key-exempt list), whose answer sets or clears the cookie. */
+  readonly cookie?: SessionCookie;
 };
 
 /** How audit rows and `app.principal` name a principal: `user:<id>` or `system:<name>`. */

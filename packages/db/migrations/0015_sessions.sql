@@ -44,3 +44,9 @@ GRANT SELECT ("id", "user_id", "device", "last_seen_at", "idle_expires_at", "abs
 --> statement-breakpoint
 -- RAD-24's rule for a view's migration: no writing through a view, since a simple view writes as its owner.
 REVOKE INSERT, UPDATE, DELETE ON "radcore"."v_schema_missing_triggers" FROM radcore_app;
+--> statement-breakpoint
+-- RAD-34: a session's end is a security event, one row per session ended, with why (ADR-005 §7c); its start is
+-- sign_in. Kinds are only ever added (RAD-31).
+ALTER TABLE radcore.event_log DROP CONSTRAINT ck_event_log_kind,
+  ADD CONSTRAINT ck_event_log_kind CHECK (kind IN ('sign_in', 'sign_in_failed', 'password_changed',
+    'second_factor_changed', 'export', 'download', 'session_ended'));

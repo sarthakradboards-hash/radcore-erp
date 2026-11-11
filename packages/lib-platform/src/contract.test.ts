@@ -240,8 +240,12 @@ describe('the admin contracts', () => {
       'POST /sign-in/second-factor': ['sign_in', 'sign_in_failed'],
       'POST /sign-in/second-factor/enrolment/confirm': ['second_factor_changed', 'sign_in'],
       'POST /invites/accept': ['password_changed'],
-      'POST /password-reset': ['password_changed'],
-      'POST /me/password': ['password_changed'],
+      'POST /password-reset': ['password_changed', 'session_ended'],
+      'POST /me/password': ['password_changed', 'session_ended'],
+      'POST /sign-out': ['session_ended'],
+      'DELETE /me/sessions/:id': ['session_ended'],
+      'DELETE /admin/sessions/:id': ['session_ended'],
+      'POST /admin/users/:id/sessions/end': ['session_ended'],
     });
   });
 

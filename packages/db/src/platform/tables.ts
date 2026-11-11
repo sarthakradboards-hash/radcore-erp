@@ -158,7 +158,8 @@ export const sessions = radcoreTable('sessions', {
   userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
   tokenHash: text().notNull(),
   device: boundedText({ max: 80 }).notNull(),
-  lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  // Read as PostgreSQL's own text: the session lists page on it (lib-platform's momentKey).
+  lastSeenAt: timestamp({ withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   idleExpiresAt: timestamp({ withTimezone: true }).notNull(),
   absoluteExpiresAt: timestamp({ withTimezone: true }).notNull(),
   endedAt: timestamp({ withTimezone: true }),

@@ -387,6 +387,20 @@ the server. The form shows the same rules but decides nothing.
 password change, the person's sessions) use one key, `session:read`, which every role holds. Ending the current
 session from the sessions list is refused with `current_session`: sign-out does that, because it clears the cookie.
 
+**Sessions** (M1-16, RAD-34). A session is a random token in the `__Host-radcore_session` cookie; only its SHA-256 is
+stored.
+- It signs nobody in after **30 minutes without a request or 12 hours after sign-in**, whichever comes first
+  (Sarthak, 11 Nov 2026), or once it's ended. A request moves the idle expiry on, never past the 12 hours. `GET /me`
+  doesn't count, since the shell reads it every minute.
+- It ends on sign-out; when the person ends it from their sessions list; when an admin ends it; on a password change
+  (the person's other sessions) or reset (all of them); and on a role change or deactivation (RAD-35, RAD-36).
+- A sign-in is a `sign_in` security event, and each session that ends is a `session_ended` event with the reason.
+- **Only the key-exempt routes touch the cookie.** The handler gives just those routes `ctx.cookie`, and sets or
+  clears the cookie only after the transaction commits, so a rolled-back sign-in sets nothing.
+- **A failed sign-in is still recorded.** Its service throws `RecordedRefusal`. On a key-exempt route the handler
+  commits that transaction, which holds the `sign_in_failed` event, and still answers with the refusal. Elsewhere it
+  rolls back like any error.
+
 **Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
 - It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
   new one only after a success (Design notes A-0).

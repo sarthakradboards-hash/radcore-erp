@@ -16,3 +16,11 @@ export class AppError extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
+
+/**
+ * A refusal whose transaction still commits, for its record: a failed sign-in's security event (RAD-34). The handler
+ * honours it only on the key-exempt routes, which claim no saved-once key; elsewhere it rolls back like any AppError.
+ */
+export class RecordedRefusal extends AppError {
+  override name = 'RecordedRefusal';
+}
