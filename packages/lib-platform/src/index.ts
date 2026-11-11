@@ -22,3 +22,7 @@ export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } fro
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
 export { cleanOutbox, outboxCleanup } from './outbox.ts';
 export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';
+export {
+  defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
+  type WebhookVerifier,
+} from './webhooks.ts';

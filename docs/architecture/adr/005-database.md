@@ -268,7 +268,7 @@ They are append-only with explicit reversals:
   the four who-and-when columns. Each column of an audited table is listed at `audit_attach` as `keep` (recorded) or
   `redact` (written as `[redacted]`). Secrets, hashes and all personal data are redacted, and the schema test fails on
   an unlisted column. An update that changes nothing kept or redacted writes no row. Machinery tables (`saved_once`,
-  `jobs_outbox`) get the who-and-when trigger only.
+  `jobs_outbox`, `webhook_deliveries`) get the who-and-when trigger only.
 - **The owner login** runs migrations and the partition top-up only, from CI. It never sits on the server or in the
   API or worker containers (RC-003, ADR-004 §3). A read-only login, `radcore_read`, serves the restore drill and
   support queries (RC-193).

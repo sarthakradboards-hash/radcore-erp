@@ -1,12 +1,13 @@
 // The api's HTTP server. The generic handler (M1-08) mounts its routes on this app.
 import express from 'express';
 import { createHealthCheck, type Logger, type Stoppable } from '@radcore/lib-platform/runtime';
-import type { Config } from '@radcore/lib-platform';
+import type { Config, Webhook } from '@radcore/lib-platform';
 import { mountRoutes, type HandlerDeps } from './http/handler.ts';
 import type { Route } from './http/route.ts';
+import { mountWebhooks } from './http/webhooks.ts';
 
 /** The routes and what the handler needs to run them; without it, the app serves only /health. */
-export type Api = Omit<HandlerDeps, 'log' | 'publicOrigin'> & { routes: readonly Route[] };
+export type Api = Omit<HandlerDeps, 'log' | 'publicOrigin'> & { routes: readonly Route[]; webhooks?: readonly Webhook[] };
 
 export function createApp(config: Config, log: Logger, api?: Api): express.Express {
   const app = express();
@@ -23,6 +24,8 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
     }
   });
   if (api !== undefined) {
+    // Webhooks first: their own lane, with the raw body, ahead of the browser routes' guards and JSON parser.
+    mountWebhooks(app, api.webhooks ?? [], { db: api.db, log });
     mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin,
       newPasswordCheck: api.newPasswordCheck });
   }
