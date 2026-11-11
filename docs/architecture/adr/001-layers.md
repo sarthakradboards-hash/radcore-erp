@@ -467,6 +467,21 @@ one) and records the result in its own transaction. A rolled-back invoice theref
 and a slow provider never holds a transaction open past the idle timeout. The one outside call a request makes
 itself, the breached-password check, runs in the generic handler before the transaction opens (§6, §7a).
 
+**Files through `ctx`** (RAD-43, M1-25). `ctx.files` gives a service the file store's two presigning calls,
+`presignUpload` and `downloadUrl`, and nothing else.
+- **Presigning is safe inside the transaction.** It signs locally with the store's credentials and sends nothing,
+  and the store loads its credentials when the process starts.
+- **The two calls that reach S3 run outside any transaction:** `verifyUpload` (the HEAD and the first 1 KB) and
+  `putFile`.
+  - Confirming an upload records the file as `checking` and queues a job. The job verifies the file, then records
+    `ready` or `refused` in its own transaction.
+  - An export uploads its file after its commit (ADR-002, Exports).
+  - Only a file that is `ready` can be downloaded.
+- **Ctx's members** are then `tx`, `principal`, `requestId`, `settings`, `jobs` and `files`. `ctx.files` is frozen
+  like `ctx.jobs`, and the Ctx test in `tools/module-tx.test.ts` pins the list.
+- **Each process builds its store once,** from `config.s3`, in the `api` and `worker` mains, and hands it to
+  `runInTransaction`. There's no process-wide registry, so a test passes its own store.
+
 ### 8b. Platform engines, module functions
 
 lib-platform's lists, exports, imports and approvals are engines that know no module, and lib-platform can't call
