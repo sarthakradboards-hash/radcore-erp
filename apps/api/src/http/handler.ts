@@ -9,11 +9,10 @@
 // (RAD-48), and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, describeError, originAllowed, type Principal } from '@radcore/lib-platform';
+import { AppError, claimSavedOnce, describeError, originAllowed, type Principal, type Route } from '@radcore/lib-platform';
 import { acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import type { Route } from './route.ts';
 
 type Database = Parameters<typeof runInTransaction>[0];
 

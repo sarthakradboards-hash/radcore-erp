@@ -1,5 +1,6 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
 export { principalId, type Ctx, type Principal } from './ctx.ts';
+export { defineRoute, type Route } from './route.ts';
 export { AppError } from './errors.ts';
 export { decodeCursor, encodeCursor, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';

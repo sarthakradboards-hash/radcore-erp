@@ -4,7 +4,7 @@
 // Here in tools/ because server code may not call fetch (ADR-002 L8). The tables live in a schema of this file's own.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { defineContract, newPassword } from '@radcore/lib-common';
-import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, defineRoute, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { sql } from 'drizzle-orm';
 import { integer, pgSchema, text, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
@@ -13,7 +13,6 @@ import { z } from 'zod';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import type { HandlerDeps } from '../apps/api/src/http/handler.ts';
-import { defineRoute } from '../apps/api/src/http/route.ts';
 import { moduleTx } from '../packages/db/src/module-tx.ts';
 import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
 
