@@ -88,9 +88,14 @@ const linkToken = <TName extends string>(name: TName) => radcoreTable(name, {
   tokenHash: text().notNull(),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
   usedAt: timestamp({ withTimezone: true }),
+  // The job that emailed this link (RAD-32): a job run twice finds its own row and sends nothing more.
+  jobId: uuid(),
+  // When the email went out. A link minted but never sent is spent and replaced on the job's retry.
+  sentAt: timestamp({ withTimezone: true }),
 }, (t) => [
   check(`ck_${name}_token_hash`, sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
   uniqueIndex(`ux_${name}_token_hash`).on(t.tokenHash),
+  uniqueIndex(`ux_${name}_job_id`).on(t.jobId),
   index(`ix_${name}_user_id`).on(t.userId),
 ]);
 export const invites = linkToken('invites');
@@ -144,6 +149,18 @@ export const webhookDeliveries = radcoreTable('webhook_deliveries', {
   check('ck_webhook_deliveries_body_sha256', sql`${t.bodySha256} ~ '^[0-9a-f]{64}$'`),
   // The stuck-delivery watch reads the unprocessed ones, oldest first.
   index('ix_webhook_deliveries_unprocessed').on(t.createdAt).where(isNull(t.processedAt)),
+]);
+
+/**
+ * The first admin (ADR-004 §3, RC-021): one permanent row, made by the bootstrap-admin command, so its invite is minted
+ * once ever and a later deploy can't mint another. The runtime login may add it, never change or remove it.
+ */
+export const bootstrap = radcoreTable('bootstrap', {
+  key: text().primaryKey(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_bootstrap_key', sql`${t.key} = 'first_admin'`),
+  uniqueIndex('ux_bootstrap_user_id').on(t.userId),
 ]);
 
 /**
