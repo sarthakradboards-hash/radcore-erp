@@ -54,6 +54,7 @@ it("points web at the api's dev port", () => {
   const file = tmp();
   writeDevEnv(file);
   expect(parse(file)['API_INTERNAL_URL']).toBe('http://127.0.0.1:3001');
+  expect(parse(file)['S3_FILES_ORIGIN']).toBe('http://127.0.0.1:8333');
 });
 
 // RAD-28: `npm run dev` must start under the settings check.

@@ -17,6 +17,8 @@ const settings = () => [
   // Where web reaches the api (ADR-004 §5): the browser's /api through Next's dev rewrite, and the server's /me read.
   // The api's own dev port (API_PORT, default 3001).
   'API_INTERNAL_URL=http://127.0.0.1:3001',
+  // The files bucket's origin as the browser sees it: SeaweedFS, path-style (RAD-43). web's CSP allows only this.
+  'S3_FILES_ORIGIN=http://127.0.0.1:8333',
 ];
 
 export function writeDevEnv(file = '.env'): boolean {
