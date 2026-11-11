@@ -1,7 +1,7 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
 export { principalId, type Ctx, type Files, type Principal } from './ctx.ts';
 export { AppError } from './errors.ts';
-export { decodeCursor, encodeCursor, sortedCursor, type SortKey } from './lists.ts';
+export { decodeCursor, encodeCursor, isoMoment, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
 export { defineRoute, type Route } from './route.ts';
 export { csvWriter } from './export/csv.ts';
@@ -25,6 +25,7 @@ export {
   checkUpload, fileCheck, importFileService, photoFileService, recordFileCheck, resumeFileService, statementFileService,
 } from './files/service.ts';
 export { cleanOutbox, outboxCleanup } from './outbox.ts';
+export { listSecurityEventsPage, recordSecurityEvent, type EventSubject, type SecurityEvent } from './security-events.ts';
 export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';
 export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,

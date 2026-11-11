@@ -3,7 +3,7 @@
 import { cursorString } from '@radcore/lib-common';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { AppError, decodeCursor, encodeCursor, sortedCursor } from './index.ts';
+import { AppError, decodeCursor, encodeCursor, isoMoment, momentKey, sortedCursor } from './index.ts';
 
 // ADR-002's worked example: a newest-first invoice list keyed on (invoiceDate, id).
 const InvoiceKey = z.strictObject({ invoiceDate: z.iso.date(), id: z.uuid() });
@@ -83,4 +83,23 @@ describe('the cursor of a sorted list (RAD-47)', () => {
 it('refuses to make a cursor past 512 characters, so a long sort key shows up in its own test', () => {
   expect(() => encodeCursor({ partyName: 'x'.repeat(400), id: key.id })).toThrow(/at most 512/);
   expect(encodeCursor({ partyName: 'x'.repeat(300), id: key.id }).length).toBeLessThanOrEqual(512);
+});
+
+// auditor-2 on #109: a timestamp key keeps PostgreSQL's microseconds, or the next page skips the rest of a transaction.
+describe('a timestamp sort key', () => {
+  it("is the column's own text, with all six fraction digits, and comes back the same", () => {
+    const at = '2026-11-11 08:13:23.563412+00';
+    expect(decodeCursor(z.strictObject({ at: momentKey(), id: z.uuid() }), encodeCursor({ at, id: key.id }))).toEqual({ at, id: key.id });
+    expect(momentKey().safeParse('2026-11-11 13:43:23+05:30').success).toBe(true);
+  });
+
+  it("refuses a Date's ISO string, which has lost the microseconds, when the cursor is made and when it comes back", () => {
+    expect(() => encodeCursor({ at: '2026-11-11T08:13:23.563Z', id: key.id })).toThrow(/column's own text/);
+    expect(momentKey().safeParse('2026-11-11T08:13:23.563Z').success).toBe(false);
+  });
+
+  it('turns the text into the ISO moment an answer carries', () => {
+    expect(isoMoment('2026-11-11 08:13:23.563412+00')).toBe('2026-11-11T08:13:23.563Z');
+    expect(isoMoment('2026-11-11 13:43:23+05:30')).toBe('2026-11-11T08:13:23.000Z');
+  });
 });

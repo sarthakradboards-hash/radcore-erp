@@ -18,7 +18,9 @@ const url = process.env['TEST_DATABASE_URL'];
 const config = () => loadConfig(testSettings({ DATABASE_URL: `postgres://radcore:${testPassword()}@127.0.0.1:1/radcore` }), 'api');
 const ORIGIN = config().publicOrigin;
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
-const user = (permissions: string[]): Principal => ({ kind: 'user', userId: 'u-files', permissions });
+// event_log.user_id is a uuid; the person needn't exist for the event to be kept.
+const USER_ID = randomUUID();
+const user = (permissions: string[]): Principal => ({ kind: 'user', userId: USER_ID, permissions });
 const PHOTOS = user(['photo_files:read', 'photo_files:write']);
 const LINK = 'https://files.example.test/bucket';
 
@@ -49,6 +51,8 @@ describe.skipIf(!url)('uploaded files', () => {
   }
   const row = async (id: string) => (await pool.query<{ status: string; size: number | null; kind: string }>(
     'select status, size, kind from radcore.files where id = $1', [id])).rows[0];
+  const downloads = async (fileId: string) => (await pool.query<{ kind: string; user_id: string; created_by: string }>(
+    "select kind, user_id, created_by from radcore.event_log where kind = 'download' and detail->>'fileId' = $1", [fileId])).rows;
   const queued = async (id: string) => (await pool.query<{ name: string; data: unknown; principal: string }>(
     "select name, data, principal from radcore.jobs_outbox where data->>'id' = $1", [id])).rows;
   // The worker's run of the check job: the store's check first, then its own transaction.
@@ -75,10 +79,10 @@ describe.skipIf(!url)('uploaded files', () => {
   it.each([
     ['another kind\'s write permission', ['statement_files:write'], 'POST', '/files/photo', 403],
     ['the read permission only', ['photo_files:read'], 'POST', '/files/photo', 403],
-    ['the write permission only', ['photo_files:write'], 'GET', `/files/photo/${randomUUID()}/download`, 403],
+    ['the write permission only', ['photo_files:write'], 'POST', `/files/photo/${randomUUID()}/download`, 403],
   ])('refuses a person with %s (RC-096)', async (_why, permissions, method, path, status) => {
     await serve(user(permissions), async (call) => {
-      const res = await call(method, path, method === 'POST' ? { filename: 'a.png', contentType: 'image/png' } : undefined);
+      const res = await call(method, path, { filename: 'a.png', contentType: 'image/png' });
       expect([res.status, (await res.json() as { code: string }).code]).toEqual([status, 'forbidden']);
     });
   });
@@ -96,7 +100,7 @@ describe.skipIf(!url)('uploaded files', () => {
       const first = await call('POST', `/files/photo/${body.id}/confirm`, {});
       expect([first.status, await first.json()]).toEqual([200, { status: 'checking' }]);
       expect(await row(body.id)).toMatchObject({ status: 'checking' });
-      expect(await queued(body.id)).toEqual([{ name: 'platform.file-check', principal: 'user:u-files',
+      expect(await queued(body.id)).toEqual([{ name: 'platform.file-check', principal: `user:${USER_ID}`,
         data: { id: body.id, kind: 'photo', key: expect.stringMatching(/^photo\/[0-9a-f-]{36}$/) } }]);
       const again = await call('POST', `/files/photo/${body.id}/confirm`, {});
       expect([again.status, (await again.json() as { code: string }).code]).toEqual([422, 'not_pending']);
@@ -107,14 +111,16 @@ describe.skipIf(!url)('uploaded files', () => {
     await serve(PHOTOS, async (call) => {
       const { body } = await start(call);
       await call('POST', `/files/photo/${body.id}/confirm`, {});
-      const early = await call('GET', `/files/photo/${body.id}/download`);
+      const early = await call('POST', `/files/photo/${body.id}/download`, {});
       expect([early.status, (await early.json() as { code: string }).code]).toEqual([422, 'not_ready']);
       const [job] = await queued(body.id);
       await runCheck(job?.data, async () => ({ size: 2048, contentType: 'image/png' }));
       expect(await row(body.id)).toEqual({ status: 'ready', size: 2048, kind: 'photo' });
-      const ready = await call('GET', `/files/photo/${body.id}/download`);
+      const ready = await call('POST', `/files/photo/${body.id}/download`, {});
       expect([ready.status, ready.headers.get('cache-control'), await ready.json()]).toEqual([200, 'no-store',
         { url: expect.stringMatching(/^https:\/\/files\.example\.test\/bucket\/photo\/.+\?name=bill%2012\.png$/) }]);
+      // RC-031: the link handed out is recorded once as a download by this person; the refusals before it weren't.
+      expect(await downloads(body.id)).toEqual([{ kind: 'download', user_id: USER_ID, created_by: `user:${USER_ID}` }]);
     });
   });
 
@@ -127,15 +133,16 @@ describe.skipIf(!url)('uploaded files', () => {
       expect(await row(body.id)).toMatchObject({ status: 'checking' });
       await runCheck(job?.data, async () => { throw new UploadRefused('the file doesn\'t begin the way a image/png must'); });
       expect(await row(body.id)).toEqual({ status: 'refused', size: null, kind: 'photo' });
-      const res = await call('GET', `/files/photo/${body.id}/download`);
+      const res = await call('POST', `/files/photo/${body.id}/download`, {});
       expect([res.status, (await res.json() as { code: string }).code]).toEqual([422, 'upload_refused']);
+      expect(await downloads(body.id)).toEqual([]);
     });
   });
 
   it('answers not_found for another kind\'s file, so one kind\'s permission never reaches another\'s', async () => {
     await serve(user(['photo_files:write', 'photo_files:read', 'resume_files:read']), async (call) => {
       const { body } = await start(call);
-      const res = await call('GET', `/files/resume/${body.id}/download`);
+      const res = await call('POST', `/files/resume/${body.id}/download`, {});
       expect([res.status, (await res.json() as { code: string }).code]).toEqual([404, 'not_found']);
     });
   });

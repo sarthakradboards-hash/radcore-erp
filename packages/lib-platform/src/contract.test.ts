@@ -8,8 +8,8 @@ import {
   acceptInvite, ANSWER_NOT_STORED_ROUTES, AUDIT_RANGE_MAX_DAYS, changePassword, confirmSecondFactorEnrolment, deactivateUser, endMySession,
   endSession, endUserSessions, getMe, getPermissionMatrix, inviteUser, KEY_EXEMPT_ROUTES, listAuditedTables,
   listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
-  resetPassword, requestPasswordReset, setRolePermissions, setUserRole, signIn, startSecondFactorEnrolment,
-  verifySecondFactor, importFiles, photoFiles, resumeFiles, statementFiles,
+  resetPassword, requestPasswordReset, SECURITY_EVENT_ROUTES, securityEvent, setRolePermissions, setUserRole, signIn,
+  startSecondFactorEnrolment, verifySecondFactor, importFiles, photoFiles, resumeFiles, statementFiles,
 } from './contract.ts';
 
 const me = {
@@ -220,9 +220,34 @@ describe('the admin contracts', () => {
       tableName: 'users', recordId: id, op: 'update',
       changed: { status: { old: 'active', new: 'disabled' }, phone: { old: '[redacted]', new: '[redacted]' } } };
     expect(listAuditTrail.output.parse({ items: [row], next: null })).toEqual({ items: [row], next: null });
-    const event = { id, occurredAt: at, kind: 'sign_in_failed', principal: null, device: 'Edge on Windows', detail: {} };
+    const event = { id, occurredAt: at, kind: 'sign_in_failed', principal: null, device: 'Edge on Windows',
+      detail: { reason: 'invalid_credentials' } };
     expect(listSecurityEvents.output.parse({ items: [event], next: null })).toEqual({ items: [event], next: null });
     expect(listSecurityEvents.output.safeParse({ items: [{ ...event, kind: 'password_seen' }], next: null }).success).toBe(false);
+    // Each kind's detail is references only (RAD-31): the typed email never rides along.
+    const leak = { ...event, detail: { reason: 'invalid_credentials', email: 'asha@example.com' } };
+    expect(listSecurityEvents.output.safeParse({ items: [leak], next: null }).success).toBe(false);
+    expect(securityEvent.safeParse({ kind: 'export', detail: { what: 'crm.parties', rows: 3 } }).success).toBe(true);
+    expect(securityEvent.safeParse({ kind: 'export', detail: { what: 'Parties.csv', rows: 3 } }).success).toBe(false);
+  });
+
+  it("list the routes that record security events, each a declared contract (RC-031's register, RAD-31)", () => {
+    // A kind's file contracts come in a group (photoFiles.downloadLink and the rest), so groups are opened one level.
+    const routes = new Set(Object.values(contracts).flatMap((c): unknown[] => typeof c === 'object' && !('path' in c) ? Object.values(c) : [c])
+      .filter((c): c is typeof signIn => typeof c === 'object' && c !== null && 'path' in c).map((c) => `${c.method} ${c.path}`));
+    expect(Object.keys(SECURITY_EVENT_ROUTES).filter((r) => !routes.has(r))).toEqual([]);
+    expect(SECURITY_EVENT_ROUTES).toEqual({
+      'POST /sign-in': ['sign_in', 'sign_in_failed'],
+      'POST /sign-in/second-factor': ['sign_in', 'sign_in_failed'],
+      'POST /sign-in/second-factor/enrolment/confirm': ['second_factor_changed', 'sign_in'],
+      'POST /invites/accept': ['password_changed'],
+      'POST /password-reset': ['password_changed'],
+      'POST /me/password': ['password_changed'],
+      'POST /files/photo/:id/download': ['download'],
+      'POST /files/resume/:id/download': ['download'],
+      'POST /files/statement/:id/download': ['download'],
+      'POST /files/import/:id/download': ['download'],
+    });
   });
 
   it('put path parameters in the path', () => {
@@ -240,7 +265,7 @@ describe('the file contracts (RAD-43, RC-096)', () => {
       expect([c.startUpload, c.confirmUpload, c.downloadLink].map((x) => `${x.method} ${x.path} ${x.perm} ${String(x.tx.readOnly)}`)).toEqual([
         `POST /files/${kind} ${kind}_files:write false`,
         `POST /files/${kind}/:id/confirm ${kind}_files:write false`,
-        `GET /files/${kind}/:id/download ${kind}_files:read true`,
+        `POST /files/${kind}/:id/download ${kind}_files:read false`,
       ]);
     });
 

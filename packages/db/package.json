@@ -21,6 +21,7 @@
     "./views": "./views/index.ts",
     "./schema": "./src/schema.ts",
     "./request-context": "./src/request-context.ts",
+    "./log-writers": "./src/log-writers.ts",
     "./migrate": "./src/migrate.ts"
   },
   "scripts": {

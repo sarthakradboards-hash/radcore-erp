@@ -15,6 +15,8 @@ const ALL = [`apps/**/*.${EXT}`, `packages/**/*.${EXT}`];
 const SERVER = [`packages/**/*.${EXT}`, `apps/api/**/*.${EXT}`, `apps/worker/**/*.${EXT}`];
 const VIEW_FILES = 'packages/db/views/!(index|*.test|*.d).ts';
 const REQUEST_CONTEXT = 'packages/db/src/request-context.ts';
+/** The calls to the database's log functions, record_event (RAD-31): `sql` only in its exported functions. */
+const LOG_WRITERS = 'packages/db/src/log-writers.ts';
 const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/columns.ts'];
 const DB_CLIENT = 'packages/lib-platform/src/db/client.ts';
 const OUTBOUND_CLIENT = 'packages/lib-platform/src/http/outbound.ts';
@@ -24,8 +26,8 @@ export const REQUEST_CONTEXT_HELPER = 'applyRequestContext';
 
 /** ADR-002 "Each rule's zone": the exact files where each rule is off. Pinned by tools/eslint-config.test.ts. */
 export const ZONES = {
-  'radcore/no-query-strings': [VIEW_FILES, REQUEST_CONTEXT],
-  'radcore/no-raw-execution': [REQUEST_CONTEXT, 'packages/db/src/migrate.ts'],
+  'radcore/no-query-strings': [VIEW_FILES, REQUEST_CONTEXT, LOG_WRITERS],
+  'radcore/no-raw-execution': [REQUEST_CONTEXT, LOG_WRITERS, 'packages/db/src/migrate.ts'],
   'radcore/no-driver': [DB_CLIENT, 'packages/db/src/migrate.ts'],
   'radcore/tables-in-schema': TABLE_FILES,
   'radcore/views-in-views': [VIEW_FILES],
@@ -34,7 +36,7 @@ export const ZONES = {
 /** L8's import list lifted by one module in exactly these files, with the rest of L8 still on (ADR-002). */
 export const L8_LIFTED = { [IMPORT_ISOLATE]: ['worker_threads'] };
 /** L1's SQL zone: `sql` allowed in its positions (plus `sql` on the allowlist). L1 itself is never off. */
-export const L1_SQL_ZONE = [VIEW_FILES, ...TABLE_FILES, REQUEST_CONTEXT];
+export const L1_SQL_ZONE = [VIEW_FILES, ...TABLE_FILES, REQUEST_CONTEXT, LOG_WRITERS];
 const L1_ALLOW = ['and', 'or', 'not', 'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'isNull', 'isNotNull', 'inArray', 'between',
   'like', 'ilike', 'asc', 'desc', 'count', 'countDistinct', 'sum', 'avg', 'min', 'max', 'exists'];
 /** L1's per-file allowlist additions (ADR-002), with the rest of L1 still on. */
@@ -254,6 +256,7 @@ export default tseslint.config(
   { files: ALL, rules: on('radcore/no-sql') },
   { files: L1_SQL_ZONE, rules: on('radcore/no-sql', L1_ZONE) },
   { files: [REQUEST_CONTEXT], rules: on('radcore/no-sql', { ...L1_ZONE, helper: REQUEST_CONTEXT_HELPER }) },
+  { files: [LOG_WRITERS], rules: on('radcore/no-sql', { ...L1_ZONE, exportedFunctions: true }) },
   ...Object.entries(L1_EXTRA_NAMES).map(([file, names]) =>
     ({ files: [file], rules: on('radcore/no-sql', { allowNames: [...L1_ALLOW, ...names] }) })),
   // Within L1's own scope only (apps/ and packages/): tools/ is repo tooling, not server code.

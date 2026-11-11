@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import type { BeforeJob, JobContract, JobMeta } from '../jobs.ts';
+import { recordSecurityEvent } from '../security-events.ts';
 import { FILE_KINDS, type FileKind } from './kinds.ts';
 import { UploadRefused } from './store.ts';
 
@@ -72,8 +73,9 @@ const fileServices = (kind: FileKind) => Object.freeze({
       throw new AppError('upload_refused', 'This file didn\'t pass its check (size, type or content). Upload it again');
     }
     if (row.status !== 'ready') throw new AppError('not_ready', 'This file is still being checked. Try again in a moment');
-    // shortcut: no security event for the download yet (RC-031); it's recorded here once RAD-31's recordSecurityEvent
-    // is on dev, and this route's transaction becomes a write.
+    // Every link handed out is a download (RC-031): the event commits with this answer, or neither does.
+    await recordSecurityEvent(ctx, { kind: 'download', detail: { fileId: id } },
+      { userId: ctx.principal.kind === 'user' ? ctx.principal.userId : null, device: null });
     return { url: await ctx.files.downloadUrl(row.key, row.filename) };
   },
 });

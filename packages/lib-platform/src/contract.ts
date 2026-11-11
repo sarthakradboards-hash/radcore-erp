@@ -286,17 +286,56 @@ export const listAuditedTables = defineContract({
   input: z.object({}), output: z.object({ tables: z.array(z.string()) }),
 });
 
-const securityEventKind = z.enum(['sign_in', 'sign_in_failed', 'password_changed', 'second_factor_changed', 'export', 'download']);
+/** The security events (RAD-31, RC-031). A new kind is a migration too: event_log's CHECK lists them. Kinds, and the
+ * values of each detail's enums, are only ever added: the list parses every stored row with these schemas, so one
+ * removed or renamed would fail the old pages that hold it (auditor-2 on #109). */
+export const SECURITY_EVENT_KINDS = ['sign_in', 'sign_in_failed', 'password_changed', 'second_factor_changed', 'export',
+  'download'] as const;
+const securityEventKind = z.enum(SECURITY_EVENT_KINDS);
+// Each kind's detail: references only, never a typed email, password, code or token (M6-16; the architect on RAD-31).
+// Each detail is strict, so nothing else can ride along, on the way in (recordSecurityEvent) or out (the list).
+const eventUnion = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('sign_in'), detail: z.strictObject({}) }),
+  z.object({ kind: z.literal('sign_in_failed'), detail: z.strictObject({
+    reason: z.enum(['invalid_credentials', 'second_factor', 'account_locked', 'rate_limited']) }) }),
+  z.object({ kind: z.literal('password_changed'), detail: z.strictObject({ how: z.enum(['change', 'reset', 'invite']) }) }),
+  z.object({ kind: z.literal('second_factor_changed'), detail: z.strictObject({
+    change: z.enum(['enrolled', 'removed', 'recovery_codes']) }) }),
+  z.object({ kind: z.literal('export'), detail: z.strictObject({
+    what: z.string().regex(/^[a-z][a-z0-9_.-]{0,62}$/, 'A list name, such as sales.invoices'),
+    rows: z.number().int().nonnegative() }) }),
+  z.object({ kind: z.literal('download'), detail: z.strictObject({ fileId: idString() }) }),
+]);
+/** One security event as recorded: its kind and that kind's detail. Typed plainly, so lint's D7 walk stays small. */
+export const securityEvent: z.ZodType<z.output<typeof eventUnion>, z.input<typeof eventUnion>> = eventUnion;
+
+/**
+ * The routes that record security events, and which (RC-031's register, RAD-31). Each route's own ticket proves in
+ * its test that it writes them: RAD-32 sign-in and passwords, RAD-33 the second factor. Exports and downloads join
+ * when they're declared (RAD-47 part 2, RAD-43 part 2).
+ */
+export const SECURITY_EVENT_ROUTES = {
+  'POST /sign-in': ['sign_in', 'sign_in_failed'],
+  'POST /sign-in/second-factor': ['sign_in', 'sign_in_failed'],
+  'POST /sign-in/second-factor/enrolment/confirm': ['second_factor_changed', 'sign_in'],
+  'POST /invites/accept': ['password_changed'],
+  'POST /password-reset': ['password_changed'],
+  'POST /me/password': ['password_changed'],
+  'POST /files/photo/:id/download': ['download'],
+  'POST /files/resume/:id/download': ['download'],
+  'POST /files/statement/:id/download': ['download'],
+  'POST /files/import/:id/download': ['download'],
+} as const satisfies Record<string, readonly (typeof SECURITY_EVENT_KINDS)[number][]>;
+
 /** Security events (RAD-31's event_log), newest first on (occurred_at desc, seq desc), the audit viewer's second tab.
  * `principal` is the account the event concerns; with none, the system principal that acted (a job's export);
- * otherwise null, such as a failed sign-in that matched nobody. `detail` never holds a password, code or token. */
+ * otherwise null, such as a failed sign-in that matched nobody. */
 export const listSecurityEvents = defineContract({
   method: 'GET', path: '/admin/security-events', auth: 'session', perm: 'audit:read', tx: read,
   input: listInput(z.object({ occurred: auditRange(), kind: securityEventKind.optional(), principal: idString().optional() })),
   output: listOf(z.object({
-    id: idString(), occurredAt: momentString(), kind: securityEventKind, principal: principalOut.nullable(),
-    device: z.string().max(80), detail: z.record(z.string(), z.json()),
-  })),
+    id: idString(), occurredAt: momentString(), principal: principalOut.nullable(), device: z.string().max(80),
+  }).and(securityEvent)),
   errors: ['range_too_long'],
 });
 
@@ -306,7 +345,7 @@ export const listSecurityEvents = defineContract({
  * 1. startUpload: a 5-minute presigned POST for one file of an allowed type, and the file's id (status `pending`);
  * 2. the browser POSTs the file to `url` with `fields`;
  * 3. confirmUpload: the file is `checking` while a job checks its size, type and first bytes in S3;
- * 4. downloadLink: a 60-second link, for a `ready` file only. A file still checking answers `not_ready`; one the
+ * 4. downloadLink: a 60-second link, for a `ready` file only, recorded as a `download` security event. A file still checking answers `not_ready`; one the
  *    check refused answers `upload_refused`.
  * Every answer is `Cache-Control: no-store` (the handler's), and so is the download itself (the link's).
  */
@@ -327,8 +366,10 @@ const fileContracts = <K extends FileKind>(kind: K) => {
       method: 'POST', path: `/files/${kind}/:id/confirm`, auth: 'session', perm: `${kind}_files:write`, tx: write,
       input: params, output: z.object({ status: z.literal('checking') }), errors: ['not_pending'],
     }),
+    // A POST in a write transaction: each link records a `download` security event (RC-031), which a read-only
+    // transaction can't write. The browser sends a new Idempotency-Key per click.
     downloadLink: defineContract({
-      method: 'GET', path: `/files/${kind}/:id/download`, auth: 'session', perm: `${kind}_files:read`, tx: read,
+      method: 'POST', path: `/files/${kind}/:id/download`, auth: 'session', perm: `${kind}_files:read`, tx: write,
       input: params, output: z.object({ url: z.url() }), errors: ['not_ready', 'upload_refused'],
     }),
   });
