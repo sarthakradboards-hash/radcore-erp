@@ -7,7 +7,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { normaliseEmail } from '@radcore/lib-common';
 import { passwordResets, platformTx, users } from '@radcore/db/platform';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from '../ctx.ts';
 import { defineJob, type JobContract, type JobDefinition } from '../jobs.ts';
@@ -44,11 +44,15 @@ export function passwordResetEmailJob({ mailer, publicOrigin }: { mailer: Mailer
     if (earlier !== undefined) {
       await tx.update(passwordResets).set({ usedAt: new Date(), jobId: null }).where(eq(passwordResets.id, earlier.id));
     }
+    // The person's row is locked, so reset jobs for one address take turns at the window below.
     const [user] = await tx.select({ id: users.id, email: users.email }).from(users)
-      .where(and(eq(users.emailKey, normaliseEmail(email)), eq(users.status, 'active'))).limit(1);
+      .where(and(eq(users.emailKey, normaliseEmail(email)), eq(users.status, 'active'))).limit(1).for('update');
     if (user === undefined) return null;
+    // Recent: a link sent in the window, or one minted in it and not yet sent or spent (another job is mailing it).
     const [recent] = await tx.select({ id: passwordResets.id }).from(passwordResets)
-      .where(and(eq(passwordResets.userId, user.id), gt(passwordResets.sentAt, secondsFromNow(-WINDOW_SECONDS)))).limit(1);
+      .where(and(eq(passwordResets.userId, user.id), or(gt(passwordResets.sentAt, secondsFromNow(-WINDOW_SECONDS)),
+        and(isNull(passwordResets.sentAt), isNull(passwordResets.usedAt), isNotNull(passwordResets.jobId),
+          gt(passwordResets.createdAt, secondsFromNow(-WINDOW_SECONDS)))))).limit(1);
     if (recent !== undefined) return null;
     const token = randomBytes(32).toString('base64url');
     await tx.insert(passwordResets).values({ userId: user.id, tokenHash: sha256(token), expiresAt: secondsFromNow(LINK_SECONDS), jobId });

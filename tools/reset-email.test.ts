@@ -98,6 +98,13 @@ describe.skipIf(!url)('the password-reset email job', () => {
     expect(await s.rows()).toHaveLength(1);
   });
 
+  // The auditor's SHOULD on #111: jobs for one address at the same moment can't all pass the window.
+  it('sends one email when several reset jobs for one address run at once', async () => {
+    const s = await setup();
+    await Promise.all([s.run(randomUUID()), s.run(randomUUID()), s.run(randomUUID())]);
+    expect(s.sent).toHaveLength(1);
+  });
+
   it('after a failed send, spends the unsent link and mails a fresh one when the job is retried', async () => {
     const s = await setup(true);
     const id = randomUUID();
