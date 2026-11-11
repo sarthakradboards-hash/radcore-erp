@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch src/main.ts",
+    "bootstrap-admin": "node --env-file-if-exists=../../.env src/bootstrap-admin.ts",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

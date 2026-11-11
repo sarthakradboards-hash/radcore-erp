@@ -1,0 +1,1512 @@
+{
+  "id": "91076133-47d8-4d0a-bb44-90dc30b7fb94",
+  "prevId": "c74a9b43-e028-4860-80ec-565d9a349521",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "radcore.bootstrap": {
+      "name": "bootstrap",
+      "schema": "radcore",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_bootstrap_user_id": {
+          "name": "ux_bootstrap_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bootstrap_user_id_users_id_fk": {
+          "name": "bootstrap_user_id_users_id_fk",
+          "tableFrom": "bootstrap",
+          "tableTo": "users",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_bootstrap_key": {
+          "name": "ck_bootstrap_key",
+          "value": "\"radcore\".\"bootstrap\".\"key\" = 'first_admin'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.files": {
+      "name": "files",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "store_key": {
+          "name": "store_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_files_store_key": {
+          "name": "ux_files_store_key",
+          "columns": [
+            {
+              "expression": "store_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_files_filename": {
+          "name": "ck_files_filename",
+          "value": "char_length(\"radcore\".\"files\".\"filename\") <= 255"
+        },
+        "ck_files_kind": {
+          "name": "ck_files_kind",
+          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import')"
+        },
+        "ck_files_status": {
+          "name": "ck_files_status",
+          "value": "\"radcore\".\"files\".\"status\" in ('pending', 'checking', 'ready', 'refused')"
+        },
+        "ck_files_store_key": {
+          "name": "ck_files_store_key",
+          "value": "\"radcore\".\"files\".\"store_key\" ~ ('^' || \"radcore\".\"files\".\"kind\" || '/[0-9a-f-]{36}$')"
+        },
+        "ck_files_size": {
+          "name": "ck_files_size",
+          "value": "(\"radcore\".\"files\".\"status\" <> 'ready' or \"radcore\".\"files\".\"size\" is not null) and (\"radcore\".\"files\".\"size\" is null or \"radcore\".\"files\".\"size\" > 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.invites": {
+      "name": "invites",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_invites_token_hash": {
+          "name": "ux_invites_token_hash",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ux_invites_job_id": {
+          "name": "ux_invites_job_id",
+          "columns": [
+            {
+              "expression": "job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_invites_user_id": {
+          "name": "ix_invites_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "invites_user_id_users_id_fk": {
+          "name": "invites_user_id_users_id_fk",
+          "tableFrom": "invites",
+          "tableTo": "users",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_invites_token_hash": {
+          "name": "ck_invites_token_hash",
+          "value": "\"radcore\".\"invites\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.jobs_outbox": {
+      "name": "jobs_outbox",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data": {
+          "name": "data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal": {
+          "name": "principal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "dead_at": {
+          "name": "dead_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_jobs_outbox_due": {
+          "name": "ix_jobs_outbox_due",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"radcore\".\"jobs_outbox\".\"dead_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_jobs_outbox_name": {
+          "name": "ck_jobs_outbox_name",
+          "value": "\"radcore\".\"jobs_outbox\".\"name\" ~ '^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$'"
+        },
+        "ck_jobs_outbox_attempts": {
+          "name": "ck_jobs_outbox_attempts",
+          "value": "\"radcore\".\"jobs_outbox\".\"attempts\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.password_resets": {
+      "name": "password_resets",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_password_resets_token_hash": {
+          "name": "ux_password_resets_token_hash",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ux_password_resets_job_id": {
+          "name": "ux_password_resets_job_id",
+          "columns": [
+            {
+              "expression": "job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_password_resets_user_id": {
+          "name": "ix_password_resets_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "password_resets_user_id_users_id_fk": {
+          "name": "password_resets_user_id_users_id_fk",
+          "tableFrom": "password_resets",
+          "tableTo": "users",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_password_resets_token_hash": {
+          "name": "ck_password_resets_token_hash",
+          "value": "\"radcore\".\"password_resets\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.saved_once": {
+      "name": "saved_once",
+      "schema": "radcore",
+      "columns": {
+        "principal": {
+          "name": "principal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route": {
+          "name": "route",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_hash": {
+          "name": "input_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "answer": {
+          "name": "answer",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kept": {
+          "name": "kept",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_saved_once_expires_at": {
+          "name": "ix_saved_once_expires_at",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "pk_saved_once": {
+          "name": "pk_saved_once",
+          "columns": [
+            "principal",
+            "route",
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_saved_once_input_hash": {
+          "name": "ck_saved_once_input_hash",
+          "value": "\"radcore\".\"saved_once\".\"input_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.secrets": {
+      "name": "secrets",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ciphertext": {
+          "name": "ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_secrets_expires_at": {
+          "name": "ix_secrets_expires_at",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"radcore\".\"secrets\".\"expires_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_secrets_name": {
+          "name": "ck_secrets_name",
+          "value": "\"radcore\".\"secrets\".\"name\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.sessions": {
+      "name": "sessions",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device": {
+          "name": "device",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "idle_expires_at": {
+          "name": "idle_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "absolute_expires_at": {
+          "name": "absolute_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ended_reason": {
+          "name": "ended_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_sessions_token_hash": {
+          "name": "ux_sessions_token_hash",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_sessions_user_id": {
+          "name": "ix_sessions_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_sessions_device": {
+          "name": "ck_sessions_device",
+          "value": "char_length(\"radcore\".\"sessions\".\"device\") <= 80"
+        },
+        "ck_sessions_token_hash": {
+          "name": "ck_sessions_token_hash",
+          "value": "\"radcore\".\"sessions\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "ck_sessions_ended_reason": {
+          "name": "ck_sessions_ended_reason",
+          "value": "\"radcore\".\"sessions\".\"ended_reason\" in ('sign_out', 'admin', 'password_changed', 'password_reset', 'role_changed', 'deactivated')"
+        },
+        "ck_sessions_ended": {
+          "name": "ck_sessions_ended",
+          "value": "(\"radcore\".\"sessions\".\"ended_at\" is null) = (\"radcore\".\"sessions\".\"ended_reason\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.settings": {
+      "name": "settings",
+      "schema": "radcore",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_settings_key": {
+          "name": "ck_settings_key",
+          "value": "\"radcore\".\"settings\".\"key\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.users": {
+      "name": "users",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_key": {
+          "name": "email_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "lower(btrim(email))",
+            "type": "stored"
+          }
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_set_at": {
+          "name": "password_set_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'invited'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_users_email_key": {
+          "name": "ux_users_email_key",
+          "columns": [
+            {
+              "expression": "email_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_users_email": {
+          "name": "ck_users_email",
+          "value": "char_length(\"radcore\".\"users\".\"email\") <= 254"
+        },
+        "ck_users_display_name": {
+          "name": "ck_users_display_name",
+          "value": "char_length(\"radcore\".\"users\".\"display_name\") <= 120"
+        },
+        "ck_users_status": {
+          "name": "ck_users_status",
+          "value": "\"radcore\".\"users\".\"status\" in ('invited', 'active', 'disabled')"
+        },
+        "ck_users_password": {
+          "name": "ck_users_password",
+          "value": "(\"radcore\".\"users\".\"status\" = 'invited') = (\"radcore\".\"users\".\"password_hash\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.webhook_deliveries": {
+      "name": "webhook_deliveries",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body_sha256": {
+          "name": "body_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_webhook_deliveries_source_delivery_id": {
+          "name": "ux_webhook_deliveries_source_delivery_id",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "delivery_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ux_webhook_deliveries_source_body_sha256": {
+          "name": "ux_webhook_deliveries_source_body_sha256",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "body_sha256",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_webhook_deliveries_unprocessed": {
+          "name": "ix_webhook_deliveries_unprocessed",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"radcore\".\"webhook_deliveries\".\"processed_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_webhook_deliveries_body_sha256": {
+          "name": "ck_webhook_deliveries_body_sha256",
+          "value": "\"radcore\".\"webhook_deliveries\".\"body_sha256\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "radcore": "radcore"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {
+    "radcore.v_schema_audit_columns": {
+      "columns": {
+        "tableName": {
+          "name": "tableName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "columnName": {
+          "name": "columnName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "problem": {
+          "name": "problem",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "with audited as (\n    select c.oid, c.relname,\n      string_to_array(split_part(encode(g.tgargs, 'escape'), '\\000',1), ',') as keys,\n      string_to_array(nullif(split_part(encode(g.tgargs, 'escape'), '\\000',2), ''), ',') as keep,\n      string_to_array(nullif(split_part(encode(g.tgargs, 'escape'), '\\000',3), ''), ',') as redact\n    from pg_catalog.pg_trigger g\n    join pg_catalog.pg_class c on c.oid = g.tgrelid\n    join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n    where g.tgname = 'audit_row' and not g.tgisinternal and n.nspname = 'radcore'\n  ), columns as (\n    select t.relname, a.attname,\n      a.attname = any (coalesce(t.keep, '{}')) as kept, a.attname = any (coalesce(t.redact, '{}')) as redacted,\n      a.attname ~ '(hash|secret|token|ciphertext|password)' and a.atttypid not in ('timestamptz'::regtype,\n        'timestamp'::regtype, 'date'::regtype, 'bool'::regtype, 'int4'::regtype, 'int8'::regtype, 'numeric'::regtype) as secret_like,\n      a.attname = any (t.keys || array['created_at', 'created_by', 'updated_at', 'updated_by']) as exempt\n    from audited t\n    join pg_catalog.pg_attribute a on a.attrelid = t.oid and a.attnum > 0 and not a.attisdropped\n  )\n  select relname::text as table_name, attname::text as column_name, 'unlisted' as problem from columns\n    where not exempt and not kept and not redacted\n  union all\n  select relname::text, attname::text, 'kept and redacted' from columns where kept and redacted\n  union all\n  select relname::text, attname::text, 'a secret not redacted' from columns\n    where secret_like and not redacted",
+      "name": "v_schema_audit_columns",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
+    "radcore.v_schema_enums": {
+      "columns": {
+        "schemaName": {
+          "name": "schemaName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "typeName": {
+          "name": "typeName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select n.nspname::text as schema_name, t.typname::text as type_name\n  from pg_catalog.pg_type t\n  join pg_catalog.pg_namespace n on n.oid = t.typnamespace\n  where t.typtype = 'e'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'",
+      "name": "v_schema_enums",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
+    "radcore.v_schema_fk_without_index": {
+      "columns": {
+        "schemaName": {
+          "name": "schemaName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tableName": {
+          "name": "tableName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "constraintName": {
+          "name": "constraintName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, k.conname::text as constraint_name\n  from pg_catalog.pg_constraint k\n  join pg_catalog.pg_class c on c.oid = k.conrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where k.contype = 'f'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_index i\n      where i.indrelid = k.conrelid\n        and array_to_string((i.indkey::int2[])[0:cardinality(k.conkey) - 1], ',') = array_to_string(k.conkey, ','))",
+      "name": "v_schema_fk_without_index",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
+    "radcore.v_schema_missing_audit": {
+      "columns": {
+        "schemaName": {
+          "name": "schemaName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tableName": {
+          "name": "tableName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and (select count(*) from pg_catalog.pg_attribute a\n      where a.attrelid = c.oid and not a.attisdropped\n        and a.attname in ('created_at', 'created_by', 'updated_at', 'updated_by')) < 4",
+      "name": "v_schema_missing_audit",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
+    "radcore.v_schema_missing_triggers": {
+      "columns": {
+        "schemaName": {
+          "name": "schemaName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tableName": {
+          "name": "tableName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "missing": {
+          "name": "missing",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')\n    and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore'\n      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
+      "name": "v_schema_missing_triggers",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
+    "radcore.v_schema_numeric_without_check": {
+      "columns": {
+        "schemaName": {
+          "name": "schemaName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tableName": {
+          "name": "tableName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "columnName": {
+          "name": "columnName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, a.attname::text as column_name\n  from pg_catalog.pg_attribute a\n  join pg_catalog.pg_class c on c.oid = a.attrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition and a.attnum > 0 and not a.attisdropped\n    and a.atttypid = 'pg_catalog.numeric'::pg_catalog.regtype\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_constraint k\n      where k.conrelid = c.oid and k.contype = 'c' and k.conname = 'ck_' || c.relname || '_' || a.attname)",
+      "name": "v_schema_numeric_without_check",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
+    "radcore.v_schema_public_relations": {
+      "columns": {
+        "schemaName": {
+          "name": "schemaName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tableName": {
+          "name": "tableName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p', 'v', 'm') and n.nspname = 'public'",
+      "name": "v_schema_public_relations",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    }
+  },
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

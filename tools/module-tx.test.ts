@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // The owner login: this file makes a schema and tables of its own (RAD-24).
 const url = process.env['TEST_DATABASE_OWNER_URL'];
-const fixture = pgSchema(`mtx_${randomBytes(6).toString('hex')}`);
+const fixture = pgSchema(`test_mtx_${randomBytes(6).toString('hex')}`);
 const own = fixture.table('own_items', { id: uuid().primaryKey().defaultRandom(), n: integer().notNull() });
 const other = fixture.table('other_items', { id: uuid().primaryKey().defaultRandom(), n: integer().notNull() });
 const ownTx = moduleTx({ own });
@@ -175,7 +175,7 @@ describe.skipIf(!url)('the module transaction', () => {
   it('runs a service with a frozen Ctx of its five members, as the named principal', async () => {
     const principal = { kind: 'user', userId: 'u-1', permissions: ['sales:read'] } as const;
     const rows = await runInTransaction(db, read, principal, 'req-9', async (ctx) => {
-      expect([Object.isFrozen(ctx), Object.keys(ctx).sort()]).toEqual([true, ['jobs', 'principal', 'requestId', 'settings', 'tx']]);
+      expect([Object.isFrozen(ctx), Object.keys(ctx).sort()]).toEqual([true, ['files', 'jobs', 'principal', 'requestId', 'settings', 'tx']]);
       // RAD-44: ctx.jobs is frozen too, so a service can't swap its send for one outside the transaction.
       expect([Object.isFrozen(ctx.jobs), Object.keys(ctx.jobs)]).toEqual([true, ['send']]);
       return ownTx(ctx).select({ p: sql<string>`current_setting('app.principal')`, r: sql<string>`current_setting('app.request_id')` })

@@ -1,7 +1,7 @@
 // RC-082: every job has retries, a timeout, an optional overlap guard and a dead-letter queue, declared as data.
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import type { Principal } from './ctx.ts';
+import type { Ctx, Principal } from './ctx.ts';
 import { defineJob, JobRefused, queueSettings, type JobContract, type OpenJob } from './jobs.ts';
 
 const contract = (over: Partial<JobContract<{ n: number }>> = {}): JobContract<{ n: number }> => ({
@@ -80,10 +80,68 @@ describe('defineJob', () => {
     expect(opened).toEqual([]);
   });
 
+  // RAD-32: a job that calls out (an email) must do it outside its transaction (ADR-001 §8), then record the result.
+  it('runs an after-commit step with the service result, outside the transaction, which may open one more', async () => {
+    const steps: string[] = [];
+    const open: OpenJob = async (_principal, jobId, work) => {
+      steps.push(`open ${jobId}`);
+      await work({} as Ctx);
+      steps.push('commit');
+    };
+    const job = defineJob({ name: 'test.mail', principal: { kind: 'system', name: 'mail', permissions: [] }, input: z.object({ n: z.number() }) },
+      async (_ctx, input) => {
+        steps.push('service');
+        return `item ${input.n}`;
+      },
+      { afterCommit: async (result, again) => {
+        steps.push(`after ${result}`);
+        await again(async () => {
+          steps.push('second');
+        });
+      } });
+    await job.handle({ input: { n: 2 }, by: 'system:x' }, 'job-9', { open, load: nobody, alert: async () => undefined });
+    expect(steps).toEqual(['open job-9', 'service', 'commit', 'after item 2', 'open job-9', 'second', 'commit']);
+  });
+
   it('refuses a scheduled job that would run as a user', () => {
     expect(() => defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' }, every: '* * * * *' }),
       async () => undefined)).toThrow(/scheduled job must declare a system principal/);
   });
+  it('runs its `before` step outside the transaction, first, and hands its result to the service (ADR-001 §8)', async () => {
+    const steps: string[] = [];
+    const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), putFile: vi.fn() };
+    const open: OpenJob = async (_principal, _jobId, work) => {
+      steps.push('open');
+      // The service's ctx isn't read here; the real one is proved on PostgreSQL (tools/files.test.ts).
+      await work(Object.freeze({}) as Parameters<typeof work>[0]);
+    };
+    const service = vi.fn(async (_ctx: unknown, _input: { n: number }, meta: { before: string }) => { steps.push(`service ${meta.before}`); });
+    const before = vi.fn(async ({ n }: { n: number }, outside: { files: unknown }) => {
+      steps.push('before');
+      expect(outside.files).toBe(files);
+      return `checked ${n}`;
+    });
+    await defineJob(contract(), service, { before }).handle({ input: { n: 3 }, by: 'system:x' }, 'job-7', { open, load: nobody, alert, files });
+    expect(steps).toEqual(['before', 'open', 'service checked 3']);
+  });
+
+  it('rechecks the enqueuer before the `before` step, so a revoked permission reaches no network (§6a, §8)', async () => {
+    const { open, opened } = opener();
+    const before = vi.fn(async () => 'x');
+    const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), putFile: vi.fn() };
+    await expect(defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' } }), async () => undefined, { before })
+      .handle({ input: { n: 1 }, by: 'user:u-1' }, 'job-9', { open, load: async () => asUser([]), alert, files }))
+      .rejects.toThrow(JobRefused);
+    expect([before.mock.calls, opened]).toEqual([[], []]);
+  });
+
+  it('refuses a job with a `before` step in a worker without a file store, before any transaction', async () => {
+    const { open, opened } = opener();
+    await expect(defineJob(contract(), async () => undefined, { before: async () => 'x' })
+      .handle({ input: { n: 1 }, by: 'system:x' }, 'job-8', { open, load: nobody, alert })).rejects.toThrow(/no file store/);
+    expect(opened).toEqual([]);
+  });
+
   it('carries the schedule and delete-on-complete for the worker', () => {
     const job = defineJob(contract({ every: '* * * * *', deleteOnComplete: true }), async () => undefined);
     expect(job).toMatchObject({ name: 'sales.shopify-order', every: '* * * * *', deleteOnComplete: true });

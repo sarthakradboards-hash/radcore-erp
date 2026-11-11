@@ -1,18 +1,19 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
-export { principalId, type Ctx, type Principal, type SessionCookie } from './ctx.ts';
-export { defineRoute, type Route } from './route.ts';
+export { principalId, type Ctx, type Files, type Principal, type SessionCookie } from './ctx.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export {
   deviceOf, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, endSessionsOf, getMyself, listAllSessions,
   listOwnSessions, sessionCookieFor, signInService, type EndedReason, type SessionCookieKind,
 } from './auth/sessions.ts';
+export { requestPasswordReset } from './auth/reset-email.ts';
 export { decodeCursor, encodeCursor, isoMoment, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
+export { defineRoute, type Route } from './route.ts';
 export { csvWriter } from './export/csv.ts';
 export { amountCell, checkRows, dateCell, parseAmountCell, parseDateCell, type ImportResult, type RowError } from './import/cells.ts';
 export { collectUpload, decodeText, IMPORT_LIMITS, ImportFileError, sniffDelimiter, type Table } from './import/read.ts';
 export { ISOLATE_LIMITS, readTable } from './import/isolate.ts';
-export { defineJob, type JobContract, type JobDefinition, type JobMeta, type JobPrincipal } from './jobs.ts';
+export { defineJob, type BeforeJob, type JobContract, type JobDefinition, type JobMeta, type JobPrincipal } from './jobs.ts';
 export {
   createOutbound, isGlobalUnicast, OutboundRefused, type Outbound, type OutboundInit, type OutboundOptions, type OutboundResponse,
   type Transport,
@@ -25,6 +26,9 @@ export { defineSetting, settingRow, Settings, type SettingDef, type SettingRow }
 export { claimSavedOnce, cleanSavedOnce, SAVED_ONCE_KEEP_MS, savedOnceCleanup, type SavedOnce, type SavedOnceClaim, type SavedOnceClass } from './saved-once.ts';
 export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './files/kinds.ts';
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
+export {
+  checkUpload, fileCheck, importFileService, photoFileService, recordFileCheck, resumeFileService, statementFileService,
+} from './files/service.ts';
 export { cleanOutbox, outboxCleanup } from './outbox.ts';
 export { listSecurityEventsPage, recordSecurityEvent, type EventSubject, type SecurityEvent } from './security-events.ts';
 export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';

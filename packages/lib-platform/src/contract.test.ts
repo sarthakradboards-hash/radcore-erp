@@ -9,7 +9,7 @@ import {
   endSession, endUserSessions, getMe, getPermissionMatrix, inviteUser, KEY_EXEMPT_ROUTES, listAuditedTables,
   listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
   resetPassword, requestPasswordReset, SECURITY_EVENT_ROUTES, securityEvent, setRolePermissions, setUserRole, signIn,
-  startSecondFactorEnrolment, verifySecondFactor,
+  startSecondFactorEnrolment, verifySecondFactor, importFiles, photoFiles, resumeFiles, statementFiles,
 } from './contract.ts';
 
 const me = {
@@ -51,17 +51,19 @@ describe('getMe', () => {
 
 // RAD-32, RAD-33 and RAD-34's own-account routes, to ui's shapes on RAD-32 with the architect's answers there.
 describe('the sign-in and own-session contracts', () => {
-  const declared = Object.values(contracts).filter((c): c is typeof signIn => typeof c === 'object' && 'path' in c);
+  // A kind's file contracts come in a group (photoFiles.downloadLink and the rest), so groups are opened one level.
+  const declared = Object.values(contracts).flatMap((c): unknown[] => typeof c === 'object' && !('path' in c) ? Object.values(c) : [c])
+    .filter((c): c is typeof signIn => typeof c === 'object' && c !== null && 'path' in c);
   const route = (c: { method: string; path: string }) => `${c.method} ${c.path}`;
 
   it("lists exactly the routes that declare each saved-once flag (ADR-001 §7a's fixed lists)", () => {
     expect(declared.filter((c) => c.idempotency === 'exempt').map(route).sort()).toEqual([...KEY_EXEMPT_ROUTES].sort());
-    expect(declared.filter((c) => c.storesAnswer === false).map(route)).toEqual([...ANSWER_NOT_STORED_ROUTES]);
+    expect(declared.filter((c) => c.storesAnswer === false).map(route).sort()).toEqual([...ANSWER_NOT_STORED_ROUTES].sort());
     expect(KEY_EXEMPT_ROUTES).toHaveLength(4);
   });
 
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
-    expect(declared.filter((c) => c.auth === 'session' && !c.path.startsWith('/admin/')).map((c) => [route(c), c.perm])).toEqual([
+    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['GET /me/sessions', 'session:read'], ['DELETE /me/sessions/:id', 'session:read']]);
   });
@@ -232,8 +234,9 @@ describe('the admin contracts', () => {
   });
 
   it("list the routes that record security events, each a declared contract (RC-031's register, RAD-31)", () => {
-    const routes = new Set(Object.values(contracts).filter((c): c is typeof signIn => typeof c === 'object' && 'path' in c)
-      .map((c) => `${c.method} ${c.path}`));
+    // A kind's file contracts come in a group (photoFiles.downloadLink and the rest), so groups are opened one level.
+    const routes = new Set(Object.values(contracts).flatMap((c): unknown[] => typeof c === 'object' && !('path' in c) ? Object.values(c) : [c])
+      .filter((c): c is typeof signIn => typeof c === 'object' && c !== null && 'path' in c).map((c) => `${c.method} ${c.path}`));
     expect(Object.keys(SECURITY_EVENT_ROUTES).filter((r) => !routes.has(r))).toEqual([]);
     expect(SECURITY_EVENT_ROUTES).toEqual({
       'POST /sign-in': ['sign_in', 'sign_in_failed'],
@@ -246,6 +249,10 @@ describe('the admin contracts', () => {
       'DELETE /me/sessions/:id': ['session_ended'],
       'DELETE /admin/sessions/:id': ['session_ended'],
       'POST /admin/users/:id/sessions/end': ['session_ended'],
+      'POST /files/photo/:id/download': ['download'],
+      'POST /files/resume/:id/download': ['download'],
+      'POST /files/statement/:id/download': ['download'],
+      'POST /files/import/:id/download': ['download'],
     });
   });
 
@@ -255,5 +262,28 @@ describe('the admin contracts', () => {
     expect(requestFor(endSession, { id })).toEqual({ method: 'DELETE', path: `/admin/sessions/${id}`, body: undefined });
     expect([listRoles, getPermissionMatrix, listAuditedTables].map((c) => requestFor(c, {}).path))
       .toEqual(['/admin/roles', '/admin/permissions', '/admin/audit/tables']);
+  });
+});
+
+describe('the file contracts (RAD-43, RC-096)', () => {
+  it.each([['photo', photoFiles], ['resume', resumeFiles], ['statement', statementFiles], ['import', importFiles]] as const)(
+    'gives %s files their own read and write permissions', (kind, c) => {
+      expect([c.startUpload, c.confirmUpload, c.downloadLink].map((x) => `${x.method} ${x.path} ${x.perm} ${String(x.tx.readOnly)}`)).toEqual([
+        `POST /files/${kind} ${kind}_files:write false`,
+        `POST /files/${kind}/:id/confirm ${kind}_files:write false`,
+        `POST /files/${kind}/:id/download ${kind}_files:read false`,
+      ]);
+    });
+
+  it("takes only its kind's types, and a file name without control characters", () => {
+    const ok = (c: typeof photoFiles, body: object) => c.startUpload.input.safeParse(body).success;
+    expect([
+      ok(photoFiles, { filename: 'bill.heic', contentType: 'image/heic' }),
+      ok(photoFiles, { filename: 'cv.pdf', contentType: 'application/pdf' }),
+      ok(resumeFiles, { filename: 'cv.pdf', contentType: 'application/pdf' }),
+      ok(resumeFiles, { filename: 'cv\r\n.pdf', contentType: 'application/pdf' }),
+      ok(resumeFiles, { filename: '   ', contentType: 'application/pdf' }),
+      ok(resumeFiles, { filename: 'a'.repeat(256), contentType: 'application/pdf' }),
+    ]).toEqual([true, false, true, false, false, false]);
   });
 });

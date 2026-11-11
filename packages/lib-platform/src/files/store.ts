@@ -8,6 +8,7 @@ import { GetObjectCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Clie
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Config } from '../config.ts';
+import type { Logger } from '../log.ts';
 import { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './kinds.ts';
 import { confirmsType, MAGIC_BYTES } from './magic.ts';
 
@@ -39,13 +40,67 @@ export class UploadRefused extends Error {
   }
 }
 
+type Credentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string; expiration?: Date };
+/** The SDK's own credential chain, which may fetch (the instance role's comes from IMDS); `forceRefresh` fetches anew. */
+export type CredentialSource = (options?: { forceRefresh?: boolean }) => Promise<Credentials>;
+
+/** Refresh this long before the credentials expire; the instance role's last about six hours. */
+const REFRESH_AHEAD_MS = 15 * 60_000;
+/** A failed refresh is tried again this soon, while the current credentials still work. */
+const RETRY_MS = 60_000;
+
+/**
+ * Credentials fetched before anything signs, and refreshed in the background (auditor-2, ADR-001 §8): left to itself,
+ * the SDK fetches the instance role's credentials on the first signature and again when they near expiry, so a
+ * presign inside a transaction could make a network call. Here signing only reads what's held.
+ */
+export async function heldCredentials(source: CredentialSource, log: Logger): Promise<{ read: () => Promise<Credentials>; stop(): void }> {
+  let current = await source();
+  let timer: NodeJS.Timeout | undefined;
+  let stopped = false;
+  const schedule = (ms: number) => {
+    if (stopped) return;
+    timer = setTimeout(() => void refresh(), ms);
+    timer.unref();
+  };
+  const untilRefresh = () => current.expiration === undefined ? null
+    : Math.max(current.expiration.getTime() - Date.now() - REFRESH_AHEAD_MS, RETRY_MS);
+  const refresh = async () => {
+    try {
+      current = await source({ forceRefresh: true });
+      const next = untilRefresh();
+      if (next !== null) schedule(next);
+    } catch (err) {
+      log.error('file store: refreshing the S3 credentials failed; trying again in a minute', err);
+      schedule(RETRY_MS);
+    }
+  };
+  const first = untilRefresh();
+  if (first !== null) schedule(first);
+  return { read: async () => current, stop: () => { stopped = true; clearTimeout(timer); } };
+}
+
+/**
+ * The process's file store, for the api and worker mains: with keys in settings (development and CI) it signs with
+ * them; with the instance role it holds credentials fetched now and refreshed in the background. Stop it on the way out.
+ */
+export async function startFileStore(s3: Config['s3'], log: Logger): Promise<{ store: FileStore; name: string; stop(): Promise<void> }> {
+  if (s3.accessKeyId !== null && s3.secretAccessKey !== null) {
+    return { store: createFileStore(s3), name: 'file store', stop: async () => undefined };
+  }
+  // A client with no keys gives the SDK's default chain: the instance role in staging and production.
+  const held = await heldCredentials(new S3Client({ region: s3.region }).config.credentials, log);
+  return { store: createFileStore(s3, s3Client(s3, held.read)), name: 'file store', stop: async () => held.stop() };
+}
+
 /** The S3 client from settings: the instance role in staging and production, the dev store's keys elsewhere. */
-function s3Client(s3: Config['s3']): S3Client {
+function s3Client(s3: Config['s3'], held?: () => Promise<Credentials>): S3Client {
   return new S3Client({
     region: s3.region,
     ...(s3.endpoint !== null ? { endpoint: s3.endpoint, forcePathStyle: true } : {}),
     ...(s3.accessKeyId !== null && s3.secretAccessKey !== null
-      ? { credentials: { accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey } } : {}),
+      ? { credentials: { accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey } }
+      : held === undefined ? {} : { credentials: held }),
     // A checksum is signed only where S3 requires one, so a presigned link's body isn't held to the empty body's.
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',

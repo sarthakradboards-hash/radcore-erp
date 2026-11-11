@@ -68,6 +68,7 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Rate limits in a shared store | rate-limiter-flexible (PostgreSQL store) | 11.2.3 | ISC | express-rate-limit counting in memory (RC-088). Its table comes from a migration (`tableCreated: true`, since the runtime login has no DDL), and it uses its own small pool in `client.ts`. It fails **closed**: when the store can't be reached, a limited action is refused |
 | File store | @aws-sdk/client-s3 | 3.1156.0 | Apache-2.0 | files in the database or on local disk. Works with SeaweedFS in development and CI (MinIO's image is no longer public; coordinator, 6 Nov) |
 | Presigned URLs | @aws-sdk/s3-request-presigner, @aws-sdk/s3-presigned-post | 3.1156.0, 3.1156.0 | Apache-2.0 | none. GETs are signed by s3-request-presigner. The browser's upload is a presigned POST from s3-presigned-post, because only a POST policy can hold `content-length-range` (ADR-004 §2). Same release as client-s3 |
+| Sending email | @aws-sdk/client-sesv2 | 3.1156.0 | Apache-2.0 | none (v1 sent no email). Invite and password-reset links (M1-14, RAD-32), behind lib-platform's `Mailer`, so tests, development and CI use a fake that sends nothing. Same release as client-s3. The SES identity and production access are a devops (Gate 0) step: nothing is sent before then (ADR-004) |
 | CSV read and write (streams) | csv-parse, csv-stringify | 7.0.3, 6.9.0 | MIT | hand-written comma split and quadratic amount pattern (RC-118). Exports use csv-stringify's `escape_formulas` (§3) |
 | Text encoding detection | chardet | 2.2.0 | MIT | UTF-8 only (RC-117). Decoding is `TextDecoder` (§1), not iconv-lite |
 | Excel read and write | read-excel-file, write-excel-file | 9.3.12, 4.1.1 | MIT | hand-written `lib/xlsx.ts` writer, and no Excel import at all (RC-117) |
@@ -245,6 +246,7 @@ that opens a connection or fetches something is named here with its rule:
 |---|---|---|
 | pg, pg-boss, rate-limiter-flexible | connect to PostgreSQL | only the pools built in `lib-platform/src/db/client.ts`, from `DATABASE_URL`, are allowed (ADR-002 L4) |
 | @aws-sdk/client-s3 | connects to S3 | the endpoint comes only from settings (`S3_REGION`, SeaweedFS's `S3_ENDPOINT` in development), never from data |
+| @aws-sdk/client-sesv2 | connects to SES | the region comes only from settings (`S3_REGION`, the deployment's one AWS region) and the from-address is `MAIL_FROM`; no endpoint is read from data, and a message's link is never logged |
 | @aws-crypto/client-node | calls KMS | the key comes only from `SECRETS_KMS_KEY_ID` |
 | imapflow | connects to the statements mailbox | the host is set by an admin, checked against the global-unicast rule before connecting, TLS only, with connection and idle timeouts |
 | mailauth | DNS lookups on the sender's domain | a `node:dns` `Resolver` with a timeout and a limited number of tries, passed in as its resolver |

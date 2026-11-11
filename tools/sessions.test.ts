@@ -298,6 +298,10 @@ describe.skipIf(!url)('sign-in sessions', () => {
       const after = await fetch(`${base}/sign-out`, { method: 'POST', headers: { ...headers, cookie: `__Host-radcore_session=${token}` }, body: '{}' });
       expect([after.status, after.headers.get('set-cookie')?.startsWith('__Host-radcore_session=; ')]).toEqual([401, true]);
       expect((await fetch(`${base}/me`)).headers.get('set-cookie')).toBeNull();
+      // A reset request answers the same for any address; the worker sends the email (RAD-32).
+      const reset = await fetch(`${base}/password-reset/request`, { method: 'POST', headers: { ...headers, 'idempotency-key': randomUUID() },
+        body: JSON.stringify({ email: `nobody.${randomBytes(4).toString('hex')}@example.in` }) });
+      expect([reset.status, await reset.json()]).toEqual([200, {}]);
       // A wrong password: refused, recorded, and no cookie.
       const wrong = await fetch(`${base}/sign-in`, { method: 'POST', headers, body: JSON.stringify({ email: s.email, password: 'nope nope nope' }) });
       expect([wrong.status, ((await wrong.json()) as { code: string }).code, wrong.headers.get('set-cookie')])

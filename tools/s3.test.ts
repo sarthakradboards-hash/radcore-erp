@@ -1,7 +1,7 @@
 // Smoke test for the dev object store (SeaweedFS in compose.dev.yml): a presigned PUT, then a presigned GET.
 // It needs the running store, so it runs where S3_ENDPOINT is set: CI's compose job, which has the store, or locally
 // after `npm run db:up`. In CI it fails instead of skipping (RC-019); the test job, which has no store, excludes it.
-import { CreateBucketCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -142,10 +142,19 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
 // real bucket with the instance role; RAD-43's upload criterion is met when it's green there. Our code never sends
 // such a field; the policy is the bucket's guard against a browser that does. A refused POST stores nothing.
 describe.runIf(REAL_S3)('file store on real S3', () => {
-  it('refuses a presigned POST with a field its policy doesn\'t name, such as an ACL', async () => {
-    const files = createFileStore({ region: env['S3_REGION'] ?? '', bucket: env['S3_BUCKET_FILES'] ?? '', endpoint: null,
-      accessKeyId: null, secretAccessKey: null });
+  it('takes a POST within its policy, and refuses one with a field the policy doesn\'t name, such as an ACL', async () => {
+    const s3 = { region: env['S3_REGION'] ?? '', bucket: env['S3_BUCKET_FILES'] ?? '', endpoint: null, accessKeyId: null,
+      secretAccessKey: null };
+    const files = createFileStore(s3);
     const upload = await files.presignUpload('resume', 'application/pdf');
-    expect(await post(upload.url, { ...upload.fields, acl: 'public-read' }, 1024)).toBe(403);
+    try {
+      // The clean POST first, so a 403 below can't come from a missing role permission or the wrong bucket (auditor-2).
+      expect(await post(upload.url, upload.fields, 1024)).toBe(204);
+      const again = await files.presignUpload('resume', 'application/pdf');
+      expect(await post(again.url, { ...again.fields, acl: 'public-read' }, 1024)).toBe(403);
+    } finally {
+      // The one object this test stored; the refused POST stored nothing.
+      await new S3Client({ region: s3.region }).send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: upload.key }));
+    }
   });
 });

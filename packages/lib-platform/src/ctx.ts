@@ -3,6 +3,7 @@
 // `ctx.tx` has no members, so a service can only hand it to its own module transaction (`salesTx(ctx)`) (T1).
 import type { Tx } from '@radcore/db/schema';
 import type { z } from 'zod';
+import type { FileStore } from './files/store.ts';
 import type { Settings } from './settings.ts';
 
 /** Who a request or job runs as (ADR-001 §6a). Link principals arrive with M1-23. */
@@ -20,6 +21,12 @@ export type Jobs = {
   /** Checks input against the job's own schema now, so a bad payload fails the save, not the job later. */
   send<I>(job: QueuedJob<I>, input: I): Promise<void>;
 };
+
+/**
+ * The file store's two signing calls (RAD-43, ADR-001 §8): they sign locally and send nothing, so they're safe inside a
+ * transaction. Checking an upload and the server's own put reach S3, so they run outside one (a job, or after commit).
+ */
+export type Files = Pick<FileStore, 'presignUpload' | 'downloadUrl'>;
 
 /** The session cookie, on the key-exempt routes only (ADR-001 §7a): set or cleared once the transaction commits. */
 export type SessionCookie = {
@@ -42,6 +49,8 @@ export type Ctx = {
   readonly jobs: Jobs;
   /** Only on sign-in and sign-out's routes (the key-exempt list), whose answer sets or clears the cookie. */
   readonly cookie?: SessionCookie;
+  /** `ctx.files.presignUpload(kind, type)` and `ctx.files.downloadUrl(key, name)`: links, never bytes. */
+  readonly files: Files;
 };
 
 /** How audit rows and `app.principal` name a principal: `user:<id>` or `system:<name>`. */
