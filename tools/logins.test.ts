@@ -3,7 +3,8 @@
 // login only reads. Each test acts as a login with SET ROLE inside a transaction it rolls back, so it leaves nothing.
 import { randomBytes } from 'node:crypto';
 import { loadConfig } from '@radcore/lib-platform';
-import { createJobQueue } from '@radcore/lib-platform/runtime';
+// The full pg-boss queue, to send to it directly as an operator; the apps' queue can't (RAD-44).
+import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';

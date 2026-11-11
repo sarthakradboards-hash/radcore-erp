@@ -5,7 +5,9 @@
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { defineContract } from '@radcore/lib-common';
 import { defineWebhook, defineWebhookJob, loadConfig, webhookDelivery, type WebhookVerifier } from '@radcore/lib-platform';
-import { createDatabase, createJobQueue, relayOutbox, runJobs } from '@radcore/lib-platform/runtime';
+import { createDatabase, relayOutbox, runJobs } from '@radcore/lib-platform/runtime';
+// The full pg-boss queue: relayOutbox sends to it; the apps' queue can't (RAD-44).
+import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
