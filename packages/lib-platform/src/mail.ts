@@ -2,6 +2,7 @@
 // development and CI use one that sends nothing. A message carries a one-time link, so neither mailer ever logs its
 // text; only a masked address is logged. The SES identity and production access are a devops step (Gate 0).
 import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2';
+import type { Config } from './config.ts';
 import type { Logger } from './log.ts';
 
 export type Mail = { to: string; subject: string; text: string };
@@ -38,4 +39,9 @@ export function createUnsentMailer(log: Logger): Mailer {
       log.info(`email not sent (development): "${subject}" to ${maskEmail(to)}`);
     },
   };
+}
+
+/** The mailer for these settings: SES where MAIL_FROM is set (staging and production), otherwise one that sends nothing. */
+export function mailerFor(config: Config, log: Logger): Mailer {
+  return config.mailFrom === null ? createUnsentMailer(log) : createSesMailer({ region: config.s3.region, from: config.mailFrom });
 }

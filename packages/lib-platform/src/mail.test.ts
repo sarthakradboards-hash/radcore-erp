@@ -2,7 +2,9 @@
 // and tests, a mailer that sends nothing and logs only that a message was kept back, to a masked address. A message
 // carries a one-time link, so its text never reaches a log.
 import { describe, expect, it, vi } from 'vitest';
-import { createSesMailer, createUnsentMailer, maskEmail } from './mail.ts';
+import { testSettings } from '@radcore/test-helpers';
+import { loadConfig } from './config.ts';
+import { createSesMailer, createUnsentMailer, mailerFor, maskEmail } from './mail.ts';
 
 const MAIL = { to: 'asha.rao@example.in', subject: 'Set your password', text: 'Open https://erp.example.in/invite#token=abc123' };
 
@@ -23,6 +25,13 @@ describe('the mailer', () => {
     await createUnsentMailer(log).send(MAIL);
     expect(log.info.mock.calls).toEqual([['email not sent (development): "Set your password" to a…o@example.in']]);
     expect(JSON.stringify(log.info.mock.calls)).not.toMatch(/token|abc123|asha/);
+  });
+
+  // MAIL_FROM is set only where mail is really sent (staging and production, ADR-004 §5).
+  it('sends nothing in development, where MAIL_FROM is unset', async () => {
+    const log = { info: vi.fn<(m: string) => void>(), error: vi.fn() };
+    await mailerFor(loadConfig(testSettings(), 'worker'), log).send(MAIL);
+    expect(log.info).toHaveBeenCalledWith(expect.stringMatching(/^email not sent/));
   });
 
   it('masks an address to its first and last letters before the @', () => {
