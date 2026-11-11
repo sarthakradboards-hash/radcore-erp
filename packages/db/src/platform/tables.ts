@@ -120,3 +120,23 @@ export const jobsOutbox = radcoreTable('jobs_outbox', {
   // The relay's pass reads the live rows that are due, oldest first.
   index('ix_jobs_outbox_due').on(t.nextAttemptAt).where(isNull(t.deadAt)),
 ]);
+
+/**
+ * Webhook deliveries (ADR-001 §8a, RAD-45, RC-084): every signed delivery from an outside service, stored once before
+ * it's answered, then handed to its job through the outbox in the same transaction. `source` is the webhook's route
+ * (`POST /hooks/...`); `delivery_id` is the provider's own id, or a hash of the raw body where it sends none, and the
+ * unique index on the two is the replay guard: a repeat is answered and acted on once. `payload` is the raw body as
+ * received. `processed_at` is set by the job in its own transaction, so a delivery left unprocessed can be found
+ * and alerted on. The read-only login can't read it (its migration revokes radcore_read): payloads may be personal.
+ */
+export const webhookDeliveries = radcoreTable('webhook_deliveries', {
+  id: id(),
+  source: text().notNull(),
+  deliveryId: text().notNull(),
+  payload: text().notNull(),
+  processedAt: timestamp({ withTimezone: true }),
+}, (t) => [
+  uniqueIndex('ux_webhook_deliveries_source_delivery_id').on(t.source, t.deliveryId),
+  // The stuck-delivery watch reads the unprocessed ones, oldest first.
+  index('ix_webhook_deliveries_unprocessed').on(t.createdAt).where(isNull(t.processedAt)),
+]);
