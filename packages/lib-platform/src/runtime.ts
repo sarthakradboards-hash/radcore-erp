@@ -9,6 +9,7 @@ import type { Logger } from './log.ts';
 import { createLog } from './log/logger.ts';
 
 export { createAlerter, startHeartbeat, type Alerter } from './alerts.ts';
+export { newPasswordCheckFor } from './auth/new-password.ts';
 export { createDatabase, createHealthCheck, createJobQueue } from './db/client.ts';
 export { runInTransaction } from './db/transaction.ts';
 export { relayOutbox, startOutboxRelay } from './outbox.ts';

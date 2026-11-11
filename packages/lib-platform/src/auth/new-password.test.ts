@@ -5,7 +5,9 @@ import { createHash } from 'node:crypto';
 import { PASSWORD_MIN_LENGTH } from '@radcore/lib-common';
 import { describe, expect, it, vi } from 'vitest';
 import type { Outbound, OutboundInit } from '../http/outbound.ts';
-import { createNewPasswordCheck, PWNED_ORIGIN } from './new-password.ts';
+import { loadConfig } from '../config.ts';
+import { testSettings } from '@radcore/test-helpers';
+import { createNewPasswordCheck, newPasswordCheckFor, PWNED_ORIGIN } from './new-password.ts';
 
 const sha1 = (s: string) => createHash('sha1').update(s).digest('hex').toUpperCase();
 const LONG = 'a quiet harbour at dawn'; // 23 code points, not on any list here
@@ -23,6 +25,13 @@ function rangeApi(lines: (password: string) => string[] = () => []) {
 }
 
 describe('the new-password check', () => {
+  // What the api builds at start: the list for its environment, the range API on its own outbound client, the alerter.
+  it('is built from the settings, and refuses a short password without reaching the network', async () => {
+    const check = newPasswordCheckFor(loadConfig(testSettings(), 'api'), { info: () => undefined, error: () => undefined });
+    expect(await check('short')).toBe('too_short');
+    expect(await check('CorrectHorseBatteryStaple')).toBe('breached');
+  });
+
   it(`refuses fewer than ${PASSWORD_MIN_LENGTH} code points of the NFC form`, async () => {
     const api = rangeApi();
     const check = createNewPasswordCheck({ common: new Set(), outbound: api.outbound, alert: async () => undefined,

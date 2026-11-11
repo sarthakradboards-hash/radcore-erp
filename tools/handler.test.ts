@@ -321,6 +321,15 @@ describe.skipIf(!url)('the new-password check before the transaction', () => {
     }
   });
 
+  // The auditor's SHOULD on #100: a wrapped input would hide the field, so the three password routes must show one.
+  it('refuses to mount a password route whose new password the check cannot find', () => {
+    const hidden = defineContract({ method: 'POST', path: '/invites/accept', auth: 'public', rateLimit: 'token-link', perm: null,
+      tx: { readOnly: false, isolation: 'read committed' }, input: z.object({ token: z.string(), password: z.string() }),
+      output: z.object({}), errors: ['password_rejected'] });
+    expect(() => createApp(config(), logger(), { db: createDatabase(new pg.Pool()), authenticate: async () => null,
+      newPasswordCheck: check, routes: [defineRoute(hidden, async () => ({}))] })).toThrow(/newPassword\(\) field/);
+  });
+
   it('refuses to mount a newPassword() field without a check to run (fails closed)', () => {
     expect(() => createApp(config(), logger(), { db: createDatabase(new pg.Pool()), authenticate: async () => null,
       routes: [defineRoute(setPassword, async () => ({}))] })).toThrow(/new-password check/);

@@ -13,6 +13,8 @@ import { createPasswords } from '../packages/lib-platform/src/auth/passwords.ts'
 import { createLimiterStore } from '../packages/lib-platform/src/db/client.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
+// Collecting a skipped suite still builds its store; a pool connects only when used, so this is never reached.
+const NO_DATABASE = 'postgres://unused@127.0.0.1:1/unused';
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const database = (u: string) => {
   const parsed = new URL(u);
@@ -27,7 +29,7 @@ const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 describe.skipIf(!url)('setting a password', () => {
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   const db = createDatabase(pool);
-  const store = createLimiterStore(database(url ?? ''), { info: () => undefined, error: () => undefined });
+  const store = createLimiterStore(database(url ?? NO_DATABASE), { info: () => undefined, error: () => undefined });
   afterAll(async () => {
     await store.end();
     await pool.end();

@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
 import { AppError, claimSavedOnce, describeError, originAllowed, type Principal } from '@radcore/lib-platform';
-import { ANSWER_NOT_STORED_ROUTES, KEY_EXEMPT_ROUTES } from '@radcore/lib-platform/contract';
+import { acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import type { Route } from './route.ts';
@@ -34,6 +34,8 @@ const PASSWORD_REFUSALS: Readonly<Record<'too_short' | 'breached', string>> = {
   too_short: `Use at least ${PASSWORD_MIN_LENGTH} characters`,
   breached: 'This password is common or has appeared in a data breach. Choose another',
 };
+// The routes that set a password (ADR-001 §7a): each must show the handler a newPassword() field to check.
+const PASSWORD_ROUTES = new Set([acceptInvite, resetPassword, changePassword].map((c) => `${c.method} ${c.path}`));
 // The input fields a contract marks newPassword().
 const newPasswordKeys = (input: unknown): string[] => Object.entries((input as { shape?: Record<string, unknown> }).shape ?? {})
   .filter(([, schema]) => newPasswordFields.has(schema as never)).map(([key]) => key);
@@ -134,6 +136,10 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
       throw new TypeError(`${route}: only ANSWER_NOT_STORED_ROUTES may declare storesAnswer: false (ADR-001 §7a)`);
     }
     const passwordKeys = newPasswordKeys(contract.input);
+    // A wrapped input would hide the field and skip the check, so a password route without one refuses to mount.
+    if (PASSWORD_ROUTES.has(route) && passwordKeys.length === 0) {
+      throw new TypeError(`${route}: sets a password, but the handler finds no newPassword() field in its input to check`);
+    }
     if (passwordKeys.length > 0 && deps.newPasswordCheck === undefined) {
       throw new TypeError(`${route}: a newPassword() field needs the new-password check, and none was given`);
     }

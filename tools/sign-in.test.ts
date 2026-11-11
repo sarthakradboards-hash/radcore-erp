@@ -15,6 +15,8 @@ import { createSignIn } from '../packages/lib-platform/src/auth/sign-in.ts';
 import { createLimiterStore } from '../packages/lib-platform/src/db/client.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
+// Collecting a skipped suite still builds its store; a pool connects only when used, so this is never reached.
+const NO_DATABASE = 'postgres://unused@127.0.0.1:1/unused';
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const database = (u: string) => {
   const parsed = new URL(u);
@@ -28,7 +30,7 @@ const PASSWORD = 'a quiet harbour at dawn';
 describe.skipIf(!url)('the sign-in credential step', () => {
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   const db = createDatabase(pool);
-  const store = createLimiterStore(database(url ?? ''), log);
+  const store = createLimiterStore(database(url ?? NO_DATABASE), log);
   afterAll(async () => {
     await store.end();
     await pool.end();

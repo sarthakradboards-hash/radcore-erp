@@ -5,16 +5,18 @@
 // the bundled list decides alone: refusing every password would block invites and resets for the outage.
 import { createHash } from 'node:crypto';
 import { PASSWORD_MIN_LENGTH, passwordLength } from '@radcore/lib-common';
-import type { Alerter } from '../alerts.ts';
-import type { Outbound } from '../http/outbound.ts';
+import { createAlerter, type Alerter } from '../alerts.ts';
+import type { Config } from '../config.ts';
+import { createOutbound, type Outbound } from '../http/outbound.ts';
 import type { Logger } from '../log.ts';
+import { loadCommonPasswords } from './common-passwords.ts';
 
 export const PWNED_ORIGIN = 'https://api.pwnedpasswords.com';
 /** For the outbound client this check is given: the range API's own 3 s limit (ADR-001 §7a). */
-export const PWNED_TIMEOUT_MS = 3_000;
+const PWNED_TIMEOUT_MS = 3_000;
 const ALERT_EVERY_MS = 60 * 60_000;
 
-export type PasswordRejection = 'too_short' | 'breached';
+type PasswordRejection = 'too_short' | 'breached';
 /** null when the password may be set; otherwise why not. `same_as_old` is the service's, since it needs the hash. */
 export type NewPasswordCheck = (password: string) => Promise<PasswordRejection | null>;
 
@@ -61,4 +63,18 @@ export function createNewPasswordCheck({ common, outbound, alert, log, now }: Ne
     }
     return found ? 'breached' : null;
   };
+}
+
+/**
+ * The check as the api builds it at start: the bundled list for its environment (a deployed api without the real
+ * list refuses to start), an outbound client allowed only the range API with its 3 s limit, and the configured alerter.
+ */
+export function newPasswordCheckFor(config: Config, log: Logger): NewPasswordCheck {
+  return createNewPasswordCheck({
+    common: loadCommonPasswords(config.appEnv, log),
+    outbound: createOutbound({ name: 'pwned-passwords', allowedOrigins: [PWNED_ORIGIN], timeoutMs: PWNED_TIMEOUT_MS }, { log }),
+    alert: createAlerter(config.alertWebhookUrl, log),
+    log,
+    now: () => Date.now(),
+  });
 }
