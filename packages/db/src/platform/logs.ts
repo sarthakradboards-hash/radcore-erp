@@ -10,6 +10,8 @@ export const auditLog = radcore.table('audit_log', {
   id: uuid().notNull(),
   // As a string, like event_log's: the database's microseconds, compared as they are.
   occurredAt: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+  // Taken at insert, from one sequence: the order rows were written, which occurred_at (a transaction's start) isn't.
+  seq: bigint({ mode: 'number' }).notNull(),
   tableName: text().notNull(),
   recordId: text().notNull(),
   ownerId: text(),

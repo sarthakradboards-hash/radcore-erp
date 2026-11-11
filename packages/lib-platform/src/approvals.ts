@@ -6,7 +6,7 @@
 //           ─► not the requester, and no change by them to the record or its parts since its last approval (audit log)
 //           ─► the approver's account predates the request
 //           ─► approve only: the record still hashes to the requested version, and the approver's screen saw it
-//           ─► record the decision (only while still pending) ─► the module's approved() or rejected(), same transaction
+//           ─► the module's approved() or rejected() ─► record the decision (only while still pending), same transaction
 // A module's route file spreads `...defineApproval(contracts, spec)` (ADR-001 §8b), with its `approvalContracts`.
 import { createHash } from 'node:crypto';
 import { approvals, auditLog, platformTx, users } from '@radcore/db/platform';
@@ -147,31 +147,36 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
     throw new AppError('version_changed', 'This changed since it was sent for approval. Ask for approval again');
   }
   const status = input.decision === 'approve' ? 'approved' : 'rejected';
-  // Only while still pending, so of two decisions at once only one is recorded (the row lock already orders them).
+  // The module's part first, then the status: the approval's audit row is then the transaction's last, so what
+  // approved() wrote comes before it by audit_log.seq and never makes the approver a maker of the next approval.
+  if (input.decision === 'approve') await spec.approved(ctx, request.recordId);
+  else await spec.rejected(ctx, request.recordId, input.reason);
+  // Only while still pending, so of two decisions at once only one is recorded (the row lock already orders them);
+  // the other rolls back, its module part with it.
   const [decided] = await tx.update(approvals).set({ status, decidedBy: me, decidedAt: new Date(),
     ...(input.decision === 'reject' ? { reason: input.reason } : {}) })
     .where(and(eq(approvals.id, id), isNull(approvals.decidedAt))).returning({ id: approvals.id });
   if (decided === undefined) throw notPending();
-  if (input.decision === 'approve') await spec.approved(ctx, request.recordId);
-  else await spec.rejected(ctx, request.recordId, input.reason);
   return { status };
 }
 
 /**
  * Everyone who changed the record or one of its parts since its last approval, or ever if it was never approved, as
  * the audit log records them (ADR-001 §8b): the record's own rows, and its parts' rows by owner_id. Only people: a
- * job isn't a maker. The last approval's time is its own audit row's, the database's clock like every other row's, so
- * what the approving transaction itself wrote (approved()) is at that time, not after it.
+ * job isn't a maker. "Since" is by audit_log.seq, taken when each row is written, not occurred_at (its transaction's
+ * start): a save that began before the approval but wrote after it still counts (auditor). The approving transaction's
+ * own writes (approved()) come before its status change, so they don't. Left over: a part written before the approval
+ * but committed after it (§8b's known limit).
  */
 async function makersSinceApproval<V extends ApprovalVersion>(ctx: Ctx, spec: ApprovalSpec<V>, recordId: string): Promise<string[]> {
   const tx = platformTx(ctx);
   const approved = (await tx.select({ id: approvals.id }).from(approvals)
     .where(and(eq(approvals.kind, spec.kind), eq(approvals.recordId, recordId), eq(approvals.status, 'approved')))).map((r) => r.id);
-  const [last] = approved.length === 0 ? [] : await tx.select({ at: max(auditLog.occurredAt) }).from(auditLog)
+  const [last] = approved.length === 0 ? [] : await tx.select({ seq: max(auditLog.seq) }).from(auditLog)
     .where(and(eq(auditLog.tableName, 'approvals'), inArray(auditLog.recordId, approved)));
   const parts = spec.parts ?? [];
   const rows = await tx.select({ by: auditLog.createdBy }).from(auditLog).where(and(
-    last?.at == null ? undefined : gt(auditLog.occurredAt, last.at),
+    last?.seq == null ? undefined : gt(auditLog.seq, last.seq),
     like(auditLog.createdBy, 'user:%'),
     or(and(eq(auditLog.tableName, spec.table), eq(auditLog.recordId, recordId)),
       parts.length === 0 ? undefined : and(inArray(auditLog.tableName, [...parts]), eq(auditLog.ownerId, recordId)))))

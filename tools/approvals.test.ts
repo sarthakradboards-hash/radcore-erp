@@ -299,6 +299,19 @@ describe.skipIf(!url)('maker-checker', () => {
       + "and created_by = 'system:nightly-prices'", [ORDERS, orderId])).rows[0]).toEqual({ n: 1 });
   });
 
+  it("doesn't make the approver a maker of the next approval by what approving wrote", async () => {
+    const first = await requested();
+    await serve(person(people.approver), async (call) => {
+      expect((await decide(call, first.id, { decision: 'approve', versionHash: first.versionHash })).status).toBe(200);
+    });
+    // approved() set the order's status as the approver; only the maker changes it after that.
+    await as(person(people.maker, []), (tx) => tx.update(orders).set({ amount: '1900.00' }).where(eq(orders.id, first.orderId)));
+    const next = await sendAgain(first.orderId);
+    await serve(person(people.approver), async (call) => {
+      expect((await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash })).status).toBe(200);
+    });
+  });
+
   it("writes the record's id on its lines' audit rows (audit_attach owner =>)", async () => {
     const { orderId, lineId } = await requested();
     expect((await pool.query('select owner_id from radcore.audit_log where table_name = $1 and record_id = $2', [LINES, lineId])).rows)
