@@ -127,6 +127,13 @@
       "when": 1794416064476,
       "tag": "0017_bootstrap",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794417194658,
+      "tag": "0018_audited_tables_view",
+      "breakpoints": true
     }
   ]
 }
