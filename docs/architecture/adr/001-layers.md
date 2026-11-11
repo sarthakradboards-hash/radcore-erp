@@ -514,7 +514,11 @@ permission: the pending list, one request with its version hash, and the decisio
 `...defineApproval(contracts, spec)`, where `spec` is the module's part: the version the approver sees, and what
 approving and rejecting do. A decision is made in one transaction, with the record's row locked, and is refused
 unless:
-- **a user decides,** who holds the permission and isn't the requester (`own_request`);
+- **a user decides,** who holds the permission;
+- **the decider made no change to what is being approved** (`own_request`): they're not the requester, and made no
+  change to the record or its parts since its last approval (or since it was made). The engine reads the makers from
+  the audit log: each part table is attached with `owner =>` its record's key, so its audit rows carry the record's id
+  (`owner_id`). Jobs aren't makers;
 - **the approver's account was created before the request** (`approver_too_new`), so a requester can't invite a
   fresh account to approve it;
 - **the version is the one the approver saw** (`version_changed`). It's a SHA-256 over sorted-key JSON of what the
