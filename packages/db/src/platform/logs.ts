@@ -1,5 +1,5 @@
 // The partitioned logs, declared for typed reads only (ADR-005 §8): Drizzle can't declare a partitioned table, so their
-// hand-written migrations (0011, 0013) make them, and this file sits outside drizzle.config.ts's schema glob so
+// hand-written migrations (0011, 0014) make them, and this file sits outside drizzle.config.ts's schema glob so
 // generate leaves them alone. The app can't insert, update or delete any of them (ADR-005 §7c).
 import { bigint, inet, jsonb, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { radcore } from '../columns.ts';

@@ -23,3 +23,7 @@ export { attachment, createFileStore, UploadRefused, type FileStore } from './fi
 export { cleanOutbox, outboxCleanup } from './outbox.ts';
 export { listSecurityEventsPage, recordSecurityEvent, type EventSubject, type SecurityEvent } from './security-events.ts';
 export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';
+export {
+  defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
+  type WebhookVerifier,
+} from './webhooks.ts';

@@ -164,8 +164,10 @@ describe.skipIf(!url)('the three logins', () => {
         secrets: 'select * from radcore.secrets',
         // RAD-44: job payloads may be personal (a reset address).
         outbox: 'select * from radcore.jobs_outbox',
+        // RAD-45: webhook payloads may be personal.
+        deliveries: 'select * from radcore.webhook_deliveries',
         temp: 'create temp table t (x int)',
-      })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, secrets: DENIED, outbox: DENIED,
+      })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, secrets: DENIED, outbox: DENIED, deliveries: DENIED,
         temp: DENIED });
     });
   });
