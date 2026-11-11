@@ -1,7 +1,9 @@
 // Smoke test for the dev object store (SeaweedFS in compose.dev.yml): a presigned PUT, then a presigned GET.
 // It needs the running store, so it runs where S3_ENDPOINT is set: CI's compose job, which has the store, or locally
 // after `npm run db:up`. In CI it fails instead of skipping (RC-019); the test job, which has no store, excludes it.
-import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -63,11 +65,14 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     const s3 = client();
     const bucket = `files-${randomUUID()}`;
     await s3.send(new CreateBucketCommand({ Bucket: bucket }));
+    // An upload as the browser's POST leaves it: under incoming/, where the check copies it from.
     const put = (Key: string, body: Buffer | string, ContentType: string) =>
-      s3.send(new PutObjectCommand({ Bucket: bucket, Key, Body: body, ContentType }));
+      s3.send(new PutObjectCommand({ Bucket: bucket, Key: `incoming/${Key}`, Body: body, ContentType }));
     const files = createFileStore({ region: env['S3_REGION'] ?? '', bucket, endpoint: env['S3_ENDPOINT'] ?? '',
       accessKeyId: env['S3_ACCESS_KEY_ID'] ?? '', secretAccessKey: env['S3_SECRET_ACCESS_KEY'] ?? '' }, s3);
-    return { put, files };
+    // Whether an object is there.
+    const exists = (Key: string) => s3.send(new HeadObjectCommand({ Bucket: bucket, Key })).then(() => true, () => false);
+    return { put, files, exists };
   };
 
   it('accepts an upload that fits its kind, and serves it as a never-cached attachment', async () => {
@@ -93,6 +98,29 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     await expect(files.verifyUpload(text, 'resume')).rejects.toThrow('upload refused: a resume can\'t be "text/plain"');
     await expect(files.verifyUpload(empty, 'resume')).rejects.toThrow('upload refused: the file is empty');
     await expect(files.verifyUpload(none, 'resume')).rejects.toThrow('upload refused: nothing was uploaded');
+  });
+
+  it('checks a copy and removes the upload, refused or not; a retry checks the copy again (auditor-2 on #112)', async () => {
+    const { put, files, exists } = await store();
+    const [ok, refused] = [`resume/${randomUUID()}`, `resume/${randomUUID()}`];
+    await put(ok, '%PDF-1.7 resume', 'application/pdf');
+    await put(refused, 'hello', 'text/plain');
+    await files.verifyUpload(ok, 'resume');
+    await expect(files.verifyUpload(refused, 'resume')).rejects.toThrow('upload refused');
+    expect(await Promise.all([ok, `incoming/${ok}`, refused, `incoming/${refused}`].map(exists))).toEqual([true, false, true, false]);
+    // The job's retry, after the upload was removed: the copy is checked again.
+    expect(await files.verifyUpload(ok, 'resume')).toEqual({ size: 15, contentType: 'application/pdf' });
+  });
+
+  it('serves the bytes it checked, even when the browser posts other bytes to its upload key afterwards', async () => {
+    const { files } = await store();
+    const upload = await files.presignUpload('resume', 'application/pdf');
+    expect(await post(upload.url, upload.fields, 1024)).toBe(204);
+    await files.verifyUpload(upload.key, 'resume');
+    // Within the policy's five minutes, the same fields again: a bigger body that begins the same way.
+    expect(await post(upload.url, upload.fields, 2048)).toBe(204);
+    const get = await fetch(await files.downloadUrl(upload.key, 'cv.pdf'));
+    expect((await get.arrayBuffer()).byteLength).toBe(1024);
   });
 
   it('refuses a file whose first bytes don\'t match its declared type', async () => {
@@ -154,7 +182,7 @@ describe.runIf(REAL_S3)('file store on real S3', () => {
       expect(await post(again.url, { ...again.fields, acl: 'public-read' }, 1024)).toBe(403);
     } finally {
       // The one object this test stored; the refused POST stored nothing.
-      await new S3Client({ region: s3.region }).send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: upload.key }));
+      await new S3Client({ region: s3.region }).send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: `incoming/${upload.key}` }));
     }
   });
 });

@@ -34,18 +34,19 @@ describe('createFileStore', () => {
     expect(url.searchParams.get('response-cache-control')).toBe('private, no-store');
   });
 
-  it('signs a 5-minute upload policy for one server-made key, its type and its kind\'s size', async () => {
+  it('signs a 5-minute upload policy for one server-made key under incoming/, its type and its kind\'s size', async () => {
     vi.useFakeTimers({ now: new Date('2026-11-10T06:00:00Z'), toFake: ['Date'] });
     const { key, url, fields } = await createFileStore(s3()).presignUpload('photo', 'image/png');
     vi.useRealTimers();
     expect(key).toMatch(/^photo\/[0-9a-f-]{36}$/);
     expect(url).toBe('http://127.0.0.1:8333/radcore-files');
-    expect(fields['key']).toBe(key);
+    // The browser writes only incoming/<key>; `key` itself, where the checked copy lives, is never in a policy.
+    expect(fields['key']).toBe(`incoming/${key}`);
     expect(fields['Content-Type']).toBe('image/png');
     const policy = JSON.parse(Buffer.from(fields['Policy'] ?? '', 'base64').toString()) as
       { expiration: string; conditions: unknown[] };
     expect(policy.expiration).toBe('2026-11-10T06:05:00Z');
-    for (const condition of [['content-length-range', 1, 10 * 1024 * 1024], { bucket: 'radcore-files' }, { key },
+    for (const condition of [['content-length-range', 1, 10 * 1024 * 1024], { bucket: 'radcore-files' }, { key: `incoming/${key}` },
       { 'Content-Type': 'image/png' }]) expect(policy.conditions).toContainEqual(condition);
   });
 

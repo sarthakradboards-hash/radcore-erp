@@ -59,7 +59,7 @@ out.
   - saved-once keys and job state.
 - **Uploads go straight to S3, with limits the bucket enforces.** The browser uploads with a presigned **POST**.
   A presigned PUT can't limit size. The POST policy fixes:
-  - the exact `bucket` and `key` (made by the server);
+  - the exact `bucket` and `key` (made by the server, under `incoming/`);
   - the `Content-Type`;
   - a `content-length-range` for the kind of file;
   - an expiry of 5 minutes.
@@ -67,7 +67,10 @@ out.
   The client can't set an ACL, encryption or any other field: encryption is the bucket's default (KMS). The
   bucket's CORS allows `POST` from `PUBLIC_ORIGIN` only (ADR-001 §7a).
   - Limits by kind: photos 10 MB, resumes 5 MB, bank statements 15 MB, import files 25 MB (M1-25).
-  - After upload, the API checks the stored object's size and magic bytes before the file is used.
+  - After upload, a job copies the object from `incoming/<kind>/<uuid>` to `<kind>/<uuid>`, which no POST policy
+    names, then checks the copy's size, type and magic bytes, and removes the upload. Only that checked copy is ever
+    downloaded, so bytes posted again to the upload key while its policy lasts never reach a reader (RAD-43). A
+    refused copy stays where it is, never served: only a file checked as ready gets a download link.
   - Downloads are short-lived presigned GETs with `Content-Disposition: attachment`.
   - Neither the API nor the database holds a whole file.
 - **Connections.** The API and worker connect straight to RDS from their own pools: no transaction-mode pooler,
@@ -118,7 +121,8 @@ and `worker` may reach it, by an allowlist:
   day, not at the next audit. M8 also proves it once from a shell inside `web`.
 
 **What the instance role may do**, and nothing else:
-- read and write objects in the files bucket;
+- read and write objects in the files bucket, and delete them under `incoming/` (an upload, once its checked copy
+  is made, RAD-43);
 - use the secrets KMS key (encrypt, decrypt, generate data keys);
 - read the named **runtime** secrets in Secrets Manager (`DATABASE_URL`, `TURNSTILE_SECRET`, `ALERT_WEBHOOK_URL`,
   `HEARTBEAT_URL`), and the runtime settings in Parameter Store;
