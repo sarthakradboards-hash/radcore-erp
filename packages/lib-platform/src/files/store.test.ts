@@ -1,7 +1,8 @@
 // RAD-43 (RC-096, RC-191): what the file store decides without reaching S3. tools/s3.test.ts runs it on SeaweedFS.
 import { testSettings } from '@radcore/test-helpers';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attachment, createFileStore, loadConfig, UploadRefused } from '../index.ts';
+import { heldCredentials, type CredentialSource } from './store.ts';
 
 const s3 = () => loadConfig(testSettings(), 'api').s3;
 
@@ -58,5 +59,46 @@ describe('createFileStore', () => {
 
   it('refuses a key made for another kind before reaching S3', async () => {
     await expect(createFileStore(s3()).verifyUpload('import/1f0c', 'photo')).rejects.toThrow(UploadRefused);
+  });
+});
+
+describe('heldCredentials (ADR-001 §8: no IMDS call while signing)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const creds = (id: string, expiration: string) => ({ accessKeyId: id, secretAccessKey: 's', expiration: new Date(expiration) });
+  const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
+
+  it('fetches once at start, signs from what it holds, and refreshes 15 minutes before expiry', async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-11-11T06:00:00Z') });
+    const source = vi.fn<CredentialSource>()
+      .mockResolvedValueOnce(creds('first', '2026-11-11T07:00:00Z'))
+      .mockResolvedValueOnce(creds('second', '2026-11-11T13:00:00Z'));
+    const held = await heldCredentials(source, logger());
+    const reads = await Promise.all([held.read(), held.read(), held.read()]);
+    expect([reads.map((c) => c.accessKeyId), source.mock.calls]).toEqual([['first', 'first', 'first'], [[]]]);
+    await vi.advanceTimersByTimeAsync(44 * 60_000);
+    expect(source).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect([(await held.read()).accessKeyId, source.mock.calls[1]]).toEqual(['second', [{ forceRefresh: true }]]);
+    held.stop();
+  });
+
+  it('keeps the current credentials when a refresh fails, logs it, and tries again a minute later; stop ends it', async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-11-11T06:00:00Z') });
+    const log = logger();
+    const source = vi.fn<CredentialSource>()
+      .mockResolvedValueOnce(creds('first', '2026-11-11T06:20:00Z'))
+      .mockRejectedValueOnce(new Error('IMDS timed out'))
+      .mockResolvedValueOnce(creds('second', '2026-11-11T12:00:00Z'));
+    const held = await heldCredentials(source, log);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect([(await held.read()).accessKeyId, log.error.mock.calls.map((c) => c[0])]).toEqual(['first',
+      ['file store: refreshing the S3 credentials failed; trying again in a minute']]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect((await held.read()).accessKeyId).toBe('second');
+    held.stop();
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    expect(source).toHaveBeenCalledTimes(3);
   });
 });

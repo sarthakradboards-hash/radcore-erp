@@ -26,7 +26,7 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
     // Webhooks first: their own lane, with the raw body, ahead of the browser routes' guards and JSON parser.
     mountWebhooks(app, api.webhooks ?? [], { db: api.db, log });
     mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin,
-      newPasswordCheck: api.newPasswordCheck });
+      newPasswordCheck: api.newPasswordCheck, files: api.files });
   }
   return app;
 }

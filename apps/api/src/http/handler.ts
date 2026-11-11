@@ -9,7 +9,7 @@
 // (RAD-48), and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, describeError, originAllowed, type Principal, type Route } from '@radcore/lib-platform';
+import { AppError, claimSavedOnce, describeError, originAllowed, type Files, type Principal, type Route } from '@radcore/lib-platform';
 import { acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
@@ -26,6 +26,8 @@ export type HandlerDeps = {
   /** The new-password check (lib-platform's createNewPasswordCheck), run before the transaction on every field marked
    * newPassword(). A route with such a field refuses to mount without it. */
   newPasswordCheck?: ((password: string) => Promise<'too_short' | 'breached' | null>) | undefined;
+  /** The process's file store, as ctx.files (RAD-43): only its two signing calls reach a service. */
+  files?: Files | undefined;
 };
 
 // What the person reads under the field when the new-password check refuses (ADR-001 §7a).
@@ -187,7 +189,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           if (!checked.success) throw new OutputMismatch(`${route}: the output doesn't match its contract`);
           await once?.keep(checked.data);
           return checked.data;
-        });
+        }, deps.files);
         res.status(200).json(output);
       } catch (err) {
         const failure = failureOf(err, contract.errors);
