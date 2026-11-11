@@ -6,6 +6,7 @@ import type { Database } from '@radcore/db/schema';
 import { ConfigError, loadConfig, type Config, type ProcessName } from './config.ts';
 import { createJobQueue as createPgBoss, createPool, type JobQueue, type Pool } from './db/client.ts';
 import { runInTransaction } from './db/transaction.ts';
+import type { FileStore } from './files/store.ts';
 import { JobRefused, type JobDefinition, type JobEnvelope, type LoadPrincipal, type OpenJob, type QueueSettings } from './jobs.ts';
 import type { Logger } from './log.ts';
 import { createLog } from './log/logger.ts';
@@ -49,14 +50,15 @@ const ensureQueue = async (queue: AppJobQueue, name: string, { policy, retries, 
  * its dead-letter queue with the alert, and its schedule. Returns how to stop: no new work, attempts in flight finish.
  */
 export async function runJobs(queue: AppJobQueue, jobs: readonly JobDefinition[], log: Logger,
-  { db, alert = createAlerter(null, log), stopTimeoutMs = 20_000, loadPrincipal = refuseEveryone, relay = false }:
+  { db, alert = createAlerter(null, log), stopTimeoutMs = 20_000, loadPrincipal = refuseEveryone, relay = false, files }:
   { db: Database; alert?: Alerter; stopTimeoutMs?: number; loadPrincipal?: LoadPrincipal;
+    /** The file store from config.s3 (RAD-43): ctx.files in every job, and the whole store before a job's transaction. */ files?: FileStore;
     /** Also run the outbox relay (the worker does): the one place that sends to pg-boss. */ relay?: boolean },
 ): Promise<Stoppable> {
   // Each attempt is one write transaction as the job's principal, its job id as the request id: its writes commit
   // together or not at all, and audit rows name the job (ADR-001 §6a, RAD-44 step 3).
   const open: OpenJob = (principal, jobId, work) =>
-    runInTransaction(db, { readOnly: false, isolation: 'read committed' }, principal, jobId, work);
+    runInTransaction(db, { readOnly: false, isolation: 'read committed' }, principal, jobId, work, files);
   await queue.start();
   for (const job of jobs) {
     const { deadLetter, ...settings } = job.settings;
@@ -66,7 +68,7 @@ export async function runJobs(queue: AppJobQueue, jobs: readonly JobDefinition[]
     await queue.work(job.name, async ([attempt]) => {
       if (attempt === undefined) return;
       try {
-        await job.handle(attempt.data, attempt.id, { open, load: loadPrincipal, alert });
+        await job.handle(attempt.data, attempt.id, { open, load: loadPrincipal, alert, ...(files === undefined ? {} : { files }) });
       } catch (err) {
         if (!(err instanceof JobRefused)) throw err;
         // Its enqueuer can't run it any more: retrying won't change that, so it ends here, with the alert.
