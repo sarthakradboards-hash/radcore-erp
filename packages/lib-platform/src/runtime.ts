@@ -11,6 +11,7 @@ import type { Logger } from './log.ts';
 import { createLog } from './log/logger.ts';
 
 export { createAlerter, startHeartbeat, type Alerter } from './alerts.ts';
+export { runBootstrapAdmin } from './auth/bootstrap.ts';
 export { newPasswordCheckFor } from './auth/new-password.ts';
 export { passwordResetEmailJob } from './auth/reset-email.ts';
 export { mailerFor } from './mail.ts';
