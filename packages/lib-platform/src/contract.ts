@@ -156,7 +156,7 @@ export const listUsers = defineContract({
     sortInput(['displayName', 'email', 'lastSignInAt'])),
   output: listOf(z.object({
     id: idString(), displayName: z.string(), email: z.string(), status: userStatus, role: roleKey(),
-    lastSignInAt: momentString().nullable(), secondFactor: z.enum(['not_required', 'enrolled', 'not_enrolled']), // D-19
+    lastSignInAt: momentString().nullable(), secondFactor: z.enum(['not_required', 'enrolled', 'enrolment_required']), // D-19, as getMe
     self: z.boolean(),
   })),
 });
@@ -183,12 +183,13 @@ export const setUserRole = defineContract({
   errors: ['own_account', 'role_not_grantable', 'last_admin'],
 });
 
-/** Disabled: every session ends and open invite and reset links stop working. */
+/** Disabled: every session ends and open invite and reset links stop working. role_not_grantable: only an admin
+ * deactivates an admin. */
 export const deactivateUser = defineContract({
   method: 'POST', path: '/admin/users/:id/deactivate', auth: 'session', perm: 'users:write', tx: write,
   input: z.object({ id: idString(), reason: reason() }),
   output: z.object({ sessionsEnded: z.number().int().nonnegative() }),
-  errors: ['own_account', 'last_admin', 'already_disabled'],
+  errors: ['own_account', 'last_admin', 'already_disabled', 'role_not_grantable'],
 });
 
 /** Back to active, or to invited if no password was ever set. role_not_grantable: only an admin reactivates an
@@ -219,11 +220,13 @@ export const getPermissionMatrix = defineContract({
   }),
 });
 
-/** Replaces one role's grants. It applies at once in every process (RC-095) and is audited with its reason. */
+/** Replaces one role's grants. It applies at once in every process (RC-095) and is audited with its reason.
+ * permission_not_held: nobody grants a key they don't hold themselves. */
 export const setRolePermissions = defineContract({
   method: 'PUT', path: '/admin/roles/:key/permissions', auth: 'session', perm: 'roles:write', tx: write,
   input: z.object({ key: roleKey(), grants: permissionKeys, version: z.string(), reason: reason() }),
-  output: z.object({ version: z.string() }), errors: ['role_not_editable', 'matrix_changed', 'unknown_permission'],
+  output: z.object({ version: z.string() }),
+  errors: ['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held'],
 });
 
 /** Every live session, or one person's, newest activity first. No IP, as on listMySessions. */

@@ -159,9 +159,9 @@ describe('the admin contracts', () => {
   it('name the self-escalation refusals the screens word (M1-18)', () => {
     expect(inviteUser.errors).toEqual(['email_taken', 'role_not_grantable']);
     expect(setUserRole.errors).toEqual(['own_account', 'role_not_grantable', 'last_admin']);
-    expect(deactivateUser.errors).toEqual(['own_account', 'last_admin', 'already_disabled']);
+    expect(deactivateUser.errors).toEqual(['own_account', 'last_admin', 'already_disabled', 'role_not_grantable']);
     expect(reactivateUser.errors).toEqual(['not_disabled', 'role_not_grantable']); // only an admin reactivates an admin
-    expect(setRolePermissions.errors).toEqual(['role_not_editable', 'matrix_changed', 'unknown_permission']);
+    expect(setRolePermissions.errors).toEqual(['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held']);
     expect([endSession.errors, endUserSessions.errors]).toEqual([['current_session'], ['own_account']]);
   });
 
@@ -175,6 +175,8 @@ describe('the admin contracts', () => {
   it("flag the caller's own row and drop what isn't declared, such as a password hash or an IP", () => {
     const user = { id, displayName: 'Asha Rao', email: 'asha@example.com', status: 'active', role: 'admin',
       lastSignInAt: null, secondFactor: 'enrolled', self: true };
+    expect(listUsers.output.safeParse({ items: [{ ...user, secondFactor: 'enrolment_required' }], next: null }).success).toBe(true);
+    expect(listUsers.output.safeParse({ items: [{ ...user, secondFactor: 'not_enrolled' }], next: null }).success).toBe(false);
     expect(listUsers.output.parse({ items: [{ ...user, passwordHash: 'argon2-hash' }], next: null }))
       .toEqual({ items: [user], next: null });
     const session = { id, user: { id, displayName: 'Asha Rao' }, createdAt: at, lastSeenAt: at, idleExpiresAt: at,
