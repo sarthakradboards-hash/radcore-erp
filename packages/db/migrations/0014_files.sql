@@ -12,9 +12,9 @@ CREATE TABLE "radcore"."files" (
 	"updated_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
 	CONSTRAINT "ck_files_filename" CHECK (char_length("radcore"."files"."filename") <= 255),
 	CONSTRAINT "ck_files_kind" CHECK ("radcore"."files"."kind" in ('photo', 'resume', 'statement', 'import')),
-	CONSTRAINT "ck_files_status" CHECK ("radcore"."files"."status" in ('pending', 'ready')),
+	CONSTRAINT "ck_files_status" CHECK ("radcore"."files"."status" in ('pending', 'checking', 'ready', 'refused')),
 	CONSTRAINT "ck_files_store_key" CHECK ("radcore"."files"."store_key" ~ ('^' || "radcore"."files"."kind" || '/[0-9a-f-]{36}$')),
-	CONSTRAINT "ck_files_size" CHECK (("radcore"."files"."status" = 'ready') = ("radcore"."files"."size" is not null) and ("radcore"."files"."size" is null or "radcore"."files"."size" > 0))
+	CONSTRAINT "ck_files_size" CHECK (("radcore"."files"."status" <> 'ready' or "radcore"."files"."size" is not null) and ("radcore"."files"."size" is null or "radcore"."files"."size" > 0))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX "ux_files_store_key" ON "radcore"."files" USING btree ("store_key");

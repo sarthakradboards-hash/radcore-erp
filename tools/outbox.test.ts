@@ -4,7 +4,9 @@
 // Here in tools/ because it reads pg-boss's and the outbox's tables as an operator would.
 import { randomUUID } from 'node:crypto';
 import { defineJob, loadConfig } from '@radcore/lib-platform';
-import { createDatabase, createJobQueue, relayOutbox, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
+import { createDatabase, relayOutbox, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
+// The full pg-boss queue, to send to it directly as an operator; the apps' queue can't (RAD-44).
+import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
 import { factory, testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -12,7 +14,9 @@ import { z } from 'zod';
 
 const url = process.env['TEST_DATABASE_URL'];
 const settings = () => {
-  const u = new URL(url ?? '');
+  // Without a test database the suite is skipped, but its body still runs: a placeholder keeps it from throwing, and
+  // the queue built from it is never started.
+  const u = new URL(url ?? 'postgres://skipped@127.0.0.1:1/skipped');
   // The test database uses trust auth; config wants a password, which the server ignores.
   u.password = testPassword();
   return loadConfig(testSettings({ DATABASE_URL: u.toString() }), 'worker').database;

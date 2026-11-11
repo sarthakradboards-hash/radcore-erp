@@ -122,9 +122,35 @@ export const jobsOutbox = radcoreTable('jobs_outbox', {
 ]);
 
 /**
+ * Webhook deliveries (ADR-001 §8a, RAD-45, RC-084): every signed delivery from an outside service, stored once before
+ * it's answered, then handed to its job through the outbox in the same transaction. `source` is the webhook's route
+ * (`POST /hooks/...`); `delivery_id` is the provider's own id, or a hash of the raw body where it sends none. Two unique
+ * indexes are the replay guard, so a repeat is answered and acted on once: on the provider's id, and on `body_sha256`,
+ * the SHA-256 of the signed raw body, because many providers send the id in an unsigned header that a resender could
+ * change (auditor-2, RC-084). `payload` is the raw body as
+ * received. `processed_at` is set by the job in its own transaction, so a delivery left unprocessed can be found
+ * and alerted on. The read-only login can't read it (its migration revokes radcore_read): payloads may be personal.
+ */
+export const webhookDeliveries = radcoreTable('webhook_deliveries', {
+  id: id(),
+  source: text().notNull(),
+  deliveryId: text().notNull(),
+  bodySha256: text().notNull(),
+  payload: text().notNull(),
+  processedAt: timestamp({ withTimezone: true }),
+}, (t) => [
+  uniqueIndex('ux_webhook_deliveries_source_delivery_id').on(t.source, t.deliveryId),
+  uniqueIndex('ux_webhook_deliveries_source_body_sha256').on(t.source, t.bodySha256),
+  check('ck_webhook_deliveries_body_sha256', sql`${t.bodySha256} ~ '^[0-9a-f]{64}$'`),
+  // The stuck-delivery watch reads the unprocessed ones, oldest first.
+  index('ix_webhook_deliveries_unprocessed').on(t.createdAt).where(isNull(t.processedAt)),
+]);
+
+/**
  * Files people upload (RAD-43, ADR-004 §2, RC-096, RC-191); an export is RAD-47's own row. The bytes live in S3, under
  * `store_key` (`<kind>/<uuid>`, made by the server); this row is what the app knows about them. A browser upload is
- * `pending` until its upload is checked (size, type, magic bytes), then `ready`; only a ready file can be downloaded.
+ * `pending` until the person confirms it, `checking` while a job checks it in S3 (size, type, magic bytes: a network
+ * call, so never inside a request's transaction, ADR-001 §8), then `ready` or `refused`. Only a ready file downloads.
  * `filename` is the name the person gave it, shown on download. Kept permanently, like all data (D-12): there's no
  * deletion job. Audited like any record.
  */
@@ -139,8 +165,8 @@ export const files = radcoreTable('files', {
 }, (t) => [
   uniqueIndex('ux_files_store_key').on(t.storeKey),
   check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import')`),
-  check('ck_files_status', sql`${t.status} in ('pending', 'ready')`),
+  check('ck_files_status', sql`${t.status} in ('pending', 'checking', 'ready', 'refused')`),
   check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
-  // A ready file has its checked size; a pending one has none yet.
-  check('ck_files_size', sql`(${t.status} = 'ready') = (${t.size} is not null) and (${t.size} is null or ${t.size} > 0)`),
+  // A ready file has its checked size.
+  check('ck_files_size', sql`(${t.status} <> 'ready' or ${t.size} is not null) and (${t.size} is null or ${t.size} > 0)`),
 ]);
