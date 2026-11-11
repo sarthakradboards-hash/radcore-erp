@@ -27,7 +27,7 @@ export const getMe = defineContract({
       idleExpiresAt: momentString(), // moves forward on activity
       absoluteExpiresAt: momentString(), // never moves
     }),
-    secondFactor: z.enum(['not_required', 'enrolled', 'enrolment_required']), // D-19: admin and owner only
+    secondFactor: z.enum(['not_required', 'enrolled', 'enrolment_required']), // D-19 (widened 10 Nov): admin, owner, accounts and HR
   }),
 });
 
@@ -48,8 +48,8 @@ export const signIn = defineContract({
   input: z.object({ email: emailString(), password: passwordString() }), // no length rule on sign-in
   output: z.discriminatedUnion('next', [
     z.object({ next: z.literal('done') }),
-    z.object({ next: z.literal('second_factor') }), // D-19: admin or owner with a factor enrolled
-    z.object({ next: z.literal('enrol_second_factor') }), // D-19: admin or owner without one yet
+    z.object({ next: z.literal('second_factor') }), // D-19: a role that needs one, with a factor enrolled
+    z.object({ next: z.literal('enrol_second_factor') }), // D-19: a role that needs one, without one yet
   ]),
   errors: ['invalid_credentials'], // the same answer for an unknown email and a wrong password
 });
