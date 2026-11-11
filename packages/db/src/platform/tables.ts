@@ -120,3 +120,27 @@ export const jobsOutbox = radcoreTable('jobs_outbox', {
   // The relay's pass reads the live rows that are due, oldest first.
   index('ix_jobs_outbox_due').on(t.nextAttemptAt).where(isNull(t.deadAt)),
 ]);
+
+/**
+ * Files people upload (RAD-43, ADR-004 §2, RC-096, RC-191); an export is RAD-47's own row. The bytes live in S3, under
+ * `store_key` (`<kind>/<uuid>`, made by the server); this row is what the app knows about them. A browser upload is
+ * `pending` until its upload is checked (size, type, magic bytes), then `ready`; only a ready file can be downloaded.
+ * `filename` is the name the person gave it, shown on download. Kept permanently, like all data (D-12): there's no
+ * deletion job. Audited like any record.
+ */
+export const files = radcoreTable('files', {
+  id: id(),
+  kind: text().notNull(),
+  storeKey: text().notNull(),
+  filename: boundedText({ max: 255 }).notNull(),
+  contentType: text().notNull(),
+  size: integer(),
+  status: text().notNull().default('pending'),
+}, (t) => [
+  uniqueIndex('ux_files_store_key').on(t.storeKey),
+  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import')`),
+  check('ck_files_status', sql`${t.status} in ('pending', 'ready')`),
+  check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
+  // A ready file has its checked size; a pending one has none yet.
+  check('ck_files_size', sql`(${t.status} = 'ready') = (${t.size} is not null) and (${t.size} is null or ${t.size} > 0)`),
+]);
