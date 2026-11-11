@@ -102,6 +102,16 @@ describe('defineJob', () => {
     expect(steps).toEqual(['before', 'open', 'service checked 3']);
   });
 
+  it('rechecks the enqueuer before the `before` step, so a revoked permission reaches no network (§6a, §8)', async () => {
+    const { open, opened } = opener();
+    const before = vi.fn(async () => 'x');
+    const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), putFile: vi.fn() };
+    await expect(defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' } }), async () => undefined, before)
+      .handle({ input: { n: 1 }, by: 'user:u-1' }, 'job-9', { open, load: async () => asUser([]), alert, files }))
+      .rejects.toThrow(JobRefused);
+    expect([before.mock.calls, opened]).toEqual([[], []]);
+  });
+
   it('refuses a job with a `before` step in a worker without a file store, before any transaction', async () => {
     const { open, opened } = opener();
     await expect(defineJob(contract(), async () => undefined, async () => 'x')
