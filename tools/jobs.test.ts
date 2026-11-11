@@ -11,6 +11,7 @@ import { cleanSavedOnce, savedOnceCleanup } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
 // The full pg-boss queue, to send to it directly as an operator; the apps' queue can't (RAD-44).
 import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
+import platformJobs from '../apps/worker/src/jobs/platform.ts';
 import { platformTx, savedOnce } from '@radcore/db/platform';
 import { factory, testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
@@ -122,7 +123,8 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
     const exited = once(worker, 'exit');
     try {
       await vi.waitFor(() => expect(out.join('')).toContain('worker: started'), { timeout: 30_000, interval: 250 });
-      expect(out.join('')).toContain('job queue: running 3 job(s)'); // lib-platform's two clean-ups and the secrets watch
+      // Every job in the worker's list, counted from the list, so a new platform job doesn't need this test changed.
+      expect(out.join('')).toContain(`job queue: running ${platformJobs.length} job(s)`);
     } finally {
       worker.kill('SIGTERM');
     }
