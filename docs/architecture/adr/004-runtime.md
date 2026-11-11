@@ -142,10 +142,10 @@ Actions with its own AWS role, assumed through OIDC (no stored keys). That role 
 2. opens an SSM port-forwarding session through the server to RDS, which isn't public;
 3. runs the `migrate` image in CI with the owner login. TLS is still verified through the tunnel: `ssl.servername`
    is the RDS endpoint name, so `verify-full` checks the right certificate. It runs under `lock_timeout = 5s` and a
-   statement timeout, so a migration never queues behind live traffic for long;
-4. runs the partition top-up (ADR-005 §8) the same way;
-5. closes the session;
-6. tells the server, through SSM, to pull the new images **by digest** and swap containers.
+   statement timeout, so a migration never queues behind live traffic for long. The same step tops up the log
+   partitions under the same lock (ADR-005 §8);
+4. closes the session;
+5. tells the server, through SSM, to pull the new images **by digest** and swap containers.
 
 Deploys are serialised: one GitHub Actions concurrency group per environment, with `cancel-in-progress: false`, so
 two deploys never overlap and a running one is never cut off. The previous five image digests are kept.
@@ -215,7 +215,8 @@ the deploy job through SSM:
   names the Hyderabad replica key. Without that, it would copy nothing.
   - A daily canary object is written in Mumbai. The monitor alerts if it hasn't appeared in Hyderabad within an
     hour.
-  - Lifecycle rules abort incomplete uploads after a day, and expire old versions under the retention rule (D-12).
+  - Lifecycle rules abort incomplete uploads after a day. Old versions are kept: D-12 keeps all data, so none
+    expires.
   - A bucket policy denies any request not over TLS.
 - **RDS** has deletion protection on, keeps its automated backups on deletion, and replicates them to `ap-south-2`
   with a key in that region. M8-01 confirms that the Mumbai-to-Hyderabad pair is offered, and sets the retention
@@ -224,7 +225,8 @@ the deploy job through SSM:
   deletion lock (M8).
 - **Files, still open:** the Hyderabad files bucket has no Object Lock yet, and one key protects both regions. Object
   Lock would protect files from one admin as the vault protects backups, but it would also block deleting a
-  person's files on request (DPDP). The choice goes with the retention decision, D-12.
+  person's files on request (DPDP). D-12 keeps everything, so Object Lock no longer conflicts with retention, but
+  it would rule out an erasure on request, which D-09 leaves open. It's decided at M8, after D-09.
 - **Recovery time:** about 30 to 60 minutes to rebuild the server from images and reattach RDS, rehearsed in M8
   (Hosting recommendation §3).
 

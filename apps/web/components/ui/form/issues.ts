@@ -16,6 +16,14 @@ export function placeIssues(issues: readonly Issue[], mounted: ReadonlySet<strin
   return { fields, rest };
 }
 
+/** The form's own alert for a refused save: what the server said, plus any issue no field shows. None for
+ * signed_out: the signed-out dialog says it and keeps the typed values, and an alert here would outlive signing in
+ * again (RC-147). */
+export function formAlert(code: string, said: string, rest: readonly string[]): string | null {
+  if (code === 'signed_out') return null;
+  return rest.length === 0 ? said : `${said}: ${rest.join('; ')}`;
+}
+
 /** The check's errors that no mounted field shows (a schema that requires a masked or missing field), as
  * "name: message", so the form can say why it won't save instead of doing nothing. */
 export function unshownErrors(errors: object, mounted: ReadonlySet<string>, path: string[] = []): string[] {
