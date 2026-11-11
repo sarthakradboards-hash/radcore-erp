@@ -1,9 +1,8 @@
 // The api's HTTP server. The generic handler (M1-08) mounts its routes on this app.
 import express from 'express';
 import { createHealthCheck, type Logger, type Stoppable } from '@radcore/lib-platform/runtime';
-import type { Config, Webhook } from '@radcore/lib-platform';
+import type { Config, Route, Webhook } from '@radcore/lib-platform';
 import { mountRoutes, type HandlerDeps } from './http/handler.ts';
-import type { Route } from './http/route.ts';
 import { mountWebhooks } from './http/webhooks.ts';
 
 /** The routes and what the handler needs to run them; without it, the app serves only /health. */
