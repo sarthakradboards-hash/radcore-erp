@@ -91,6 +91,17 @@ describe.skipIf(!url)('webhook intake', () => {
     expect(handled.mock.calls.filter(([d]) => d.payload === body)).toHaveLength(1);
   }, 60_000);
 
+  it('acts once on a signed body resent under a new delivery id, since the id header isn\'t signed (auditor-2)', async () => {
+    const [first, second] = [randomUUID(), randomUUID()];
+    const body = JSON.stringify({ order: first });
+    expect([(await deliver(body, { 'x-test-delivery': first })).status, (await deliver(body, { 'x-test-delivery': second })).status])
+      .toEqual([200, 200]);
+    expect([await stored(first), await stored(second)].map((r) => r.length)).toEqual([1, 0]);
+    await runQueuedWork();
+    await vi.waitFor(async () => expect(await stored(first)).toEqual([{ processed: true }]), { timeout: 30_000, interval: 250 });
+    expect(handled.mock.calls.filter(([d]) => d.payload === body)).toHaveLength(1);
+  }, 60_000);
+
   it('refuses a delivery whose signature doesn\'t match its raw body, storing nothing', async () => {
     const id = randomUUID();
     const body = JSON.stringify({ order: id });

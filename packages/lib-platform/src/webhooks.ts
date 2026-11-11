@@ -18,14 +18,16 @@ export type WebhookCheck = { valid: false } | { valid: true; deliveryId: string 
 /** The provider's signature check over the raw bytes, with the request's headers (lib-integrations supplies it). */
 export type WebhookVerifier = (raw: Buffer, header: (name: string) => string | undefined) => WebhookCheck;
 
-/** The input every webhook job takes: one stored delivery, with its raw body. */
-export const webhookDelivery = z.object({ id: z.uuid(), source: z.string(), deliveryId: z.string(), payload: z.string() });
-export type WebhookDelivery = z.output<typeof webhookDelivery>;
+/** The input every webhook job takes: the stored delivery's id only, so its payload has one copy (auditor-2). */
+export const webhookDelivery = z.strictObject({ id: z.uuid() });
 
-export type Webhook = Readonly<{ contract: Contract; source: string; verify: WebhookVerifier; job: JobContract<WebhookDelivery> }>;
+/** What the owning library's service gets: the stored delivery, loaded by the job in its own transaction. */
+export type WebhookDelivery = { id: string; source: string; deliveryId: string; payload: string };
+
+export type Webhook = Readonly<{ contract: Contract; source: string; verify: WebhookVerifier; job: JobContract<{ id: string }> }>;
 
 /** A webhook route: its contract (a POST with `auth: 'webhook'`), the provider's check, and the job that acts on it. */
-export function defineWebhook(contract: Contract, verify: WebhookVerifier, job: JobContract<WebhookDelivery>): Webhook {
+export function defineWebhook(contract: Contract, verify: WebhookVerifier, job: JobContract<{ id: string }>): Webhook {
   const source = `${contract.method} ${contract.path}`;
   if (contract.auth !== 'webhook' || contract.method !== 'POST') throw new TypeError(`${source}: a webhook is a POST with auth: 'webhook'`);
   // ADR-001 §6a: a webhook's work runs as a named system principal with only its listed permissions.
@@ -34,25 +36,35 @@ export function defineWebhook(contract: Contract, verify: WebhookVerifier, job: 
 }
 
 /**
- * Stores a checked delivery once and queues its job, both in `ctx`'s transaction. Returns false for a repeat (the same
- * source and delivery id), which was stored and queued already: it's answered the same and acted on once.
+ * Stores a checked delivery once and queues its job, both in `ctx`'s transaction. Returns false for a repeat, which
+ * was stored and queued already: it's answered the same and acted on once. A repeat is the same provider id, or the
+ * same signed body under another id, since many providers put the id in an unsigned header (auditor-2, RC-084).
  */
 export async function takeDelivery(ctx: Ctx, hook: Webhook, raw: Buffer, providerId: string | null): Promise<boolean> {
   const payload = raw.toString('utf8');
-  // A provider that sends no id gets one from the body itself, so a byte-for-byte resend is still caught.
-  const deliveryId = providerId ?? createHash('sha256').update(raw).digest('hex');
-  const [row] = await platformTx(ctx).insert(webhookDeliveries).values({ source: hook.source, deliveryId, payload })
+  const bodySha256 = createHash('sha256').update(raw).digest('hex');
+  // A provider that sends no id is keyed on its body alone.
+  const deliveryId = providerId ?? bodySha256;
+  const [row] = await platformTx(ctx).insert(webhookDeliveries).values({ source: hook.source, deliveryId, bodySha256, payload })
     .onConflictDoNothing().returning({ id: webhookDeliveries.id });
   if (row === undefined) return false;
-  await ctx.jobs.send(hook.job, { id: row.id, source: hook.source, deliveryId, payload });
+  await ctx.jobs.send(hook.job, { id: row.id });
   return true;
 }
 
-/** A webhook's job: the owning library's service, then its delivery marked processed in the same transaction. */
-export function defineWebhookJob(contract: JobContract<WebhookDelivery>,
+/**
+ * A webhook's job: loads its delivery, runs the owning library's service on it, then marks the delivery processed,
+ * all in the job's one transaction.
+ */
+export function defineWebhookJob(contract: JobContract<{ id: string }>,
   service: (ctx: Ctx, delivery: WebhookDelivery, meta: JobMeta) => Promise<void>): JobDefinition {
-  return defineJob(contract, async (ctx, delivery, meta) => {
+  return defineJob(contract, async (ctx, { id }, meta) => {
+    const tx = platformTx(ctx);
+    const [delivery] = await tx.select({ id: webhookDeliveries.id, source: webhookDeliveries.source,
+      deliveryId: webhookDeliveries.deliveryId, payload: webhookDeliveries.payload }).from(webhookDeliveries)
+      .where(eq(webhookDeliveries.id, id));
+    if (delivery === undefined) throw new Error(`${contract.name}: delivery ${id} isn't stored`);
     await service(ctx, delivery, meta);
-    await platformTx(ctx).update(webhookDeliveries).set({ processedAt: new Date() }).where(eq(webhookDeliveries.id, delivery.id));
+    await tx.update(webhookDeliveries).set({ processedAt: new Date() }).where(eq(webhookDeliveries.id, id));
   });
 }

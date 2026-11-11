@@ -20,13 +20,11 @@ const answer = (res: Response, status: number, code: string, message: string, re
 /** Mounts each webhook before the browser routes' guards and body parser. */
 export function mountWebhooks(app: Express, hooks: readonly Webhook[], deps: { db: Database; log: Logger }): void {
   const router = express.Router();
-  router.use((_req, res, next) => {
-    res.set('Cache-Control', 'no-store');
-    next();
-  });
   for (const hook of hooks) {
     router.post(hook.contract.path, express.raw({ type: () => true, limit: '1mb' }), async (req, res) => {
       const requestId = randomUUID();
+      // Set here, not on the router: it sits at '/', and this lane answers only its own paths (auditor-2).
+      res.set('Cache-Control', 'no-store');
       try {
         const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
         const check = hook.verify(raw, (name) => req.get(name));
