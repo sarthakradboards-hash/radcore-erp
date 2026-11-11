@@ -105,6 +105,8 @@ export const admin = {
   'admin.sessions.col.action': 'End',
   'admin.sessions.current': 'This session',
   'admin.sessions.end': 'End session',
+  // The row's button shows "End", which its label starts with, so voice control finds it by what it shows (WCAG 2.5.3).
+  'admin.sessions.end.row': 'End',
   'admin.sessions.end.label': 'End {name}’s session on {device}',
   'admin.sessions.end.title': 'End {name}’s session on {device}?',
   'admin.sessions.end.body': 'They are signed out on that device. Unsaved work there may be lost.',

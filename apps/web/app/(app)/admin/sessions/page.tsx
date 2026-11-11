@@ -30,7 +30,7 @@ export default function SessionsPage() {
     { id: 'ends', header: t('admin.sessions.col.ends'), cell: (s) => formatMoment(endsBy(s)) },
     { id: 'action', header: t('admin.sessions.col.action'), cell: (s) => (s.current ? t('admin.sessions.current') : (
       <button type="button" className="kit-button" onClick={() => setEnding(s)}
-        aria-label={t('admin.sessions.end.label', { name: s.user.displayName, device: s.device })}>{t('admin.sessions.end')}</button>
+        aria-label={t('admin.sessions.end.label', { name: s.user.displayName, device: s.device })}>{t('admin.sessions.end.row')}</button>
     )) },
   ];
 
