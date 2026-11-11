@@ -1,7 +1,7 @@
 // lib-platform's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every
 // contract file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  dateRange, defineContract, emailString, idString, listInput, listOf, momentString, newPassword, passwordString,
+  dateString, defineContract, emailString, idString, listInput, listOf, momentString, newPassword, passwordString,
   searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
@@ -248,12 +248,18 @@ export const endUserSessions = defineContract({
 });
 
 const auditOp = z.enum(['insert', 'update', 'delete']);
-/** The audit trail (RAD-30 part 2), newest first, keyset on (occurred_at desc, id desc). The date range is required,
- * so a read prunes to a few month partitions; range_too_long caps it. A secret column's value is "[redacted]". */
+/** The widest range one audit or security-event read may ask for, both ends counted; past it, range_too_long. */
+export const AUDIT_RANGE_MAX_DAYS = 92;
+// Both ends required (unlike lib-common's dateRange), so a read always prunes to the months it names.
+const auditRange = () => z.object({ from: dateString(), to: dateString() })
+  .refine((r) => r.from <= r.to, { error: 'The start date is after the end date', path: ['to'] });
+/** The audit trail (RAD-30 part 2), newest first, keyset on (occurred_at desc, seq desc): one save's rows share
+ * occurred_at, and seq keeps them in the order written. Secret and personal-data columns are stored, and so arrive,
+ * as "[redacted]" (the architect on RAD-30: references, not copies), so the screen never sees a raw personal value. */
 export const listAuditTrail = defineContract({
   method: 'GET', path: '/admin/audit', auth: 'session', perm: 'audit:read', tx: read,
   input: listInput(z.object({
-    occurred: dateRange(),
+    occurred: auditRange(),
     tableName: z.string().regex(/^[a-z][a-z0-9_]{0,62}$/, 'Choose a table from the list').optional(),
     recordId: z.string().max(64).optional(),
     principal: z.string().max(80).optional(), // a user id, "system:<name>" or a link id (ADR-001 §6a)
@@ -275,11 +281,12 @@ export const listAuditedTables = defineContract({
 });
 
 const securityEventKind = z.enum(['sign_in', 'sign_in_failed', 'password_changed', 'second_factor_changed', 'export', 'download']);
-/** Security events (RAD-31's event_log), newest first, the audit viewer's second tab. `detail` never holds a
- * password, code or token; `principal` is null for a failed sign-in that matched nobody. */
+/** Security events (RAD-31's event_log), newest first on (occurred_at desc, seq desc), the audit viewer's second tab.
+ * `principal` is the account the event concerns; with none, the system principal that acted (a job's export);
+ * otherwise null, such as a failed sign-in that matched nobody. `detail` never holds a password, code or token. */
 export const listSecurityEvents = defineContract({
   method: 'GET', path: '/admin/security-events', auth: 'session', perm: 'audit:read', tx: read,
-  input: listInput(z.object({ occurred: dateRange(), kind: securityEventKind.optional(), principal: z.string().max(80).optional() })),
+  input: listInput(z.object({ occurred: auditRange(), kind: securityEventKind.optional(), principal: idString().optional() })),
   output: listOf(z.object({
     id: idString(), occurredAt: momentString(), kind: securityEventKind, principal: principalOut.nullable(),
     device: z.string().max(80), detail: z.record(z.string(), z.json()),

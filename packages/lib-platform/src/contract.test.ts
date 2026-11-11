@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as contracts from './contract.ts';
 import {
-  acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, confirmSecondFactorEnrolment, deactivateUser, endMySession,
+  acceptInvite, ANSWER_NOT_STORED_ROUTES, AUDIT_RANGE_MAX_DAYS, changePassword, confirmSecondFactorEnrolment, deactivateUser, endMySession,
   endSession, endUserSessions, getMe, getPermissionMatrix, inviteUser, KEY_EXEMPT_ROUTES, listAuditedTables,
   listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
   resetPassword, requestPasswordReset, setRolePermissions, setUserRole, signIn, startSecondFactorEnrolment,
@@ -195,16 +195,24 @@ describe('the admin contracts', () => {
     const occurred = { from: '2026-10-11', to: '2026-11-10' };
     expect(okFor(listAuditTrail, { ...list, filter: { occurred } })).toBe(true);
     expect(okFor(listAuditTrail, { ...list, filter: {} })).toBe(false);
+    for (const c of [listAuditTrail, listSecurityEvents]) {
+      expect(okFor(c, { ...list, filter: { occurred: {} } })).toBe(false); // both ends, always
+      expect(okFor(c, { ...list, filter: { occurred: { from: '2026-10-11' } } })).toBe(false);
+    }
+    expect(AUDIT_RANGE_MAX_DAYS).toBe(92);
+    // event_log.user_id is a uuid: a name there would be a 500, so the schema refuses it first.
+    expect(okFor(listSecurityEvents, { ...list, filter: { occurred, principal: 'system:online-orders' } })).toBe(false);
+    expect(okFor(listSecurityEvents, { ...list, filter: { occurred, principal: id } })).toBe(true);
     expect(okFor(listAuditTrail, { ...list, filter: { occurred: { from: '2026-11-10', to: '2026-10-11' } } })).toBe(false);
     expect(okFor(listAuditTrail, { ...list, filter: { occurred, tableName: 'users; drop' } })).toBe(false);
     expect(okFor(listSecurityEvents, { ...list, filter: { occurred, kind: 'sign_in_failed' } })).toBe(true);
     expect([listAuditTrail.errors, listSecurityEvents.errors]).toEqual([['range_too_long'], ['range_too_long']]);
   });
 
-  it('carry audit values as stored, a secret as "[redacted]", and a failed sign-in with no principal', () => {
+  it('carry audit values as stored, secrets and personal data as "[redacted]", and a failed sign-in with no principal', () => {
     const row = { id, occurredAt: at, principal: { kind: 'system', id: 'system:online-orders', displayName: null },
       tableName: 'users', recordId: id, op: 'update',
-      changed: { display_name: { old: 'Asha', new: 'Asha Rao' }, password_hash: { old: '[redacted]', new: '[redacted]' } } };
+      changed: { status: { old: 'active', new: 'disabled' }, phone: { old: '[redacted]', new: '[redacted]' } } };
     expect(listAuditTrail.output.parse({ items: [row], next: null })).toEqual({ items: [row], next: null });
     const event = { id, occurredAt: at, kind: 'sign_in_failed', principal: null, device: 'Edge on Windows', detail: {} };
     expect(listSecurityEvents.output.parse({ items: [event], next: null })).toEqual({ items: [event], next: null });
