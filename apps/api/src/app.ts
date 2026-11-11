@@ -23,7 +23,8 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
     }
   });
   if (api !== undefined) {
-    mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin });
+    mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin,
+      newPasswordCheck: api.newPasswordCheck });
   }
   return app;
 }

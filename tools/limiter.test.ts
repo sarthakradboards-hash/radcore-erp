@@ -9,6 +9,8 @@ import { createLockout, LOCKOUT } from '../packages/lib-platform/src/auth/lockou
 import { createLimiterStore } from '../packages/lib-platform/src/db/client.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
+// Collecting a skipped suite still builds its store; a pool connects only when used, so this is never reached.
+const NO_DATABASE = 'postgres://unused@127.0.0.1:1/unused';
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 // The test server uses trust auth; the settings check wants a password, which the server ignores.
 const database = (u: string) => {
@@ -20,7 +22,7 @@ const prefix = () => `test${randomBytes(4).toString('hex')}`;
 const log = { info: () => undefined, error: () => undefined };
 
 describe.skipIf(!url)('the shared rate-limit store', () => {
-  const store = createLimiterStore(database(url ?? ''), log);
+  const store = createLimiterStore(database(url ?? NO_DATABASE), log);
   afterAll(() => store.end());
 
   it('lets a key through until its points are used, then holds it for the block', async () => {
