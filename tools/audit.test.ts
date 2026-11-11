@@ -136,9 +136,9 @@ describe.skipIf(!url)('the audit engine', () => {
 
   it("takes a log's time from the database: a far-off occurred_at is refused (ADR-005 §8)", async () => {
     await inRollback(async (c) => {
-      expect(await outcome(c, "insert into radcore.event_log (kind, occurred_at) values ('test', now() + interval '1 day')"))
+      expect(await outcome(c, "insert into radcore.event_log (kind, occurred_at) values ('sign_in', now() + interval '1 day')"))
         .toBe('23514');
-      expect(await outcome(c, "insert into radcore.event_log (kind) values ('test')")).toBe('ok');
+      expect(await outcome(c, "insert into radcore.event_log (kind) values ('sign_in')")).toBe('ok');
     });
   });
 
