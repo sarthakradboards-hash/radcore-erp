@@ -15,8 +15,9 @@ const config = () => loadConfig(testSettings({ DATABASE_URL: `postgres://radcore
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
 const as = (permissions: string[]): Principal => ({ kind: 'user', userId: randomUUID(), permissions });
 
-it('mounts listSecurityEvents from the platform route file', () => {
-  expect(platform.map((r) => `${r.contract.method} ${r.contract.path}`)).toContain('GET /admin/security-events');
+it("mounts lib-platform's admin audit routes from its route file", () => {
+  expect(platform.map((r) => `${r.contract.method} ${r.contract.path}`))
+    .toEqual(expect.arrayContaining(['GET /admin/audit', 'GET /admin/audit/tables', 'GET /admin/security-events']));
 });
 
 describe.skipIf(!url)('GET /admin/security-events', () => {

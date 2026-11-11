@@ -131,8 +131,15 @@
     {
       "idx": 18,
       "version": "7",
-      "when": 1794417469580,
-      "tag": "0018_sessions",
+      "when": 1794417194658,
+      "tag": "0018_audited_tables_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794419174625,
+      "tag": "0019_sessions",
       "breakpoints": true
     }
   ]
