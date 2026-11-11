@@ -145,3 +145,28 @@ export const webhookDeliveries = radcoreTable('webhook_deliveries', {
   // The stuck-delivery watch reads the unprocessed ones, oldest first.
   index('ix_webhook_deliveries_unprocessed').on(t.createdAt).where(isNull(t.processedAt)),
 ]);
+
+/**
+ * Sign-in sessions (M1-16, RAD-34, ADR-001 §7a). The cookie holds a random token; only its SHA-256 is stored, so the
+ * table can't be used to sign anyone in. `idle_expires_at` moves forward on the person's own requests and
+ * `absolute_expires_at` never moves; a session past either, or with `ended_at`, signs nobody in. `device` is a short
+ * user-agent summary, with no IP. It's stamped who-and-when but not row-audited: `last_seen_at` changes on every
+ * request, and a session's start and end are security events (RAD-31).
+ */
+export const sessions = radcoreTable('sessions', {
+  id: id(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+  tokenHash: text().notNull(),
+  device: boundedText({ max: 80 }).notNull(),
+  lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  idleExpiresAt: timestamp({ withTimezone: true }).notNull(),
+  absoluteExpiresAt: timestamp({ withTimezone: true }).notNull(),
+  endedAt: timestamp({ withTimezone: true }),
+  endedReason: text(),
+}, (t) => [
+  check('ck_sessions_token_hash', sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+  check('ck_sessions_ended_reason', sql`${t.endedReason} in ('sign_out', 'admin', 'password_changed', 'password_reset', 'role_changed', 'deactivated')`),
+  check('ck_sessions_ended', sql`(${t.endedAt} is null) = (${t.endedReason} is null)`),
+  uniqueIndex('ux_sessions_token_hash').on(t.tokenHash),
+  index('ix_sessions_user_id').on(t.userId),
+]);
