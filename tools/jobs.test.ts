@@ -165,8 +165,8 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
           [[keptId, goneId]]);
         expect(rows).toEqual([{ id: keptId, state: 'completed' }]);
       }, { timeout: 30_000, interval: 250 });
-      expect(ran).toHaveBeenCalledWith(expect.objectContaining({ principal: system }), { n: 1 }, { jobId: keptId });
-      expect(ran).toHaveBeenCalledWith(expect.anything(), { n: 2 }, { jobId: goneId });
+      expect(ran).toHaveBeenCalledWith(expect.objectContaining({ principal: system }), { n: 1 }, { jobId: keptId, alert: expect.any(Function) });
+      expect(ran).toHaveBeenCalledWith(expect.anything(), { n: 2 }, { jobId: goneId, alert: expect.any(Function) });
     } finally {
       await stop.stop();
     }
