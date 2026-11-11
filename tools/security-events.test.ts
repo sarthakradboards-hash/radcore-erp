@@ -5,6 +5,7 @@
 // runs as the app login; event_log is append-only, so its rows stay, and each test reads only its own account's.
 import { randomUUID } from 'node:crypto';
 import { type Principal } from '@radcore/lib-platform';
+import { listSecurityEvents } from '@radcore/lib-platform/contract';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -59,6 +60,15 @@ describe.skipIf(!superUrl)('record_event', () => {
         from radcore.event_log where user_id = $1`, [userId]);
       expect(rows).toEqual([{ kind: 'sign_in_failed', device: 'Firefox on Windows', detail: { reason: 'invalid_credentials' },
         created_by: 'system:public', now: true }]);
+    });
+  });
+
+  it("accepts exactly the contract's kinds: a kind added on one side only fails here", async () => {
+    await inRollback(async (c) => {
+      const { rows } = await c.query<{ def: string }>(
+        "select pg_get_constraintdef(oid) as def from pg_catalog.pg_constraint where conname = 'ck_event_log_kind' and conrelid = 'radcore.event_log'::regclass");
+      const kinds = [...(rows[0]?.def ?? '').matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]);
+      expect(kinds.toSorted()).toEqual([...listSecurityEvents.output.shape.items.element.shape.kind.options].toSorted());
     });
   });
 
