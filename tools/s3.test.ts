@@ -180,11 +180,17 @@ describe.runIf(REAL_S3)('file store on real S3', () => {
     try {
       // The clean POST first, so a 403 below can't come from a missing role permission or the wrong bucket (auditor-2).
       expect(await post(upload.url, upload.fields, 1024)).toBe(204);
+      // The check with the instance role: its first HEAD finds no copy yet, which only answers 404 (not 403) when the
+      // role may list the bucket (ADR-004 §2), and the check depends on that (auditor on #123).
+      expect(await files.verifyUpload(upload.key, 'resume')).toEqual({ size: 1024, contentType: 'application/pdf' });
       const again = await files.presignUpload('resume', 'application/pdf');
       expect(await post(again.url, { ...again.fields, acl: 'public-read' }, 1024)).toBe(403);
     } finally {
       // The one object this test stored; the refused POST stored nothing.
-      await new S3Client({ region: s3.region }).send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: `incoming/${upload.key}` }));
+      // The upload (if the check didn't get to remove it) and its checked copy.
+      const real = new S3Client({ region: s3.region });
+      await real.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: `incoming/${upload.key}` }));
+      await real.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: upload.key }));
     }
   });
 });

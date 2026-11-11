@@ -124,6 +124,8 @@ and `worker` may reach it, by an allowlist:
 **What the instance role may do**, and nothing else:
 - read and write objects in the files bucket, and delete them under `incoming/` (an upload, once its checked copy
   is made, RAD-43);
+- list the files bucket (`s3:ListBucket`), so a missing object answers 404, which the upload check relies on. Without
+  it S3 answers 403 for a missing object. It shows key names only, which are server-made ids;
 - use the secrets KMS key (encrypt, decrypt, generate data keys);
 - read the named **runtime** secrets in Secrets Manager (`DATABASE_URL`, `TURNSTILE_SECRET`, `ALERT_WEBHOOK_URL`,
   `HEARTBEAT_URL`), and the runtime settings in Parameter Store;
