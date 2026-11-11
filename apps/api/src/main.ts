@@ -1,9 +1,10 @@
 import { createDatabase, newPasswordCheckFor, startFileStore, startProcess } from '@radcore/lib-platform/runtime';
 import { createApp, listen } from './app.ts';
 import fileRoutes from './routes/files.ts';
+import platform from './routes/platform.ts';
 
-// Each module's route file (apps/api/src/routes/<module>.ts) joins this list as modules land.
-const ROUTES = [...fileRoutes];
+// Each module's route file (apps/api/src/routes/<module>.ts) default-exports its defineRoute list; spread them in here.
+const ROUTES = [...fileRoutes, ...platform];
 
 await startProcess('api', async ({ config, pool, log }) => {
   // shortcut: no one can sign in until sessions land (RAD-32), so every session route answers 401 signed_out.
