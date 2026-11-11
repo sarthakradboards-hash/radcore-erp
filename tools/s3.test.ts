@@ -186,11 +186,9 @@ describe.runIf(REAL_S3)('file store on real S3', () => {
       const again = await files.presignUpload('resume', 'application/pdf');
       expect(await post(again.url, { ...again.fields, acl: 'public-read' }, 1024)).toBe(403);
     } finally {
-      // The one object this test stored; the refused POST stored nothing.
-      // The upload (if the check didn't get to remove it) and its checked copy.
-      const real = new S3Client({ region: s3.region });
-      await real.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: `incoming/${upload.key}` }));
-      await real.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: upload.key }));
+      // The upload, if the check didn't get to remove it; the refused POST stored nothing. The checked copy stays, as
+      // every checked file does: the instance role deletes only under incoming/ (ADR-004 §2).
+      await new S3Client({ region: s3.region }).send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: `incoming/${upload.key}` }));
     }
   });
 });
