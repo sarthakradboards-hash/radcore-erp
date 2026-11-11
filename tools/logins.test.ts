@@ -23,7 +23,7 @@ const withPassword = (u: string) => {
 const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'unit_events', 'payment_allocations',
   'credit_applications', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
 // Written only by triggers and record_access, never by an INSERT from the app.
-const NO_INSERT = ['audit_log', 'access_log'];
+const NO_INSERT = ['audit_log', 'access_log', 'event_log'];
 const EVERY = 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
 
 // Anything in radcore a login could reach that it must not:
@@ -90,9 +90,9 @@ describe.skipIf(!url)('the three logins', () => {
     await inRollback(async (c) => {
       const { rows } = await c.query(`
         select pg_get_userbyid(datdba) as owner from pg_database where datname = current_database()
-        union select pg_get_userbyid(nspowner) from pg_namespace where nspname in ('radcore', 'pgboss', 'drizzle')
+        union select pg_get_userbyid(nspowner) from pg_namespace where nspname in ('radcore', 'pgboss', 'drizzle', 'ratelimit')
         union select pg_get_userbyid(c.relowner) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-          where n.nspname in ('radcore', 'pgboss', 'drizzle')`);
+          where n.nspname in ('radcore', 'pgboss', 'drizzle', 'ratelimit')`);
       expect(rows).toEqual([{ owner: 'radcore_owner' }]);
     });
   });
@@ -177,12 +177,12 @@ describe.skipIf(!url)('the three logins', () => {
       await c.query('set local role radcore_owner');
       await c.query('create table radcore.journal_lines (id int)');
       await c.query('create view radcore.journal_view as select * from radcore.journal_lines');
-      await c.query('create table radcore.audit_log (id int, at date not null) partition by range (at)');
-      await c.query('revoke update, delete, truncate on radcore.audit_log from radcore_app');
-      await c.query("create table radcore.audit_log_2026_11 partition of radcore.audit_log for values from ('2026-11-01') to ('2026-12-01')");
-      await c.query("create table radcore.audit_log_2026_12 partition of radcore.audit_log for values from ('2026-12-01') to ('2027-01-01')");
-      await c.query('revoke all on radcore.audit_log_2026_12 from radcore_app, radcore_read');
-      expect(await exposed()).toEqual(['audit_log', 'audit_log_2026_11', 'journal_lines', 'journal_view']);
+      // The real audit_log (RAD-30) given back an INSERT, and a month added without its revokes.
+      await c.query('grant insert on radcore.audit_log to radcore_app');
+      await c.query("create table radcore.audit_log_2099_01 partition of radcore.audit_log for values from ('2099-01-01') to ('2099-02-01')");
+      await c.query("create table radcore.audit_log_2099_02 partition of radcore.audit_log for values from ('2099-02-01') to ('2099-03-01')");
+      await c.query('revoke all on radcore.audit_log_2099_02 from radcore_app, radcore_read');
+      expect(await exposed()).toEqual(['audit_log', 'audit_log_2099_01', 'journal_lines', 'journal_view']);
     });
   });
 
