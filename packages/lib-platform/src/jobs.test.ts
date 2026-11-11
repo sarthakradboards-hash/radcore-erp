@@ -84,6 +84,31 @@ describe('defineJob', () => {
     expect(() => defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' }, every: '* * * * *' }),
       async () => undefined)).toThrow(/scheduled job must declare a system principal/);
   });
+  it('runs its `before` step outside the transaction, first, and hands its result to the service (ADR-001 §8)', async () => {
+    const steps: string[] = [];
+    const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), putFile: vi.fn() };
+    const open: OpenJob = async (_principal, _jobId, work) => {
+      steps.push('open');
+      // The service's ctx isn't read here; the real one is proved on PostgreSQL (tools/files.test.ts).
+      await work(Object.freeze({}) as Parameters<typeof work>[0]);
+    };
+    const service = vi.fn(async (_ctx: unknown, _input: { n: number }, meta: { before: string }) => { steps.push(`service ${meta.before}`); });
+    const before = vi.fn(async ({ n }: { n: number }, outside: { files: unknown }) => {
+      steps.push('before');
+      expect(outside.files).toBe(files);
+      return `checked ${n}`;
+    });
+    await defineJob(contract(), service, before).handle({ input: { n: 3 }, by: 'system:x' }, 'job-7', { open, load: nobody, alert, files });
+    expect(steps).toEqual(['before', 'open', 'service checked 3']);
+  });
+
+  it('refuses a job with a `before` step in a worker without a file store, before any transaction', async () => {
+    const { open, opened } = opener();
+    await expect(defineJob(contract(), async () => undefined, async () => 'x')
+      .handle({ input: { n: 1 }, by: 'system:x' }, 'job-8', { open, load: nobody, alert })).rejects.toThrow(/no file store/);
+    expect(opened).toEqual([]);
+  });
+
   it('carries the schedule and delete-on-complete for the worker', () => {
     const job = defineJob(contract({ every: '* * * * *', deleteOnComplete: true }), async () => undefined);
     expect(job).toMatchObject({ name: 'sales.shopify-order', every: '* * * * *', deleteOnComplete: true });

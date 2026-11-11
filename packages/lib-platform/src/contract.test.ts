@@ -9,7 +9,7 @@ import {
   endSession, endUserSessions, getMe, getPermissionMatrix, inviteUser, KEY_EXEMPT_ROUTES, listAuditedTables,
   listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
   resetPassword, requestPasswordReset, setRolePermissions, setUserRole, signIn, startSecondFactorEnrolment,
-  verifySecondFactor,
+  verifySecondFactor, importFiles, photoFiles, resumeFiles, statementFiles,
 } from './contract.ts';
 
 const me = {
@@ -231,5 +231,28 @@ describe('the admin contracts', () => {
     expect(requestFor(endSession, { id })).toEqual({ method: 'DELETE', path: `/admin/sessions/${id}`, body: undefined });
     expect([listRoles, getPermissionMatrix, listAuditedTables].map((c) => requestFor(c, {}).path))
       .toEqual(['/admin/roles', '/admin/permissions', '/admin/audit/tables']);
+  });
+});
+
+describe('the file contracts (RAD-43, RC-096)', () => {
+  it.each([['photo', photoFiles], ['resume', resumeFiles], ['statement', statementFiles], ['import', importFiles]] as const)(
+    'gives %s files their own read and write permissions', (kind, c) => {
+      expect([c.startUpload, c.confirmUpload, c.downloadLink].map((x) => `${x.method} ${x.path} ${x.perm} ${String(x.tx.readOnly)}`)).toEqual([
+        `POST /files/${kind} ${kind}_files:write false`,
+        `POST /files/${kind}/:id/confirm ${kind}_files:write false`,
+        `GET /files/${kind}/:id/download ${kind}_files:read true`,
+      ]);
+    });
+
+  it("takes only its kind's types, and a file name without control characters", () => {
+    const ok = (c: typeof photoFiles, body: object) => c.startUpload.input.safeParse(body).success;
+    expect([
+      ok(photoFiles, { filename: 'bill.heic', contentType: 'image/heic' }),
+      ok(photoFiles, { filename: 'cv.pdf', contentType: 'application/pdf' }),
+      ok(resumeFiles, { filename: 'cv.pdf', contentType: 'application/pdf' }),
+      ok(resumeFiles, { filename: 'cv\r\n.pdf', contentType: 'application/pdf' }),
+      ok(resumeFiles, { filename: '   ', contentType: 'application/pdf' }),
+      ok(resumeFiles, { filename: 'a'.repeat(256), contentType: 'application/pdf' }),
+    ]).toEqual([true, false, true, false, false, false]);
   });
 });

@@ -4,9 +4,9 @@
 // transaction with a Ctx for its principal (RAD-44 step 3). pg-boss's schema comes from the migrations (0001, RAD-25),
 // so run `npm run db:migrate` first; without it the worker refuses to start ("pg-boss is not installed").
 import {
-  createAlerter, createDatabase, createJobQueue, runJobs, startHeartbeat, startProcess,
+  createAlerter, createDatabase, createJobQueue, runJobs, startFileStore, startHeartbeat, startProcess,
 } from '@radcore/lib-platform/runtime';
-import { createFileStore, type JobDefinition } from '@radcore/lib-platform';
+import type { JobDefinition } from '@radcore/lib-platform';
 import platform from './jobs/platform.ts';
 
 // Each module's job file in ./jobs/ (ADR-001 §8) default-exports its defineJob list; spread them in here.
@@ -15,8 +15,9 @@ const jobs: readonly JobDefinition[] = [...platform];
 await startProcess('worker', async ({ config, pool, log }) => {
   const alert = createAlerter(config.alertWebhookUrl, log);
   const queue = createJobQueue(config.database, log);
+  const files = await startFileStore(config.s3, log);
   // The job queue and the outbox relay: the relay stops first, while the queue can still take its jobs.
   const running = await runJobs(queue, jobs, log, { db: createDatabase(pool), alert, relay: true,
-    files: createFileStore(config.s3) });
-  return [startHeartbeat(config.heartbeatUrl, log), running];
+    files: files.store });
+  return [startHeartbeat(config.heartbeatUrl, log), running, files];
 });
