@@ -88,9 +88,14 @@ const linkToken = <TName extends string>(name: TName) => radcoreTable(name, {
   tokenHash: text().notNull(),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
   usedAt: timestamp({ withTimezone: true }),
+  // The job that emailed this link (RAD-32): a job run twice finds its own row and sends nothing more.
+  jobId: uuid(),
+  // When the email went out. A link minted but never sent is spent and replaced on the job's retry.
+  sentAt: timestamp({ withTimezone: true }),
 }, (t) => [
   check(`ck_${name}_token_hash`, sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
   uniqueIndex(`ux_${name}_token_hash`).on(t.tokenHash),
+  uniqueIndex(`ux_${name}_job_id`).on(t.jobId),
   index(`ix_${name}_user_id`).on(t.userId),
 ]);
 export const invites = linkToken('invites');

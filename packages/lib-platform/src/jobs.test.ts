@@ -1,7 +1,7 @@
 // RC-082: every job has retries, a timeout, an optional overlap guard and a dead-letter queue, declared as data.
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import type { Principal } from './ctx.ts';
+import type { Ctx, Principal } from './ctx.ts';
 import { defineJob, JobRefused, queueSettings, type JobContract, type OpenJob } from './jobs.ts';
 
 const contract = (over: Partial<JobContract<{ n: number }>> = {}): JobContract<{ n: number }> => ({
@@ -77,6 +77,29 @@ describe('defineJob', () => {
     await expect(defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' } }), async () => undefined)
       .handle({ input: { n: 1 }, by }, 'job-5', open, load)).rejects.toThrow(JobRefused);
     expect(opened).toEqual([]);
+  });
+
+  // RAD-32: a job that calls out (an email) must do it outside its transaction (ADR-001 §8), then record the result.
+  it('runs an after-commit step with the service result, outside the transaction, which may open one more', async () => {
+    const steps: string[] = [];
+    const open: OpenJob = async (_principal, jobId, work) => {
+      steps.push(`open ${jobId}`);
+      await work({} as Ctx);
+      steps.push('commit');
+    };
+    const job = defineJob({ name: 'test.mail', principal: { kind: 'system', name: 'mail', permissions: [] }, input: z.object({ n: z.number() }) },
+      async (_ctx, input) => {
+        steps.push('service');
+        return `item ${input.n}`;
+      },
+      async (result, again) => {
+        steps.push(`after ${result}`);
+        await again(async () => {
+          steps.push('second');
+        });
+      });
+    await job.handle({ input: { n: 2 }, by: 'system:x' }, 'job-9', open, nobody);
+    expect(steps).toEqual(['open job-9', 'service', 'commit', 'after item 2', 'open job-9', 'second', 'commit']);
   });
 
   it('refuses a scheduled job that would run as a user', () => {

@@ -108,8 +108,14 @@ async function principalOf(name: string, p: JobPrincipal, by: string, load: Load
   if (!who.permissions.includes(p.perm)) throw new JobRefused(`${name}: ${by} no longer holds ${p.perm}`);
   return who;
 }
-export function defineJob<I>(contract: JobContract<I>,
-  service: (ctx: Ctx, input: I, meta: JobMeta) => Promise<void>): JobDefinition {
+/**
+ * A job's contract and service. `afterCommit`, when given, runs after the service's transaction commits, with what the
+ * service returned: the place for a call to an outside service (an email), which never runs inside a transaction
+ * (ADR-001 §8). It may open one more transaction, as the same principal, to record the call's result.
+ */
+export function defineJob<I, R = void>(contract: JobContract<I>,
+  service: (ctx: Ctx, input: I, meta: JobMeta) => Promise<R>,
+  afterCommit?: (result: R, again: (work: (ctx: Ctx) => Promise<void>) => Promise<void>) => Promise<void>): JobDefinition {
   const settings = queueSettings(contract);
   // A schedule has no person behind it, so a scheduled job runs as a system principal.
   if (contract.every !== undefined && contract.principal.kind !== 'system') {
@@ -126,7 +132,11 @@ export function defineJob<I>(contract: JobContract<I>,
       const { input: raw, by } = ENVELOPE.parse(data);
       const input = contract.input.parse(raw);
       const principal = await principalOf(contract.name, contract.principal, by, load);
-      await open(principal, jobId, (ctx) => service(ctx, input, { jobId }));
+      const ran: { result?: R } = {};
+      await open(principal, jobId, async (ctx) => {
+        ran.result = await service(ctx, input, { jobId });
+      });
+      if (afterCommit !== undefined) await afterCommit(ran.result as R, (work) => open(principal, jobId, work));
     },
   };
 }
