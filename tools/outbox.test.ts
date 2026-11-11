@@ -4,7 +4,9 @@
 // Here in tools/ because it reads pg-boss's and the outbox's tables as an operator would.
 import { randomUUID } from 'node:crypto';
 import { defineJob, loadConfig } from '@radcore/lib-platform';
-import { createDatabase, createJobQueue, relayOutbox, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
+import { createDatabase, relayOutbox, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
+// The full pg-boss queue, to send to it directly as an operator; the apps' queue can't (RAD-44).
+import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
 import { factory, testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';

@@ -1,10 +1,14 @@
 // RAD-65 (RC-213) on PostgreSQL 16: a secret stored in the migrated `secrets` table decrypts only as its own row, so
 // a ciphertext copied into another row is refused. Runs where TEST_DATABASE_URL is set (CI's test job). Here in tools/
 // because it writes the table as an operator would; inside one transaction that is rolled back.
-import { createSecrets, SecretPlaceMismatch } from '@radcore/lib-platform';
+import { randomUUID } from 'node:crypto';
+import { platformTx, secrets as secretsTable } from '@radcore/db/platform';
+import { inArray } from 'drizzle-orm';
+import { createSecrets, SecretPlaceMismatch, watchSecretExpiry } from '@radcore/lib-platform';
+import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
 const secrets = () => createSecrets({ kmsKeyId: null, localKey: testSettings()['SECRETS_LOCAL_KEY'] ?? null });
@@ -55,6 +59,42 @@ describe.skipIf(!url)('the secrets table', () => {
     } finally {
       await client.query('rollback');
       await client.end();
+    }
+  });
+});
+
+// RAD-65 part 2: the daily watch alerts on each secret expiring within two weeks, or already expired, and on nothing
+// else; an alert names the secret and its date, never its value.
+describe.skipIf(!url)('the secrets expiry watch', () => {
+  it('alerts on the secrets that expire within two weeks, soonest first, without their values', async () => {
+    vi.useFakeTimers({ now: new Date('2026-11-11T00:00:00Z'), toFake: ['Date'] });
+    const pool = new pg.Pool({ connectionString: url, max: 2 });
+    const db = createDatabase(pool);
+    const system = { kind: 'system', name: 'test', permissions: [] } as const;
+    const WRITE = { readOnly: false, isolation: 'read committed' } as const;
+    const plan = [['crm.meta_page_token', '2026-11-14T00:00:00Z'], ['crm.shopify_token', '2026-12-11T00:00:00Z'],
+      ['hr.bank_mailbox', null], ['crm.whatsapp_token', '2026-11-10T00:00:00Z']] as const;
+    const ids: string[] = [];
+    try {
+      await runInTransaction(db, WRITE, system, randomUUID(), async (ctx) => {
+        const rows = await platformTx(ctx).insert(secretsTable).values(plan.map(([name, expiresAt]) =>
+          ({ name, ciphertext: TOKEN, keyId: 'local:test', expiresAt: expiresAt === null ? null : new Date(expiresAt) })))
+          .returning({ id: secretsTable.id });
+        ids.push(...rows.map((r) => r.id));
+      });
+      const alert = vi.fn<(message: string) => Promise<void>>(async () => undefined);
+      await runInTransaction(db, { readOnly: true, isolation: 'read committed' }, system, randomUUID(),
+        (ctx) => watchSecretExpiry(ctx, null, { jobId: 'watch', alert }));
+      const ours = alert.mock.calls.map((c) => c[0]).filter((m) => ids.some((id) => m.includes(id)));
+      expect(ours.map((m) => m.split(' ')[1])).toEqual(['crm.whatsapp_token', 'crm.meta_page_token']);
+      expect(ours[0]).toContain('has expired');
+      expect(ours.join('\n')).not.toContain(TOKEN.trim());
+    } finally {
+      vi.useRealTimers();
+      await runInTransaction(db, WRITE, system, randomUUID(), async (ctx) => {
+        await platformTx(ctx).delete(secretsTable).where(inArray(secretsTable.id, ids));
+      });
+      await pool.end();
     }
   });
 });

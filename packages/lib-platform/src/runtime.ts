@@ -4,16 +4,24 @@
 import { createAlerter, type Alerter } from './alerts.ts';
 import type { Database } from '@radcore/db/schema';
 import { ConfigError, loadConfig, type Config, type ProcessName } from './config.ts';
-import { createPool, type JobQueue, type Pool } from './db/client.ts';
+import { createJobQueue as createPgBoss, createPool, type JobQueue, type Pool } from './db/client.ts';
 import { runInTransaction } from './db/transaction.ts';
 import { JobRefused, type JobDefinition, type JobEnvelope, type LoadPrincipal, type OpenJob, type QueueSettings } from './jobs.ts';
 import type { Logger } from './log.ts';
 import { createLog } from './log/logger.ts';
+import { startOutboxRelay } from './outbox.ts';
 
 export { createAlerter, startHeartbeat, type Alerter } from './alerts.ts';
-export { createDatabase, createHealthCheck, createJobQueue } from './db/client.ts';
+export { createDatabase, createHealthCheck } from './db/client.ts';
 export { runInTransaction } from './db/transaction.ts';
-export { relayOutbox, startOutboxRelay } from './outbox.ts';
+export { relayOutbox } from './outbox.ts';
+
+/**
+ * The job queue the apps hold: they start, run and stop it, but can't send to it. pg-boss's data carries who queued
+ * each job (RAD-44), so a job is queued only through the outbox (`ctx.jobs.send`) and its relay (auditor-2).
+ */
+export type AppJobQueue = Omit<JobQueue, 'send' | 'sendAfter' | 'sendThrottled' | 'sendDebounced' | 'insert' | 'publish'>;
+export const createJobQueue = (database: Config['database'], log: Logger): AppJobQueue => createPgBoss(database, log);
 export type { Logger } from './log.ts';
 
 // shortcut: no person can be loaded until RAD-35 (M1-17) provides the loader, so every job for a user is refused (fails
@@ -24,7 +32,7 @@ type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };
 // Create the queue if it's missing, then bring its options up to date. pg-boss's create_queue is INSERT … ON CONFLICT
 // DO NOTHING under an advisory lock, so two workers starting together both succeed. updateQueue can't change a
 // policy, so a changed one is refused rather than silently kept.
-const ensureQueue = async (queue: JobQueue, name: string, { policy, retries, ...rest }: QueueOptions): Promise<void> => {
+const ensureQueue = async (queue: AppJobQueue, name: string, { policy, retries, ...rest }: QueueOptions): Promise<void> => {
   const options = { ...rest, retryLimit: retries };
   await queue.createQueue(name, { policy, ...options });
   const stored = (await queue.getQueue(name))?.policy;
@@ -39,9 +47,10 @@ const ensureQueue = async (queue: JobQueue, name: string, { policy, retries, ...
  * RAD-44 (RC-082): start the queue and run every job: its queue with its retries, timeout, overlap guard and clean-up,
  * its dead-letter queue with the alert, and its schedule. Returns how to stop: no new work, attempts in flight finish.
  */
-export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], log: Logger,
-  { db, alert = createAlerter(null, log), stopTimeoutMs = 20_000, loadPrincipal = refuseEveryone }:
-  { db: Database; alert?: Alerter; stopTimeoutMs?: number; loadPrincipal?: LoadPrincipal },
+export async function runJobs(queue: AppJobQueue, jobs: readonly JobDefinition[], log: Logger,
+  { db, alert = createAlerter(null, log), stopTimeoutMs = 20_000, loadPrincipal = refuseEveryone, relay = false }:
+  { db: Database; alert?: Alerter; stopTimeoutMs?: number; loadPrincipal?: LoadPrincipal;
+    /** Also run the outbox relay (the worker does): the one place that sends to pg-boss. */ relay?: boolean },
 ): Promise<Stoppable> {
   // Each attempt is one write transaction as the job's principal, its job id as the request id: its writes commit
   // together or not at all, and audit rows name the job (ADR-001 §6a, RAD-44 step 3).
@@ -56,7 +65,7 @@ export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], l
     await queue.work(job.name, async ([attempt]) => {
       if (attempt === undefined) return;
       try {
-        await job.handle(attempt.data, attempt.id, open, loadPrincipal);
+        await job.handle(attempt.data, attempt.id, { open, load: loadPrincipal, alert });
       } catch (err) {
         if (!(err instanceof JobRefused)) throw err;
         // Its enqueuer can't run it any more: retrying won't change that, so it ends here, with the alert.
@@ -77,7 +86,13 @@ export async function runJobs(queue: JobQueue, jobs: readonly JobDefinition[], l
     }
   }
   log.info(`job queue: running ${jobs.length} job(s)`);
-  return { name: 'job queue', stop: () => queue.stop({ graceful: true, timeout: stopTimeoutMs }) };
+  // The queue object is pg-boss underneath; only the relay, inside lib-platform, uses its send.
+  const relaying = relay ? startOutboxRelay(db, queue as JobQueue, log, { alert }) : null;
+  return { name: 'job queue', stop: async () => {
+    // The relay finishes its pass while the queue can still take its jobs (ADR-002 §4).
+    await relaying?.stop();
+    await queue.stop({ graceful: true, timeout: stopTimeoutMs });
+  } };
 }
 
 /** Something the process stops on the way out, in the order the app returns them; the pool is closed last. */

@@ -2,6 +2,7 @@
 // (ADR-001 §6a), its input schema, and how it retries, times out, overlaps and is kept. The worker runs them on
 // pg-boss (runtime.ts). Jobs are declared in apps/worker/src/jobs/ with defineJob(contract, service), like routes.
 import { z } from 'zod';
+import type { Alerter } from './alerts.ts';
 import type { Ctx, Principal } from './ctx.ts';
 
 /** Who a job runs as (ADR-001 §6a): its service gets a Ctx for that principal (RAD-44 step 3). */
@@ -33,7 +34,8 @@ export type JobContract<I> = {
   deleteOnComplete?: boolean;
 };
 
-export type JobMeta = { jobId: string };
+/** What a job's service gets beside its Ctx and input: its id, and the worker's alerter (RAD-65), for work whose result is an alert. */
+export type JobMeta = { jobId: string; alert: Alerter };
 
 /** What pg-boss holds for every job: its input and who queued it (`user:<id>` or `system:<name>`, ADR-001 §6a). */
 export type JobEnvelope = { input: unknown; by: string };
@@ -50,6 +52,9 @@ export class JobRefused extends Error {
 /** How the worker runs a job's service: in one transaction, with a Ctx for principal (runtime.ts). */
 export type OpenJob = (principal: Principal, jobId: string, work: (ctx: Ctx) => Promise<void>) => Promise<void>;
 
+/** What the worker gives a job to run with: its transaction, how to load the enqueuer, and the alerter. */
+type JobRun = { open: OpenJob; load: LoadPrincipal; alert: Alerter };
+
 /** A job contract with the service that does the work. The worker runs these; nothing else calls `handle`. */
 export type JobDefinition = {
   name: string;
@@ -58,7 +63,7 @@ export type JobDefinition = {
   deleteOnComplete: boolean;
   settings: QueueSettings;
   /** Checks the envelope and its input, settles who the job runs as, then runs the service through open. */
-  handle(data: unknown, jobId: string, open: OpenJob, load: LoadPrincipal): Promise<void>;
+  handle(data: unknown, jobId: string, run: JobRun): Promise<void>;
 };
 
 /** What pg-boss gets for the queue (its Queue options). */
@@ -122,11 +127,11 @@ export function defineJob<I>(contract: JobContract<I>,
     deleteOnComplete: contract.deleteOnComplete === true,
     settings,
     // The payload is checked before any transaction opens; the service's writes commit or roll back together.
-    handle: async (data, jobId, open, load) => {
+    handle: async (data, jobId, { open, load, alert }) => {
       const { input: raw, by } = ENVELOPE.parse(data);
       const input = contract.input.parse(raw);
       const principal = await principalOf(contract.name, contract.principal, by, load);
-      await open(principal, jobId, (ctx) => service(ctx, input, { jobId }));
+      await open(principal, jobId, (ctx) => service(ctx, input, { jobId, alert }));
     },
   };
 }

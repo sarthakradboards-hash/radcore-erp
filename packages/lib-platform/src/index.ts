@@ -21,3 +21,4 @@ export { claimSavedOnce, cleanSavedOnce, SAVED_ONCE_KEEP_MS, savedOnceCleanup, t
 export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './files/kinds.ts';
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
 export { cleanOutbox, outboxCleanup } from './outbox.ts';
+export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';
