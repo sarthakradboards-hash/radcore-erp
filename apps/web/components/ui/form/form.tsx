@@ -10,6 +10,7 @@ import { ApiError } from '../../../lib/api-client.ts';
 import { announce } from '../live-region.tsx';
 import { formAlert, omitFields, placeIssues, unshownErrors } from './issues.ts';
 import './form.css';
+import { t } from '../../../lib/i18n/index.ts';
 
 type Names = { mounted: Set<string>; masked: Set<string> };
 const NamesContext = createContext<Names | null>(null);
@@ -24,11 +25,11 @@ export function useFieldName(name: string, kind: keyof Names = 'mounted') {
   }, [names, kind, name]);
 }
 
-const OFFLINE = 'RadCore could not be reached. Check the connection, then try again.';
-const UNSHOWN = 'This screen cannot save: it needs something it does not show. Please report it';
+const OFFLINE = t('kit.form.offline');
+const UNSHOWN = t('kit.form.unshown');
 // Codes whose message the form words itself. The mutation (RAD-52) has already renewed the key and refreshed lists.
 const SAID: Partial<Record<string, string>> = {
-  idempotency_mismatch: 'This was already saved; check the list before saving again.',
+  idempotency_mismatch: t('kit.form.alreadySaved'),
 };
 
 type FormProps<I extends FieldValues, O extends FieldValues> = {
@@ -46,7 +47,7 @@ type FormProps<I extends FieldValues, O extends FieldValues> = {
 };
 
 export function Form<I extends FieldValues, O extends FieldValues>(
-  { schema, defaultValues, onSubmit, saved = 'Saved', children, ...aria }: FormProps<I, O>,
+  { schema, defaultValues, onSubmit, saved = t('kit.form.saved'), children, ...aria }: FormProps<I, O>,
 ) {
   const [names] = useState<Names>(() => ({ mounted: new Set(), masked: new Set() }));
   const check = zodResolver(schema);
