@@ -243,15 +243,17 @@ They are append-only with explicit reversals:
   - It has no `UPDATE`, `DELETE` or `TRUNCATE` on the append-only tables, no DDL anywhere, and **no `INSERT` on
     `audit_log`, `access_log` or `event_log`**.
   - The audit log is written only by triggers.
-  - The event log is written only through `record_event` (RAD-31), a `SECURITY DEFINER` function like
-    `record_access`.
+  - The event log is written only through `record_event(kind, user_id, device, detail)` (RAD-31), a
+    `SECURITY DEFINER` function like `record_access`. The app chooses `user_id`, the account the event concerns, as
+    it chooses `record_access`'s record: it's trusted code, and the row's principal and time stay the database's
+    own. `detail` holds references only and is at most 2 KB; `kind` is one of a CHECKed list.
   - The access log is written only through one `SECURITY DEFINER` function, `record_access(record_table,
     record_id)`. It takes **no** principal or time argument: it reads the principal from the request context and
     the time from `now()` itself. The runtime login can therefore append an access row, but can't alter one or
     choose who or when.
 - **No function is callable by default.**
   - `REVOKE EXECUTE ON FUNCTION record_access FROM PUBLIC`, then `GRANT` it to `radcore_app` only. `radcore_read`
-    can't call it.
+    can't call it. The same goes for `record_event`.
   - `ALTER DEFAULT PRIVILEGES FOR ROLE radcore_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`, so a function added
     later isn't callable by everyone either.
   - A schema test fails on any non-trigger `SECURITY DEFINER` function that PUBLIC can execute or that has no fixed
