@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as contracts from './contract.ts';
 import {
-  acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, confirmSecondFactorEnrolment, endMySession, getMe,
-  KEY_EXEMPT_ROUTES, listMySessions, resetPassword,
-  requestPasswordReset, signIn, startSecondFactorEnrolment, verifySecondFactor,
+  acceptInvite, ANSWER_NOT_STORED_ROUTES, AUDIT_RANGE_MAX_DAYS, changePassword, confirmSecondFactorEnrolment, deactivateUser, endMySession,
+  endSession, endUserSessions, getMe, getPermissionMatrix, inviteUser, KEY_EXEMPT_ROUTES, listAuditedTables,
+  listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
+  resetPassword, requestPasswordReset, SECURITY_EVENT_ROUTES, securityEvent, setRolePermissions, setUserRole, signIn,
+  startSecondFactorEnrolment, verifySecondFactor,
 } from './contract.ts';
 
 const me = {
@@ -59,7 +61,7 @@ describe('the sign-in and own-session contracts', () => {
   });
 
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
-    expect(declared.filter((c) => c.auth === 'session').map((c) => [route(c), c.perm])).toEqual([
+    expect(declared.filter((c) => c.auth === 'session' && !c.path.startsWith('/admin/')).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['GET /me/sessions', 'session:read'], ['DELETE /me/sessions/:id', 'session:read']]);
   });
@@ -122,5 +124,126 @@ describe('the sign-in and own-session contracts', () => {
     // An IP the service mistakenly adds is dropped before the answer leaves.
     expect(listMySessions.output.parse({ items: [{ ...item, ip: '203.0.113.7' }], next: null }))
       .toEqual({ items: [item], next: null });
+  });
+});
+
+// RAD-57's admin routes, declared ahead of their services (RAD-30, 31, 32, 34, 35, 36) to ui-2's shapes there.
+describe('the admin contracts', () => {
+  const admin = Object.values(contracts).filter((c): c is typeof listUsers =>
+    typeof c === 'object' && 'path' in c && c.path.startsWith('/admin/'));
+  const id = '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01';
+  const at = '2026-11-10T06:00:00Z';
+  const okFor = (c: { input: z.ZodType }, input: unknown) => c.input.safeParse(input).success;
+
+  it('are admin-only: a session, one of five admin keys, read-only GETs, and no saved-once exemption', () => {
+    expect(admin).toHaveLength(15);
+    for (const c of admin) {
+      expect(c.auth).toBe('session');
+      expect(['users:read', 'users:write', 'roles:read', 'roles:write', 'audit:read']).toContain(c.perm);
+      expect(c.tx.readOnly).toBe(c.method === 'GET');
+      expect(c.idempotency).toBeUndefined();
+      expect(c.storesAnswer).toBeUndefined();
+    }
+  });
+
+  it('take a typed reason for every change that removes access or power, and refuse a blank one', () => {
+    for (const [c, rest] of [[setUserRole, { id, role: 'sales' }], [deactivateUser, { id }], [reactivateUser, { id }],
+      [setRolePermissions, { key: 'sales', grants: ['sales:read'], version: '7' }]] as const) {
+      expect(okFor(c, { ...rest, reason: 'Moved to the sales team' })).toBe(true);
+      expect(okFor(c, { ...rest, reason: '   ' })).toBe(false);
+      expect(okFor(c, { ...rest, reason: 'x'.repeat(501) })).toBe(false);
+      expect(okFor(c, rest)).toBe(false);
+    }
+  });
+
+  it('name the self-escalation refusals the screens word (M1-18)', () => {
+    expect(inviteUser.errors).toEqual(['email_taken', 'role_not_grantable']);
+    expect(setUserRole.errors).toEqual(['own_account', 'role_not_grantable', 'last_admin']);
+    expect(deactivateUser.errors).toEqual(['own_account', 'last_admin', 'already_disabled']);
+    expect(setRolePermissions.errors).toEqual(['role_not_editable', 'matrix_changed', 'unknown_permission']);
+    expect([endSession.errors, endUserSessions.errors]).toEqual([['current_session'], ['own_account']]);
+  });
+
+  it('sort people only by the declared columns', () => {
+    const list = { filter: {}, limit: 50 };
+    expect(okFor(listUsers, { ...list, sort: { column: 'lastSignInAt', desc: true } })).toBe(true);
+    expect(okFor(listUsers, { ...list, sort: { column: 'role', desc: false } })).toBe(false);
+    expect(okFor(listSessions, { ...list, sort: { column: 'lastSeenAt', desc: true } })).toBe(false);
+  });
+
+  it("flag the caller's own row and drop what isn't declared, such as a password hash or an IP", () => {
+    const user = { id, displayName: 'Asha Rao', email: 'asha@example.com', status: 'active', role: 'admin',
+      lastSignInAt: null, secondFactor: 'enrolled', self: true };
+    expect(listUsers.output.parse({ items: [{ ...user, passwordHash: 'argon2-hash' }], next: null }))
+      .toEqual({ items: [user], next: null });
+    const session = { id, user: { id, displayName: 'Asha Rao' }, createdAt: at, lastSeenAt: at, idleExpiresAt: at,
+      absoluteExpiresAt: at, device: 'Chrome on Android', current: false };
+    expect(listSessions.output.parse({ items: [{ ...session, ip: '203.0.113.7' }], next: null }))
+      .toEqual({ items: [session], next: null });
+  });
+
+  it("send a role's grants sorted and once each, with the version they were read at", () => {
+    const save = { key: 'sales', version: '7', reason: 'Sales may raise quotes' };
+    expect(okFor(setRolePermissions, { ...save, grants: ['parties:read', 'sales:write'] })).toBe(true);
+    expect(okFor(setRolePermissions, { ...save, grants: ['sales:write', 'parties:read'] })).toBe(false);
+    expect(okFor(setRolePermissions, { ...save, grants: ['sales:write', 'sales:write'] })).toBe(false);
+    expect(okFor(setRolePermissions, { ...save, key: 'Sales!', grants: [] })).toBe(false);
+  });
+
+  it('read the audit trail and security events only within a stated date range', () => {
+    const list = { limit: 50 };
+    const occurred = { from: '2026-10-11', to: '2026-11-10' };
+    expect(okFor(listAuditTrail, { ...list, filter: { occurred } })).toBe(true);
+    expect(okFor(listAuditTrail, { ...list, filter: {} })).toBe(false);
+    for (const c of [listAuditTrail, listSecurityEvents]) {
+      expect(okFor(c, { ...list, filter: { occurred: {} } })).toBe(false); // both ends, always
+      expect(okFor(c, { ...list, filter: { occurred: { from: '2026-10-11' } } })).toBe(false);
+    }
+    expect(AUDIT_RANGE_MAX_DAYS).toBe(92);
+    // event_log.user_id is a uuid: a name there would be a 500, so the schema refuses it first.
+    expect(okFor(listSecurityEvents, { ...list, filter: { occurred, principal: 'system:online-orders' } })).toBe(false);
+    expect(okFor(listSecurityEvents, { ...list, filter: { occurred, principal: id } })).toBe(true);
+    expect(okFor(listAuditTrail, { ...list, filter: { occurred: { from: '2026-11-10', to: '2026-10-11' } } })).toBe(false);
+    expect(okFor(listAuditTrail, { ...list, filter: { occurred, tableName: 'users; drop' } })).toBe(false);
+    expect(okFor(listSecurityEvents, { ...list, filter: { occurred, kind: 'sign_in_failed' } })).toBe(true);
+    expect([listAuditTrail.errors, listSecurityEvents.errors]).toEqual([['range_too_long'], ['range_too_long']]);
+  });
+
+  it('carry audit values as stored, secrets and personal data as "[redacted]", and a failed sign-in with no principal', () => {
+    const row = { id, occurredAt: at, principal: { kind: 'system', id: 'system:online-orders', displayName: null },
+      tableName: 'users', recordId: id, op: 'update',
+      changed: { status: { old: 'active', new: 'disabled' }, phone: { old: '[redacted]', new: '[redacted]' } } };
+    expect(listAuditTrail.output.parse({ items: [row], next: null })).toEqual({ items: [row], next: null });
+    const event = { id, occurredAt: at, kind: 'sign_in_failed', principal: null, device: 'Edge on Windows',
+      detail: { reason: 'invalid_credentials' } };
+    expect(listSecurityEvents.output.parse({ items: [event], next: null })).toEqual({ items: [event], next: null });
+    expect(listSecurityEvents.output.safeParse({ items: [{ ...event, kind: 'password_seen' }], next: null }).success).toBe(false);
+    // Each kind's detail is references only (RAD-31): the typed email never rides along.
+    const leak = { ...event, detail: { reason: 'invalid_credentials', email: 'asha@example.com' } };
+    expect(listSecurityEvents.output.safeParse({ items: [leak], next: null }).success).toBe(false);
+    expect(securityEvent.safeParse({ kind: 'export', detail: { what: 'crm.parties', rows: 3 } }).success).toBe(true);
+    expect(securityEvent.safeParse({ kind: 'export', detail: { what: 'Parties.csv', rows: 3 } }).success).toBe(false);
+  });
+
+  it("list the routes that record security events, each a declared contract (RC-031's register, RAD-31)", () => {
+    const routes = new Set(Object.values(contracts).filter((c): c is typeof signIn => typeof c === 'object' && 'path' in c)
+      .map((c) => `${c.method} ${c.path}`));
+    expect(Object.keys(SECURITY_EVENT_ROUTES).filter((r) => !routes.has(r))).toEqual([]);
+    expect(SECURITY_EVENT_ROUTES).toEqual({
+      'POST /sign-in': ['sign_in', 'sign_in_failed'],
+      'POST /sign-in/second-factor': ['sign_in', 'sign_in_failed'],
+      'POST /sign-in/second-factor/enrolment/confirm': ['second_factor_changed', 'sign_in'],
+      'POST /invites/accept': ['password_changed'],
+      'POST /password-reset': ['password_changed'],
+      'POST /me/password': ['password_changed'],
+    });
+  });
+
+  it('put path parameters in the path', () => {
+    expect(requestFor(setRolePermissions, { key: 'sales', grants: [], version: '7', reason: 'r' }).path)
+      .toBe('/admin/roles/sales/permissions');
+    expect(requestFor(endSession, { id })).toEqual({ method: 'DELETE', path: `/admin/sessions/${id}`, body: undefined });
+    expect([listRoles, getPermissionMatrix, listAuditedTables].map((c) => requestFor(c, {}).path))
+      .toEqual(['/admin/roles', '/admin/permissions', '/admin/audit/tables']);
   });
 });

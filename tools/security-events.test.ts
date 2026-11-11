@@ -4,11 +4,12 @@
 // The SQL half runs as the superuser switching login with SET ROLE, in transactions that roll back. The library half
 // runs as the app login; event_log is append-only, so its rows stay, and each test reads only its own account's.
 import { randomUUID } from 'node:crypto';
+import { addDays } from '@radcore/lib-common';
 import { type Principal } from '@radcore/lib-platform';
-import { listSecurityEvents } from '@radcore/lib-platform/contract';
+import { SECURITY_EVENT_KINDS } from '@radcore/lib-platform/contract';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import { listSecurityEventsPage, recordSecurityEvent, type SecurityEvent } from '../packages/lib-platform/src/security-events.ts';
 
@@ -68,7 +69,7 @@ describe.skipIf(!superUrl)('record_event', () => {
       const { rows } = await c.query<{ def: string }>(
         "select pg_get_constraintdef(oid) as def from pg_catalog.pg_constraint where conname = 'ck_event_log_kind' and conrelid = 'radcore.event_log'::regclass");
       const kinds = [...(rows[0]?.def ?? '').matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]);
-      expect(kinds.toSorted()).toEqual([...listSecurityEvents.output.shape.items.element.shape.kind.options].toSorted());
+      expect(kinds.toSorted()).toEqual([...SECURITY_EVENT_KINDS].toSorted());
     });
   });
 
@@ -113,11 +114,16 @@ describe.skipIf(!appUrl)('recordSecurityEvent and listSecurityEvents', () => {
   const read = { readOnly: true, isolation: 'read committed' } as const;
   const admin: Principal = { kind: 'user', userId: randomUUID(), permissions: ['audit:read'] };
   const job: Principal = { kind: 'system', name: 'nightly-export', permissions: [] };
-  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
-  const range = { from: yesterday, to: tomorrow };
-  const list = (filter: { kind?: SecurityEvent['kind']; principal?: string }, limit = 50, after?: string) => runInTransaction(db, read, admin, randomUUID(), (ctx) =>
-    listSecurityEventsPage(ctx, { filter: { occurred: range, ...filter }, limit, ...(after === undefined ? {} : { after }) }));
+  // The events carry the database's time (now()), so the range is the database's India day, a day either side.
+  const range = { from: '', to: '' };
+  beforeAll(async () => {
+    const { rows } = await pool.query<{ day: string }>("select to_char(now() at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day");
+    const day = rows[0]?.day ?? '';
+    Object.assign(range, { from: addDays(day, -1), to: addDays(day, 1) });
+  });
+  const list = (filter: { kind?: SecurityEvent['kind']; principal?: string }, limit = 50, after?: string) =>
+    runInTransaction(db, read, admin, randomUUID(), (ctx) => listSecurityEventsPage(ctx,
+      { filter: { occurred: range, ...filter }, limit, ...(after === undefined ? {} : { after }) }));
 
   it('records each of the six kinds and reads them back newest first, in the order written (RC-031)', async () => {
     const userId = randomUUID();
@@ -147,9 +153,9 @@ describe.skipIf(!appUrl)('recordSecurityEvent and listSecurityEvents', () => {
         { userId, device: null });
     });
     const first = await list({ principal: userId }, 2);
-    expect(first.items.map((e) => e.detail['rows'])).toEqual([3, 2]);
+    expect(first.items.map((e) => (e.kind === 'export' ? e.detail.rows : null))).toEqual([3, 2]);
     const second = await list({ principal: userId }, 2, first.next ?? '');
-    expect(second.items.map((e) => e.detail['rows'])).toEqual([1]);
+    expect(second.items.map((e) => (e.kind === 'export' ? e.detail.rows : null))).toEqual([1]);
     expect(second.next).toBeNull();
   });
 
@@ -176,7 +182,7 @@ describe.skipIf(!appUrl)('recordSecurityEvent and listSecurityEvents', () => {
     await runInTransaction(db, write, { kind: 'system', name: 'public', permissions: [] }, randomUUID(), (ctx) =>
       recordSecurityEvent(ctx, { kind: 'sign_in_failed', detail: { reason: 'invalid_credentials' } }, { userId: null, device: null }));
     const exports = (await list({ kind: 'export' }, 100)).items;
-    expect(exports.find((e) => e.detail['what'] === `jobs.r${requestId.slice(0, 8)}`)?.principal)
+    expect(exports.find((e) => e.kind === 'export' && e.detail.what === `jobs.r${requestId.slice(0, 8)}`)?.principal)
       .toEqual({ kind: 'system', id: 'nightly-export', displayName: null });
     const failed = (await list({ kind: 'sign_in_failed' }, 100)).items;
     expect(failed.some((e) => e.principal === null)).toBe(true);
