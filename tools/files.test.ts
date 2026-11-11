@@ -37,13 +37,14 @@ describe.skipIf(!url)('uploaded files', () => {
   const db = createDatabase(pool);
   afterAll(() => pool.end());
 
-  async function serve(principal: Principal, fn: (call: (method: string, path: string, body?: unknown) => Promise<Response>) => Promise<void>) {
+  async function serve(principal: Principal,
+    fn: (call: (method: string, path: string, body?: unknown, key?: string) => Promise<Response>) => Promise<void>) {
     const app = createApp(config(), logger(), { db, authenticate: async () => principal, routes, files: store() });
     const server = await listen(app, 0, '127.0.0.1');
     try {
-      await fn((method, path, body) => fetch(`http://127.0.0.1:${server.port}${path}`, {
+      await fn((method, path, body, key = randomUUID()) => fetch(`http://127.0.0.1:${server.port}${path}`, {
         method, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        headers: { 'content-type': 'application/json', origin: ORIGIN, 'idempotency-key': randomUUID() },
+        headers: { 'content-type': 'application/json', origin: ORIGIN, 'idempotency-key': key },
       }));
     } finally {
       await server.stop();
@@ -121,6 +122,14 @@ describe.skipIf(!url)('uploaded files', () => {
         { url: expect.stringMatching(/^https:\/\/files\.example\.test\/bucket\/photo\/.+\?name=bill%2012\.png$/) }]);
       // RC-031: the link handed out is recorded once as a download by this person; the refusals before it weren't.
       expect(await downloads(body.id)).toEqual([{ kind: 'download', user_id: USER_ID, created_by: `user:${USER_ID}` }]);
+      // RC-132: the link is never kept as a stored answer; the same key again is answer_not_kept, with no new event.
+      const key = randomUUID();
+      const once = await call('POST', `/files/photo/${body.id}/download`, {}, key);
+      const again = await call('POST', `/files/photo/${body.id}/download`, {}, key);
+      expect([once.status, again.status, (await again.json() as { code: string }).code]).toEqual([200, 409, 'answer_not_kept']);
+      expect((await pool.query('select answer, kept from radcore.saved_once where key = $1', [key])).rows)
+        .toEqual([{ answer: null, kept: false }]);
+      expect(await downloads(body.id)).toHaveLength(2);
     });
   });
 

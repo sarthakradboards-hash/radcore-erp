@@ -51,17 +51,19 @@ describe('getMe', () => {
 
 // RAD-32, RAD-33 and RAD-34's own-account routes, to ui's shapes on RAD-32 with the architect's answers there.
 describe('the sign-in and own-session contracts', () => {
-  const declared = Object.values(contracts).filter((c): c is typeof signIn => typeof c === 'object' && 'path' in c);
+  // A kind's file contracts come in a group (photoFiles.downloadLink and the rest), so groups are opened one level.
+  const declared = Object.values(contracts).flatMap((c): unknown[] => typeof c === 'object' && !('path' in c) ? Object.values(c) : [c])
+    .filter((c): c is typeof signIn => typeof c === 'object' && c !== null && 'path' in c);
   const route = (c: { method: string; path: string }) => `${c.method} ${c.path}`;
 
   it("lists exactly the routes that declare each saved-once flag (ADR-001 §7a's fixed lists)", () => {
     expect(declared.filter((c) => c.idempotency === 'exempt').map(route).sort()).toEqual([...KEY_EXEMPT_ROUTES].sort());
-    expect(declared.filter((c) => c.storesAnswer === false).map(route)).toEqual([...ANSWER_NOT_STORED_ROUTES]);
+    expect(declared.filter((c) => c.storesAnswer === false).map(route).sort()).toEqual([...ANSWER_NOT_STORED_ROUTES].sort());
     expect(KEY_EXEMPT_ROUTES).toHaveLength(4);
   });
 
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
-    expect(declared.filter((c) => c.auth === 'session' && !c.path.startsWith('/admin/')).map((c) => [route(c), c.perm])).toEqual([
+    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['GET /me/sessions', 'session:read'], ['DELETE /me/sessions/:id', 'session:read']]);
   });
