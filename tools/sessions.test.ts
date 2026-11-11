@@ -2,8 +2,8 @@
 // after 30 minutes idle or 12 hours, whichever is first, or when it's ended: by sign-out, by the person, by an admin,
 // or by a password change or reset. Each start and end is a security event. The cookie is set only after commit.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { AppError, loadConfig, RecordedRefusal, type Ctx, type Principal } from '@radcore/lib-platform';
-import { authenticateSession, createAuth, createDatabase, runInTransaction, tokenFromCookie } from '@radcore/lib-platform/runtime';
+import { AppError, loadConfig, RecordedRefusal, sessionCookieFor, type Ctx, type Principal } from '@radcore/lib-platform';
+import { authenticateSession, createAuth, createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -23,11 +23,14 @@ const url = process.env['TEST_DATABASE_URL'];
 // Collecting a skipped suite still builds its store; a pool connects only when used, so this is never reached.
 const NO_DATABASE = 'postgres://unused@127.0.0.1:1/unused';
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
+// https, as deployed, so the cookie is the __Host- form (sessionCookieFor).
+const ORIGIN = 'https://erp.example.in';
 const config = (u: string) => {
   const parsed = new URL(u);
   parsed.password = testPassword();
-  return loadConfig(testSettings({ DATABASE_URL: parsed.toString() }), 'api');
+  return loadConfig(testSettings({ DATABASE_URL: parsed.toString(), PUBLIC_ORIGIN: ORIGIN }), 'api');
 };
+const { tokenIn } = sessionCookieFor(ORIGIN);
 const log = { info: () => undefined, error: () => undefined };
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const PASSWORD = 'a quiet harbour at dawn';
@@ -74,9 +77,9 @@ describe.skipIf(!url)('sign-in sessions', () => {
     // A device name of this test's own, so its security events can be found even when they name no account.
     const device = `test ${randomBytes(6).toString('hex')}`;
     // Signs in through the route's service as the handler runs it, and returns the token its cookie would carry.
-    const signInNow = async () => {
+    const signInNow = async (incoming: string | null = null) => {
       const set = vi.fn<(token: string, expires: Date) => void>();
-      await run(PUBLIC, (ctx) => signIn({ ...ctx, cookie: { device, set, clear: vi.fn() } }, { email, password: PASSWORD }));
+      await run(PUBLIC, (ctx) => signIn({ ...ctx, cookie: { device, incoming, set, clear: vi.fn() } }, { email, password: PASSWORD }));
       return set.mock.calls[0]?.[0] ?? '';
     };
     const principalOf = async (token: string, touch = false) => authenticateSession(db, token, { touch });
@@ -97,7 +100,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
   it('starts a session on sign-in: the token in the cookie, only its hash stored, and a sign_in event', async () => {
     const s = await setup();
     const set = vi.fn<(token: string, expires: Date) => void>();
-    expect(await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, set, clear: vi.fn() } },
+    expect(await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, incoming: null, set, clear: vi.fn() } },
       { email: s.email, password: PASSWORD }))).toEqual({ next: 'done' });
     const [token, expires] = set.mock.calls[0] ?? [];
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -115,7 +118,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
   it('records a failed sign-in, for the account or for nobody, and starts no session', async () => {
     const s = await setup();
     const set = vi.fn();
-    const attempt = (email: string) => run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, set, clear: vi.fn() } },
+    const attempt = (email: string) => run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, incoming: null, set, clear: vi.fn() } },
       { email, password: 'not the password at all' }).catch((e: unknown) => e));
     // The handler commits a RecordedRefusal's transaction; here the catch inside it does the same.
     const wrong = await attempt(s.email);
@@ -163,6 +166,25 @@ describe.skipIf(!url)('sign-in sessions', () => {
     expect(capped?.idle.getTime()).toBe(capped?.absolute.getTime());
   });
 
+  it("ends the browser's previous session when someone signs in on it, so none lingers on a shared computer", async () => {
+    const s = await setup();
+    const before = await s.signInNow();
+    const after = await s.signInNow(before);
+    expect([await s.principalOf(before), (await s.row(before))?.ended_reason, await s.principalOf(after) !== null])
+      .toEqual([null, 'sign_out', true]);
+  });
+
+  it('records a locked account once per lock window, however many times the address is tried', async () => {
+    const s = await setup();
+    const set = vi.fn();
+    for (let i = 0; i < LOCKOUT.points + 3; i += 1) {
+      await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, incoming: null, set, clear: vi.fn() } },
+        { email: s.email, password: 'not the password at all' }).catch((e: unknown) => e));
+    }
+    const reasons = (await s.events()).map((e) => (e.detail as { reason: string }).reason);
+    expect(reasons).toEqual([...Array<string>(LOCKOUT.points).fill('invalid_credentials'), 'account_locked']);
+  });
+
   it('answers /me with the person, their permissions and when this session ends', async () => {
     const s = await setup();
     const token = await s.signInNow();
@@ -204,7 +226,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const token = await s.signInNow();
     const clear = vi.fn();
     const me = await s.as(token);
-    await run(me, (ctx) => endCurrentSession({ ...ctx, cookie: { device: s.device, set: vi.fn(), clear } }));
+    await run(me, (ctx) => endCurrentSession({ ...ctx, cookie: { device: s.device, incoming: null, set: vi.fn(), clear } }));
     expect([clear.mock.calls.length, await s.principalOf(token)]).toEqual([1, null]);
     expect(await s.events()).toEqual([{ kind: 'sign_in', detail: {} }, { kind: 'session_ended', detail: { reason: 'sign_out' } }]);
   });
@@ -256,7 +278,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const cfg = config(url ?? NO_DATABASE);
     const auth = await createAuth(cfg, log);
     const app = createApp(cfg, log, { db, routes: [...platform, ...auth.routes], newPasswordCheck: async () => null,
-      authenticate: (req, route) => authenticateSession(db, tokenFromCookie(req.get('cookie')), { touch: route !== 'GET /me' }) });
+      authenticate: (req, route) => authenticateSession(db, tokenIn(req.get('cookie')), { touch: route !== 'GET /me' }) });
     const server = await listen(app, 0, '127.0.0.1');
     const base = `http://127.0.0.1:${server.port}`;
     const headers = { 'content-type': 'application/json', origin: cfg.publicOrigin, 'user-agent': CHROME_ANDROID };
@@ -265,14 +287,17 @@ describe.skipIf(!url)('sign-in sessions', () => {
       expect([signedIn.status, await signedIn.json()]).toEqual([200, { next: 'done' }]);
       const cookie = signedIn.headers.get('set-cookie') ?? '';
       expect(cookie).toMatch(/^__Host-radcore_session=[A-Za-z0-9_-]{43}; Path=\/; Expires=.+; HttpOnly; Secure; SameSite=Lax$/);
-      const token = tokenFromCookie(cookie.split(';')[0]) ?? '';
+      const token = tokenIn(cookie.split(';')[0]) ?? '';
       expect((await s.row(token))?.device).toBe('Chrome on Android');
       const me = await fetch(`${base}/me`, { headers: { cookie: `__Host-radcore_session=${token}` } });
       expect([me.status, ((await me.json()) as { user: { id: string } }).user.id]).toEqual([200, s.userId]);
       const out = await fetch(`${base}/sign-out`, { method: 'POST', headers: { ...headers, cookie: `__Host-radcore_session=${token}` }, body: '{}' });
       expect(out.status).toBe(200);
       expect(out.headers.get('set-cookie')).toMatch(/^__Host-radcore_session=; Path=\/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax$/);
-      expect((await fetch(`${base}/me`, { headers: { cookie: `__Host-radcore_session=${token}` } })).status).toBe(401);
+      // Its session over, the cookie is cleared again with the 401, sign-out's included (RAD-34).
+      const after = await fetch(`${base}/sign-out`, { method: 'POST', headers: { ...headers, cookie: `__Host-radcore_session=${token}` }, body: '{}' });
+      expect([after.status, after.headers.get('set-cookie')?.startsWith('__Host-radcore_session=; ')]).toEqual([401, true]);
+      expect((await fetch(`${base}/me`)).headers.get('set-cookie')).toBeNull();
       // A wrong password: refused, recorded, and no cookie.
       const wrong = await fetch(`${base}/sign-in`, { method: 'POST', headers, body: JSON.stringify({ email: s.email, password: 'nope nope nope' }) });
       expect([wrong.status, ((await wrong.json()) as { code: string }).code, wrong.headers.get('set-cookie')])

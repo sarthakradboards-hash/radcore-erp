@@ -251,7 +251,8 @@ describe.skipIf(!url)('the generic route handler', () => {
   });
 
   // RAD-34: the session cookie rides only on the key-exempt routes, whose answers are never stored and replayed, and
-  // is set only once the transaction commits. A RecordedRefusal (a failed sign-in's record) commits only there.
+  // is set only once the transaction commits. A RecordedRefusal (a failed sign-in's record) commits only there. These
+  // settings' origin is http, so the cookie is the development form (sessionCookieFor); tools/sessions.test has https.
   it('sets the cookie only from a key-exempt route and only after commit; a recorded refusal commits only there', async () => {
     const TOKEN = 'a'.repeat(43);
     const exemptPost = (base: string) => fetch(`${base}/sign-out`, { method: 'POST', body: '{}',
@@ -277,7 +278,7 @@ describe.skipIf(!url)('the generic route handler', () => {
       });
       const ok = await exemptPost(base);
       expect([ok.status, ok.headers.get('set-cookie')]).toEqual([200,
-        `__Host-radcore_session=${TOKEN}; Path=/; Expires=Thu, 01 Jan 2099 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax`]);
+        `radcore_session=${TOKEN}; Path=/; Expires=Thu, 01 Jan 2099 00:00:00 GMT; HttpOnly; SameSite=Lax`]);
       expect(device).toBe('Firefox on Windows');
       // A recorded refusal on an exempt route: its work commits and its cookie is set, and the caller gets the refusal.
       signOutService.mockImplementationOnce(exemptWrites(`kept ${tag}`, () => { throw new RecordedRefusal('conflict', 'Kept'); }));

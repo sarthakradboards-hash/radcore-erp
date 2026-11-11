@@ -4,7 +4,7 @@ export { defineRoute, type Route } from './route.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export {
   deviceOf, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, endSessionsOf, getMyself, listAllSessions,
-  listOwnSessions, SESSION_COOKIE, signInService, type EndedReason,
+  listOwnSessions, sessionCookieFor, signInService, type EndedReason, type SessionCookieKind,
 } from './auth/sessions.ts';
 export { decodeCursor, encodeCursor, isoMoment, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';

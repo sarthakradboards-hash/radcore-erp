@@ -14,7 +14,7 @@ import { startOutboxRelay } from './outbox.ts';
 export { createAlerter, startHeartbeat, type Alerter } from './alerts.ts';
 export { createAuth, type Auth } from './auth/auth.ts';
 export { newPasswordCheckFor } from './auth/new-password.ts';
-export { authenticateSession, tokenFromCookie } from './auth/sessions.ts';
+export { authenticateSession } from './auth/sessions.ts';
 export { createDatabase, createHealthCheck } from './db/client.ts';
 export { runInTransaction } from './db/transaction.ts';
 export { relayOutbox } from './outbox.ts';

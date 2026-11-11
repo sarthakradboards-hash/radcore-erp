@@ -25,6 +25,8 @@ export type Jobs = {
 export type SessionCookie = {
   /** The request's short user-agent summary ("Chrome on Android"), with no IP. */
   readonly device: string;
+  /** The session token the request's cookie already holds, if any. */
+  readonly incoming: string | null;
   set(token: string, expires: Date): void;
   clear(): void;
 };

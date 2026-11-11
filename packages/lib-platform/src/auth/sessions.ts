@@ -1,11 +1,11 @@
 // Sign-in sessions (M1-16, RAD-34, ADR-001 §7a, RC-091). A session is a random token in the person's cookie
-// (`__Host-radcore_session`: HttpOnly, Secure, SameSite=Lax, Path=/), and only its SHA-256 is stored. It signs nobody
+// (HttpOnly, SameSite=Lax, Path=/, and on https `__Host-` and Secure: sessionCookieFor); only its SHA-256 is stored. It signs nobody
 // in after 30 minutes without a request or 12 hours after sign-in, whichever comes first (Sarthak, 11 Nov 2026), or
 // once it's ended: by sign-out, by the person from their sessions list, by an admin, or by a password, role or status
 // change. Each end is one session_ended security event per session; a sign-in is sign_in (ADR-005 §7c).
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { idString, normaliseEmail } from '@radcore/lib-common';
-import { after, platformTx, sessions, users } from '@radcore/db/platform';
+import { after, eventLog, platformTx, sessions, users } from '@radcore/db/platform';
 import type { Database } from '@radcore/db/schema';
 import { and, desc, eq, gt, isNull, ne, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
@@ -15,9 +15,9 @@ import { runInTransaction } from '../db/transaction.ts';
 import { AppError, RecordedRefusal } from '../errors.ts';
 import { decodeCursor, encodeCursor, isoMoment, momentKey } from '../lists.ts';
 import { recordSecurityEvent } from '../security-events.ts';
+import { LOCKOUT } from './lockout.ts';
 import type { SignInResult } from './sign-in.ts';
 
-export const SESSION_COOKIE = '__Host-radcore_session';
 export const SESSION_IDLE_SECONDS = 30 * 60;
 export const SESSION_ABSOLUTE_SECONDS = 12 * 60 * 60;
 export type EndedReason = 'sign_out' | 'admin' | 'password_changed' | 'password_reset' | 'role_changed' | 'deactivated';
@@ -29,7 +29,6 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // The idle expiry moves at most once a minute, so a burst of requests writes the row once.
 const TOUCH_AFTER_MS = 60_000;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
-const COOKIE_TOKEN = new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([A-Za-z0-9_-]{43})(?:;|$)`);
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const live = (now: Date) => and(isNull(sessions.endedAt), gt(sessions.idleExpiresAt, now), gt(sessions.absoluteExpiresAt, now));
@@ -51,8 +50,25 @@ export function deviceOf(userAgent: string | undefined): string {
   return browser ?? system ?? 'Unknown device';
 }
 
-/** The session token in a Cookie header, or null. */
-export const tokenFromCookie = (header: string | undefined): string | null => COOKIE_TOKEN.exec(header ?? '')?.[1] ?? null;
+export type SessionCookieKind = {
+  readonly name: string;
+  readonly secure: boolean;
+  /** The session token in a Cookie header, or null. */
+  tokenIn(header: string | undefined): string | null;
+};
+
+/**
+ * The session cookie for this PUBLIC_ORIGIN. A deployed origin is https (config insists), and there it's
+ * `__Host-radcore_session`, Secure. Over plain http, which only development and CI use, it's `radcore_session` and
+ * not Secure: WebKit stores a Secure cookie from http://127.0.0.1 but never sends it back (checked 11 Nov 2026 with
+ * Playwright's WebKit; Chromium and Firefox do send it), so Safari could never stay signed in during development.
+ */
+export function sessionCookieFor(publicOrigin: string): SessionCookieKind {
+  const secure = publicOrigin.startsWith('https://');
+  const name = secure ? '__Host-radcore_session' : 'radcore_session';
+  const pattern = new RegExp(`(?:^|;\\s*)${name}=([A-Za-z0-9_-]{43})(?:;|$)`);
+  return Object.freeze({ name, secure, tokenIn: (header: string | undefined) => pattern.exec(header ?? '')?.[1] ?? null });
+}
 
 /**
  * Who a session token signs in, or null: an unknown, ended or expired session, or a person no longer active. With
@@ -107,6 +123,17 @@ type Credentials = (ctx: Ctx, input: In<typeof signIn>) => Promise<SignInResult>
 const FAILED = ['invalid_credentials', 'account_locked'] as const;
 const isFailure = (code: string): code is (typeof FAILED)[number] => (FAILED as readonly string[]).includes(code);
 
+// Whether this account's lock is already on record. A locked address is refused on every try and event_log keeps
+// every row for good (D-12), so a lock is recorded once per lock window. An address no account has can't be told
+// apart this way; the per-IP limit (RAD-39) bounds those rows. The lockout caps an account's failures in a window at
+// its points plus this one row, so reading them all is cheap.
+async function lockOnRecord(ctx: Ctx, userId: string): Promise<boolean> {
+  const since = new Date(Date.now() - LOCKOUT.blockSeconds * 1000).toISOString();
+  const failures = await platformTx(ctx).select({ detail: eventLog.detail }).from(eventLog)
+    .where(and(eq(eventLog.userId, userId), eq(eventLog.kind, 'sign_in_failed'), gt(eventLog.occurredAt, since)));
+  return failures.some((f) => (f.detail as { reason?: unknown }).reason === 'account_locked');
+}
+
 /**
  * POST /sign-in over the credential step (createSignIn). A success with nothing more to prove starts a session and
  * sets its cookie; a failure is recorded, and that record commits though the answer is a refusal.
@@ -121,12 +148,16 @@ export function signInService(credentials: Credentials) {
       if (!(err instanceof AppError) || !isFailure(err.code)) throw err;
       const [known] = await platformTx(ctx).select({ id: users.id }).from(users)
         .where(eq(users.emailKey, normaliseEmail(input.email))).limit(1);
-      await recordSecurityEvent(ctx, { kind: 'sign_in_failed', detail: { reason: err.code } },
-        { userId: known?.id ?? null, device: cookie.device });
+      if (err.code !== 'account_locked' || known === undefined || !(await lockOnRecord(ctx, known.id))) {
+        await recordSecurityEvent(ctx, { kind: 'sign_in_failed', detail: { reason: err.code } },
+          { userId: known?.id ?? null, device: cookie.device });
+      }
       throw new RecordedRefusal(err.code, err.message, err.issues, err.retryAfterSeconds);
     }
     // shortcut: second_factor and enrol_second_factor set RAD-33's pending-sign-in cookie, which lands with it.
     if (result.next !== 'done') return { next: result.next };
+    // The session this browser already had ends, so it doesn't linger on a shared computer.
+    if (cookie.incoming !== null) await end(ctx, eq(sessions.tokenHash, sha256(cookie.incoming)), 'sign_out');
     const token = randomBytes(32).toString('base64url');
     const now = new Date();
     const absolute = new Date(now.getTime() + SESSION_ABSOLUTE_SECONDS * 1000);

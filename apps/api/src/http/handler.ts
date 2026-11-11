@@ -9,7 +9,7 @@
 // Still to come, each with its ticket: rate guards (M1-21), pii() masking (M1-22) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, deviceOf, describeError, originAllowed, RecordedRefusal, SESSION_COOKIE, type Principal, type Route,
+import { AppError, claimSavedOnce, deviceOf, describeError, originAllowed, RecordedRefusal, sessionCookieFor, type Principal, type Route,
   type SessionCookie } from '@radcore/lib-platform';
 import { acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
@@ -105,8 +105,6 @@ const send = (res: Response, f: Failure, requestId: string) => {
     ...(f.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: f.retryAfterSeconds }) });
 };
 
-// ADR-001 §7a: the session cookie can't be read by script, sent to another site's request, or set for a subdomain.
-const COOKIE: CookieOptions = Object.freeze({ httpOnly: true, secure: true, sameSite: 'lax', path: '/' });
 type CookieChange = { token: string; expires: Date } | 'clear' | null;
 
 // A UUID, as apps/web makes one per submit (ADR-001 §7a).
@@ -115,6 +113,10 @@ const onList = (list: readonly string[], route: string): boolean => list.include
 
 export function mountRoutes(app: Express, routes: readonly Route[], deps: HandlerDeps): void {
   const router = express.Router();
+  // ADR-001 §7a: the session cookie can't be read by script or sent with another site's request; on https it's also
+  // __Host- and Secure, so it can't be set for a subdomain (sessionCookieFor).
+  const session = sessionCookieFor(deps.publicOrigin);
+  const COOKIE: CookieOptions = Object.freeze({ httpOnly: true, secure: session.secure, sameSite: 'lax', path: '/' });
   // An answer is one person's data at one moment: no browser or proxy keeps it.
   router.use((_req: Request, res: Response, next: NextFunction) => {
     res.set('Cache-Control', 'no-store');
@@ -153,6 +155,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
       try {
         const principal = await deps.authenticate(req, route);
         if (contract.auth === 'session' && principal === null) {
+          // A cookie whose session has ended or expired is cleared, sign-out's included (RAD-34).
+          if (session.tokenIn(req.get('cookie')) !== null) res.clearCookie(session.name, COOKIE);
           send(res, platform('signed_out'), requestId);
           return;
         }
@@ -188,6 +192,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         let cookie: CookieChange = null;
         let refused: RecordedRefusal | null = null;
         const channel: SessionCookie = Object.freeze({ device: deviceOf(req.get('user-agent')),
+          incoming: session.tokenIn(req.get('cookie')),
           set: (token: string, expires: Date) => { cookie = { token, expires }; }, clear: () => { cookie = 'clear'; } });
         const output = await runInTransaction(deps.db, contract.tx, principal ?? PUBLIC, requestId, async (ctx) => {
           // Saved-once (M1-09): a write claims its key first, in this transaction, and replays an earlier answer.
@@ -211,8 +216,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         });
         // After the commit: a cookie for a session that rolled back would sign nobody in.
         const change = cookie as CookieChange;
-        if (change === 'clear') res.clearCookie(SESSION_COOKIE, COOKIE);
-        else if (change !== null) res.cookie(SESSION_COOKIE, change.token, { ...COOKIE, expires: change.expires });
+        if (change === 'clear') res.clearCookie(session.name, COOKIE);
+        else if (change !== null) res.cookie(session.name, change.token, { ...COOKIE, expires: change.expires });
         if (refused !== null) {
           send(res, failureOf(refused, contract.errors), requestId);
           return;

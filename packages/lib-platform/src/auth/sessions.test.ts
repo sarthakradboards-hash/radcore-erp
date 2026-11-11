@@ -1,6 +1,6 @@
-// RAD-34: the sessions list's device name, and reading the session token from a Cookie header.
+// RAD-34: the sessions list's device name, and the session cookie's form and reading it from a Cookie header.
 import { describe, expect, it } from 'vitest';
-import { deviceOf, tokenFromCookie } from './sessions.ts';
+import { deviceOf, sessionCookieFor } from './sessions.ts';
 
 describe('deviceOf', () => {
   it('names the browser and system from a User-Agent, never more', () => {
@@ -18,14 +18,23 @@ describe('deviceOf', () => {
   });
 });
 
-describe('tokenFromCookie', () => {
+describe('sessionCookieFor', () => {
   const token = 'Ab_-'.repeat(10) + 'xyz';
-  it('reads the session cookie wherever it sits in the header, and nothing else', () => {
-    expect(tokenFromCookie(`__Host-radcore_session=${token}`)).toBe(token);
-    expect(tokenFromCookie(`theme=dark; __Host-radcore_session=${token}; lang=en`)).toBe(token);
-    expect(tokenFromCookie(`x__Host-radcore_session=${token}`)).toBeNull();
-    expect(tokenFromCookie(`__Host-radcore_session=${token}x`)).toBeNull();
-    expect(tokenFromCookie('__Host-radcore_session=short')).toBeNull();
-    expect(tokenFromCookie(undefined)).toBeNull();
+  it('is __Host- and Secure on https, and plain over http, which only development and CI use', () => {
+    expect([sessionCookieFor('https://erp.example.in').name, sessionCookieFor('https://erp.example.in').secure])
+      .toEqual(['__Host-radcore_session', true]);
+    expect([sessionCookieFor('http://127.0.0.1:3000').name, sessionCookieFor('http://127.0.0.1:3000').secure])
+      .toEqual(['radcore_session', false]);
+  });
+  it('reads its own cookie wherever it sits in the header, and nothing else', () => {
+    const { tokenIn } = sessionCookieFor('https://erp.example.in');
+    expect(tokenIn(`__Host-radcore_session=${token}`)).toBe(token);
+    expect(tokenIn(`theme=dark; __Host-radcore_session=${token}; lang=en`)).toBe(token);
+    expect(tokenIn(`radcore_session=${token}`)).toBeNull();
+    expect(tokenIn(`x__Host-radcore_session=${token}`)).toBeNull();
+    expect(tokenIn(`__Host-radcore_session=${token}x`)).toBeNull();
+    expect(tokenIn('__Host-radcore_session=short')).toBeNull();
+    expect(tokenIn(undefined)).toBeNull();
+    expect(sessionCookieFor('http://127.0.0.1:3000').tokenIn(`__Host-radcore_session=${token}`)).toBeNull();
   });
 });
