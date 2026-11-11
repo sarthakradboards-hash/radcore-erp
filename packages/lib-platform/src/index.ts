@@ -24,6 +24,7 @@ export { attachment, createFileStore, UploadRefused, type FileStore } from './fi
 export { cleanOutbox, outboxCleanup } from './outbox.ts';
 export { listSecurityEventsPage, recordSecurityEvent, type EventSubject, type SecurityEvent } from './security-events.ts';
 export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';
+export { STUCK_AFTER_MS, watchStuckDeliveries, webhookStuckWatch } from './webhooks-watch.ts';
 export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
   type WebhookVerifier,

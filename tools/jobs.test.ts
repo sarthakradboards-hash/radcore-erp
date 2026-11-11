@@ -11,12 +11,12 @@ import { cleanSavedOnce, savedOnceCleanup } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
 // The full pg-boss queue, to send to it directly as an operator; the apps' queue can't (RAD-44).
 import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
+import platformJobs from '../apps/worker/src/jobs/platform.ts';
 import { platformTx, savedOnce } from '@radcore/db/platform';
 import { factory, testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import platform from '../apps/worker/src/jobs/platform.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const SCHEMA = 'pgboss';
@@ -125,7 +125,7 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
       await vi.waitFor(() => expect(out.join('')).toContain('worker: started'), { timeout: 30_000, interval: 250 });
       // What the worker runs: its job files' list, plus the jobs built at start with what only start-up has (RAD-32's
       // reset email). Counted from the list, so a new job doesn't need this line changed.
-      expect(out.join('')).toContain(`job queue: running ${platform.length + 1} job(s)`);
+      expect(out.join('')).toContain(`job queue: running ${platformJobs.length + 1} job(s)`);
     } finally {
       worker.kill('SIGTERM');
     }

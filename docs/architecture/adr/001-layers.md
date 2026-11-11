@@ -509,11 +509,31 @@ the two together:
 ```ts
 defineExport(sales.contracts.exportInvoices, sales.invoiceExportRows),   // engine: paging, streaming, file format
 defineImport(stock.contracts.importItems, stock.importItemRow),          // engine: parsing, limits, per-row errors
-defineApproval('purchase-order', purchasing.approvePurchaseOrder),       // engine: maker-checker record and hash
+...defineApproval(purchasing.contracts.poApproval, purchasing.poApproval), // engine: maker-checker record and hash
 ```
 
 The module function runs under `ctx` like any service. Scope, rules and `pii()` masking apply to an export exactly
 as they do on a screen (M1-22, M1-28, M1-29, M1-20).
+
+**Approvals (maker-checker, M1-20, RAD-38).** A module's `contract.ts` declares
+`approvalContracts('purchase-order', 'purchasing:approve')`. That gives three contracts under one static
+permission: the pending list, one request with its version hash, and the decision. The route file spreads
+`...defineApproval(contracts, spec)`, where `spec` is the module's part: the version the approver sees, and what
+approving and rejecting do. A decision is made in one transaction, with the record's row locked, and is refused
+unless:
+- **a user decides,** who holds the permission and isn't the requester (`own_request`);
+- **the approver's account was created before the request** (`approver_too_new`), so a requester can't invite a
+  fresh account to approve it;
+- **the version is the one the approver saw** (`version_changed`). It's a SHA-256 over sorted-key JSON of what the
+  approver is shown, taken when the request is made and checked again at the decision;
+- **the request is still pending,** and a conditional status update means two approvers can't both win.
+
+**Known limit:** an account invited before the request, possibly by the requester, can still approve. "The approver
+wasn't invited by the requester" isn't a rule, because the admin invites nearly everyone, so the admin's own
+requests could never be approved. Three things bound the limit:
+- only admin grants roles (RAD-36);
+- every grant is in the audit trail;
+- once role grants carry their time (RAD-35), the approver's approving role must also predate the request.
 
 ### 8a. Inbound work from outside services
 

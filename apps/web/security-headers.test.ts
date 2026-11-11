@@ -1,7 +1,7 @@
 // RC-146 (M1-46): the headers on every response and the per-request CSP. The new-tab link rule is in
 // tools/eslint-config.test.ts.
 import { NextRequest } from 'next/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import config from './next.config';
 import { contentSecurityPolicy, proxy } from './proxy';
 
@@ -35,6 +35,31 @@ describe('content security policy', () => {
     expect(dev).toContain("script-src 'self' 'nonce-abc' 'strict-dynamic' 'unsafe-eval';");
     expect(dev).toContain("style-src 'self' 'unsafe-inline';");
     expect(dev.replace("style-src-attr 'unsafe-inline'", '').replace(/'unsafe-(eval|inline)'/g, '')).not.toContain('unsafe');
+  });
+
+  it('allows the files bucket origin for uploads and previews, in exactly three directives (RAD-43)', () => {
+    const files = 'https://radcore-files.s3.ap-south-1.amazonaws.com';
+    const csp = contentSecurityPolicy('abc', false, files);
+    expect(csp).toContain(`img-src 'self' blob: data: ${files};`);
+    expect(csp).toContain(`connect-src 'self' ${files};`);
+    expect(csp).toContain(`form-action 'self' ${files};`);
+    expect(csp.split(files)).toHaveLength(4);
+    expect(csp.replaceAll(` ${files}`, '')).toBe(contentSecurityPolicy('abc', false));
+  });
+
+  it('reads the origin from S3_FILES_ORIGIN, and adds nothing when it is not a bare origin', () => {
+    const cspWith = (value: string) => {
+      vi.stubEnv('APP_ENV', 'production');
+      vi.stubEnv('S3_FILES_ORIGIN', value);
+      return proxy(new NextRequest('http://127.0.0.1:3000/')).headers.get('content-security-policy') ?? '';
+    };
+    try {
+      expect(cspWith('https://radcore-files.s3.ap-south-1.amazonaws.com'))
+        .toContain("connect-src 'self' https://radcore-files.s3.ap-south-1.amazonaws.com;");
+      expect(cspWith('https://*.amazonaws.com')).toContain("connect-src 'self';");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('gives each request its own nonce, on the response and on the request Next renders', () => {
