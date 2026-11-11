@@ -45,17 +45,18 @@ describe('defineJob', () => {
   };
 
   const nobody = async () => null;
+  const alert = async () => undefined;
   const asUser = (permissions: string[]): Principal => ({ kind: 'user', userId: 'u-1', permissions });
 
   it('checks the envelope and the payload first, then runs a system job as its contract\'s principal', async () => {
     const service = vi.fn(async () => undefined);
     const job = defineJob(contract(), service);
     const { open, opened } = opener();
-    await job.handle({ input: { n: 1 }, by: 'system:online-orders' }, 'job-1', open, nobody);
+    await job.handle({ input: { n: 1 }, by: 'system:online-orders' }, 'job-1', { open, load: nobody, alert });
     expect(opened).toEqual([{ principal: { kind: 'system', name: 'online-orders', permissions: ['sales:write'] }, jobId: 'job-1' }]);
-    await expect(job.handle({ input: { n: 'one' }, by: 'system:x' }, 'job-2', open, nobody)).rejects.toThrow();
+    await expect(job.handle({ input: { n: 'one' }, by: 'system:x' }, 'job-2', { open, load: nobody, alert })).rejects.toThrow();
     // A bare payload, not an envelope, never runs either.
-    await expect(job.handle({ n: 1 }, 'job-3', open, nobody)).rejects.toThrow();
+    await expect(job.handle({ n: 1 }, 'job-3', { open, load: nobody, alert })).rejects.toThrow();
     expect(opened).toHaveLength(1);
   });
 
@@ -63,7 +64,7 @@ describe('defineJob', () => {
     const { open, opened } = opener();
     const load = vi.fn(async () => asUser(['invoices:export']));
     await defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' } }), async () => undefined)
-      .handle({ input: { n: 1 }, by: 'user:u-1' }, 'job-4', open, load);
+      .handle({ input: { n: 1 }, by: 'user:u-1' }, 'job-4', { open, load, alert });
     expect(load).toHaveBeenCalledWith('user:u-1');
     expect(opened).toEqual([{ principal: asUser(['invoices:export']), jobId: 'job-4' }]);
   });
@@ -75,7 +76,7 @@ describe('defineJob', () => {
   ])('refuses a job for a user %s, without opening a transaction', async (_why, by, load) => {
     const { open, opened } = opener();
     await expect(defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' } }), async () => undefined)
-      .handle({ input: { n: 1 }, by }, 'job-5', open, load)).rejects.toThrow(JobRefused);
+      .handle({ input: { n: 1 }, by }, 'job-5', { open, load, alert })).rejects.toThrow(JobRefused);
     expect(opened).toEqual([]);
   });
 

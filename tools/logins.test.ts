@@ -3,7 +3,8 @@
 // login only reads. Each test acts as a login with SET ROLE inside a transaction it rolls back, so it leaves nothing.
 import { randomBytes } from 'node:crypto';
 import { loadConfig } from '@radcore/lib-platform';
-import { createJobQueue } from '@radcore/lib-platform/runtime';
+// The full pg-boss queue, to send to it directly as an operator; the apps' queue can't (RAD-44).
+import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
@@ -163,8 +164,10 @@ describe.skipIf(!url)('the three logins', () => {
         secrets: 'select * from radcore.secrets',
         // RAD-44: job payloads may be personal (a reset address).
         outbox: 'select * from radcore.jobs_outbox',
+        // RAD-45: webhook payloads may be personal.
+        deliveries: 'select * from radcore.webhook_deliveries',
         temp: 'create temp table t (x int)',
-      })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, secrets: DENIED, outbox: DENIED,
+      })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, secrets: DENIED, outbox: DENIED, deliveries: DENIED,
         temp: DENIED });
     });
   });
