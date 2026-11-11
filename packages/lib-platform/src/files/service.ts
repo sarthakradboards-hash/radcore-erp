@@ -37,7 +37,11 @@ export async function recordFileCheck(ctx: Ctx, { id, key }: CheckInput, { befor
     .where(and(eq(files.id, id), eq(files.storeKey, key), eq(files.status, 'checking')));
 }
 
-/** A kind's three services, for its contracts in ./contract (photoFiles and the rest). Another kind's id is not_found. */
+/**
+ * A kind's three services, for its contracts in ./contract (photoFiles and the rest). Another kind's id is not_found.
+ * shortcut: access is per kind, not per record; once files attach to bills or HR records, reading one should follow
+ * its parent record's access (auditor-2, RAD-43).
+ */
 const fileServices = (kind: FileKind) => Object.freeze({
   async startUpload(ctx: Ctx, { filename, contentType }: { filename: string; contentType: string }) {
     const { key, url, fields } = await ctx.files.presignUpload(kind, contentType);

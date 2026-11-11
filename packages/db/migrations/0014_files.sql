@@ -19,5 +19,6 @@ CREATE TABLE "radcore"."files" (
 --> statement-breakpoint
 CREATE UNIQUE INDEX "ux_files_store_key" ON "radcore"."files" USING btree ("store_key");
 --> statement-breakpoint
--- A record people make: audited, with the who-and-when stamp (ADR-005 §5, §7c).
-SELECT radcore.audit_attach('files');
+-- A record people make: audited, with the who-and-when stamp (ADR-005 §5, §7c). The name a person gave the file
+-- often holds a person's name, so its changes are recorded as redacted (auditor-2).
+SELECT radcore.audit_attach('files', keep => array['kind', 'store_key', 'content_type', 'size', 'status'], redact => array['filename']);
