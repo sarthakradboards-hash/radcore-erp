@@ -500,6 +500,11 @@ succeeded; the service never records it as done ("sent"), since the call may sti
 again, so the service makes the step safe to repeat: the password-reset email, its first user, dedupes on its job id,
 and a link minted but never mailed is spent and replaced.
 
+**A job's transaction.** A job runs in a `read committed` write transaction, unless its contract gives `tx` (an
+export: `{ readOnly: true, isolation: 'repeatable read', statementTimeoutMs }`, ADR-002 Exports). A job for a user
+names its permission as `perm`. That is a key, or a pure function from the input to a key (the export job looks it up
+by kind), with no I/O. `afterCommit` gets the same `deps` as `before`.
+
 ### 8b. Platform engines, module functions
 
 lib-platform's lists, exports, imports and approvals are engines that know no module, and lib-platform can't call
@@ -507,7 +512,7 @@ up into module libraries. So each module supplies the function that does its par
 the two together:
 
 ```ts
-defineExport(sales.contracts.exportInvoices, sales.invoiceExportRows),   // engine: paging, streaming, file format
+...defineExport(sales.salesExports),                                        // engine: paging, streaming, file format
 defineImport(stock.contracts.importItems, stock.importItemRow),          // engine: parsing, limits, per-row errors
 ...defineApproval(purchasing.contracts.poApproval, purchasing.poApproval), // engine: maker-checker record and hash
 ```
@@ -604,7 +609,7 @@ config test (ADR-002) calls `calculateConfigForFile` and asserts each local rule
 | T1 | the opaque transaction (§5) | TypeScript (`tsc --noEmit`, the typecheck job) | a library touches `ctx.tx.query`, `.select`, `.insert`, `.update`, `.delete`, `.execute` or `._`; or reaches another module's table through its own module transaction (`salesTx(ctx).query.parties`). Its proof lands with M1-08 (`Ctx` and the generic route handler), not with M0-07 (RAD-13). |
 | D8 | apps never touch the database directly | dependency-cruiser | `apps/api/**` or `apps/worker/**` imports `packages/db` |
 | D9 | no HTTP in libraries | dependency-cruiser | `packages/**` imports `express`, `next`, or anything under `apps/` |
-| E1 | no rule in a route or job file | local rule `radcore/e1-route-files` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator; or an argument of a `define*` call is itself a call (so `defineRoute(c, wrap(sales.x))` fails); or the file imports anything except libraries' `.` and `./contract` entries and the `define*` helpers. Route and job files hold only `defineRoute`, `defineWebhook`, `defineJob`, `defineExport`, `defineImport` and `defineApproval` calls. |
+| E1 | no rule in a route or job file | local rule `radcore/e1-route-files` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator; or an argument of a `define*` call is itself a call (so `defineRoute(c, wrap(sales.x))` fails); or the file imports anything except libraries' `.` and `./contract` entries and the `define*` helpers. Route and job files hold only `defineRoute`, `defineWebhook`, `defineJob`, `defineExport`, `defineExportJob`, `defineImport` and `defineApproval` calls. |
 | E2 | file size | ESLint `max-lines` (`max: 400`, blank lines and comments counted) | any source file over 400 lines |
 | E3 | no I/O without an import | local rule `radcore/e3-no-io` on `packages/lib-common/**`, every `contract.ts` and every `src/rules/**` | use of `process`, `fetch`, `setTimeout`, `setInterval`, `crypto`, `Math.random`, `Date.now()` or `new Date()` with no argument. Time and randomness come in as arguments or from `ctx.clock`. |
 | E4 | no escape hatch in libraries | on `packages/lib-*/**` and `packages/db/src/*/repo.ts`, with type information: `@typescript-eslint/no-explicit-any`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-assignment` (these typed rules aren't shared with any other E- or L-rule); plus local rule `radcore/e4-no-escape`, which bans a double cast (`x as unknown as T`), `as any`, the `Reflect` global and importing `getTableConfig` | a library casts or reflects its way past T1 (`Reflect.get(ctx.tx, '_')`), or reads table metadata |

@@ -61,8 +61,8 @@ export async function runJobs(queue: AppJobQueue, jobs: readonly JobDefinition[]
 ): Promise<Stoppable> {
   // Each attempt is one write transaction as the job's principal, its job id as the request id: its writes commit
   // together or not at all, and audit rows name the job (ADR-001 §6a, RAD-44 step 3).
-  const open: OpenJob = (principal, jobId, work) =>
-    runInTransaction(db, { readOnly: false, isolation: 'read committed' }, principal, jobId, work, files);
+  const open: OpenJob = (principal, jobId, work, tx = { readOnly: false, isolation: 'read committed' }) =>
+    runInTransaction(db, tx, principal, jobId, work, files);
   await queue.start();
   for (const job of jobs) {
     const { deadLetter, ...settings } = job.settings;

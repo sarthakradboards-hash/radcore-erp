@@ -5,7 +5,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 import type { Ctx } from '../packages/lib-platform/src/ctx.ts';
 import { ExportTooLarge, writeExportFile, type ExportDefinition, type ExportRow } from '../packages/lib-platform/src/export/engine.ts';
 
@@ -17,7 +16,7 @@ const ctx = {} as Ctx;
 // A list of `total` rows served `per` at a time through an opaque `after`, as a screen's keyset paging would.
 function list(total: number, per: number, fail?: number): ExportDefinition<{ city: string }> {
   return {
-    kind: 'crm.parties', perm: 'parties:export', filter: z.object({ city: z.string() }), columns: ['name', 'phone', 'balance'],
+    kind: 'crm.parties', columns: ['name', 'phone', 'balance'],
     rows: async (_ctx, filter, { after }) => {
       const start = after === undefined ? 0 : Number(after);
       if (fail !== undefined && start >= fail) throw new Error('the database went away');

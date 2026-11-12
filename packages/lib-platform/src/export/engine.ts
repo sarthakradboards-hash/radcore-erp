@@ -21,14 +21,10 @@ export type ExportRow = Readonly<Record<string, string | number | null>>;
 export type ExportRows<F> = (ctx: Ctx, filter: F, page: { after?: string; limit: number }) =>
   Promise<{ items: readonly ExportRow[]; next: string | null }>;
 
-/** A module's export (ADR-001 §8b): which list, who may run it, its filter's schema, its columns and its rows. */
+/** What the writer needs of an export: its list, its columns in order (each a key of the rows) and its rows. */
 export type ExportDefinition<F> = {
-  /** The list, `<module>.<name>`, such as `sales.invoices`; also the file's name. */
+  /** The list, `<module>.<name>`, such as `sales.invoices`. */
   readonly kind: string;
-  /** The permission to start it, checked again when the job runs. */
-  readonly perm: string;
-  readonly filter: z.ZodType<F>;
-  /** The CSV's columns, in order: each is a key of the rows. */
   readonly columns: readonly string[];
   readonly rows: ExportRows<F>;
 };

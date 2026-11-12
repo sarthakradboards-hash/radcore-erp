@@ -26,3 +26,20 @@ export const downloadExport = defineContract({
   method: 'POST', path: '/exports/:id/download', auth: 'session', perm: 'session:read', tx: write,
   input: z.object({ id: idString() }), output: z.object({ url: z.string() }), errors: ['not_ready'],
 });
+
+/**
+ * A list's export, declared in its module's contract.ts (ADR-001 §8b): `kind` is the list, `<module>.<name>` with
+ * the name in lower-case words joined by hyphens, which also names the file; `perm` may start it, and is checked again
+ * when the job runs; `filter` is the list's own; `columns` are the CSV's, in order. `start` is its route,
+ * `POST /<module>/<name>/exports`, answered with the export's id at once; the screen then polls getExport and calls
+ * downloadExport.
+ */
+export const exportContract = <F extends z.ZodType>(kind: string, perm: `${string}:${string}`, filter: F,
+  columns: readonly string[]) => ({
+  kind, perm, filter, columns,
+  start: defineContract({
+    method: 'POST', path: `/${kind.replace('.', '/')}/exports`, auth: 'session', perm, tx: write,
+    input: z.object({ filter }), output: z.object({ exportId: idString() }),
+  }),
+});
+export type ExportContract<F extends z.ZodType = z.ZodType> = ReturnType<typeof exportContract<F>>;
