@@ -281,6 +281,20 @@ describe.skipIf(!url)('sign-in sessions', () => {
   });
 
   // The whole path as the browser takes it: the api's own routes, wiring and cookie.
+  // RAD-32's reset request is checked as mounted only: a request would commit a row to the shared outbox, which a
+  // relay in another test file running at the same time could take (RAD-79). reset-email.test covers its service.
+  it('mounts the sessions, the reset request and the password routes', async () => {
+    const auth = await createAuth(config(url ?? NO_DATABASE), log);
+    try {
+      expect([...platform, ...auth.routes].map((r) => `${r.contract.method} ${r.contract.path}`)).toEqual(expect.arrayContaining([
+        'POST /sign-in', 'POST /sign-out', 'GET /me', 'GET /me/sessions', 'DELETE /me/sessions/:id', 'GET /admin/sessions',
+        'DELETE /admin/sessions/:id', 'POST /admin/users/:id/sessions/end', 'POST /password-reset/request',
+        'POST /invites/accept', 'POST /password-reset', 'POST /me/password']));
+    } finally {
+      await auth.store.stop();
+    }
+  });
+
   it('signs in and out over HTTP with a __Host- cookie that is HttpOnly, Secure and SameSite=Lax', async () => {
     const s = await setup();
     const cfg = config(url ?? NO_DATABASE);
@@ -306,10 +320,6 @@ describe.skipIf(!url)('sign-in sessions', () => {
       const after = await fetch(`${base}/sign-out`, { method: 'POST', headers: { ...headers, cookie: `__Host-radcore_session=${token}` }, body: '{}' });
       expect([after.status, after.headers.get('set-cookie')?.startsWith('__Host-radcore_session=; ')]).toEqual([401, true]);
       expect((await fetch(`${base}/me`)).headers.get('set-cookie')).toBeNull();
-      // A reset request answers the same for any address; the worker sends the email (RAD-32).
-      const reset = await fetch(`${base}/password-reset/request`, { method: 'POST', headers: { ...headers, 'idempotency-key': randomUUID() },
-        body: JSON.stringify({ email: `nobody.${randomBytes(4).toString('hex')}@example.in` }) });
-      expect([reset.status, await reset.json()]).toEqual([200, {}]);
       // A wrong password: refused, recorded, and no cookie.
       const wrong = await fetch(`${base}/sign-in`, { method: 'POST', headers, body: JSON.stringify({ email: s.email, password: 'nope nope nope' }) });
       expect([wrong.status, ((await wrong.json()) as { code: string }).code, wrong.headers.get('set-cookie')])
