@@ -107,6 +107,35 @@ describe('defineJob', () => {
     expect(() => defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' }, every: '* * * * *' }),
       async () => undefined)).toThrow(/scheduled job must declare a system principal/);
   });
+  it("sends the service's alerts only after its transaction commits, in order, and before the after-commit step (RAD-77)", async () => {
+    const steps: string[] = [];
+    const open: OpenJob = async (_principal, _jobId, work) => {
+      steps.push('open');
+      await work({} as Ctx);
+      steps.push('commit');
+    };
+    const job = defineJob(contract(), async (_ctx, _input, meta) => {
+      await meta.alert('secret expires');
+      await meta.alert('webhook stuck');
+      steps.push('service done');
+    }, { afterCommit: async () => { steps.push('after'); } });
+    await job.handle({ input: { n: 1 }, by: 'system:x' }, 'job-10',
+      { open, load: nobody, alert: async (message) => { steps.push(`alert ${message}`); } });
+    expect(steps).toEqual(['open', 'service done', 'commit', 'alert secret expires', 'alert webhook stuck', 'after']);
+  });
+
+  it('sends no alert from a job whose transaction rolls back (RAD-77)', async () => {
+    const sent = vi.fn<(message: string) => Promise<void>>(async () => undefined);
+    const open: OpenJob = async (_principal, _jobId, work) => {
+      await work({} as Ctx);
+      throw new Error('the commit failed');
+    };
+    const job = defineJob(contract(), async (_ctx, _input, meta) => { await meta.alert('secret expires'); });
+    await expect(job.handle({ input: { n: 1 }, by: 'system:x' }, 'job-11', { open, load: nobody, alert: sent }))
+      .rejects.toThrow('the commit failed');
+    expect(sent).not.toHaveBeenCalled();
+  });
+
   it('runs its `before` step outside the transaction, first, and hands its result to the service (ADR-001 §8)', async () => {
     const steps: string[] = [];
     const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), putFile: vi.fn() };

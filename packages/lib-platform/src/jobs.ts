@@ -35,7 +35,8 @@ export type JobContract<I> = {
   deleteOnComplete?: boolean;
 };
 
-/** What a job's service gets beside its Ctx and input: its id, and the worker's alerter (RAD-65), for work whose result is an alert. */
+/** What a job's service gets beside its Ctx and input: its id, and the worker's alerter (RAD-65), for work whose result is an alert.
+ * An alert raised here is held and sent only once the job's transaction commits; a rolled-back job sends none (RAD-77). */
 export type JobMeta = { jobId: string; alert: Alerter };
 
 /** What pg-boss holds for every job: its input and who queued it (`user:<id>` or `system:<name>`, ADR-001 §6a). */
@@ -157,9 +158,15 @@ export function defineJob<I, B = undefined, R = void>(contract: JobContract<I>,
       // Without a `before`, B is undefined, so this is B either way.
       const done = (before === undefined || files === undefined ? undefined : await before(input, { files })) as B;
       const ran: { result?: R } = {};
+      // Posting an alert is a network call, so none is made inside the transaction (ADR-001 §8, RAD-77): the service's
+      // alerts wait here, and go only if its work commits. A rollback drops them; the runner's own alerts (a refused
+      // job, a dead letter) say what failed.
+      const held: string[] = [];
       await open(principal, jobId, async (ctx) => {
-        ran.result = await service(ctx, input, { jobId, alert, before: done });
+        ran.result = await service(ctx, input, { jobId, alert: async (message) => { held.push(message); }, before: done });
       });
+      // Before afterCommit, so they're sent even if it then fails: the work they describe has committed.
+      for (const message of held) await alert(message);
       if (afterCommit !== undefined) await afterCommit(ran.result as R, (work) => open(principal, jobId, work));
     },
   };
