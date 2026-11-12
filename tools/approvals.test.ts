@@ -62,6 +62,17 @@ const spec: ApprovalSpec<{ amount: string; lines: { id: string; qty: string }[] 
   },
 };
 
+// A spec breaking §8b's rule: its rejected() changes what is approved (the amount), not only the status.
+const BAD_KIND = `test-bad-order-${tag}`;
+const badContracts = approvalContracts(BAD_KIND, PERM);
+const badSpec: typeof spec = {
+  ...spec,
+  kind: BAD_KIND,
+  async rejected(ctx, id) {
+    await ordersTx(ctx).update(orders).set({ status: 'rejected', amount: '0.00' }).where(eq(orders.id, id));
+  },
+};
+
 describe.skipIf(!url)('maker-checker', () => {
   const pool = new pg.Pool({ connectionString: url, max: 6 });
   const db = createDatabase(pool, { orders, lines });
@@ -124,7 +135,7 @@ describe.skipIf(!url)('maker-checker', () => {
     'select status, decided_by, reason from radcore.approvals where id = $1', [id])).rows[0];
 
   async function serve(principal: Principal, fn: (call: (method: string, path: string, body?: unknown) => Promise<Response>) => Promise<void>) {
-    const app = createApp(config(), logger(), { db, authenticate: async () => principal, routes: defineApproval(contracts, spec) });
+    const app = createApp(config(), logger(), { db, authenticate: async () => principal, routes: [...defineApproval(contracts, spec), ...defineApproval(badContracts, badSpec)] });
     const server = await listen(app, 0, '127.0.0.1');
     try {
       await fn((method, path, body) => fetch(`http://127.0.0.1:${server.port}${path}`, {
@@ -309,6 +320,66 @@ describe.skipIf(!url)('maker-checker', () => {
     const next = await sendAgain(first.orderId);
     await serve(person(people.approver), async (call) => {
       expect((await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash })).status).toBe(200);
+    });
+  });
+
+  it('lets the person who rejected approve the fixed version: what a decision wrote is no change of theirs', async () => {
+    const first = await requested();
+    await serve(person(people.approver), async (call) => {
+      expect((await decide(call, first.id, { decision: 'reject', reason: 'Amount is wrong' })).status).toBe(200);
+    });
+    // rejected() set the order's status as the approver; the maker fixes it and sends it again.
+    await as(person(people.maker, []), (tx) => tx.update(orders).set({ amount: '1450.00' }).where(eq(orders.id, first.orderId)));
+    const next = await sendAgain(first.orderId);
+    await serve(person(people.approver), async (call) => {
+      expect((await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash })).status).toBe(200);
+    });
+  });
+
+  // A decision's own writes (architect on RAD-38): approved() and rejected() change only status and decision fields,
+  // so they're no change of the decider's; any other change by the decider still counts.
+
+  it('leaves the version as it was after a rejection, when nothing else changed', async () => {
+    const { id, versionHash } = await requested();
+    await serve(person(people.approver), async (call) => {
+      expect((await decide(call, id, { decision: 'reject', reason: 'Check the supplier' })).status).toBe(200);
+      expect(await (await call('GET', `/approvals/${KIND}/${id}`)).json())
+        .toMatchObject({ status: 'rejected', versionHash, currentHash: versionHash, changed: false });
+    });
+  });
+
+  it('refuses a decision whose spec changes what is approved, and rolls it back', async () => {
+    const { orderId } = await requested();
+    const bad = await runInTransaction(db, WRITE, person(people.maker, []), randomUUID(), (ctx) => requestApproval(ctx, badSpec, orderId));
+    await serve(person(people.approver), async (call) => {
+      const res = await call('POST', `/approvals/${BAD_KIND}/${bad.id}/decision`, { decision: 'reject', reason: 'No' });
+      expect(await codeOf(res)).toEqual([500, 'server_error']);
+    });
+    expect([(await approval(bad.id))?.status, (await pool.query<{ amount: string }>(
+      `select amount from radcore.${ORDERS} where id = $1`, [orderId])).rows[0]?.amount]).toEqual(['pending', '1500.00']);
+  });
+
+  it('refuses the rejecter who then corrected it themselves: their correction counts', async () => {
+    const first = await requested();
+    await serve(person(people.approver), async (call) => {
+      expect((await decide(call, first.id, { decision: 'reject', reason: 'Amount is wrong' })).status).toBe(200);
+    });
+    await as(person(people.approver), (tx) => tx.update(orders).set({ amount: '1400.00' }).where(eq(orders.id, first.orderId)));
+    const next = await sendAgain(first.orderId);
+    await serve(person(people.approver), async (call) => {
+      expect(await codeOf(await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash }))).toEqual([422, 'own_request']);
+    });
+  });
+
+  it('still counts the approver\'s later edit, made in a transaction of its own', async () => {
+    const first = await requested();
+    await serve(person(people.approver), async (call) => {
+      expect((await decide(call, first.id, { decision: 'approve', versionHash: first.versionHash })).status).toBe(200);
+    });
+    await as(person(people.approver), (tx) => tx.update(orders).set({ amount: '2100.00' }).where(eq(orders.id, first.orderId)));
+    const next = await sendAgain(first.orderId);
+    await serve(person(people.approver), async (call) => {
+      expect(await codeOf(await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash }))).toEqual([422, 'own_request']);
     });
   });
 

@@ -526,7 +526,9 @@ unless:
   change to the record or its parts since its last approval (or since it was made). The engine reads the makers from
   the audit log: each part table is attached with `owner =>` its record's key, so its audit rows carry the record's id
   (`owner_id`). "Since" is by the log's write order (`seq`), so a save that began before the approval but wrote after
-  it still counts. Jobs aren't makers;
+  it still counts. Jobs aren't makers. Writes made by a decision itself (a send-back's status and reason) don't make
+  the decider a maker. A spec's `approved` and `rejected` change only the record's status and decision fields, never
+  what is approved;
 - **the approver's account was created before the request** (`approver_too_new`), so a requester can't invite a
   fresh account to approve it;
 - **the version is the one the approver saw** (`version_changed`). It's a SHA-256 over sorted-key JSON of what the

@@ -10,7 +10,7 @@
 // A module's route file spreads `...defineApproval(contracts, spec)` (ADR-001 §8b), with its `approvalContracts`.
 import { createHash } from 'node:crypto';
 import { approvals, auditLog, platformTx, users } from '@radcore/db/platform';
-import { and, asc, eq, gt, inArray, isNull, like, max, or } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, like, or } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { approvalContracts } from './approval-contracts.ts';
 import { principalId, type Ctx } from './ctx.ts';
@@ -151,6 +151,12 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
   // approved() wrote comes before it by audit_log.seq and never makes the approver a maker of the next approval.
   if (input.decision === 'approve') await spec.approved(ctx, request.recordId);
   else await spec.rejected(ctx, request.recordId, input.reason);
+  // A decision changes only the record's status and decision fields, never what is approved (ADR-001 §8b): that's why
+  // the maker read can leave its writes out. A spec that breaks the rule fails here, and the decision rolls back.
+  const after = await spec.version(ctx, request.recordId, { forUpdate: false });
+  if (after === null || versionHash(after) !== versionHash(version)) {
+    throw new Error(`approval ${spec.kind}: its ${input.decision === 'approve' ? 'approved' : 'rejected'}() changed what is approved`);
+  }
   // Only while still pending, so of two decisions at once only one is recorded (the row lock already orders them);
   // the other rolls back, its module part with it.
   const [decided] = await tx.update(approvals).set({ status, decidedBy: me, decidedAt: new Date(),
@@ -170,18 +176,27 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
  */
 async function makersSinceApproval<V extends ApprovalVersion>(ctx: Ctx, spec: ApprovalSpec<V>, recordId: string): Promise<string[]> {
   const tx = platformTx(ctx);
-  const approved = (await tx.select({ id: approvals.id }).from(approvals)
-    .where(and(eq(approvals.kind, spec.kind), eq(approvals.recordId, recordId), eq(approvals.status, 'approved')))).map((r) => r.id);
-  const [last] = approved.length === 0 ? [] : await tx.select({ seq: max(auditLog.seq) }).from(auditLog)
-    .where(and(eq(auditLog.tableName, 'approvals'), inArray(auditLog.recordId, approved)));
+  const decided = await tx.select({ id: approvals.id, status: approvals.status, by: approvals.decidedBy }).from(approvals)
+    .where(and(eq(approvals.kind, spec.kind), eq(approvals.recordId, recordId), inArray(approvals.status, ['approved', 'rejected'])));
+  // Each decision's own audit row (its status change, written by the decider): its seq bounds "since", and its
+  // transaction (decider and time) marks what approved() or rejected() wrote, which is the decision, not a change.
+  const decisions = decided.length === 0 ? [] : await tx.select({ id: auditLog.recordId, by: auditLog.createdBy,
+    at: auditLog.occurredAt, seq: auditLog.seq }).from(auditLog)
+    .where(and(eq(auditLog.tableName, 'approvals'), inArray(auditLog.recordId, decided.map((d) => d.id))));
+  const byDecider = decisions.filter((r) => decided.some((d) => d.id === r.id && d.by === r.by));
+  const approvedIds = new Set(decided.filter((d) => d.status === 'approved').map((d) => d.id));
+  const last = Math.max(0, ...byDecider.filter((r) => approvedIds.has(r.id)).map((r) => r.seq));
   const parts = spec.parts ?? [];
-  const rows = await tx.select({ by: auditLog.createdBy }).from(auditLog).where(and(
-    last?.seq == null ? undefined : gt(auditLog.seq, last.seq),
+  const rows = await tx.select({ by: auditLog.createdBy, at: auditLog.occurredAt }).from(auditLog).where(and(
+    last === 0 ? undefined : gt(auditLog.seq, last),
     like(auditLog.createdBy, 'user:%'),
     or(and(eq(auditLog.tableName, spec.table), eq(auditLog.recordId, recordId)),
       parts.length === 0 ? undefined : and(inArray(auditLog.tableName, [...parts]), eq(auditLog.ownerId, recordId)))))
-    .groupBy(auditLog.createdBy);
-  return rows.map((r) => r.by);
+    .groupBy(auditLog.createdBy, auditLog.occurredAt);
+  // A rejection's rejected() wrote the record as the rejecter, and that's no change of theirs (auditor): reject, fix
+  // and approve again by the same person must work.
+  const inDecision = (r: { by: string; at: string }) => byDecider.some((d) => d.by === r.by && d.at === r.at);
+  return [...new Set(rows.filter((r) => !inDecision(r)).map((r) => r.by))];
 }
 
 type ApprovalContracts = ReturnType<typeof approvalContracts>;
