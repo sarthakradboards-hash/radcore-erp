@@ -21,9 +21,10 @@ export const getExport = defineContract({
 });
 
 /** A short-lived link that downloads a ready export as an attachment, for the person who started it; recorded as a
- * `download` security event (RC-031). Not yet ready, or failed: not_ready. */
+ * `download` security event (RC-031). Not yet ready, or failed: not_ready. The link is live, so saved-once keeps no
+ * answer (ADR-001 §7a, RC-132). */
 export const downloadExport = defineContract({
-  method: 'POST', path: '/exports/:id/download', auth: 'session', perm: 'session:read', tx: write,
+  method: 'POST', path: '/exports/:id/download', auth: 'session', perm: 'session:read', storesAnswer: false, tx: write,
   input: z.object({ id: idString() }), output: z.object({ url: z.string() }), errors: ['not_ready'],
 });
 

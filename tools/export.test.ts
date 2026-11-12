@@ -55,23 +55,23 @@ describe.skipIf(!url)('an export, start to download', () => {
     presignUpload: async () => ({ key: '', url: '', fields: {} }),
   };
 
-  let userId = '';
-  let owner: Principal = { kind: 'user', userId, permissions: [] };
+  // The person who exports, made once for the file: every test reads only their own exports and events.
+  const me = { userId: '' };
+  const owner = (): Principal => ({ kind: 'user', userId: me.userId, permissions: ['crm:export', 'session:read', 'audit:read'] });
   beforeAll(async () => {
     const { rows } = await pool.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
       insert into radcore.users (email, display_name) select $1, 'Asha' from p returning id`, [`asha.${randomUUID()}@example.com`]);
-    userId = rows[0]?.id ?? '';
-    owner = { kind: 'user', userId, permissions: ['crm:export', 'session:read', 'audit:read'] };
+    me.userId = rows[0]?.id ?? '';
   });
 
   // Starts an export through its route's service, as the API would, and answers its id.
-  const begin = async (n: number, who: Principal = owner) => {
+  const begin = async (n: number, who: Principal = owner()) => {
     const out = await runInTransaction(db, write, who, randomUUID(), (ctx) => start?.service(ctx, { filter: { n } }) ?? Promise.reject());
     return (out as { exportId: string }).exportId;
   };
   // Runs the export job as the worker would: the enqueuer loaded as they are now, each step in its own transaction.
   const txs: (TxSpec | undefined)[] = [];
-  const run = (exportId: string, holder: Principal = owner) => job.handle({ input: { exportId, kind: parties.kind }, by: `user:${userId}` },
+  const run = (exportId: string, holder: Principal = owner()) => job.handle({ input: { exportId, kind: parties.kind }, by: `user:${me.userId}` },
     randomUUID(), {
       open: (principal, jobId, work, tx) => {
         txs.push(tx);
@@ -81,7 +81,7 @@ describe.skipIf(!url)('an export, start to download', () => {
       alert: async () => undefined,
       files,
     });
-  const status = (exportId: string, who: Principal = owner) =>
+  const status = (exportId: string, who: Principal = owner()) =>
     runInTransaction(db, read, who, randomUUID(), (ctx) => exportStatus(ctx, { id: exportId }));
 
   it('writes every row, uploads after the read-only snapshot, and is ready to download (RC-086)', async () => {
@@ -93,7 +93,7 @@ describe.skipIf(!url)('an export, start to download', () => {
     expect(txs[0]).toEqual({ readOnly: true, isolation: 'repeatable read', statementTimeoutMs: 60_000 });
     expect(txs[1]).toBeUndefined();
     expect(await status(exportId)).toEqual({ status: 'ready', rows: 5, failure: null });
-    const { url: link } = await runInTransaction(db, write, owner, randomUUID(), (ctx) => exportDownload(ctx, { id: exportId }));
+    const { url: link } = await runInTransaction(db, write, owner(), randomUUID(), (ctx) => exportDownload(ctx, { id: exportId }));
     const key = /export\/[0-9a-f-]{36}/.exec(link)?.[0] ?? '';
     const lines = (uploaded.get(key) ?? '').replace(/^﻿/, '').trimEnd().split('\n');
     expect(lines).toEqual(['name,phone', ...[0, 1, 2, 3, 4].map((i) => `Party ${String(i)},+919876543210`)]);
@@ -105,19 +105,19 @@ describe.skipIf(!url)('an export, start to download', () => {
     await run(exportId);
     expect(await status(exportId)).toEqual({ status: 'failed', rows: null, failure: 'too_large' });
     expect(vi.mocked(files.putFile).mock.calls.length).toBe(calls);
-    await expect(runInTransaction(db, write, owner, randomUUID(), (ctx) => exportDownload(ctx, { id: exportId })))
+    await expect(runInTransaction(db, write, owner(), randomUUID(), (ctx) => exportDownload(ctx, { id: exportId })))
       .rejects.toMatchObject({ code: 'not_ready' });
   });
 
   it('records the export and its download as security events, with the list and count but no row data (RC-031)', async () => {
     const exportId = await begin(3);
     await run(exportId);
-    await runInTransaction(db, write, owner, randomUUID(), (ctx) => exportDownload(ctx, { id: exportId }));
+    await runInTransaction(db, write, owner(), randomUUID(), (ctx) => exportDownload(ctx, { id: exportId }));
     // The events carry the database's time, so the range is the database's India day.
     const { rows } = await pool.query<{ day: string }>("select to_char(now() at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day");
     const day = rows[0]?.day ?? '';
-    const { items } = await runInTransaction(db, read, owner, randomUUID(), (ctx) => listSecurityEventsPage(ctx,
-      { filter: { occurred: { from: day, to: day }, principal: userId }, limit: 50 }));
+    const { items } = await runInTransaction(db, read, owner(), randomUUID(), (ctx) => listSecurityEventsPage(ctx,
+      { filter: { occurred: { from: day, to: day }, principal: me.userId }, limit: 50 }));
     expect(items.find((e) => e.kind === 'download' && e.detail.fileId === exportId)).toBeDefined();
     expect(items.some((e) => e.kind === 'export' && e.detail.what === parties.kind && e.detail.rows === 3)).toBe(true);
   });
@@ -126,7 +126,7 @@ describe.skipIf(!url)('an export, start to download', () => {
     const exportId = await begin(2);
     const someoneElse: Principal = { kind: 'user', userId: randomUUID(), permissions: ['session:read'] };
     await expect(status(exportId, someoneElse)).rejects.toMatchObject({ code: 'not_found' });
-    await expect(run(exportId, { ...owner, permissions: ['session:read'] })).rejects.toThrow(/no longer holds crm:export/);
+    await expect(run(exportId, { ...owner(), permissions: ['session:read'] })).rejects.toThrow(/no longer holds crm:export/);
     expect(await status(exportId)).toEqual({ status: 'queued', rows: null, failure: null });
   });
 });

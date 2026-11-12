@@ -390,4 +390,5 @@ export const KEY_EXEMPT_ROUTES = ['POST /sign-in', 'POST /sign-out', 'POST /sign
   'POST /sign-in/second-factor/enrolment/confirm'] as const;
 // shortcut: M1-15's signed-in "new recovery codes" route joins this list when it is declared.
 export const ANSWER_NOT_STORED_ROUTES = ['POST /sign-in/second-factor/enrolment', 'POST /files/photo/:id/download',
-  'POST /files/resume/:id/download', 'POST /files/statement/:id/download', 'POST /files/import/:id/download'] as const;
+  'POST /files/resume/:id/download', 'POST /files/statement/:id/download', 'POST /files/import/:id/download',
+  'POST /exports/:id/download'] as const;

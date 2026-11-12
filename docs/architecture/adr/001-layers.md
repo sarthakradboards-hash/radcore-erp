@@ -415,7 +415,8 @@ session from the sessions list is refused with `current_session`: sign-out does 
   - starting a second-factor enrolment (the new TOTP secret);
   - making new recovery codes;
   - asking for a file's download link, `POST /files/<kind>/:id/download` for photo, resume, statement and import
-    (RAD-43). The answer is a live presigned link, and a stored answer must carry no tokens (RC-132).
+    (RAD-43), or an export's, `POST /exports/:id/download` (RAD-47). The answer is a live presigned link, and a
+    stored answer must carry no tokens (RC-132).
 
   How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
