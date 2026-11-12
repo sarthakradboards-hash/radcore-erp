@@ -4,7 +4,7 @@
 // Here in tools/ because server code may not call fetch (ADR-002 L8). The tables live in a schema of this file's own.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { defineContract, newPassword } from '@radcore/lib-common';
-import { AppError, defineRoute, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, defineRoute, loadConfig, RecordedRefusal, type Ctx, type Principal } from '@radcore/lib-platform';
 import { sql } from 'drizzle-orm';
 import { integer, pgSchema, text, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
@@ -90,7 +90,7 @@ describe.skipIf(!url)('the generic route handler', () => {
     const [row] = await notesTx(ctx).insert(notes).values(input).returning({ id: notes.id });
     return { id: row?.id ?? '' };
   };
-  const signOutService = vi.fn(async () => ({}));
+  const signOutService = vi.fn<(ctx: Ctx) => Promise<Record<string, never>>>(async () => ({}));
   // Every write carries its saved-once key (ADR-001 §7a): a UUID, new per submit.
   const post = (base: string, body: unknown, key: string | null = randomUUID()) => fetch(`${base}/notes`, {
     method: 'POST', body: JSON.stringify(body),
@@ -248,6 +248,53 @@ describe.skipIf(!url)('the generic route handler', () => {
     });
     expect(signOutService).toHaveBeenCalledTimes(1);
     expect(service).not.toHaveBeenCalled();
+  });
+
+  // RAD-34: the session cookie rides only on the key-exempt routes, whose answers are never stored and replayed, and
+  // is set only once the transaction commits. A RecordedRefusal (a failed sign-in's record) commits only there. These
+  // settings' origin is http, so the cookie is the development form (sessionCookieFor); tools/sessions.test has https.
+  it('sets the cookie only from a key-exempt route and only after commit; a recorded refusal commits only there', async () => {
+    const TOKEN = 'a'.repeat(43);
+    const exemptPost = (base: string) => fetch(`${base}/sign-out`, { method: 'POST', body: '{}',
+      headers: { 'content-type': 'application/json', origin: ORIGIN, 'user-agent': 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0' } });
+    const tag = randomBytes(4).toString('hex');
+    const exemptWrites = (body: string, then: () => never) => async (ctx: Ctx) => {
+      await notesTx(ctx).insert(notes).values({ body, n: 1 });
+      ctx.cookie?.set(TOKEN, new Date('2099-01-01T00:00:00Z'));
+      return then();
+    };
+    let cookieOnKeyed: unknown = 'unset';
+    await serve(user(['session:read', 'notes:write']), async (ctx, input) => {
+      cookieOnKeyed = ctx.cookie;
+      await insert(ctx, input);
+      throw new RecordedRefusal('note_too_long', 'Too long');
+    }, async (base) => {
+      // Set, and the device named from the User-Agent.
+      let device: string | undefined;
+      signOutService.mockImplementationOnce(async (ctx: Ctx) => {
+        ctx.cookie?.set(TOKEN, new Date('2099-01-01T00:00:00Z'));
+        device = ctx.cookie?.device;
+        return {};
+      });
+      const ok = await exemptPost(base);
+      expect([ok.status, ok.headers.get('set-cookie')]).toEqual([200,
+        `radcore_session=${TOKEN}; Path=/; Expires=Thu, 01 Jan 2099 00:00:00 GMT; HttpOnly; SameSite=Lax`]);
+      expect(device).toBe('Firefox on Windows');
+      // A recorded refusal on an exempt route: its work commits and its cookie is set, and the caller gets the refusal.
+      signOutService.mockImplementationOnce(exemptWrites(`kept ${tag}`, () => { throw new RecordedRefusal('conflict', 'Kept'); }));
+      const kept = await exemptPost(base);
+      expect([kept.status, ((await kept.json()) as { code: string }).code, kept.headers.get('set-cookie') !== null])
+        .toEqual([409, 'conflict', true]);
+      // Any other failure rolls back, and no cookie is set for what never committed.
+      signOutService.mockImplementationOnce(exemptWrites(`dropped ${tag}`, () => { throw new AppError('conflict', 'Dropped'); }));
+      const dropped = await exemptPost(base);
+      expect([dropped.status, dropped.headers.get('set-cookie')]).toEqual([409, null]);
+      // A keyed route gets no cookie, and a recorded refusal there rolls back like any other.
+      const keyed = await post(base, { body: `keyed ${tag}`, n: 1 });
+      expect([keyed.status, keyed.headers.get('set-cookie')]).toEqual([422, null]);
+    });
+    expect(cookieOnKeyed).toBeUndefined();
+    expect([await count(`kept ${tag}`), await count(`dropped ${tag}`), await count(`keyed ${tag}`)]).toEqual([1, 0, 0]);
   });
 
   it('marks every answer no-store, and never names the server', async () => {

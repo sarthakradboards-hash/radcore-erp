@@ -5,22 +5,24 @@
 //   ─► a write claims its saved-once key (M1-09): an earlier committed answer is replayed here ─► service(ctx, input)
 //   ─► output checked against contract.output, camelCase as is (RC-199) ─► a write keeps its answer ─► commit ─► 200
 //   ─► errors mapped by code: a thrown AppError's code or a PostgreSQL SQLSTATE, never message text (RC-216)
-// Still to come, each with its ticket: rate guards (M1-21), sessions (RAD-32), pii() masking (M1-22), Settings in Ctx
-// (RAD-48), and webhooks' own lane (M1-27).
+// The key-exempt routes (sign-in, sign-out) get ctx.cookie, applied only once the transaction commits (RAD-34).
+// Still to come, each with its ticket: rate guards (M1-21), pii() masking (M1-22) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, describeError, originAllowed, type Files, type Principal, type Route } from '@radcore/lib-platform';
+import { AppError, claimSavedOnce, deviceOf, describeError, originAllowed, RecordedRefusal, sessionCookieFor, type Files,
+  type Principal, type Route, type SessionCookie } from '@radcore/lib-platform';
 import { acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
-import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
 
 type Database = Parameters<typeof runInTransaction>[0];
 
 export type HandlerDeps = {
   db: Database;
   log: Logger;
-  /** Who sent the request: the session's user, or null when signed out. Sessions arrive with RAD-32. */
-  authenticate: (req: Request) => Promise<Principal | null>;
+  /** Who sent the request: the session's user, or null when signed out. `route` is "METHOD /path", so a read that
+   * isn't activity (GET /me, RAD-34) can leave the idle expiry alone. */
+  authenticate: (req: Request, route: string) => Promise<Principal | null>;
   /** PUBLIC_ORIGIN: the one origin a write may come from (ADR-001 §7a). */
   publicOrigin: string;
   /** The new-password check (lib-platform's createNewPasswordCheck), run before the transaction on every field marked
@@ -105,12 +107,18 @@ const send = (res: Response, f: Failure, requestId: string) => {
     ...(f.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: f.retryAfterSeconds }) });
 };
 
+type CookieChange = { token: string; expires: Date } | 'clear' | null;
+
 // A UUID, as apps/web makes one per submit (ADR-001 §7a).
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const onList = (list: readonly string[], route: string): boolean => list.includes(route);
 
 export function mountRoutes(app: Express, routes: readonly Route[], deps: HandlerDeps): void {
   const router = express.Router();
+  // ADR-001 §7a: the session cookie can't be read by script or sent with another site's request; on https it's also
+  // __Host- and Secure, so it can't be set for a subdomain (sessionCookieFor).
+  const session = sessionCookieFor(deps.publicOrigin);
+  const COOKIE: CookieOptions = Object.freeze({ httpOnly: true, secure: session.secure, sameSite: 'lax', path: '/' });
   // An answer is one person's data at one moment: no browser or proxy keeps it.
   router.use((_req: Request, res: Response, next: NextFunction) => {
     res.set('Cache-Control', 'no-store');
@@ -147,8 +155,10 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
     const handle = async (req: Request, res: Response): Promise<void> => {
       const requestId = randomUUID();
       try {
-        const principal = await deps.authenticate(req);
+        const principal = await deps.authenticate(req, route);
         if (contract.auth === 'session' && principal === null) {
+          // A cookie whose session has ended or expired is cleared, sign-out's included (RAD-34).
+          if (session.tokenIn(req.get('cookie')) !== null) res.clearCookie(session.name, COOKIE);
           send(res, platform('signed_out'), requestId);
           return;
         }
@@ -179,17 +189,41 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           }
         }
         const key = req.get('idempotency-key') ?? '';
+        // Only a key-exempt route may set or clear the cookie: its answer is never stored and replayed (ADR-001 §7a).
+        const exempt = contract.idempotency === 'exempt';
+        let cookie: CookieChange = null;
+        let refused: RecordedRefusal | null = null;
+        const channel: SessionCookie = Object.freeze({ device: deviceOf(req.get('user-agent')),
+          incoming: session.tokenIn(req.get('cookie')),
+          set: (token: string, expires: Date) => { cookie = { token, expires }; }, clear: () => { cookie = 'clear'; } });
         const output = await runInTransaction(deps.db, contract.tx, principal ?? PUBLIC, requestId, async (ctx) => {
           // Saved-once (M1-09): a write claims its key first, in this transaction, and replays an earlier answer.
           // A key-exempt route sends no key and claims none; a route whose answer holds a secret claims and keeps nothing.
           const once = contract.tx.readOnly || contract.idempotency === 'exempt' ? null
             : await claimSavedOnce(ctx, { route, key, input: input.value, storesAnswer: contract.storesAnswer !== false });
           if (once?.replay === true) return once.answer;
-          const checked = contract.output.safeParse(await service(ctx, input.value));
+          let answer: unknown;
+          try {
+            answer = await service(exempt ? Object.freeze({ ...ctx, cookie: channel }) : ctx, input.value);
+          } catch (err) {
+            // A failed sign-in's record commits; the person still gets the refusal (RAD-34).
+            if (!(exempt && err instanceof RecordedRefusal)) throw err;
+            refused = err;
+            return null;
+          }
+          const checked = contract.output.safeParse(answer);
           if (!checked.success) throw new OutputMismatch(`${route}: the output doesn't match its contract`);
           await once?.keep(checked.data);
           return checked.data;
         }, deps.files);
+        // After the commit: a cookie for a session that rolled back would sign nobody in.
+        const change = cookie as CookieChange;
+        if (change === 'clear') res.clearCookie(session.name, COOKIE);
+        else if (change !== null) res.cookie(session.name, change.token, { ...COOKIE, expires: change.expires });
+        if (refused !== null) {
+          send(res, failureOf(refused, contract.errors), requestId);
+          return;
+        }
         res.status(200).json(output);
       } catch (err) {
         const failure = failureOf(err, contract.errors);
