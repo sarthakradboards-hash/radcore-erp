@@ -6,7 +6,7 @@ import { createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { dataExports, platformTx } from '@radcore/db/platform';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import type { z } from 'zod';
 import { EXPORT_MAX_ROWS, type downloadExport, type getExport } from './contract.ts';
 import { principalId, type Ctx } from '../ctx.ts';
@@ -33,6 +33,17 @@ export type ExportDefinition<F> = {
 export class ExportTooLarge extends Error {
   override name = 'ExportTooLarge';
 }
+
+/**
+ * How long an export may stay queued before it counts as failed (auditor on #125): a job that was refused (its starter
+ * gone, or their permission revoked) or whose worker died never marks its row, so its status would read queued for
+ * ever. Past this it reads `failed`, and no longer blocks the person's next export.
+ * shortcut: a fixed six hours, comfortably past one job's hour plus the queue; mark the row from the dead-letter path
+ * if a backlog ever makes honest exports wait that long.
+ */
+export const EXPORT_GIVE_UP_MS = 6 * 3_600_000;
+/** When an export queued before now is given up on. */
+const givenUpBefore = (): Date => new Date(Date.now() - EXPORT_GIVE_UP_MS);
 
 /** Rows read per page: the screen's paging, sized so memory stays flat however long the export. */
 const PAGE = 1_000;
@@ -74,7 +85,8 @@ export async function writeExportFile<F>(ctx: Ctx, def: ExportDefinition<F>, fil
 /** The person's own export, or not_found: an export is only ever its starter's. */
 async function ownExport(ctx: Ctx, id: string) {
   const [row] = await platformTx(ctx).select({ id: dataExports.id, kind: dataExports.kind, status: dataExports.status,
-    rows: dataExports.rows, storeKey: dataExports.storeKey, failure: dataExports.failure }).from(dataExports)
+    rows: dataExports.rows, storeKey: dataExports.storeKey, failure: dataExports.failure, createdAt: dataExports.createdAt })
+    .from(dataExports)
     .where(and(eq(dataExports.id, id), eq(dataExports.createdBy, principalId(ctx.principal)))).limit(1);
   if (row === undefined) throw new AppError('not_found', 'There is no such export');
   return row;
@@ -84,8 +96,17 @@ async function ownExport(ctx: Ctx, id: string) {
 export async function exportStatus(ctx: Ctx, input: z.output<typeof getExport.input>,
 ): Promise<z.input<typeof getExport.output>> {
   const row = await ownExport(ctx, input.id);
+  if (row.status === 'queued' && row.createdAt < givenUpBefore()) return { status: 'failed', rows: null, failure: 'failed' };
   const failure = row.failure === 'too_large' || row.failure === 'failed' ? row.failure : null;
   return { status: row.status === 'ready' || row.status === 'failed' ? row.status : 'queued', rows: row.rows, failure };
+}
+
+/** The person's export still queued and not given up on, if any: they may have one at a time (auditor on #125). */
+export async function queuedExport(ctx: Ctx): Promise<boolean> {
+  const [row] = await platformTx(ctx).select({ id: dataExports.id }).from(dataExports)
+    .where(and(eq(dataExports.createdBy, principalId(ctx.principal)), eq(dataExports.status, 'queued'),
+      gt(dataExports.createdAt, givenUpBefore()))).limit(1);
+  return row !== undefined;
 }
 
 /** downloadExport: a short-lived link to the person's own ready export, recorded as a `download` event (RC-031). */

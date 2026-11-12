@@ -33,5 +33,5 @@ export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
   type WebhookVerifier,
 } from './webhooks.ts';
-export { exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows } from './export/engine.ts';
+export { EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows } from './export/engine.ts';
 export { defineExport, defineExportJob, exportOf, type ModuleExport } from './export/job.ts';

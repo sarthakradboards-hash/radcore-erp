@@ -33,14 +33,14 @@ export const downloadExport = defineContract({
  * the name in lower-case words joined by hyphens, which also names the file; `perm` may start it, and is checked again
  * when the job runs; `filter` is the list's own; `columns` are the CSV's, in order. `start` is its route,
  * `POST /<module>/<name>/exports`, answered with the export's id at once; the screen then polls getExport and calls
- * downloadExport.
+ * downloadExport. A person has one export queued at a time: another start answers export_in_progress.
  */
 export const exportContract = <F extends z.ZodType>(kind: string, perm: `${string}:${string}`, filter: F,
   columns: readonly string[]) => ({
   kind, perm, filter, columns,
   start: defineContract({
     method: 'POST', path: `/${kind.replace('.', '/')}/exports`, auth: 'session', perm, tx: write,
-    input: z.object({ filter }), output: z.object({ exportId: idString() }),
+    input: z.object({ filter }), output: z.object({ exportId: idString() }), errors: ['export_in_progress'],
   }),
 });
 export type ExportContract<F extends z.ZodType = z.ZodType> = ReturnType<typeof exportContract<F>>;

@@ -12,11 +12,12 @@ import { idString } from '@radcore/lib-common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { principalId, type Ctx } from '../ctx.ts';
+import { AppError } from '../errors.ts';
 import { defineJob, type JobDefinition } from '../jobs.ts';
 import { defineRoute, type Route } from '../route.ts';
 import { recordSecurityEvent } from '../security-events.ts';
 import { EXPORT_MAX_ROWS, type ExportContract } from './contract.ts';
-import { ExportTooLarge, writeExportFile, type ExportRows } from './engine.ts';
+import { ExportTooLarge, queuedExport, writeExportFile, type ExportRows } from './engine.ts';
 
 /** A module's export, ready to wire: its contract with the module's row function. */
 export type ModuleExport = {
@@ -42,8 +43,13 @@ const PAGE_TIMEOUT_MS = 60_000;
 /** A whole export, a million rows at most, finishes within this. */
 const EXPORT_TIMEOUT_SECONDS = 3_600;
 
-/** Starts an export: its row, then its job through the outbox, in the request's transaction; answers at once. */
+/**
+ * Starts an export: its row, then its job through the outbox, in the request's transaction; answers at once. Exports
+ * run one at a time for everyone, so a person has one queued at a time: another start is export_in_progress.
+ * shortcut: two starts in the same instant can both pass the check; add a partial unique index if that ever matters.
+ */
 async function startExport(ctx: Ctx, m: ModuleExport, filter: unknown): Promise<{ exportId: string }> {
+  if (await queuedExport(ctx)) throw new AppError('export_in_progress', 'Your last export is still being made. Try again when it is ready.');
   const [row] = await platformTx(ctx).insert(dataExports).values({ kind: m.kind, filter }).returning({ id: dataExports.id });
   if (row === undefined) throw new Error(`${m.kind}: the export wasn't saved`);
   await ctx.jobs.send(EXPORT_JOB, { exportId: row.id, kind: m.kind });
