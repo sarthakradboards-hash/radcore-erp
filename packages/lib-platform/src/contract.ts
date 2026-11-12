@@ -290,7 +290,7 @@ export const listAuditedTables = defineContract({
  * values of each detail's enums, are only ever added: the list parses every stored row with these schemas, so one
  * removed or renamed would fail the old pages that hold it (auditor-2 on #109). */
 export const SECURITY_EVENT_KINDS = ['sign_in', 'sign_in_failed', 'password_changed', 'second_factor_changed', 'export',
-  'download'] as const;
+  'download', 'session_ended'] as const;
 const securityEventKind = z.enum(SECURITY_EVENT_KINDS);
 // Each kind's detail: references only, never a typed email, password, code or token (M6-16; the architect on RAD-31).
 // Each detail is strict, so nothing else can ride along, on the way in (recordSecurityEvent) or out (the list).
@@ -305,22 +305,30 @@ const eventUnion = z.discriminatedUnion('kind', [
     what: z.string().regex(/^[a-z][a-z0-9_.-]{0,62}$/, 'A list name, such as sales.invoices'),
     rows: z.number().int().nonnegative() }) }),
   z.object({ kind: z.literal('download'), detail: z.strictObject({ fileId: idString() }) }),
+  // A session's start is sign_in; its end, one row per session, says why (RAD-34). Expiry ends one silently.
+  z.object({ kind: z.literal('session_ended'), detail: z.strictObject({
+    reason: z.enum(['sign_out', 'admin', 'password_changed', 'password_reset', 'role_changed', 'deactivated']) }) }),
 ]);
 /** One security event as recorded: its kind and that kind's detail. Typed plainly, so lint's D7 walk stays small. */
 export const securityEvent: z.ZodType<z.output<typeof eventUnion>, z.input<typeof eventUnion>> = eventUnion;
 
 /**
  * The routes that record security events, and which (RC-031's register, RAD-31). Each route's own ticket proves in
- * its test that it writes them: RAD-32 sign-in and passwords, RAD-33 the second factor. Exports and downloads join
- * when they're declared (RAD-47 part 2, RAD-43 part 2).
+ * its test that it writes them: RAD-32 and RAD-34 sign-in, passwords and sessions, RAD-33 the second factor. Exports
+ * and downloads join when they're declared (RAD-47 part 2, RAD-43 part 2), and the role change and deactivation,
+ * which end sessions, with RAD-35 and RAD-36.
  */
 export const SECURITY_EVENT_ROUTES = {
   'POST /sign-in': ['sign_in', 'sign_in_failed'],
   'POST /sign-in/second-factor': ['sign_in', 'sign_in_failed'],
   'POST /sign-in/second-factor/enrolment/confirm': ['second_factor_changed', 'sign_in'],
   'POST /invites/accept': ['password_changed'],
-  'POST /password-reset': ['password_changed'],
-  'POST /me/password': ['password_changed'],
+  'POST /password-reset': ['password_changed', 'session_ended'],
+  'POST /me/password': ['password_changed', 'session_ended'],
+  'POST /sign-out': ['session_ended'],
+  'DELETE /me/sessions/:id': ['session_ended'],
+  'DELETE /admin/sessions/:id': ['session_ended'],
+  'POST /admin/users/:id/sessions/end': ['session_ended'],
   'POST /files/photo/:id/download': ['download'],
   'POST /files/resume/:id/download': ['download'],
   'POST /files/statement/:id/download': ['download'],

@@ -387,6 +387,29 @@ the server. The form shows the same rules but decides nothing.
 password change, the person's sessions) use one key, `session:read`, which every role holds. Ending the current
 session from the sessions list is refused with `current_session`: sign-out does that, because it clears the cookie.
 
+**Sessions** (M1-16, RAD-34). A session is a random token in the `__Host-radcore_session` cookie; only its SHA-256 is
+stored.
+- **Over plain http (development and CI only), the cookie is `radcore_session` and not Secure.** WebKit stores a
+  Secure cookie from `http://127.0.0.1` but never sends it back, so Safari couldn't stay signed in. Deployed origins
+  are https, which config enforces.
+- It signs nobody in after **30 minutes without a request or 12 hours after sign-in**, whichever comes first
+  (Sarthak, 11 Nov 2026), or once it's ended. A request moves the idle expiry on, never past the 12 hours. `GET /me`
+  doesn't count, since the shell reads it every minute.
+- It ends on sign-out; when the person ends it from their sessions list; when an admin ends it; on a password change
+  (the person's other sessions) or reset (all of them); and on a role change or deactivation (RAD-35, RAD-36).
+- A sign-in ends the session the browser's cookie already names, so none lingers on a shared computer.
+- A request whose cookie names an ended or expired session gets 401 `signed_out`, and the cookie is cleared with it,
+  sign-out's included.
+- A sign-in is a `sign_in` security event, and each session that ends is a `session_ended` event with the reason.
+  Every refused sign-in is a `sign_in_failed` row, a locked address's included, whether or not an account has the
+  address: recording only some would make a known address do different work, and timing would tell (RAD-64). The
+  per-IP limit (RAD-39) bounds the rows one source can add (ADR-005 §7c).
+- **Only the key-exempt routes touch the cookie.** The handler gives just those routes `ctx.cookie`, and sets or
+  clears the cookie only after the transaction commits, so a rolled-back sign-in sets nothing.
+- **A failed sign-in is still recorded.** Its service throws `RecordedRefusal`. On a key-exempt route the handler
+  commits that transaction, which holds the `sign_in_failed` event, and still answers with the refusal. Elsewhere it
+  rolls back like any error.
+
 **Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
 - It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
   new one only after a success (Design notes A-0).
@@ -411,12 +434,19 @@ session from the sessions list is refused with `current_session`: sign-out does 
     seconds for a fresh code, because the one they just used is spent. If its answer is lost, the person signs in
     again and makes new recovery codes from their account (M1-15).
 - **Answers that hold a secret aren't stored** (RAD-32). A route whose answer holds a secret declares
-  `storesAnswer: false`: starting a second-factor enrolment (the new TOTP secret) and making new recovery codes.
+  `storesAnswer: false`:
+  - starting a second-factor enrolment (the new TOTP secret);
+  - making new recovery codes;
+  - asking for a file's download link, `POST /files/<kind>/:id/download` for photo, resume, statement and import
+    (RAD-43). The answer is a live presigned link, and a stored answer must carry no tokens (RC-132).
+
+  How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
     secret is never at rest in the saved-once table.
   - A repeated key after a commit gets 409 `answer_not_kept`, and the client starts again with a new key.
-  - The generic handler accepts the flag only from those two routes, a fixed list in lib-platform, and the
-    permission manifest test (M1-19) fails on any other route that declares it.
+  - The generic handler accepts the flag only from those routes, a fixed list in lib-platform
+    (`ANSWER_NOT_STORED_ROUTES`), and the permission manifest test (M1-19) fails on any other route that declares
+    it.
   - Confirming an enrolment returns the recovery codes too, but it is exempt, so it stores nothing anyway.
 
 **Links that carry a token** (RAD-61). Invite and password-reset links carry their token in the URL fragment
