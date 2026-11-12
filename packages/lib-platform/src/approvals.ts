@@ -69,7 +69,7 @@ export async function requestApproval<V extends ApprovalVersion>(ctx: Ctx, spec:
   await tx.update(approvals).set({ status: 'superseded', decidedAt: new Date() })
     .where(and(eq(approvals.kind, spec.kind), eq(approvals.recordId, recordId), isNull(approvals.decidedAt)));
   const [row] = await tx.insert(approvals)
-    .values({ kind: spec.kind, recordId, versionHash: hash, requestedBy: principalId(ctx.principal) }).returning({ id: approvals.id });
+    .values({ kind: spec.kind, recordId, versionDigest: hash, requestedBy: principalId(ctx.principal) }).returning({ id: approvals.id });
   if (row === undefined) throw new Error('the approval request was not stored');
   return { id: row.id, versionHash: hash };
 }
@@ -94,7 +94,7 @@ export async function listPendingApprovals<V extends ApprovalVersion>(ctx: Ctx, 
 /** A request with the record as it is now: `changed` when it no longer hashes to the version requested. */
 export async function showApproval<V extends ApprovalVersion>(ctx: Ctx, spec: ApprovalSpec<V>, id: string) {
   const [request] = await platformTx(ctx).select({ id: approvals.id, recordId: approvals.recordId, status: approvals.status,
-    versionHash: approvals.versionHash, requestedBy: approvals.requestedBy, requestedAt: approvals.createdAt,
+    versionHash: approvals.versionDigest, requestedBy: approvals.requestedBy, requestedAt: approvals.createdAt,
     decidedBy: approvals.decidedBy, decidedAt: approvals.decidedAt, reason: approvals.reason })
     .from(approvals).where(and(eq(approvals.id, id), eq(approvals.kind, spec.kind)));
   if (request === undefined) throw notFound();
@@ -131,7 +131,7 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
   const version = await spec.version(ctx, found.recordId, { forUpdate: true });
   if (version === null) throw notFound();
   // The request locked too, so two people deciding at once are taken one after the other: the second finds it decided.
-  const [request] = await tx.select({ recordId: approvals.recordId, versionHash: approvals.versionHash,
+  const [request] = await tx.select({ recordId: approvals.recordId, versionHash: approvals.versionDigest,
     requestedBy: approvals.requestedBy, requestedAt: approvals.createdAt, decidedAt: approvals.decidedAt })
     .from(approvals).where(eq(approvals.id, id)).for('update');
   if (request === undefined) throw notFound();

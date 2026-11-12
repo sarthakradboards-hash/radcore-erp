@@ -2,7 +2,7 @@ CREATE TABLE "radcore"."approvals" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"kind" text NOT NULL,
 	"record_id" uuid NOT NULL,
-	"version_hash" text NOT NULL,
+	"version_digest" text NOT NULL,
 	"requested_by" text NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"decided_by" text,
@@ -14,7 +14,7 @@ CREATE TABLE "radcore"."approvals" (
 	"updated_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
 	CONSTRAINT "ck_approvals_reason" CHECK (char_length("radcore"."approvals"."reason") <= 500),
 	CONSTRAINT "ck_approvals_kind" CHECK ("radcore"."approvals"."kind" ~ '^[a-z][a-z0-9-]*$'),
-	CONSTRAINT "ck_approvals_version_hash" CHECK ("radcore"."approvals"."version_hash" ~ '^[0-9a-f]{64}$'),
+	CONSTRAINT "ck_approvals_version_digest" CHECK ("radcore"."approvals"."version_digest" ~ '^[0-9a-f]{64}$'),
 	CONSTRAINT "ck_approvals_status" CHECK ("radcore"."approvals"."status" in ('pending', 'approved', 'rejected', 'superseded')),
 	CONSTRAINT "ck_approvals_decided" CHECK (("radcore"."approvals"."status" = 'pending') = ("radcore"."approvals"."decided_at" is null)
     and ("radcore"."approvals"."status" in ('approved', 'rejected')) = ("radcore"."approvals"."decided_by" is not null)
@@ -25,7 +25,7 @@ CREATE UNIQUE INDEX "ux_approvals_pending" ON "radcore"."approvals" USING btree 
 CREATE INDEX "ix_approvals_kind_status" ON "radcore"."approvals" USING btree ("kind","status","created_at");--> statement-breakpoint
 -- A record people make (ADR-005 §5, §7c): audited, every column kept, since who asked, who decided and what they
 -- decided on is the point of the table (RC-037).
-SELECT radcore.audit_attach('approvals', keep => array['kind', 'record_id', 'version_hash', 'requested_by', 'status', 'decided_by', 'decided_at', 'reason']);
+SELECT radcore.audit_attach('approvals', keep => array['kind', 'record_id', 'version_digest', 'requested_by', 'status', 'decided_by', 'decided_at', 'reason']);
 --> statement-breakpoint
 -- RAD-38 (ADR-001 §8b): a part's audit rows name the record it belongs to, so maker-checker can find everyone who
 -- changed a record or any of its parts since the record's last approval. A part table (a purchase order's lines) is

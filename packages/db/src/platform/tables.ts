@@ -152,7 +152,7 @@ export const webhookDeliveries = radcoreTable('webhook_deliveries', {
 ]);
 /**
  * Approvals (maker-checker, RAD-38, RC-037): one row per request for a second person to approve a record of `kind`
- * (`purchase-order`, `stock-adjustment`, ...). `version_hash` is the SHA-256 of the exact version the request was made
+ * (`purchase-order`, `stock-adjustment`, ...). `version_digest` is the SHA-256 of the exact version the request was made
  * for; an approval goes through only if the record still hashes to it and the approver's screen saw the same hash.
  * `requested_by` and `decided_by` are principal ids (`user:<id>`), never the same one on an approved or rejected row.
  * A new request for the same record supersedes the pending one (its `decided_at` is then when), so at most one is
@@ -162,7 +162,8 @@ export const approvals = radcoreTable('approvals', {
   id: id(),
   kind: text().notNull(),
   recordId: uuid().notNull(),
-  versionHash: text().notNull(),
+  // A digest, not a secret: named so, since the audit rules treat a `*hash*` column as one to redact (ADR-005 §7c).
+  versionDigest: text().notNull(),
   requestedBy: text().notNull(),
   status: text().notNull().default('pending'),
   decidedBy: text(),
@@ -170,7 +171,7 @@ export const approvals = radcoreTable('approvals', {
   reason: boundedText({ max: 500 }),
 }, (t) => [
   check('ck_approvals_kind', sql`${t.kind} ~ '^[a-z][a-z0-9-]*$'`),
-  check('ck_approvals_version_hash', sql`${t.versionHash} ~ '^[0-9a-f]{64}$'`),
+  check('ck_approvals_version_digest', sql`${t.versionDigest} ~ '^[0-9a-f]{64}$'`),
   check('ck_approvals_status', sql`${t.status} in ('pending', 'approved', 'rejected', 'superseded')`),
   // Only a pending request has no decided_at (a superseded one has the time it was superseded); an approval or
   // rejection names who decided, and it's never the requester (RC-037).

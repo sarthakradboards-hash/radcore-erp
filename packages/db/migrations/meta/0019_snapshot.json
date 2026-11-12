@@ -1,5 +1,5 @@
 {
-  "id": "a49783be-bdcc-4ca4-b6f0-135b62c0c30f",
+  "id": "48470239-728e-4e3f-acac-19e9ef258e20",
   "prevId": "3301b2ae-c3f8-46cd-a6be-3740a75c7b3d",
   "version": "7",
   "dialect": "postgresql",
@@ -27,8 +27,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "version_hash": {
-          "name": "version_hash",
+        "version_digest": {
+          "name": "version_digest",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -157,9 +157,9 @@
           "name": "ck_approvals_kind",
           "value": "\"radcore\".\"approvals\".\"kind\" ~ '^[a-z][a-z0-9-]*$'"
         },
-        "ck_approvals_version_hash": {
-          "name": "ck_approvals_version_hash",
-          "value": "\"radcore\".\"approvals\".\"version_hash\" ~ '^[0-9a-f]{64}$'"
+        "ck_approvals_version_digest": {
+          "name": "ck_approvals_version_digest",
+          "value": "\"radcore\".\"approvals\".\"version_digest\" ~ '^[0-9a-f]{64}$'"
         },
         "ck_approvals_status": {
           "name": "ck_approvals_status",
