@@ -411,12 +411,19 @@ session from the sessions list is refused with `current_session`: sign-out does 
     seconds for a fresh code, because the one they just used is spent. If its answer is lost, the person signs in
     again and makes new recovery codes from their account (M1-15).
 - **Answers that hold a secret aren't stored** (RAD-32). A route whose answer holds a secret declares
-  `storesAnswer: false`: starting a second-factor enrolment (the new TOTP secret) and making new recovery codes.
+  `storesAnswer: false`:
+  - starting a second-factor enrolment (the new TOTP secret);
+  - making new recovery codes;
+  - asking for a file's download link, `POST /files/<kind>/:id/download` for photo, resume, statement and import
+    (RAD-43). The answer is a live presigned link, and a stored answer must carry no tokens (RC-132).
+
+  How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
     secret is never at rest in the saved-once table.
   - A repeated key after a commit gets 409 `answer_not_kept`, and the client starts again with a new key.
-  - The generic handler accepts the flag only from those two routes, a fixed list in lib-platform, and the
-    permission manifest test (M1-19) fails on any other route that declares it.
+  - The generic handler accepts the flag only from those routes, a fixed list in lib-platform
+    (`ANSWER_NOT_STORED_ROUTES`), and the permission manifest test (M1-19) fails on any other route that declares
+    it.
   - Confirming an enrolment returns the recovery codes too, but it is exempt, so it stores nothing anyway.
 
 **Links that carry a token** (RAD-61). Invite and password-reset links carry their token in the URL fragment
