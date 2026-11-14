@@ -4,6 +4,7 @@ export { roleNeedsSecondFactor } from './auth/principal.ts';
 export { changeUserRole, listRolesFor, permissionMatrix, setRoleGrants } from './auth/roles-admin.ts';
 export { deactivatePerson, invitePerson, reactivatePerson, resendPersonInvite } from './auth/people-admin.ts';
 export { createCustomRole, deleteCustomRole, renameRole, resetRoleToTemplate } from './auth/roles-custom.ts';
+export { listPeople } from './auth/people-list.ts';
 export { assignRole } from './auth/roles.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export {
