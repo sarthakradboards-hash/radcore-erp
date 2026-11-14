@@ -256,14 +256,20 @@ describe.skipIf(!url)('the second sign-in factor', () => {
     expect(await outcome(other.newCodes('123456'))).toBe('no_second_factor');
   });
 
-  it("lets an admin remove someone else's factor, so they enrol again, but not their own", async () => {
+  it("lets an admin remove someone else's factor, ending their sessions, so they enrol again, but not their own", async () => {
     const s = await setup();
     await s.enrol();
+    const live = async () => asAdmin<{ ended_reason: string | null }>('select ended_reason from radcore.sessions where user_id = $1', [s.userId]);
+    expect(await live()).toEqual([{ ended_reason: null }]);
     const admin: Principal = { kind: 'user', userId: (await setup()).userId, permissions: ['users:write'] };
     const reason = 'Lost their phone';
     expect(await outcome(run(s.me(), (ctx) => s.factor.remove(ctx, { id: s.userId, reason })))).toBe('own_account');
     expect(await outcome(run(admin, (ctx) => s.factor.remove(ctx, { id: s.userId, reason })))).toBe('ok');
     expect(await asAdmin('select 1 from radcore.recovery_codes where user_id = $1', [s.userId])).toEqual([]);
+    // The lost phone's session ends with it (the architect on #132).
+    expect(await live()).toEqual([{ ended_reason: 'admin' }]);
+    expect((await s.events()).slice(-2)).toEqual([{ kind: 'second_factor_changed', detail: { change: 'removed' } },
+      { kind: 'session_ended', detail: { reason: 'admin' } }]);
     expect(await run(s.me(), (ctx) => secondFactorStatus(ctx, s.userId))).toBe('enrolment_required');
     expect(await s.password()).toEqual({ next: 'enrol_second_factor' });
     expect(await outcome(run(admin, (ctx) => s.factor.remove(ctx, { id: s.userId, reason })))).toBe('no_second_factor');

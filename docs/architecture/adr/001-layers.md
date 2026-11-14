@@ -428,7 +428,8 @@ codes.
 - **Signed in,** `POST /me/second-factor/recovery-codes` takes a current code, voids the old set and answers a new
   one (`storesAnswer: false`).
 - **An admin** removes someone else's factor and codes after a lost phone
-  (`POST /admin/users/:id/second-factor/remove`). They enrol again at their next sign-in if their role needs it.
+  (`POST /admin/users/:id/second-factor/remove`), and ends their sessions; it's a `second_factor_changed` event. They
+  enrol again at their next sign-in if their role needs it.
 - **Attempts:** five per account in 15 minutes, then a 15-minute wait. They're counted in the shared store, like the
   sign-in lockout.
 - **Every account needs a factor until roles land** (RAD-35). It fails safe, and the first admin needs one anyway.

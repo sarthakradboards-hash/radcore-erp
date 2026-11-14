@@ -27,7 +27,7 @@ import type { BeforeDeps } from '../route.ts';
 import type { Secrets } from '../secrets.ts';
 import { recordSecurityEvent } from '../security-events.ts';
 import type { Passwords } from './passwords.ts';
-import { cookieOf, finishPendingSignIn, pendingSignIn } from './sessions.ts';
+import { cookieOf, endSessionsOf, finishPendingSignIn, pendingSignIn } from './sessions.ts';
 
 /** Five tries per account in 15 minutes, then 15 minutes' wait: a 6-digit code can't be guessed in reach of it. */
 export const SECOND_FACTOR_ATTEMPTS = Object.freeze({ points: 5, windowSeconds: 900, blockSeconds: 900 });
@@ -221,7 +221,8 @@ export function createSecondFactor({ passwords, attempts, now = () => new Date()
       return { recoveryCodes: codes };
     },
 
-    /** POST /admin/users/:id/second-factor/remove (users:write): someone else's factor and codes, after a lost phone.
+    /** POST /admin/users/:id/second-factor/remove (users:write): someone else's factor and codes, after a lost phone,
+     * and every session they have.
      * shortcut: the typed reason isn't kept yet; it joins the audit row when RAD-35/36 add how admin reasons are kept. */
     async remove(ctx: Ctx, { id }: In<typeof removeSecondFactor>): Promise<Out<typeof removeSecondFactor>> {
       if (ctx.principal.kind === 'user' && ctx.principal.userId === id) {
@@ -232,6 +233,9 @@ export function createSecondFactor({ passwords, attempts, now = () => new Date()
       if (removed.length === 0) throw new AppError('no_second_factor', 'This person has no second factor to remove');
       await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, id));
       await recordSecurityEvent(ctx, { kind: 'second_factor_changed', detail: { change: 'removed' } }, { userId: id, device: null });
+      // The lost phone may still hold a signed-in session (the architect on #132). Ended by an admin, so 'admin': the
+      // removed event just above says why, and a reason of its own would need a migration to the sessions CHECK.
+      await endSessionsOf(ctx, id, 'admin');
       return {};
     },
   });
