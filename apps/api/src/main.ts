@@ -1,4 +1,4 @@
-import { sessionCookieFor } from '@radcore/lib-platform';
+import { createSecrets, sessionCookieFor } from '@radcore/lib-platform';
 import { authenticateSession, createAuth, createDatabase, newPasswordCheckFor, startFileStore, startProcess } from '@radcore/lib-platform/runtime';
 import { createApp, listen } from './app.ts';
 import fileRoutes from './routes/files.ts';
@@ -14,6 +14,7 @@ await startProcess('api', async ({ config, pool, log }) => {
   const session = sessionCookieFor(config.publicOrigin);
   // Sign-in and the password routes are built at start, with Argon2id and the lockout store (createAuth).
   const api = { db, routes: [...ROUTES, ...auth.routes], newPasswordCheck: newPasswordCheckFor(config, log), files: files.store,
+    secrets: createSecrets(config.secrets),
     // GET /me isn't activity: the shell reads it every minute, and that mustn't keep an idle session alive (RAD-52).
     authenticate: (req: { get(name: string): string | undefined }, route: string) =>
       authenticateSession(db, session.tokenIn(req.get('cookie')), { touch: route !== 'GET /me' }) };

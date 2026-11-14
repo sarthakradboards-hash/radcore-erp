@@ -72,7 +72,7 @@ describe.skipIf(!url)('an export, start to download', () => {
 
   // Starts an export through its route's service, as the API would, and answers its id.
   const begin = async (n: number, who: Principal = owner()) => {
-    const out = await runInTransaction(db, write, who, randomUUID(), (ctx) => start?.service(ctx, { filter: { n } }) ?? Promise.reject());
+    const out = await runInTransaction(db, write, who, randomUUID(), (ctx) => start?.service(ctx, { filter: { n } }, { before: undefined }) ?? Promise.reject());
     return (out as { exportId: string }).exportId;
   };
   // Runs the export job as the worker would: the enqueuer loaded as they are now, each step in its own transaction.

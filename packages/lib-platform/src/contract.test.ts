@@ -8,7 +8,7 @@ import {
   acceptInvite, ANSWER_NOT_STORED_ROUTES, AUDIT_RANGE_MAX_DAYS, changePassword, confirmSecondFactorEnrolment, deactivateUser, endMySession,
   endSession, endUserSessions, getMe, getPermissionMatrix, inviteUser, KEY_EXEMPT_ROUTES, listAuditedTables,
   listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
-  resetPassword, requestPasswordReset, SECURITY_EVENT_ROUTES, securityEvent, setRolePermissions, setUserRole, signIn,
+  removeSecondFactor, resetPassword, requestPasswordReset, SECURITY_EVENT_ROUTES, securityEvent, setRolePermissions, setUserRole, signIn,
   startSecondFactorEnrolment, verifySecondFactor, importFiles, photoFiles, resumeFiles, statementFiles,
 } from './contract.ts';
 
@@ -65,7 +65,8 @@ describe('the sign-in and own-session contracts', () => {
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
     expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
-      ['GET /me/sessions', 'session:read'], ['DELETE /me/sessions/:id', 'session:read']]);
+      ['POST /me/second-factor/recovery-codes', 'session:read'], ['GET /me/sessions', 'session:read'],
+      ['DELETE /me/sessions/:id', 'session:read']]);
   });
 
   it('marks exactly the three new-password fields for the check before the transaction (ADR-001 §7a)', () => {
@@ -138,7 +139,7 @@ describe('the admin contracts', () => {
   const okFor = (c: { input: z.ZodType }, input: unknown) => c.input.safeParse(input).success;
 
   it('are admin-only: a session, one of five admin keys, read-only GETs, and no saved-once exemption', () => {
-    expect(admin).toHaveLength(15);
+    expect(admin).toHaveLength(16);
     for (const c of admin) {
       expect(c.auth).toBe('session');
       expect(['users:read', 'users:write', 'roles:read', 'roles:write', 'audit:read']).toContain(c.perm);
@@ -150,7 +151,7 @@ describe('the admin contracts', () => {
 
   it('take a typed reason for every change that removes access or power, and refuse a blank one', () => {
     for (const [c, rest] of [[setUserRole, { id, role: 'sales' }], [deactivateUser, { id }], [reactivateUser, { id }],
-      [setRolePermissions, { key: 'sales', grants: ['sales:read'], version: '7' }]] as const) {
+      [removeSecondFactor, { id }], [setRolePermissions, { key: 'sales', grants: ['sales:read'], version: '7' }]] as const) {
       expect(okFor(c, { ...rest, reason: 'Moved to the sales team' })).toBe(true);
       expect(okFor(c, { ...rest, reason: '   ' })).toBe(false);
       expect(okFor(c, { ...rest, reason: 'x'.repeat(501) })).toBe(false);
@@ -239,9 +240,9 @@ describe('the admin contracts', () => {
       .filter((c): c is typeof signIn => typeof c === 'object' && c !== null && 'path' in c).map((c) => `${c.method} ${c.path}`));
     expect(Object.keys(SECURITY_EVENT_ROUTES).filter((r) => !routes.has(r))).toEqual([]);
     expect(SECURITY_EVENT_ROUTES).toEqual({
-      'POST /sign-in': ['sign_in', 'sign_in_failed'],
-      'POST /sign-in/second-factor': ['sign_in', 'sign_in_failed'],
-      'POST /sign-in/second-factor/enrolment/confirm': ['second_factor_changed', 'sign_in'],
+      'POST /sign-in': ['sign_in', 'sign_in_failed', 'session_ended'],
+      'POST /sign-in/second-factor': ['sign_in', 'sign_in_failed', 'session_ended'],
+      'POST /sign-in/second-factor/enrolment/confirm': ['second_factor_changed', 'sign_in', 'session_ended'],
       'POST /invites/accept': ['password_changed'],
       'POST /password-reset': ['password_changed', 'session_ended'],
       'POST /me/password': ['password_changed', 'session_ended'],
@@ -249,6 +250,8 @@ describe('the admin contracts', () => {
       'DELETE /me/sessions/:id': ['session_ended'],
       'DELETE /admin/sessions/:id': ['session_ended'],
       'POST /admin/users/:id/sessions/end': ['session_ended'],
+      'POST /me/second-factor/recovery-codes': ['second_factor_changed'],
+      'POST /admin/users/:id/second-factor/remove': ['second_factor_changed'],
       'POST /files/photo/:id/download': ['download'],
       'POST /files/resume/:id/download': ['download'],
       'POST /files/statement/:id/download': ['download'],

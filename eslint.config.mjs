@@ -287,7 +287,9 @@ export default tseslint.config(
 
   // E1, E3, and D7's re-export guard (lib-platform's runtime entry and its own db/ hand on the pool by design).
   { files: ['apps/api/src/routes/**', 'apps/worker/src/jobs/**'], rules: on('radcore/e1-route-files') },
-  { files: ['packages/lib-common/**', 'packages/*/src/contract.ts', 'packages/*/src/rules/**'], rules: on('radcore/e3-no-io') },
+  // A contract entry may keep part of itself in src/contract/ (lib-platform's sign-in contracts, RAD-33): the same rules.
+  { files: ['packages/lib-common/**', 'packages/*/src/contract.ts', 'packages/*/src/contract/**', 'packages/*/src/rules/**'],
+    rules: on('radcore/e3-no-io') },
   { files: [`packages/lib-*/**/*.${EXT}`], ignores: ['packages/lib-platform/src/runtime.ts', 'packages/lib-platform/src/db/**'],
     rules: on('radcore/d7-no-db-reexport') },
 
@@ -306,7 +308,7 @@ export default tseslint.config(
     } },
 
   // D7's export guard on every library entry, with the same type information.
-  { files: ['packages/lib-*/src/index.ts', 'packages/lib-*/src/contract.ts'],
+  { files: ['packages/lib-*/src/index.ts', 'packages/lib-*/src/contract.ts', 'packages/lib-*/src/contract/**'],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: on('radcore/d7-no-table-exports') },
 
