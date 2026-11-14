@@ -22,6 +22,10 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/admin
 export const ERROR_CLASSES = ['TypeError', 'ReferenceError', 'RangeError', 'SyntaxError', 'ChunkLoadError'] as const;
 
 const MAX_STACK_LINES = 20;
+// A stack's frame lines only, as describeError keeps them: Chrome's and Edge's first line repeats the message, which
+// can quote input (the auditor on #154). V8 writes `    at f (url:1:2)`; Firefox and Safari write `f@url:1:2`.
+const FRAME = /^\s+at \S|^[^\s@]*@\S+:\d+:\d+$/;
+const framesOf = (stack: string) => stack.split('\n').filter((l) => FRAME.test(l)).slice(0, MAX_STACK_LINES).join('\n');
 const PAGES = WEB_PAGES.map((t) => ({ t, re: new RegExp(`^${t.replace(/\[[^\]/]+\]/g, '[^/]+')}$`) }));
 
 /** The page a path is, as one of WEB_PAGES, or null. */
@@ -37,7 +41,7 @@ export function createClientErrors(log: Logger, alert?: Alerter) {
       const page = pageOf(input.page);
       const cls = classOf(input.name);
       const { message } = describeError(Object.assign(new Error(input.message), { name: cls }));
-      const stack = scrubText((input.stack ?? '').split('\n').slice(0, MAX_STACK_LINES).join('\n'));
+      const stack = scrubText(framesOf(input.stack ?? ''));
       log.error(`browser error (${input.kind}) on ${page ?? 'an unknown page'} (request ${ctx.requestId})`,
         { errorClass: cls, message, path: scrubText(routeOf(input.page)), stack });
       // Not awaited: posting must never hold this transaction open, and the alerter never throws.

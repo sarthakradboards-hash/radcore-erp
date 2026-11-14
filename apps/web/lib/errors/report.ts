@@ -10,6 +10,7 @@ type Kind = 'error' | 'unhandledrejection' | 'render';
 /** Reports per page load. */
 const MAX_REPORTS = 10;
 const sent = { count: 0 };
+const UNSENT_KEY = '00000000-0000-4000-8000-000000000000';
 
 /** Sends one error report, at most MAX_REPORTS per page load; never throws. */
 export function reportClientError(error: unknown, kind: Kind = 'error'): void {
@@ -18,9 +19,9 @@ export function reportClientError(error: unknown, kind: Kind = 'error'): void {
   const e = error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'A non-error value was thrown');
   const input = { kind, name: e.name.slice(0, 100), message: e.message.slice(0, 1000),
     page: window.location.pathname.slice(0, 500), ...(e.stack === undefined ? {} : { stack: e.stack.slice(0, 4000) }) };
-  // A POST contract's type always allows a write, so the client asks for a key; the route is read-only, and the server
-  // ignores it.
-  callContract(contract, input, { idempotencyKey: crypto.randomUUID() }).catch(() => undefined);
+  // A POST contract's type always allows a write, so the client's type asks for a key. The route is read-only, so the
+  // client never sends it: a fixed one, not crypto.randomUUID(), which throws outside a secure context (auditor, #154).
+  callContract(contract, input, { idempotencyKey: UNSENT_KEY }).catch(() => undefined);
 }
 
 /** Reports uncaught errors and unhandled rejections on this page; returns the function that stops it. */

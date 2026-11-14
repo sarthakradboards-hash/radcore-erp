@@ -29,6 +29,14 @@ it('reports an uncaught error and an unhandled rejection, same-origin, until sto
       stack: expect.any(String) }]]);
 });
 
+// The auditor's SHOULD on #154: the key the client's type asks for is never sent, and nothing needs crypto.
+it('sends no idempotency key, and works without crypto.randomUUID', () => {
+  const { fetch } = setup();
+  vi.stubGlobal('crypto', {});
+  reportClientError(new Error('boom'));
+  expect(fetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty('idempotency-key');
+});
+
 it('sends at most 10 reports per page load', () => {
   const { fetch } = setup();
   for (let i = 0; i < 25; i += 1) reportClientError(new Error(`loop ${i}`), 'render');

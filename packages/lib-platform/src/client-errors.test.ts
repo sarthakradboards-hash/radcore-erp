@@ -56,4 +56,18 @@ describe('the browser error report', () => {
     expect(fields).toMatchObject({ errorClass: 'SyntaxError', message: 'Unexpected token, "…" is not valid' });
     expect(((fields as { stack: string }).stack).split('\n')).toHaveLength(20);
   });
+
+  // The auditor's MUST on #154: Chrome's stack starts with the message, which quotes input; only frames are kept.
+  it("keeps only a stack's frames, Chrome's and Firefox's, dropping the message line that starts it", async () => {
+    const { log, report } = setup();
+    const message = "Cannot read properties of undefined (reading 'Asha Rao')";
+    await report({ name: 'TypeError', message, page: '/admin/users', stack: [`TypeError: ${message}`,
+      '    at render (https://radcore.example.in/_next/static/chunks/app.js:10:5)',
+      'render@https://radcore.example.in/_next/static/chunks/app.js:10:5',
+      "  reading 'Asha Rao' again", ''].join('\n') });
+    const [, fields] = log.error.mock.calls[0] ?? [];
+    expect((fields as { stack: string }).stack).toBe(['    at render (https://radcore.example.in/_next/static/chunks/app.js:10:5)',
+      'render@https://radcore.example.in/_next/static/chunks/app.js:10:5'].join('\n'));
+    expect(JSON.stringify(fields)).not.toContain('Asha');
+  });
 });
