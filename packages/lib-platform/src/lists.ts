@@ -17,6 +17,8 @@ import { AppError } from './errors.ts';
 export function listScope(ctx: Ctx, permission: string, owner: AnyColumn): SQL | undefined {
   const p = ctx.principal;
   if (!p.permissions.includes(permission)) throw new AppError('forbidden', 'You may not see this list');
+  // A link's holder holds no key (ADR-001 §6a), so it was refused above; it never lists (RAD-41).
+  if (p.kind === 'link') throw new AppError('forbidden', 'You may not see this list');
   if (p.kind === 'system' || !(p.ownScope ?? []).includes(permission)) return undefined;
   return eq(owner, principalId(p));
 }
