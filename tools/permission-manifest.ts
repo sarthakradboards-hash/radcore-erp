@@ -76,3 +76,68 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'platform.invite-email': 'system invites []',
   'platform.export': 'user <by input>',
 };
+
+/** Which libraries each route's and job's own code reaches (RAD-84, M1-19, RC-153), keyed as above: the library of the
+ * service its route or job file names, or of what builds it at start (createAuth, the email jobs), and every library
+ * that code imports, through every file, lib-common aside (it holds no services). tools/permission-reach.test.ts works
+ * the reach out from the code, never from here, so a route or job that starts reaching another module's services, or
+ * stops, fails CI until its line here changes, in the same review. */
+const PLATFORM = ['lib-platform'];
+export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
+  // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
+  'POST /sign-in': PLATFORM,
+  'POST /sign-in/second-factor': PLATFORM,
+  'POST /sign-in/second-factor/enrolment': PLATFORM,
+  'POST /sign-in/second-factor/enrolment/confirm': PLATFORM,
+  'POST /password-reset/request': PLATFORM,
+  'POST /password-reset': PLATFORM,
+  'POST /invites/accept': PLATFORM,
+  'POST /sign-out': PLATFORM,
+  'GET /me': PLATFORM,
+  'POST /me/password': PLATFORM,
+  'POST /me/second-factor/recovery-codes': PLATFORM,
+  'GET /me/sessions': PLATFORM,
+  'DELETE /me/sessions/:id': PLATFORM,
+  'GET /exports/:id': PLATFORM,
+  'POST /exports/:id/download': PLATFORM,
+  'GET /admin/sessions': PLATFORM,
+  'DELETE /admin/sessions/:id': PLATFORM,
+  'POST /admin/users/:id/sessions/end': PLATFORM,
+  'POST /admin/users/:id/second-factor/remove': PLATFORM,
+  'PUT /admin/users/:id/role': PLATFORM,
+  'POST /admin/users': PLATFORM,
+  'POST /admin/users/:id/invite': PLATFORM,
+  'POST /admin/users/:id/deactivate': PLATFORM,
+  'POST /admin/users/:id/reactivate': PLATFORM,
+  'GET /admin/roles': PLATFORM,
+  'GET /admin/permissions': PLATFORM,
+  'PUT /admin/roles/:key/permissions': PLATFORM,
+  'POST /admin/roles': PLATFORM,
+  'PATCH /admin/roles/:key': PLATFORM,
+  'POST /admin/roles/:key/delete': PLATFORM,
+  'POST /admin/roles/:key/reset': PLATFORM,
+  'GET /admin/audit': PLATFORM,
+  'GET /admin/audit/tables': PLATFORM,
+  'GET /admin/security-events': PLATFORM,
+  'POST /files/photo': PLATFORM,
+  'POST /files/photo/:id/confirm': PLATFORM,
+  'POST /files/photo/:id/download': PLATFORM,
+  'POST /files/resume': PLATFORM,
+  'POST /files/resume/:id/confirm': PLATFORM,
+  'POST /files/resume/:id/download': PLATFORM,
+  'POST /files/statement': PLATFORM,
+  'POST /files/statement/:id/confirm': PLATFORM,
+  'POST /files/statement/:id/download': PLATFORM,
+  'POST /files/import': PLATFORM,
+  'POST /files/import/:id/confirm': PLATFORM,
+  'POST /files/import/:id/download': PLATFORM,
+  // Jobs, in JOB_PRINCIPALS' order.
+  'platform.saved-once-cleanup': PLATFORM,
+  'platform.outbox-cleanup': PLATFORM,
+  'platform.secrets-expiry': PLATFORM,
+  'platform.webhook-stuck': PLATFORM,
+  'platform.file-check': PLATFORM,
+  'platform.password-reset-email': PLATFORM,
+  'platform.invite-email': PLATFORM,
+  'platform.export': PLATFORM,
+};
