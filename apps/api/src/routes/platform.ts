@@ -1,11 +1,11 @@
 // lib-platform's routes (ADR-001 §6): your own session and sessions, the admin's sessions (RAD-34), asking for a
 // password reset (RAD-32), which only queues its email, the audit trail and security events (RAD-30, RAD-31), and an
-// export's status and download (RAD-47), and roles and the permission matrix (RAD-36).
+// export's status and download (RAD-47), and roles and the permission matrix (RAD-36), custom roles included (RAD-83).
 // Sign-in and the password routes need Argon2id and the lockout store, so they're built at start (createAuth's routes).
 import {
-  changeUserRole, defineRoute, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, getMyself, listAllSessions,
+  changeUserRole, createCustomRole, defineRoute, deleteCustomRole, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, getMyself, listAllSessions,
   exportDownload, exportStatus, listAuditedTablesList, listAuditTrailPage, listOwnSessions, listSecurityEventsPage,
-  listRolesFor, permissionMatrix, requestPasswordReset, setRoleGrants,
+  listRolesFor, permissionMatrix, renameRole, requestPasswordReset, resetRoleToTemplate, setRoleGrants,
 } from '@radcore/lib-platform';
 import * as contract from '@radcore/lib-platform/contract';
 
@@ -27,4 +27,8 @@ export default [
   defineRoute(contract.getPermissionMatrix, permissionMatrix),
   defineRoute(contract.setRolePermissions, setRoleGrants),
   defineRoute(contract.setUserRole, changeUserRole),
+  defineRoute(contract.createRole, createCustomRole),
+  defineRoute(contract.updateRole, renameRole),
+  defineRoute(contract.deleteRole, deleteCustomRole),
+  defineRoute(contract.resetRole, resetRoleToTemplate),
 ];
