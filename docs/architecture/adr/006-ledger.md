@@ -195,6 +195,12 @@ sums.
 **One average per item and location.** The moving average is kept per item **and per location**.
 - Rejected, job-work and demo stock sit in their own locations (M2-14's location kinds). So they never enter the
   average of the stock that is sold (RC-205).
+- **Location kinds** are a fixed list in lib-common, each marked sellable or not:
+  - **sellable:** `store`, `stores`, `service_bay` (parts held for fitting, sold on the job's bill) and
+    `franchisee` (a franchisee's store is a location of ours, CA-30);
+  - **not sellable:** `rejected`, `demo`, `job_work` (one per job worker, F16) and `in_transit`.
+
+  "Sellable" decides where a bill's price difference goes (below).
 - A transfer takes value out of the source at the source's average, and puts the same value into the destination.
 - Each location's value is the sum of its own movements. Stock by place and books by place therefore agree (§7).
 
