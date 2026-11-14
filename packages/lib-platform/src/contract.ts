@@ -143,18 +143,20 @@ export const createRole = defineContract({
   output: z.object({ key: roleKey() }), errors: ['name_taken', 'permission_not_held', 'permission_not_for_role'],
 });
 
-/** A role's name or description; a built-in role keeps its key. Not the admin role, nor the caller's own. */
+/** A role's name or description; a built-in role keeps its key. Not the admin role, nor the caller's own, nor one
+ * holding a key the caller doesn't (permission_not_held). */
 export const updateRole = defineContract({
   method: 'PATCH', path: '/admin/roles/:key', auth: 'session', perm: 'roles:write', tx: write,
   input: z.object({ key: roleKey(), name: roleName().optional(), description: roleDescription().optional(), reason: reason() }),
-  output: z.object({}), errors: ['role_not_editable', 'name_taken'],
+  output: z.object({}), errors: ['role_not_editable', 'name_taken', 'permission_not_held'],
 });
 
-/** A custom role nobody holds. role_in_use while anyone, invited or active, holds it; a built-in role can't be. A
+/** A custom role nobody holds, and holding no key the caller doesn't (permission_not_held). role_in_use while anyone
+ * holds it, deactivated people included; a built-in role can't be. A
  * POST, not a DELETE: a DELETE's input travels in the URL, and the reason is the person's own words. */
 export const deleteRole = defineContract({
   method: 'POST', path: '/admin/roles/:key/delete', auth: 'session', perm: 'roles:write', tx: write,
-  input: z.object({ key: roleKey(), reason: reason() }), output: z.object({}), errors: ['role_not_deletable', 'role_in_use'],
+  input: z.object({ key: roleKey(), reason: reason() }), output: z.object({}), errors: ['role_not_deletable', 'role_in_use', 'permission_not_held'],
 });
 
 /** A built-in role's grants back to its template, as one change, under setRolePermissions' rules (a key the caller

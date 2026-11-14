@@ -172,7 +172,8 @@ describe('the admin contracts', () => {
     expect([endSession.errors, endUserSessions.errors]).toEqual([['current_session'], ['own_account']]);
     // RAD-83: a copy passes on only the caller's own keys, a reset gives and takes away only those, and a role in use stays.
     expect([createRole.errors, updateRole.errors, deleteRole.errors]).toEqual([['name_taken', 'permission_not_held',
-      'permission_not_for_role'], ['role_not_editable', 'name_taken'], ['role_not_deletable', 'role_in_use']]);
+      'permission_not_for_role'], ['role_not_editable', 'name_taken', 'permission_not_held'],
+      ['role_not_deletable', 'role_in_use', 'permission_not_held']]);
     expect(resetRole.errors).toEqual(['not_a_template', ...setRolePermissions.errors.filter((e) => e !== 'unknown_permission')]);
   });
 

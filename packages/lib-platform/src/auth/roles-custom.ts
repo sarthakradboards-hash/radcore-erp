@@ -55,6 +55,18 @@ async function lockedRole(tx: Tx, key: string) {
   return role;
 }
 
+/** The role's grants, refused unless the caller holds every one of its keys: copying, renaming or deleting a role is
+ * its holders' business, so it's for someone at least as strong (the auditor on #142). */
+async function everyKeyHeld(tx: Tx, caller: { permissions: readonly string[] }, key: string, field: string, doing: string) {
+  const grants = await tx.select({ permission: roleGrants.permission, scope: roleGrants.scope }).from(roleGrants).where(eq(roleGrants.role, key));
+  const notHeld = grants.filter((g) => !caller.permissions.includes(g.permission));
+  if (notHeld.length > 0) {
+    throw new AppError('permission_not_held', `You can only ${doing} a role whose permissions you hold yourself`,
+      notHeld.map((g) => ({ path: [field], code: 'not_held', message: `You don’t hold ${g.permission}` })));
+  }
+  return grants;
+}
+
 const isBuiltIn = async (tx: Tx, key: string) =>
   (await tx.select({ role: roleTemplates.role }).from(roleTemplates).where(eq(roleTemplates.role, key)).limit(1)).length > 0;
 
@@ -65,13 +77,8 @@ export async function createCustomRole(ctx: Ctx, { name, description, copyFrom }
   let grants = SIGNED_IN_BASICS.map((permission) => ({ permission, scope: 'all' }));
   if (copyFrom !== undefined) {
     await lockedRole(tx, copyFrom);
-    grants = await tx.select({ permission: roleGrants.permission, scope: roleGrants.scope }).from(roleGrants).where(eq(roleGrants.role, copyFrom));
     // A copy passes its keys on, so each must be the caller's own, and none kept for the roles it was copied from.
-    const notHeld = grants.filter((g) => !caller.permissions.includes(g.permission));
-    if (notHeld.length > 0) {
-      throw new AppError('permission_not_held', 'You can only copy a role whose permissions you hold yourself',
-        notHeld.map((g) => ({ path: ['copyFrom'], code: 'not_held', message: `You don’t hold ${g.permission}` })));
-    }
+    grants = await everyKeyHeld(tx, caller, copyFrom, 'copyFrom', 'copy');
     const reserved = grants.filter((g) => CATALOG.get(g.permission)?.onlyRoles !== undefined);
     if (reserved.length > 0) {
       throw new AppError('permission_not_for_role', 'This role holds permissions kept for named roles, so it can’t be copied',
@@ -93,6 +100,7 @@ export async function renameRole(ctx: Ctx, { key, name, description }: In<typeof
   await lockedRole(tx, key);
   if (key === ADMIN) throw new AppError('role_not_editable', 'The admin role can’t be changed');
   if (key === caller.role) throw new AppError('role_not_editable', 'Nobody changes their own role');
+  await everyKeyHeld(tx, caller, key, 'key', 'rename');
   if (name === undefined && description === undefined) return {};
   await sameNameRefused(tx.update(roles).set({ ...(name === undefined ? {} : { name }), ...(description === undefined ? {} : { description }) })
     .where(eq(roles.key, key)));
@@ -101,10 +109,11 @@ export async function renameRole(ctx: Ctx, { key, name, description }: In<typeof
 
 /** POST /admin/roles/:key/delete: a custom role nobody holds, with its grants. */
 export async function deleteCustomRole(ctx: Ctx, { key }: In<typeof deleteRole>): Promise<Out<typeof deleteRole>> {
-  await callerOf(ctx);
+  const caller = await callerOf(ctx);
   const tx = platformTx(ctx);
   await lockedRole(tx, key);
   if (await isBuiltIn(tx, key)) throw new AppError('role_not_deletable', 'This is one of the built-in roles: reset it instead');
+  await everyKeyHeld(tx, caller, key, 'key', 'delete');
   // Anyone holding it, deactivated people included: users.role keeps them pointing at it (and its FK refuses anyway).
   const [held] = await tx.select({ n: count() }).from(users).where(eq(users.role, key));
   const n = held?.n ?? 0;

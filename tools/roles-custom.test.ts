@@ -136,7 +136,7 @@ describe.skipIf(!url)('custom roles and templates', () => {
     expect(await flagOf((await create(as, `T ${letters()}`, strong)).key)).toBe(true);
   });
 
-  it('renames a role, though not admin, the caller’s own, or to a name another role has', async () => {
+  it('renames a role, though not admin, the caller’s own, one holding a key the caller lacks, or to a taken name', async () => {
     const a = await admin();
     const as = await a.as();
     const target = await role({ 'session:read': 'all' });
@@ -149,6 +149,10 @@ describe.skipIf(!url)('custom roles and templates', () => {
     const mgr = await manager();
     const own = ((await mgr.as()) as { role?: string }).role ?? '';
     expect(await rename(await mgr.as(), own, `T ${letters()}`)).toBe('role_not_editable');
+    // The every-key rule (the auditor on #142): the manager lacks leads:read, so a role holding it isn't theirs to rename.
+    const stronger = await role({ 'session:read': 'all', 'leads:read': 'own' });
+    expect([await rename(await mgr.as(), stronger, `T ${letters()}`), await rename(await mgr.as(), target, `T ${letters()}`)])
+      .toEqual(['permission_not_held', 'ok']);
   });
 
   it('deletes a custom role nobody holds, never one someone holds or a built-in one', async () => {
@@ -162,6 +166,11 @@ describe.skipIf(!url)('custom roles and templates', () => {
     expect(await remove('sales')).toBe('role_not_deletable');
     expect(await remove(await role({ 'session:read': 'all' }, { 'session:read': 'all' }))).toBe('role_not_deletable');
     const empty = await role({ 'session:read': 'all', 'audit:read': 'all' });
+    // The every-key rule (the auditor on #142): the manager lacks leads:read, so can't delete a role holding it.
+    const stronger = await role({ 'session:read': 'all', 'leads:read': 'own' });
+    const mgr = await (await manager()).as();
+    expect(await outcome(run(mgr, (ctx) => deleteCustomRole(ctx, { key: stronger, reason })))).toBe('permission_not_held');
+    expect(await asAdmin('select 1 from radcore.roles where key = $1', [stronger])).toHaveLength(1);
     expect(await remove(empty)).toBe('ok');
     expect([await asAdmin('select 1 from radcore.roles where key = $1', [empty]), await grantsOf(empty)]).toEqual([[], {}]);
   });
