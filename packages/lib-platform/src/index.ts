@@ -1,5 +1,6 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
-export { principalId, type Ctx, type Files, type Principal, type SessionCookie } from './ctx.ts';
+export { principalId, type Ctx, type Files, type Owned, type Principal, type SessionCookie } from './ctx.ts';
+export { assignRole, roleNeedsSecondFactor } from './auth/roles.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export {
   deviceOf, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, endSessionsOf, getMyself, listAllSessions,

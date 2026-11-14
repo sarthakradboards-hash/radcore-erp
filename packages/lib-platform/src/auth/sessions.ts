@@ -15,14 +15,13 @@ import { runInTransaction } from '../db/transaction.ts';
 import { AppError, RecordedRefusal } from '../errors.ts';
 import { decodeCursor, encodeCursor, isoMoment, momentKey } from '../lists.ts';
 import { recordSecurityEvent } from '../security-events.ts';
+import { principalFor } from './roles.ts';
 import type { SignInResult } from './sign-in.ts';
 
 export const SESSION_IDLE_SECONDS = 30 * 60;
 export const SESSION_ABSOLUTE_SECONDS = 12 * 60 * 60;
 export type EndedReason = 'sign_out' | 'admin' | 'password_changed' | 'password_reset' | 'role_changed' | 'deactivated';
 
-// shortcut: every signed-in person holds only session:read until roles land (RAD-35), which gives each role's keys.
-const BASELINE: readonly string[] = Object.freeze(['session:read']);
 const LOOKUP: Principal = Object.freeze({ kind: 'system', name: 'session', permissions: Object.freeze([]) });
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // The idle expiry moves at most once a minute, so a burst of requests writes the row once.
@@ -88,7 +87,8 @@ export async function authenticateSession(db: Database, token: string | null, { 
       await tx.update(sessions).set({ lastSeenAt: now.toISOString(), idleExpiresAt: idleUntil(now, found.absoluteExpiresAt) })
         .where(eq(sessions.id, found.id));
     }
-    return Object.freeze({ kind: 'user', userId: found.userId, sessionId: found.id, permissions: BASELINE });
+    // Their role's keys as they are now, read on every request (RAD-35, RC-095).
+    return principalFor(ctx, found.userId, found.id);
   });
 }
 

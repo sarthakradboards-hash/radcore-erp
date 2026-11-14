@@ -2,7 +2,9 @@
 // nothing else can, because only the runtime entry exports it (L7).
 import { jobsOutbox, platformTx, settings as settingsTable } from '@radcore/db/platform';
 import { openTransaction, type Database, type TxSpec } from '@radcore/db/schema';
-import { principalId, type Ctx, type Files, type Jobs, type Principal } from '../ctx.ts';
+import { principalId, type Ctx, type Files, type Jobs, type Owned, type Principal } from '../ctx.ts';
+import { AppError } from '../errors.ts';
+import { mayUse } from '../scope.ts';
 import { Settings } from '../settings.ts';
 
 /**
@@ -27,6 +29,10 @@ export function runInTransaction<R>(db: Database, spec: TxSpec, principal: Princ
           principal: principalId(principal), requestId });
       },
     });
-    return fn(Object.freeze({ tx, principal, requestId, settings: new Settings(rows), jobs, files }));
+    const can = (permission: string, record?: Owned) => mayUse(principal, permission, record);
+    const see = (permission: string, record: Owned) => {
+      if (!can(permission, record)) throw new AppError('not_found', 'Not found');
+    };
+    return fn(Object.freeze({ tx, principal, requestId, settings: new Settings(rows), jobs, files, can, see }));
   });
 }

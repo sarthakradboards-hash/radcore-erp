@@ -14,6 +14,7 @@ import { createDatabase, createPool } from '../db/client.ts';
 import { runInTransaction } from '../db/transaction.ts';
 import type { Logger } from '../log.ts';
 import { mailerFor, maskEmail, type Mailer } from '../mail.ts';
+import { assignRole } from './roles.ts';
 
 export type BootstrapOutcome = 'invited' | 'reissued' | 'already_bootstrapped' | 'admin_exists';
 
@@ -92,8 +93,9 @@ export async function runBootstrapAdmin(env: Record<string, string | undefined>,
   if (!seed.success) throw new Error('SEED_ADMIN_EMAIL is not set to an email address');
   const pool = createPool(config.database, log);
   try {
+    // The first admin is given the admin role in the same transaction as their invite (RAD-35, RC-021).
     const { outcome, to } = await bootstrapAdmin(createDatabase(pool), { email: seed.data, reissue, mailer: mailerFor(config, log),
-      publicOrigin: config.publicOrigin });
+      publicOrigin: config.publicOrigin, assignRole: (ctx, userId) => assignRole(ctx, userId, 'admin') });
     return to === null ? `first admin: ${outcome}, nothing sent` : `first admin: ${outcome}, invite sent to ${to}`;
   } finally {
     await pool.end();
