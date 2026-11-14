@@ -102,7 +102,7 @@ describe.skipIf(!url)('maker-checker', () => {
         order_id uuid not null references radcore.${ORDERS} (id), qty text not null, ${STAMPS});
       create index on radcore.${LINES} (order_id);
       select radcore.audit_attach('${ORDERS}', keep => array['amount', 'status', 'hidden']);
-      select radcore.audit_attach('${LINES}', keep => array['order_id', 'qty'], owner => 'order_id');
+      select radcore.audit_attach('${LINES}', keep => array['order_id', 'qty'], owner => 'order_id', owner_table => '${ORDERS}');
       commit`);
     people.maker = await newUser();
     people.approver = await newUser();
@@ -381,6 +381,44 @@ describe.skipIf(!url)('maker-checker', () => {
     await serve(person(people.approver), async (call) => {
       expect(await codeOf(await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash }))).toEqual([422, 'own_request']);
     });
+  });
+
+  // RAD-80: a part's write locks its record first (audit_attach's owner), so a save and a decision never overlap.
+
+  it('makes a decision wait for a line save on its record, and then see it: version_changed, never approved', async () => {
+    const { lineId, id, versionHash } = await requested();
+    const save = await pool.connect();
+    try {
+      await save.query('begin');
+      // If this test fails while the save is open, the server ends it, so it can't hold the tables past the test.
+      await save.query("set local idle_in_transaction_session_timeout = '20s'");
+      const savePid = (await save.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
+      await save.query("select set_config('app.principal', $1, true)", [`user:${people.maker}`]);
+      // Only the line: its lock_owner trigger takes the order's row lock first.
+      await save.query(`update radcore.${LINES} set qty = '9' where id = $1`, [lineId]);
+      await serve(person(people.approver), async (call) => {
+        const deciding = decide(call, id, { decision: 'approve', versionHash });
+        // The decision is waiting on the save while the save is open: some session is blocked by the save's own backend.
+        // pg_locks and pg_blocking_pids are readable by any login (pg_stat_activity's queries aren't, in CI), and the
+        // save's pid keeps other test files' waits out of it.
+        await vi.waitFor(async () => expect((await pool.query<{ n: number }>('select count(*)::int as n from pg_locks '
+          + 'where not granted and $1 = any(pg_blocking_pids(pid))', [savePid])).rows[0]?.n).toBeGreaterThanOrEqual(1),
+        { timeout: 15_000, interval: 50 });
+        await save.query('commit');
+        expect(await codeOf(await deciding)).toEqual([422, 'version_changed']);
+      });
+    } finally {
+      await save.query('rollback').catch(() => undefined);
+      save.release();
+    }
+    expect((await approval(id))?.status).toBe('pending');
+  }, 30_000);
+
+  it('refuses a part attached with an owner column but no owner table, and the other way round', async () => {
+    for (const args of ["owner => 'order_id'", `owner_table => '${ORDERS}'`]) {
+      await expect(pool.query(`select radcore.audit_attach('${LINES}', keep => array['order_id', 'qty'], ${args})`))
+        .rejects.toThrow('a part names both its owner column and its owner table');
+    }
   });
 
   it("writes the record's id on its lines' audit rows (audit_attach owner =>)", async () => {

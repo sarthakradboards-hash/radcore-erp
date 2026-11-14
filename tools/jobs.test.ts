@@ -14,6 +14,7 @@ import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
 import platformJobs from '../apps/worker/src/jobs/platform.ts';
 import { platformTx, savedOnce } from '@radcore/db/platform';
 import { factory, testPassword, testSettings } from '@radcore/test-helpers';
+import { freshDatabase } from './test-database.ts';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -22,8 +23,8 @@ const url = process.env['TEST_DATABASE_URL'];
 const SCHEMA = 'pgboss';
 const name = factory((f) => ({ name: `test.job-${f.tag}` }));
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
-const databaseUrl = () => {
-  const u = new URL(url ?? '');
+const databaseUrl = (of = url) => {
+  const u = new URL(of ?? '');
   // The test database uses trust auth; config wants a password, which the server ignores.
   u.password = testPassword();
   return u.toString();
@@ -115,22 +116,30 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
 
   // Windows has no SIGTERM: kill() ends the child without running its handler, so there's no clean stop to see.
   it.skipIf(process.platform === 'win32')('the worker process starts the job queue on the migrated schema, and stops cleanly', async () => {
-    const worker = spawn(process.execPath, ['apps/worker/src/main.ts'],
-      { env: { PATH: process.env['PATH'], ...testSettings({ DATABASE_URL: databaseUrl() }) } });
-    const out: string[] = [];
-    worker.stdout.on('data', (b: Buffer) => out.push(b.toString()));
-    worker.stderr.on('data', (b: Buffer) => out.push(b.toString()));
-    const exited = once(worker, 'exit');
+    // A database of its own: the real worker runs the outbox relay, which takes every due row in its database, so on
+    // the run's database it would try other test files' rows while they assert on them (RAD-79).
+    const own = await freshDatabase(process.env['TEST_DATABASE_ADMIN_URL'] ?? '');
     try {
-      await vi.waitFor(() => expect(out.join('')).toContain('worker: started'), { timeout: 30_000, interval: 250 });
-      // What the worker runs: its job files' list, plus the jobs built at start with what only start-up has (RAD-32's
-      // reset email). Counted from the list, so a new job doesn't need this line changed.
-      expect(out.join('')).toContain(`job queue: running ${platformJobs.length + 1} job(s)`);
+      const worker = spawn(process.execPath, ['apps/worker/src/main.ts'],
+        { env: { PATH: process.env['PATH'], ...testSettings({ DATABASE_URL: databaseUrl(own.appUrl) }) } });
+      const out: string[] = [];
+      worker.stdout.on('data', (b: Buffer) => out.push(b.toString()));
+      worker.stderr.on('data', (b: Buffer) => out.push(b.toString()));
+      const exited = once(worker, 'exit');
+      try {
+        await vi.waitFor(() => expect(out.join('')).toContain('worker: started'), { timeout: 30_000, interval: 250 });
+        // What the worker runs: its job files' list, plus the jobs built at start with what only start-up has (RAD-32's
+        // reset email). Counted from the list, so a new job doesn't need this line changed.
+        expect(out.join('')).toContain(`job queue: running ${platformJobs.length + 1} job(s)`);
+      } finally {
+        worker.kill('SIGTERM');
+      }
+      expect((await exited)[0]).toBe(0);
     } finally {
-      worker.kill('SIGTERM');
+      // Dropped with force, so a worker that didn't stop can't keep it.
+      await own.drop();
     }
-    expect((await exited)[0]).toBe(0);
-  }, 60_000);
+  }, 180_000);
 
   it('two workers starting together both create the same queues and run', async () => {
     const job = defineJob({ ...name(), principal: system, input: z.object({}).loose() }, async () => undefined);

@@ -152,8 +152,15 @@
     {
       "idx": 21,
       "version": "7",
-      "when": 1794631757254,
-      "tag": "0021_public_links",
+      "when": 1794630913503,
+      "tag": "0021_part_locks",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794633707219,
+      "tag": "0022_public_links",
       "breakpoints": true
     }
   ]

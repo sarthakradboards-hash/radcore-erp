@@ -1,5 +1,5 @@
 {
-  "id": "568e16bf-9b1d-4c46-af3a-b21005e66493",
+  "id": "a77d4eed-ff74-4c9d-84ac-e265d1a70e12",
   "prevId": "12166dc1-e300-43aa-a35d-57c5ab8e5ffb",
   "version": "7",
   "dialect": "postgresql",
@@ -111,10 +111,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"radcore\".\"approvals\".\"decided_at\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"radcore\".\"approvals\".\"decided_at\" is null",
+          "concurrently": false
         },
         "ix_approvals_kind_status": {
           "name": "ix_approvals_kind_status",
@@ -139,9 +139,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -229,25 +229,25 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "bootstrap_user_id_users_id_fk": {
           "name": "bootstrap_user_id_users_id_fk",
           "tableFrom": "bootstrap",
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -350,9 +350,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -471,9 +471,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "ux_invites_job_id": {
           "name": "ux_invites_job_id",
@@ -486,9 +486,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "ix_invites_user_id": {
           "name": "ix_invites_user_id",
@@ -501,25 +501,25 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "invites_user_id_users_id_fk": {
           "name": "invites_user_id_users_id_fk",
           "tableFrom": "invites",
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -629,10 +629,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"radcore\".\"jobs_outbox\".\"dead_at\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"radcore\".\"jobs_outbox\".\"dead_at\" is null",
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -739,9 +739,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "ux_password_resets_job_id": {
           "name": "ux_password_resets_job_id",
@@ -754,9 +754,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "ix_password_resets_user_id": {
           "name": "ix_password_resets_user_id",
@@ -769,25 +769,25 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "password_resets_user_id_users_id_fk": {
           "name": "password_resets_user_id_users_id_fk",
           "tableFrom": "password_resets",
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -797,150 +797,6 @@
         "ck_password_resets_token_hash": {
           "name": "ck_password_resets_token_hash",
           "value": "\"radcore\".\"password_resets\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.public_links": {
-      "name": "public_links",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "uses_left": {
-          "name": "uses_left",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_by": {
-          "name": "revoked_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_public_links_token_hash": {
-          "name": "ux_public_links_token_hash",
-          "columns": [
-            {
-              "expression": "token_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_public_links_action_record_id": {
-          "name": "ix_public_links_action_record_id",
-          "columns": [
-            {
-              "expression": "action",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_public_links_action": {
-          "name": "ck_public_links_action",
-          "value": "\"radcore\".\"public_links\".\"action\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service).[a-z][a-z0-9_]*$'"
-        },
-        "ck_public_links_token_hash": {
-          "name": "ck_public_links_token_hash",
-          "value": "\"radcore\".\"public_links\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
-        },
-        "ck_public_links_uses_left": {
-          "name": "ck_public_links_uses_left",
-          "value": "\"radcore\".\"public_links\".\"uses_left\" is null or \"radcore\".\"public_links\".\"uses_left\" >= 0"
-        },
-        "ck_public_links_revoked": {
-          "name": "ck_public_links_revoked",
-          "value": "(\"radcore\".\"public_links\".\"revoked_at\" is null) = (\"radcore\".\"public_links\".\"revoked_by\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -1033,9 +889,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1135,10 +991,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"radcore\".\"secrets\".\"expires_at\" is not null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"radcore\".\"secrets\".\"expires_at\" is not null",
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1254,9 +1110,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "ix_sessions_user_id": {
           "name": "ix_sessions_user_id",
@@ -1269,25 +1125,25 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sessions_user_id_users_id_fk": {
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -1394,8 +1250,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "as": "lower(btrim(email))",
-            "type": "stored"
+            "type": "stored",
+            "as": "lower(btrim(email))"
           }
         },
         "display_name": {
@@ -1464,9 +1320,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1581,9 +1437,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "ux_webhook_deliveries_source_body_sha256": {
           "name": "ux_webhook_deliveries_source_body_sha256",
@@ -1602,9 +1458,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "ix_webhook_deliveries_unprocessed": {
           "name": "ix_webhook_deliveries_unprocessed",
@@ -1617,10 +1473,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"radcore\".\"webhook_deliveries\".\"processed_at\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"radcore\".\"webhook_deliveries\".\"processed_at\" is null",
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1640,11 +1496,10 @@
   "schemas": {
     "radcore": "radcore"
   },
-  "sequences": {},
-  "roles": {},
-  "policies": {},
   "views": {
     "radcore.v_schema_audit_columns": {
+      "name": "v_schema_audit_columns",
+      "schema": "radcore",
       "columns": {
         "tableName": {
           "name": "tableName",
@@ -1666,12 +1521,12 @@
         }
       },
       "definition": "with audited as (\n    select c.oid, c.relname,\n      string_to_array(split_part(encode(g.tgargs, 'escape'), '\\000',1), ',') as keys,\n      string_to_array(nullif(split_part(encode(g.tgargs, 'escape'), '\\000',2), ''), ',') as keep,\n      string_to_array(nullif(split_part(encode(g.tgargs, 'escape'), '\\000',3), ''), ',') as redact\n    from pg_catalog.pg_trigger g\n    join pg_catalog.pg_class c on c.oid = g.tgrelid\n    join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n    where g.tgname = 'audit_row' and not g.tgisinternal and n.nspname = 'radcore'\n  ), columns as (\n    select t.relname, a.attname,\n      a.attname = any (coalesce(t.keep, '{}')) as kept, a.attname = any (coalesce(t.redact, '{}')) as redacted,\n      a.attname ~ '(hash|secret|token|ciphertext|password)' and a.atttypid not in ('timestamptz'::regtype,\n        'timestamp'::regtype, 'date'::regtype, 'bool'::regtype, 'int4'::regtype, 'int8'::regtype, 'numeric'::regtype) as secret_like,\n      a.attname = any (t.keys || array['created_at', 'created_by', 'updated_at', 'updated_by']) as exempt\n    from audited t\n    join pg_catalog.pg_attribute a on a.attrelid = t.oid and a.attnum > 0 and not a.attisdropped\n  )\n  select relname::text as table_name, attname::text as column_name, 'unlisted' as problem from columns\n    where not exempt and not kept and not redacted\n  union all\n  select relname::text, attname::text, 'kept and redacted' from columns where kept and redacted\n  union all\n  select relname::text, attname::text, 'a secret not redacted' from columns\n    where secret_like and not redacted",
-      "name": "v_schema_audit_columns",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_audited_tables": {
+      "name": "v_audited_tables",
+      "schema": "radcore",
       "columns": {
         "tableName": {
           "name": "tableName",
@@ -1681,12 +1536,12 @@
         }
       },
       "definition": "select c.relname::text as table_name\n    from pg_catalog.pg_trigger g\n    join pg_catalog.pg_class c on c.oid = g.tgrelid\n    join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n    where g.tgname = 'audit_row' and not g.tgisinternal and n.nspname = 'radcore'",
-      "name": "v_audited_tables",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_enums": {
+      "name": "v_schema_enums",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -1702,12 +1557,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, t.typname::text as type_name\n  from pg_catalog.pg_type t\n  join pg_catalog.pg_namespace n on n.oid = t.typnamespace\n  where t.typtype = 'e'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'",
-      "name": "v_schema_enums",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_fk_without_index": {
+      "name": "v_schema_fk_without_index",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -1729,12 +1584,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, k.conname::text as constraint_name\n  from pg_catalog.pg_constraint k\n  join pg_catalog.pg_class c on c.oid = k.conrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where k.contype = 'f'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_index i\n      where i.indrelid = k.conrelid\n        and array_to_string((i.indkey::int2[])[0:cardinality(k.conkey) - 1], ',') = array_to_string(k.conkey, ','))",
-      "name": "v_schema_fk_without_index",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_missing_audit": {
+      "name": "v_schema_missing_audit",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -1750,12 +1605,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and (select count(*) from pg_catalog.pg_attribute a\n      where a.attrelid = c.oid and not a.attisdropped\n        and a.attname in ('created_at', 'created_by', 'updated_at', 'updated_by')) < 4",
-      "name": "v_schema_missing_audit",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_missing_triggers": {
+      "name": "v_schema_missing_triggers",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -1777,12 +1632,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')\n    and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore'\n      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
-      "name": "v_schema_missing_triggers",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_numeric_without_check": {
+      "name": "v_schema_numeric_without_check",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -1804,12 +1659,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, a.attname::text as column_name\n  from pg_catalog.pg_attribute a\n  join pg_catalog.pg_class c on c.oid = a.attrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition and a.attnum > 0 and not a.attisdropped\n    and a.atttypid = 'pg_catalog.numeric'::pg_catalog.regtype\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_constraint k\n      where k.conrelid = c.oid and k.contype = 'c' and k.conname = 'ck_' || c.relname || '_' || a.attname)",
-      "name": "v_schema_numeric_without_check",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     },
     "radcore.v_schema_public_relations": {
+      "name": "v_schema_public_relations",
+      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -1825,12 +1680,13 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p', 'v', 'm') and n.nspname = 'public'",
-      "name": "v_schema_public_relations",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     }
   },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
   "_meta": {
     "columns": {},
     "schemas": {},
