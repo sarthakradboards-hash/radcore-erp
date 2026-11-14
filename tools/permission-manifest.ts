@@ -31,6 +31,10 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /admin/users/:id/sessions/end': 'users:write',
   'POST /admin/users/:id/second-factor/remove': 'users:write',
   'PUT /admin/users/:id/role': 'users:write',
+  'POST /admin/users': 'users:write',
+  'POST /admin/users/:id/invite': 'users:write',
+  'POST /admin/users/:id/deactivate': 'users:write',
+  'POST /admin/users/:id/reactivate': 'users:write',
   // Admin: roles and the permission matrix (RAD-36).
   'GET /admin/roles': 'roles:read',
   'GET /admin/permissions': 'roles:read',
@@ -69,5 +73,6 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'platform.webhook-stuck': 'system webhook-stuck []',
   'platform.file-check': 'system file-check []',
   'platform.password-reset-email': 'system password-reset []',
+  'platform.invite-email': 'system invites []',
   'platform.export': 'user <by input>',
 };

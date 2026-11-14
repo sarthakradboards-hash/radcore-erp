@@ -204,6 +204,13 @@
       "when": 1794660276373,
       "tag": "0028_owner_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794675650806,
+      "tag": "0029_users_disabled_without_password",
+      "breakpoints": true
     }
   ]
 }

@@ -211,8 +211,13 @@ describe.skipIf(!url)('roles and the permission matrix', () => {
       body: JSON.stringify(body), headers: { 'content-type': 'application/json', origin: cfg.publicOrigin, 'idempotency-key': randomUUID() } });
     const why = [`Audit-only now ${letters()}`, `Moved to the other team ${letters()}`];
     try {
-      const { version } = await run(as, permissionMatrix);
-      expect((await send('PUT', `/admin/roles/${target}/permissions`, { grants: ['session:read', 'users:read'], version, reason: why[0] })).status).toBe(200);
+      // Another file may change the matrix between the read and the write: read the version again on matrix_changed.
+      let status = 0;
+      for (let i = 0; i < 5 && status !== 200; i += 1) {
+        const { version } = await run(as, permissionMatrix);
+        status = (await send('PUT', `/admin/roles/${target}/permissions`, { grants: ['session:read', 'users:read'], version, reason: why[0] })).status;
+      }
+      expect(status).toBe(200);
       expect((await send('PUT', `/admin/users/${p.id}/role`, { role: other, reason: why[1] })).status).toBe(200);
       expect((await send('POST', '/test/rename-role', { key: other, description: 'Renamed' })).status).toBe(200);
     } finally {
