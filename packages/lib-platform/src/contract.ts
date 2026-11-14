@@ -4,6 +4,7 @@ import {
   dateString, defineContract, emailString, idString, listInput, listOf, momentString, searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
+export { downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, type ExportContract } from './export/contract.ts';
 import { FILE_KINDS, type FileKind } from './files/kinds.ts';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */
@@ -215,12 +216,9 @@ const eventUnion = z.discriminatedUnion('kind', [
 /** One security event as recorded: its kind and that kind's detail. Typed plainly, so lint's D7 walk stays small. */
 export const securityEvent: z.ZodType<z.output<typeof eventUnion>, z.input<typeof eventUnion>> = eventUnion;
 
-/**
- * The routes that record security events, and which (RC-031's register, RAD-31). Each route's own ticket proves in
- * its test that it writes them: RAD-32 and RAD-34 sign-in, passwords and sessions, RAD-33 the second factor. Exports
- * and downloads join when they're declared (RAD-47 part 2, RAD-43 part 2), and the role change and deactivation,
- * which end sessions, with RAD-35 and RAD-36.
- */
+/** The routes that record security events, and which (RC-031's register, RAD-31). Each route's ticket proves its own
+ * rows: RAD-32 and RAD-34 sign-in, passwords and sessions; RAD-33 the second factor; exports and downloads when they're
+ * declared (RAD-47 part 2, RAD-43 part 2); RAD-35 and RAD-36 the role change and deactivation, which end sessions. */
 export const SECURITY_EVENT_ROUTES = {
   // A sign-in ends the session the browser already had (RAD-34), so each finishing step can write session_ended.
   'POST /sign-in': ['sign_in', 'sign_in_failed', 'session_ended'],
@@ -239,6 +237,7 @@ export const SECURITY_EVENT_ROUTES = {
   'POST /files/resume/:id/download': ['download'],
   'POST /files/statement/:id/download': ['download'],
   'POST /files/import/:id/download': ['download'],
+  'POST /exports/:id/download': ['download'],
 } as const satisfies Record<string, readonly (typeof SECURITY_EVENT_KINDS)[number][]>;
 
 /** Security events (RAD-31's event_log), newest first on (occurred_at desc, seq desc), the audit viewer's second tab.
@@ -303,4 +302,5 @@ export const KEY_EXEMPT_ROUTES = ['POST /sign-in', 'POST /sign-out', 'POST /sign
   'POST /sign-in/second-factor/enrolment/confirm'] as const;
 export const ANSWER_NOT_STORED_ROUTES = ['POST /sign-in/second-factor/enrolment', 'POST /me/second-factor/recovery-codes',
   'POST /files/photo/:id/download',
-  'POST /files/resume/:id/download', 'POST /files/statement/:id/download', 'POST /files/import/:id/download'] as const;
+  'POST /files/resume/:id/download', 'POST /files/statement/:id/download', 'POST /files/import/:id/download',
+  'POST /exports/:id/download'] as const;

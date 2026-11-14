@@ -1,23 +1,29 @@
 // Background jobs declared as data (RAD-44, ADR-001 §8, RC-082): each job contract names its queue, its principal
 // (ADR-001 §6a), its input schema, and how it retries, times out, overlaps and is kept. The worker runs them on
 // pg-boss (runtime.ts). Jobs are declared in apps/worker/src/jobs/ with defineJob(contract, service), like routes.
+import type { TxSpec } from '@radcore/db/schema';
 import { z } from 'zod';
 import type { Alerter } from './alerts.ts';
 import type { Ctx, Principal } from './ctx.ts';
 import type { FileStore } from './files/store.ts';
 
 /** Who a job runs as (ADR-001 §6a): its service gets a Ctx for that principal (RAD-44 step 3). */
-export type JobPrincipal =
+export type JobPrincipal<I = unknown> =
   /** A schedule or webhook: every record, but only these permissions. */
   | { kind: 'system'; name: string; permissions: readonly string[] }
-  /** Queued during a person's request: run as that person, with this permission checked again when it runs. */
-  | { kind: 'user'; perm: string };
+  /** Queued during a person's request: run as that person, with this permission checked again when it runs. The key,
+   * or a pure function from the input to it, with no I/O (one export queue serves every list, RAD-47); a function
+   * that throws fails the job, never falling back to another key. */
+  | { kind: 'user'; perm: string | ((input: I) => string) };
 
 export type JobContract<I> = {
   /** Queue name: lower-case words joined by dots or hyphens, like `sales.shopify-order`. */
   name: string;
-  principal: JobPrincipal;
+  principal: JobPrincipal<I>;
   input: z.ZodType<I>;
+  /** The job's transaction (ADR-001 §8): read committed and writable unless given, as an export's read-only
+   * `repeatable read` snapshot is (ADR-002 Exports). */
+  tx?: TxSpec;
   /** Attempts after the first. Default 3. */
   retries?: number;
   /** First wait before a retry, doubling each time. Default 30 seconds. */
@@ -51,8 +57,9 @@ export class JobRefused extends Error {
   override name = 'JobRefused';
 }
 
-/** How the worker runs a job's service: in one transaction, with a Ctx for principal (runtime.ts). */
-export type OpenJob = (principal: Principal, jobId: string, work: (ctx: Ctx) => Promise<void>) => Promise<void>;
+/** How the worker runs a job's service: in one transaction, with a Ctx for principal (runtime.ts), of kind `tx`
+ * (by default, read committed and writable). */
+export type OpenJob = (principal: Principal, jobId: string, work: (ctx: Ctx) => Promise<void>, tx?: TxSpec) => Promise<void>;
 
 /** What the worker gives a job to run with: its transaction, how to load the enqueuer, the alerter, and the file
  * store when the process has one (RAD-43). */
@@ -62,10 +69,15 @@ type JobRun = { open: OpenJob; load: LoadPrincipal; alert: Alerter; files?: File
  * S3, say. Its result reaches the service as `meta.before`. */
 export type BeforeJob<I, B> = (input: I, outside: { files: FileStore }) => Promise<B>;
 
+// A worker built without a file store (a test) gives afterCommit one that says so when used, so a step that never
+// touches files, such as the reset email's, runs as before.
+const noStore = (): Promise<never> => Promise.reject(new Error('this worker has no file store (RAD-43)'));
+const NO_FILE_STORE: FileStore = Object.freeze({ downloadUrl: noStore, verifyUpload: noStore, presignUpload: noStore, putFile: noStore });
+
 /** A job contract with the service that does the work. The worker runs these; nothing else calls `handle`. */
 export type JobDefinition = {
   name: string;
-  principal: JobPrincipal;
+  principal: JobPrincipal<never>;
   every: string | null;
   deleteOnComplete: boolean;
   settings: QueueSettings;
@@ -93,7 +105,7 @@ const wholeNumber = (value: number, min: number, what: string): number => {
 };
 
 /** The queue settings a contract asks for, checked. Exported for its tests. */
-export function queueSettings(c: JobContract<unknown>): QueueSettings {
+export function queueSettings(c: Omit<JobContract<unknown>, 'principal' | 'input'>): QueueSettings {
   if (!NAME.test(c.name) || c.name.endsWith('.dead')) throw new Error(`job name ${JSON.stringify(c.name)} is not valid`);
   return {
     policy: c.oneAtATime === true ? 'singleton' : 'standard',
@@ -113,11 +125,12 @@ export function queueSettings(c: JobContract<unknown>): QueueSettings {
  * as the person who queued it, loaded as they are now: if they're gone, or no longer hold the job's permission, it is
  * refused rather than run (a revoked permission fails the job, with the dead-letter alert).
  */
-async function principalOf(name: string, p: JobPrincipal, by: string, load: LoadPrincipal): Promise<Principal> {
+async function principalOf<I>(name: string, p: JobPrincipal<I>, input: I, by: string, load: LoadPrincipal): Promise<Principal> {
   if (p.kind === 'system') return Object.freeze({ kind: 'system', name: p.name, permissions: Object.freeze([...p.permissions]) });
+  const perm = typeof p.perm === 'string' ? p.perm : p.perm(input);
   const who = by.startsWith('user:') ? await load(by) : null;
   if (who === null) throw new JobRefused(`${name}: queued by ${by}, who can't be loaded as a person now`);
-  if (!who.permissions.includes(p.perm)) throw new JobRefused(`${name}: ${by} no longer holds ${p.perm}`);
+  if (!who.permissions.includes(perm)) throw new JobRefused(`${name}: ${by} no longer holds ${perm}`);
   return who;
 }
 /** A job's optional steps around its transaction (ADR-001 §8). */
@@ -129,8 +142,9 @@ export type JobSteps<I, B, R> = {
    * Runs after the service's transaction commits, with what the service returned: the place for an outside call that
    * needs what the transaction decided (the reset email's recipient and link). `again` opens one more transaction, as
    * the same principal, to record the call's outcome. A retry runs the service again, which makes this safe to repeat.
+   * It gets the same `deps` as `before` (RAD-47: an export uploads its file here).
    */
-  afterCommit?: (result: R, again: (work: (ctx: Ctx) => Promise<void>) => Promise<void>) => Promise<void>;
+  afterCommit?: (result: R, again: (work: (ctx: Ctx) => Promise<void>) => Promise<void>, deps: { files: FileStore }) => Promise<void>;
 };
 
 /** A job's contract, its service, and its optional steps around the service's transaction. */
@@ -152,7 +166,7 @@ export function defineJob<I, B = undefined, R = void>(contract: JobContract<I>,
     handle: async (data, jobId, { open, load, alert, files }) => {
       const { input: raw, by } = ENVELOPE.parse(data);
       const input = contract.input.parse(raw);
-      const principal = await principalOf(contract.name, contract.principal, by, load);
+      const principal = await principalOf(contract.name, contract.principal, input, by, load);
       if (before !== undefined && files === undefined) throw new Error(`${contract.name}: this worker has no file store`);
       // Outside any transaction: no connection is held while it waits on the network.
       // Without a `before`, B is undefined, so this is B either way.
@@ -164,10 +178,12 @@ export function defineJob<I, B = undefined, R = void>(contract: JobContract<I>,
       const held: string[] = [];
       await open(principal, jobId, async (ctx) => {
         ran.result = await service(ctx, input, { jobId, alert: async (message) => { held.push(message); }, before: done });
-      });
+      }, contract.tx);
       // Before afterCommit, so they're sent even if it then fails: the work they describe has committed.
       for (const message of held) await alert(message);
-      if (afterCommit !== undefined) await afterCommit(ran.result as R, (work) => open(principal, jobId, work));
+      if (afterCommit !== undefined) {
+        await afterCommit(ran.result as R, (work) => open(principal, jobId, work), { files: files ?? NO_FILE_STORE });
+      }
     },
   };
 }

@@ -222,6 +222,34 @@ export const files = radcoreTable('files', {
 ]);
 
 /**
+ * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts. Its owner is `created_by`, the
+ * principal who started it, and only they may read its status or download it. The export job fills it after its own
+ * transaction: `ready` with the row count and the file's store key, or `failed` with why. An export is complete or it
+ * fails, never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or when the export volume fills.
+ * - `kind` is the list, `<module>.<name>`, which names the module's row function.
+ * - `filter` is the list's own filter as the person sent it, checked by that list's schema when the job runs.
+ */
+export const dataExports = radcoreTable('exports', {
+  id: id(),
+  kind: text().notNull(),
+  filter: jsonb().notNull(),
+  status: text().notNull().default('queued'),
+  rows: integer(),
+  storeKey: text(),
+  failure: text(),
+}, (t) => [
+  uniqueIndex('ux_exports_store_key').on(t.storeKey),
+  check('ck_exports_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'`),
+  check('ck_exports_status', sql`${t.status} in ('queued', 'ready', 'failed')`),
+  check('ck_exports_failure', sql`(${t.status} = 'failed') = (${t.failure} is not null)
+    and (${t.failure} is null or ${t.failure} in ('too_large', 'failed'))`),
+  // A ready export has its file and its count; nothing else has a file.
+  check('ck_exports_ready', sql`(${t.status} = 'ready') = (${t.storeKey} is not null)
+    and ((${t.status} = 'ready') = (${t.rows} is not null)) and (${t.rows} is null or ${t.rows} >= 0)`),
+  check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
+]);
+
+/**
  * Sign-in sessions (M1-16, RAD-34, ADR-001 §7a). The cookie holds a random token; only its SHA-256 is stored, so the
  * table can't be used to sign anyone in. `idle_expires_at` moves forward on the person's own requests and
  * `absolute_expires_at` never moves; a session past either, or with `ended_at`, signs nobody in. `device` is a short

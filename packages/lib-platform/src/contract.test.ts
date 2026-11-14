@@ -63,7 +63,7 @@ describe('the sign-in and own-session contracts', () => {
   });
 
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
-    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
+    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['POST /me/second-factor/recovery-codes', 'session:read'], ['GET /me/sessions', 'session:read'],
       ['DELETE /me/sessions/:id', 'session:read']]);
@@ -256,6 +256,7 @@ describe('the admin contracts', () => {
       'POST /files/resume/:id/download': ['download'],
       'POST /files/statement/:id/download': ['download'],
       'POST /files/import/:id/download': ['download'],
+      'POST /exports/:id/download': ['download'],
     });
   });
 
