@@ -251,7 +251,7 @@ describe('the admin contracts', () => {
       'DELETE /admin/sessions/:id': ['session_ended'],
       'POST /admin/users/:id/sessions/end': ['session_ended'],
       'POST /me/second-factor/recovery-codes': ['second_factor_changed'],
-      'POST /admin/users/:id/second-factor/remove': ['second_factor_changed'],
+      'POST /admin/users/:id/second-factor/remove': ['second_factor_changed', 'session_ended'],
       'POST /files/photo/:id/download': ['download'],
       'POST /files/resume/:id/download': ['download'],
       'POST /files/statement/:id/download': ['download'],
