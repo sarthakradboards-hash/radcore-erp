@@ -21,9 +21,6 @@ export async function migrate(url: string, { migrationsFolder = MIGRATIONS_FOLDE
   const client = new pg.Client({
     connectionString: url,
     application_name: 'radcore-migrate',
-    // Rows a migration writes are recorded as this principal (ADR-005 §5). Options the URL carries are kept: the test
-    // setup migrates as the owner login with `-c role=radcore_owner` (RAD-24).
-    options: [new URL(url).searchParams.get('options'), '-c app.principal=system:migrate'].filter(Boolean).join(' '),
     // A second runner waits 5 s for the lock below, then fails (CI serialises deploys, ADR-004 §3), and a migration
     // never queues long behind live traffic.
     lock_timeout: 5_000,
@@ -31,6 +28,10 @@ export async function migrate(url: string, { migrationsFolder = MIGRATIONS_FOLDE
   });
   await client.connect();
   try {
+    // Rows a migration writes are recorded as this principal (ADR-005 §5). Set on the session, not in the connection's
+    // options: a URL with its own `?options=` (the test setup's `-c role=radcore_owner`, RAD-24) replaces those
+    // outright, and the principal was lost (RAD-82). A session setting holds through drizzle's transaction.
+    await client.query("select set_config('app.principal', 'system:migrate', false)");
     try {
       // ADR-002 L3's exceptions in this file: this lock, and the partition top-up below.
       await client.query('select pg_advisory_lock(hashtextextended($1, 0))', [MIGRATION_LOCK_KEY]);

@@ -110,12 +110,13 @@ describe('the migration files', () => {
   });
 
   // ADR-002: L3 is off in migrate.ts for the advisory lock and the partition top-up under it (ADR-005 §8) only.
-  it('migrate.ts makes exactly two raw calls, the lock and the partition top-up', () => {
+  it('migrate.ts makes exactly three raw calls: the principal, the lock and the partition top-up', () => {
     const source = readFileSync(join(MIGRATIONS_FOLDER, '..', 'src', 'migrate.ts'), 'utf8');
     // \b, not \(, so a generic call such as client.query<Row>( counts too.
-    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query', '.query']);
-    expect(source.match(/query\('([^']*)'/g)).toEqual(["query('select pg_advisory_lock(hashtextextended($1, 0))'",
-      "query('select radcore.add_log_partitions($1)'"]);
+    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query', '.query', '.query']);
+    expect(source.match(/query\("[^"]*"\)|query\('[^']*'/g)).toEqual([
+      "query(\"select set_config('app.principal', 'system:migrate', false)\")",
+      "query('select pg_advisory_lock(hashtextextended($1, 0))'", "query('select radcore.add_log_partitions($1)'"]);
   });
 
   it("creates pg-boss's schema from pg-boss's own construction plan (ADR-002 §4)", () => {
@@ -157,6 +158,18 @@ describe.skipIf(!url)('the migration runner', { timeout: 30_000 }, () => {
       await migrate(db);
       await withFolder(1, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
       expect(await applied(db)).toBe(MIGRATIONS);
+    });
+  });
+
+  it("stamps a seeding migration's rows as system:migrate, even when the URL brings its own options (RAD-82)", async () => {
+    await withDatabase(async (db) => {
+      // Its own `options`, as the test setup's owner URL has (`-c role=…`): they used to replace the principal's.
+      const withOptions = new URL(db);
+      withOptions.searchParams.set('options', '-c lock_timeout=6000');
+      const seed = "insert into radcore.settings (key, value) values ('platform.migrate_probe', '1'::jsonb);";
+      await withFolder(MIGRATIONS, [seed], (dir) => migrate(withOptions.toString(), { migrationsFolder: dir }));
+      expect(await query(db, "select created_by, updated_by from radcore.settings where key = 'platform.migrate_probe'"))
+        .toEqual([{ created_by: 'system:migrate', updated_by: 'system:migrate' }]);
     });
   });
 

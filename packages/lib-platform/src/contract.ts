@@ -150,8 +150,8 @@ export const endUserSessions = defineContract({
   input: z.object({ id: idString() }), output: z.object({ ended: z.number().int().nonnegative() }), errors: ['own_account'],
 });
 
-/** Removes a person's second factor and recovery codes, such as after a lost phone (M1-15). A role that needs one
- * (D-19) enrols again at the next sign-in. Not your own account. */
+/** Removes a person's second factor and recovery codes, such as after a lost phone (M1-15), and ends their sessions.
+ * A role that needs one (D-19) enrols again at the next sign-in. Not your own account. */
 export const removeSecondFactor = defineContract({
   method: 'POST', path: '/admin/users/:id/second-factor/remove', auth: 'session', perm: 'users:write', tx: write,
   input: z.object({ id: idString(), reason: reason() }), output: z.object({}), errors: ['own_account', 'no_second_factor'],
@@ -232,7 +232,7 @@ export const SECURITY_EVENT_ROUTES = {
   'DELETE /admin/sessions/:id': ['session_ended'],
   'POST /admin/users/:id/sessions/end': ['session_ended'],
   'POST /me/second-factor/recovery-codes': ['second_factor_changed'],
-  'POST /admin/users/:id/second-factor/remove': ['second_factor_changed'],
+  'POST /admin/users/:id/second-factor/remove': ['second_factor_changed', 'session_ended'],
   'POST /files/photo/:id/download': ['download'],
   'POST /files/resume/:id/download': ['download'],
   'POST /files/statement/:id/download': ['download'],
