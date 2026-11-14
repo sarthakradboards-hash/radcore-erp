@@ -190,6 +190,13 @@
       "when": 1794654699758,
       "tag": "0026_public_links",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794657200202,
+      "tag": "0027_users_disabled_without_password",
+      "breakpoints": true
     }
   ]
 }

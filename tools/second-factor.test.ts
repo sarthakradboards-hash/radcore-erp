@@ -37,7 +37,8 @@ const PASSWORD = 'a quiet harbour at dawn';
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const PUBLIC: Principal = { kind: 'system', name: 'public', permissions: [] };
 
-describe.skipIf(!url)('the second sign-in factor', () => {
+// Enrolment hashes ten recovery codes with Argon2id at the production cost, which outlasts 5 s on a loaded machine.
+describe.skipIf(!url)('the second sign-in factor', { timeout: 30_000 }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 3 });
   const db = createDatabase(pool);
   const cfg = config(url ?? NO_DATABASE);

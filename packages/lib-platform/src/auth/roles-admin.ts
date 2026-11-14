@@ -29,7 +29,7 @@ const CATALOG = new Map(PERMISSIONS.map((p) => [p.key, p]));
 
 /** The signed-in caller, with their role and keys read now, in this transaction, rather than taken from the
  * request's principal: a change in between (another admin demoting them) counts. */
-async function callerOf(ctx: Ctx): Promise<{ userId: string; role: string; permissions: readonly string[] }> {
+export async function callerOf(ctx: Ctx): Promise<{ userId: string; role: string; permissions: readonly string[] }> {
   if (ctx.principal.kind !== 'user') throw new AppError('forbidden', 'Only a signed-in person can change roles');
   const { userId } = ctx.principal;
   const me = await principalFor(ctx, userId);
@@ -38,7 +38,7 @@ async function callerOf(ctx: Ctx): Promise<{ userId: string; role: string; permi
 }
 
 /** Each role's keys. */
-async function keysByRole(tx: Tx): Promise<Map<string, string[]>> {
+export async function keysByRole(tx: Tx): Promise<Map<string, string[]>> {
   const byRole = new Map<string, string[]>();
   for (const g of await tx.select({ role: roleGrants.role, permission: roleGrants.permission }).from(roleGrants)) {
     byRole.set(g.role, [...(byRole.get(g.role) ?? []), g.permission]);
@@ -48,7 +48,7 @@ async function keysByRole(tx: Tx): Promise<Map<string, string[]>> {
 
 /** Whether the caller may give this role to someone, or take it away: only an admin for admin, and only someone who
  * holds every key the role holds, so nobody passes on a key they don't have. */
-const mayGive = (caller: { role: string; permissions: readonly string[] }, role: string, keys: readonly string[]) =>
+export const mayGive = (caller: { role: string; permissions: readonly string[] }, role: string, keys: readonly string[]) =>
   (role !== ADMIN || caller.role === ADMIN) && keys.every((k) => caller.permissions.includes(k));
 
 /** The matrix's version: the SHA-256 of every grant. Any write changes it, so a stale editor is caught. */
