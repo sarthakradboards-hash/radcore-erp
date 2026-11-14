@@ -225,6 +225,13 @@
       "when": 1794677363589,
       "tag": "0031_user_sign_ins_row",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794681859153,
+      "tag": "0032_number_counters",
+      "breakpoints": true
     }
   ]
 }

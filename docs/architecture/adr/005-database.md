@@ -273,8 +273,8 @@ They are append-only with explicit reversals:
   the four who-and-when columns. Each column of an audited table is listed at `audit_attach` as `keep` (recorded) or
   `redact` (written as `[redacted]`). Secrets, hashes and all personal data are redacted, and the schema test fails on
   an unlisted column. An update that changes nothing kept or redacted writes no row. Machinery tables (`saved_once`,
-  `jobs_outbox`, `webhook_deliveries`, `sessions`, `change_reasons`, `user_sign_ins`) get the who-and-when trigger
-  only. A session's `last_seen_at` changes on every request, and its start and end are security events (RAD-34). A
+  `jobs_outbox`, `webhook_deliveries`, `sessions`, `change_reasons`, `user_sign_ins`, `number_counters`) get the
+  who-and-when trigger only. A session's `last_seen_at` changes on every request, and its start and end are security events (RAD-34). A
   person's last sign-in (`user_sign_ins`, RAD-36) is already a `sign_in` event.
 - **Why a change was made** (RAD-36). When a write's contract asks for a reason (lib-common's `reason()`), the handler
   stores it in `change_reasons` and sets `app.reason_id`, and each audit row of that change carries `reason_id`, a

@@ -156,7 +156,9 @@ delivery they belong to (M5-17), so §7's per-line check still holds.
   the financial-year and period-lock rows; M5-09 builds moving the lock and the year close.
 - **Gap-free numbers** (RC-206, M2-04). The entry's number comes from its financial year's series, under the series
   row lock, as the last step (§1). There's no database sequence. A save that fails rolls the number back with
-  everything else.
+  everything else. lib-platform's `nextNumber` draws it in one upsert on `number_counters (series, financial_year)`,
+  whose trigger sets the count to exactly one more than the last, whatever the app sends, and refuses a delete
+  (RAD-87). A series' prefix is a setting, read with the request's others (RC-200).
 - **A manual journal** carries a reason (bounded text, ADR-005 §1) and only ordinary accounts (§2).
 - **A closed year's profit and loss** is read without its `year_close` entry, which would otherwise show every
   income and expense account at zero (M5-09, M5-14).
