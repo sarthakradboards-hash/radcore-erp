@@ -15,6 +15,7 @@ export { recordChangeReason } from './change-reasons.ts';
 export {
   createLink, linkMaxDays, linkPrincipal, linkUrl, listLinks, recordLinkAccess, revokeLink, useLink, type NewLink,
 } from './links.ts';
+export { recordLooks } from './looks.ts';
 export {
   deviceOf, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, endSessionsOf, getMyself, listAllSessions,
   listOwnSessions, cookieFor, sessionCookieFor, signInService, type EndedReason, type SessionCookieKind,

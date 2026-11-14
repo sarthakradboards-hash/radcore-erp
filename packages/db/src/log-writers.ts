@@ -20,6 +20,14 @@ export async function recordEvent(handle: Tx, e: EventRow): Promise<void> {
     sql`select radcore.record_event(${e.kind}, ${e.userId}::uuid, ${e.device}, ${JSON.stringify(e.detail)}::jsonb)`);
 }
 
+/** Appends the records an answer showed unmasked to access_log, one row per record, in one statement (RAD-40): in a
+ * write's own transaction, or in a short write of its own after a read commits (ADR-005 §7c). The rows go as one JSON
+ * parameter, since an array in a template would be spread into a list of parameters. */
+export async function recordAccesses(handle: Tx, looks: readonly { table: string; id: string }[]): Promise<void> {
+  const rows = JSON.stringify(looks.map((l) => ({ t: l.table, i: l.id })));
+  await rawOf(handle).execute(sql`select radcore.record_access(l.t, l.i) from jsonb_to_recordset(${rows}::jsonb) as l(t text, i text)`);
+}
+
 /** Appends a record's opening to access_log, in a short write of its own after the read commits (ADR-005 §7c). */
 export async function recordAccess(handle: Tx, recordTable: string, recordId: string): Promise<void> {
   await rawOf(handle).execute(sql`select radcore.record_access(${recordTable}, ${recordId})`);

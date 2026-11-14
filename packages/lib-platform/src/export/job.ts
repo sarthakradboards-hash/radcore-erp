@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { dataExports, platformTx } from '@radcore/db/platform';
-import { idString } from '@radcore/lib-common';
+import { idString, type PiiKind } from '@radcore/lib-common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { principalId, type Ctx } from '../ctx.ts';
@@ -24,15 +24,17 @@ export type ModuleExport = {
   readonly kind: string;
   readonly perm: string;
   readonly start: ExportContract['start'];
+  /** Its columns holding personal data (RAD-40). */
+  readonly pii: Readonly<Partial<Record<string, PiiKind>>>;
   /** Writes every row for a stored filter to `path`, the filter checked by the list's own schema first. */
   readonly write: (ctx: Ctx, filter: unknown, path: string, cap: number) => Promise<number>;
 };
 
 /** A module's export: its contract and the function that gives its rows a page at a time (ADR-001 §8b). */
 export function exportOf<F extends z.ZodType>(contract: ExportContract<F>, rows: ExportRows<z.output<F>>): ModuleExport {
-  const def = { kind: contract.kind, columns: contract.columns, rows };
+  const def = { kind: contract.kind, columns: contract.columns, rows, pii: contract.pii };
   return Object.freeze({
-    kind: contract.kind, perm: contract.perm, start: contract.start,
+    kind: contract.kind, perm: contract.perm, start: contract.start, pii: contract.pii,
     write: (ctx: Ctx, filter: unknown, path: string, cap: number) => writeExportFile(ctx, def, contract.filter.parse(filter), path, cap),
   });
 }
