@@ -150,6 +150,39 @@ export const webhookDeliveries = radcoreTable('webhook_deliveries', {
   // The stuck-delivery watch reads the unprocessed ones, oldest first.
   index('ix_webhook_deliveries_unprocessed').on(t.createdAt).where(isNull(t.processedAt)),
 ]);
+/**
+ * Approvals (maker-checker, RAD-38, RC-037): one row per request for a second person to approve a record of `kind`
+ * (`purchase-order`, `stock-adjustment`, ...). `version_digest` is the SHA-256 of the exact version the request was made
+ * for; an approval goes through only if the record still hashes to it and the approver's screen saw the same hash.
+ * `requested_by` and `decided_by` are principal ids (`user:<id>`), never the same one on an approved or rejected row.
+ * A new request for the same record supersedes the pending one (its `decided_at` is then when), so at most one is
+ * pending per record. Audited like any record.
+ */
+export const approvals = radcoreTable('approvals', {
+  id: id(),
+  kind: text().notNull(),
+  recordId: uuid().notNull(),
+  // A digest, not a secret: named so, since the audit rules treat a `*hash*` column as one to redact (ADR-005 §7c).
+  versionDigest: text().notNull(),
+  requestedBy: text().notNull(),
+  status: text().notNull().default('pending'),
+  decidedBy: text(),
+  decidedAt: timestamp({ withTimezone: true }),
+  reason: boundedText({ max: 500 }),
+}, (t) => [
+  check('ck_approvals_kind', sql`${t.kind} ~ '^[a-z][a-z0-9-]*$'`),
+  check('ck_approvals_version_digest', sql`${t.versionDigest} ~ '^[0-9a-f]{64}$'`),
+  check('ck_approvals_status', sql`${t.status} in ('pending', 'approved', 'rejected', 'superseded')`),
+  // Only a pending request has no decided_at (a superseded one has the time it was superseded); an approval or
+  // rejection names who decided, and it's never the requester (RC-037).
+  check('ck_approvals_decided', sql`(${t.status} = 'pending') = (${t.decidedAt} is null)
+    and (${t.status} in ('approved', 'rejected')) = (${t.decidedBy} is not null)
+    and (${t.decidedBy} is null or ${t.decidedBy} <> ${t.requestedBy})`),
+  // At most one pending request per record.
+  uniqueIndex('ux_approvals_pending').on(t.kind, t.recordId).where(isNull(t.decidedAt)),
+  index('ix_approvals_kind_status').on(t.kind, t.status, t.createdAt),
+]);
+
 
 /**
  * The first admin (ADR-004 §3, RC-021): one permanent row, made by the bootstrap-admin command, so its invite is minted

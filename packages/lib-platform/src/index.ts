@@ -6,6 +6,10 @@ export {
   listOwnSessions, sessionCookieFor, signInService, type EndedReason, type SessionCookieKind,
 } from './auth/sessions.ts';
 export { requestPasswordReset } from './auth/reset-email.ts';
+export {
+  decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash, type ApprovalSpec,
+  type ApprovalVersion, type Decision,
+} from './approvals.ts';
 export { decodeCursor, encodeCursor, isoMoment, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
 export { defineRoute, type Route } from './route.ts';
