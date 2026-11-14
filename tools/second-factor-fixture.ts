@@ -1,6 +1,6 @@
 // RAD-33: a test person with a second factor already set up, for tests (and e2e, once it signs in) that need to get
-// past D-19's second step. Every account needs one until roles land (RAD-35), so any test that signs in through the
-// api's own routes enrols first, or uses this. The secret is sealed exactly as the app seals one.
+// past D-19's second step. A person whose role needs one (admin, owner, accounts, HR; RAD-35) and who signs in through
+// the api's own routes enrols first, or uses this. The secret is sealed exactly as the app seals one.
 import { randomUUID } from 'node:crypto';
 import type { Config } from '@radcore/lib-platform';
 import { Secret, TOTP } from 'otpauth';

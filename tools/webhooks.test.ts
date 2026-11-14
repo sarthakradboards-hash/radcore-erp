@@ -64,10 +64,10 @@ describe.skipIf(!url)('webhook intake', () => {
   const stored = async (deliveryId: string) => (await pool.query<{ processed: boolean }>(
     'select processed_at is not null as processed from radcore.webhook_deliveries where source = $1 and delivery_id = $2',
     [hook.source, deliveryId])).rows;
-  // One relay pass, as the worker's relay would make it. Callers retry it with the check they wait on: the outbox is
-  // shared with other test files, whose rows may be ahead of this one's (RAD-79).
+  // One relay pass over this webhook's job only, as the worker's relay would make it: the outbox is shared with other
+  // test files, whose rows it must never try (RAD-79). Callers retry it with the check they wait on.
   const runQueuedWork = async () => {
-    if (state.queue) await relayOutbox(db, state.queue, logger());
+    if (state.queue) await relayOutbox(db, state.queue, logger(), { only: [job.name] });
   };
 
   it('stores a signed delivery and answers before any work runs; the work runs later, from the queue (RC-084)', async () => {

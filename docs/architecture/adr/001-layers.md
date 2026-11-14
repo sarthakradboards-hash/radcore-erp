@@ -269,8 +269,19 @@ link id.
 The feature permission is checked once, at the entry: the route contract's `perm`, or the job contract's
 principal. Inside, services check record scope with `ctx.can`. A service called by another service runs under the
 same principal. The scope rules are keyed by the kind of data, so payroll reading employees asks "may this principal
-see this employee's pay", not "does this principal hold hr:read". M1-17 defines the scope rules. M1-19's manifest
-lists which services each route and job reaches, so a new reach shows up in review.
+see this employee's pay", not "does this principal hold hr:read". M1-17 defines the scope rules. A role grants each
+key at `own` or `all` scope (RAD-35). A list whose key the principal holds only at `own` is filtered to the principal's
+own records by the list engine, and get-one and writes check with `ctx.see` or `ctx.can`. Admin holds every key as an
+explicit grant, never a wildcard, and a test checks that it holds the whole catalogue. `users.role_since` and each
+grant's `created_at` say when a person gained a key, which the approval rules use (§8b). M1-19's manifest lists which
+services each route and job reaches, so a new reach shows up in review.
+
+**How the scope rule reads (RAD-35).** A record's owner is named as audit rows name a principal (`user:<id>`): usually
+its `created_by`, or a module's own owner column. `ctx.can(perm, { owner })` answers it; `ctx.see(perm, { owner })`
+throws `not_found` out of scope, so it answers 404 like a record that doesn't exist; a list adds
+`listScope(ctx, perm, ownerColumn)` to its filter. A system principal reaches every record for the keys its contract
+lists. A person's role and grants are read from the database on every request and every job (`loadPrincipal`), never
+cached, so a change applies at once in every process (RC-095).
 
 ### 7. The web client
 
@@ -332,7 +343,8 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   - `rate_limited` counts requests per **client IP**, the address `api` takes from `proxy` through `TRUST_PROXY`
     (ADR-004 §3).
 
-  Both live in the shared store (ADR-003, rate-limiter-flexible).
+  Both live in the shared store (ADR-003, rate-limiter-flexible), which keeps each email or address only as its
+  HMAC under `RATE_LIMIT_KEY` (RAD-73, ADR-004 §5), never as it was typed.
 - **Nothing tells anyone an account exists:**
   - Failed attempts are counted for the email address typed, whether or not an account has it, so an unknown
     address locks the same way.
@@ -435,11 +447,11 @@ codes.
 - **Signed in,** `POST /me/second-factor/recovery-codes` takes a current code, voids the old set and answers a new
   one (`storesAnswer: false`).
 - **An admin** removes someone else's factor and codes after a lost phone
-  (`POST /admin/users/:id/second-factor/remove`). They enrol again at their next sign-in if their role needs it.
+  (`POST /admin/users/:id/second-factor/remove`), and ends their sessions; it's a `second_factor_changed` event. They
+  enrol again at their next sign-in if their role needs it.
 - **Attempts:** five per account in 15 minutes, then a 15-minute wait. They're counted in the shared store, like the
   sign-in lockout.
-- **Every account needs a factor until roles land** (RAD-35). It fails safe, and the first admin needs one anyway.
-  RAD-35's per-role `second_factor_required` then limits it to D-19's admin, owner, accounts and HR.
+- **Who needs a factor** is the role's `second_factor_required` (RAD-35): D-19's admin, owner, accounts and HR.
 - The secret is kept by the secrets library. Each route seals or opens it in its `before` step (§8), so no KMS call
   runs inside a transaction.
 
@@ -471,7 +483,8 @@ codes.
   - starting a second-factor enrolment (the new TOTP secret);
   - making new recovery codes;
   - asking for a file's download link, `POST /files/<kind>/:id/download` for photo, resume, statement and import
-    (RAD-43). The answer is a live presigned link, and a stored answer must carry no tokens (RC-132).
+    (RAD-43), or an export's, `POST /exports/:id/download` (RAD-47). The answer is a live presigned link, and a
+    stored answer must carry no tokens (RC-132).
 
   How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
@@ -572,6 +585,11 @@ succeeded; the service never records it as done ("sent"), since the call may sti
 again, so the service makes the step safe to repeat: the password-reset email, its first user, dedupes on its job id,
 and a link minted but never mailed is spent and replaced.
 
+**A job's transaction.** A job runs in a `read committed` write transaction, unless its contract gives `tx` (an
+export: `{ readOnly: true, isolation: 'repeatable read', statementTimeoutMs }`, ADR-002 Exports). A job for a user
+names its permission as `perm`. That is a key, or a pure function from the input to a key (the export job looks it up
+by kind), with no I/O. `afterCommit` gets the same `deps` as `before`.
+
 ### 8b. Platform engines, module functions
 
 lib-platform's lists, exports, imports and approvals are engines that know no module, and lib-platform can't call
@@ -579,7 +597,7 @@ up into module libraries. So each module supplies the function that does its par
 the two together:
 
 ```ts
-defineExport(sales.contracts.exportInvoices, sales.invoiceExportRows),   // engine: paging, streaming, file format
+...defineExport(sales.salesExports),                                        // engine: paging, streaming, file format
 defineImport(stock.contracts.importItems, stock.importItemRow),          // engine: parsing, limits, per-row errors
 ...defineApproval(purchasing.contracts.poApproval, purchasing.poApproval), // engine: maker-checker record and hash
 ```
@@ -686,7 +704,7 @@ config test (ADR-002) calls `calculateConfigForFile` and asserts each local rule
 | T1 | the opaque transaction (§5) | TypeScript (`tsc --noEmit`, the typecheck job) | a library touches `ctx.tx.query`, `.select`, `.insert`, `.update`, `.delete`, `.execute` or `._`; or reaches another module's table through its own module transaction (`salesTx(ctx).query.parties`). Its proof lands with M1-08 (`Ctx` and the generic route handler), not with M0-07 (RAD-13). |
 | D8 | apps never touch the database directly | dependency-cruiser | `apps/api/**` or `apps/worker/**` imports `packages/db` |
 | D9 | no HTTP in libraries | dependency-cruiser | `packages/**` imports `express`, `next`, or anything under `apps/` |
-| E1 | no rule in a route or job file | local rule `radcore/e1-route-files` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator; or an argument of a `define*` call is itself a call (so `defineRoute(c, wrap(sales.x))` fails); or the file imports anything except libraries' `.` and `./contract` entries and the `define*` helpers. Route and job files hold only `defineRoute`, `defineWebhook`, `defineJob`, `defineExport`, `defineImport` and `defineApproval` calls. |
+| E1 | no rule in a route or job file | local rule `radcore/e1-route-files` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator; or an argument of a `define*` call is itself a call (so `defineRoute(c, wrap(sales.x))` fails); or the file imports anything except libraries' `.` and `./contract` entries and the `define*` helpers. Route and job files hold only `defineRoute`, `defineWebhook`, `defineJob`, `defineExport`, `defineExportJob`, `defineImport` and `defineApproval` calls. |
 | E2 | file size | ESLint `max-lines` (`max: 400`, blank lines and comments counted) | any source file over 400 lines |
 | E3 | no I/O without an import | local rule `radcore/e3-no-io` on `packages/lib-common/**`, every `contract.ts` and every `src/rules/**` | use of `process`, `fetch`, `setTimeout`, `setInterval`, `crypto`, `Math.random`, `Date.now()` or `new Date()` with no argument. Time and randomness come in as arguments or from `ctx.clock`. |
 | E4 | no escape hatch in libraries | on `packages/lib-*/**` and `packages/db/src/*/repo.ts`, with type information: `@typescript-eslint/no-explicit-any`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-assignment` (these typed rules aren't shared with any other E- or L-rule); plus local rule `radcore/e4-no-escape`, which bans a double cast (`x as unknown as T`), `as any`, the `Reflect` global and importing `getTableConfig` | a library casts or reflects its way past T1 (`Reflect.get(ctx.tx, '_')`), or reads table metadata |

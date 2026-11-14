@@ -47,6 +47,8 @@ const SETTINGS = {
   S3_SECRET_ACCESS_KEY: { format: text, in: DEV_CI, secret: true },
   SECRETS_KMS_KEY_ID: { format: z.string().regex(MULTI_REGION_KEY_ARN, 'must be a multi-Region KMS key ARN (…:key/mrk-…)'), in: DEPLOYED },
   SECRETS_LOCAL_KEY: { format: localKey, in: LOCAL_KEY_ENVS, secret: true },
+  // The rate-limit store's HMAC key (RAD-73): an email or IP can't be read back from the keys it stores.
+  RATE_LIMIT_KEY: { format: localKey, in: ALL, by: 'api', secret: true },
   MAIL_FROM: { format: z.email(), in: DEPLOYED },
   TURNSTILE_SITE_KEY: { format: text, in: ALL, by: 'api' },
   TURNSTILE_SECRET: { format: text, in: DEPLOYED, by: 'api', secret: true },
@@ -71,6 +73,8 @@ export type Config = {
   s3: { region: string; bucket: string; endpoint: string | null; accessKeyId: string | null; secretAccessKey: string | null };
   /** Exactly one is set. */
   secrets: { kmsKeyId: string | null; localKey: string | null };
+  /** The rate-limit store's HMAC key (RAD-73); the api's only, so null for the worker. */
+  rateLimitKey: string | null;
   mailFrom: string | null;
   turnstile: { siteKey: string | null; secret: string | null };
   alertWebhookUrl: string | null;
@@ -164,6 +168,7 @@ export function loadConfig(env: Env, proc: ProcessName): Config {
     s3: { region: str('S3_REGION'), bucket: str('S3_BUCKET_FILES'), endpoint: get('S3_ENDPOINT'),
       accessKeyId: get('S3_ACCESS_KEY_ID'), secretAccessKey: get('S3_SECRET_ACCESS_KEY') },
     secrets: { kmsKeyId: get('SECRETS_KMS_KEY_ID'), localKey: get('SECRETS_LOCAL_KEY') },
+    rateLimitKey: get('RATE_LIMIT_KEY'),
     mailFrom: get('MAIL_FROM'),
     turnstile: { siteKey: get('TURNSTILE_SITE_KEY'), secret: get('TURNSTILE_SECRET') },
     alertWebhookUrl: get('ALERT_WEBHOOK_URL'),

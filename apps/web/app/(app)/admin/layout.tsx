@@ -5,9 +5,10 @@ import { AdminNav } from './shared.tsx';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
-    <main className="admin">
+    // A <div>: the shell (RAD-50) already gives every signed-in screen its one <main>.
+    <div className="admin">
       <AdminNav />
       {children}
-    </main>
+    </div>
   );
 }

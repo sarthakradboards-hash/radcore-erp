@@ -7,25 +7,22 @@ import { usePathname } from 'next/navigation';
 import { z } from 'zod';
 import { Dialog, CloseButton } from '../../../components/ui/dialog/dialog.tsx';
 import { Form, SubmitButton } from '../../../components/ui/form/form.tsx';
+import { ADMIN_PAGES, allowed } from '../../../components/shell/nav.ts';
+import { useMe } from '../../../components/shell/session-provider.tsx';
 import { announce } from '../../../components/ui/live-region.tsx';
-import { t, type MessageKey } from '../../../lib/i18n/index.ts';
+import { t } from '../../../lib/i18n/index.ts';
 import './admin.css';
 
-const PAGES = [
-  ['/admin/users', 'admin.nav.users'],
-  ['/admin/roles', 'admin.nav.roles'],
-  ['/admin/permissions', 'admin.nav.permissions'],
-  ['/admin/sessions', 'admin.nav.sessions'],
-  ['/admin/audit', 'admin.nav.audit'],
-] as const satisfies readonly (readonly [string, MessageKey])[];
-
+// The pages come from the shell's menu (components/shell/nav.ts), each with the permission its screen reads, so the
+// sub-menu, like the main one, offers only what the person may open (RC-151). The server still checks every request.
 export function AdminNav() {
   const here = usePathname();
+  const { permissions } = useMe();
   return (
     <nav aria-label={t('admin.nav')} className="admin-nav">
       <ul>
-        {PAGES.map(([href, key]) => (
-          <li key={href}><Link href={href} aria-current={here === href ? 'page' : undefined}>{t(key)}</Link></li>
+        {ADMIN_PAGES.filter((page) => allowed(page, permissions)).map(({ href, label }) => (
+          <li key={href}><Link href={href} aria-current={here === href ? 'page' : undefined}>{t(label)}</Link></li>
         ))}
       </ul>
     </nav>

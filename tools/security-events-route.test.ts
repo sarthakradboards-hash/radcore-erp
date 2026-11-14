@@ -17,7 +17,8 @@ const as = (permissions: string[]): Principal => ({ kind: 'user', userId: random
 
 it("mounts lib-platform's admin audit routes from its route file", () => {
   expect(platform.map((r) => `${r.contract.method} ${r.contract.path}`))
-    .toEqual(expect.arrayContaining(['GET /admin/audit', 'GET /admin/audit/tables', 'GET /admin/security-events']));
+    .toEqual(expect.arrayContaining(['GET /admin/audit', 'GET /admin/audit/tables', 'GET /admin/security-events',
+      'GET /exports/:id', 'POST /exports/:id/download']));
 });
 
 describe.skipIf(!url)('GET /admin/security-events', () => {

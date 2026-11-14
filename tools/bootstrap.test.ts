@@ -1,14 +1,17 @@
 // RAD-32 (M1-14, ADR-004 §3, RC-021): the first admin, on a real PostgreSQL as the runtime login. The command invites
 // SEED_ADMIN_EMAIL once ever, with no password printed or logged anywhere, and can re-issue the invite only until
 // someone has accepted it. Each test gets a freshly migrated database of its own: the record is one per database.
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { loadConfig } from '@radcore/lib-platform';
-import { createDatabase } from '@radcore/lib-platform/runtime';
+import { createDatabase, loadPrincipal, runInTransaction } from '@radcore/lib-platform/runtime';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import { migrate } from '../packages/db/src/migrate.ts';
+import { createAccount } from '../packages/lib-platform/src/auth/account.ts';
 import { bootstrapAdmin, runBootstrapAdmin } from '../packages/lib-platform/src/auth/bootstrap.ts';
+import type { Lockout } from '../packages/lib-platform/src/auth/lockout.ts';
+import { createPasswords } from '../packages/lib-platform/src/auth/passwords.ts';
 import type { Database } from '../packages/db/src/schema.ts';
 import type { Mail } from '../packages/lib-platform/src/mail.ts';
 import { ensureLogins } from './db-logins.ts';
@@ -69,21 +72,38 @@ const recorder = () => {
 const tokenIn = (m: Mail | undefined) => /\/invite#token=([A-Za-z0-9_-]{16,512})$/m.exec(m?.text ?? '')?.[1] ?? '';
 
 describe.skipIf(!adminUrl)('the first admin', { timeout: 60_000 }, () => {
-  it('invites SEED_ADMIN_EMAIL once, with the link only in the email, and gives the role hook the new user', async () => {
+  it('invites SEED_ADMIN_EMAIL once, with the link only in the email, as the admin', async () => {
     await withDatabase(async ({ db, sql }) => {
       const { sent, mailer } = recorder();
-      const assignRole = vi.fn(async () => undefined);
-      const done = await bootstrapAdmin(db, { email: SEED, reissue: false, mailer, publicOrigin: ORIGIN, assignRole });
+      const done = await bootstrapAdmin(db, { email: SEED, reissue: false, mailer, publicOrigin: ORIGIN });
       expect(done).toEqual({ outcome: 'invited', to: 'o…n@example.in' });
-      const [user] = await sql<{ id: string; email: string; status: string }>('select id, email, status from radcore.users');
-      expect([user?.email, user?.status]).toEqual(['owner.person@example.in', 'invited']);
-      expect(assignRole).toHaveBeenCalledWith(expect.anything(), user?.id);
+      const [user] = await sql<{ email: string; status: string; role: string }>('select email, status, role from radcore.users');
+      expect([user?.email, user?.status, user?.role]).toEqual(['owner.person@example.in', 'invited', 'admin']);
       expect(sent.map((m) => m.to)).toEqual(['owner.person@example.in']);
       const token = tokenIn(sent[0]);
       expect(sent[0]?.text).toContain(`${ORIGIN}/invite#token=${token}`);
       expect(await sql('select token_hash, sent_at is not null as sent from radcore.invites')).toEqual([{ token_hash: sha256(token), sent: true }]);
       expect(JSON.stringify(done)).not.toContain(token);
       expect(await sql('select key from radcore.bootstrap')).toEqual([{ key: 'first_admin' }]);
+    });
+  });
+
+  // RC-021 (RAD-35): v1 could create the first admin locked out. Here the invite gives them the admin role, and once
+  // they've set their password they're an active person holding every admin key, read fresh as any request reads them.
+  it('makes the first admin an admin: once they accept, they sign in holding every admin key, not locked out (RC-021)', async () => {
+    await withDatabase(async ({ db, sql }) => {
+      const { sent, mailer } = recorder();
+      await bootstrapAdmin(db, { email: SEED, reissue: false, mailer, publicOrigin: ORIGIN });
+      const [user] = await sql<{ id: string; role: string }>('select id, role from radcore.users');
+      expect(user?.role).toBe('admin');
+      const account = createAccount({ passwords: await createPasswords(), lockout: { succeeded: async () => undefined } as unknown as Lockout });
+      await runInTransaction(db, { readOnly: false, isolation: 'read committed' }, { kind: 'system', name: 'public', permissions: [] },
+        randomUUID(), (ctx) => account.acceptInvite(ctx, { token: tokenIn(sent[0]), password: 'a long enough first password' }));
+      const admin = await loadPrincipal(db)(`user:${user?.id ?? ''}`);
+      const [{ keys } = { keys: [] }] = await sql<{ keys: string[] }>(
+        "select array_agg(permission order by permission) as keys from radcore.role_grants where role = 'admin'");
+      expect(admin).toMatchObject({ kind: 'user', userId: user?.id, role: 'admin', ownScope: [] });
+      expect(admin?.permissions).toEqual(expect.arrayContaining([...keys, 'users:write', 'roles:write']));
     });
   });
 

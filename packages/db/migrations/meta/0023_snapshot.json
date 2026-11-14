@@ -1,5 +1,5 @@
 {
-  "id": "3130ad4a-0d32-4118-939e-ebd20a10769d",
+  "id": "24d84d16-84a0-48d2-bb27-7e708079b43e",
   "prevId": "386b0a13-0390-4557-900c-1d8f6d809895",
   "version": "7",
   "dialect": "postgresql",
@@ -257,6 +257,128 @@
         "ck_bootstrap_key": {
           "name": "ck_bootstrap_key",
           "value": "\"radcore\".\"bootstrap\".\"key\" = 'first_admin'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.exports": {
+      "name": "exports",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filter": {
+          "name": "filter",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "rows": {
+          "name": "rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "store_key": {
+          "name": "store_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure": {
+          "name": "failure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_exports_store_key": {
+          "name": "ux_exports_store_key",
+          "columns": [
+            {
+              "expression": "store_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_exports_kind": {
+          "name": "ck_exports_kind",
+          "value": "\"radcore\".\"exports\".\"kind\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'"
+        },
+        "ck_exports_status": {
+          "name": "ck_exports_status",
+          "value": "\"radcore\".\"exports\".\"status\" in ('queued', 'ready', 'failed')"
+        },
+        "ck_exports_failure": {
+          "name": "ck_exports_failure",
+          "value": "(\"radcore\".\"exports\".\"status\" = 'failed') = (\"radcore\".\"exports\".\"failure\" is not null)\n    and (\"radcore\".\"exports\".\"failure\" is null or \"radcore\".\"exports\".\"failure\" in ('too_large', 'failed'))"
+        },
+        "ck_exports_ready": {
+          "name": "ck_exports_ready",
+          "value": "(\"radcore\".\"exports\".\"status\" = 'ready') = (\"radcore\".\"exports\".\"store_key\" is not null)\n    and ((\"radcore\".\"exports\".\"status\" = 'ready') = (\"radcore\".\"exports\".\"rows\" is not null)) and (\"radcore\".\"exports\".\"rows\" is null or \"radcore\".\"exports\".\"rows\" >= 0)"
+        },
+        "ck_exports_store_key": {
+          "name": "ck_exports_store_key",
+          "value": "\"radcore\".\"exports\".\"store_key\" is null or \"radcore\".\"exports\".\"store_key\" ~ '^export/[0-9a-f-]{36}$'"
         }
       },
       "isRLSEnabled": false
@@ -920,150 +1042,6 @@
         "ck_pending_sign_ins_token_hash": {
           "name": "ck_pending_sign_ins_token_hash",
           "value": "\"radcore\".\"pending_sign_ins\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.public_links": {
-      "name": "public_links",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "uses_left": {
-          "name": "uses_left",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_by": {
-          "name": "revoked_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_public_links_token_hash": {
-          "name": "ux_public_links_token_hash",
-          "columns": [
-            {
-              "expression": "token_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_public_links_action_record_id": {
-          "name": "ix_public_links_action_record_id",
-          "columns": [
-            {
-              "expression": "action",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_public_links_action": {
-          "name": "ck_public_links_action",
-          "value": "\"radcore\".\"public_links\".\"action\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service).[a-z][a-z0-9_]*$'"
-        },
-        "ck_public_links_token_hash": {
-          "name": "ck_public_links_token_hash",
-          "value": "\"radcore\".\"public_links\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
-        },
-        "ck_public_links_uses_left": {
-          "name": "ck_public_links_uses_left",
-          "value": "\"radcore\".\"public_links\".\"uses_left\" is null or \"radcore\".\"public_links\".\"uses_left\" >= 0"
-        },
-        "ck_public_links_revoked": {
-          "name": "ck_public_links_revoked",
-          "value": "(\"radcore\".\"public_links\".\"revoked_at\" is null) = (\"radcore\".\"public_links\".\"revoked_by\" is null)"
         }
       },
       "isRLSEnabled": false

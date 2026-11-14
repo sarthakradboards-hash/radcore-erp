@@ -110,12 +110,13 @@ describe('the migration files', () => {
   });
 
   // ADR-002: L3 is off in migrate.ts for the advisory lock and the partition top-up under it (ADR-005 §8) only.
-  it('migrate.ts makes exactly two raw calls, the lock and the partition top-up', () => {
+  it('migrate.ts makes exactly three raw calls: the principal, the lock and the partition top-up', () => {
     const source = readFileSync(join(MIGRATIONS_FOLDER, '..', 'src', 'migrate.ts'), 'utf8');
     // \b, not \(, so a generic call such as client.query<Row>( counts too.
-    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query', '.query']);
-    expect(source.match(/query\('([^']*)'/g)).toEqual(["query('select pg_advisory_lock(hashtextextended($1, 0))'",
-      "query('select radcore.add_log_partitions($1)'"]);
+    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query', '.query', '.query']);
+    expect(source.match(/query\("[^"]*"\)|query\('[^']*'/g)).toEqual([
+      "query(\"select set_config('app.principal', 'system:migrate', false)\")",
+      "query('select pg_advisory_lock(hashtextextended($1, 0))'", "query('select radcore.add_log_partitions($1)'"]);
   });
 
   it("creates pg-boss's schema from pg-boss's own construction plan (ADR-002 §4)", () => {
@@ -152,11 +153,64 @@ describe.skipIf(!url)('the migration runner', { timeout: 30_000 }, () => {
     });
   });
 
+  // RAD-35 (the auditor and the coordinator on #130): 0024_roles makes users.role NOT NULL as an upgrade (ADR-004). A
+  // database that already has its first admin, such as a developer's after the bootstrap, takes it with them made admin;
+  // one with anyone else still without a role stops, saying so, rather than inventing one.
+  describe('0024_roles on a database that already has people', () => {
+    const FIRST = '00000000-0000-4000-8000-000000000001';
+    const upTo = readJournal(MIGRATIONS_FOLDER).entries.findIndex((e) => e.tag.endsWith('_roles'));
+    // A database migrated as the release before 0024 had it, holding its first admin and `others` more people.
+    const before = async (db: string, others: number) => {
+      expect(upTo).toBeGreaterThan(0);
+      await withFolder(upTo, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
+      const more = Array.from({ length: others }, (_, i) => `, ('00000000-0000-4000-8000-00000000010${String(i)}', 'p${String(i)}@example.in', 'Person')`);
+      await query(db, `begin;
+        set local app.principal = 'system:test';
+        insert into radcore.users (id, email, display_name) values ('${FIRST}', 'first.admin@example.in', 'First admin')${more.join('')};
+        insert into radcore.bootstrap (key, user_id) values ('first_admin', '${FIRST}');
+        commit`);
+    };
+
+    it('makes the first admin an admin, then the role required', async () => {
+      await withDatabase(async (db) => {
+        await before(db, 0);
+        await migrate(db);
+        expect(await query(db, 'select email, role, role_since is not null as since from radcore.users'))
+          .toEqual([{ email: 'first.admin@example.in', role: 'admin', since: true }]);
+        expect(await query(db, "select is_nullable from information_schema.columns where table_schema = 'radcore' and table_name = 'users' and column_name = 'role'"))
+          .toEqual([{ is_nullable: 'NO' }]);
+      });
+    });
+
+    it('stops, naming how many, when anyone else has no role, and applies none of it', async () => {
+      await withDatabase(async (db) => {
+        await before(db, 2);
+        // drizzle wraps the database's error; its cause is the migration's own message.
+        await expect(migrate(db)).rejects.toMatchObject({ cause: { message: expect.stringMatching(/^2 people have no role/) } });
+        expect(await applied(db)).toBe(upTo);
+        expect(await query(db, "select count(*)::int as n from information_schema.columns where table_schema = 'radcore' and table_name = 'users' and column_name = 'role'"))
+          .toEqual([{ n: 0 }]);
+      });
+    });
+  });
+
   it('is forward-only: an earlier release on a newer database changes nothing', async () => {
     await withDatabase(async (db) => {
       await migrate(db);
       await withFolder(1, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
       expect(await applied(db)).toBe(MIGRATIONS);
+    });
+  });
+
+  it("stamps a seeding migration's rows as system:migrate, even when the URL brings its own options (RAD-82)", async () => {
+    await withDatabase(async (db) => {
+      // Its own `options`, as the test setup's owner URL has (`-c role=…`): they used to replace the principal's.
+      const withOptions = new URL(db);
+      withOptions.searchParams.set('options', '-c lock_timeout=6000');
+      const seed = "insert into radcore.settings (key, value) values ('platform.migrate_probe', '1'::jsonb);";
+      await withFolder(MIGRATIONS, [seed], (dir) => migrate(withOptions.toString(), { migrationsFolder: dir }));
+      expect(await query(db, "select created_by, updated_by from radcore.settings where key = 'platform.migrate_probe'"))
+        .toEqual([{ created_by: 'system:migrate', updated_by: 'system:migrate' }]);
     });
   });
 

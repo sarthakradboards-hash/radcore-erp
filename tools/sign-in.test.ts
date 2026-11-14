@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import { AppError, loadConfig, type Ctx } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { testPassword, testSettings } from '@radcore/test-helpers';
+import { testPassword, testRateLimitKey, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createLockout, LOCKOUT } from '../packages/lib-platform/src/auth/lockout.ts';
@@ -30,7 +30,7 @@ const PASSWORD = 'a quiet harbour at dawn';
 describe.skipIf(!url)('the sign-in credential step', () => {
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   const db = createDatabase(pool);
-  const store = createLimiterStore(database(url ?? NO_DATABASE), log);
+  const store = createLimiterStore(database(url ?? NO_DATABASE), log, testRateLimitKey());
   afterAll(async () => {
     await store.end();
     await pool.end();
@@ -45,7 +45,7 @@ describe.skipIf(!url)('the sign-in credential step', () => {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
       const { rows: [u] } = await c.query<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
-        password_set_at) values ($1, 'Test', $2, $3, case when $3::text is null then null else now() end) returning id`,
+        password_set_at, role) values ($1, 'Test', $2, $3, case when $3::text is null then null else now() end, 'sales') returning id`,
       [email, status, passwordHash]);
       await c.query('commit');
       return { email, id: u?.id ?? '' };

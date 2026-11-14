@@ -21,7 +21,8 @@ export type Auth = Awaited<ReturnType<typeof createAuth>>;
 
 /** `now` is for tests, which never read the run date (RC-156): the TOTP check's clock. */
 export async function createAuth(config: Config, log: Logger, { now }: { now?: () => Date } = {}) {
-  const store = createLimiterStore(config.database, log);
+  if (config.rateLimitKey === null) throw new Error('RATE_LIMIT_KEY is not set: the api needs it for its rate limits');
+  const store = createLimiterStore(config.database, log, config.rateLimitKey);
   const passwords = await createPasswords();
   const lockout = createLockout(store.limiter({ prefix: 'sign-in', ...LOCKOUT }));
   const credentials = createSignIn({ passwords, lockout, secondFactor: secondFactorStatus });

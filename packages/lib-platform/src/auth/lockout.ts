@@ -2,8 +2,7 @@
 // whether or not an account has it, in the shared store. Each attempt is counted, atomically, before the password is
 // checked, so parallel attempts can't all slip past a check made before any of them was counted. A success clears
 // the count. A lock is short and ends on its own; a password reset clears it; an admin can lift it. The store keeps
-// the address's SHA-256, never the address.
-import { createHash } from 'node:crypto';
+// the address's HMAC under RATE_LIMIT_KEY (RAD-73), never the address.
 import { normaliseEmail } from '@radcore/lib-common';
 import type { Limiter } from '../db/client.ts';
 
@@ -17,7 +16,8 @@ export type Lockout = {
   succeeded(email: string): Promise<void>;
 };
 
-const keyOf = (email: string) => createHash('sha256').update(normaliseEmail(email)).digest('hex');
+// The store hashes it (RAD-73); one address, however it's typed, is one key.
+const keyOf = (email: string) => `email:${normaliseEmail(email)}`;
 
 export function createLockout(limiter: Limiter): Lockout {
   return Object.freeze({

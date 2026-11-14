@@ -3,6 +3,7 @@
 // searched and paged on the "server" side over the `{ items, next }` envelope, after a short delay. No request is made.
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { SearchBox } from '../../components/ui/form/search-box.tsx';
 import { Picker } from '../../components/ui/picker/picker.tsx';
 import { DataTable, type Column, type Sort } from '../../components/ui/table/data-table.tsx';
 import { useSavedView } from '../../components/ui/table/saved-view.ts';
@@ -68,6 +69,7 @@ export function Lists({ initialView }: { initialView: View }) {
     enabled: view === 'board',
   });
 
+  const [searched, setSearched] = useState('');
   const [query, setQuery] = useState('');
   const [party, setParty] = useState<Party | null>(null);
   const found = useQuery({
@@ -105,6 +107,11 @@ export function Lists({ initialView }: { initialView: View }) {
           {(board.data?.items ?? []).map((p) => <li key={p.id}>{p.name}<br />{p.city}</li>)}
         </ul>
       )}
+
+      <h2>Search</h2>
+      <p>Applies on Show. Text typed before the scripts load is kept.</p>
+      <SearchBox label="Search parties" action="Show" onSearch={setSearched} />
+      <p>Searched: <output aria-label="Searched">{searched}</output></p>
 
       <h2>Pickers</h2>
       <p>Type part of a name or number (try 2050). Arrow keys only move the highlight; Enter or a click chooses.</p>

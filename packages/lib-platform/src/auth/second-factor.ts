@@ -27,7 +27,7 @@ import type { BeforeDeps } from '../route.ts';
 import type { Secrets } from '../secrets.ts';
 import { recordSecurityEvent } from '../security-events.ts';
 import type { Passwords } from './passwords.ts';
-import { cookieOf, finishPendingSignIn, pendingSignIn } from './sessions.ts';
+import { cookieOf, endSessionsOf, finishPendingSignIn, pendingSignIn } from './sessions.ts';
 
 /** Five tries per account in 15 minutes, then 15 minutes' wait: a 6-digit code can't be guessed in reach of it. */
 export const SECOND_FACTOR_ATTEMPTS = Object.freeze({ points: 5, windowSeconds: 900, blockSeconds: 900 });
@@ -73,16 +73,18 @@ const signedInUser = (ctx: Ctx): string => {
 };
 
 /** A `before` step: whose factor (the pending sign-in's, or the signed-in person's), read with no lock, then opened
- * outside the transaction. */
-async function openFactor(deps: BeforeDeps, whose: 'pending' | 'signed_in', confirmed: boolean): Promise<Opened> {
+ * outside the transaction. A locked account isn't opened: the service refuses it anyway, so a guess past the lock
+ * costs no KMS call (the auditor on #132). */
+async function openFactor(deps: BeforeDeps, attempts: Limiter, whose: 'pending' | 'signed_in', confirmed: boolean):
+  Promise<Opened> {
   const found = await deps.read(async (ctx) => {
     const userId = whose === 'pending' ? (await pendingSignIn(ctx, cookieOf(ctx), { lock: false })).userId : signedInUser(ctx);
     const [row] = await platformTx(ctx).select({ id: secondFactors.id, secret: secondFactors.secret }).from(secondFactors)
       .where(and(eq(secondFactors.userId, userId), confirmed ? isNotNull(secondFactors.confirmedAt) : isNull(secondFactors.confirmedAt)))
       .limit(1);
-    return row;
+    return row === undefined ? undefined : { ...row, userId };
   });
-  if (found === undefined) return null;
+  if (found === undefined || (await attempts.wait(found.userId)) > 0) return null;
   return { factorId: found.id, ciphertext: found.secret, secret: await factorSecrets(deps.secrets).open(found.secret, found.id) };
 }
 
@@ -137,7 +139,7 @@ export function createSecondFactor({ passwords, attempts, now = () => new Date()
   return Object.freeze({
     /** POST /sign-in/second-factor's `before`: a TOTP code needs the secret; a recovery code doesn't. */
     openForVerify: async (input: In<typeof verifySecondFactor>, deps: BeforeDeps): Promise<Opened> =>
-      (input.kind === 'totp' ? openFactor(deps, 'pending', true) : null),
+      (input.kind === 'totp' ? openFactor(deps, attempts, 'pending', true) : null),
 
     /** POST /sign-in/second-factor: a TOTP code or a recovery code finishes the pending sign-in. A refusal is recorded,
      * and that record commits though the answer is a refusal. */
@@ -183,7 +185,7 @@ export function createSecondFactor({ passwords, attempts, now = () => new Date()
 
     /** POST /sign-in/second-factor/enrolment/confirm's `before`: the unconfirmed factor's secret. */
     openForConfirm: async (_input: In<typeof confirmSecondFactorEnrolment>, deps: BeforeDeps): Promise<Opened> =>
-      openFactor(deps, 'pending', false),
+      openFactor(deps, attempts, 'pending', false),
 
     /** POST /sign-in/second-factor/enrolment/confirm: the new factor's first code. It confirms the factor, signs the
      * person in and answers their recovery codes. */
@@ -203,14 +205,15 @@ export function createSecondFactor({ passwords, attempts, now = () => new Date()
 
     /** POST /me/second-factor/recovery-codes's `before`: the signed-in person's confirmed factor. */
     openForNewCodes: async (_input: In<typeof newRecoveryCodes>, deps: BeforeDeps): Promise<Opened> =>
-      openFactor(deps, 'signed_in', true),
+      openFactor(deps, attempts, 'signed_in', true),
 
     /** POST /me/second-factor/recovery-codes: signed in, with a current code; the old set stops working. */
     async newRecoveryCodes(ctx: Ctx, { code }: In<typeof newRecoveryCodes>, { before }: { before: Opened }):
       Promise<Out<typeof newRecoveryCodes>> {
       const userId = signedInUser(ctx);
-      if (before === null) throw new AppError('no_second_factor', 'Set up your authenticator app first');
+      // The lock first: a locked account's `before` opened nothing, so null means locked as much as no factor.
       await tryCount(userId);
+      if (before === null) throw new AppError('no_second_factor', 'Set up your authenticator app first');
       if (!(await acceptCode(ctx, before, code))) throw invalid();
       const codes = await replaceCodes(ctx, userId);
       await recordSecurityEvent(ctx, { kind: 'second_factor_changed', detail: { change: 'recovery_codes' } }, { userId, device: null });
@@ -218,7 +221,8 @@ export function createSecondFactor({ passwords, attempts, now = () => new Date()
       return { recoveryCodes: codes };
     },
 
-    /** POST /admin/users/:id/second-factor/remove (users:write): someone else's factor and codes, after a lost phone.
+    /** POST /admin/users/:id/second-factor/remove (users:write): someone else's factor and codes, after a lost phone,
+     * and every session they have.
      * shortcut: the typed reason isn't kept yet; it joins the audit row when RAD-35/36 add how admin reasons are kept. */
     async remove(ctx: Ctx, { id }: In<typeof removeSecondFactor>): Promise<Out<typeof removeSecondFactor>> {
       if (ctx.principal.kind === 'user' && ctx.principal.userId === id) {
@@ -229,6 +233,9 @@ export function createSecondFactor({ passwords, attempts, now = () => new Date()
       if (removed.length === 0) throw new AppError('no_second_factor', 'This person has no second factor to remove');
       await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, id));
       await recordSecurityEvent(ctx, { kind: 'second_factor_changed', detail: { change: 'removed' } }, { userId: id, device: null });
+      // The lost phone may still hold a signed-in session (the architect on #132). Ended by an admin, so 'admin': the
+      // removed event just above says why, and a reason of its own would need a migration to the sessions CHECK.
+      await endSessionsOf(ctx, id, 'admin');
       return {};
     },
   });

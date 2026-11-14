@@ -13,6 +13,8 @@ const settings = () => [
   'NODE_ENV=development', 'APP_ENV=development', 'PUBLIC_ORIGIN=http://127.0.0.1:3000', 'TRUST_PROXY=127.0.0.1',
   'DB_POOL_MAX=10', 'DB_POOL_WAIT_MS=5000', 'DB_STATEMENT_TIMEOUT_MS=15000', 'DB_LOCK_TIMEOUT_MS=5000',
   'DB_IDLE_TX_TIMEOUT_MS=10000', 'S3_BUCKET_FILES=radcore-files', `SECRETS_LOCAL_KEY=${secret()}`,
+  // The rate-limit store's HMAC key (RAD-73).
+  `RATE_LIMIT_KEY=${secret()}`,
   'TURNSTILE_SITE_KEY=1x00000000000000000000AA', 'LOG_LEVEL=info',
   // Where web reaches the api (ADR-004 §5): the browser's /api through Next's dev rewrite, and the server's /me read.
   // The api's own dev port (API_PORT, default 3001).

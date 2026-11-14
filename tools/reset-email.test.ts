@@ -50,8 +50,8 @@ describe.skipIf(!url)('the password-reset email job', () => {
   }
   async function setup(fail = false) {
     const email = `user.${randomBytes(4).toString('hex')}@example.in`;
-    await asAdmin(`insert into radcore.users (email, display_name, status, password_hash, password_set_at)
-      values ($1, 'Test', 'active', '$argon2id$v=19$m=19456,t=2,p=1$x$y', now())`, [email]);
+    await asAdmin(`insert into radcore.users (email, display_name, status, password_hash, password_set_at, role)
+      values ($1, 'Test', 'active', '$argon2id$v=19$m=19456,t=2,p=1$x$y', now(), 'sales')`, [email]);
     const sent: Mail[] = [];
     const mailer = { send: vi.fn(async (m: Mail) => {
       if (fail) throw new Error('SES did not answer');

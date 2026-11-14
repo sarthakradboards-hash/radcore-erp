@@ -10,7 +10,11 @@ import type { Settings } from './settings.ts';
 export type Principal =
   | { readonly kind: 'user'; readonly userId: string; readonly permissions: readonly string[];
       /** The sign-in session the request came with (RAD-34): "this device" in the sessions list. */
-      readonly sessionId?: string }
+      readonly sessionId?: string;
+      /** The person's role (RAD-35). */
+      readonly role?: string;
+      /** Of `permissions`, those the role holds only over the person's own records (RAD-35); the rest reach all. */
+      readonly ownScope?: readonly string[] }
   | { readonly kind: 'system'; readonly name: string; readonly permissions: readonly string[] }
   /** A public link's holder (RAD-41): only the link's one action, on its one record. `permissions` is always empty. */
   | { readonly kind: 'link'; readonly linkId: string; readonly action: string; readonly recordId: string;
@@ -30,6 +34,10 @@ export type Jobs = {
  * transaction. Checking an upload and the server's own put reach S3, so they run outside one (a job, or after commit).
  */
 export type Files = Pick<FileStore, 'presignUpload' | 'downloadUrl'>;
+
+/** A record as record scope reads it (RAD-35): who owns it, named as audit rows name a principal (`user:<id>`), which
+ * is usually its `created_by`. */
+export type Owned = { readonly owner: string };
 
 /** One sign-in cookie: the token the request already holds, and a change applied once the transaction commits. */
 export type SignInCookie = {
@@ -59,6 +67,15 @@ export type Ctx = {
   readonly cookie?: SessionCookie;
   /** `ctx.files.presignUpload(kind, type)` and `ctx.files.downloadUrl(key, name)`: links, never bytes. */
   readonly files: Files;
+  /**
+   * Record scope (RAD-35, ADR-001 §6a): may this principal use `permission` on `record`? A system principal needs the
+   * key and reaches every record; a person needs the key, and owns the record when their role holds it only at `own`.
+   * Without a record it asks only whether the key is held at all.
+   */
+  can(permission: string, record?: Owned): boolean;
+  /** As `can`, but a record outside the principal's scope throws not_found: the same answer as no such record, so
+   * nobody learns that a record they may not see exists (404, not 403; RAD-7). */
+  see(permission: string, record: Owned): void;
 };
 
 /** How audit rows and `app.principal` name a principal: `user:<id>` or `system:<name>`. */

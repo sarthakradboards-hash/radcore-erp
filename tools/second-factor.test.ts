@@ -7,7 +7,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { AppError, loadConfig, RecordedRefusal, type BeforeDeps, type Ctx, type Principal } from '@radcore/lib-platform';
 import { SECURITY_EVENT_ROUTES } from '@radcore/lib-platform/contract';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { fakeClock, testPassword, testSettings } from '@radcore/test-helpers';
+import { fakeClock, testPassword, testRateLimitKey, testSettings } from '@radcore/test-helpers';
 import { Secret, URI } from 'otpauth';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -41,9 +41,15 @@ describe.skipIf(!url)('the second sign-in factor', () => {
   const pool = new pg.Pool({ connectionString: url, max: 3 });
   const db = createDatabase(pool);
   const cfg = config(url ?? NO_DATABASE);
-  const store = createLimiterStore(cfg.database, log);
+  const store = createLimiterStore(cfg.database, log, testRateLimitKey());
   const passwordsReady = createPasswords();
-  const secrets = createSecrets(cfg.secrets);
+  // The secrets library, counting its decrypts: each is a KMS call in production.
+  const real = createSecrets(cfg.secrets);
+  const decrypts = { n: 0 };
+  const secrets = { ...real, keyId: real.keyId, decrypt: async (...args: Parameters<typeof real.decrypt>) => {
+    decrypts.n += 1;
+    return real.decrypt(...args);
+  } };
   afterAll(async () => {
     await store.end();
     await pool.end();
@@ -77,7 +83,7 @@ describe.skipIf(!url)('the second sign-in factor', () => {
       lockout: createLockout(store.limiter({ prefix: `testpw${prefix}`, ...LOCKOUT })) }));
     const email = `admin.${prefix}@example.in`;
     const [user] = await asAdmin<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
-      password_set_at) values ($1, 'Asha Rao', 'active', $2, now()) returning id`, [email, await passwords.hash(PASSWORD)]);
+      password_set_at, role) values ($1, 'Asha Rao', 'active', $2, now(), 'admin') returning id`, [email, await passwords.hash(PASSWORD)]);
     const userId = user?.id ?? '';
     const device = `test ${prefix}`;
     // One browser: what it holds of each cookie, kept as the handler would set and clear them.
@@ -226,6 +232,11 @@ describe.skipIf(!url)('the second sign-in factor', () => {
     expect(await outcome(s.verify({ kind: 'totp', code: codeAt(secret, s.clock.now()) })))
       .toBe('recorded:account_locked');
     expect((await s.events()).at(-1)).toEqual({ kind: 'sign_in_failed', detail: { reason: 'account_locked' } });
+    // Once locked, a guess opens nothing: no KMS call is spent on it (the auditor on #132).
+    const before = decrypts.n;
+    expect(await outcome(s.verify({ kind: 'totp', code: codeAt(secret, s.clock.now()) }))).toBe('recorded:account_locked');
+    expect(await outcome(s.newCodes(codeAt(secret, s.clock.now())))).toBe('account_locked');
+    expect(decrypts.n).toBe(before);
   });
 
   it('makes new recovery codes for a signed-in person with a current code; the old ones stop working', async () => {
@@ -245,14 +256,20 @@ describe.skipIf(!url)('the second sign-in factor', () => {
     expect(await outcome(other.newCodes('123456'))).toBe('no_second_factor');
   });
 
-  it("lets an admin remove someone else's factor, so they enrol again, but not their own", async () => {
+  it("lets an admin remove someone else's factor, ending their sessions, so they enrol again, but not their own", async () => {
     const s = await setup();
     await s.enrol();
+    const live = async () => asAdmin<{ ended_reason: string | null }>('select ended_reason from radcore.sessions where user_id = $1', [s.userId]);
+    expect(await live()).toEqual([{ ended_reason: null }]);
     const admin: Principal = { kind: 'user', userId: (await setup()).userId, permissions: ['users:write'] };
     const reason = 'Lost their phone';
     expect(await outcome(run(s.me(), (ctx) => s.factor.remove(ctx, { id: s.userId, reason })))).toBe('own_account');
     expect(await outcome(run(admin, (ctx) => s.factor.remove(ctx, { id: s.userId, reason })))).toBe('ok');
     expect(await asAdmin('select 1 from radcore.recovery_codes where user_id = $1', [s.userId])).toEqual([]);
+    // The lost phone's session ends with it (the architect on #132).
+    expect(await live()).toEqual([{ ended_reason: 'admin' }]);
+    expect((await s.events()).slice(-2)).toEqual([{ kind: 'second_factor_changed', detail: { change: 'removed' } },
+      { kind: 'session_ended', detail: { reason: 'admin' } }]);
     expect(await run(s.me(), (ctx) => secondFactorStatus(ctx, s.userId))).toBe('enrolment_required');
     expect(await s.password()).toEqual({ next: 'enrol_second_factor' });
     expect(await outcome(run(admin, (ctx) => s.factor.remove(ctx, { id: s.userId, reason })))).toBe('no_second_factor');

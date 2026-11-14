@@ -10,7 +10,8 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { trigramIndex } from '../packages/db/src/columns.ts';
 import { after, escapeLike, onDates, onIndiaDays, searchWords } from '../packages/db/src/lists.ts';
-import { decodeCursor, encodeCursor, momentKey, sortedCursor } from '../packages/lib-platform/src/lists.ts';
+import type { Ctx, Principal } from '../packages/lib-platform/src/ctx.ts';
+import { decodeCursor, encodeCursor, listScope, momentKey, sortedCursor } from '../packages/lib-platform/src/lists.ts';
 import { z } from 'zod';
 
 const fixture = pgSchema('test_list_fixture');
@@ -55,6 +56,17 @@ describe('the SQL each condition builds', () => {
     expect(show(onIndiaDays(entries.at, { from: '2026-11-07', to: '2026-11-07' }))).toEqual({
       sql: '("test_list_fixture"."entries"."at" >= $1 and "test_list_fixture"."entries"."at" < $2)',
       params: ['2026-11-06T18:30:00.000Z', '2026-11-07T18:30:00.000Z'] });
+  });
+
+  // RAD-35 (the architect on RAD-35): a list keeps an own-scoped person to their own rows, whatever else it filters.
+  it("adds owner = me for a key held only over the person's own records, and nothing for every record", () => {
+    const as = (principal: Principal) => ({ principal }) as unknown as Ctx;
+    const own: Principal = { kind: 'user', userId: 'u-1', permissions: ['notes:read'], ownScope: ['notes:read'] };
+    expect(show(listScope(as(own), 'notes:read', entries.note))).toEqual({
+      sql: '"test_list_fixture"."entries"."note" = $1', params: ['user:u-1'] });
+    expect(listScope(as({ ...own, ownScope: [] }), 'notes:read', entries.note)).toBeUndefined();
+    expect(listScope(as({ kind: 'system', name: 'nightly', permissions: ['notes:read'] }), 'notes:read', entries.note)).toBeUndefined();
+    expect(() => listScope(as({ ...own, permissions: [] }), 'notes:read', entries.note)).toThrow(expect.objectContaining({ code: 'forbidden' }));
   });
 
   it('starts a newest-first page strictly after the last row\'s sort key', () => {

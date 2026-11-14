@@ -63,7 +63,7 @@ describe('the sign-in and own-session contracts', () => {
   });
 
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
-    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
+    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['POST /me/second-factor/recovery-codes', 'session:read'], ['GET /me/sessions', 'session:read'],
       ['DELETE /me/sessions/:id', 'session:read']]);
@@ -251,11 +251,12 @@ describe('the admin contracts', () => {
       'DELETE /admin/sessions/:id': ['session_ended'],
       'POST /admin/users/:id/sessions/end': ['session_ended'],
       'POST /me/second-factor/recovery-codes': ['second_factor_changed'],
-      'POST /admin/users/:id/second-factor/remove': ['second_factor_changed'],
+      'POST /admin/users/:id/second-factor/remove': ['second_factor_changed', 'session_ended'],
       'POST /files/photo/:id/download': ['download'],
       'POST /files/resume/:id/download': ['download'],
       'POST /files/statement/:id/download': ['download'],
       'POST /files/import/:id/download': ['download'],
+      'POST /exports/:id/download': ['download'],
     });
   });
 

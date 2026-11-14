@@ -17,6 +17,7 @@ export { createAuth, type Auth } from './auth/auth.ts';
 export { runBootstrapAdmin } from './auth/bootstrap.ts';
 export { newPasswordCheckFor } from './auth/new-password.ts';
 export { passwordResetEmailJob } from './auth/reset-email.ts';
+export { loadPrincipal } from './auth/principal.ts';
 export { authenticateSession } from './auth/sessions.ts';
 export { mailerFor } from './mail.ts';
 export { createDatabase, createHealthCheck } from './db/client.ts';
@@ -32,8 +33,7 @@ export type AppJobQueue = Omit<JobQueue, 'send' | 'sendAfter' | 'sendThrottled' 
 export const createJobQueue = (database: Config['database'], log: Logger): AppJobQueue => createPgBoss(database, log);
 export type { Logger } from './log.ts';
 
-// shortcut: no person can be loaded until RAD-35 (M1-17) provides the loader, so every job for a user is refused (fails
-// closed); the worker passes RAD-35's loader then.
+// A process that names no loader can run no job for a person: it fails closed. The worker passes loadPrincipal (RAD-35).
 const refuseEveryone: LoadPrincipal = async () => null;
 
 type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };
@@ -63,8 +63,8 @@ export async function runJobs(queue: AppJobQueue, jobs: readonly JobDefinition[]
 ): Promise<Stoppable> {
   // Each attempt is one write transaction as the job's principal, its job id as the request id: its writes commit
   // together or not at all, and audit rows name the job (ADR-001 §6a, RAD-44 step 3).
-  const open: OpenJob = (principal, jobId, work) =>
-    runInTransaction(db, { readOnly: false, isolation: 'read committed' }, principal, jobId, work, files);
+  const open: OpenJob = (principal, jobId, work, tx = { readOnly: false, isolation: 'read committed' }) =>
+    runInTransaction(db, tx, principal, jobId, work, files);
   await queue.start();
   for (const job of jobs) {
     const { deadLetter, ...settings } = job.settings;

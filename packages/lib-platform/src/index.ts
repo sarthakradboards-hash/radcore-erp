@@ -1,5 +1,7 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
-export { principalId, type Ctx, type Files, type Principal, type SessionCookie, type SignInCookie } from './ctx.ts';
+export { principalId, type Ctx, type Files, type Owned, type Principal, type SessionCookie, type SignInCookie } from './ctx.ts';
+export { roleNeedsSecondFactor } from './auth/principal.ts';
+export { assignRole } from './auth/roles.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export {
   createLink, linkMaxDays, linkPrincipal, linkUrl, listLinks, recordLinkAccess, revokeLink, useLink, type NewLink,
@@ -13,7 +15,7 @@ export {
   decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash, type ApprovalSpec,
   type ApprovalVersion, type Decision,
 } from './approvals.ts';
-export { decodeCursor, encodeCursor, isoMoment, momentKey, sortedCursor, type SortKey } from './lists.ts';
+export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
 export { defineRoute, type BeforeDeps, type Route } from './route.ts';
 export { csvWriter } from './export/csv.ts';
@@ -45,3 +47,5 @@ export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
   type WebhookVerifier,
 } from './webhooks.ts';
+export { EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows } from './export/engine.ts';
+export { defineExport, defineExportJob, exportOf, type ModuleExport } from './export/job.ts';

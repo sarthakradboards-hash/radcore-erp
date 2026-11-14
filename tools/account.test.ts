@@ -4,7 +4,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { testPassword, testSettings } from '@radcore/test-helpers';
+import { testPassword, testRateLimitKey, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createAccount } from '../packages/lib-platform/src/auth/account.ts';
@@ -29,7 +29,7 @@ const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 describe.skipIf(!url)('setting a password', () => {
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   const db = createDatabase(pool);
-  const store = createLimiterStore(database(url ?? NO_DATABASE), { info: () => undefined, error: () => undefined });
+  const store = createLimiterStore(database(url ?? NO_DATABASE), { info: () => undefined, error: () => undefined }, testRateLimitKey());
   afterAll(async () => {
     await store.end();
     await pool.end();
@@ -58,8 +58,8 @@ describe.skipIf(!url)('setting a password', () => {
     const outcome = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) =>
       (e instanceof AppError ? [e.code, ...e.issues.map((i) => i.code)].join(':') : String(e)));
     const user = async (status: 'invited' | 'active') => (await asAdmin<{ id: string }>(`insert into radcore.users (email,
-      display_name, status, password_hash, password_set_at) values ($1, 'Test', $2, $3,
-      case when $3::text is null then null else now() end) returning id`, [email, status,
+      display_name, status, password_hash, password_set_at, role) values ($1, 'Test', $2, $3,
+      case when $3::text is null then null else now() end, 'sales') returning id`, [email, status,
       status === 'active' ? await passwords.hash(OLD) : null]))[0]?.id ?? '';
     const link = async (table: 'invites' | 'password_resets', userId: string, expiresInSeconds = 3600) => {
       const token = randomBytes(32).toString('base64url');

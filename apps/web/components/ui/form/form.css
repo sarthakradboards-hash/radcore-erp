@@ -42,3 +42,5 @@
 .kit-radio > span { display: grid; }
 .kit-radio input { inline-size: 1.25rem; block-size: 1.25rem; margin-block-start: 0.125rem; }
 .kit-radio:has(input:disabled) { color: var(--text-muted); }
+
+.kit-search { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; }

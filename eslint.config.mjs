@@ -52,7 +52,7 @@ const msg = (tag, adr, text) => `[${tag}] ${text} (${adr}).`;
 const sel = (tag, adr, text) => (selector) => ({ selector, message: msg(tag, adr, text) });
 // Statement shapes, with \W+ between keywords so a comment or other separator doesn't hide them.
 const SQL_SHAPE = String.raw`/\bselect\b[\s\S]*\bfrom\b|\binsert\W+into\b|\bupdate\b[\s\S]*\bset\b|\bdelete\W+from\b|\bwith\b[\s\S]*\bas\W*\(|\b(create|alter|drop)\W+(or\W+replace\W+)?(table|view|index|trigger|function)\b|\btruncate\W+(table\b|\w+\W*$)|\bgrant\b[\s\S]*\b(on|to)\b/i`;
-const DEFINE = '/^define(Route|Webhook|Job|Export|Import|Approval)$/';
+const DEFINE = '/^define(Route|Webhook|Job|Export|ExportJob|Import|Approval)$/';
 const RAW_EXEC = '/^(execute|unsafe|query)$/';
 const L8 = msg('L8', 'ADR-002', `Outside calls and module loading go through ${OUTBOUND_CLIENT}`);
 const L8_MODULES = ['undici', 'axios', 'got', 'node-fetch', 'ws', 'http', 'https', 'http2', 'net', 'tls', 'dgram',

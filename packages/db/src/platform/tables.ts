@@ -70,11 +70,42 @@ export const users = radcoreTable('users', {
   passwordHash: text(),
   passwordSetAt: timestamp({ withTimezone: true }),
   status: text().notNull().default('invited'),
+  // The person's one role (RAD-35, the plan's page 4): every person has one, given when they're invited.
+  role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
+  // When the person gained their role (RAD-35): approval rules refuse a decider whose role is newer than the request.
+  roleSince: timestamp({ withTimezone: true }),
 }, (t) => [
   check('ck_users_status', sql`${t.status} in ('invited', 'active', 'disabled')`),
   // Active means a password is set; invited means none yet.
   check('ck_users_password', sql`(${t.status} = 'invited') = (${t.passwordHash} is null)`),
   uniqueIndex('ux_users_email_key').on(t.emailKey),
+  index('ix_users_role').on(t.role),
+]);
+
+/**
+ * Roles (RAD-35, M1-17; the plan's page 4): each person signs in with one. `key` never changes, and `name` is what
+ * people see. A role that needs the second sign-in factor says so (D-19). What a role may do is its grants.
+ */
+export const roles = radcoreTable('roles', {
+  key: text().primaryKey(),
+  name: boundedText({ max: 60 }).notNull(),
+  description: boundedText({ max: 500 }).notNull(),
+  secondFactorRequired: boolean().notNull().default(false),
+}, (t) => [check('ck_roles_key', sql`${t.key} ~ '^[a-z][a-z_]{1,31}$'`)]);
+
+/**
+ * What a role may do (RAD-35, ADR-001 §6a): one permission key each, at a scope. `all` reaches every record of that
+ * kind; `own` only the records the person owns (ctx.can), so one key can mean "my leads" for one role and "every lead"
+ * for another. The admin's grants hold every key at `all`.
+ */
+export const roleGrants = radcoreTable('role_grants', {
+  role: text().notNull().references(() => roles.key, { onDelete: 'cascade' }),
+  permission: text().notNull(),
+  scope: text().notNull(),
+}, (t) => [
+  primaryKey({ name: 'pk_role_grants', columns: [t.role, t.permission] }),
+  check('ck_role_grants_permission', sql`${t.permission} ~ '^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$'`),
+  check('ck_role_grants_scope', sql`${t.scope} in ('all', 'own')`),
 ]);
 
 /**
@@ -219,6 +250,34 @@ export const files = radcoreTable('files', {
   check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
   // A ready file has its checked size.
   check('ck_files_size', sql`(${t.status} <> 'ready' or ${t.size} is not null) and (${t.size} is null or ${t.size} > 0)`),
+]);
+
+/**
+ * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts. Its owner is `created_by`, the
+ * principal who started it, and only they may read its status or download it. The export job fills it after its own
+ * transaction: `ready` with the row count and the file's store key, or `failed` with why. An export is complete or it
+ * fails, never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or when the export volume fills.
+ * - `kind` is the list, `<module>.<name>`, which names the module's row function.
+ * - `filter` is the list's own filter as the person sent it, checked by that list's schema when the job runs.
+ */
+export const dataExports = radcoreTable('exports', {
+  id: id(),
+  kind: text().notNull(),
+  filter: jsonb().notNull(),
+  status: text().notNull().default('queued'),
+  rows: integer(),
+  storeKey: text(),
+  failure: text(),
+}, (t) => [
+  uniqueIndex('ux_exports_store_key').on(t.storeKey),
+  check('ck_exports_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'`),
+  check('ck_exports_status', sql`${t.status} in ('queued', 'ready', 'failed')`),
+  check('ck_exports_failure', sql`(${t.status} = 'failed') = (${t.failure} is not null)
+    and (${t.failure} is null or ${t.failure} in ('too_large', 'failed'))`),
+  // A ready export has its file and its count; nothing else has a file.
+  check('ck_exports_ready', sql`(${t.status} = 'ready') = (${t.storeKey} is not null)
+    and ((${t.status} = 'ready') = (${t.rows} is not null)) and (${t.rows} is null or ${t.rows} >= 0)`),
+  check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
 ]);
 
 /**

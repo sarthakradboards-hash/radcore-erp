@@ -312,3 +312,39 @@ test.describe('the picker', () => {
     await expect(page.getByText('Nothing matches “zzzz”')).toBeVisible(LOAD);
   });
 });
+
+test.describe('the search box', () => {
+  test('text typed before the scripts load is kept when React takes over, and Show sends it (WebKit lost it, #128)', async ({ page }) => {
+    // Hold every script chunk (not the stylesheets, which hold the first paint), so the page is the server's HTML alone
+    // while we type.
+    const scripts = /\/_next\/static\/chunks\/.+\.js$/;
+    let held = 0;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(scripts, async (route) => { held += 1; await gate; await route.continue(); });
+    await page.goto('/kit', { waitUntil: 'commit' });
+    const box = page.getByRole('search').getByLabel('Search parties');
+    await box.pressSequentially('Asha Pune');
+    expect(held).toBeGreaterThan(0);
+    release();
+    await page.waitForFunction(() => Object.keys(document.querySelector('form[role="search"]') ?? {})
+      .some((k) => k.startsWith('__reactFiber')));
+    await expect(box).toHaveValue('Asha Pune');
+    await page.getByRole('search').getByRole('button', { name: 'Show' }).click();
+    await expect(page.locator('output[aria-label="Searched"]')).toHaveText('Asha Pune');
+  });
+
+  test('a Show pressed before the scripts load puts nothing typed in the URL (no name or email in history or logs)', async ({ page }) => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(/\/_next\/static\/chunks\/.+\.js$/, async (route) => { await gate; await route.continue(); });
+    await page.goto('/kit', { waitUntil: 'commit' });
+    await page.getByRole('search').getByLabel('Search parties').pressSequentially('asha@example.com');
+    const submitted = page.waitForRequest((r) => r.isNavigationRequest());
+    await page.getByRole('search').getByRole('button', { name: 'Show' }).click();
+    const sent = new URL((await submitted).url());
+    release();
+    expect(sent.pathname).toBe('/kit');
+    expect(sent.search).toBe('');
+  });
+});
