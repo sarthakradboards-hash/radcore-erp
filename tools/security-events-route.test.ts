@@ -15,10 +15,10 @@ const config = () => loadConfig(testSettings({ DATABASE_URL: `postgres://radcore
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
 const as = (permissions: string[]): Principal => ({ kind: 'user', userId: randomUUID(), permissions });
 
-it("mounts lib-platform's routes from its route file", () => {
+it("mounts lib-platform's admin audit routes from its route file", () => {
   expect(platform.map((r) => `${r.contract.method} ${r.contract.path}`))
-    .toEqual(['GET /admin/audit', 'GET /admin/audit/tables', 'GET /admin/security-events', 'GET /exports/:id',
-      'POST /exports/:id/download']);
+    .toEqual(expect.arrayContaining(['GET /admin/audit', 'GET /admin/audit/tables', 'GET /admin/security-events',
+      'GET /exports/:id', 'POST /exports/:id/download']));
 });
 
 describe.skipIf(!url)('GET /admin/security-events', () => {

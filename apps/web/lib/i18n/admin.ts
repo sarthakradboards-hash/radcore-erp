@@ -151,6 +151,7 @@ export const admin = {
   'admin.events.kind.second_factor_changed': 'Second factor changed',
   'admin.events.kind.export': 'Exported',
   'admin.events.kind.download': 'Downloaded',
+  'admin.events.kind.session_ended': 'Session ended',
   'admin.audit.err.table': 'Choose a table from the list',
   'admin.audit.err.range': 'The start date is after the end date',
 } as const;

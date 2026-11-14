@@ -28,8 +28,6 @@ export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output
   }
   const key = input.after === undefined ? undefined : decodeCursor(pageKey, input.after);
   const tx = platformTx(ctx);
-  // shortcut: no index on (table_name, record_id): the 92-day range already limits a read to a few month partitions;
-  // add one if a record's history is read often enough to need it.
   const rows = await tx.select({
     id: auditLog.id, occurredAt: auditLog.occurredAt, seq: auditLog.seq, tableName: auditLog.tableName,
     recordId: auditLog.recordId, op: auditLog.op, changed: auditLog.changed, createdBy: auditLog.createdBy,

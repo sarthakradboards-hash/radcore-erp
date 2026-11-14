@@ -134,6 +134,27 @@
       "when": 1794417194658,
       "tag": "0018_audited_tables_view",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794419174625,
+      "tag": "0019_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794487626317,
+      "tag": "0020_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794630980713,
+      "tag": "0021_exports",
+      "breakpoints": true
     }
   ]
 }

@@ -247,6 +247,9 @@ They are append-only with explicit reversals:
     `SECURITY DEFINER` function like `record_access`. The app chooses `user_id`, the account the event concerns, as
     it chooses `record_access`'s record: it's trusted code, and the row's principal and time stay the database's
     own. `detail` holds references only and is at most 2 KB; `kind` is one of a CHECKed list.
+  - Every refused sign-in adds a row, so a locked address being tried adds one per try. Nothing dedupes them: a
+    known and an unknown address must do the same work (RAD-64). The per-IP limit (RAD-39) bounds the rows one
+    source can add, and each is under 2 KB (RAD-34).
   - The access log is written only through one `SECURITY DEFINER` function, `record_access(record_table,
     record_id)`. It takes **no** principal or time argument: it reads the principal from the request context and
     the time from `now()` itself. The runtime login can therefore append an access row, but can't alter one or
@@ -270,7 +273,8 @@ They are append-only with explicit reversals:
   the four who-and-when columns. Each column of an audited table is listed at `audit_attach` as `keep` (recorded) or
   `redact` (written as `[redacted]`). Secrets, hashes and all personal data are redacted, and the schema test fails on
   an unlisted column. An update that changes nothing kept or redacted writes no row. Machinery tables (`saved_once`,
-  `jobs_outbox`, `webhook_deliveries`) get the who-and-when trigger only.
+  `jobs_outbox`, `webhook_deliveries`, `sessions`) get the who-and-when trigger only. A session's `last_seen_at`
+  changes on every request, and its start and end are security events (RAD-34).
 - **The owner login** runs migrations and the partition top-up only, from CI. It never sits on the server or in the
   API or worker containers (RC-003, ADR-004 §3). A read-only login, `radcore_read`, serves the restore drill and
   support queries (RC-193).

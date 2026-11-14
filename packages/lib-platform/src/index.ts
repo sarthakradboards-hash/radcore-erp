@@ -1,6 +1,15 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
-export { principalId, type Ctx, type Files, type Principal } from './ctx.ts';
-export { AppError } from './errors.ts';
+export { principalId, type Ctx, type Files, type Principal, type SessionCookie } from './ctx.ts';
+export { AppError, RecordedRefusal } from './errors.ts';
+export {
+  deviceOf, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, endSessionsOf, getMyself, listAllSessions,
+  listOwnSessions, sessionCookieFor, signInService, type EndedReason, type SessionCookieKind,
+} from './auth/sessions.ts';
+export { requestPasswordReset } from './auth/reset-email.ts';
+export {
+  decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash, type ApprovalSpec,
+  type ApprovalVersion, type Decision,
+} from './approvals.ts';
 export { decodeCursor, encodeCursor, isoMoment, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
 export { defineRoute, type Route } from './route.ts';

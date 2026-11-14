@@ -387,6 +387,29 @@ the server. The form shows the same rules but decides nothing.
 password change, the person's sessions) use one key, `session:read`, which every role holds. Ending the current
 session from the sessions list is refused with `current_session`: sign-out does that, because it clears the cookie.
 
+**Sessions** (M1-16, RAD-34). A session is a random token in the `__Host-radcore_session` cookie; only its SHA-256 is
+stored.
+- **Over plain http (development and CI only), the cookie is `radcore_session` and not Secure.** WebKit stores a
+  Secure cookie from `http://127.0.0.1` but never sends it back, so Safari couldn't stay signed in. Deployed origins
+  are https, which config enforces.
+- It signs nobody in after **30 minutes without a request or 12 hours after sign-in**, whichever comes first
+  (Sarthak, 11 Nov 2026), or once it's ended. A request moves the idle expiry on, never past the 12 hours. `GET /me`
+  doesn't count, since the shell reads it every minute.
+- It ends on sign-out; when the person ends it from their sessions list; when an admin ends it; on a password change
+  (the person's other sessions) or reset (all of them); and on a role change or deactivation (RAD-35, RAD-36).
+- A sign-in ends the session the browser's cookie already names, so none lingers on a shared computer.
+- A request whose cookie names an ended or expired session gets 401 `signed_out`, and the cookie is cleared with it,
+  sign-out's included.
+- A sign-in is a `sign_in` security event, and each session that ends is a `session_ended` event with the reason.
+  Every refused sign-in is a `sign_in_failed` row, a locked address's included, whether or not an account has the
+  address: recording only some would make a known address do different work, and timing would tell (RAD-64). The
+  per-IP limit (RAD-39) bounds the rows one source can add (ADR-005 §7c).
+- **Only the key-exempt routes touch the cookie.** The handler gives just those routes `ctx.cookie`, and sets or
+  clears the cookie only after the transaction commits, so a rolled-back sign-in sets nothing.
+- **A failed sign-in is still recorded.** Its service throws `RecordedRefusal`. On a key-exempt route the handler
+  commits that transaction, which holds the `sign_in_failed` event, and still answers with the refusal. Elsewhere it
+  rolls back like any error.
+
 **Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
 - It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
   new one only after a success (Design notes A-0).
@@ -534,12 +557,23 @@ permission: the pending list, one request with its version hash, and the decisio
 `...defineApproval(contracts, spec)`, where `spec` is the module's part: the version the approver sees, and what
 approving and rejecting do. A decision is made in one transaction, with the record's row locked, and is refused
 unless:
-- **a user decides,** who holds the permission and isn't the requester (`own_request`);
+- **a user decides,** who holds the permission;
+- **the decider made no change to what is being approved** (`own_request`): they're not the requester, and made no
+  change to the record or its parts since its last approval (or since it was made). The engine reads the makers from
+  the audit log: each part table is attached with `owner =>` its record's key, so its audit rows carry the record's id
+  (`owner_id`). "Since" is by the log's write order (`seq`), so a save that began before the approval but wrote after
+  it still counts. Jobs aren't makers. Writes made by a decision itself (a send-back's status and reason) don't make
+  the decider a maker. A spec's `approved` and `rejected` change only the record's status and decision fields, never
+  what is approved;
 - **the approver's account was created before the request** (`approver_too_new`), so a requester can't invite a
   fresh account to approve it;
 - **the version is the one the approver saw** (`version_changed`). It's a SHA-256 over sorted-key JSON of what the
   approver is shown, taken when the request is made and checked again at the decision;
 - **the request is still pending,** and a conditional status update means two approvers can't both win.
+
+**Known limit:** a part written before an approval but committed after it isn't counted as a change since that
+approval: the log's order is the order rows were written, not committed. The window is one save's length, and the
+part is still in the audit trail.
 
 **Known limit:** an account invited before the request, possibly by the requester, can still approve. "The approver
 wasn't invited by the requester" isn't a rule, because the admin invites nearly everyone, so the admin's own
