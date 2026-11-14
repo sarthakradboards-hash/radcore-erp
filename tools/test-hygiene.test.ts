@@ -83,6 +83,11 @@ const SHARED = [
   `Program > ExportNamedDeclaration > ${LET}`,
   `CallExpression:matches([callee.name=/^(describe|suite)$/], [callee.object.name=/^(describe|suite)$/], [callee.callee.object.name=/^(describe|suite)$/]) > :function > BlockStatement > ${LET}`,
 ].map(sel('[RC-222] Tests share no mutable state: build what a test needs inside it, with a factory'));
+// The outbox is shared by every test file running at once, so a test's relay pass names the jobs it takes: a pass
+// over all of it would try, and count against, other files' rows (RAD-79).
+const RELAY = [
+  "CallExpression[callee.name='relayOutbox']:not(:has(Property[key.name='only']))",
+].map(sel('[RC-222] A test relays only its own jobs: pass relayOutbox its `only` job names (RAD-79)'));
 
 const TS = ['**/*.ts', '**/*.tsx'];
 const TEST_FILES = ['**/*.test.ts', '**/*.test.tsx'];
@@ -94,7 +99,7 @@ const eslint = new ESLint({ overrideConfigFile: true, overrideConfig: [
   { ignores: ['**/node_modules/**', 'apps/web/.next/**', 'tools/boundary-fixtures/**'] },
   { linterOptions: { noInlineConfig: true } },
   block([...TEST_FILES, 'packages/test-helpers/**'], TS, TEST_MODE),
-  block([], TEST_FILES, [...CLOCK, ...SLEEP, ...CONDITIONAL, ...SHARED]),
+  block([], TEST_FILES, [...CLOCK, ...SLEEP, ...CONDITIONAL, ...SHARED, ...RELAY]),
   { files: TEST_FILES, plugins: { hygiene: { rules: { 'early-return': earlyReturn } } }, rules: { 'hygiene/early-return': 'error' } },
 ] });
 const problems = (results: ESLint.LintResult[]) =>
@@ -176,6 +181,8 @@ describe('each check fails its violating samples', () => {
     ['export let id = 1;', 'RC-222'],
     ["describe('x', () => { let id = ''; it('a', () => { id = 'y'; }); });", 'RC-222'],
     ["describe.each([1])('x %s', () => { var n = 0; });", 'RC-222'],
+    ['await relayOutbox(db, queue, log);', 'RC-222'],
+    ['await relayOutbox(db, queue, log, { batch: 3 });', 'RC-222'],
   ])('test: %s', async (code, tag) => {
     expect((await lintSample(code, TEST)).join('\n')).toContain(`[${tag}]`);
   });
@@ -203,6 +210,12 @@ describe('each check lets the safe forms through', () => {
       "it('b', () => { const pick = (r: number[]) => { if (!r.length) return 0; return r[0]; }; expect(pick([2])).toBe(2); });",
       "const fmt = new Intl.DateTimeFormat('en-IN').format(d);",
     ].join('\n');
+    expect(await lintSample(code, TEST)).toEqual([]);
+  });
+
+  it('a relay pass that names its jobs, plainly or through spread options', async () => {
+    const code = ["await relayOutbox(db, queue, log, { only: ['test.a'] });",
+      "await relayOutbox(db, queue, log, { ...options, only });"].join('\n');
     expect(await lintSample(code, TEST)).toEqual([]);
   });
 
