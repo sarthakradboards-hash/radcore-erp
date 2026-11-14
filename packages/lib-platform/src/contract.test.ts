@@ -164,7 +164,8 @@ describe('the admin contracts', () => {
     expect(setUserRole.errors).toEqual(['own_account', 'role_not_grantable', 'last_admin']);
     expect(deactivateUser.errors).toEqual(['own_account', 'last_admin', 'already_disabled', 'role_not_grantable']);
     expect(reactivateUser.errors).toEqual(['not_disabled', 'role_not_grantable']); // only an admin reactivates an admin
-    expect(setRolePermissions.errors).toEqual(['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held']);
+    expect(setRolePermissions.errors).toEqual(['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held',
+      'basics_required', 'permission_not_for_role']);
     expect([endSession.errors, endUserSessions.errors]).toEqual([['current_session'], ['own_account']]);
   });
 
@@ -221,7 +222,8 @@ describe('the admin contracts', () => {
   it('carry audit values as stored, secrets and personal data as "[redacted]", and a failed sign-in with no principal', () => {
     const row = { id, occurredAt: at, principal: { kind: 'system', id: 'system:online-orders', displayName: null },
       tableName: 'users', recordId: id, op: 'update',
-      changed: { status: { old: 'active', new: 'disabled' }, phone: { old: '[redacted]', new: '[redacted]' } } };
+      changed: { status: { old: 'active', new: 'disabled' }, phone: { old: '[redacted]', new: '[redacted]' } },
+      reason: 'Left the company' }; // RAD-36: why, when the change asked
     expect(listAuditTrail.output.parse({ items: [row], next: null })).toEqual({ items: [row], next: null });
     const event = { id, occurredAt: at, kind: 'sign_in_failed', principal: null, device: 'Edge on Windows',
       detail: { reason: 'invalid_credentials' } };
@@ -252,6 +254,7 @@ describe('the admin contracts', () => {
       'POST /admin/users/:id/sessions/end': ['session_ended'],
       'POST /me/second-factor/recovery-codes': ['second_factor_changed'],
       'POST /admin/users/:id/second-factor/remove': ['second_factor_changed', 'session_ended'],
+      'PUT /admin/users/:id/role': ['session_ended'],
       'POST /files/photo/:id/download': ['download'],
       'POST /files/resume/:id/download': ['download'],
       'POST /files/statement/:id/download': ['download'],

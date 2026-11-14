@@ -350,3 +350,13 @@ export const pendingSignIns = radcoreTable('pending_sign_ins', {
   uniqueIndex('ux_pending_sign_ins_token_hash').on(t.tokenHash),
   index('ix_pending_sign_ins_user_id').on(t.userId),
 ]);
+
+/**
+ * Why a change was made (RAD-36, ADR-005 §7c): the reason an admin typed, once per change. Each audit row of the change
+ * carries its id (`audit_log.reason_id`), never its text, so the text can be corrected or erased later without touching
+ * an append-only row. Written only through radcore.record_change_reason, and not copied into the audit log.
+ */
+export const changeReasons = radcoreTable('change_reasons', {
+  id: id(),
+  reason: boundedText({ max: 500 }).notNull(),
+});

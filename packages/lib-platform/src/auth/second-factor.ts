@@ -222,8 +222,7 @@ export function createSecondFactor({ passwords, attempts, now = () => new Date()
     },
 
     /** POST /admin/users/:id/second-factor/remove (users:write): someone else's factor and codes, after a lost phone,
-     * and every session they have.
-     * shortcut: the typed reason isn't kept yet; it joins the audit row when RAD-35/36 add how admin reasons are kept. */
+     * and every session they have. The handler keeps the typed reason, which the change's audit rows point at. */
     async remove(ctx: Ctx, { id }: In<typeof removeSecondFactor>): Promise<Out<typeof removeSecondFactor>> {
       if (ctx.principal.kind === 'user' && ctx.principal.userId === id) {
         throw new AppError('own_account', 'Another admin has to remove your own second factor');

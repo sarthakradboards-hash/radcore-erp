@@ -273,8 +273,16 @@ They are append-only with explicit reversals:
   the four who-and-when columns. Each column of an audited table is listed at `audit_attach` as `keep` (recorded) or
   `redact` (written as `[redacted]`). Secrets, hashes and all personal data are redacted, and the schema test fails on
   an unlisted column. An update that changes nothing kept or redacted writes no row. Machinery tables (`saved_once`,
-  `jobs_outbox`, `webhook_deliveries`, `sessions`) get the who-and-when trigger only. A session's `last_seen_at`
-  changes on every request, and its start and end are security events (RAD-34).
+  `jobs_outbox`, `webhook_deliveries`, `sessions`, `change_reasons`) get the who-and-when trigger only. A session's
+  `last_seen_at` changes on every request, and its start and end are security events (RAD-34).
+- **Why a change was made** (RAD-36). When a write's contract asks for a reason (lib-common's `reason()`), the handler
+  stores it in `change_reasons` and sets `app.reason_id`, and each audit row of that change carries `reason_id`, a
+  reference, never the text. The reason's own table isn't copied into the audit log (`capture => false`), so the text
+  can be corrected or erased later without touching an append-only row.
+  - It's written only through `radcore.record_change_reason`, a `SECURITY DEFINER` function that inserts the reason
+    and sets `app.reason_id` for the transaction. `audit_log.reason_id` takes it as a column default, as
+    `created_by` takes `app.principal`.
+  - The runtime login has no INSERT, UPDATE or DELETE on the table, and `radcore_read` has nothing on it.
 - **The owner login** runs migrations and the partition top-up only, from CI. It never sits on the server or in the
   API or worker containers (RC-003, ADR-004 §3). A read-only login, `radcore_read`, serves the restore drill and
   support queries (RC-193).

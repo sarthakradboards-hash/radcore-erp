@@ -1,8 +1,10 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
 export { principalId, type Ctx, type Files, type Owned, type Principal, type SessionCookie, type SignInCookie } from './ctx.ts';
 export { roleNeedsSecondFactor } from './auth/principal.ts';
+export { changeUserRole, listRolesFor, permissionMatrix, setRoleGrants } from './auth/roles-admin.ts';
 export { assignRole } from './auth/roles.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
+export { recordChangeReason } from './change-reasons.ts';
 export {
   deviceOf, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, endSessionsOf, getMyself, listAllSessions,
   listOwnSessions, cookieFor, sessionCookieFor, signInService, type EndedReason, type SessionCookieKind,
