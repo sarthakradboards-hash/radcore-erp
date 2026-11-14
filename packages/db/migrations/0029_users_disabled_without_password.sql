@@ -1,0 +1,2 @@
+ALTER TABLE "radcore"."users" DROP CONSTRAINT "ck_users_password";--> statement-breakpoint
+ALTER TABLE "radcore"."users" ADD CONSTRAINT "ck_users_password" CHECK (("radcore"."users"."status" <> 'active' or "radcore"."users"."password_hash" is not null) and ("radcore"."users"."status" <> 'invited' or "radcore"."users"."password_hash" is null));

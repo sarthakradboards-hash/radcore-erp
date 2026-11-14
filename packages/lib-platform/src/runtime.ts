@@ -15,6 +15,7 @@ import { startOutboxRelay } from './outbox.ts';
 export { createAlerter, startHeartbeat, type Alerter } from './alerts.ts';
 export { createAuth, type Auth } from './auth/auth.ts';
 export { runBootstrapAdmin } from './auth/bootstrap.ts';
+export { inviteEmailJob } from './auth/invite-email.ts';
 export { newPasswordCheckFor } from './auth/new-password.ts';
 export { passwordResetEmailJob } from './auth/reset-email.ts';
 export { loadPrincipal } from './auth/principal.ts';
