@@ -6,6 +6,7 @@ export { deactivatePerson, invitePerson, reactivatePerson, resendPersonInvite } 
 export { createCustomRole, deleteCustomRole, renameRole, resetRoleToTemplate } from './auth/roles-custom.ts';
 export { listPeople } from './auth/people-list.ts';
 export { assignRole } from './auth/roles.ts';
+export { createClientErrors, ERROR_CLASSES, pageOf, WEB_PAGES } from './client-errors.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export {
   ADDRESS_LIMITS, createRequestGuards, isRateLimitClass, PERSON_LIMIT, type RateLimitClass, type RequestGuards,
