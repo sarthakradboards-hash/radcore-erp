@@ -194,8 +194,15 @@
     {
       "idx": 27,
       "version": "7",
-      "when": 1794657200202,
-      "tag": "0027_users_disabled_without_password",
+      "when": 1794656636179,
+      "tag": "0027_role_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794658642776,
+      "tag": "0028_users_disabled_without_password",
       "breakpoints": true
     }
   ]
