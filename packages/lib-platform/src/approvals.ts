@@ -26,8 +26,9 @@ export type ApprovalSpec<V extends ApprovalVersion = ApprovalVersion> = {
   readonly kind: string;
   /** The record's own table (`purchase_orders`), audited, keyed by the record's id. */
   readonly table: string;
-  /** Its part tables (`purchase_order_lines`), each attached with `owner =>` its record's key column, so their audit
-   * rows carry the record's id. A change to a part is a change to the record (ADR-001 §8b). */
+  /** Its part tables (`purchase_order_lines`), each attached with `owner =>` its record's key column and
+   * `owner_table =>` the record's table, so their audit rows carry the record's id and every write to one locks the
+   * record first. A change to a part is a change to the record (ADR-001 §8b). */
   readonly parts?: readonly string[];
   /**
    * Exactly what the approver is shown and approves, as plain JSON values (money and quantities as strings): the
