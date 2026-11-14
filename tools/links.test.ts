@@ -92,10 +92,11 @@ describe.skipIf(!url)('public links', () => {
       .rejects.toMatchObject({ code: 'forbidden' });
   });
 
-  it('refuses a link with no future expiry, a bad action, or a use count that isn\'t a whole number of at least 1', async () => {
+  it('refuses a link with no future expiry, one past the 30-day maximum, a bad action, or a use count that isn\'t a whole number of at least 1', async () => {
     const soon = new Date((await dbNow()).getTime() + DAY);
     const make = (over: object) => as(staff, (ctx) => createLink(ctx, { action: ACTION, recordId: randomUUID(), expiresAt: soon, ...over }));
     await expect(make({ expiresAt: new Date((await dbNow()).getTime() - DAY) })).rejects.toThrow('a link must expire in the future');
+    await expect(make({ expiresAt: new Date((await dbNow()).getTime() + 31 * DAY) })).rejects.toThrow('at most 30 days');
     await expect(make({ action: 'Sales.View' })).rejects.toThrow('not a link action');
     await expect(make({ uses: 0 })).rejects.toThrow('at least 1');
     await expect(make({ uses: 1.5 })).rejects.toThrow('at least 1');

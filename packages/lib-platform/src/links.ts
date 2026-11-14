@@ -6,8 +6,13 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { platformTx, publicLinks } from '@radcore/db/platform';
 import { and, eq, gt, isNull } from 'drizzle-orm';
+import { z } from 'zod';
 import { principalId, type Ctx, type Principal } from './ctx.ts';
 import { AppError } from './errors.ts';
+import { defineSetting } from './settings.ts';
+
+/** The longest a link may last, in days: every link expires within it (RAD-41). */
+export const linkMaxDays = defineSetting('platform.link_max_days', z.number().int().min(1).max(365), 30);
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 /** `<module>.<what>`, as public_links' CHECK has it: `sales.invoice_view`. */
@@ -18,7 +23,7 @@ export type NewLink = {
   action: string;
   /** The one record it lets them do it to. */
   recordId: string;
-  /** When it stops working. Every link expires. */
+  /** When it stops working. Every link expires, within the `platform.link_max_days` setting (30 days). */
   expiresAt: Date;
   /** How many times it can be used; left out, any number until it expires. */
   uses?: number;
@@ -32,7 +37,12 @@ export type NewLink = {
 export async function createLink(ctx: Ctx, link: NewLink): Promise<{ id: string; token: string }> {
   if (ctx.principal.kind === 'link') throw new AppError('forbidden', 'A link can\'t make another link');
   if (!ACTION.test(link.action)) throw new TypeError(`${link.action}: not a link action (<module>.<what>)`);
-  if (!(link.expiresAt.getTime() > Date.now())) throw new TypeError('a link must expire in the future');
+  const now = Date.now();
+  if (!(link.expiresAt.getTime() > now)) throw new TypeError('a link must expire in the future');
+  const maxDays = ctx.settings.get(linkMaxDays);
+  if (link.expiresAt.getTime() > now + maxDays * 86_400_000) {
+    throw new TypeError(`a link can last at most ${maxDays} days (platform.link_max_days)`);
+  }
   if (link.uses !== undefined && !(Number.isInteger(link.uses) && link.uses >= 1)) {
     throw new TypeError('a link\'s uses must be a whole number of at least 1');
   }
