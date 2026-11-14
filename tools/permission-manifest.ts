@@ -16,6 +16,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /password-reset/request': 'public',
   'POST /password-reset': 'public',
   'POST /invites/accept': 'public',
+  // The browser's error report (RC-158): public, so a signed-out page reports too; its own per-address limit.
+  'POST /client-errors': 'public',
   // Your own account (RAD-32, RAD-33, RAD-34, RAD-47): session:read, which every role holds.
   'POST /sign-out': 'session:read',
   'GET /me': 'session:read',

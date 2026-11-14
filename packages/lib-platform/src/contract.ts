@@ -34,6 +34,8 @@ export const getMe = defineContract({
 
 // Sign-in, the second factor, password reset and your own account's routes live in ./contract/sign-in.ts.
 export * from './contract/sign-in.ts';
+// The browser's error report (RC-158).
+export * from './contract/client-errors.ts';
 
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const read = { readOnly: true, isolation: 'read committed' } as const;

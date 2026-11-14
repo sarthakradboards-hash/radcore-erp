@@ -4,6 +4,7 @@ export { roleNeedsSecondFactor } from './auth/principal.ts';
 export { changeUserRole, listRolesFor, permissionMatrix, setRoleGrants } from './auth/roles-admin.ts';
 export { createCustomRole, deleteCustomRole, renameRole, resetRoleToTemplate } from './auth/roles-custom.ts';
 export { assignRole } from './auth/roles.ts';
+export { createClientErrors, ERROR_CLASSES, pageOf, WEB_PAGES } from './client-errors.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export {
   ADDRESS_LIMITS, createRequestGuards, isRateLimitClass, PERSON_LIMIT, type RateLimitClass, type RequestGuards,
