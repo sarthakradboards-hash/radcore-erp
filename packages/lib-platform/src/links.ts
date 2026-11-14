@@ -4,6 +4,7 @@
 // token's SHA-256 is stored, and nothing else ever holds the token: other tables and the audit trail name the link by
 // its id (`link:<id>`).
 import { createHash, randomBytes } from 'node:crypto';
+import { recordAccess } from '@radcore/db/log-writers';
 import { platformTx, publicLinks } from '@radcore/db/platform';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
@@ -12,7 +13,7 @@ import { AppError } from './errors.ts';
 import { defineSetting } from './settings.ts';
 
 /** The longest a link may last, in days: every link expires within it (RAD-41). */
-export const linkMaxDays = defineSetting('platform.link_max_days', z.number().int().min(1).max(365), 30);
+export const linkMaxDays = defineSetting('platform.public_link_max_days', z.number().int().min(1).max(365), 30);
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 /** `<module>.<what>`, as public_links' CHECK has it: `sales.invoice_view`. */
@@ -23,7 +24,7 @@ export type NewLink = {
   action: string;
   /** The one record it lets them do it to. */
   recordId: string;
-  /** When it stops working. Every link expires, within the `platform.link_max_days` setting (30 days). */
+  /** When it stops working. Every link expires, within the `platform.public_link_max_days` setting (30 days). */
   expiresAt: Date;
   /** How many times it can be used; left out, any number until it expires. */
   uses?: number;
@@ -41,7 +42,7 @@ export async function createLink(ctx: Ctx, link: NewLink): Promise<{ id: string;
   if (!(link.expiresAt.getTime() > now)) throw new TypeError('a link must expire in the future');
   const maxDays = ctx.settings.get(linkMaxDays);
   if (link.expiresAt.getTime() > now + maxDays * 86_400_000) {
-    throw new TypeError(`a link can last at most ${maxDays} days (platform.link_max_days)`);
+    throw new TypeError(`a link can last at most ${maxDays} days (platform.public_link_max_days)`);
   }
   if (link.uses !== undefined && !(Number.isInteger(link.uses) && link.uses >= 1)) {
     throw new TypeError('a link\'s uses must be a whole number of at least 1');
@@ -103,4 +104,14 @@ export async function useLink(ctx: Ctx): Promise<void> {
   if (link === undefined || link.usesLeft === 0) throw new AppError('not_found', 'Not found');
   if (link.usesLeft === null) return;
   await tx.update(publicLinks).set({ usesLeft: link.usesLeft - 1 }).where(eq(publicLinks.id, ctx.principal.linkId));
+}
+
+/**
+ * The access_log row for a request a link's holder made (ADR-005 §7c, the architect on RAD-41): what was opened, as the
+ * link's action and record, by `link:<id>`. The generic handler writes it in a short write of its own once the
+ * request's work has committed.
+ */
+export async function recordLinkAccess(ctx: Ctx): Promise<void> {
+  if (ctx.principal.kind !== 'link') throw new TypeError('recordLinkAccess needs a link principal');
+  await recordAccess(ctx.tx, ctx.principal.action, ctx.principal.recordId);
 }

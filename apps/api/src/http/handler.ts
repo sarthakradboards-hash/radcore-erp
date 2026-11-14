@@ -9,8 +9,8 @@
 // Still to come, each with its ticket: rate guards (M1-21), pii() masking (M1-22) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, deviceOf, describeError, originAllowed, RecordedRefusal, sessionCookieFor, type Files,
-  type Principal, type Route, type SessionCookie } from '@radcore/lib-platform';
+import { AppError, claimSavedOnce, deviceOf, describeError, linkPrincipal, originAllowed, RecordedRefusal, recordLinkAccess,
+  sessionCookieFor, type Files, type Principal, type Route, type SessionCookie } from '@radcore/lib-platform';
 import { acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
@@ -43,8 +43,12 @@ const PASSWORD_ROUTES = new Set([acceptInvite, resetPassword, changePassword].ma
 const newPasswordKeys = (input: unknown): string[] => Object.entries((input as { shape?: Record<string, unknown> }).shape ?? {})
   .filter(([, schema]) => newPasswordFields.has(schema as never)).map(([key]) => key);
 
-// shortcut: a signed-out caller of a public route runs as this principal, with no permissions; M1-23 adds link principals.
+// shortcut: a signed-out caller of a public route runs as this principal, with no permissions.
 const PUBLIC: Principal = Object.freeze({ kind: 'system', name: 'public', permissions: Object.freeze([]) });
+// A link route's token is looked up by this principal, in a read of its own, before the request runs as the link's holder.
+const LINK_CHECK: Principal = Object.freeze({ kind: 'system', name: 'link-check', permissions: Object.freeze([]) });
+const READ = { readOnly: true, isolation: 'read committed' } as const;
+const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 
 // PostgreSQL's code for a failure the caller can act on. Every other database error is the server's.
 const SQLSTATE: Readonly<Record<string, PlatformErrorCode>> = {
@@ -155,7 +159,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
     const handle = async (req: Request, res: Response): Promise<void> => {
       const requestId = randomUUID();
       try {
-        const principal = await deps.authenticate(req, route);
+        // A link route runs as the link's holder alone, never as whoever's session came with it (ADR-001 §6a).
+        let principal = contract.auth === 'link' ? null : await deps.authenticate(req, route);
         if (contract.auth === 'session' && principal === null) {
           // A cookie whose session has ended or expired is cleared, sign-out's included (RAD-34).
           if (session.tokenIn(req.get('cookie')) !== null) res.clearCookie(session.name, COOKIE);
@@ -167,6 +172,22 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         if (!input.ok) {
           send(res, platform('invalid_input', input.error.issues), requestId);
           return;
+        }
+        // What the service gets: the input, less a link route's token, which no service, log or audit row ever sees.
+        let work: unknown = input.value;
+        if (contract.auth === 'link') {
+          res.set('X-Robots-Tag', 'noindex');
+          const { token, ...rest } = input.value as { token: string };
+          // One answer for every token that isn't a live link for exactly this action, whatever the reason, by one
+          // path, so neither the answer nor its time says which links exist (the architect on RAD-41).
+          const holder = await runInTransaction(deps.db, READ, LINK_CHECK, requestId,
+            (ctx) => linkPrincipal(ctx, token, contract.action));
+          if (holder === null) {
+            send(res, platform('not_found'), requestId);
+            return;
+          }
+          principal = holder;
+          work = rest;
         }
         // A key-exempt route sets or clears the session cookie, which a stored answer can't (ADR-001 §7a).
         if (!contract.tx.readOnly && contract.idempotency !== 'exempt' && !UUID.test(req.get('idempotency-key') ?? '')) {
@@ -180,7 +201,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         // Before the transaction and the saved-once claim: the check may wait up to 3 s on Pwned Passwords, and must
         // hold no transaction or pooled connection while it does (ADR-001 §7a).
         for (const field of passwordKeys) {
-          const value = (input.value as Record<string, unknown>)[field];
+          const value = (work as Record<string, unknown>)[field];
           const refused = typeof value === 'string' ? await deps.newPasswordCheck?.(value) : null;
           if (refused !== null && refused !== undefined) {
             send(res, { status: BUSINESS_RULE_STATUS, code: 'password_rejected', message: 'Choose a different password',
@@ -200,11 +221,11 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           // Saved-once (M1-09): a write claims its key first, in this transaction, and replays an earlier answer.
           // A key-exempt route sends no key and claims none; a route whose answer holds a secret claims and keeps nothing.
           const once = contract.tx.readOnly || contract.idempotency === 'exempt' ? null
-            : await claimSavedOnce(ctx, { route, key, input: input.value, storesAnswer: contract.storesAnswer !== false });
+            : await claimSavedOnce(ctx, { route, key, input: work, storesAnswer: contract.storesAnswer !== false });
           if (once?.replay === true) return once.answer;
           let answer: unknown;
           try {
-            answer = await service(exempt ? Object.freeze({ ...ctx, cookie: channel }) : ctx, input.value);
+            answer = await service(exempt ? Object.freeze({ ...ctx, cookie: channel }) : ctx, work);
           } catch (err) {
             // A failed sign-in's record commits; the person still gets the refusal (RAD-34).
             if (!(exempt && err instanceof RecordedRefusal)) throw err;
@@ -224,6 +245,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           send(res, failureOf(refused, contract.errors), requestId);
           return;
         }
+        // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c).
+        if (principal?.kind === 'link') await runInTransaction(deps.db, WRITE, principal, requestId, recordLinkAccess);
         res.status(200).json(output);
       } catch (err) {
         const failure = failureOf(err, contract.errors);

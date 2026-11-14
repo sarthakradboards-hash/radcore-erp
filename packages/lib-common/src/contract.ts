@@ -83,7 +83,10 @@ type WriteTx = { readOnly: false; isolation: 'read committed'; statementTimeoutM
 type Access =
   | { auth: 'session'; perm: PermissionKey }
   | { auth: 'public'; rateLimit: string; perm: PermissionKey | null }
-  | { auth: 'webhook'; perm: null };
+  | { auth: 'webhook'; perm: null }
+  /** A public link's route (ADR-001 §6a, RAD-41): its holder may do this one `action` (`sales.invoice_view`) to the
+   * link's one record. A POST whose input has the link's `token`, which the handler resolves and strips. */
+  | { auth: 'link'; action: string; rateLimit: string; perm: null };
 
 /** `'exempt'` only on a route whose answer sets or clears the session cookie (ADR-001 §7a). */
 export type Idempotency = 'exempt' | undefined;
@@ -111,6 +114,7 @@ export type Contract<M extends Method = Method, I extends z.ZodType = z.ZodType,
   Readonly<ContractSpec<M, I, O, E, X> & { errors: readonly E[]; params: readonly string[] }>;
 
 const PATH = /^(\/([a-z0-9]+(-[a-z0-9]+)*|:[a-z][A-Za-z0-9]*))+$/;
+const LINK_ACTION = /^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$/;
 const CODE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 
 // shortcut: input and output JSON Schemas must match and be representable, which refuses .transform(), a pipe to
@@ -137,6 +141,12 @@ export function defineContract<const M extends Method, I extends z.ZodType, O ex
   const params = spec.path.split('/').filter((s) => s.startsWith(':')).map((s) => s.slice(1));
   const keys = spec.input instanceof z.ZodObject ? Object.keys(spec.input.shape) : [];
   for (const p of params) if (!keys.includes(p)) throw new TypeError(`${at}: :${p} isn't a field of the input`);
+  // A link's token travels in a POST body, never a path or a query (ADR-001 §7a), and the handler reads it there.
+  if (spec.auth === 'link') {
+    if (spec.method !== 'POST') throw new TypeError(`${at}: a link route is a POST, so its token travels in the body`);
+    if (!keys.includes('token') || params.includes('token')) throw new TypeError(`${at}: a link route's input has a token, in the body`);
+    if (!LINK_ACTION.test(spec.action)) throw new TypeError(`${at}: a link route's action is <module>.<what>`);
+  }
   // The types already say this; these also hold for a contract built without them.
   if (spec.method === 'GET' && !spec.tx.readOnly) throw new TypeError(`${at}: a GET must be read-only`);
   if (!spec.tx.readOnly && spec.tx.isolation !== 'read committed') throw new TypeError(`${at}: a write is read committed`);

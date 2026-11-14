@@ -202,10 +202,11 @@ export default [
 
 `defineRoute(contract, service)` is the ticket's `defineRoute({ perm, input, handler })`: `perm` and `input` come
 from the contract, and `handler` is the service function itself. The compiler checks that the service's input and
-output match the contract. `auth` is `session`, `public` (with a named rate-limit class) or `webhook` (signature
-checked by the webhook intake).
+output match the contract. `auth` is `session`, `public` (with a named rate-limit class), `link` (a public link's
+one action, §6a) or `webhook` (signature checked by the webhook intake).
 
-The one generic handler (`apps/api/src/http/`, M1-08) runs every `session` and `public` route in the same order:
+The one generic handler (`apps/api/src/http/`, M1-08) runs every `session`, `public` and `link` route in the same
+order:
 
 ```
 request ─► origin and rate guards ─► principal (§6a: session, or a link token) ─► parse input (contract.input)
@@ -250,9 +251,15 @@ stored once and acted on once (M1-27).
 | Principal | Comes from | Permission checked | Record scope |
 |---|---|---|---|
 | user | a session | the user's roles at that moment | the role's scope (M1-17) |
-| link | a public link token | only the one action on the one record the token names | that record (M1-23) |
+| link | a public link token, on an `auth: 'link'` route | only the one action on the one record the token names | that record (M1-23) |
 | job for a user | `ctx.jobs.send` during a user's request | the enqueuer's roles, **rechecked when the job runs**; a revoked permission fails the job and raises the dead-letter alert | the enqueuer's scope (M1-26) |
 | system | a schedule or a webhook | only the permissions listed in the job contract, for example `principal: system('online-orders', ['sales:write', 'parties:write'])` | every record, for the listed permissions only |
+
+**Public links** (M1-23, RAD-41). A link route declares `auth: 'link'` and its one `action`. The handler resolves
+the token, which travels in the URL fragment then a POST body, and is stored only as a hash. It strips the token from
+the input and runs the request as the link principal. An unknown, expired, revoked, used-up or wrong-action token gets
+the same 404 `not_found`. A link expires within `platform.public_link_max_days` (30) and can be revoked. Answers carry
+`noindex` and `no-store`.
 
 There is no principal that passes every check. Audit rows record the principal: a user id, `system:<name>` or a
 link id.

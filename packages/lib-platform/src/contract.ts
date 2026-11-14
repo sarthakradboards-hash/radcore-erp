@@ -99,7 +99,7 @@ export const requestPasswordReset = defineContract({
   tx: write, input: z.object({ email: emailString() }), output: z.object({}),
 });
 
-const linkToken = () => z.string().min(16).max(512); // from the link's #fragment, sent in the body (RAD-61)
+export const linkToken = () => z.string().min(16).max(512); // from a link's #fragment, sent in the body (RAD-61, RAD-41)
 
 /** Sets your password from an invite link. Starts no session: you sign in after (RAD-64). link_expired covers an
  * unknown, used or expired token with one answer. */

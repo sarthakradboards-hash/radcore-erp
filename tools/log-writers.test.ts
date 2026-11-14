@@ -9,13 +9,14 @@ const FILE = 'packages/db/src/log-writers.ts';
 
 it('log-writers.ts makes exactly its pinned calls, each a select of one radcore log function', () => {
   const source = readFileSync(FILE, 'utf8');
-  expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.execute']);
-  // Every mention of sql: its import and the one template, so no sql.raw or second statement slips in.
-  expect(source.match(/\bsql\b/g)).toHaveLength(2);
+  expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.execute', '.execute']);
+  // Every mention of sql: its import and the two templates, so no sql.raw or other statement slips in.
+  expect(source.match(/\bsql\b/g)).toHaveLength(3);
   // Each export runs its call and hands nothing back, so no exported function can return SQL.
   expect(source.match(/^export (async )?function .*$/gm)?.every((l) => /\): Promise<void> \{$/.test(l))).toBe(true);
   expect(source.match(/sql`[^`]*`/g)).toEqual([
     'sql`select radcore.record_event(${e.kind}, ${e.userId}::uuid, ${e.device}, ${JSON.stringify(e.detail)}::jsonb)`',
+    'sql`select radcore.record_access(${recordTable}, ${recordId})`',
   ]);
 });
 
