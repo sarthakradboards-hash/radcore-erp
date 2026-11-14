@@ -4,7 +4,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { AppError, createSecrets, loadConfig, RecordedRefusal, sessionCookieFor, type Ctx, type Principal } from '@radcore/lib-platform';
 import { authenticateSession, createAuth, createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { fakeClock, testPassword, testSettings } from '@radcore/test-helpers';
+import { fakeClock, testPassword, testRateLimitKey, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { Secret, URI } from 'otpauth';
@@ -43,7 +43,7 @@ const CHROME_ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537
 describe.skipIf(!url)('sign-in sessions', () => {
   const pool = new pg.Pool({ connectionString: url, max: 3 });
   const db = createDatabase(pool);
-  const store = createLimiterStore(config(url ?? NO_DATABASE).database, log);
+  const store = createLimiterStore(config(url ?? NO_DATABASE).database, log, testRateLimitKey());
   const passwordsReady = createPasswords();
   afterAll(async () => {
     await store.end();

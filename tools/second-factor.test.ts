@@ -7,7 +7,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { AppError, loadConfig, RecordedRefusal, type BeforeDeps, type Ctx, type Principal } from '@radcore/lib-platform';
 import { SECURITY_EVENT_ROUTES } from '@radcore/lib-platform/contract';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { fakeClock, testPassword, testSettings } from '@radcore/test-helpers';
+import { fakeClock, testPassword, testRateLimitKey, testSettings } from '@radcore/test-helpers';
 import { Secret, URI } from 'otpauth';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -41,7 +41,7 @@ describe.skipIf(!url)('the second sign-in factor', () => {
   const pool = new pg.Pool({ connectionString: url, max: 3 });
   const db = createDatabase(pool);
   const cfg = config(url ?? NO_DATABASE);
-  const store = createLimiterStore(cfg.database, log);
+  const store = createLimiterStore(cfg.database, log, testRateLimitKey());
   const passwordsReady = createPasswords();
   // The secrets library, counting its decrypts: each is a KMS call in production.
   const real = createSecrets(cfg.secrets);

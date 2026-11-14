@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import { AppError, loadConfig, type Ctx } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { testPassword, testSettings } from '@radcore/test-helpers';
+import { testPassword, testRateLimitKey, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createLockout, LOCKOUT } from '../packages/lib-platform/src/auth/lockout.ts';
@@ -30,7 +30,7 @@ const PASSWORD = 'a quiet harbour at dawn';
 describe.skipIf(!url)('the sign-in credential step', () => {
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   const db = createDatabase(pool);
-  const store = createLimiterStore(database(url ?? NO_DATABASE), log);
+  const store = createLimiterStore(database(url ?? NO_DATABASE), log, testRateLimitKey());
   afterAll(async () => {
     await store.end();
     await pool.end();

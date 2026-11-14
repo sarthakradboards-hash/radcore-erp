@@ -65,6 +65,7 @@ describe('refuses to start', () => {
     ['DATABASE_URL', 'mysql://x:y@h/db', 'URL'],
     ['LOG_LEVEL', 'verbose', 'LOG_LEVEL'],
     ['SECRETS_LOCAL_KEY', Buffer.alloc(16, 7).toString('base64url'), 'at least 32 random bytes'],
+    ['RATE_LIMIT_KEY', Buffer.alloc(16, 9).toString('base64url'), 'at least 32 random bytes'],
     ['S3_SECRET_ACCESS_KEY', 'changeme', 'placeholder'],
     ['DATABASE_URL', 'postgres://radcore:password@127.0.0.1:5432/radcore', 'placeholder password'],
     ['DATABASE_URL', 'postgres://radcore:short@127.0.0.1:5432/radcore', 'at least 16 characters'],
@@ -121,6 +122,15 @@ describe('refuses to start', () => {
     expect(problems({ ...production(), HEARTBEAT_URL: undefined }, 'api')).toEqual([]);
     expect(problems({ ...production(), HEARTBEAT_URL: undefined }, 'worker')).toEqual(['HEARTBEAT_URL is required when APP_ENV is production (read by worker)']);
     expect(problems({ ...production(), TRUST_PROXY: undefined, TURNSTILE_SECRET: undefined }, 'worker')).toEqual([]);
+  });
+
+  // RAD-73: the api's rate-limit HMAC key is required, and long enough, everywhere; the worker never reads it.
+  it('requires RATE_LIMIT_KEY of the api when deployed, and too short is refused', () => {
+    expect(problems({ ...production(), RATE_LIMIT_KEY: undefined }, 'api'))
+      .toEqual(['RATE_LIMIT_KEY is required when APP_ENV is production (read by api)']);
+    expect(problems({ ...production(), RATE_LIMIT_KEY: 'x'.repeat(12) }, 'api').join(' ')).toContain('at least 32 random bytes');
+    expect(problems({ ...production(), RATE_LIMIT_KEY: undefined }, 'worker')).toEqual([]);
+    expect(loadConfig({ ...production(), RATE_LIMIT_KEY: undefined }, 'worker').rateLimitKey).toBeNull();
   });
 
   it('never puts a secret value in its message', () => {

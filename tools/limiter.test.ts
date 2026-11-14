@@ -1,8 +1,8 @@
 // RAD-32 (M1-14, RC-089, ADR-003): the shared rate-limit store on a real PostgreSQL, as the runtime login, and the
 // sign-in lockout built on it. Each test uses its own key prefix, so the shuffled order doesn't matter.
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { loadConfig } from '@radcore/lib-platform';
-import { testPassword, testSettings } from '@radcore/test-helpers';
+import { testPassword, testRateLimitKey, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createLockout, LOCKOUT } from '../packages/lib-platform/src/auth/lockout.ts';
@@ -19,11 +19,46 @@ const database = (u: string) => {
   return loadConfig(testSettings({ DATABASE_URL: parsed.toString() }), 'api').database;
 };
 const prefix = () => `test${randomBytes(4).toString('hex')}`;
+// The store's rows, read as the superuser: the runtime login reaches them only through the store.
+async function asAdmin<T extends pg.QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> {
+  const c = new pg.Client({ connectionString: superUrl });
+  await c.connect();
+  try {
+    return (await c.query<T>(text, values)).rows;
+  } finally {
+    await c.end();
+  }
+}
+// What the store keeps for a key: its HMAC under the store's secret (RAD-73).
+const hmac = (secret: string, key: string) => createHmac('sha256', Buffer.from(secret, 'base64')).update(key).digest('hex');
 const log = { info: () => undefined, error: () => undefined };
 
 describe.skipIf(!url)('the shared rate-limit store', () => {
-  const store = createLimiterStore(database(url ?? NO_DATABASE), log);
+  const store = createLimiterStore(database(url ?? NO_DATABASE), log, testRateLimitKey());
   afterAll(() => store.end());
+
+  // RAD-73: a key is stored as its HMAC under RATE_LIMIT_KEY, so the table can't be read back into addresses.
+  it('stores each key as its HMAC: the same under one secret, different under another, never the input', async () => {
+    const p = prefix();
+    const other = createLimiterStore(database(url ?? NO_DATABASE), log, Buffer.alloc(32, 4).toString('base64url'));
+    const email = `email:asha.${randomBytes(3).toString('hex')}@example.in`;
+    try {
+      const spec = { prefix: p, points: 5, windowSeconds: 60, blockSeconds: 60 };
+      await store.limiter(spec).hit(email);
+      await store.limiter(spec).hit(email);
+      await other.limiter(spec).hit(email);
+      const rows = await asAdmin<{ key: string; points: number }>('select key, points from ratelimit.limits where key like $1 order by key',
+        [`${p}:%`]);
+      // One secret: both hits on one key. Another: a key of its own.
+      expect(rows.toSorted((a, b) => a.points - b.points)).toEqual([
+        { key: `${p}:${hmac(Buffer.alloc(32, 4).toString('base64url'), email)}`, points: 1 },
+        { key: `${p}:${hmac(testRateLimitKey(), email)}`, points: 2 }]);
+      expect(JSON.stringify(rows)).not.toContain('asha');
+      expect(rows.map((r) => r.key)).not.toContain(`${p}:${createHash('sha256').update(email).digest('hex')}`);
+    } finally {
+      await other.end();
+    }
+  });
 
   it('lets a key through until its points are used, then holds it for the block', async () => {
     const limiter = store.limiter({ prefix: prefix(), points: 3, windowSeconds: 60, blockSeconds: 120 });
@@ -42,7 +77,7 @@ describe.skipIf(!url)('the shared rate-limit store', () => {
 
   // ADR-003: when the store can't be reached, a limited action is refused for the whole block.
   it('fails closed when the store does not answer', async () => {
-    const down = createLimiterStore(database(`postgres://radcore:${testPassword()}@127.0.0.1:1/radcore`), log);
+    const down = createLimiterStore(database(`postgres://radcore:${testPassword()}@127.0.0.1:1/radcore`), log, testRateLimitKey());
     try {
       const limiter = down.limiter({ prefix: prefix(), points: 3, windowSeconds: 60, blockSeconds: 120 });
       expect([await limiter.wait('a'), await limiter.hit('a')]).toEqual([120, 120]);
@@ -51,20 +86,14 @@ describe.skipIf(!url)('the shared rate-limit store', () => {
     }
   });
 
-  it('keeps no email address in the store, only its hash', async () => {
-    const lockout = createLockout(store.limiter({ prefix: prefix(), ...LOCKOUT }));
+  it('keeps no email address in the store, only its HMAC', async () => {
+    const p = prefix();
+    const lockout = createLockout(store.limiter({ prefix: p, ...LOCKOUT }));
     const email = `Asha.${randomBytes(3).toString('hex')}@Example.in`;
     await lockout.attempt(email);
-    const c = new pg.Client({ connectionString: superUrl });
-    await c.connect();
-    try {
-      const { rows } = await c.query<{ key: string }>('select key from ratelimit.limits where key like $1',
-        [`%${createHash('sha256').update(email.trim().toLowerCase()).digest('hex')}`]);
-      expect(rows).toHaveLength(1);
-      expect(JSON.stringify((await c.query('select key from ratelimit.limits')).rows)).not.toMatch(/asha/i);
-    } finally {
-      await c.end();
-    }
+    expect(await asAdmin('select key from ratelimit.limits where key like $1', [`${p}:%`]))
+      .toEqual([{ key: `${p}:${hmac(testRateLimitKey(), `email:${email.trim().toLowerCase()}`)}` }]);
+    expect(JSON.stringify(await asAdmin('select key from ratelimit.limits'))).not.toMatch(/asha/i);
   });
 
   // RAD-64: 10 attempts per address; the 11th is refused and the lock ends on its own. The numbers are production's.
