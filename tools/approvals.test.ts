@@ -392,18 +392,18 @@ describe.skipIf(!url)('maker-checker', () => {
       await save.query('begin');
       // If this test fails while the save is open, the server ends it, so it can't hold the tables past the test.
       await save.query("set local idle_in_transaction_session_timeout = '20s'");
+      const savePid = (await save.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
       await save.query("select set_config('app.principal', $1, true)", [`user:${people.maker}`]);
       // Only the line: its lock_owner trigger takes the order's row lock first.
       await save.query(`update radcore.${LINES} set qty = '9' where id = $1`, [lineId]);
       await serve(person(people.approver), async (call) => {
         const deciding = decide(call, id, { decision: 'approve', versionHash });
-        // The decision is waiting on the order's row lock while the save is open. If it never does, the failure shows
-        // what each of this database's sessions was doing.
-        await vi.waitFor(async () => {
-          const active = (await pool.query<{ wait: string | null; query: string }>("select wait_event_type as wait, "
-            + "left(query, 160) as query from pg_stat_activity where datname = current_database() and state <> 'idle'")).rows;
-          expect(active.some((a) => a.wait === 'Lock' && a.query.includes(ORDERS)), JSON.stringify(active)).toBe(true);
-        }, { timeout: 15_000, interval: 50 });
+        // The decision is waiting on the save while the save is open: some session is blocked by the save's own backend.
+        // pg_locks and pg_blocking_pids are readable by any login (pg_stat_activity's queries aren't, in CI), and the
+        // save's pid keeps other test files' waits out of it.
+        await vi.waitFor(async () => expect((await pool.query<{ n: number }>('select count(*)::int as n from pg_locks '
+          + 'where not granted and $1 = any(pg_blocking_pids(pid))', [savePid])).rows[0]?.n).toBeGreaterThanOrEqual(1),
+        { timeout: 15_000, interval: 50 });
         await save.query('commit');
         expect(await codeOf(await deciding)).toEqual([422, 'version_changed']);
       });
