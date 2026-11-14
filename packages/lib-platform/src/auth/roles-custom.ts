@@ -9,6 +9,7 @@ import { and, count, eq, inArray, like } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { createRole, deleteRole, resetRole, updateRole } from '../contract.ts';
 import type { Ctx } from '../ctx.ts';
+import { recordChangeReason } from '../change-reasons.ts';
 import { AppError } from '../errors.ts';
 import { SIGNED_IN_BASICS } from '../permissions.ts';
 import { afterGrantsChanged } from './role-rules.ts';
@@ -70,27 +71,36 @@ async function everyKeyHeld(tx: Tx, caller: { permissions: readonly string[] }, 
 const isBuiltIn = async (tx: Tx, key: string) =>
   (await tx.select({ role: roleTemplates.role }).from(roleTemplates).where(eq(roleTemplates.role, key)).limit(1)).length > 0;
 
+/** The person's reason, with a note of the keys a copy left out; it fits change_reasons' 500 characters. */
+const withDropNote = (reason: string, dropped: readonly string[]) => {
+  const note = ` (Not copied, kept for named roles: ${dropped.join(', ')})`;
+  return reason.length + note.length <= 500 ? reason + note : `${reason.slice(0, 499 - note.length)}…${note}`;
+};
+
 /** POST /admin/roles: a blank role, holding only the signed-in basics, or a copy of another's grants and scopes. */
-export async function createCustomRole(ctx: Ctx, { name, description, copyFrom }: In<typeof createRole>): Promise<Out<typeof createRole>> {
+export async function createCustomRole(ctx: Ctx, { name, description, copyFrom, reason }: In<typeof createRole>):
+  Promise<Out<typeof createRole>> {
   const caller = await callerOf(ctx);
   const tx = platformTx(ctx);
   let grants = SIGNED_IN_BASICS.map((permission) => ({ permission, scope: 'all' }));
+  let dropped: string[] = [];
   if (copyFrom !== undefined) {
     await lockedRole(tx, copyFrom);
-    // A copy passes its keys on, so each must be the caller's own, and none kept for the roles it was copied from.
+    // A copy passes its keys on, so each must be the caller's own. A key kept for named roles can't go to a new one
+    // (D-20), so the copy leaves it out and says so (the architect on RAD-83).
     grants = await everyKeyHeld(tx, caller, copyFrom, 'copyFrom', 'copy');
-    const reserved = grants.filter((g) => CATALOG.get(g.permission)?.onlyRoles !== undefined);
-    if (reserved.length > 0) {
-      throw new AppError('permission_not_for_role', 'This role holds permissions kept for named roles, so it can’t be copied',
-        reserved.map((g) => ({ path: ['copyFrom'], code: 'reserved', message: `Only ${CATALOG.get(g.permission)?.onlyRoles?.join(' and ') ?? ''} may hold ${g.permission}` })));
-    }
+    dropped = grants.filter((g) => CATALOG.get(g.permission)?.onlyRoles !== undefined).map((g) => g.permission);
+    grants = grants.filter((g) => !dropped.includes(g.permission));
   }
+  // The change's reason names what was left out: this is kept before any write, so every audit row of the copy points
+  // at it. shortcut: the handler's first record of the reason stays, unreferenced; change_reasons can't be updated.
+  if (dropped.length > 0) await recordChangeReason(ctx, withDropNote(reason, dropped));
   const key = await freeKey(tx, keyFromName(name));
   // A copy never takes the original's second-factor setting: it's worked out from the copy's own keys.
   await sameNameRefused(tx.insert(roles).values({ key, name, description }));
   if (grants.length > 0) await tx.insert(roleGrants).values(grants.map((g) => ({ role: key, ...g })));
   await afterGrantsChanged(ctx, key, { shrank: false });
-  return { key };
+  return { key, droppedKeys: dropped.map((k) => ({ key: k, reason: 'permission_not_for_role' as const })) };
 }
 
 /** PATCH /admin/roles/:key: a role's name or description. Its key never changes. */

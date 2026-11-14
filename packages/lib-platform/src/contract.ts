@@ -135,12 +135,14 @@ const roleDescription = () => z.string().trim().max(500);
 
 /** A new role: blank, holding only the signed-in basics, or a copy of `copyFrom`'s grants and scopes (never its people
  * or its second-factor setting, which follows its keys). Its key is made from its name and never changes. A copy
- * can't carry a key the caller doesn't hold (permission_not_held) or one kept for other roles (permission_not_for_role).
- * name_taken: two roles never share a name, whatever the case or spacing. */
+ * can't carry a key the caller doesn't hold (permission_not_held). A key kept for named roles (D-20: pay:read) is left
+ * out and named in `droppedKeys`, never silently (the architect on RAD-83). name_taken: two roles never share a name,
+ * whatever the case or spacing. */
 export const createRole = defineContract({
   method: 'POST', path: '/admin/roles', auth: 'session', perm: 'roles:write', tx: write,
   input: z.object({ name: roleName(), description: roleDescription(), copyFrom: roleKey().optional(), reason: reason() }),
-  output: z.object({ key: roleKey() }), errors: ['name_taken', 'permission_not_held', 'permission_not_for_role'],
+  output: z.object({ key: roleKey(), droppedKeys: z.array(z.object({ key: z.string(), reason: z.enum(['permission_not_for_role']) })) }),
+  errors: ['name_taken', 'permission_not_held'],
 });
 
 /** A role's name or description; a built-in role keeps its key. Not the admin role, nor the caller's own, nor one
