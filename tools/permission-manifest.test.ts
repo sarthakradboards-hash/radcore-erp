@@ -11,9 +11,15 @@ import { workerJobs } from '../apps/worker/src/worker-jobs.ts';
 import { PERMISSIONS } from '../packages/lib-platform/src/permissions.ts';
 import { JOB_PRINCIPALS, ROUTE_CHECKS } from './permission-manifest.ts';
 
-/** What a route checks, in the manifest's words. */
-const checkOf = (r: Route): string => (r.contract.auth === 'public' ? 'public' : r.contract.auth === 'webhook' ? 'webhook'
-  : r.contract.perm ?? 'none');
+/** What a route checks, in the manifest's words: its key; `public`, with any key it also names, which shouldn't be
+ * there; or `link <action>`, the one action a public link may take (RAD-41). */
+function checkOf(r: Route): string {
+  const c = r.contract;
+  if (c.auth === 'public') return c.perm === null ? 'public' : `public ${c.perm}`;
+  if (c.auth === 'link') return `link ${c.action}`;
+  if (c.auth === 'webhook') return 'webhook';
+  return c.perm;
+}
 /** What a job runs as, in the manifest's words. */
 const principalOf = (j: JobDefinition): string => (j.principal.kind === 'system'
   ? `system ${j.principal.name} [${j.principal.permissions.join(', ')}]`
@@ -69,6 +75,13 @@ describe('the permission manifest', () => {
     ['a route that was removed', (m: Record<string, string>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== 'GET /me'))],
   ])('fails on %s', async (_, tamper) => {
     expect(disagreements(tamper(await mountedRoutes()), ROUTE_CHECKS)).toHaveLength(1);
+  });
+
+  it('names a link route by its action, and catches a public route that also names a key', () => {
+    const route = (spec: Record<string, unknown>) => ({ contract: { method: 'POST', path: '/x', ...spec } }) as unknown as Route;
+    expect([checkOf(route({ auth: 'link', action: 'sales.view_quote', perm: null })),
+      checkOf(route({ auth: 'public', perm: 'users:write' })), checkOf(route({ auth: 'public', perm: null }))])
+      .toEqual(['link sales.view_quote', 'public users:write', 'public']);
   });
 
   it('fails on a job whose principal gained keys or became a person', () => {

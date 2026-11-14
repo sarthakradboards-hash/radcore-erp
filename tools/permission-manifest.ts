@@ -4,8 +4,9 @@
 // that loses or changes its check, or appears without a line here, fails CI, and so does a line here for a route
 // that's gone. Change a line only with the route's own change, in the same review.
 
-/** Each route, as "METHOD /path": its permission key, or `public` for a route anyone may call (its own rate limit
- * and, for sign-in, its own checks). */
+/** Each route, as "METHOD /path": its permission key; `public` for a route anyone may call (its own rate limit and,
+ * for sign-in, its own checks); or `link <action>` for a public link's one action (RAD-41). A module's export start
+ * route (defineExport) gets its line here like any other, with its own key: the export job checks that same key. */
 export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Sign-in, the second factor and passwords (RAD-32, RAD-33, RAD-34): public, with their own checks.
   'POST /sign-in': 'public',
@@ -54,7 +55,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
- * again when it runs; `user <by input>` where the key comes from the job's input (one export queue serves every list). */
+ * again when it runs; `user <by input>` where the key comes from the job's input. The export job is that one: it
+ * checks each export kind's own key, the one its start route's line above names (no module declares one yet). */
 export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'platform.saved-once-cleanup': 'system saved-once-cleanup []',
   'platform.outbox-cleanup': 'system outbox-cleanup []',
