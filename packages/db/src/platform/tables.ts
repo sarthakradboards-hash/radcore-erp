@@ -84,14 +84,34 @@ export const users = radcoreTable('users', {
 
 /**
  * Roles (RAD-35, M1-17; the plan's page 4): each person signs in with one. `key` never changes, and `name` is what
- * people see. A role that needs the second sign-in factor says so (D-19). What a role may do is its grants.
+ * people see. A role that needs the second sign-in factor says so (D-19). What a role may do is its grants. People
+ * make their own roles too (RAD-83), so `name_key` (the name without case or extra spaces) is unique: no two roles look
+ * alike on screen, as v1's store and stores did (RC-044).
  */
 export const roles = radcoreTable('roles', {
   key: text().primaryKey(),
   name: boundedText({ max: 60 }).notNull(),
+  nameKey: text().notNull().generatedAlwaysAs(sql`lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))`),
   description: boundedText({ max: 500 }).notNull(),
   secondFactorRequired: boolean().notNull().default(false),
-}, (t) => [check('ck_roles_key', sql`${t.key} ~ '^[a-z][a-z_]{1,31}$'`)]);
+}, (t) => [
+  check('ck_roles_key', sql`${t.key} ~ '^[a-z][a-z_]{1,31}$'`),
+  uniqueIndex('ux_roles_name_key').on(t.nameKey),
+]);
+
+/**
+ * The built-in roles' templates (RAD-83; the architect on RAD-83): the grants each of the plan's roles shipped with,
+ * seeded by migration and never changed by the app. "Reset to template" puts a built-in role's grants back to these;
+ * a role with no rows here is a custom one, which can be deleted.
+ */
+export const roleTemplates = radcoreTable('role_templates', {
+  role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
+  permission: text().notNull(),
+  scope: text().notNull(),
+}, (t) => [
+  primaryKey({ name: 'pk_role_templates', columns: [t.role, t.permission] }),
+  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own')`),
+]);
 
 /**
  * What a role may do (RAD-35, ADR-001 §6a): one permission key each, at a scope. `all` reaches every record of that
