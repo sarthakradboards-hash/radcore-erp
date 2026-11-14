@@ -418,7 +418,7 @@ under 63 bytes (§1).
 | RA005 | a write ran with no principal in the request context |
 | RA006 | a document's header and lines disagree (total, round-off), or allocations exceed it |
 | RA007 | stock: a document's movements and its Stock in Hand lines disagree, an empty location holds value, a movement's units don't match its quantity, an issue would take stock below zero (ADR-006 §4), or a movement's batches don't add up to its quantity or take a batch below zero (ADR-006 §4a) |
-| RA008 | a unit event isn't allowed from the unit's current state, or a vehicle whose item has a chassis number is received or delivered without one (ADR-006 §5) |
+| RA008 | a unit event isn't allowed from the unit's current state, a vehicle whose item has a chassis number is received or delivered without one, or an item's chassis flag is turned off while a unit of it has a number (ADR-006 §5) |
 
 (The `RA` prefix keeps them apart from the register's RC-numbers, which name v1 defects.)
 

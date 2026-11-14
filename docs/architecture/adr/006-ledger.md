@@ -406,6 +406,13 @@ serialised)`: only a serialised item can have it.
   keeps the old value and the new.
 - **`delivered`** is refused for a unit whose item has the flag and which has no chassis number (RA008), so every
   such vehicle leaves with one for its papers.
+- **Turning the flag on** applies from then on: every later `received` needs a number, and so does every later
+  `delivered`. Units already in stock get theirs through `chassis_recorded` before they can leave. Units already
+  with customers are untouched.
+- **Turning it off** is refused while any unit of the item, in stock or sold, has a chassis number. The item
+  service answers `chassis_numbers_recorded`, and a trigger on `items` refuses it too (RA008). Once a vehicle has
+  its number, the product is a registered vehicle, and turning the flag off would let the next one leave without
+  one. A flag set by mistake can still be turned off before any number is entered.
 
 ### 6. What each document posts
 
@@ -695,6 +702,7 @@ of basic, 1,800.00, and employer PF is the same. Professional tax is 200.00 and 
   `ma1-example-0000001` is refused, since its key is the same.
 - S-0002 came in before the flag was set and has none. Its `delivered` event is refused (RA008) until a
   `chassis_recorded` event, with a reason, gives it one.
+- Turning SCOOTER's flag off now is refused (`chassis_numbers_recorded`, RA008): S-0006 has a number.
 
 ## Consequences
 
