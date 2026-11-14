@@ -1,6 +1,6 @@
 // RAD-34's /me contract, declared ahead of the sessions service: its shape is what ui builds RAD-50, RAD-52 and
 // RAD-55 against, and the same schema refuses a bad answer on both sides.
-import { newPasswordFields, requestFor } from '@radcore/lib-common';
+import { maskOutput, newPasswordFields, piiPlan, requestFor } from '@radcore/lib-common';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as contracts from './contract.ts';
@@ -189,6 +189,15 @@ describe('the admin contracts', () => {
     expect(okFor(listUsers, { ...list, sort: { column: 'lastSignInAt', desc: true } })).toBe(true);
     expect(okFor(listUsers, { ...list, sort: { column: 'role', desc: false } })).toBe(false);
     expect(okFor(listSessions, { ...list, sort: { column: 'lastSeenAt', desc: true } })).toBe(false);
+  });
+
+  it("mask a person's address without pii:read, and log each one shown against users (RAD-103)", () => {
+    const plan = piiPlan(listUsers.output);
+    if (plan === null) throw new Error('listUsers has no pii() field');
+    const page = { items: [{ id, displayName: 'Asha Rao', email: 'asha@example.com', status: 'active', role: 'admin',
+      lastSignInAt: null, secondFactor: 'enrolled', self: true }], next: null };
+    expect(maskOutput(plan, page, []).value).toEqual({ ...page, items: [{ ...page.items[0], email: { masked: '••••••' } }] });
+    expect(maskOutput(plan, page, ['pii:read']).looks).toEqual([{ table: 'users', id }]);
   });
 
   it("flag the caller's own row and drop what isn't declared, such as a password hash or an IP", () => {
