@@ -303,7 +303,8 @@ They are append-only with explicit reversals:
     top-up (§8) made it. Rows go through the parent, and the owner's default privileges would otherwise let the
     app insert straight into an `audit_log` partition and forge audit rows.
   - **Closed to the read-only login:** `radcore.secrets` (RAD-65). Its migration revokes everything from
-    `radcore_read`, and `tools/logins.test.ts` checks it.
+    `radcore_read`, and `tools/logins.test.ts` checks it. Also every `pii('pay')` column (RAD-40, D-20). The
+    migration that adds one revokes `radcore_read`'s SELECT on it, and `tools/logins.test.ts` names it.
   - **The guard.** `tools/logins.test.ts` fails on any append-only table, log or view that `radcore_app` can
     still write, and on any partition either login holds a privilege on.
   - **The settings check** refuses `radcore_owner` as `DATABASE_URL` everywhere. In staging and production it
@@ -316,11 +317,18 @@ They are append-only with explicit reversals:
   functions; index scans don't need it. Their member objects belong to the bootstrap superuser, so the owner's
   default `REVOKE EXECUTE` doesn't reach them, and the missing `USAGE` does that job.
 
-**Access logging and read-only requests.** A GET runs read-only (ADR-002 §4), so it can't write `access_log`. When
-a GET opens a full record:
-1. lib-platform commits the read.
-2. It writes the access row through `record_access` in its own short transaction, before the response goes out.
-3. If that write fails, the request fails, and the record isn't returned without its log.
+**Access logging (RAD-40).** A look at a record is an answer object with an `id` and at least one unmasked `pii()`
+field. Every object schema holding a `pii()` field names its table (`piiRecord('customers', …)`), so a customer
+reached through an order is logged against `customers`. The handler refuses to mount a contract with a `pii()` field
+outside a `piiRecord`.
+- An answer's looks are written in one `record_access` statement, one row per distinct record.
+- A write logs them in the same transaction as its work and its saved-once answer. A replayed answer logs nothing new.
+- A GET runs read-only (ADR-002 §4), so it can't write `access_log`. lib-platform commits the read, then writes the
+  looks in their own short transaction before the response goes out. If that write fails, the request fails, and the
+  record isn't returned without its log.
+- A list page logs each row that is a look, at most `MAX_LIMIT` (200) per page.
+- An export doesn't log its rows: it can hold 1,000,000, and its transaction is read-only. Its file is kept (D-12) and
+  records what it held. Each `POST /exports/:id/download` writes `record_access('data_exports', <id>)`.
 
 A public link's request (`auth: 'link'`, ADR-001 §6a, RAD-41) is logged the same way, by the generic handler, after
 every such request's work commits. Its row names the record's table and id, like any opening, and its principal is
@@ -328,23 +336,18 @@ every such request's work commits. Its row names the record's table and id, like
 (`public_links.record_table`, which must be one of radcore's tables). That check runs only when a row is written, so
 a migration that renames such a table also updates `public_links.record_table`.
 
-A full record is served, and its access logged, only when the browser's `Sec-Fetch-Site` is `same-origin`, or
+An unmasked `pii()` field is served, and its look logged, only when the browser's `Sec-Fetch-Site` is `same-origin`, or
 `none` (a typed address or a bookmark). Otherwise a cross-site link could make a person "open" a record they never
 looked at, for example to make it seem they viewed someone's pay.
 - The browser sets this header itself, and a page can't change it.
 - It reaches `api` in one of two ways (ADR-004 §3): straight from the browser through `proxy`, or forwarded by
   `web`'s server components. `web` forwards the browser's own value **unchanged** on every call to `api`, and never
   sets one itself.
-- A request without the header, or with `cross-site` or `same-site`, gets the record's page without the full
-  record. A link from an email is one of these. The person opens the record with one click, which is a same-origin
+- A request without the header, or with `cross-site` or `same-site`, gets its `pii()` fields masked. A link from an
+  email is one of these. The person opens the record with one click, which is a same-origin
   request.
-- The generic handler does this structurally (RAD-40): such a request sees every `pii()` value masked, as if it held
-  neither `pii:read` nor `pay:read`, so it shows nothing that needs logging.
-
-**Pay columns and the read-only login.** `radcore_read` gets `SELECT` on every table (§7c). The migration that adds
-a `pii('pay')` column (salaries and bank details, D-20; M6-03 adds the first) revokes `radcore_read`'s `SELECT` on
-the table and grants back every other column, as 0005 does for `users`' password hash, so the restore drill's login
-never reads pay.
+- The generic handler answers such a request as if its principal held neither `pii:read` nor `pay:read`, and logs
+  nothing (RAD-40).
 
 **Proof (M1-06, M1-12):**
 - For every append-only table **and every partition, the default included, by name**, a test connected as the
@@ -354,7 +357,7 @@ never reads pay.
   `radcore.audit_log`.
 - A posted invoice can't be moved to `draft`, its lines can't be edited, and a write-once column can't be written
   twice.
-- A full-record read with `Sec-Fetch-Site: cross-site`, or with no header, returns no full record and writes no
+- A read with `Sec-Fetch-Site: cross-site`, or with no header, gets its `pii()` fields masked and writes no
   access row. With `same-origin` or `none` it does both, including through `web`'s server-side call.
 
 ### 8. Logs partitioned by month (M1-12)

@@ -1,10 +1,11 @@
 // RAD-40 (M1-22, RC-040, ADR-001 §7a, ADR-005 §7c) over real HTTP on PostgreSQL 16: the generic handler masks pii()
-// fields on the declared output for a principal without pii:read (pay: pay:read), in a lookup, a list and a value
-// reached through a relation; logs each record shown unmasked to access_log before answering; keeps only the masked
-// answer for saved-once; and refuses a write that sends a mask back. Here in tools/ because server code may not call
-// fetch (ADR-002 L8).
+// fields on the declared output for a principal without pii:read (pay: pay:read), in a lookup, a list and a record
+// reached through another; logs each record shown unmasked against its piiRecord's table, a read's before it answers
+// and a write's with its work; keeps only the masked answer for saved-once, and a replay logs nothing new; refuses a
+// write that sends a mask back; and refuses to mount a pii() field outside a piiRecord. Here in tools/ because server
+// code may not call fetch (ADR-002 L8).
 import { randomUUID } from 'node:crypto';
-import { defineContract, idString, listOf, pii } from '@radcore/lib-common';
+import { defineContract, idString, listOf, pii, piiRecord } from '@radcore/lib-common';
 import { defineRoute, loadConfig, type Principal } from '@radcore/lib-platform';
 import { createDatabase } from '@radcore/lib-platform/runtime';
 import { testPassword, testSettings } from '@radcore/test-helpers';
@@ -20,22 +21,17 @@ const ORIGIN = config().publicOrigin;
 const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
-// A table of radcore's that exists today, standing in for a module's own (`people`).
-const TABLE = 'files';
 
-const person = z.object({ id: idString(), name: z.string(), phone: pii(), salary: pii(z.string(), 'pay'),
-  manager: z.object({ id: idString(), phone: pii() }).nullable() });
+const person = piiRecord('t_people', z.object({ id: idString(), name: z.string(), phone: pii(z.string(), 'last4'),
+  salary: pii(z.string(), 'pay'), manager: piiRecord('t_managers', z.object({ id: idString(), phone: pii(z.string(), 'last4') })).nullable() }));
 type Person = z.output<typeof person>;
 const getPerson = defineContract({ method: 'POST', path: '/t/people/one', auth: 'session', perm: 'people:read', tx: read,
-  records: TABLE, input: z.object({ id: idString() }), output: person });
+  input: z.object({ id: idString(), manager: idString().optional() }), output: person });
 const listPeople = defineContract({ method: 'POST', path: '/t/people/list', auth: 'session', perm: 'people:read', tx: read,
-  records: TABLE, input: z.object({ ids: z.array(idString()) }), output: listOf(person) });
+  input: z.object({ ids: z.array(idString()) }), output: listOf(person) });
 const savePerson = defineContract({ method: 'POST', path: '/t/people/save', auth: 'session', perm: 'people:read', tx: write,
-  records: TABLE, input: z.object({ id: idString(), name: z.string(), phone: z.string().optional(),
+  input: z.object({ id: idString(), name: z.string(), phone: z.string().optional(),
     notes: z.array(z.object({ text: z.string() })).optional() }), output: person });
-// Shows a pii() value with no record id around it, which can't be logged: a bug, so 500.
-const noId = defineContract({ method: 'POST', path: '/t/people/no-id', auth: 'session', perm: 'people:read', tx: read,
-  records: TABLE, input: z.object({}), output: z.object({ phone: pii() }) });
 
 const someone = (id: string): Person => ({ id, name: 'Asha', phone: '+919876543210', salary: '125000.00', manager: null });
 const as = (permissions: string[]): Principal => ({ kind: 'user', userId: randomUUID(), permissions: ['people:read', ...permissions] });
@@ -53,13 +49,13 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
   });
 
   const routes = [
-    defineRoute(getPerson, async (_ctx, { id }) => ({ ...someone(id), manager: { id: randomUUID(), phone: '+911234567890' } })),
+    defineRoute(getPerson, async (_ctx, { id, manager }) => ({ ...someone(id),
+      manager: manager === undefined ? null : { id: manager, phone: '+911234567890' } })),
     defineRoute(listPeople, async (_ctx, { ids }) => ({ items: ids.map(someone), next: null })),
     defineRoute(savePerson, async (_ctx, input) => {
       saved(input);
       return someone(input.id);
     }),
-    defineRoute(noId, async () => ({ phone: '+919876543210' })),
   ];
   async function serve(principal: Principal, fn: (post: (path: string, body: object, key?: string) => Promise<Response>) => Promise<void>,
     site: string | null = 'same-origin') {
@@ -76,25 +72,26 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
   const looksAt = async (ids: string[]) => (await admin.query<{ record_table: string; record_id: string; created_by: string }>(
     'select record_table, record_id, created_by from radcore.access_log where record_id = any($1) order by record_id', [ids])).rows;
 
-  it('masks personal data without pii:read and pay without pay:read, a relation included, and logs no look', async () => {
-    const id = randomUUID();
+  it('masks personal data without pii:read and pay without pay:read, a related record included, and logs no look', async () => {
+    const [id, manager] = [randomUUID(), randomUUID()];
     await serve(as([]), async (post) => {
-      const body = await (await post('/t/people/one', { id })).json() as Person;
+      const body = await (await post('/t/people/one', { id, manager })).json() as Person;
       expect(body).toEqual({ ...someone(id), phone: MASKED_PHONE, salary: MASKED_PAY,
-        manager: { id: expect.any(String) as string, phone: { masked: '••••••7890' } } });
+        manager: { id: manager, phone: { masked: '••••••7890' } } });
     });
-    expect(await looksAt([id])).toEqual([]);
+    expect(await looksAt([id, manager])).toEqual([]);
   });
 
-  it('shows pii:read personal data but still masks pay, and logs the look as the principal, before answering', async () => {
-    const id = randomUUID();
+  it('shows pii:read personal data but still masks pay, and logs each record against its own table before answering', async () => {
+    const [id, manager] = [randomUUID(), randomUUID()];
     const reader = as(['pii:read']);
+    const by = reader.kind === 'user' ? `user:${reader.userId}` : '';
     await serve(reader, async (post) => {
-      const body = await (await post('/t/people/one', { id })).json() as Person;
+      const body = await (await post('/t/people/one', { id, manager })).json() as Person;
       expect([body.phone, body.salary]).toEqual(['+919876543210', MASKED_PAY]);
-      // The look is in the log by the time the answer arrives.
-      expect(await looksAt([id])).toEqual([{ record_table: TABLE, record_id: id,
-        created_by: reader.kind === 'user' ? `user:${reader.userId}` : '' }]);
+      // The looks are in the log by the time the answer arrives.
+      expect((await looksAt([id, manager])).map((r) => [r.record_id, r.record_table, r.created_by]).sort())
+        .toEqual([[id, 't_people', by], [manager, 't_managers', by]].sort());
     });
   });
 
@@ -136,7 +133,17 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
     expect(JSON.stringify(row?.answer)).not.toContain('9876543210');
   });
 
-  it('refuses a write that sends a mask back, at any depth, before the service runs', async () => {
+  it("logs a write's look with its work, and a replay logs nothing new", async () => {
+    const id = randomUUID();
+    const key = randomUUID();
+    await serve(as(['pii:read']), async (post) => {
+      expect((await post('/t/people/save', { id, name: 'Asha' }, key)).status).toBe(200);
+      expect((await post('/t/people/save', { id, name: 'Asha' }, key)).status).toBe(200);
+    });
+    expect((await looksAt([id])).map((r) => r.record_table)).toEqual(['t_people']);
+  });
+
+  it('refuses a write that sends a mask back, at any depth, before the service runs, and saves bulleted text', async () => {
     saved.mockClear();
     await serve(as([]), async (post) => {
       for (const [body, path] of [[{ phone: '••••••3210' }, ['phone']], [{ notes: [{ text: 'ok' }, { text: '••••••' }] }, ['notes', 1, 'text']]] as const) {
@@ -144,13 +151,17 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
         const err = await res.json() as { code: string; issues: { path: unknown[]; code: string }[] };
         expect([res.status, err.code, err.issues.map((i) => [i.path, i.code])]).toEqual([400, 'invalid_input', [[path, 'masked_value']]]);
       }
+      expect(saved).not.toHaveBeenCalled();
+      const bulleted = await post('/t/people/save', { id: randomUUID(), name: 'Asha', notes: [{ text: '• first' }] }, randomUUID());
+      expect(bulleted.status).toBe(200);
     });
-    expect(saved).not.toHaveBeenCalled();
   });
 
-  it('answers 500 for an unmasked value with no record id around it, since its look could not be logged', async () => {
-    await serve(as(['pii:read']), async (post) => {
-      expect((await post('/t/people/no-id', {})).status).toBe(500);
-    });
+  it('refuses to mount a contract with a pii() field outside a piiRecord', () => {
+    const stray = defineContract({ method: 'POST', path: '/t/people/stray', auth: 'session', perm: 'people:read', tx: read,
+      input: z.object({}), output: z.object({ id: idString(), phone: pii() }) });
+    expect(() => createApp(config(), logger(), { db, authenticate: async () => null,
+      routes: [defineRoute(stray, async () => ({ id: randomUUID(), phone: '+919876543210' }))] }))
+      .toThrow(/POST \/t\/people\/stray: a pii\(\) field sits outside any piiRecord/);
   });
 });

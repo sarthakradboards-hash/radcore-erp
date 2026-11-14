@@ -551,25 +551,21 @@ codes.
 - There is no total count. A screen that needs counts, such as count cards, calls a count contract of its own, so a
   list never adds up a whole ledger (RC-176).
 
-**Masked fields.** A `pii()` field sent to a principal without `pii:read` arrives masked (`"••••••3210"`) and
-marked as masked in the output type.
-- On the wire a masked value is `{ masked: "••••••3210" }`, so a field's type is `T | { masked: string }` and every
-  screen handles both; lib-common's `isMasked` tells them apart, for the server and the kit alike (RAD-40).
-- The mask is always six bullets, so it gives no length away. Personal data longer than 6 characters keeps its last
-  4; anything shorter, and all pay, is masked whole.
-- A contract whose output has `pii()` fields names its records' table, `records: '<table>'`, or `defineContract`
-  refuses it. The handler logs a look at each record shown with an unmasked value: the outermost object with an
-  `id`, so a value reached through a relation counts as a look at the record that holds it (ADR-005 §7c). An
-  unmasked value with no `id` around it can't be logged, so it answers 500.
-- An export marks its personal columns, `exportContract(kind, perm, filter, columns, { phone: 'personal' })`. The
-  file masks them for a starter without the key, and an export that holds any unmasked is logged as a look at its
-  own `data_exports` row, which names the list and the filter.
-- Salaries and bank details carry the stricter `pii('pay')`. It needs `pay:read`, which only admin and owner hold
-  (D-20, Sarthak, 6 Nov 2026), so a role with `pii:read` still gets them masked (M1-22).
+**Masked fields (RAD-40).** A `pii()` field that its principal can't see arrives as `{ masked: "••••••" }`, and its
+wire type is `T | { masked: string }`, so a screen can't miss it. The mask is always six bullets, so it doesn't give
+away the length.
+- `pii(schema)` is masked whole. `pii(schema, 'last4')`, for an identifier like a phone or PAN, keeps the last 4
+  characters (`"••••••3210"`) when the value has at least 8.
+- Salaries and bank details carry `pii(schema, 'pay')`, masked whole. It needs `pay:read`, which only admin and owner
+  hold (D-20, Sarthak, 6 Nov 2026), so a role with `pii:read` still gets them masked (M1-22).
+- The generic handler masks after the output check and before saved-once keeps the answer, so a stored answer never
+  holds what its principal couldn't see.
 - Edit forms show it read-only and never send it back. Edit contracts change only the fields they receive (patch
   semantics), so a field left out is left alone.
-- The server also refuses an input value shaped like a mask, with `invalid_input`. A masked value can never be
-  saved over the real one.
+- The server refuses an input string that starts with six `•` (U+2022), with `invalid_input`. A masked value can
+  never be saved over the real one, and text pasted from a bulleted list still saves.
+- An export marks its personal columns the same way, `exportContract(kind, perm, filter, columns, { phone: 'last4' })`,
+  and its file masks them for a starter without the key.
 
 **Same origin, no CORS.**
 - Caddy serves `web` at `/` and `api` at `/api` on one origin (ADR-004).

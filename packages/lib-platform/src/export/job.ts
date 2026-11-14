@@ -8,13 +8,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { dataExports, platformTx } from '@radcore/db/platform';
-import { idString, maySee, type PiiKind } from '@radcore/lib-common';
+import { idString, type PiiKind } from '@radcore/lib-common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { principalId, type Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import { defineJob, type JobDefinition } from '../jobs.ts';
-import { recordLooks } from '../looks.ts';
 import { defineRoute, type Route } from '../route.ts';
 import { recordSecurityEvent } from '../security-events.ts';
 import { EXPORT_MAX_ROWS, type ExportContract } from './contract.ts';
@@ -65,7 +64,7 @@ export const defineExport = (exports: readonly ModuleExport[]): Route[] =>
 
 type Written =
   | { exportId: string; kind: string; skip: true }
-  | { exportId: string; kind: string; skip: false; dir: string; path: string; rows: number; looked: boolean }
+  | { exportId: string; kind: string; skip: false; dir: string; path: string; rows: number }
   | { exportId: string; kind: string; skip: false; failure: 'too_large' | 'failed'; error?: unknown };
 
 const setFailed = (failure: 'too_large' | 'failed', exportId: string) => async (ctx: Ctx) => {
@@ -107,9 +106,7 @@ export function defineExportJob(exports: readonly ModuleExport[], { cap = EXPORT
     const dir = await mkdtemp(join(tmpdir(), 'radcore-export-'));
     const path = join(dir, `${kind}.csv`);
     try {
-      // Someone who sees a pii column unmasked looked at what the export holds: its row names the list and filter.
-      const looked = Object.values(m.pii).some((k) => k !== undefined && maySee(k, ctx.principal.permissions));
-      return { exportId, kind, skip: false, dir, path, rows: await m.write(ctx, row.filter, path, cap), looked };
+      return { exportId, kind, skip: false, dir, path, rows: await m.write(ctx, row.filter, path, cap) };
     } catch (error) {
       await rm(dir, { recursive: true, force: true });
       return error instanceof ExportTooLarge ? { exportId, kind, skip: false, failure: 'too_large' }
@@ -132,7 +129,6 @@ export function defineExportJob(exports: readonly ModuleExport[], { cap = EXPORT
             .where(eq(dataExports.id, done.exportId));
           await recordSecurityEvent(ctx, { kind: 'export', detail: { what: done.kind, rows: done.rows } },
             { userId: ctx.principal.kind === 'user' ? ctx.principal.userId : null, device: null });
-          if (done.looked) await recordLooks(ctx, 'data_exports', [done.exportId]);
         });
       } catch (error) {
         await again(setFailed('failed', done.exportId));

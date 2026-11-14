@@ -54,7 +54,7 @@ describe('writeExportFile', () => {
   it('masks a pii column for a principal without its key, as a screen would (RAD-40)', async () => {
     const lines = async (who: Ctx, name: string) => {
       const path = join(dir, name);
-      await writeExportFile(who, list(1, 2, undefined, { phone: 'personal', balance: 'pay' }), { city: 'Pune' }, path, 5);
+      await writeExportFile(who, list(1, 2, undefined, { phone: 'last4', balance: 'pay' }), { city: 'Pune' }, path, 5);
       return readFileSync(path, 'utf8').replace(/^﻿/, '').trimEnd().split('\n').slice(1);
     };
     expect(await lines(as([]), 'masked.csv')).toEqual(['Party 0 of Pune,••••••3210,••••••']);

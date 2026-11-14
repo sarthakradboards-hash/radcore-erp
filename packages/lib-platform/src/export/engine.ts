@@ -12,6 +12,7 @@ import type { z } from 'zod';
 import { EXPORT_MAX_ROWS, type downloadExport, type getExport } from './contract.ts';
 import { principalId, type Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
+import { recordLooks } from '../looks.ts';
 import { recordSecurityEvent } from '../security-events.ts';
 import { csvWriter } from './csv.ts';
 
@@ -124,7 +125,9 @@ export async function queuedExport(ctx: Ctx): Promise<boolean> {
   return row !== undefined;
 }
 
-/** downloadExport: a short-lived link to the person's own ready export, recorded as a `download` event (RC-031). */
+/** downloadExport: a short-lived link to the person's own ready export, recorded as a `download` event (RC-031) and
+ * as a look at the export (RAD-40): its file is kept and records what it held, and its row names the list and the
+ * filter, so a download is logged once rather than its rows one by one (the architect on RAD-40). */
 export async function exportDownload(ctx: Ctx, input: z.output<typeof downloadExport.input>,
 ): Promise<z.input<typeof downloadExport.output>> {
   const row = await ownExport(ctx, input.id);
@@ -132,5 +135,6 @@ export async function exportDownload(ctx: Ctx, input: z.output<typeof downloadEx
   const url = await ctx.files.downloadUrl(row.storeKey, `${row.kind}.csv`);
   await recordSecurityEvent(ctx, { kind: 'download', detail: { fileId: row.id } },
     { userId: ctx.principal.kind === 'user' ? ctx.principal.userId : null, device: null });
+  await recordLooks(ctx, [{ table: 'data_exports', id: row.id }]);
   return { url };
 }

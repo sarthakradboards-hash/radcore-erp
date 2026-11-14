@@ -24,7 +24,7 @@ it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
 
 // A fixture list: `n` rows, served two at a time through an opaque cursor, as a module's screen list would.
 const parties = exportContract('crm.fixture-parties', 'crm:export', z.object({ n: z.number().int() }), ['name', 'phone'],
-  { phone: 'personal' });
+  { phone: 'last4' });
 const partiesExport = exportOf(parties, async (_ctx, { n }, { after }) => {
   const start = after === undefined ? 0 : Number(after);
   const items = Array.from({ length: Math.min(2, n - start) }, (_, i) => ({ name: `Party ${String(start + i)}`, phone: '+919876543210' }));
@@ -32,7 +32,7 @@ const partiesExport = exportOf(parties, async (_ctx, { n }, { after }) => {
 });
 
 it('refuses a pii mark on a column the export does not have', () => {
-  expect(() => exportContract('crm.fixture-x', 'crm:export', z.object({}), ['name'], { phone: 'personal' })).toThrow(/isn't a column/);
+  expect(() => exportContract('crm.fixture-x', 'crm:export', z.object({}), ['name'], { phone: 'last4' })).toThrow(/isn't a column/);
 });
 
 it('refuses an export kind declared twice', () => {
@@ -108,20 +108,24 @@ describe.skipIf(!url)('an export, start to download', () => {
     const { url: link } = await runInTransaction(db, write, owner(), randomUUID(), (ctx) => exportDownload(ctx, { id: exportId }), files);
     const key = /export\/[0-9a-f-]{36}/.exec(link)?.[0] ?? '';
     const lines = (uploaded.get(key) ?? '').replace(/^﻿/, '').trimEnd().split('\n');
-    // The starter has no pii:read, so the phone is masked in the file as on a screen, and nothing was looked at.
+    // The starter has no pii:read, so the phone is masked in the file as on a screen.
     expect(lines).toEqual(['name,phone', ...[0, 1, 2, 3, 4].map((i) => `Party ${String(i)},••••••3210`)]);
-    expect((await pool.query('select 1 from radcore.access_log where record_id = $1', [exportId])).rows).toEqual([]);
   });
 
-  it('shows a pii column to a starter with pii:read, and logs the export as looked at (RAD-40)', async () => {
+  it('shows a pii column to a starter with pii:read, and logs each download as a look at the export (RAD-40)', async () => {
     const reader = { ...await person(), permissions: ['crm:export', 'session:read', 'pii:read'] };
     const exportId = await begin(1, reader);
     await run(exportId, reader);
-    const { url: link } = await runInTransaction(db, write, reader, randomUUID(), (ctx) => exportDownload(ctx, { id: exportId }), files);
+    // Nothing is logged by the job itself: an export doesn't log its rows (the architect on RAD-40).
+    expect((await pool.query('select 1 from radcore.access_log where record_id = $1', [exportId])).rows).toEqual([]);
+    const download = () => runInTransaction(db, write, reader, randomUUID(), (ctx) => exportDownload(ctx, { id: exportId }), files);
+    const { url: link } = await download();
+    await download();
     const key = /export\/[0-9a-f-]{36}/.exec(link)?.[0] ?? '';
     expect((uploaded.get(key) ?? '').replace(/^﻿/, '').trimEnd().split('\n')).toEqual(['name,phone', 'Party 0,+919876543210']);
+    const row = { record_table: 'data_exports', created_by: `user:${reader.userId}` };
     expect((await pool.query('select record_table, created_by from radcore.access_log where record_id = $1', [exportId])).rows)
-      .toEqual([{ record_table: 'data_exports', created_by: `user:${reader.userId}` }]);
+      .toEqual([row, row]);
   });
 
   it('fails too_large past its cap and uploads nothing, rather than a truncated file', async () => {
