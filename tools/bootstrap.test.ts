@@ -12,7 +12,6 @@ import { createAccount } from '../packages/lib-platform/src/auth/account.ts';
 import { bootstrapAdmin, runBootstrapAdmin } from '../packages/lib-platform/src/auth/bootstrap.ts';
 import type { Lockout } from '../packages/lib-platform/src/auth/lockout.ts';
 import { createPasswords } from '../packages/lib-platform/src/auth/passwords.ts';
-import { assignRole } from '../packages/lib-platform/src/auth/roles.ts';
 import type { Database } from '../packages/db/src/schema.ts';
 import type { Mail } from '../packages/lib-platform/src/mail.ts';
 import { ensureLogins } from './db-logins.ts';
@@ -73,15 +72,13 @@ const recorder = () => {
 const tokenIn = (m: Mail | undefined) => /\/invite#token=([A-Za-z0-9_-]{16,512})$/m.exec(m?.text ?? '')?.[1] ?? '';
 
 describe.skipIf(!adminUrl)('the first admin', { timeout: 60_000 }, () => {
-  it('invites SEED_ADMIN_EMAIL once, with the link only in the email, and gives the role hook the new user', async () => {
+  it('invites SEED_ADMIN_EMAIL once, with the link only in the email, as the admin', async () => {
     await withDatabase(async ({ db, sql }) => {
       const { sent, mailer } = recorder();
-      const assignRole = vi.fn(async () => undefined);
-      const done = await bootstrapAdmin(db, { email: SEED, reissue: false, mailer, publicOrigin: ORIGIN, assignRole });
+      const done = await bootstrapAdmin(db, { email: SEED, reissue: false, mailer, publicOrigin: ORIGIN });
       expect(done).toEqual({ outcome: 'invited', to: 'o…n@example.in' });
-      const [user] = await sql<{ id: string; email: string; status: string }>('select id, email, status from radcore.users');
-      expect([user?.email, user?.status]).toEqual(['owner.person@example.in', 'invited']);
-      expect(assignRole).toHaveBeenCalledWith(expect.anything(), user?.id);
+      const [user] = await sql<{ email: string; status: string; role: string }>('select email, status, role from radcore.users');
+      expect([user?.email, user?.status, user?.role]).toEqual(['owner.person@example.in', 'invited', 'admin']);
       expect(sent.map((m) => m.to)).toEqual(['owner.person@example.in']);
       const token = tokenIn(sent[0]);
       expect(sent[0]?.text).toContain(`${ORIGIN}/invite#token=${token}`);
@@ -96,8 +93,7 @@ describe.skipIf(!adminUrl)('the first admin', { timeout: 60_000 }, () => {
   it('makes the first admin an admin: once they accept, they sign in holding every admin key, not locked out (RC-021)', async () => {
     await withDatabase(async ({ db, sql }) => {
       const { sent, mailer } = recorder();
-      await bootstrapAdmin(db, { email: SEED, reissue: false, mailer, publicOrigin: ORIGIN,
-        assignRole: (ctx, userId) => assignRole(ctx, userId, 'admin') });
+      await bootstrapAdmin(db, { email: SEED, reissue: false, mailer, publicOrigin: ORIGIN });
       const [user] = await sql<{ id: string; role: string }>('select id, role from radcore.users');
       expect(user?.role).toBe('admin');
       const account = createAccount({ passwords: await createPasswords(), lockout: { succeeded: async () => undefined } as unknown as Lockout });

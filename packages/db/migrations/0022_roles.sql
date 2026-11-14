@@ -38,6 +38,10 @@ SELECT radcore.audit_attach('role_grants', keep => array['scope']);
 SELECT radcore.audit_attach('users', keep => array['status', 'password_set_at', 'role'],
   redact => array['email', 'email_key', 'display_name', 'password_hash']);
 --> statement-breakpoint
+-- The seed below is stamped and audited, so it names its principal here, as migrate() does on its own connection: a
+-- migration URL carrying its own `options` (the test setup's `-c role=…`) replaces the one migrate() adds (auditor on #130).
+SELECT set_config('app.principal', 'system:migrate', true);
+--> statement-breakpoint
 -- The plan's 11 roles (page 4), one per person. `counter` is the plan's Store, the counter staff: a key one letter
 -- from `stores` was v1's defect RC-044. D-19 asks the second factor of owner, admin, accounts and HR.
 INSERT INTO radcore.roles (key, name, description, second_factor_required) VALUES
@@ -71,3 +75,6 @@ UNION ALL
 SELECT 'accounts', k, 'all' FROM unnest(array['statement_files:read', 'statement_files:write']) AS k
 UNION ALL
 SELECT r, k, 'all' FROM unnest(array['stores', 'accounts']) AS r, unnest(array['import_files:read', 'import_files:write']) AS k;
+--> statement-breakpoint
+-- A first admin made before this migration (RAD-32's bootstrap) gets the admin role now, so they aren't locked out (RC-021).
+UPDATE radcore.users SET role = 'admin' WHERE id IN (SELECT user_id FROM radcore.bootstrap) AND role IS NULL;
