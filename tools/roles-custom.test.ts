@@ -129,8 +129,15 @@ describe.skipIf(!url)('custom roles and templates', () => {
     const { key } = await create(as, `T ${letters()}`, source);
     expect([await grantsOf(key), await flagOf(key)]).toEqual([{ 'session:read': 'all', 'photo_files:read': 'own', 'audit:read': 'all' }, false]);
     expect((await asAdmin('select 1 from radcore.users where role = $1', [key]))).toEqual([]);
-    // D-20: owner holds pay:read, kept for admin and owner, so no copy of owner can.
-    expect(await outcome(create(as, `T ${letters()}`, 'owner'))).toBe('permission_not_for_role');
+    expect((await create(as, `T ${letters()}`, source)).droppedKeys).toEqual([]);
+    // D-20: owner holds pay:read, kept for admin and owner, so a copy of owner gets every key but that one, and says so,
+    // in its answer and in the change's reason (the architect on RAD-83).
+    const copy = await create(as, `T ${letters()}`, 'owner');
+    const { 'pay:read': pay, ...rest } = await grantsOf('owner');
+    expect([pay, await grantsOf(copy.key), copy.droppedKeys]).toEqual(['all', rest, ['pay:read']]);
+    const why = await asAdmin<{ reason: string }>(`select distinct r.reason from radcore.audit_log a join radcore.change_reasons r
+      on r.id = a.reason_id where a.table_name = 'roles' and a.record_id = $1`, [copy.key]);
+    expect(why).toEqual([{ reason: `${reason} (Not copied, kept for named roles: pay:read)` }]);
     // A copy holding a key that needs the second factor needs it.
     const strong = await role({ 'session:read': 'all', 'users:write': 'all' });
     expect(await flagOf((await create(as, `T ${letters()}`, strong)).key)).toBe(true);
