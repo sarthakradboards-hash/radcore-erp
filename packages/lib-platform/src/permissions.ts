@@ -34,6 +34,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'statement_files:write', module: 'Files', label: 'Upload bank statements', secondFactor: true },
   { key: 'import_files:read', module: 'Files', label: 'See import files' },
   { key: 'import_files:write', module: 'Files', label: 'Upload import files' },
+  // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so the keys name no records.
+  { key: 'locations:read', module: 'Stock', label: 'See locations' },
+  { key: 'locations:write', module: 'Stock', label: 'Add and change locations, switch them off' },
 ].map((p) => Object.freeze(p)));
 
 /**
