@@ -26,6 +26,22 @@ const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'uni
 // Written only by triggers and record_access, never by an INSERT from the app.
 const NO_INSERT = ['audit_log', 'access_log', 'event_log'];
 const EVERY = 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
+// RAD-40 (D-20, ADR-005 §7c): every pii('pay') column, as 'table.column', each closed to the read-only login by the
+// migration that adds it. None exists yet; M6-03 adds the first, and names it here.
+const PAY_COLUMNS: readonly string[] = [];
+// A column whose name says pay must be on that list, so a pay column can't land unlisted and readable.
+const PAY_LIKE = '(salar|wage|ctc|gross|net_pay|basic_pay|bank|ifsc|account_number|iban|upi_id)';
+// Columns PAY_LIKE matches that aren't pay, as 'table.column', each with its reason, such as an invoice's
+// gross_amount or a payment's bank_account_id: business data the read-only login keeps (the architect and the auditor
+// on #156). The test skips them.
+const NOT_PAY: Readonly<Record<string, string>> = {};
+const PAY_READABLE = `select c.table_name || '.' || c.column_name as col,
+    has_column_privilege('radcore_read', format('radcore.%I', c.table_name), c.column_name, 'SELECT') as readable
+  from information_schema.columns c join pg_catalog.pg_class r on r.relname = c.table_name
+  join pg_catalog.pg_namespace n on n.oid = r.relnamespace and n.nspname = c.table_schema
+  where c.table_schema = 'radcore' and r.relkind in ('r', 'p') and not r.relispartition
+    and (c.column_name ~ '${PAY_LIKE}' or c.table_name || '.' || c.column_name = any($1))
+  order by 1`;
 
 // Anything in radcore a login could reach that it must not:
 // - an append-only table the app can update, delete or truncate, or a log it can insert into;
@@ -189,6 +205,27 @@ describe.skipIf(!url)('the three logins', () => {
       await c.query("create table radcore.audit_log_2099_02 partition of radcore.audit_log for values from ('2099-02-01') to ('2099-03-01')");
       await c.query('revoke all on radcore.audit_log_2099_02 from radcore_app, radcore_read');
       expect(await exposed()).toEqual(['audit_log', 'audit_log_2099_01', 'journal_lines', 'journal_view']);
+    });
+  });
+
+  it("closes every pay column to the read-only login, and finds one left off the list or readable (RAD-40, D-20)", async () => {
+    await inRollback(async (c) => {
+      // A pay-like column that isn't listed, or a listed one the read-only login can read; NOT_PAY's are skipped.
+      const problems = async (listed: readonly string[], notPay: Readonly<Record<string, string>>) =>
+        (await c.query<{ col: string; readable: boolean }>(PAY_READABLE, [listed])).rows
+          .filter((r) => notPay[r.col] === undefined && (!listed.includes(r.col) || r.readable));
+      expect(await problems(PAY_COLUMNS, NOT_PAY)).toEqual([]);
+      // The check finds a pay column made the way the owner's default privileges leave it, then closed column by column.
+      await c.query('set local role radcore_owner');
+      await c.query('create table radcore.t_payslips (id int primary key, net_pay numeric, note text)');
+      expect(await problems([], {})).toEqual([{ col: 't_payslips.net_pay', readable: true }]);
+      await c.query('revoke select on radcore.t_payslips from radcore_read');
+      await c.query('grant select (id, note) on radcore.t_payslips to radcore_read');
+      expect(await problems(['t_payslips.net_pay'], {})).toEqual([]);
+      // A false match is named in NOT_PAY with its reason, and stays readable.
+      await c.query('create table radcore.t_invoices (id int primary key, gross_amount numeric)');
+      expect(await problems(['t_payslips.net_pay'], {})).toEqual([{ col: 't_invoices.gross_amount', readable: true }]);
+      expect(await problems(['t_payslips.net_pay'], { 't_invoices.gross_amount': 'an invoice total, not pay' })).toEqual([]);
     });
   });
 

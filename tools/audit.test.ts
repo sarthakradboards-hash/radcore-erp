@@ -155,7 +155,8 @@ describe.skipIf(!url)('the audit engine', () => {
       expect(await outcome(c, "select radcore.record_access('users', 'u-2')")).toBe('42501');
       await c.query('reset role');
       const { rows } = await c.query<{ record_id: string; created_by: string }>(
-        "select record_id, created_by from radcore.access_log where record_table = 'users' order by record_id");
+        // Its own ids only: other files log real looks at users in the shared database (RAD-40).
+        "select record_id, created_by from radcore.access_log where record_table = 'users' and record_id in ('u-1', 'u-2') order by record_id");
       expect(rows).toEqual([{ record_id: 'u-1', created_by: 'user:asha' }]);
     });
   });
