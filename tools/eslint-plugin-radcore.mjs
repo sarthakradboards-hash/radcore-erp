@@ -386,7 +386,8 @@ const noTableExports = {
 // `records`; options.tables, '<source>#<export>') applies the record scope in the same function, the outermost one
 // around the read: `x.see(...)`, `x.can(...)` or lib-platform's `listScope(...)`. A read is the table as an argument of
 // `.from` or a join, imported by name (aliased or not) or through a namespace, or `.query.<table>`. It can't follow a
-// read or a check into another function, a table passed around as a value, or whether the check names the right owner.
+// read or a check into another function, a table passed around as a value, a table reached through a relation
+// (`with:`) or a view, or whether the check names the right owner.
 const READS = new Set(['from', 'innerJoin', 'leftJoin', 'rightJoin', 'fullJoin', 'crossJoin']);
 const CHECKS = new Set(['see', 'can']);
 const scopeOnOwnedReads = {
