@@ -333,4 +333,18 @@ test.describe('the search box', () => {
     await page.getByRole('search').getByRole('button', { name: 'Show' }).click();
     await expect(page.locator('output[aria-label="Searched"]')).toHaveText('Asha Pune');
   });
+
+  test('a Show pressed before the scripts load puts nothing typed in the URL (no name or email in history or logs)', async ({ page }) => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(/\/_next\/static\/chunks\/.+\.js$/, async (route) => { await gate; await route.continue(); });
+    await page.goto('/kit', { waitUntil: 'commit' });
+    await page.getByRole('search').getByLabel('Search parties').pressSequentially('asha@example.com');
+    const submitted = page.waitForRequest((r) => r.isNavigationRequest());
+    await page.getByRole('search').getByRole('button', { name: 'Show' }).click();
+    const sent = new URL((await submitted).url());
+    release();
+    expect(sent.pathname).toBe('/kit');
+    expect(sent.search).toBe('');
+  });
 });
