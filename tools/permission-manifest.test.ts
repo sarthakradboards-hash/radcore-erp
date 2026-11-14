@@ -4,6 +4,7 @@
 // route or job checks must also be one the permission matrix can grant (RAD-36's catalogue).
 import { loadConfig, type JobDefinition, type Route } from '@radcore/lib-platform';
 import { createAuth } from '@radcore/lib-platform/runtime';
+import { createClientErrors } from '@radcore/lib-platform';
 import { testSettings } from '@radcore/test-helpers';
 import { describe, expect, it } from 'vitest';
 import { apiRoutes } from '../apps/api/src/routes.ts';
@@ -39,9 +40,10 @@ describe('the permission manifest', () => {
   const cfg = loadConfig(testSettings(), 'api');
   // The api's own list, as main.ts mounts it; createAuth's store connects only when used.
   async function apiList(): Promise<readonly Route[]> {
-    const auth = await createAuth(cfg, { info: () => undefined, error: () => undefined });
+    const log = { info: () => undefined, error: () => undefined };
+    const auth = await createAuth(cfg, log);
     try {
-      return apiRoutes(auth);
+      return apiRoutes(auth, createClientErrors(log));
     } finally {
       await auth.store.stop();
     }
