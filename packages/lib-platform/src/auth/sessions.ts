@@ -15,7 +15,7 @@ import { runInTransaction } from '../db/transaction.ts';
 import { AppError, RecordedRefusal } from '../errors.ts';
 import { decodeCursor, encodeCursor, isoMoment, momentKey } from '../lists.ts';
 import { recordSecurityEvent } from '../security-events.ts';
-import { principalFor } from './roles.ts';
+import { principalFor } from './principal.ts';
 import type { SignInResult } from './sign-in.ts';
 
 export const SESSION_IDLE_SECONDS = 30 * 60;

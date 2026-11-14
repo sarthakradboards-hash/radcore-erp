@@ -23,7 +23,9 @@ const url = process.env['TEST_DATABASE_OWNER_URL'];
 const tag = randomBytes(4).toString('hex');
 const [ORDERS, LINES] = [`t_orders_${tag}`, `t_order_lines_${tag}`];
 const orders = radcore.table(ORDERS, { id: uuid().primaryKey().defaultRandom(), amount: text().notNull(),
-  status: text().notNull().default('draft'), hidden: boolean().notNull().default(false) });
+  status: text().notNull().default('draft'), hidden: boolean().notNull().default(false),
+  // Stamped by the database (ADR-005 §5); declared here only to read it.
+  createdBy: text() });
 const lines = radcore.table(LINES, { id: uuid().primaryKey().defaultRandom(), orderId: uuid().notNull(), qty: text().notNull() });
 const ordersTx = moduleTx({ orders, lines });
 const STAMPS = `created_at timestamptz not null default now(),
@@ -39,17 +41,18 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
 const person = (userId: string, permissions = [PERM]): Principal => ({ kind: 'user', userId, permissions });
 
-// The module's part: the figures the approver sees (the amount and every line), and what each decision does. `hidden`
-// stands in for a record outside the approver's scope, which RAD-35's ctx.can will decide.
+// The module's part: the figures the approver sees (the amount and every line), and what each decision does. Record
+// scope is ctx.can over who made the order (RAD-35); `hidden` stands in for any other rule a module adds.
 const approvedRuns = vi.fn<(id: string) => void>();
 const spec: ApprovalSpec<{ amount: string; lines: { id: string; qty: string }[] }> = {
   kind: KIND,
   table: ORDERS,
   parts: [LINES],
   async version(ctx, id, { forUpdate }) {
-    const query = ordersTx(ctx).select({ amount: orders.amount, hidden: orders.hidden }).from(orders).where(eq(orders.id, id));
+    const query = ordersTx(ctx).select({ amount: orders.amount, hidden: orders.hidden, owner: orders.createdBy }).from(orders)
+      .where(eq(orders.id, id));
     const [row] = forUpdate ? await query.for('update') : await query;
-    if (row === undefined || row.hidden) return null;
+    if (row === undefined || row.hidden || !ctx.can(PERM, { owner: row.owner ?? '' })) return null;
     const its = await ordersTx(ctx).select({ id: lines.id, qty: lines.qty }).from(lines).where(eq(lines.orderId, id)).orderBy(lines.id);
     return { amount: row.amount, lines: its };
   },
@@ -245,6 +248,24 @@ describe.skipIf(!url)('maker-checker', () => {
       expect(list.items.map((i) => i.id)).not.toContain(id);
       expect(await codeOf(await call('GET', `/approvals/${KIND}/${id}`))).toEqual([404, 'not_found']);
       expect(await codeOf(await decide(call, id, { decision: 'approve', versionHash }))).toEqual([404, 'not_found']);
+    });
+  });
+
+  // RAD-35's hook: an approver whose role holds the permission only over their own records gets 404 on someone else's
+  // order, from the list, the request and the decision alike, exactly as for no such record (RAD-7).
+  it("hides another person's order from an approver who may approve only their own (ctx.can, 404)", async () => {
+    const { id, versionHash } = await requested('800.00');
+    const ownOnly: Principal = { kind: 'user', userId: people.second, permissions: [PERM], ownScope: [PERM] };
+    await serve(ownOnly, async (call) => {
+      const list = await (await call('GET', `/approvals/${KIND}?input=${encodeURIComponent(JSON.stringify({ filter: {}, limit: 100 }))}`)).json() as
+        { items: { id: string }[] };
+      expect(list.items.map((i) => i.id)).not.toContain(id);
+      expect(await codeOf(await call('GET', `/approvals/${KIND}/${id}`))).toEqual([404, 'not_found']);
+      expect(await codeOf(await decide(call, id, { decision: 'approve', versionHash }))).toEqual([404, 'not_found']);
+    });
+    // The same request, for an approver whose role reaches every order: shown as usual.
+    await serve(person(people.approver), async (call) => {
+      expect((await call('GET', `/approvals/${KIND}/${id}`)).status).toBe(200);
     });
   });
 

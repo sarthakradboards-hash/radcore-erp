@@ -263,6 +263,14 @@ same principal. The scope rules are keyed by the kind of data, so payroll readin
 see this employee's pay", not "does this principal hold hr:read". M1-17 defines the scope rules. M1-19's manifest
 lists which services each route and job reaches, so a new reach shows up in review.
 
+**The scope rule (M1-17, RAD-35).** Each person has one role, and a role holds each permission key at a scope: `all`
+reaches every record of that kind, `own` only the records the person owns. A record's owner is named as audit rows
+name a principal (`user:<id>`): usually its `created_by`, or a module's own owner column. `ctx.can(perm, { owner })`
+answers it; `ctx.see(perm, { owner })` throws `not_found` for a record out of scope, so it answers 404 like a record
+that doesn't exist. A system principal reaches every record for the keys its contract lists. A person's role and grants
+are read from the database on every request and every job (`loadPrincipal`), never cached, so a change applies at once
+in every process (RC-095).
+
 ### 7. The web client
 
 `apps/web` builds its client from the same contracts: one client per module, for example
