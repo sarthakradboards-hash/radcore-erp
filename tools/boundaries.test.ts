@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vitest';
 const FIXTURES = 'tools/boundary-fixtures';
 // Type-aware linting builds a TypeScript program on first use; a cold CI runner can take a while.
 const LINT_TIMEOUT = 180_000;
+// A cruise reads the whole fixture folder; under a full parallel run it has taken over vitest's 5 s default (RAD-59).
+const CRUISE_TIMEOUT = 60_000;
 const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7',
   'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b', 'T1'];
 const CONTROLS = { depcruise: 'ok-allowed-imports', eslint: 'ok-lint-zones', tsc: 'ok-opaque-tx' };
@@ -152,7 +154,7 @@ describe('boundary fixtures', () => {
 
   it('allows the imports ADR-001 §4 permits', async () => {
     expect(await violations(CONTROLS.depcruise)).toEqual([]);
-  });
+  }, CRUISE_TIMEOUT);
 
   it('lets each zone file do what its zone allows', async () => {
     const errors = (await lint(CONTROLS.eslint)).flatMap((r) =>
@@ -182,5 +184,5 @@ describe('boundary fixtures', () => {
   it.each(Object.entries(DEPCRUISE_RULE))('%s fails dependency-cruiser rule %s', async (d, rule) => {
     const names = await violations(d);
     expect(names, `${d} should fail ${rule}`).toContain(rule);
-  });
+  }, CRUISE_TIMEOUT);
 });
