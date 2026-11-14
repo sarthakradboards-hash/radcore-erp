@@ -210,7 +210,7 @@ describe.skipIf(!url)('the audit engine', () => {
         "insert into radcore.users (email, display_name) values ('asha.rao@example.com', 'Asha Rao') returning id");
       await c.query("update radcore.users set display_name = 'Asha R.' where id = $1", [u?.id]);
       const rows = await auditOf(c, 'users', u?.id ?? '');
-      expect(rows[0]?.changed).toEqual({ status: 'invited', password_set_at: null, email: '[redacted]',
+      expect(rows[0]?.changed).toEqual({ status: 'invited', password_set_at: null, role: null, email: '[redacted]',
         email_key: '[redacted]', display_name: '[redacted]', password_hash: '[redacted]' });
       expect(rows[1]?.changed).toEqual({ display_name: '[redacted]' });
       expect(JSON.stringify(rows.map((r) => r.changed))).not.toMatch(/asha|Asha/);

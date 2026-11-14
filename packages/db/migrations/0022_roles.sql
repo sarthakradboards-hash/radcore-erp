@@ -26,16 +26,17 @@ CREATE TABLE "radcore"."roles" (
 );
 --> statement-breakpoint
 ALTER TABLE "radcore"."users" ADD COLUMN "role" text;--> statement-breakpoint
+ALTER TABLE "radcore"."users" ADD COLUMN "role_since" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "radcore"."role_grants" ADD CONSTRAINT "role_grants_role_roles_key_fk" FOREIGN KEY ("role") REFERENCES "radcore"."roles"("key") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."users" ADD CONSTRAINT "users_role_roles_key_fk" FOREIGN KEY ("role") REFERENCES "radcore"."roles"("key") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "ix_users_role" ON "radcore"."users" USING btree ("role");--> statement-breakpoint
 -- Records people change: audited, with the who-and-when stamp (ADR-005 §5, §7c). A role's grants and a person's
--- role are the trail RC-033 and RC-095 ask for. The users table gains `role`, so it's attached again.
+-- role are the trail RC-033 and RC-095 ask for. The users table gains `role` and `role_since`, so it's attached again.
 SELECT radcore.audit_attach('roles', keep => array['name', 'description', 'second_factor_required']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('role_grants', keep => array['scope']);
 --> statement-breakpoint
-SELECT radcore.audit_attach('users', keep => array['status', 'password_set_at', 'role'],
+SELECT radcore.audit_attach('users', keep => array['status', 'password_set_at', 'role', 'role_since'],
   redact => array['email', 'email_key', 'display_name', 'password_hash']);
 --> statement-breakpoint
 -- The seed below is stamped and audited, so it names its principal here, as migrate() does on its own connection: a
@@ -55,20 +56,21 @@ INSERT INTO radcore.roles (key, name, description, second_factor_required) VALUE
   ('hr', 'HR', 'People matters: openings and applicants, employees, attendance and leave, preparing payroll', true),
   ('operations', 'Operations', 'Whoever runs the floor and machines: projects, tasks, routines, assets and maintenance, job work', false),
   ('technician', 'Technician', 'Workshop staff: job cards, diagnosis, fitting parts, photos', false),
-  ('service_manager', 'Service manager', 'Head of the workshop: what a technician does, plus estimates, warranty claims and the service reports', false);
+  ('service_head', 'Service manager', 'Head of the workshop: what a technician does, plus estimates, warranty claims and the service reports', false);
 --> statement-breakpoint
--- The M1 grants (RAD-35): every person has My work's session:read; admin holds every M1 key; the rest follow each
--- role's plan column, as far as M1 keys exist. Each module's migration adds its own keys to the roles it names.
+-- The M1 grants (RAD-35): every person has My work's session:read; admin holds every M1 key, each as its own row, never a
+-- wildcard; owner reads the audit trail, personal data and pay (D-20: only admin and owner see pay); the rest follow
+-- each role's plan column, as far as M1 keys exist. Each module's migration adds its own keys to the roles it names.
 INSERT INTO radcore.role_grants (role, permission, scope)
 SELECT r.key, 'session:read', 'all' FROM radcore.roles r
 UNION ALL
-SELECT 'admin', k, 'all' FROM unnest(array['users:read', 'users:write', 'roles:read', 'roles:write', 'audit:read',
+SELECT 'admin', k, 'all' FROM unnest(array['users:read', 'users:write', 'roles:read', 'roles:write', 'audit:read', 'pii:read', 'pay:read',
   'photo_files:read', 'photo_files:write', 'resume_files:read', 'resume_files:write', 'statement_files:read',
   'statement_files:write', 'import_files:read', 'import_files:write']) AS k
 UNION ALL
-SELECT 'owner', 'audit:read', 'all'
+SELECT 'owner', k, 'all' FROM unnest(array['audit:read', 'pii:read', 'pay:read']) AS k
 UNION ALL
-SELECT r, k, 'all' FROM unnest(array['technician', 'service_manager']) AS r, unnest(array['photo_files:read', 'photo_files:write']) AS k
+SELECT r, k, 'all' FROM unnest(array['technician', 'service_head']) AS r, unnest(array['photo_files:read', 'photo_files:write']) AS k
 UNION ALL
 SELECT 'hr', k, 'all' FROM unnest(array['resume_files:read', 'resume_files:write']) AS k
 UNION ALL
@@ -77,4 +79,4 @@ UNION ALL
 SELECT r, k, 'all' FROM unnest(array['stores', 'accounts']) AS r, unnest(array['import_files:read', 'import_files:write']) AS k;
 --> statement-breakpoint
 -- A first admin made before this migration (RAD-32's bootstrap) gets the admin role now, so they aren't locked out (RC-021).
-UPDATE radcore.users SET role = 'admin' WHERE id IN (SELECT user_id FROM radcore.bootstrap) AND role IS NULL;
+UPDATE radcore.users SET role = 'admin', role_since = now() WHERE id IN (SELECT user_id FROM radcore.bootstrap) AND role IS NULL;

@@ -111,7 +111,8 @@ describe.skipIf(!url)('sign-in sessions', () => {
     expect(expires?.getTime()).toBe(stored?.absolute.getTime());
     expect(Math.abs(since(stored?.absolute) - SESSION_ABSOLUTE_SECONDS * 1000)).toBeLessThan(5000);
     expect(Math.abs(since(stored?.idle) - SESSION_IDLE_SECONDS * 1000)).toBeLessThan(5000);
-    expect(await s.principalOf(token ?? '')).toEqual({ kind: 'user', userId: s.userId, sessionId: stored?.id, permissions: ['session:read'] });
+    expect(await s.principalOf(token ?? '')).toEqual({ kind: 'user', userId: s.userId, sessionId: stored?.id, role: null,
+      permissions: ['session:read'], ownScope: [] });
     expect(await s.events()).toEqual([{ kind: 'sign_in', detail: {} }]);
   });
 

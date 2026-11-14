@@ -50,7 +50,7 @@ describe.skipIf(!url)('roles and record scope', () => {
     const rows = await sql<{ key: string; second: boolean }>(
       "select key, second_factor_required as second from radcore.roles where key not like 't\\_%' order by key");
     expect(rows.map((r) => r.key)).toEqual(['accounts', 'admin', 'counter', 'hr', 'marketing', 'operations', 'owner', 'sales',
-      'service_manager', 'stores', 'technician']);
+      'service_head', 'stores', 'technician']);
     expect(rows.filter((r) => r.second).map((r) => r.key)).toEqual(['accounts', 'admin', 'hr', 'owner']);
     // RC-044: no two roles a letter apart, such as v1's store and stores.
     expect(rows.map((r) => r.key)).not.toContain('store');

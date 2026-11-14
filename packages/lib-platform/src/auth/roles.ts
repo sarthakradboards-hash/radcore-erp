@@ -22,7 +22,8 @@ export async function assignRole(ctx: Ctx, userId: string, role: string): Promis
   const tx = platformTx(ctx);
   const [known] = await tx.select({ key: roles.key }).from(roles).where(eq(roles.key, role)).limit(1);
   if (known === undefined) throw new AppError('not_found', 'There is no such role');
-  const changed = await tx.update(users).set({ role }).where(eq(users.id, userId)).returning({ id: users.id });
+  // role_since says when they gained it, which the approval rules read (the architect on RAD-35).
+  const changed = await tx.update(users).set({ role, roleSince: new Date() }).where(eq(users.id, userId)).returning({ id: users.id });
   if (changed.length === 0) throw new AppError('not_found', 'There is no such person');
   await endSessionsOf(ctx, userId, 'role_changed');
 }

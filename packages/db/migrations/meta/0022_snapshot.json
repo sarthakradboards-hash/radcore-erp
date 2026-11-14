@@ -1,5 +1,5 @@
 {
-  "id": "2c28e450-4aa7-45c8-bbb6-3f29955bb1ed",
+  "id": "4b5276be-f7ed-4311-81d8-b648f2d15b22",
   "prevId": "a77d4eed-ff74-4c9d-84ac-e265d1a70e12",
   "version": "7",
   "dialect": "postgresql",
@@ -1452,6 +1452,12 @@
         "role": {
           "name": "role",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role_since": {
+          "name": "role_since",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

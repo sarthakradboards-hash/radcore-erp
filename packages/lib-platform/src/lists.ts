@@ -3,8 +3,23 @@
 // own sort-key schema; anything else is 400 invalid_input. A cursor that decodes, even an edited one, only says
 // where the page starts: the repo applies the person's scope on every page, so it can't reach outside that scope.
 import { idString, MAX_CURSOR_LENGTH } from '@radcore/lib-common';
+import { eq, type AnyColumn, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
+import { principalId, type Ctx } from './ctx.ts';
 import { AppError } from './errors.ts';
+
+/**
+ * A list's record scope (RAD-35, ADR-001 §6a; the architect on RAD-35): the condition every list adds to its own filter,
+ * so a key held only over the person's own records can't show them anyone else's. `owner` is the column naming the
+ * record's owner as audit rows do (`user:<id>`), usually `created_by`. Held over every record, or by a system
+ * principal: no condition. Not held at all: forbidden, as the route's own check would have said.
+ */
+export function listScope(ctx: Ctx, permission: string, owner: AnyColumn): SQL | undefined {
+  const p = ctx.principal;
+  if (!p.permissions.includes(permission)) throw new AppError('forbidden', 'You may not see this list');
+  if (p.kind === 'system' || !(p.ownScope ?? []).includes(permission)) return undefined;
+  return eq(owner, principalId(p));
+}
 
 /**
  * A list's sort key, as its last row holds it: `{ invoiceDate: '2026-11-07', id: '…' }`. No nulls (see lists.ts).

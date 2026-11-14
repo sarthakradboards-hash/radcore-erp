@@ -260,16 +260,19 @@ link id.
 The feature permission is checked once, at the entry: the route contract's `perm`, or the job contract's
 principal. Inside, services check record scope with `ctx.can`. A service called by another service runs under the
 same principal. The scope rules are keyed by the kind of data, so payroll reading employees asks "may this principal
-see this employee's pay", not "does this principal hold hr:read". M1-17 defines the scope rules. M1-19's manifest
-lists which services each route and job reaches, so a new reach shows up in review.
+see this employee's pay", not "does this principal hold hr:read". M1-17 defines the scope rules. A role grants each
+key at `own` or `all` scope (RAD-35). A list whose key the principal holds only at `own` is filtered to the principal's
+own records by the list engine, and get-one and writes check with `ctx.see` or `ctx.can`. Admin holds every key as an
+explicit grant, never a wildcard, and a test checks that it holds the whole catalogue. `users.role_since` and each
+grant's `created_at` say when a person gained a key, which the approval rules use (§8b). M1-19's manifest lists which
+services each route and job reaches, so a new reach shows up in review.
 
-**The scope rule (M1-17, RAD-35).** Each person has one role, and a role holds each permission key at a scope: `all`
-reaches every record of that kind, `own` only the records the person owns. A record's owner is named as audit rows
-name a principal (`user:<id>`): usually its `created_by`, or a module's own owner column. `ctx.can(perm, { owner })`
-answers it; `ctx.see(perm, { owner })` throws `not_found` for a record out of scope, so it answers 404 like a record
-that doesn't exist. A system principal reaches every record for the keys its contract lists. A person's role and grants
-are read from the database on every request and every job (`loadPrincipal`), never cached, so a change applies at once
-in every process (RC-095).
+**How the scope rule reads (RAD-35).** A record's owner is named as audit rows name a principal (`user:<id>`): usually
+its `created_by`, or a module's own owner column. `ctx.can(perm, { owner })` answers it; `ctx.see(perm, { owner })`
+throws `not_found` out of scope, so it answers 404 like a record that doesn't exist; a list adds
+`listScope(ctx, perm, ownerColumn)` to its filter. A system principal reaches every record for the keys its contract
+lists. A person's role and grants are read from the database on every request and every job (`loadPrincipal`), never
+cached, so a change applies at once in every process (RC-095).
 
 ### 7. The web client
 

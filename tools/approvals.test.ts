@@ -34,12 +34,14 @@ const STAMPS = `created_at timestamptz not null default now(),
   updated_by text not null default nullif(current_setting('app.principal', true), '')`;
 const KIND = `test-order-${tag}`;
 const PERM = 'orders:approve';
+// The module's read key, which record scope checks: everyone here reads orders, and the own-scope test reads only its own.
+const READ = 'orders:read';
 const contracts = approvalContracts(KIND, PERM);
 const config = () => loadConfig(testSettings({ DATABASE_URL: `postgres://radcore:${testPassword()}@127.0.0.1:1/radcore` }), 'api');
 const ORIGIN = config().publicOrigin;
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
-const person = (userId: string, permissions = [PERM]): Principal => ({ kind: 'user', userId, permissions });
+const person = (userId: string, permissions = [PERM, READ]): Principal => ({ kind: 'user', userId, permissions });
 
 // The module's part: the figures the approver sees (the amount and every line), and what each decision does. Record
 // scope is ctx.can over who made the order (RAD-35); `hidden` stands in for any other rule a module adds.
@@ -52,7 +54,7 @@ const spec: ApprovalSpec<{ amount: string; lines: { id: string; qty: string }[] 
     const query = ordersTx(ctx).select({ amount: orders.amount, hidden: orders.hidden, owner: orders.createdBy }).from(orders)
       .where(eq(orders.id, id));
     const [row] = forUpdate ? await query.for('update') : await query;
-    if (row === undefined || row.hidden || !ctx.can(PERM, { owner: row.owner ?? '' })) return null;
+    if (row === undefined || row.hidden || !ctx.can(READ, { owner: row.owner ?? '' })) return null;
     const its = await ordersTx(ctx).select({ id: lines.id, qty: lines.qty }).from(lines).where(eq(lines.orderId, id)).orderBy(lines.id);
     return { amount: row.amount, lines: its };
   },
@@ -122,11 +124,11 @@ describe.skipIf(!url)('maker-checker', () => {
   const job: Principal = { kind: 'system', name: 'nightly-prices', permissions: [] };
   // The maker sends it (again): a new request, which supersedes the pending one.
   const sendAgain = (orderId: string) =>
-    runInTransaction(db, WRITE, person(people.maker, []), randomUUID(), (ctx) => requestApproval(ctx, spec, orderId));
+    runInTransaction(db, WRITE, person(people.maker, [READ]), randomUUID(), (ctx) => requestApproval(ctx, spec, orderId));
   // An order with one line, made and sent for approval by its maker; every test makes its own.
   const requested = async (amount = '1500.00') => {
     const ids = { orderId: randomUUID(), lineId: randomUUID() };
-    await as(person(people.maker, []), async (tx) => {
+    await as(person(people.maker, [READ]), async (tx) => {
       await tx.insert(orders).values({ id: ids.orderId, amount });
       await tx.insert(lines).values({ id: ids.lineId, orderId: ids.orderId, qty: '2' });
     });
@@ -189,7 +191,7 @@ describe.skipIf(!url)('maker-checker', () => {
       // The screen showed another version.
       expect(await codeOf(await decide(call, id, { decision: 'approve', versionHash: 'f'.repeat(64) }))).toEqual([422, 'version_changed']);
       // The record changed after the request.
-      await as(person(people.maker, []), (tx) => tx.update(orders).set({ amount: '9000.00' }).where(eq(orders.id, orderId)));
+      await as(person(people.maker, [READ]), (tx) => tx.update(orders).set({ amount: '9000.00' }).where(eq(orders.id, orderId)));
       expect(await codeOf(await decide(call, id, { decision: 'approve', versionHash }))).toEqual([422, 'version_changed']);
       expect(await (await call('GET', `/approvals/${KIND}/${id}`)).json()).toMatchObject({ changed: true, version: { amount: '9000.00' } });
     });
@@ -251,11 +253,11 @@ describe.skipIf(!url)('maker-checker', () => {
     });
   });
 
-  // RAD-35's hook: an approver whose role holds the permission only over their own records gets 404 on someone else's
+  // RAD-35's hook: an approver whose role reads orders only over their own records gets 404 on someone else's
   // order, from the list, the request and the decision alike, exactly as for no such record (RAD-7).
-  it("hides another person's order from an approver who may approve only their own (ctx.can, 404)", async () => {
+  it("hides another person's order from an approver who may read only their own (ctx.can, 404)", async () => {
     const { id, versionHash } = await requested('800.00');
-    const ownOnly: Principal = { kind: 'user', userId: people.second, permissions: [PERM], ownScope: [PERM] };
+    const ownOnly: Principal = { kind: 'user', userId: people.second, permissions: [PERM, READ], ownScope: [READ] };
     await serve(ownOnly, async (call) => {
       const list = await (await call('GET', `/approvals/${KIND}?input=${encodeURIComponent(JSON.stringify({ filter: {}, limit: 100 }))}`)).json() as
         { items: { id: string }[] };
@@ -313,7 +315,7 @@ describe.skipIf(!url)('maker-checker', () => {
       expect((await decide(call, first.id, { decision: 'approve', versionHash: first.versionHash })).status).toBe(200);
     });
     // After that approval only the maker changes it, so the approver's earlier change no longer counts.
-    await as(person(people.maker, []), (tx) => tx.update(orders).set({ amount: '1800.00' }).where(eq(orders.id, orderId)));
+    await as(person(people.maker, [READ]), (tx) => tx.update(orders).set({ amount: '1800.00' }).where(eq(orders.id, orderId)));
     const next = await sendAgain(orderId);
     await serve(person(people.approver), async (call) => {
       expect((await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash })).status).toBe(200);
@@ -337,7 +339,7 @@ describe.skipIf(!url)('maker-checker', () => {
       expect((await decide(call, first.id, { decision: 'approve', versionHash: first.versionHash })).status).toBe(200);
     });
     // approved() set the order's status as the approver; only the maker changes it after that.
-    await as(person(people.maker, []), (tx) => tx.update(orders).set({ amount: '1900.00' }).where(eq(orders.id, first.orderId)));
+    await as(person(people.maker, [READ]), (tx) => tx.update(orders).set({ amount: '1900.00' }).where(eq(orders.id, first.orderId)));
     const next = await sendAgain(first.orderId);
     await serve(person(people.approver), async (call) => {
       expect((await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash })).status).toBe(200);
@@ -350,7 +352,7 @@ describe.skipIf(!url)('maker-checker', () => {
       expect((await decide(call, first.id, { decision: 'reject', reason: 'Amount is wrong' })).status).toBe(200);
     });
     // rejected() set the order's status as the approver; the maker fixes it and sends it again.
-    await as(person(people.maker, []), (tx) => tx.update(orders).set({ amount: '1450.00' }).where(eq(orders.id, first.orderId)));
+    await as(person(people.maker, [READ]), (tx) => tx.update(orders).set({ amount: '1450.00' }).where(eq(orders.id, first.orderId)));
     const next = await sendAgain(first.orderId);
     await serve(person(people.approver), async (call) => {
       expect((await decide(call, next.id, { decision: 'approve', versionHash: next.versionHash })).status).toBe(200);
@@ -371,7 +373,7 @@ describe.skipIf(!url)('maker-checker', () => {
 
   it('refuses a decision whose spec changes what is approved, and rolls it back', async () => {
     const { orderId } = await requested();
-    const bad = await runInTransaction(db, WRITE, person(people.maker, []), randomUUID(), (ctx) => requestApproval(ctx, badSpec, orderId));
+    const bad = await runInTransaction(db, WRITE, person(people.maker, [READ]), randomUUID(), (ctx) => requestApproval(ctx, badSpec, orderId));
     await serve(person(people.approver), async (call) => {
       const res = await call('POST', `/approvals/${BAD_KIND}/${bad.id}/decision`, { decision: 'reject', reason: 'No' });
       expect(await codeOf(res)).toEqual([500, 'server_error']);
