@@ -1,9 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { z } from 'zod';
 import {
   amountInWords, dec, fitsUnit, formatMoney, formatNumber, lineAmount, moneyString, percentString, quantityString,
   unitPriceString,
-  roundMoney, roundQty, roundRate, sum,
+  roundMoney, roundQty, roundRate, sum, type Money, type Percent, type Quantity, type Rate,
 } from './index.ts';
+
+// RAD-67: what the schemas parse and the rounding functions make carries its brand, so E6's typed check sees it under
+// any name; what JSON sends in is still a plain string. Each is still a string at run time.
+describe('the decimal brands', () => {
+  it("brands the schemas' output, not their input", () => {
+    expectTypeOf<z.output<ReturnType<typeof moneyString>>>().toEqualTypeOf<Money>();
+    expectTypeOf<z.output<ReturnType<typeof unitPriceString>>>().toEqualTypeOf<Rate>();
+    expectTypeOf<z.output<ReturnType<typeof quantityString>>>().toEqualTypeOf<Quantity>();
+    expectTypeOf<z.output<ReturnType<typeof percentString>>>().toEqualTypeOf<Percent>();
+    expectTypeOf<z.input<ReturnType<typeof moneyString>>>().toEqualTypeOf<string>();
+    expectTypeOf<Money>().not.toEqualTypeOf<Rate>();
+  });
+
+  it('brands what the rounding functions return, and keeps it a plain string', () => {
+    expectTypeOf(roundMoney('1')).toEqualTypeOf<Money>();
+    expectTypeOf(lineAmount('2', '0.5')).toEqualTypeOf<Money>();
+    expectTypeOf(roundRate('1')).toEqualTypeOf<Rate>();
+    expectTypeOf(roundQty('1', 0)).toEqualTypeOf<Quantity>();
+    expect([typeof roundMoney('1'), moneyString().parse('12.50')]).toEqual(['string', '12.50']);
+  });
+});
 
 describe('RC-008: rates keep more than 2 decimals', () => {
   it('accepts a rate of 0.375 and keeps it exactly', () => {

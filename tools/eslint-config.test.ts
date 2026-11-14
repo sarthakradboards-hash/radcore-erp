@@ -35,7 +35,9 @@ it('each zone is exactly the ADR-002 table', () => {
 
 const ALLOW = PINNED['radcore/no-sql']?.allowNames ?? [];
 const L1 = { base: { allowNames: ALLOW }, zone: { allowNames: [...ALLOW, 'sql'], zone: true } };
-const EVERYWHERE = ['radcore/no-driver', 'radcore/no-raw-html', 'radcore/e6-no-float-money', 'radcore/tables-in-schema',
+// Every sample here is TypeScript in a tsconfig, so E6's typed half is on for each (RAD-67).
+const EVERYWHERE = ['radcore/no-driver', 'radcore/no-raw-html', 'radcore/e6-no-float-money', 'radcore/e6-branded-money',
+  'radcore/tables-in-schema',
   'radcore/views-in-views',
   'radcore/no-subpath-imports', 'radcore/no-declare'];
 const SERVER = ['radcore/no-query-strings', 'radcore/no-raw-execution', 'radcore/outbound-only', ...EVERYWHERE];
@@ -109,9 +111,14 @@ describe.each(Object.entries(SAMPLES))('%s', (file, want) => {
   });
 });
 
+// A sample path that isn't on disk is in no tsconfig, so these lint without type information; E6's typed half has its
+// own fixtures in tools/boundary-fixtures (RAD-67).
+const UNTYPED = new ESLint({ overrideConfig: { languageOptions: { parserOptions: { projectService: false } },
+  rules: { 'radcore/e6-branded-money': 'off' } } });
+
 // RC-146 (M1-46): a web link that opens a new tab must carry rel="noopener noreferrer".
 it('refuses target="_blank" without rel="noopener noreferrer" in the web app', async () => {
-  const lint = async (code: string) => (await new ESLint().lintText(code, { filePath: 'apps/web/app/x.tsx' }))[0]
+  const lint = async (code: string) => (await UNTYPED.lintText(code, { filePath: 'apps/web/app/x.tsx' }))[0]
     ?.messages.map((m) => m.ruleId);
   expect(await lint('export const A = (u: string) => <a href={u} target="_blank">x</a>;\n'))
     .toEqual(['react/jsx-no-target-blank']);

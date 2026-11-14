@@ -19,6 +19,9 @@ const REQUEST_CONTEXT = 'packages/db/src/request-context.ts';
 /** The calls to the database's log functions, record_event (RAD-31): `sql` only in its exported functions. */
 const LOG_WRITERS = 'packages/db/src/log-writers.ts';
 const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/columns.ts'];
+// The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.
+export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${TS}`, `apps/api/src/**/*.${TS}`,
+  `apps/worker/src/**/*.${TS}`, `apps/web/**/*.${TS}`];
 const DB_CLIENT = 'packages/lib-platform/src/db/client.ts';
 const OUTBOUND_CLIENT = 'packages/lib-platform/src/http/outbound.ts';
 const IMPORT_ISOLATE = 'packages/lib-platform/src/import/isolate.ts';
@@ -62,21 +65,22 @@ const L8_MODULES = ['undici', 'axios', 'got', 'node-fetch', 'ws', 'http', 'https
 // tools/outbound-tls.test.ts, which isn't server code, may import it (RAD-44, auditor-2).
 const L8_TRANSPORT = { source: '(^|/)outbound(\\.ts)?$', names: ['nodeTransport'], message: L8 };
 const l8Imports = (modules) => [{ source: `^(node:)?(${modules.join('|')})(/.*)?$`, message: L8 }, L8_TRANSPORT];
-// E6: a name that holds money, a rate or a quantity: the whole name (`total`), a camelCase, ALL-CAPS or snake_case
-// ending (`grandTotal`, `totalGST`, `unit_price`), singular or plural. `generate` and `separate` don't match. A word
-// in SUFFIX_ONLY counts only as a camelCase ending, so a page's `limit` and `MAX_LIMIT` are numbers but `creditLimit`
-// is money. tools/e6-words.test.ts lints a sample for every word.
+// E6 has two halves. By type (e6-branded-money): any value lib-common branded Money, Rate, Quantity or Percent, and
+// any Decimal, whatever it's named (RAD-67). By name (e6-no-float-money), kept for what carries no brand, such as a
+// numeric column Drizzle reads as a plain string: the whole name (`total`), a camelCase, ALL-CAPS or snake_case
+// ending (`grandTotal`, `totalGST`, `unit_price`), singular or plural. `generate` and `separate` don't match.
+// `creditLimit` is a word of its own, so `retryLimit`, `rateLimit` and a page's `limit` stay numbers (RAD-67, the
+// false positive on #51). tools/e6-words.test.ts lints a sample for every word.
 export const MONEY_WORDS = ['amount', 'price', 'rate', 'total', 'subtotal', 'cost', 'qty', 'quantity', 'balance', 'tax',
   'cess', 'paise', 'rupees', 'money', 'discount', 'mrp', 'fee', 'charge', 'gst', 'cgst', 'sgst', 'igst', 'tds', 'tcs',
   'freight', 'roundOff', 'salary', 'gross', 'net', 'wage', 'pay', 'outstanding', 'due', 'payable', 'receivable', 'debit',
-  'credit', 'interest', 'commission', 'advance', 'refund'];
-export const SUFFIX_ONLY = ['limit'];
+  'credit', 'interest', 'commission', 'advance', 'refund', 'creditLimit'];
 const cap = (w) => w[0].toUpperCase() + w.slice(1);
 const snake = (w) => w.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 const alt = (ws) => ws.join('|');
 const UPPER = MONEY_WORDS.map((w) => w.toUpperCase());
 const MONEY_NAME = `/^(${alt(MONEY_WORDS)}|${alt(UPPER)})s?$`
-  + `|[a-z0-9_](${alt([...MONEY_WORDS, ...SUFFIX_ONLY].map(cap))}|${alt(UPPER)})s?$|_(${alt(MONEY_WORDS.map(snake))})s?$/`;
+  + `|[a-z0-9_](${alt(MONEY_WORDS.map(cap))}|${alt(UPPER)})s?$|_(${alt(MONEY_WORDS.map(snake))})s?$/`;
 const E6 = msg('E6', 'ADR-001', 'No floating-point maths or text comparison on money, rates or quantities. Use '
   + "@radcore/lib-common's decimal helpers: dec(a).plus(b), dec(a).gt(b), dec(a).eq(b)");
 const MONEY = `:matches(Identifier[name=${MONEY_NAME}], MemberExpression[property.name=${MONEY_NAME}])`;
@@ -212,6 +216,7 @@ export const OPTIONS = {
       `Property[key.name=${MONEY_NAME}] CallExpression[callee.property.name='number']`,
     ].map((selector) => ({ selector, message: E6 })),
   },
+  'radcore/e6-branded-money': { brands: ['Money', 'Rate', 'Quantity', 'Percent'], classes: ['Decimal'], message: E6 },
   'radcore/d7-no-db-reexport': {
     sources: ['^@radcore/db(/|$)', '^\\.{1,2}/(.*/)?db(/|$)'],
     message: msg('D7', 'ADR-001', "A library never hands on @radcore/db's tables or transactions, or lib-platform's db/"),
@@ -285,8 +290,12 @@ export default tseslint.config(
   // Everywhere: L4, L6, L9a, L9b.
   { files: ALL, ignores: ZONES['radcore/no-driver'], rules: on('radcore/no-driver') },
   { files: ALL, rules: on('radcore/no-raw-html') },
-  // E6: no float maths on money, in the browser and the server alike (RC-215).
+  // E6: no float maths on money, in the browser and the server alike (RC-215): by name everywhere, and by type on
+  // every TypeScript file a project holds (RAD-67), apps/web's own included.
   { files: ALL, rules: on('radcore/e6-no-float-money') },
+  { files: E6_TYPED, ignores: ['**/*.d.ts'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: on('radcore/e6-branded-money') },
   { files: ALL, ignores: ZONES['radcore/tables-in-schema'], rules: on('radcore/tables-in-schema') },
   { files: ALL, ignores: ZONES['radcore/views-in-views'], rules: on('radcore/views-in-views') },
 
