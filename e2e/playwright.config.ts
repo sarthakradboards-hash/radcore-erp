@@ -22,6 +22,9 @@ export default defineConfig({
   forbidOnly: CI,
   retries: CI ? 1 : 0,
   reporter: CI ? [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]] : 'list',
+  // One person per built-in role, seeded and signed in for real once the servers are up (RAD-58, e2e/people.ts). It
+  // writes to the e2e database as its superuser: E2E_SEED_DATABASE_URL, default postgres://radcore@127.0.0.1:5432.
+  globalSetup: './global-setup.ts',
   use: {
     baseURL: `http://127.0.0.1:${WEB_PORT}`,
     trace: 'retain-on-failure',
@@ -29,11 +32,13 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   // Every spec runs in Chromium. The UI kit runs in Firefox and WebKit too (RAD-75): its widgets are where engines
-  // differ. The harness self-checks stay Chromium-only; some check Chromium's own error texts.
+  // differ. The auth journeys run in WebKit too (RAD-58): session cookies are where it has differed. Not in Firefox,
+  // so a run stays under the api's 100-a-minute sign-in limit, which every test shares from one address. The harness
+  // self-checks stay Chromium-only; some check Chromium's own error texts.
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: /kit\.spec\.ts$/ },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /kit\.spec\.ts$/ },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /(kit|auth-[a-z-]+)\.spec\.ts$/ },
   ],
   // Never reuse a server already on a port: it may be another checkout's code. A busy port fails the run instead.
   webServer: [
