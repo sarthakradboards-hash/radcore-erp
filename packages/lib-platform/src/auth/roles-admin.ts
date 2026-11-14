@@ -1,8 +1,10 @@
 // Roles, the permission matrix, and a person's role (M1-18, RAD-36, RC-033, RC-095). Nobody gives themselves more
 // power:
 // - only an admin gives or takes away the admin role, and nobody changes their own role;
+// - nobody gives a role, or takes one away, unless they hold every key it holds (the auditor on #139), so no role
+//   passes on, or takes away, keys the caller doesn't hold;
 // - the admin role isn't edited (it holds every key), nor the caller's own role;
-// - nobody grants a key they don't hold;
+// - nobody grants or removes a key they don't hold;
 // - no role loses the signed-in basics, and a key kept for named roles goes to no other (D-20: pay).
 // Every key is read fresh on each request and job (RAD-35), so a change applies at once in every process, and each one
 // is audited through the roles, role_grants and users triggers, each row pointing at the typed reason, which the
@@ -15,6 +17,7 @@ import type { getPermissionMatrix, listRoles, setRolePermissions, setUserRole } 
 import type { Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import { PERMISSIONS, SIGNED_IN_BASICS } from '../permissions.ts';
+import { principalFor } from './principal.ts';
 import { endSessionsOf } from './sessions.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -24,14 +27,29 @@ type Tx = ReturnType<typeof platformTx>;
 const ADMIN = 'admin';
 const CATALOG = new Map(PERMISSIONS.map((p) => [p.key, p]));
 
-/** The signed-in caller, with their role read now rather than taken from the request's principal. */
+/** The signed-in caller, with their role and keys read now, in this transaction, rather than taken from the
+ * request's principal: a change in between (another admin demoting them) counts. */
 async function callerOf(ctx: Ctx): Promise<{ userId: string; role: string; permissions: readonly string[] }> {
   if (ctx.principal.kind !== 'user') throw new AppError('forbidden', 'Only a signed-in person can change roles');
-  const { userId, permissions } = ctx.principal;
-  const [me] = await platformTx(ctx).select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
-  if (me === undefined) throw new AppError('signed_out', 'Please sign in');
-  return { userId, role: me.role, permissions };
+  const { userId } = ctx.principal;
+  const me = await principalFor(ctx, userId);
+  if (me?.kind !== 'user' || me.role === undefined) throw new AppError('signed_out', 'Please sign in');
+  return { userId, role: me.role, permissions: me.permissions };
 }
+
+/** Each role's keys. */
+async function keysByRole(tx: Tx): Promise<Map<string, string[]>> {
+  const byRole = new Map<string, string[]>();
+  for (const g of await tx.select({ role: roleGrants.role, permission: roleGrants.permission }).from(roleGrants)) {
+    byRole.set(g.role, [...(byRole.get(g.role) ?? []), g.permission]);
+  }
+  return byRole;
+}
+
+/** Whether the caller may give this role to someone, or take it away: only an admin for admin, and only someone who
+ * holds every key the role holds, so nobody passes on a key they don't have. */
+const mayGive = (caller: { role: string; permissions: readonly string[] }, role: string, keys: readonly string[]) =>
+  (role !== ADMIN || caller.role === ADMIN) && keys.every((k) => caller.permissions.includes(k));
 
 /** The matrix's version: the SHA-256 of every grant. Any write changes it, so a stale editor is caught. */
 async function matrixVersion(tx: Tx): Promise<string> {
@@ -52,7 +70,8 @@ export async function listRolesFor(ctx: Ctx): Promise<Out<typeof listRoles>> {
   const held = await tx.select({ role: users.role, n: count() }).from(users)
     .where(inArray(users.status, ['active', 'invited'])).groupBy(users.role);
   const people = new Map(held.map((h) => [h.role, h.n]));
-  return { roles: rows.map((r) => ({ ...r, userCount: people.get(r.key) ?? 0, grantable: r.key !== ADMIN || caller.role === ADMIN })) };
+  const keys = await keysByRole(tx);
+  return { roles: rows.map((r) => ({ ...r, userCount: people.get(r.key) ?? 0, grantable: mayGive(caller, r.key, keys.get(r.key) ?? []) })) };
 }
 
 /** GET /admin/permissions (roles:read): every key, every role's grants, and the version a change must name. */
@@ -96,6 +115,12 @@ export async function setRoleGrants(ctx: Ctx, { key, grants, version }: In<typeo
     throw new AppError('permission_not_held', 'You can only give a permission you hold yourself',
       keyIssues(grants, notHeld, 'not_held', (k) => `You don’t hold ${k}`));
   }
+  // Nor take one away: a key the caller lacks belongs to a stronger role's business (the auditor on #139).
+  const notHeldRemoved = removed.filter((k) => !caller.permissions.includes(k));
+  if (notHeldRemoved.length > 0) {
+    throw new AppError('permission_not_held', 'You can only take away a permission you hold yourself',
+      notHeldRemoved.map((k) => ({ path: ['grants'], code: 'not_held', message: `You don’t hold ${k}` })));
+  }
   const basics = removed.filter((k) => SIGNED_IN_BASICS.includes(k));
   if (basics.length > 0) {
     throw new AppError('basics_required', `Every role keeps ${basics.join(', ')}: without it nobody can use their own account`,
@@ -131,6 +156,11 @@ export async function changeUserRole(ctx: Ctx, { id, role }: In<typeof setUserRo
   }
   if ((role === ADMIN || target.role === ADMIN) && caller.role !== ADMIN) {
     throw new AppError('role_not_grantable', 'Only an admin gives or takes away the admin role');
+  }
+  // Both roles' keys must be the caller's own: giving a role passes its keys on, and taking one away removes them.
+  const keys = await keysByRole(tx);
+  if (!mayGive(caller, role, keys.get(role) ?? []) || !mayGive(caller, target.role, keys.get(target.role) ?? [])) {
+    throw new AppError('role_not_grantable', 'You can only give or take away a role whose permissions you hold yourself');
   }
   if (target.role === role) return { sessionsEnded: 0 };
   if (target.role === ADMIN && admins.filter((a) => a.id !== id).length === 0) {

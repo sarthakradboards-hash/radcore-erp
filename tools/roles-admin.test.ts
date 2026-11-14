@@ -92,6 +92,8 @@ describe.skipIf(!url)('roles and the permission matrix', () => {
     const pick = (r: typeof fromAdmin, key: string) => r.roles.find((x) => x.key === key);
     expect([pick(fromAdmin, target)?.userCount, pick(fromAdmin, 'admin')?.grantable, pick(fromManager, 'admin')?.grantable,
       pick(fromManager, target)?.grantable]).toEqual([2, true, false, true]);
+    // The manager lacks owner's pii:read and pay:read, so can't give owner to anyone (the auditor on #139).
+    expect([pick(fromAdmin, 'owner')?.grantable, pick(fromManager, 'owner')?.grantable]).toEqual([true, false]);
     expect(pick(fromAdmin, 'admin')?.secondFactorRequired).toBe(true);
   });
 
@@ -146,6 +148,10 @@ describe.skipIf(!url)('roles and the permission matrix', () => {
     const a = await admin();
     // The manager doesn't hold pii:read, so can't give it; the admin does.
     expect(await setGrants(await mgr.as(), target, ['session:read', 'pii:read'])).toBe('permission_not_held');
+    // Nor take it away from a role that has it (the auditor on #139).
+    const stronger = await role({ 'session:read': 'all', 'pii:read': 'all' });
+    expect(await setGrants(await mgr.as(), stronger, ['session:read'])).toBe('permission_not_held');
+    expect(await grantsOf(stronger)).toEqual([{ permission: 'pii:read', scope: 'all' }, { permission: 'session:read', scope: 'all' }]);
     expect(await setGrants(await a.as(), target, ['pii:read'])).toBe('basics_required');
     // D-20: the admin holds pay:read, but only admin and owner may.
     expect(await setGrants(await a.as(), target, ['session:read', 'pay:read'])).toBe('permission_not_for_role');
@@ -168,6 +174,10 @@ describe.skipIf(!url)('roles and the permission matrix', () => {
     expect(await change(await mgr.as(), mgr.id, to)).toBe('own_account');
     expect(await change(await mgr.as(), p.id, 'admin')).toBe('role_not_grantable');
     expect(await change(await mgr.as(), a.id, to)).toBe('role_not_grantable');
+    // Owner holds pii:read and pay:read, which the manager doesn't: they can neither give it nor take it away.
+    expect(await change(await mgr.as(), p.id, 'owner')).toBe('role_not_grantable');
+    const o = await person('owner');
+    expect(await change(await mgr.as(), o.id, to)).toBe('role_not_grantable');
     expect(await change(await mgr.as(), p.id, 'no_such_role')).toBe('invalid_input');
     expect(await run(await mgr.as(), (ctx) => changeUserRole(ctx, { id: p.id, role: to, reason }))).toEqual({ sessionsEnded: 2 });
     expect(await asAdmin('select role, role_since is not null as since from radcore.users where id = $1', [p.id]))
