@@ -101,6 +101,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'DELETE /me/sessions/:id': PLATFORM,
   'GET /exports/:id': PLATFORM,
   'POST /exports/:id/download': PLATFORM,
+  'GET /admin/users': PLATFORM,
   'GET /admin/sessions': PLATFORM,
   'DELETE /admin/sessions/:id': PLATFORM,
   'POST /admin/users/:id/sessions/end': PLATFORM,

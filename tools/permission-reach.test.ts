@@ -32,15 +32,16 @@ function declaringFile(n: ts.Node): string | null {
   const d = s?.declarations?.[0];
   return d === undefined ? null : repoPath(d.getSourceFile().fileName);
 }
-/** Every file a define call's arguments after the contract, and the define helper itself, are declared in. */
-function filesOf(call: ts.CallExpression): string[] {
+/** Every file a call's callee and its arguments from `from` on are declared in: for a define call, its helper and
+ * what follows the contract; for a builder called at start, the builder and everything handed to it. */
+function filesOf(call: ts.CallExpression, from = 1): string[] {
   const out = [declaringFile(call.expression)];
   const visit = (n: ts.Node): void => {
     if (ts.isIdentifier(n) || ts.isPropertyAccessExpression(n)) out.push(declaringFile(n));
     else if (ts.isObjectLiteralExpression(n) || ts.isArrayLiteralExpression(n) || ts.isSpreadElement(n)) n.forEachChild(visit);
     else if (ts.isPropertyAssignment(n)) visit(n.initializer);
   };
-  call.arguments.slice(1).forEach(visit);
+  call.arguments.slice(from).forEach(visit);
   return out.filter((f): f is string => f !== null);
 }
 const defaultArray = (file: string): ts.ArrayLiteralExpression => {
@@ -50,15 +51,16 @@ const defaultArray = (file: string): ts.ArrayLiteralExpression => {
   return e;
 };
 /** For one list (apiRoutes' or workerJobs' array), each entry's files, in order. A spread of a route or job file opens
- * to its calls; a call made at start (`passwordResetEmailJob(start)`) and a spread of what start-up built
- * (`...auth.routes`) are their builder's file, for as many entries as the runtime list has left. */
-function entriesOf(list: string, mounted: number): string[][] {
+ * to its calls; a call made at start (`passwordResetEmailJob(start)`) is its builder's files; a spread of what start-up
+ * built (`...auth.routes`) is the file declaring it, once for each entry of its runtime list, whose size `built` names
+ * by the spread's own text. */
+function entriesOf(list: string, built: Readonly<Record<string, number>>): string[][] {
   const fn = program.getSourceFile(list)?.statements.find(ts.isVariableStatement)?.declarationList.declarations[0]?.initializer;
   let body: ts.Node | undefined = fn !== undefined && ts.isArrowFunction(fn) ? fn.body : undefined;
   while (body !== undefined && ts.isParenthesizedExpression(body)) body = body.expression;
   if (body === undefined || !ts.isArrayLiteralExpression(body)) throw new Error(`${list}: not an arrow answering an array`);
   const out: string[][] = [];
-  body.elements.forEach((el, i) => {
+  for (const el of body.elements) {
     const target = ts.isSpreadElement(el) ? el.expression : el;
     const file = declaringFile(target);
     if (ts.isSpreadElement(el) && file !== null && file.startsWith('apps/')) {
@@ -67,13 +69,13 @@ function entriesOf(list: string, mounted: number): string[][] {
         out.push(filesOf(call));
       }
     } else if (ts.isCallExpression(target)) {
-      out.push([declaringFile(target.expression) ?? list]);
+      out.push(filesOf(target, 0));
     } else {
-      // Only the last entry can be a list of unknown length.
-      if (i !== body.elements.length - 1) throw new Error(`${list}: a list built at start must come last`);
-      while (out.length < mounted) out.push([file ?? list]);
+      const size = built[target.getText()];
+      if (size === undefined) throw new Error(`${list}: no runtime size given for ${target.getText()}`);
+      for (let n = 0; n < size; n += 1) out.push([file ?? list]);
     }
-  });
+  }
   return out;
 }
 
@@ -121,8 +123,8 @@ describe('the manifest’s reach', () => {
       await auth.store.stop();
     }
     const jobs: readonly JobDefinition[] = workerJobs({ mailer: { send: async () => undefined }, publicOrigin: cfg.publicOrigin });
-    const routeFiles = entriesOf(LISTS.api, routes.length);
-    const jobFiles = entriesOf(LISTS.worker, jobs.length);
+    const routeFiles = entriesOf(LISTS.api, { 'auth.routes': auth.routes.length });
+    const jobFiles = entriesOf(LISTS.worker, {});
     expect([routeFiles.length, jobFiles.length]).toEqual([routes.length, jobs.length]);
     const keys = [...routes.map((r) => `${r.contract.method} ${r.contract.path}`), ...jobs.map((j) => j.name)];
     const reach = await reachOf([...routeFiles, ...jobFiles]);
@@ -135,7 +137,9 @@ describe('the manifest’s reach', () => {
 
   it('reads each route file as the api mounts it, and finds the service’s own file', () => {
     // files.ts's first route is the photo upload, served by lib-platform's files engine.
-    const [first] = entriesOf(LISTS.api, 0);
+    const [first] = entriesOf(LISTS.api, { 'auth.routes': 0 });
+    // A list built at start is sized from the runtime by name, wherever it sits; one with no size is refused.
+    expect(() => entriesOf(LISTS.api, {})).toThrow('no runtime size given for auth.routes');
     expect(first?.some((f) => f.startsWith('packages/lib-platform/src/files/'))).toBe(true);
     expect(readdirSync(join('apps', 'api', 'src', 'routes')).every((f) => f.endsWith('.ts'))).toBe(true);
   });
