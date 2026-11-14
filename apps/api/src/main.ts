@@ -11,7 +11,8 @@ await startProcess('api', async ({ config, pool, log }) => {
   const session = sessionCookieFor(config.publicOrigin);
   // Sign-in and the password routes are built at start, with Argon2id and the lockout store (createAuth).
   const api = { db, routes: apiRoutes(auth), newPasswordCheck: newPasswordCheckFor(config, log), files: files.store,
-    secrets: createSecrets(config.secrets), alert: createAlerter(config.alertWebhookUrl, log, { repeats: auth.limits }),
+    secrets: createSecrets(config.secrets), guards: auth.guards,
+    alert: createAlerter(config.alertWebhookUrl, log, { repeats: auth.limits }),
     // GET /me isn't activity: the shell reads it every minute, and that mustn't keep an idle session alive (RAD-52).
     authenticate: (req: { get(name: string): string | undefined }, route: string) =>
       authenticateSession(db, session.tokenIn(req.get('cookie')), { touch: route !== 'GET /me' }) };
