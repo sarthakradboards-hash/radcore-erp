@@ -7,6 +7,7 @@ import {
   startSecondFactorEnrolment, verifySecondFactor,
 } from '../contract.ts';
 import { createLimiterStore } from '../db/client.ts';
+import { createRequestGuards } from '../guards.ts';
 import type { Logger } from '../log.ts';
 import { defineRoute } from '../route.ts';
 import { createAccount } from './account.ts';
@@ -38,6 +39,8 @@ export async function createAuth(config: Config, log: Logger, { now }: { now?: (
       defineRoute(newRecoveryCodes, factor.newRecoveryCodes, { before: factor.openForNewCodes }),
       defineRoute(removeSecondFactor, factor.remove), defineRoute(acceptInvite, account.acceptInvite),
       defineRoute(resetPassword, account.resetPassword), defineRoute(changePassword, account.changePassword)],
+    /** The request rate limits (RAD-39), on the same store. */
+    guards: createRequestGuards(store),
     store: { name: 'rate-limit store', stop: () => store.end() },
   });
 }
