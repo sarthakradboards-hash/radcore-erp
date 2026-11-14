@@ -63,6 +63,12 @@ export const passwordLength = (password: string): number => [...password.normali
 export const newPasswordFields = z.registry<{ check: 'new_password' }>();
 /** A password a person is setting: invite accept, reset and change. Only those three routes may use it (M1-19). */
 export const newPassword = () => z.string().max(PASSWORD_MAX_LENGTH).register(newPasswordFields, { check: 'new_password' });
+/** The fields the handler keeps as a change's reason (RAD-36, ADR-005 §7c): its audit rows point at the reason. */
+export const reasonFields = z.registry<{ keep: 'change_reason' }>();
+/** Why a change that removes access or power was made, in the admin's own words. The handler stores it once, and each
+ * audit row of the change carries its id, never its text. */
+export const reason = () => z.string().trim().min(1, 'Say why, in your own words').max(500)
+  .register(reasonFields, { keep: 'change_reason' });
 /** A password typed to prove who you are: sign-in, and the current password on a change. No rule but the cap. */
 export const passwordString = () => z.string().min(1).max(PASSWORD_MAX_LENGTH);
 /** A search box's text, sent as `filter.search` (RAD-52's useApiSearch). The server splits it into words. */

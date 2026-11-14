@@ -1,7 +1,7 @@
 // lib-platform's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every
 // contract file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  dateString, defineContract, emailString, idString, listInput, listOf, momentString, searchText, sortInput,
+  dateString, defineContract, emailString, idString, listInput, listOf, momentString, reason, searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 export { downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, type ExportContract } from './export/contract.ts';
@@ -43,7 +43,6 @@ const read = { readOnly: true, isolation: 'read committed' } as const;
 // self-escalation rule (M1-18) and says so in flags (`self`, `grantable`, `editable`) and named refusals; the
 // screens only show them. Every change that removes access or power takes a typed reason, kept in its audit row.
 const roleKey = () => z.string().regex(/^[a-z][a-z_]{1,31}$/, 'Not a role');
-const reason = () => z.string().trim().min(1, 'Say why, in your own words').max(500);
 const userStatus = z.enum(['invited', 'active', 'disabled']); // the users table's own check
 const principalOut = z.object({ kind: z.enum(['user', 'system', 'link']), id: z.string(), displayName: z.string().nullable() });
 
@@ -119,12 +118,14 @@ export const getPermissionMatrix = defineContract({
 });
 
 /** Replaces one role's grants. It applies at once in every process (RC-095) and is audited with its reason.
- * permission_not_held: nobody grants a key they don't hold themselves. */
+ * permission_not_held: nobody grants a key they don't hold themselves. basics_required: no role loses the signed-in
+ * basics (session:read). permission_not_for_role: a key kept for named roles (D-20: pay, admin and owner only). */
 export const setRolePermissions = defineContract({
   method: 'PUT', path: '/admin/roles/:key/permissions', auth: 'session', perm: 'roles:write', tx: write,
   input: z.object({ key: roleKey(), grants: permissionKeys, version: z.string(), reason: reason() }),
   output: z.object({ version: z.string() }),
-  errors: ['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held'],
+  errors: ['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held', 'basics_required',
+    'permission_not_for_role'],
 });
 
 /** Every live session, or one person's, newest activity first. No IP, as on listMySessions. */
@@ -180,6 +181,7 @@ export const listAuditTrail = defineContract({
     tableName: z.string(), recordId: z.string(), op: auditOp,
     // insert: new only; update: old and new for each changed column; delete: old only
     changed: z.record(z.string(), z.object({ old: z.json().optional(), new: z.json().optional() })),
+    reason: z.string().nullable(), // why, as the admin typed it, when the change asked (RAD-36)
   })),
   errors: ['range_too_long'],
 });
@@ -233,6 +235,7 @@ export const SECURITY_EVENT_ROUTES = {
   'POST /admin/users/:id/sessions/end': ['session_ended'],
   'POST /me/second-factor/recovery-codes': ['second_factor_changed'],
   'POST /admin/users/:id/second-factor/remove': ['second_factor_changed', 'session_ended'],
+  'PUT /admin/users/:id/role': ['session_ended'],
   'POST /files/photo/:id/download': ['download'],
   'POST /files/resume/:id/download': ['download'],
   'POST /files/statement/:id/download': ['download'],

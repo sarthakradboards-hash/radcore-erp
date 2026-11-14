@@ -283,6 +283,22 @@ throws `not_found` out of scope, so it answers 404 like a record that doesn't ex
 lists. A person's role and grants are read from the database on every request and every job (`loadPrincipal`), never
 cached, so a change applies at once in every process (RC-095).
 
+**Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
+under these rules, each refused by name:
+- Only an admin gives or takes away the admin role, and nobody gives or takes away a role whose keys they don't all
+  hold, since that would pass on or remove keys they lack (`role_not_grantable`; `grantable` on the roles list says
+  the same). Nobody changes their own role (`own_account`), and the last active admin stays one (`last_admin`). Two admins demoting each other at once take
+  turns, and the second is refused, because it's no longer an admin.
+- The admin role's grants aren't edited, since it holds every key, and nor are the caller's own role's
+  (`role_not_editable`).
+- A key must be in lib-platform's catalogue (`permissions.ts`; `unknown_permission`). Nobody grants a key they don't
+  hold, or takes one away (`permission_not_held`). No role loses the signed-in basics, `session:read` today (`basics_required`). A key
+  kept for named roles goes to no other: `pay:read` stays with admin and owner (D-20, `permission_not_for_role`).
+- The matrix's `version` is the SHA-256 of every grant, so a change made from a stale copy is refused
+  (`matrix_changed`). A key a role keeps keeps its scope; a key it gains reaches every record.
+- A role change ends that person's sessions (`role_changed`), so the new role's keys and second-factor rule apply
+  from their next sign-in.
+
 ### 7. The web client
 
 `apps/web` builds its client from the same contracts: one client per module, for example

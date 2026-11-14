@@ -4,6 +4,7 @@
 //   ─► the new-password check ─► the route's `before` step, outside any transaction (ADR-001 §8, RAD-33)
 //   ─► one transaction of the contract's kind, with its statement timeout (RC-080)
 //   ─► a write claims its saved-once key (M1-09): an earlier committed answer is replayed here
+//   ─► a reason() field is kept as the change's reason, which its audit rows point at (RAD-36)
 //   ─► service(ctx, input, { before })
 //   ─► output checked against contract.output, camelCase as is (RC-199) ─► a write keeps its answer ─► commit ─► 200
 //   ─► errors mapped by code: a thrown AppError's code or a PostgreSQL SQLSTATE, never message text (RC-216)
@@ -11,9 +12,10 @@
 // commits (RAD-34, RAD-33).
 // Still to come, each with its ticket: rate guards (M1-21), pii() masking (M1-22) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
-import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, linkPrincipal, originAllowed, RecordedRefusal,
-  recordLinkAccess, useLink, type Files, type Principal, type Route, type Secrets, type SessionCookie, type SignInCookie,
+import { BUSINESS_RULE_STATUS, newPasswordFields, reasonFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
+import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, linkPrincipal, originAllowed, recordChangeReason,
+  RecordedRefusal, recordLinkAccess, useLink, type Files, type Principal, type Route, type Secrets, type SessionCookie,
+  type SignInCookie,
 } from '@radcore/lib-platform';
 import {
   acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword, startSecondFactorEnrolment,
@@ -51,9 +53,12 @@ const PASSWORD_REFUSALS: Readonly<Record<'too_short' | 'breached', string>> = {
 const PASSWORD_ROUTES = new Set([acceptInvite, resetPassword, changePassword].map((c) => `${c.method} ${c.path}`));
 // The one sign-in route that isn't key-exempt: it reads the pending-sign-in cookie, and stores no answer (ADR-001 §7a).
 const ENROLMENT_START = `${startSecondFactorEnrolment.method} ${startSecondFactorEnrolment.path}`;
-// The input fields a contract marks newPassword().
-const newPasswordKeys = (input: unknown): string[] => Object.entries((input as { shape?: Record<string, unknown> }).shape ?? {})
-  .filter(([, schema]) => newPasswordFields.has(schema as never)).map(([key]) => key);
+// The input fields a contract marks newPassword(), or reason().
+const markedKeys = (registry: { has(schema: never): boolean }) => (input: unknown): string[] =>
+  Object.entries((input as { shape?: Record<string, unknown> }).shape ?? {})
+    .filter(([, schema]) => registry.has(schema as never)).map(([key]) => key);
+const newPasswordKeys = markedKeys(newPasswordFields);
+const reasonKeys = markedKeys(reasonFields);
 
 // shortcut: a signed-out caller of a public route runs as this principal, with no permissions.
 const PUBLIC: Principal = Object.freeze({ kind: 'system', name: 'public', permissions: Object.freeze([]) });
@@ -160,6 +165,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
       throw new TypeError(`${route}: only ANSWER_NOT_STORED_ROUTES may declare storesAnswer: false (ADR-001 §7a)`);
     }
     const passwordKeys = newPasswordKeys(contract.input);
+    const reasonKey = reasonKeys(contract.input)[0];
     // A wrapped input would hide the field and skip the check, so a password route without one refuses to mount.
     if (PASSWORD_ROUTES.has(route) && passwordKeys.length === 0) {
       throw new TypeError(`${route}: sets a password, but the handler finds no newPassword() field in its input to check`);
@@ -249,6 +255,9 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           const once = contract.tx.readOnly || contract.idempotency === 'exempt' ? null
             : await claimSavedOnce(ctx, { route, key, input: work, storesAnswer: contract.storesAnswer !== false });
           if (once?.replay === true) return once.answer;
+          // Why: kept once, before the service writes, so every audit row of this change carries its id (RAD-36).
+          const why = reasonKey === undefined ? undefined : (input.value as Record<string, unknown>)[reasonKey];
+          if (typeof why === 'string') await recordChangeReason(ctx, why);
           // A link that changes something spends one of its uses with the work, so both commit or neither does, and no
           // service can forget to (auditor on #134).
           if (contract.auth === 'link' && !contract.tx.readOnly) await useLink(ctx);

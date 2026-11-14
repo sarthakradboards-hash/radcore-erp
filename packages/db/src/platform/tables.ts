@@ -352,6 +352,16 @@ export const pendingSignIns = radcoreTable('pending_sign_ins', {
 ]);
 
 /**
+ * Why a change was made (RAD-36, ADR-005 §7c): the reason an admin typed, once per change. Each audit row of the change
+ * carries its id (`audit_log.reason_id`), never its text, so the text can be corrected or erased later without touching
+ * an append-only row. Written only through radcore.record_change_reason, and not copied into the audit log.
+ */
+export const changeReasons = radcoreTable('change_reasons', {
+  id: id(),
+  reason: boundedText({ max: 500 }).notNull(),
+});
+
+/**
  * Public links (RAD-41, ADR-001 §6a, RC-047): a link sent to a customer or a member of staff (an invoice, an estimate,
  * a payslip) lets its holder do one `action` on one record, `record_id` in `record_table`, until `expires_at`, unless
  * revoked first.
