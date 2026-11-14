@@ -11,6 +11,9 @@ export type Permission = {
   /** A role holding it needs the second sign-in factor, whatever its own setting (D-19, RAD-83): keys that move money
    * or reach payroll, HR or user administration. Each such module's keys join with it. */
   readonly secondFactor?: boolean;
+  /** The tables holding the records this key reaches, as `<db entry>#<table export>` ('@radcore/db/crm#leads'). Any
+   * key may be granted at `own` scope, so a module service reading one of these applies the scope (E7, RAD-85). */
+  readonly records?: readonly string[];
 };
 
 /** In the order the matrix shows them: by module, then by key. */
@@ -42,3 +45,6 @@ export const SIGNED_IN_BASICS: readonly string[] = Object.freeze(['session:read'
 
 /** The keys whose holder needs the second sign-in factor (D-19, RAD-83). */
 export const SECOND_FACTOR_KEYS: readonly string[] = Object.freeze(PERMISSIONS.filter((p) => p.secondFactor).map((p) => p.key));
+
+/** Every table some key's records live in: a module service reads one only with the record scope applied (E7). */
+export const SCOPED_TABLES: readonly string[] = Object.freeze([...new Set(PERMISSIONS.flatMap((p) => p.records ?? []))].toSorted());
