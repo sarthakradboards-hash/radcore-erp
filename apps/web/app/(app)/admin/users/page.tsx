@@ -39,6 +39,7 @@ export default function UsersPage() {
   const { permissions } = useMe();
   const mayWrite = permissions.includes('users:write');
   const seesRoles = permissions.includes('roles:read');
+  // Without pii:read the server searches names only (#166), so the label says so (e2e on #173).
   // Inviting and changing a role pick from the role list, so they need both.
   const mayPickRole = mayWrite && seesRoles;
   const roles = useApiQuery(listRoles, {}, { enabled: seesRoles }).data?.roles ?? [];
@@ -86,7 +87,7 @@ export default function UsersPage() {
     <>
       <h1>{t('admin.users.title')}</h1>
       <div className="admin-toolbar">
-        <SearchBox label={t('admin.users.search')} action={t('admin.audit.apply')} onSearch={setSearch} />
+        <SearchBox label={t(permissions.includes('pii:read') ? 'admin.users.search' : 'admin.users.search.names')} action={t('admin.audit.apply')} onSearch={setSearch} />
         {mayPickRole ? (
           <button type="button" className="kit-button kit-button-primary" onClick={() => setInviting(true)}>
             {t('admin.users.invite')}
