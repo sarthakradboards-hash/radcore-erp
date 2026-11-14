@@ -35,6 +35,11 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /admin/roles': 'roles:read',
   'GET /admin/permissions': 'roles:read',
   'PUT /admin/roles/:key/permissions': 'roles:write',
+  // Admin: custom roles and the built-in templates (RAD-83).
+  'POST /admin/roles': 'roles:write',
+  'PATCH /admin/roles/:key': 'roles:write',
+  'POST /admin/roles/:key/delete': 'roles:write',
+  'POST /admin/roles/:key/reset': 'roles:write',
   // Admin: the audit trail and security events (RAD-30, RAD-31).
   'GET /admin/audit': 'audit:read',
   'GET /admin/audit/tables': 'audit:read',
