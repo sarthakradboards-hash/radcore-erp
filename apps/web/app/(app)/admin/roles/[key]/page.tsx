@@ -7,7 +7,7 @@ import {
   deleteRole, getPermissionMatrix, listRoles, resetRole, setRolePermissions, updateRole,
 } from '@radcore/lib-platform/contract';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import { CloseButton, Dialog } from '../../../../../components/ui/dialog/dialog.tsx';
@@ -29,6 +29,8 @@ const renameSchema = updateRole.input.pick({ name: true, description: true, reas
 
 export default function RolePage() {
   const { key } = useParams<{ key: string }>();
+  // Keys a copy left out (?dropped=, set by New role); only keys the matrix lists are shown, so a made-up URL says nothing.
+  const dropped = (useSearchParams().get('dropped') ?? '').split(',');
   const me = useMe();
   const roles = useApiQuery(listRoles, {});
   const matrix = useApiQuery(getPermissionMatrix, {});
@@ -84,7 +86,7 @@ export default function RolePage() {
       <dl className="admin-facts" aria-label={t('admin.roles.facts')}>
         <dt>{t('admin.roles.col.kind')}</dt><dd>{t(role.builtIn ? 'admin.roles.kind.builtIn' : 'admin.roles.kind.custom')}</dd>
         <dt>{t('admin.roles.col.description')}</dt><dd>{role.description}</dd>
-        <dt>{t('admin.roles.col.people')}</dt><dd>{t('admin.roles.people', { count: String(role.userCount) })}</dd>
+        <dt>{t('admin.roles.col.people')}</dt><dd>{role.userCount === 1 ? t('admin.roles.people.one') : t('admin.roles.people', { count: String(role.userCount) })}</dd>
         <dt>{t('admin.roles.col.factor')}</dt>
         <dd>{t(role.secondFactorRequired ? 'admin.roles.factor.required' : 'admin.roles.factor.optional')}</dd>
       </dl>
@@ -98,6 +100,17 @@ export default function RolePage() {
         </div>
       ) : <p>{t('admin.roles.locked')}</p>}
       {mayChange && !role.builtIn && role.userCount > 0 ? <p className="kit-field-hint">{t('admin.roles.delete.inUse')}</p> : null}
+
+      {m.permissions.some((p) => dropped.includes(p.key)) ? (
+        <div className="admin-notice">
+          <p>{t('admin.roles.dropped.title')}</p>
+          <ul>
+            {m.permissions.filter((p) => dropped.includes(p.key)).map((p) => (
+              <li key={p.key}>{t('admin.roles.dropped.permission_not_for_role', { permission: p.label })}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <h2>{t('admin.roles.perms')}</h2>
       <p>{t('admin.roles.perms.hint')}</p>

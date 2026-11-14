@@ -55,10 +55,12 @@ export default function RolesPage() {
       <Dialog open={creating} onOpenChange={setCreating} title={t('admin.roles.new.title')} description={t('admin.roles.new.hint')}>
         <Form schema={schema} defaultValues={{ name: '', description: '', copyFrom: '', reason: '' }} saved={false} messages={MESSAGES}
           onSubmit={async ({ copyFrom, ...v }) => {
-            const { key } = await create.submit({ ...v, ...(copyFrom === '' ? {} : { copyFrom }) });
+            const { key, droppedKeys } = await create.submit({ ...v, ...(copyFrom === '' ? {} : { copyFrom }) });
             setCreating(false);
-            setTimeout(() => announce(t('admin.roles.created', { role: v.name })), 0);
-            router.push(`/admin/roles/${key}`);
+            setTimeout(() => announce(t(droppedKeys.length === 0 ? 'admin.roles.created' : 'admin.roles.created.dropped', { role: v.name })), 0);
+            // A copy leaves out keys kept for named roles (pay); the role's page names them (the architect on RAD-83).
+            const dropped = droppedKeys.join(',');
+            router.push(`/admin/roles/${key}${dropped === '' ? '' : `?dropped=${encodeURIComponent(dropped)}`}`);
           }}>
           <TextField name="name" label={t('admin.roles.name')} autoComplete="off" />
           <TextAreaField name="description" label={t('admin.roles.description')} />
