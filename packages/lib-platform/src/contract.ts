@@ -314,12 +314,9 @@ const eventUnion = z.discriminatedUnion('kind', [
 /** One security event as recorded: its kind and that kind's detail. Typed plainly, so lint's D7 walk stays small. */
 export const securityEvent: z.ZodType<z.output<typeof eventUnion>, z.input<typeof eventUnion>> = eventUnion;
 
-/**
- * The routes that record security events, and which (RC-031's register, RAD-31). Each route's own ticket proves in
- * its test that it writes them: RAD-32 and RAD-34 sign-in, passwords and sessions, RAD-33 the second factor. Exports
- * and downloads join when they're declared (RAD-47 part 2, RAD-43 part 2), and the role change and deactivation,
- * which end sessions, with RAD-35 and RAD-36.
- */
+/** The routes that record security events, and which (RC-031's register, RAD-31). Each route's ticket proves its own
+ * rows: RAD-32 and RAD-34 sign-in, passwords and sessions; RAD-33 the second factor; exports and downloads when they're
+ * declared (RAD-47 part 2, RAD-43 part 2); RAD-35 and RAD-36 the role change and deactivation, which end sessions. */
 export const SECURITY_EVENT_ROUTES = {
   'POST /sign-in': ['sign_in', 'sign_in_failed'],
   'POST /sign-in/second-factor': ['sign_in', 'sign_in_failed'],
