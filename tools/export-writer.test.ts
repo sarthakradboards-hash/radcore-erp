@@ -10,13 +10,14 @@ import { ExportTooLarge, writeExportFile, type ExportDefinition, type ExportRow 
 
 const dir = mkdtempSync(join(tmpdir(), 'export-writer-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
-// The writer only hands ctx to the module's page function, which these fakes ignore.
-const ctx = {} as Ctx;
+// The writer reads only the principal's keys, for pii columns, and hands ctx to the page function, which these ignore.
+const as = (permissions: string[]) => ({ principal: { kind: 'system', name: 'test', permissions } }) as unknown as Ctx;
+const ctx = as([]);
 
 // A list of `total` rows served `per` at a time through an opaque `after`, as a screen's keyset paging would.
-function list(total: number, per: number, fail?: number): ExportDefinition<{ city: string }> {
+function list(total: number, per: number, fail?: number, pii?: ExportDefinition<unknown>['pii']): ExportDefinition<{ city: string }> {
   return {
-    kind: 'crm.parties', columns: ['name', 'phone', 'balance'],
+    kind: 'crm.parties', columns: ['name', 'phone', 'balance'], ...(pii === undefined ? {} : { pii }),
     rows: async (_ctx, filter, { after }) => {
       const start = after === undefined ? 0 : Number(after);
       if (fail !== undefined && start >= fail) throw new Error('the database went away');
@@ -48,6 +49,17 @@ describe('writeExportFile', () => {
     const path = join(dir, 'broken.csv');
     await expect(writeExportFile(ctx, list(6, 2, 4), { city: 'Pune' }, path, 100)).rejects.toThrow('the database went away');
     expect(existsSync(path)).toBe(false);
+  });
+
+  it('masks a pii column for a principal without its key, as a screen would (RAD-40)', async () => {
+    const lines = async (who: Ctx, name: string) => {
+      const path = join(dir, name);
+      await writeExportFile(who, list(1, 2, undefined, { phone: 'last4', balance: 'pay' }), { city: 'Pune' }, path, 5);
+      return readFileSync(path, 'utf8').replace(/^﻿/, '').trimEnd().split('\n').slice(1);
+    };
+    expect(await lines(as([]), 'masked.csv')).toEqual(['Party 0 of Pune,••••••3210,••••••']);
+    expect(await lines(as(['pii:read']), 'personal.csv')).toEqual(['Party 0 of Pune,+919876543210,••••••']);
+    expect(await lines(as(['pii:read', 'pay:read']), 'shown.csv')).toEqual(['Party 0 of Pune,+919876543210,-1250.50']);
   });
 
   it('writes the header alone for an empty list', async () => {
