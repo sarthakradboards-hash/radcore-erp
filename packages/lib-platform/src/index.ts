@@ -1,6 +1,7 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
 export { principalId, type Ctx, type Files, type Principal, type SessionCookie } from './ctx.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
+export { createLink, linkPrincipal, linkUrl, listLinks, revokeLink, useLink, type NewLink } from './links.ts';
 export {
   deviceOf, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, endSessionsOf, getMyself, listAllSessions,
   listOwnSessions, sessionCookieFor, signInService, type EndedReason, type SessionCookieKind,

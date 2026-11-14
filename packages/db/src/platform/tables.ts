@@ -246,3 +246,29 @@ export const sessions = radcoreTable('sessions', {
   uniqueIndex('ux_sessions_token_hash').on(t.tokenHash),
   index('ix_sessions_user_id').on(t.userId),
 ]);
+
+/**
+ * Public links (RAD-41, ADR-001 §6a, RC-047): a link sent to a customer or a member of staff (an invoice, an estimate,
+ * a payslip) lets its holder do one `action` on one record, `record_id`, until `expires_at`, unless revoked first.
+ * Only the SHA-256 of its token is stored (`token_hash`), and nothing else ever holds the token: other tables, and the
+ * audit trail (`link:<id>`), name the link by its id. `uses_left` counts down for a link with a set number of uses
+ * (null: any number until it expires). Audited, with the hash redacted; the read-only login can't read the hash.
+ */
+export const publicLinks = radcoreTable('public_links', {
+  id: id(),
+  action: text().notNull(),
+  recordId: uuid().notNull(),
+  tokenHash: text().notNull(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  usesLeft: integer(),
+  revokedAt: timestamp({ withTimezone: true }),
+  revokedBy: text(),
+}, (t) => [
+  check('ck_public_links_action', sql`${t.action} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$'`),
+  check('ck_public_links_token_hash', sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+  check('ck_public_links_uses_left', sql`${t.usesLeft} is null or ${t.usesLeft} >= 0`),
+  // A revocation says who revoked it, and when.
+  check('ck_public_links_revoked', sql`(${t.revokedAt} is null) = (${t.revokedBy} is null)`),
+  uniqueIndex('ux_public_links_token_hash').on(t.tokenHash),
+  index('ix_public_links_action_record_id').on(t.action, t.recordId),
+]);
