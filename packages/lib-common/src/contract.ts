@@ -146,6 +146,9 @@ export function defineContract<const M extends Method, I extends z.ZodType, O ex
     if (spec.method !== 'POST') throw new TypeError(`${at}: a link route is a POST, so its token travels in the body`);
     if (!keys.includes('token') || params.includes('token')) throw new TypeError(`${at}: a link route's input has a token, in the body`);
     if (!LINK_ACTION.test(spec.action)) throw new TypeError(`${at}: a link route's action is <module>.<what>`);
+    // Its one record is the link's (ctx.principal.recordId), never one the holder names: no id in its input.
+    const ids = keys.filter((k) => k === 'id' || /Id$|_id$/.test(k));
+    if (ids.length > 0) throw new TypeError(`${at}: a link route's record is the link's, so its input has no ${ids.join(', ')}`);
   }
   // The types already say this; these also hold for a contract built without them.
   if (spec.method === 'GET' && !spec.tx.readOnly) throw new TypeError(`${at}: a GET must be read-only`);

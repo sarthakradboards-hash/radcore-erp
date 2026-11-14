@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
 import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, linkPrincipal, originAllowed, RecordedRefusal,
-  recordLinkAccess, type Files, type Principal, type Route, type Secrets, type SessionCookie, type SignInCookie,
+  recordLinkAccess, useLink, type Files, type Principal, type Route, type Secrets, type SessionCookie, type SignInCookie,
 } from '@radcore/lib-platform';
 import {
   acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword, startSecondFactorEnrolment,
@@ -249,6 +249,9 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           const once = contract.tx.readOnly || contract.idempotency === 'exempt' ? null
             : await claimSavedOnce(ctx, { route, key, input: work, storesAnswer: contract.storesAnswer !== false });
           if (once?.replay === true) return once.answer;
+          // A link that changes something spends one of its uses with the work, so both commit or neither does, and no
+          // service can forget to (auditor on #134).
+          if (contract.auth === 'link' && !contract.tx.readOnly) await useLink(ctx);
           let answer: unknown;
           try {
             answer = await service(cookie === undefined ? ctx : Object.freeze({ ...ctx, cookie }), work, meta);
@@ -273,8 +276,15 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           send(res, failureOf(refused, contract.errors), requestId);
           return;
         }
-        // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c).
-        if (principal?.kind === 'link') await runInTransaction(deps.db, WRITE, principal, requestId, recordLinkAccess);
+        // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c). A read-only
+        // link spends its use here, before anything is answered: if the last use went to a request racing this one,
+        // this one gets the same not_found, and sees nothing.
+        if (principal?.kind === 'link') {
+          await runInTransaction(deps.db, WRITE, principal, requestId, async (ctx) => {
+            if (contract.tx.readOnly) await useLink(ctx);
+            await recordLinkAccess(ctx);
+          });
+        }
         res.status(200).json(output);
       } catch (err) {
         const failure = failureOf(err, contract.errors);

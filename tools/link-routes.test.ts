@@ -49,10 +49,8 @@ describe.skipIf(!url || !superUrl)('link routes', () => {
       seen(ctx.principal, input);
       return { recordId: ctx.principal.kind === 'link' ? ctx.principal.recordId : '', heard: Object.keys(input).sort() };
     }),
-    defineRoute(accept, async (ctx: Ctx) => {
-      await useLink(ctx);
-      return {};
-    }),
+    // The handler spends the link's use with this write; the service doesn't (auditor on #134).
+    defineRoute(accept, async () => ({})),
   ];
   // A session comes with the request too: a link route must ignore it and run as the link's holder only.
   async function serve(fn: (post: (path: string, body: object, key?: string | null) => Promise<Response>) => Promise<void>) {
@@ -111,6 +109,22 @@ describe.skipIf(!url || !superUrl)('link routes', () => {
     const notFound = { status: 404, body: { code: 'not_found', message: 'Not found', issues: [], requestId: 'string' } };
     expect(answers).toEqual({ unknown: notFound, revoked: notFound, usedUp: notFound, otherAction: notFound, expired: notFound });
     expect(seen).not.toHaveBeenCalled();
+  });
+
+  it("serves only the link's own record, whatever other record the body names", async () => {
+    const { token, recordId } = await made(VIEW);
+    await serve(async (post) => {
+      const res = await post('/l/invoice', { token, note: 'x', invoiceId: randomUUID(), id: randomUUID() });
+      expect([res.status, await res.json()]).toEqual([200, { recordId, heard: ['note'] }]);
+    });
+  });
+
+  it("spends a read-only link's use itself: a single-use link answers once, then not_found", async () => {
+    const { token } = await made(VIEW, { uses: 1 });
+    await serve(async (post) => {
+      expect((await post('/l/invoice', { token, note: '' })).status).toBe(200);
+      expect((await answer(await post('/l/invoice', { token, note: '' }))).status).toBe(404);
+    });
   });
 
   it('treats a link that changes something as an ordinary write: it needs its key, and a single use goes once', async () => {

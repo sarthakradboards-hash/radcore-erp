@@ -92,7 +92,9 @@ export async function linkPrincipal(ctx: Ctx, token: string, action: string): Pr
 }
 
 /**
- * Uses up one of a link's uses, in the transaction of the work it allows, so the use and the work commit together.
+ * Uses up one of a link's uses. The generic handler calls it for every link route (auditor on #134): in the work's own
+ * transaction for a link that writes, so the use and the work commit together, and just after the read for one that
+ * only reads. A service never calls it.
  * Refused (not_found, like any dead link) when none is left, including when two requests race for the last one. A link
  * with any number of uses is left as it is.
  */

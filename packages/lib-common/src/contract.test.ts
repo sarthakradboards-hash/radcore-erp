@@ -52,7 +52,11 @@ describe('defineContract refuses a contract that breaks a rule', () => {
       output: z.object({}) } as const;
     expect(defineContract(link)).toMatchObject({ auth: 'link', action: 'sales.invoice_view' });
     for (const change of [{ method: 'GET' }, { input: z.object({ id: z.string() }) }, { action: 'Sales.View' },
-      { path: '/l/:token', input: z.object({ token: z.string() }) }]) {
+      { path: '/l/:token', input: z.object({ token: z.string() }) },
+      // The record is the link's: an id the holder could name would serve another record (auditor on #134).
+      { input: z.object({ token: z.string(), invoiceId: z.string() }) },
+      { input: z.object({ token: z.string(), id: z.string() }) },
+      { input: z.object({ token: z.string(), invoice_id: z.string() }) }]) {
       expect(() => defineContract({ ...link, ...change } as typeof link)).toThrow(/link route/);
     }
   });

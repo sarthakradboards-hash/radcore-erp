@@ -314,6 +314,11 @@ a GET opens a full record:
 2. It writes the access row through `record_access` in its own short transaction, before the response goes out.
 3. If that write fails, the request fails, and the record isn't returned without its log.
 
+A public link's request (`auth: 'link'`, ADR-001 §6a, RAD-41) is logged the same way, by the generic handler, after
+every such request's work commits. Its row's `record_table` holds the link's action (`sales.invoice_view`) and
+`record_id` the link's record: a link knows its action and record, not the record's table, and the pair still names
+exactly what was opened. The row's principal is `link:<id>`.
+
 A full record is served, and its access logged, only when the browser's `Sec-Fetch-Site` is `same-origin`, or
 `none` (a typed address or a bookmark). Otherwise a cross-site link could make a person "open" a record they never
 looked at, for example to make it seem they viewed someone's pay.
