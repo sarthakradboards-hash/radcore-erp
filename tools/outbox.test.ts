@@ -2,10 +2,10 @@
 // in a committed transaction runs once; one sent in a rolled-back transaction never does; a row sent again after a
 // crash is refused by pg-boss's job id; two relays never take the same row; a job pg-boss can't take waits.
 // Here in tools/ because it reads pg-boss's and the outbox's tables as an operator would.
-// The outbox is shared with every other test file running at the same time, and the relay takes the oldest due rows
-// of all of it. So each test relays until its own rows have gone, and asserts only on its own rows (RAD-79): other
-// files' jobs may be ahead of it, and a fresh row may not be due on the first pass (the relay reads the app's clock,
-// the row's time is the database's).
+// The outbox is shared with every other test file running at the same time. So every pass here takes only this
+// test's own jobs (relayOutbox's `only`), and never tries another file's rows, and each test relays until its own rows
+// have gone: a fresh row may not be due on the first pass (the relay reads the app's clock, the row's time is the
+// database's) (RAD-79).
 import { randomUUID } from 'node:crypto';
 import { defineJob, loadConfig } from '@radcore/lib-platform';
 import { createDatabase, relayOutbox, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
@@ -53,10 +53,11 @@ describe.skipIf(!url)('the outbox', () => {
     'select id, name, principal from radcore.jobs_outbox where request_id = $1', [requestId])).rows;
   const jobsWithIds = async (ids: string[]) => Number((await pool.query(
     'select count(*) from pgboss.job where id = any($1::uuid[])', [ids])).rows[0]?.count);
-  // Relay passes, as the worker's relay would make them, until `done` holds.
-  const relayUntil = (done: () => Promise<void>, q = queue, options?: Parameters<typeof relayOutbox>[3]) =>
+  // Relay passes over these jobs only, as the worker's relay would make them, until `done` holds.
+  const relayUntil = (only: readonly string[], done: () => Promise<void>, q = queue,
+    options: Parameters<typeof relayOutbox>[3] = {}) =>
     vi.waitFor(async () => {
-      await relayOutbox(db, q, logger(), options);
+      await relayOutbox(db, q, logger(), { ...options, only });
       await done();
     }, { timeout: 30_000, interval: 250 });
   const gone = (...requestIds: string[]) => async () => {
@@ -68,7 +69,7 @@ describe.skipIf(!url)('the outbox', () => {
     await send(41, requestId);
     const [row] = await outboxFor(requestId);
     expect(row).toMatchObject({ name: job.name, principal: 'user:u-1' });
-    await relayUntil(gone(requestId));
+    await relayUntil([contract.name], gone(requestId));
     expect(await jobsWithIds([row?.id ?? ''])).toBe(1);
     await vi.waitFor(() => expect(ran).toHaveBeenCalledWith({ n: 41 }), { timeout: 30_000, interval: 250 });
   }, 60_000);
@@ -94,7 +95,7 @@ describe.skipIf(!url)('the outbox', () => {
     await send(7, requestId);
     const [row] = await outboxFor(requestId);
     const id = row?.id ?? '';
-    await relayUntil(gone(requestId));
+    await relayUntil([contract.name], gone(requestId));
     // The crash: the job reached pg-boss, but the delete didn't commit, so the row is back.
     await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(contract, { n: 7 }));
     // The who-and-when stamp needs a principal (RA005, RAD-30).
@@ -108,7 +109,7 @@ describe.skipIf(!url)('the outbox', () => {
       c.release();
     }
     // The relay takes it again, pg-boss refuses the second job with that id, and the row is still cleared.
-    await relayUntil(gone(requestId));
+    await relayUntil([contract.name], gone(requestId));
     expect(await jobsWithIds([id])).toBe(1);
   }, 60_000);
 
@@ -118,8 +119,9 @@ describe.skipIf(!url)('the outbox', () => {
       for (const n of [1, 2, 3, 4, 5, 6]) await ctx.jobs.send(contract, { n });
     });
     const ids = (await outboxFor(requestId)).map((r) => r.id);
-    await Promise.all([relayOutbox(db, queue, logger(), { batch: 3 }), relayOutbox(db, queue, logger(), { batch: 3 })]);
-    await relayUntil(gone(requestId));
+    const only = [contract.name];
+    await Promise.all([relayOutbox(db, queue, logger(), { batch: 3, only }), relayOutbox(db, queue, logger(), { batch: 3, only })]);
+    await relayUntil(only, gone(requestId));
     expect(await jobsWithIds(ids)).toBe(6);
   }, 60_000);
 
@@ -137,7 +139,7 @@ describe.skipIf(!url)('the outbox', () => {
     const [good] = await outboxFor(after);
     try {
       // A pass takes the oldest 100 due, the poison among them, and backs each off; a later pass reaches the good job.
-      await relayUntil(gone(after));
+      await relayUntil([lost.name, contract.name], gone(after));
       expect(await jobsWithIds([good?.id ?? ''])).toBe(1);
       // Every poison row was tried and is waiting its turn again: none was sent, none set aside.
       const poisoned = await pool.query<{ n: number }>('select count(*)::int as n from radcore.jobs_outbox '
@@ -150,26 +152,21 @@ describe.skipIf(!url)('the outbox', () => {
 
   it('sets a row aside after its last try, with one alert, and takes it no more', async () => {
     const requestId = randomUUID();
-    await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(poison(), {}));
+    const lost = poison();
+    await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(lost, {}));
     const [row] = await outboxFor(requestId);
     const alert = vi.fn<(message: string) => Promise<void>>(async () => undefined);
-    const options = { maxAttempts: 2, backoff: () => 0, alert };
+    // Two tries, no wait, and only this job: no other relay takes it, and these passes take no other file's rows.
+    const options = { maxAttempts: 2, backoff: () => 0, alert, only: [lost.name] };
     const stateOf = async () => (await pool.query<{ attempts: number; dead: boolean }>(
       'select attempts, dead_at is not null as dead from radcore.jobs_outbox where id = $1', [row?.id])).rows[0];
-    // These passes set aside after two tries, with no wait: other files' rows are held locked meanwhile, so the relay
-    // skips them and only this row is tried that hard.
-    const others = await pool.connect();
     try {
-      await others.query('begin');
-      await others.query('select id from radcore.jobs_outbox where request_id <> $1 for update skip locked', [requestId]);
-      await relayUntil(async () => expect(await stateOf()).toEqual({ attempts: 2, dead: true }), queue, options);
+      await relayUntil([lost.name], async () => expect(await stateOf()).toEqual({ attempts: 2, dead: true }), queue, options);
       // A row set aside is taken no more: another pass leaves it as it is, and alerts no more.
-      await relayOutbox(db, queue, logger(), options);
+      await relayOutbox(db, queue, logger(), { ...options, only: [lost.name] });
       expect(await stateOf()).toEqual({ attempts: 2, dead: true });
       expect(alert.mock.calls.map((c) => c[0]).filter((m) => m.includes(row?.id ?? '-'))).toHaveLength(1);
     } finally {
-      await others.query('rollback');
-      others.release();
       await pool.query('delete from radcore.jobs_outbox where request_id = $1', [requestId]);
     }
   }, 60_000);
@@ -188,7 +185,7 @@ describe.skipIf(!url)('the outbox', () => {
     try {
       const requestId = randomUUID();
       await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(job, {}));
-      await relayUntil(gone(requestId), q);
+      await relayUntil([job.name], gone(requestId), q);
       await vi.waitFor(() => expect(seen).toHaveBeenCalledWith(person(['invoices:export'])), { timeout: 30_000, interval: 250 });
       expect(load).toHaveBeenCalledWith('user:u-1');
     } finally {
@@ -207,7 +204,7 @@ describe.skipIf(!url)('the outbox', () => {
     try {
       await runInTransaction(db, WRITE, user, requestId, (ctx) => ctx.jobs.send(job, {}));
       const [row] = await outboxFor(requestId);
-      await relayUntil(gone(requestId), q);
+      await relayUntil([job.name], gone(requestId), q);
       await vi.waitFor(async () => expect((await pool.query<{ state: string; retries: number }>(
         'select state, retry_count as retries from pgboss.job where id = $1', [row?.id])).rows).toEqual([{ state: 'completed', retries: 0 }]),
       { timeout: 30_000, interval: 250 });

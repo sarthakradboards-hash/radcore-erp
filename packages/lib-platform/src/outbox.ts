@@ -35,19 +35,23 @@ export type RelayOptions = {
   backoff?: (attempts: number) => number;
   /** Raised once for each row set aside. Log-only by default. */
   alert?: Alerter;
+  /** Only rows of these jobs. Left out, every due row: the worker's relay. A test passes its own jobs' names, because
+   * the outbox is shared by every test file running at once, and a pass over all of it would try their rows (RAD-79). */
+  only?: readonly string[];
 };
 
 /** One pass. `taken` is how many due rows it looked at; `sent`, how many reached pg-boss. */
 export async function relayOutbox(db: Database, queue: JobQueue, log: Logger, options: RelayOptions = {},
 ): Promise<{ taken: number; sent: number }> {
-  const { batch = OUTBOX_BATCH, maxAttempts = MAX_ATTEMPTS, backoff = backoffMs, alert = createAlerter(null, log) } = options;
+  const { batch = OUTBOX_BATCH, maxAttempts = MAX_ATTEMPTS, backoff = backoffMs, alert = createAlerter(null, log), only } = options;
   const setAside: { id: string; name: string }[] = [];
   const result = await runInTransaction(db, WRITE, RELAY, randomUUID(), async (ctx) => {
     const tx = platformTx(ctx);
     const now = new Date();
     const rows = await tx.select({ id: jobsOutbox.id, name: jobsOutbox.name, data: jobsOutbox.data,
       principal: jobsOutbox.principal, attempts: jobsOutbox.attempts })
-      .from(jobsOutbox).where(and(isNull(jobsOutbox.deadAt), lte(jobsOutbox.nextAttemptAt, now)))
+      .from(jobsOutbox).where(and(isNull(jobsOutbox.deadAt), lte(jobsOutbox.nextAttemptAt, now),
+        only === undefined ? undefined : inArray(jobsOutbox.name, [...only])))
       .orderBy(asc(jobsOutbox.nextAttemptAt)).limit(batch).for('update', { skipLocked: true });
     const sent: string[] = [];
     for (const row of rows) {
