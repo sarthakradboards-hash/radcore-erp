@@ -1,11 +1,11 @@
-// Sign-in sessions (M1-16, RAD-34, ADR-001 §7a, RC-091). A session is a random token in the person's cookie
-// (HttpOnly, SameSite=Lax, Path=/, and on https `__Host-` and Secure: sessionCookieFor); only its SHA-256 is stored. It signs nobody
-// in after 30 minutes without a request or 12 hours after sign-in, whichever comes first (Sarthak, 11 Nov 2026), or
+// Sign-in sessions (M1-16, RAD-34, ADR-001 §7a, RC-091). A session is a random token in the person's cookie (HttpOnly,
+// SameSite=Lax, Path=/, and on https `__Host-` and Secure: cookieFor); only its SHA-256 is stored. It signs nobody in
+// after 30 minutes without a request or 12 hours after sign-in, whichever comes first (Sarthak, 11 Nov 2026), or
 // once it's ended: by sign-out, by the person from their sessions list, by an admin, or by a password, role or status
 // change. Each end is one session_ended security event per session; a sign-in is sign_in (ADR-005 §7c).
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { idString, normaliseEmail } from '@radcore/lib-common';
-import { after, platformTx, sessions, users } from '@radcore/db/platform';
+import { after, pendingSignIns, platformTx, sessions, users } from '@radcore/db/platform';
 import type { Database } from '@radcore/db/schema';
 import { and, desc, eq, gt, isNull, ne, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
@@ -15,9 +15,12 @@ import { runInTransaction } from '../db/transaction.ts';
 import { AppError, RecordedRefusal } from '../errors.ts';
 import { decodeCursor, encodeCursor, isoMoment, momentKey } from '../lists.ts';
 import { recordSecurityEvent } from '../security-events.ts';
+import { secondFactorStatus } from './second-factor-status.ts';
 import type { SignInResult } from './sign-in.ts';
 
 export const SESSION_IDLE_SECONDS = 30 * 60;
+/** How long a sign-in may wait between its password and its second factor (M1-15). */
+const PENDING_SIGN_IN_SECONDS = 5 * 60;
 export const SESSION_ABSOLUTE_SECONDS = 12 * 60 * 60;
 export type EndedReason = 'sign_out' | 'admin' | 'password_changed' | 'password_reset' | 'role_changed' | 'deactivated';
 
@@ -52,22 +55,24 @@ export function deviceOf(userAgent: string | undefined): string {
 export type SessionCookieKind = {
   readonly name: string;
   readonly secure: boolean;
-  /** The session token in a Cookie header, or null. */
+  /** The token in a Cookie header, or null. */
   tokenIn(header: string | undefined): string | null;
 };
 
 /**
- * The session cookie for this PUBLIC_ORIGIN. A deployed origin is https (config insists), and there it's
- * `__Host-radcore_session`, Secure. Over plain http, which only development and CI use, it's `radcore_session` and
- * not Secure: WebKit stores a Secure cookie from http://127.0.0.1 but never sends it back (checked 11 Nov 2026 with
- * Playwright's WebKit; Chromium and Firefox do send it), so Safari could never stay signed in during development.
+ * A sign-in cookie for this PUBLIC_ORIGIN: `session`, or `pending` between the password and the second factor. A
+ * deployed origin is https (config insists), and there it's `__Host-radcore_<kind>`, Secure. Over plain http, which
+ * only development and CI use, it's `radcore_<kind>` and not Secure: WebKit stores a Secure cookie from
+ * http://127.0.0.1 but never sends it back (checked 11 Nov 2026 with Playwright's WebKit; Chromium and Firefox do
+ * send it), so Safari could never stay signed in during development.
  */
-export function sessionCookieFor(publicOrigin: string): SessionCookieKind {
+export function cookieFor(publicOrigin: string, kind: 'session' | 'pending'): SessionCookieKind {
   const secure = publicOrigin.startsWith('https://');
-  const name = secure ? '__Host-radcore_session' : 'radcore_session';
+  const name = secure ? `__Host-radcore_${kind}` : `radcore_${kind}`;
   const pattern = new RegExp(`(?:^|;\\s*)${name}=([A-Za-z0-9_-]{43})(?:;|$)`);
   return Object.freeze({ name, secure, tokenIn: (header: string | undefined) => pattern.exec(header ?? '')?.[1] ?? null });
 }
+export const sessionCookieFor = (publicOrigin: string) => cookieFor(publicOrigin, 'session');
 
 /**
  * Who a session token signs in, or null: an unknown, ended or expired session, or a person no longer active. With
@@ -111,10 +116,55 @@ const own = (ctx: Ctx): { userId: string; sessionId: string } => {
   if (p.kind !== 'user' || p.sessionId === undefined) throw signedOut();
   return { userId: p.userId, sessionId: p.sessionId };
 };
-const cookieOf = (ctx: Ctx): SessionCookie => {
-  if (ctx.cookie === undefined) throw new TypeError('This service sets the session cookie: mount it on a key-exempt route');
+export const cookieOf = (ctx: Ctx): SessionCookie => {
+  if (ctx.cookie === undefined) throw new TypeError('This service sets a sign-in cookie: mount it on a sign-in route');
   return ctx.cookie;
 };
+
+/** Starts a session for someone who has proved everything their sign-in needs, and sets its cookie. The session this
+ * browser already had ends, so none lingers on a shared computer. */
+async function startSession(ctx: Ctx, cookie: SessionCookie, userId: string): Promise<void> {
+  if (cookie.incoming !== null) await end(ctx, eq(sessions.tokenHash, sha256(cookie.incoming)), 'sign_out');
+  const token = randomBytes(32).toString('base64url');
+  const now = new Date();
+  const absolute = new Date(now.getTime() + SESSION_ABSOLUTE_SECONDS * 1000);
+  await platformTx(ctx).insert(sessions).values({ userId, tokenHash: sha256(token), device: cookie.device,
+    idleExpiresAt: idleUntil(now, absolute), absoluteExpiresAt: absolute });
+  await recordSecurityEvent(ctx, { kind: 'sign_in', detail: {} }, { userId, device: cookie.device });
+  cookie.set(token, absolute);
+}
+
+/** After the password, when a second factor is still to come: a five-minute pending sign-in and its cookie. */
+async function beginPendingSignIn(ctx: Ctx, cookie: SessionCookie, userId: string): Promise<void> {
+  const token = randomBytes(32).toString('base64url');
+  const expires = new Date(Date.now() + PENDING_SIGN_IN_SECONDS * 1000);
+  await platformTx(ctx).insert(pendingSignIns).values({ userId, tokenHash: sha256(token), expiresAt: expires });
+  cookie.pending.set(token, expires);
+}
+
+/** The person whose pending sign-in this browser holds, locked so two second steps can't both finish it (a route's
+ * `before` step reads it unlocked, in its read-only transaction). A missing, spent or expired one is
+ * sign_in_expired: the person starts again with their password. */
+export async function pendingSignIn(ctx: Ctx, cookie: SessionCookie, { lock = true }: { lock?: boolean } = {}):
+  Promise<{ id: string; userId: string }> {
+  const token = cookie.pending.incoming;
+  const now = new Date();
+  const query = platformTx(ctx).select({ id: pendingSignIns.id, userId: pendingSignIns.userId })
+    .from(pendingSignIns).innerJoin(users, eq(users.id, pendingSignIns.userId))
+    .where(and(eq(pendingSignIns.tokenHash, sha256(token ?? '')), isNull(pendingSignIns.usedAt), gt(pendingSignIns.expiresAt, now),
+      eq(users.status, 'active'))).limit(1);
+  const [found] = token === null ? [] : await (lock ? query.for('update') : query);
+  if (found === undefined) throw new AppError('sign_in_expired', 'Your sign-in timed out. Please sign in again');
+  return found;
+}
+
+/** The second step succeeded: the pending sign-in is spent, its cookie cleared, and the session starts. */
+export async function finishPendingSignIn(ctx: Ctx, cookie: SessionCookie, pending: { id: string; userId: string }):
+  Promise<void> {
+  await platformTx(ctx).update(pendingSignIns).set({ usedAt: new Date() }).where(eq(pendingSignIns.id, pending.id));
+  cookie.pending.clear();
+  await startSession(ctx, cookie, pending.userId);
+}
 
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -142,17 +192,12 @@ export function signInService(credentials: Credentials) {
         { userId: known?.id ?? null, device: cookie.device });
       throw new RecordedRefusal(err.code, err.message, err.issues, err.retryAfterSeconds);
     }
-    // shortcut: second_factor and enrol_second_factor set RAD-33's pending-sign-in cookie, which lands with it.
-    if (result.next !== 'done') return { next: result.next };
-    // The session this browser already had ends, so it doesn't linger on a shared computer.
-    if (cookie.incoming !== null) await end(ctx, eq(sessions.tokenHash, sha256(cookie.incoming)), 'sign_out');
-    const token = randomBytes(32).toString('base64url');
-    const now = new Date();
-    const absolute = new Date(now.getTime() + SESSION_ABSOLUTE_SECONDS * 1000);
-    await platformTx(ctx).insert(sessions).values({ userId: result.userId, tokenHash: sha256(token), device: cookie.device,
-      idleExpiresAt: idleUntil(now, absolute), absoluteExpiresAt: absolute });
-    await recordSecurityEvent(ctx, { kind: 'sign_in', detail: {} }, { userId: result.userId, device: cookie.device });
-    cookie.set(token, absolute);
+    // A second factor to give, or to enrol: no session yet, only the five-minute pending sign-in (D-19).
+    if (result.next !== 'done') {
+      await beginPendingSignIn(ctx, cookie, result.userId);
+      return { next: result.next };
+    }
+    await startSession(ctx, cookie, result.userId);
     return { next: 'done' };
   };
 }
@@ -176,8 +221,7 @@ export async function getMyself(ctx: Ctx): Promise<Out<typeof getMe>> {
     user: { id: userId, displayName: row.displayName },
     permissions: [...ctx.principal.permissions].toSorted(),
     session: { idleExpiresAt: row.idle.toISOString(), absoluteExpiresAt: row.absolute.toISOString() },
-    // shortcut: D-19's answer comes from the person's role and enrolment with RAD-33.
-    secondFactor: 'not_required',
+    secondFactor: await secondFactorStatus(ctx, userId),
   };
 }
 

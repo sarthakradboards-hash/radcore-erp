@@ -1,17 +1,22 @@
 // The one generic route handler (M1-08, ADR-001 §6): every `session` and `public` route runs the same steps, so a
 // route is only its contract and its service.
 //   principal ─► input (contract.input) ─► a write's Idempotency-Key ─► route permission (contract.perm)
+//   ─► the new-password check ─► the route's `before` step, outside any transaction (ADR-001 §8, RAD-33)
 //   ─► one transaction of the contract's kind, with its statement timeout (RC-080)
-//   ─► a write claims its saved-once key (M1-09): an earlier committed answer is replayed here ─► service(ctx, input)
+//   ─► a write claims its saved-once key (M1-09): an earlier committed answer is replayed here
+//   ─► service(ctx, input, { before })
 //   ─► output checked against contract.output, camelCase as is (RC-199) ─► a write keeps its answer ─► commit ─► 200
 //   ─► errors mapped by code: a thrown AppError's code or a PostgreSQL SQLSTATE, never message text (RC-216)
-// The key-exempt routes (sign-in, sign-out) get ctx.cookie, applied only once the transaction commits (RAD-34).
+// The sign-in routes (sign-in, its second-factor steps, sign-out) get ctx.cookie, applied only once the transaction
+// commits (RAD-34, RAD-33).
 // Still to come, each with its ticket: rate guards (M1-21), pii() masking (M1-22) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, deviceOf, describeError, originAllowed, RecordedRefusal, sessionCookieFor, type Files,
-  type Principal, type Route, type SessionCookie } from '@radcore/lib-platform';
-import { acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword } from '@radcore/lib-platform/contract';
+import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, originAllowed, RecordedRefusal, type Files,
+  type Principal, type Route, type Secrets, type SessionCookie, type SignInCookie } from '@radcore/lib-platform';
+import {
+  acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword, startSecondFactorEnrolment,
+} from '@radcore/lib-platform/contract';
 import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
 
@@ -30,7 +35,10 @@ export type HandlerDeps = {
   newPasswordCheck?: ((password: string) => Promise<'too_short' | 'breached' | null>) | undefined;
   /** The process's file store, as ctx.files (RAD-43): only its two signing calls reach a service. */
   files?: Files | undefined;
+  /** The secrets library, for routes' `before` steps (RAD-33). A route with one refuses to mount without it. */
+  secrets?: Secrets | undefined;
 };
+const READ = { readOnly: true, isolation: 'read committed' } as const;
 
 // What the person reads under the field when the new-password check refuses (ADR-001 §7a).
 const PASSWORD_REFUSALS: Readonly<Record<'too_short' | 'breached', string>> = {
@@ -39,6 +47,8 @@ const PASSWORD_REFUSALS: Readonly<Record<'too_short' | 'breached', string>> = {
 };
 // The routes that set a password (ADR-001 §7a): each must show the handler a newPassword() field to check.
 const PASSWORD_ROUTES = new Set([acceptInvite, resetPassword, changePassword].map((c) => `${c.method} ${c.path}`));
+// The one sign-in route that isn't key-exempt: it reads the pending-sign-in cookie, and stores no answer (ADR-001 §7a).
+const ENROLMENT_START = `${startSecondFactorEnrolment.method} ${startSecondFactorEnrolment.path}`;
 // The input fields a contract marks newPassword().
 const newPasswordKeys = (input: unknown): string[] => Object.entries((input as { shape?: Record<string, unknown> }).shape ?? {})
   .filter(([, schema]) => newPasswordFields.has(schema as never)).map(([key]) => key);
@@ -117,7 +127,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
   const router = express.Router();
   // ADR-001 §7a: the session cookie can't be read by script or sent with another site's request; on https it's also
   // __Host- and Secure, so it can't be set for a subdomain (sessionCookieFor).
-  const session = sessionCookieFor(deps.publicOrigin);
+  const session = cookieFor(deps.publicOrigin, 'session');
+  const pending = cookieFor(deps.publicOrigin, 'pending');
   const COOKIE: CookieOptions = Object.freeze({ httpOnly: true, secure: session.secure, sameSite: 'lax', path: '/' });
   // An answer is one person's data at one moment: no browser or proxy keeps it.
   router.use((_req: Request, res: Response, next: NextFunction) => {
@@ -134,7 +145,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
     send(res, platform('forbidden'), randomUUID());
   });
   router.use(express.json({ limit: '1mb' }));
-  for (const { contract, service } of routes) {
+  for (const { contract, service, before } of routes) {
     if (contract.auth === 'webhook') throw new TypeError(`${contract.method} ${contract.path}: a webhook takes its own lane (M1-27)`);
     const route = `${contract.method} ${contract.path}`;
     // ADR-001 §7a: only the fixed lists may skip the key or keep no answer, or the handler refuses to start.
@@ -152,6 +163,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
     if (passwordKeys.length > 0 && deps.newPasswordCheck === undefined) {
       throw new TypeError(`${route}: a newPassword() field needs the new-password check, and none was given`);
     }
+    const secrets = deps.secrets;
+    if (before !== undefined && secrets === undefined) throw new TypeError(`${route}: a before step needs the secrets library`);
     const handle = async (req: Request, res: Response): Promise<void> => {
       const requestId = randomUUID();
       try {
@@ -189,13 +202,26 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           }
         }
         const key = req.get('idempotency-key') ?? '';
-        // Only a key-exempt route may set or clear the cookie: its answer is never stored and replayed (ADR-001 §7a).
+        // Only the sign-in routes see the cookies: the key-exempt ones, whose answers are never stored and replayed, and
+        // the second-factor enrolment start, which stores none (ADR-001 §7a).
         const exempt = contract.idempotency === 'exempt';
-        let cookie: CookieChange = null;
+        const signInRoute = exempt || route === ENROLMENT_START;
+        const changes: { session: CookieChange; pending: CookieChange } = { session: null, pending: null };
         let refused: RecordedRefusal | null = null;
-        const channel: SessionCookie = Object.freeze({ device: deviceOf(req.get('user-agent')),
-          incoming: session.tokenIn(req.get('cookie')),
-          set: (token: string, expires: Date) => { cookie = { token, expires }; }, clear: () => { cookie = 'clear'; } });
+        const cookieIn = (kind: 'session' | 'pending', tokenIn: (h: string | undefined) => string | null): SignInCookie =>
+          Object.freeze({ incoming: tokenIn(req.get('cookie')),
+            set: (token: string, expires: Date) => { changes[kind] = { token, expires }; },
+            clear: () => { changes[kind] = 'clear'; } });
+        const channel: SessionCookie = Object.freeze({ ...cookieIn('session', session.tokenIn),
+          device: deviceOf(req.get('user-agent')), pending: cookieIn('pending', pending.tokenIn) });
+        const cookie = signInRoute ? channel : undefined;
+        // Outside any transaction (ADR-001 §8): a KMS call here holds no transaction or pooled connection. `read` is a
+        // short read-only transaction of its own, closed before the call; the service checks nothing it read has moved.
+        const meta = { before: before === undefined || secrets === undefined ? undefined : await before(input.value, {
+          secrets, principal: principal ?? PUBLIC, cookie,
+          read: (work) => runInTransaction(deps.db, READ, principal ?? PUBLIC, requestId,
+            (ctx) => work(cookie === undefined ? ctx : Object.freeze({ ...ctx, cookie })), deps.files),
+        }) };
         const output = await runInTransaction(deps.db, contract.tx, principal ?? PUBLIC, requestId, async (ctx) => {
           // Saved-once (M1-09): a write claims its key first, in this transaction, and replays an earlier answer.
           // A key-exempt route sends no key and claims none; a route whose answer holds a secret claims and keeps nothing.
@@ -204,7 +230,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           if (once?.replay === true) return once.answer;
           let answer: unknown;
           try {
-            answer = await service(exempt ? Object.freeze({ ...ctx, cookie: channel }) : ctx, input.value);
+            answer = await service(cookie === undefined ? ctx : Object.freeze({ ...ctx, cookie }), input.value, meta);
           } catch (err) {
             // A failed sign-in's record commits; the person still gets the refusal (RAD-34).
             if (!(exempt && err instanceof RecordedRefusal)) throw err;
@@ -217,9 +243,11 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           return checked.data;
         }, deps.files);
         // After the commit: a cookie for a session that rolled back would sign nobody in.
-        const change = cookie as CookieChange;
-        if (change === 'clear') res.clearCookie(session.name, COOKIE);
-        else if (change !== null) res.cookie(session.name, change.token, { ...COOKIE, expires: change.expires });
+        for (const [kind, name] of [['session', session.name], ['pending', pending.name]] as const) {
+          const change = changes[kind];
+          if (change === 'clear') res.clearCookie(name, COOKIE);
+          else if (change !== null) res.cookie(name, change.token, { ...COOKIE, expires: change.expires });
+        }
         if (refused !== null) {
           send(res, failureOf(refused, contract.errors), requestId);
           return;

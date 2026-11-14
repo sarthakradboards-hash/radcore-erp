@@ -213,3 +213,48 @@ export const sessions = radcoreTable('sessions', {
   uniqueIndex('ux_sessions_token_hash').on(t.tokenHash),
   index('ix_sessions_user_id').on(t.userId),
 ]);
+
+/**
+ * Second factors (M1-15, RAD-33, D-19): a person's TOTP authenticator, at most one. The secret is kept by the secrets
+ * library: `secret` is its ciphertext, bound to this table, column and row, and `secret_key_id` the key that wrapped
+ * it. `confirmed_at` is null while an enrolment waits for its first code; starting again replaces that row.
+ * `last_step` is the last accepted 30-second step, so a code is refused if it's used again (ADR-003).
+ */
+export const secondFactors = radcoreTable('second_factors', {
+  id: id(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+  secret: text().notNull(),
+  secretKeyId: text().notNull(),
+  confirmedAt: timestamp({ withTimezone: true }),
+  lastStep: integer(),
+}, (t) => [
+  uniqueIndex('ux_second_factors_user_id').on(t.userId),
+]);
+
+/** Recovery codes (M1-15, RAD-64): ten per set, each stored as its Argon2id hash. A code works once; a new set
+ * replaces the old one. */
+export const recoveryCodes = radcoreTable('recovery_codes', {
+  id: id(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+  codeHash: text().notNull(),
+  usedAt: timestamp({ withTimezone: true }),
+}, (t) => [
+  index('ix_recovery_codes_user_id').on(t.userId),
+]);
+
+/**
+ * A sign-in between its password and its second factor (M1-15, ADR-001 §7a): the pending-sign-in cookie holds a
+ * random token, and only its SHA-256 is stored. It lasts five minutes and is spent when the sign-in finishes, so it
+ * can't stand in for a session or be used twice.
+ */
+export const pendingSignIns = radcoreTable('pending_sign_ins', {
+  id: id(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+  tokenHash: text().notNull(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  usedAt: timestamp({ withTimezone: true }),
+}, (t) => [
+  check('ck_pending_sign_ins_token_hash', sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+  uniqueIndex('ux_pending_sign_ins_token_hash').on(t.tokenHash),
+  index('ix_pending_sign_ins_user_id').on(t.userId),
+]);

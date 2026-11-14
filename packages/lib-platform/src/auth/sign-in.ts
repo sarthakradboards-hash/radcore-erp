@@ -13,12 +13,11 @@ import type { Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import type { Lockout } from './lockout.ts';
 import type { Passwords } from './passwords.ts';
+import type { SecondFactorStatus } from './second-factor-status.ts';
 
-/** Whether a person's sign-in needs a second factor (D-19: admin, owner, accounts and HR). RAD-33 answers it from their role. */
-type SecondFactorStatus = 'not_required' | 'enrolled' | 'enrolment_required';
 export type SignInResult = { userId: string; next: 'done' | 'second_factor' | 'enrol_second_factor' };
 
-type Deps = { passwords: Passwords; lockout: Lockout; secondFactor: (userId: string) => Promise<SecondFactorStatus> };
+type Deps = { passwords: Passwords; lockout: Lockout; secondFactor: (ctx: Ctx, userId: string) => Promise<SecondFactorStatus> };
 
 const NEXT: Readonly<Record<SecondFactorStatus, SignInResult['next']>> = {
   not_required: 'done', enrolled: 'second_factor', enrolment_required: 'enrol_second_factor',
@@ -40,6 +39,6 @@ export function createSignIn({ passwords, lockout, secondFactor }: Deps) {
     if (rehash) {
       await tx.update(users).set({ passwordHash: await passwords.hash(password) }).where(eq(users.id, user.id));
     }
-    return { userId: user.id, next: NEXT[await secondFactor(user.id)] };
+    return { userId: user.id, next: NEXT[await secondFactor(ctx, user.id)] };
   };
 }
