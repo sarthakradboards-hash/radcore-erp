@@ -4,7 +4,7 @@
 // personal data this person may not see is already masked, and secrets read "[redacted]"; the screen never unmasks.
 // Filters apply on "Show", so typing doesn't fetch, and each tab keeps its own while the other is open.
 import { listAuditedTables, listAuditTrail, listSecurityEvents, listUsers } from '@radcore/lib-platform/contract';
-import { addDays, dateString, formatMoment, indiaDate } from '@radcore/lib-common';
+import { addDays, dateString, formatMoment, indiaDate, isMasked } from '@radcore/lib-common';
 import { Tabs } from 'radix-ui';
 import { useState, type ReactNode } from 'react';
 import { z } from 'zod';
@@ -74,7 +74,7 @@ function PersonFilter({ person, onChange }: { person: AdminUser | null; onChange
     <>
       <Picker label={t('admin.audit.who')} query={query} onQueryChange={setQuery} options={found.items}
         loading={found.isFetching} error={found.error} value={person} onChange={onChange}
-        optionKey={(u) => u.id} optionLabel={(u) => u.displayName} optionDetail={(u) => u.email} />
+        optionKey={(u) => u.id} optionLabel={(u) => u.displayName} optionDetail={(u) => (isMasked(u.email) ? null : u.email)} />
       {person === null ? null : <button type="button" className="kit-button" onClick={() => onChange(null)}>{t('admin.sessions.clear')}</button>}
     </>
   );
