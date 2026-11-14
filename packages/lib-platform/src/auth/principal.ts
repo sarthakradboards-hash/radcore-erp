@@ -5,10 +5,11 @@ import { randomUUID } from 'node:crypto';
 import { idString } from '@radcore/lib-common';
 import { platformTx, roleGrants, roles, users } from '@radcore/db/platform';
 import type { Database } from '@radcore/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Ctx, Principal } from '../ctx.ts';
 import { runInTransaction } from '../db/transaction.ts';
 import type { LoadPrincipal } from '../jobs.ts';
+import { SECOND_FACTOR_KEYS } from '../permissions.ts';
 
 const LOADER: Principal = Object.freeze({ kind: 'system', name: 'principal-loader', permissions: Object.freeze([]) });
 const READ = { readOnly: true, isolation: 'read committed' } as const;
@@ -44,8 +45,15 @@ export const loadPrincipal = (db: Database): LoadPrincipal => async (by) => {
 };
 
 /** Whether the person's role asks for the second sign-in factor (D-19, RAD-33). */
+// The role's own setting, or any key it holds that needs the factor: an old row or a stray grant can't slip past (the
+// architect on RAD-83).
 export async function roleNeedsSecondFactor(ctx: Ctx, userId: string): Promise<boolean> {
-  const [row] = await platformTx(ctx).select({ required: roles.secondFactorRequired }).from(users)
+  const tx = platformTx(ctx);
+  const [row] = await tx.select({ role: users.role, required: roles.secondFactorRequired }).from(users)
     .innerJoin(roles, eq(roles.key, users.role)).where(eq(users.id, userId)).limit(1);
-  return row?.required ?? false;
+  if (row === undefined) return false;
+  if (row.required) return true;
+  const [held] = await tx.select({ permission: roleGrants.permission }).from(roleGrants)
+    .where(and(eq(roleGrants.role, row.role), inArray(roleGrants.permission, [...SECOND_FACTOR_KEYS]))).limit(1);
+  return held !== undefined;
 }
