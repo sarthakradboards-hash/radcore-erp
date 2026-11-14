@@ -5,6 +5,9 @@ export { changeUserRole, listRolesFor, permissionMatrix, setRoleGrants } from '.
 export { createCustomRole, deleteCustomRole, renameRole, resetRoleToTemplate } from './auth/roles-custom.ts';
 export { assignRole } from './auth/roles.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
+export {
+  ADDRESS_LIMITS, createRequestGuards, isRateLimitClass, PERSON_LIMIT, type RateLimitClass, type RequestGuards,
+} from './guards.ts';
 export { recordChangeReason } from './change-reasons.ts';
 export {
   createLink, linkMaxDays, linkPrincipal, linkUrl, listLinks, recordLinkAccess, revokeLink, useLink, type NewLink,
