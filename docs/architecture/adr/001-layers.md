@@ -556,14 +556,21 @@ codes.
 - There is no total count. A screen that needs counts, such as count cards, calls a count contract of its own, so a
   list never adds up a whole ledger (RC-176).
 
-**Masked fields.** A `pii()` field sent to a principal without `pii:read` arrives masked (`"••••••3210"`) and
-marked as masked in the output type.
-- Salaries and bank details carry the stricter `pii('pay')`. It needs `pay:read`, which only admin and owner hold
-  (D-20, Sarthak, 6 Nov 2026), so a role with `pii:read` still gets them masked (M1-22).
+**Masked fields (RAD-40).** A `pii()` field that its principal can't see arrives as
+`{ masked: "••••••" }`, and its wire type is `T | { masked: string }`, so a screen can't miss it. The mask is
+always six bullets, so it doesn't give away the length.
+- `pii(schema)` is masked whole. `pii(schema, 'last4')`, for an identifier like a phone or PAN, keeps the last 4
+  characters (`"••••••3210"`) when the value has at least 8.
+- Salaries and bank details carry `pii(schema, 'pay')`, masked whole. It needs `pay:read`, which only admin and owner
+  hold (D-20, Sarthak, 6 Nov 2026), so a role with `pii:read` still gets them masked (M1-22).
+- The generic handler masks after the output check and before saved-once keeps the answer, so a stored answer never
+  holds what its principal couldn't see.
 - Edit forms show it read-only and never send it back. Edit contracts change only the fields they receive (patch
   semantics), so a field left out is left alone.
-- The server also refuses an input value shaped like a mask, with `invalid_input`. A masked value can never be
-  saved over the real one.
+- The server refuses an input string that starts with six `•` (U+2022), with `invalid_input`. A masked value can
+  never be saved over the real one, and text pasted from a bulleted list still saves.
+- An export names its personal columns and their kind, `exportContract(…, { phone: 'last4' })`, and its file masks
+  them as a screen would for the person who started it.
 
 **Same origin, no CORS.**
 - Caddy serves `web` at `/` and `api` at `/api` on one origin (ADR-004).
