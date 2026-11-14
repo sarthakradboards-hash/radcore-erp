@@ -218,6 +218,13 @@
       "when": 1794676013458,
       "tag": "0030_user_sign_ins",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794677363589,
+      "tag": "0031_user_sign_ins_row",
+      "breakpoints": true
     }
   ]
 }

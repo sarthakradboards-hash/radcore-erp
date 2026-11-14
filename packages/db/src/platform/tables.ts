@@ -287,9 +287,9 @@ export const dataExports = radcoreTable('exports', {
   check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
 ]);
 
-/** When each person last signed in (RAD-36), made with the person and set when a session starts. Machinery, not
- * row-audited (ADR-005 §7c): a sign-in is already a `sign_in` event. The people list sorts on `sort_key`, epoch for
- * never, since a sort key is never null; text mode keeps its microseconds for the page key (the architect on RAD-36). */
+/** When each person last signed in (RAD-36): made with the person by a trigger on users (0031), set when a session
+ * starts. Machinery, not row-audited (ADR-005 §7c): a sign-in is already a `sign_in` event. The people list sorts on
+ * `sort_key`, epoch for never, since a sort key is never null; text mode keeps its microseconds for the page key. */
 export const userSignIns = radcoreTable('user_sign_ins', {
   userId: uuid().primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   lastSignInAt: timestamp({ withTimezone: true }),
