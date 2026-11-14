@@ -19,7 +19,7 @@ export async function signOutAndLeave(userId: string, go: (url: string) => void 
   go('/sign-in');
 }
 
-/** @public sign-in screen API: its first caller is the shell's account menu (RAD-50 part 2). */
+/** In the shell's header, beside who is signed in (RAD-55; e2e on RAD-58 found it mounted nowhere). */
 export function SignOutButton({ userId }: { userId: string }) {
   const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
   const run = async () => {
