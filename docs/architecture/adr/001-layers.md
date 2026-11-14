@@ -544,6 +544,17 @@ codes.
 
 **Masked fields.** A `pii()` field sent to a principal without `pii:read` arrives masked (`"••••••3210"`) and
 marked as masked in the output type.
+- On the wire a masked value is `{ masked: "••••••3210" }`, so a field's type is `T | { masked: string }` and every
+  screen handles both; lib-common's `isMasked` tells them apart, for the server and the kit alike (RAD-40).
+- The mask is always six bullets, so it gives no length away. Personal data longer than 6 characters keeps its last
+  4; anything shorter, and all pay, is masked whole.
+- A contract whose output has `pii()` fields names its records' table, `records: '<table>'`, or `defineContract`
+  refuses it. The handler logs a look at each record shown with an unmasked value: the outermost object with an
+  `id`, so a value reached through a relation counts as a look at the record that holds it (ADR-005 §7c). An
+  unmasked value with no `id` around it can't be logged, so it answers 500.
+- An export marks its personal columns, `exportContract(kind, perm, filter, columns, { phone: 'personal' })`. The
+  file masks them for a starter without the key, and an export that holds any unmasked is logged as a look at its
+  own `data_exports` row, which names the list and the filter.
 - Salaries and bank details carry the stricter `pii('pay')`. It needs `pay:read`, which only admin and owner hold
   (D-20, Sarthak, 6 Nov 2026), so a role with `pii:read` still gets them masked (M1-22).
 - Edit forms show it read-only and never send it back. Edit contracts change only the fields they receive (patch

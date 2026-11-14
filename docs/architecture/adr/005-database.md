@@ -338,6 +338,13 @@ looked at, for example to make it seem they viewed someone's pay.
 - A request without the header, or with `cross-site` or `same-site`, gets the record's page without the full
   record. A link from an email is one of these. The person opens the record with one click, which is a same-origin
   request.
+- The generic handler does this structurally (RAD-40): such a request sees every `pii()` value masked, as if it held
+  neither `pii:read` nor `pay:read`, so it shows nothing that needs logging.
+
+**Pay columns and the read-only login.** `radcore_read` gets `SELECT` on every table (§7c). The migration that adds
+a `pii('pay')` column (salaries and bank details, D-20; M6-03 adds the first) revokes `radcore_read`'s `SELECT` on
+the table and grants back every other column, as 0005 does for `users`' password hash, so the restore drill's login
+never reads pay.
 
 **Proof (M1-06, M1-12):**
 - For every append-only table **and every partition, the default included, by name**, a test connected as the

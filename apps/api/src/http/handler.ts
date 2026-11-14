@@ -62,6 +62,8 @@ const markedKeys = (registry: { has(schema: never): boolean }) => (input: unknow
 const newPasswordKeys = markedKeys(newPasswordFields);
 const reasonKeys = markedKeys(reasonFields);
 
+// The Sec-Fetch-Site values of a request that may see pii() values unmasked (ADR-005 §7c).
+const DIRECT = new Set(['same-origin', 'none']);
 // shortcut: a signed-out caller of a public route runs as this principal, with no permissions.
 const PUBLIC: Principal = Object.freeze({ kind: 'system', name: 'public', permissions: Object.freeze([]) });
 // A link route's token is looked up by this principal, in a read of its own, before the request runs as the link's holder.
@@ -247,9 +249,12 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         let refused: RecordedRefusal | null = null;
         // The records this principal saw a pii() value of unmasked, logged once the read commits (ADR-005 §7c).
         let looks: string[] = [];
+        // Only a request the browser says came from this app, or from a typed address, opens a record in full: a
+        // cross-site link can't make someone "look" at a record they never saw (ADR-005 §7c), so it sees masks.
+        const direct = DIRECT.has(req.get('sec-fetch-site') ?? '');
         const shown = (answer: unknown): unknown => {
           if (plan === null) return answer;
-          const m = maskOutput(plan, answer, (principal ?? PUBLIC).permissions);
+          const m = maskOutput(plan, answer, direct ? (principal ?? PUBLIC).permissions : []);
           if (m.unattributed) throw new OutputMismatch(`${route}: a pii() value is shown with no record id to log it under`);
           looks = m.looks;
           return m.value;

@@ -6,6 +6,7 @@ import { createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { dataExports, platformTx } from '@radcore/db/platform';
+import { maskOf, maySee, type PiiKind } from '@radcore/lib-common';
 import { and, eq, gt } from 'drizzle-orm';
 import type { z } from 'zod';
 import { EXPORT_MAX_ROWS, type downloadExport, type getExport } from './contract.ts';
@@ -27,7 +28,20 @@ export type ExportDefinition<F> = {
   readonly kind: string;
   readonly columns: readonly string[];
   readonly rows: ExportRows<F>;
+  /** The columns holding personal data, masked as on a screen for a principal without their key (RAD-40). */
+  readonly pii?: Readonly<Partial<Record<string, PiiKind>>>;
 };
+
+/** A row as this principal may see it: each pii column they lack the key for written as its mask's text. */
+function masker(def: ExportDefinition<unknown>, permissions: readonly string[]): (row: ExportRow) => ExportRow {
+  const hidden = Object.entries(def.pii ?? {}).filter((e): e is [string, PiiKind] => e[1] !== undefined && !maySee(e[1], permissions));
+  if (hidden.length === 0) return (row) => row;
+  return (row) => {
+    const out: Record<string, string | number | null> = { ...row };
+    for (const [c, kind] of hidden) if (out[c] !== null && out[c] !== undefined) out[c] = maskOf(out[c], kind).masked;
+    return out;
+  };
+}
 
 /** An export past its cap, or one that filled the export volume (ENOSPC): it fails `too_large`. */
 export class ExportTooLarge extends Error {
@@ -56,6 +70,7 @@ const PAGE = 1_000;
 export async function writeExportFile<F>(ctx: Ctx, def: ExportDefinition<F>, filter: F, path: string,
   cap: number = EXPORT_MAX_ROWS): Promise<number> {
   const csv = csvWriter(def.columns);
+  const shown = masker(def as ExportDefinition<unknown>, ctx.principal.permissions);
   // pipeline closes the file on success and destroys both streams on any error, so nothing is left open.
   const done = pipeline(csv, createWriteStream(path));
   let rows = 0;
@@ -66,7 +81,7 @@ export async function writeExportFile<F>(ctx: Ctx, def: ExportDefinition<F>, fil
       rows += page.items.length;
       if (rows > cap) throw new ExportTooLarge(`${def.kind}: more than ${String(cap)} rows`);
       for (const row of page.items) {
-        if (!csv.write(row)) await new Promise((resolve) => csv.once('drain', resolve));
+        if (!csv.write(shown(row))) await new Promise((resolve) => csv.once('drain', resolve));
       }
       after = page.next ?? undefined;
     } while (after !== undefined);

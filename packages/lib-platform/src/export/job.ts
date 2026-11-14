@@ -8,12 +8,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { dataExports, platformTx } from '@radcore/db/platform';
-import { idString } from '@radcore/lib-common';
+import { idString, maySee, type PiiKind } from '@radcore/lib-common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { principalId, type Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import { defineJob, type JobDefinition } from '../jobs.ts';
+import { recordLooks } from '../looks.ts';
 import { defineRoute, type Route } from '../route.ts';
 import { recordSecurityEvent } from '../security-events.ts';
 import { EXPORT_MAX_ROWS, type ExportContract } from './contract.ts';
@@ -24,15 +25,17 @@ export type ModuleExport = {
   readonly kind: string;
   readonly perm: string;
   readonly start: ExportContract['start'];
+  /** Its columns holding personal data (RAD-40). */
+  readonly pii: Readonly<Partial<Record<string, PiiKind>>>;
   /** Writes every row for a stored filter to `path`, the filter checked by the list's own schema first. */
   readonly write: (ctx: Ctx, filter: unknown, path: string, cap: number) => Promise<number>;
 };
 
 /** A module's export: its contract and the function that gives its rows a page at a time (ADR-001 §8b). */
 export function exportOf<F extends z.ZodType>(contract: ExportContract<F>, rows: ExportRows<z.output<F>>): ModuleExport {
-  const def = { kind: contract.kind, columns: contract.columns, rows };
+  const def = { kind: contract.kind, columns: contract.columns, rows, pii: contract.pii };
   return Object.freeze({
-    kind: contract.kind, perm: contract.perm, start: contract.start,
+    kind: contract.kind, perm: contract.perm, start: contract.start, pii: contract.pii,
     write: (ctx: Ctx, filter: unknown, path: string, cap: number) => writeExportFile(ctx, def, contract.filter.parse(filter), path, cap),
   });
 }
@@ -62,7 +65,7 @@ export const defineExport = (exports: readonly ModuleExport[]): Route[] =>
 
 type Written =
   | { exportId: string; kind: string; skip: true }
-  | { exportId: string; kind: string; skip: false; dir: string; path: string; rows: number }
+  | { exportId: string; kind: string; skip: false; dir: string; path: string; rows: number; looked: boolean }
   | { exportId: string; kind: string; skip: false; failure: 'too_large' | 'failed'; error?: unknown };
 
 const setFailed = (failure: 'too_large' | 'failed', exportId: string) => async (ctx: Ctx) => {
@@ -104,7 +107,9 @@ export function defineExportJob(exports: readonly ModuleExport[], { cap = EXPORT
     const dir = await mkdtemp(join(tmpdir(), 'radcore-export-'));
     const path = join(dir, `${kind}.csv`);
     try {
-      return { exportId, kind, skip: false, dir, path, rows: await m.write(ctx, row.filter, path, cap) };
+      // Someone who sees a pii column unmasked looked at what the export holds: its row names the list and filter.
+      const looked = Object.values(m.pii).some((k) => k !== undefined && maySee(k, ctx.principal.permissions));
+      return { exportId, kind, skip: false, dir, path, rows: await m.write(ctx, row.filter, path, cap), looked };
     } catch (error) {
       await rm(dir, { recursive: true, force: true });
       return error instanceof ExportTooLarge ? { exportId, kind, skip: false, failure: 'too_large' }
@@ -127,6 +132,7 @@ export function defineExportJob(exports: readonly ModuleExport[], { cap = EXPORT
             .where(eq(dataExports.id, done.exportId));
           await recordSecurityEvent(ctx, { kind: 'export', detail: { what: done.kind, rows: done.rows } },
             { userId: ctx.principal.kind === 'user' ? ctx.principal.userId : null, device: null });
+          if (done.looked) await recordLooks(ctx, 'data_exports', [done.exportId]);
         });
       } catch (error) {
         await again(setFailed('failed', done.exportId));

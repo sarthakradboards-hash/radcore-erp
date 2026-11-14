@@ -12,6 +12,8 @@ export type Masked = { masked: string };
 const masked = z.object({ masked: z.string() }).strict();
 const KEY: Readonly<Record<PiiKind, string>> = { personal: 'pii:read', pay: 'pay:read' };
 const BULLETS = '••••••';
+/** Whether a principal holding these keys sees this kind of data unmasked. */
+export const maySee = (kind: PiiKind, permissions: readonly string[]): boolean => permissions.includes(KEY[kind]);
 
 /** The fields the handler masks. */
 export const piiFields = z.registry<{ kind: PiiKind }>();
@@ -34,17 +36,16 @@ export function maskOf(value: unknown, kind: PiiKind): Masked {
 /** Where the pii() fields are in an output schema. */
 export type PiiPlan = { kind: PiiKind } | { fields: Readonly<Record<string, PiiPlan>> } | { each: PiiPlan };
 
-type Def = { type: string; shape?: Record<string, z.ZodType>; element?: z.ZodType; innerType?: z.ZodType;
-  options?: z.ZodType[]; in?: z.ZodType; out?: z.ZodType; valueType?: z.ZodType; keyType?: z.ZodType;
-  items?: z.ZodType[]; rest?: z.ZodType | null; left?: z.ZodType; right?: z.ZodType };
-const defOf = (s: z.ZodType) => (s as unknown as { _zod: { def: Def } })._zod.def;
-const WRAPPERS = new Set(['optional', 'nullable', 'readonly', 'default', 'prefault', 'nonoptional', 'catch']);
-
-function children(d: Def): z.ZodType[] {
-  return [...Object.values(d.shape ?? {}), d.element, d.innerType, ...(d.options ?? []), d.in, d.out, d.valueType,
-    d.keyType, ...(d.items ?? []), d.rest ?? undefined, d.left, d.right].filter((c): c is z.ZodType => c !== undefined);
+// Every schema a schema holds, whatever its kind: zod keeps them on its def (shape, element, options, innerType…).
+function children(s: z.ZodType): z.ZodType[] {
+  const def: object = s._zod.def;
+  return Object.values(def).flatMap((v: unknown) => {
+    if (v instanceof z.ZodType) return [v];
+    const many: unknown[] = Array.isArray(v) ? v : v !== null && typeof v === 'object' ? Object.values(v) : [];
+    return many.filter((c): c is z.ZodType => c instanceof z.ZodType);
+  });
 }
-const holdsPii = (s: z.ZodType): boolean => piiFields.has(s) || children(defOf(s)).some(holdsPii);
+const holdsPii = (s: z.ZodType): boolean => piiFields.has(s) || children(s).some(holdsPii);
 
 function merge(a: PiiPlan, b: PiiPlan): PiiPlan {
   if ('fields' in a && 'fields' in b) {
@@ -63,18 +64,22 @@ export function piiPlan(schema: z.ZodType): PiiPlan | null {
   const meta = piiFields.get(schema);
   if (meta !== undefined) return { kind: meta.kind };
   if (!holdsPii(schema)) return null;
-  const d = defOf(schema);
-  if (WRAPPERS.has(d.type) && d.innerType !== undefined) return piiPlan(d.innerType);
-  if (d.type === 'array' && d.element !== undefined) return { each: piiPlan(d.element) as PiiPlan };
-  if (d.type === 'object' && d.shape !== undefined) {
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable || schema instanceof z.ZodReadonly
+    || schema instanceof z.ZodDefault || schema instanceof z.ZodPrefault || schema instanceof z.ZodNonOptional
+    || schema instanceof z.ZodCatch) return piiPlan(schema.unwrap() as z.ZodType);
+  if (schema instanceof z.ZodArray) return { each: piiPlan(schema.element as z.ZodType) as PiiPlan };
+  if (schema instanceof z.ZodObject) {
     const fields: Record<string, PiiPlan> = {};
-    for (const [k, s] of Object.entries(d.shape)) { const p = piiPlan(s); if (p !== null) fields[k] = p; }
+    for (const [k, s] of Object.entries(schema.shape as Record<string, z.ZodType>)) {
+      const p = piiPlan(s);
+      if (p !== null) fields[k] = p;
+    }
     return { fields };
   }
-  if (d.type === 'union' && d.options !== undefined) {
-    return d.options.map(piiPlan).filter((p): p is PiiPlan => p !== null).reduce(merge);
+  if (schema instanceof z.ZodUnion) {
+    return (schema.options as z.ZodType[]).map(piiPlan).filter((p): p is PiiPlan => p !== null).reduce(merge);
   }
-  throw new TypeError(`a pii() field under a ${d.type} can't be masked: use an object or an array`);
+  throw new TypeError(`a pii() field under a ${schema._zod.def.type} can't be masked: use an object or an array`);
 }
 
 type Seen = { looks: Set<string>; unattributed: boolean };
@@ -105,7 +110,7 @@ function walk(plan: PiiPlan, value: unknown, may: (k: PiiKind) => boolean, recor
 export function maskOutput(plan: PiiPlan, value: unknown, permissions: readonly string[]):
   { value: unknown; looks: string[]; unattributed: boolean } {
   const seen: Seen = { looks: new Set(), unattributed: false };
-  const shown = walk(plan, value, (k) => permissions.includes(KEY[k]), undefined, seen);
+  const shown = walk(plan, value, (k) => maySee(k, permissions), undefined, seen);
   return { value: shown, looks: [...seen.looks], unattributed: seen.unattributed };
 }
 
