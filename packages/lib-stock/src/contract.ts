@@ -36,10 +36,12 @@ export const renameItemCategory = defineContract({
   input: z.object({ id: idString(), name: categoryName() }), output: z.object({}), errors: ['name_taken'],
 });
 
-/** An item as it's answered. */
+/** An item as it's answered, with its pictures in order: each a short-lived link shown inline (ADR-004 §2). A picture
+ * still being checked has no link yet. */
 const item = z.object({
   id: idString(), sku: z.string(), name: z.string(), categoryId: idString(), hsn: z.string(), unit: unitCode(),
   barcode: z.string().nullable(), serialised: z.boolean(), hasChassis: z.boolean(), active: z.boolean(),
+  pictures: z.array(z.object({ fileId: idString(), url: z.url().nullable() })).max(8),
 });
 
 /** GET /items (items:read): items by name, a page at a time, searched by name, SKU or barcode, filtered by category
@@ -76,6 +78,23 @@ export const createItem = defineContract({
   method: 'POST', path: '/items', auth: 'session', perm: 'items:write', tx: write,
   input: z.object({ sku: skuString(), ...itemFields }).refine((i) => !i.hasChassis || i.serialised, chassisNeedsSerial),
   output: z.object({ id: idString() }), errors: ['sku_taken', 'barcode_taken', 'unknown_category', 'unknown_unit'],
+});
+
+/**
+ * POST /items/:id/pictures (items:write): adds an uploaded item picture (itemPictureFiles) as the item's last.
+ * picture_attached: the file already pictures an item; too_many_pictures: an item has at most 8; not_ready and
+ * upload_refused: the file is still being checked, or failed its check.
+ */
+export const attachItemPicture = defineContract({
+  method: 'POST', path: '/items/:id/pictures', auth: 'session', perm: 'items:write', tx: write,
+  input: z.object({ id: idString(), fileId: idString() }), output: z.object({}),
+  errors: ['picture_attached', 'too_many_pictures', 'not_ready', 'upload_refused'],
+});
+
+/** DELETE /items/:id/pictures/:fileId (items:write): takes a picture off the item. The file stays (D-12). */
+export const removeItemPicture = defineContract({
+  method: 'DELETE', path: '/items/:id/pictures/:fileId', auth: 'session', perm: 'items:write', tx: write,
+  input: z.object({ id: idString(), fileId: idString() }), output: z.object({}),
 });
 
 /** PATCH /items/:id (items:write): any of an item's fields but its SKU, which documents print and search by. An item

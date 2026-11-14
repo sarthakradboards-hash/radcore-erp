@@ -1,11 +1,12 @@
 // Items, their categories and units of measure (M2-10, RAD-89; ADR-001 §5: lib-stock's). Every write is audited by
 // the tables' triggers. A quantity follows its item's unit (RC-162): checkQuantity is what every stock document calls.
-import { after, itemCategories, items, searchWords, stockTx, unitsOfMeasure } from '@radcore/db/stock';
-import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
-import { and, asc, eq, or } from 'drizzle-orm';
+import { after, itemCategories, itemPictures, items, searchWords, stockTx, unitsOfMeasure } from '@radcore/db/stock';
+import { AppError, decodeCursor, encodeCursor, readyFile, viewLinks, type Ctx } from '@radcore/lib-platform';
+import { and, asc, count, eq, inArray, max, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
-  createItem, createItemCategory, getItem, listItemCategories, listItems, listUnitsOfMeasure, renameItemCategory, updateItem,
+  attachItemPicture, createItem, createItemCategory, getItem, listItemCategories, listItems, listUnitsOfMeasure, removeItemPicture,
+  renameItemCategory, updateItem,
 } from '../contract.ts';
 import { quantityFits } from '../rules/quantity.ts';
 
@@ -41,6 +42,18 @@ async function checkRefs(tx: Tx, { categoryId, unit }: { categoryId?: string | u
   if (unit !== undefined && (await tx.select({ code: unitsOfMeasure.code }).from(unitsOfMeasure).where(eq(unitsOfMeasure.code, unit)).limit(1)).length === 0) {
     throw new AppError('unknown_unit', 'There is no such unit', field('unit', 'unknown', 'Choose a unit'));
   }
+}
+
+const MAX_PICTURES = 8;
+type ItemRow = Omit<Out<typeof getItem>, 'pictures'>;
+
+/** The items with their pictures in order, each a view link from lib-platform's files (none while it's checked). */
+async function withPictures(ctx: Ctx, rows: readonly ItemRow[]): Promise<Out<typeof getItem>[]> {
+  const ids = rows.map((r) => r.id);
+  const pics = ids.length === 0 ? [] : await stockTx(ctx).select({ itemId: itemPictures.itemId, fileId: itemPictures.fileId })
+    .from(itemPictures).where(inArray(itemPictures.itemId, ids)).orderBy(asc(itemPictures.itemId), asc(itemPictures.position));
+  const links = await viewLinks(ctx, 'item_picture', pics.map((p) => p.fileId));
+  return rows.map((r) => ({ ...r, pictures: pics.filter((p) => p.itemId === r.id).map((p) => ({ fileId: p.fileId, url: links.get(p.fileId) ?? null })) }));
 }
 
 /** GET /units-of-measure. */
@@ -87,14 +100,38 @@ export async function listItemsPage(ctx: Ctx, input: In<typeof listItems>): Prom
     .orderBy(asc(items.name), asc(items.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
-  return { items: page, next: rows.length > input.limit && last ? encodeCursor({ name: last.name, id: last.id }) : null };
+  return { items: await withPictures(ctx, page), next: rows.length > input.limit && last ? encodeCursor({ name: last.name, id: last.id }) : null };
 }
 
 /** GET /items/:id. */
 export async function getItemById(ctx: Ctx, { id }: In<typeof getItem>): Promise<Out<typeof getItem>> {
   const [row] = await stockTx(ctx).select(itemColumns).from(items).where(eq(items.id, id)).limit(1);
   if (row === undefined) throw new AppError('not_found', 'There is no such item');
-  return row;
+  const [answer] = await withPictures(ctx, [row]);
+  if (answer === undefined) throw new Error('The item was not answered');
+  return answer;
+}
+
+/** POST /items/:id/pictures: the file must be a ready item picture; it goes last. The item's row is locked, so two
+ * pictures added at once take turns and never share a position. */
+export async function addItemPicture(ctx: Ctx, { id, fileId }: In<typeof attachItemPicture>): Promise<Out<typeof attachItemPicture>> {
+  const tx = stockTx(ctx);
+  const [item] = await tx.select({ id: items.id }).from(items).where(eq(items.id, id)).limit(1).for('update');
+  if (item === undefined) throw new AppError('not_found', 'There is no such item');
+  await readyFile(ctx, 'item_picture', fileId);
+  const [held] = await tx.select({ n: count(), last: max(itemPictures.position) }).from(itemPictures).where(eq(itemPictures.itemId, id));
+  if ((held?.n ?? 0) >= MAX_PICTURES) throw new AppError('too_many_pictures', `An item has at most ${MAX_PICTURES} pictures`);
+  await uniquely(tx.insert(itemPictures).values({ fileId, itemId: id, position: (held?.last ?? -1) + 1 }),
+    { item_pictures_pkey: new AppError('picture_attached', 'This picture is already on an item') });
+  return {};
+}
+
+/** DELETE /items/:id/pictures/:fileId: the picture comes off; the file itself is kept (D-12). */
+export async function dropItemPicture(ctx: Ctx, { id, fileId }: In<typeof removeItemPicture>): Promise<Out<typeof removeItemPicture>> {
+  const gone = await stockTx(ctx).delete(itemPictures).where(and(eq(itemPictures.itemId, id), eq(itemPictures.fileId, fileId)))
+    .returning({ fileId: itemPictures.fileId });
+  if (gone.length === 0) throw new AppError('not_found', 'This item has no such picture');
+  return {};
 }
 
 /** POST /items. */
