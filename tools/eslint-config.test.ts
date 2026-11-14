@@ -52,7 +52,8 @@ L8_PINNED?.imports?.[1]] };
 // For each sample: the radcore rules on (beyond L1), L1's options, and whether E4's typed rules apply.
 const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; server: boolean; options?: Record<string, object> }> = {
   'packages/db/src/sales/repo.ts': { rules: [...SERVER, 'radcore/e4-no-escape'], l1: L1.base, typed: true, server: true },
-  'packages/lib-sales/src/services/invoices.ts': { rules: LIB, l1: L1.base, typed: true, server: true },
+  // A module service also has E7, its record-scope backstop (RAD-85); its test file doesn't.
+  'packages/lib-sales/src/services/invoices.ts': { rules: [...LIB, 'radcore/e7-scope-on-owned-reads'], l1: L1.base, typed: true, server: true },
   'apps/api/src/routes/sales.ts': { rules: [...SERVER, 'radcore/e1-route-files'], l1: L1.base, typed: false, server: true },
   'packages/db/views/index.ts': { rules: SERVER, l1: L1.base, typed: false, server: true },
   'packages/db/views/receivables-ageing.ts': {

@@ -1,10 +1,11 @@
-// ESLint for ADR-001 (E1 to E5, D7's re-export guard) and ADR-002 (L1 to L6, L8, L9). Every ADR rule is its own rule
+// ESLint for ADR-001 (E1 to E7, D7's re-export guard) and ADR-002 (L1 to L6, L8, L9). Every ADR rule is its own rule
 // in the local `radcore` plugin (tools/eslint-plugin-radcore.mjs), with its selectors and patterns as options here.
 // tools/eslint-config.test.ts pins the options (tools/eslint-options.json) and zones; tools/boundaries.test.ts runs
 // the violating fixtures. Import-graph rules (D1 to D9, L7) are in .dependency-cruiser.cjs.
 import drizzle from 'eslint-plugin-drizzle';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import tseslint from 'typescript-eslint';
+import { SCOPED_TABLES } from './packages/lib-platform/src/permissions.ts';
 import radcore from './tools/eslint-plugin-radcore.mjs';
 
 // Every extension a source file could have. Only .ts and .tsx are allowed (tools/source-files.test.ts); the rest are
@@ -230,6 +231,10 @@ export const OPTIONS = {
       .map(sel('E4', 'ADR-001', 'No ambient declarations outside .d.ts: they hide globals such as fetch and Reflect')),
   },
 };
+// E7's tables come from the catalogue. Only tools/boundaries.test.ts sets RADCORE_BOUNDARY_FIXTURES: then the
+// fixtures' own table, which no module has, is scoped too.
+OPTIONS['radcore/e7-scope-on-owned-reads'] = { tables: [...SCOPED_TABLES,
+  ...(process.env.RADCORE_BOUNDARY_FIXTURES === '1' ? ['../../../db/src/e7/tables.ts#leads'] : [])] };
 const on = (id, options = OPTIONS[id]) => ({ [id]: ['error', options] });
 const L1_BASE = OPTIONS['radcore/no-sql'];
 const L1_ZONE = { allowNames: [...L1_ALLOW, 'sql'], zone: true };
@@ -292,6 +297,8 @@ export default tseslint.config(
     rules: on('radcore/e3-no-io') },
   { files: [`packages/lib-*/**/*.${EXT}`], ignores: ['packages/lib-platform/src/runtime.ts', 'packages/lib-platform/src/db/**'],
     rules: on('radcore/d7-no-db-reexport') },
+  // E7: a module service reads a scoped table only with the record scope applied (RAD-85). Its tests read freely.
+  { files: [`packages/lib-*/src/services/**/*.${EXT}`], ignores: [`**/*.test.${EXT}`], rules: on('radcore/e7-scope-on-owned-reads') },
 
   // E4: with type information, on libraries and packages/db's module folders outside the SQL zone. These typed
   // rules belong to E4 alone.

@@ -3,10 +3,14 @@
 // on a key they don't hold; a role holding a key that needs the second factor needs it, and its people sign in again.
 // Each test works on roles of its own (keys t_…, which roles.test leaves out): other files run alongside.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { AppError, roleNeedsSecondFactor, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, roleNeedsSecondFactor, type Ctx, type Principal } from '@radcore/lib-platform';
+import { getPermissionMatrix, listRoles, listUsers } from '@radcore/lib-platform/contract';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import platform from '../apps/api/src/routes/platform.ts';
 import { principalFor } from '../packages/lib-platform/src/auth/principal.ts';
 import { listRolesFor, permissionMatrix, setRoleGrants } from '../packages/lib-platform/src/auth/roles-admin.ts';
 import { createCustomRole, deleteCustomRole, keyFromName, renameRole, resetRoleToTemplate }
@@ -222,5 +226,23 @@ describe.skipIf(!url)('custom roles and templates', () => {
     if (lacking === undefined) throw new Error('owner holds every key admin holds');
     expect(await withVersion(as, (ctx, version) => setRoleGrants(ctx, { key, grants: ['session:read', lacking], version, reason })))
       .toBe('permission_not_held');
+  });
+
+  it('lets owner open the role screens and the people list, not just change them (e2e-playwright on RAD-83)', async () => {
+    const as = await (await person('owner')).as();
+    // The people list's route lands with RAD-36's follow-up; its key is the contract's.
+    expect(as.permissions).toEqual(expect.arrayContaining([listRoles.perm, getPermissionMatrix.perm, listUsers.perm]));
+    const template = await asAdmin<{ permission: string }>(
+      "select permission from radcore.role_templates where role = 'owner' and permission in ('roles:read', 'users:read') order by permission");
+    expect(template.map((t) => t.permission)).toEqual(['roles:read', 'users:read']);
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: () => undefined, error: () => undefined },
+      { db, authenticate: async () => as, routes: platform }), 0, '127.0.0.1');
+    try {
+      const get = async (path: string) => (await fetch(`http://127.0.0.1:${server.port}${path}`, { headers: { origin: cfg.publicOrigin } })).status;
+      expect([await get('/admin/roles'), await get('/admin/permissions')]).toEqual([200, 200]);
+    } finally {
+      await server.stop();
+    }
   });
 });

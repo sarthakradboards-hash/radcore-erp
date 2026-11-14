@@ -11,10 +11,18 @@ export type Api = Omit<HandlerDeps, 'log' | 'publicOrigin'> & { routes: readonly
 export function createApp(config: Config, log: Logger, api?: Api): express.Express {
   const app = express();
   app.disable('x-powered-by');
+  // The client's address, for the per-address limits (RAD-39): forwarded-for is believed only from TRUST_PROXY's fixed
+  // addresses (proxy and web, ADR-004 §3), so a client can't name its own address and dodge its limit.
+  app.set('trust proxy', config.trustProxy);
   const databaseAnswers = createHealthCheck(config.database);
-  // ADR-004 §2: Caddy sends /api/health here; it answers only if the database does. Rate limit: RAD-39.
-  app.get('/health', async (_req, res) => {
+  // ADR-004 §2: Caddy sends /api/health here; it answers only if the database does, so it's limited per address (RAD-39).
+  app.get('/health', async (req, res) => {
     try {
+      const wait = await api?.guards?.address('health', req.ip ?? '') ?? 0;
+      if (wait > 0) {
+        res.set('Retry-After', String(wait)).status(429).json({ ok: false });
+        return;
+      }
       await databaseAnswers();
       res.json({ ok: true });
     } catch (err) {
@@ -24,9 +32,10 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
   });
   if (api !== undefined) {
     // Webhooks first: their own lane, with the raw body, ahead of the browser routes' guards and JSON parser.
-    mountWebhooks(app, api.webhooks ?? [], { db: api.db, log });
+    mountWebhooks(app, api.webhooks ?? [], { db: api.db, log, alert: api.alert });
     mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin,
-      newPasswordCheck: api.newPasswordCheck, files: api.files, secrets: api.secrets });
+      newPasswordCheck: api.newPasswordCheck, files: api.files, secrets: api.secrets, guards: api.guards,
+      alert: api.alert });
   }
   return app;
 }

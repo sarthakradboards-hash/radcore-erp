@@ -13,14 +13,14 @@
 // Still to come, each with its ticket: rate guards (M1-21), pii() masking (M1-22) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, newPasswordFields, reasonFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
-import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, linkPrincipal, originAllowed, recordChangeReason,
-  RecordedRefusal, recordLinkAccess, useLink, type Files, type Principal, type Route, type Secrets, type SessionCookie,
-  type SignInCookie,
+import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, isRateLimitClass, linkPrincipal, originAllowed,
+  recordChangeReason, RecordedRefusal, recordLinkAccess, useLink, type Files, type Principal, type RequestGuards, type Route,
+  type Secrets, type SessionCookie, type SignInCookie,
 } from '@radcore/lib-platform';
 import {
   acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword, startSecondFactorEnrolment,
 } from '@radcore/lib-platform/contract';
-import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
+import { runInTransaction, type Alerter, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
 
 type Database = Parameters<typeof runInTransaction>[0];
@@ -40,6 +40,11 @@ export type HandlerDeps = {
   files?: Files | undefined;
   /** The secrets library, for routes' `before` steps (RAD-33). A route with one refuses to mount without it. */
   secrets?: Secrets | undefined;
+  /** The rate limits in the shared store (RAD-39): per client address on public and link routes, per person on
+   * signed-in ones. The api always passes them; a test of something else may leave them out. */
+  guards?: RequestGuards | undefined;
+  /** Alerts on an unexpected failure, one per route and code per hour (RC-158). The api always passes it. */
+  alert?: Alerter | undefined;
 };
 const READ = { readOnly: true, isolation: 'read committed' } as const;
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
@@ -90,6 +95,8 @@ const MESSAGES: Readonly<Record<PlatformErrorCode, string>> = {
 const isPlatform = (code: string): code is PlatformErrorCode => Object.hasOwn(PLATFORM_ERRORS, code);
 
 type Failure = { status: number; code: string; message: string; issues: readonly Issue[]; retryAfterSeconds?: number };
+// Too many requests (RAD-39): how many seconds until a retry can succeed, in the body and in Retry-After.
+const limited = (wait: number): Failure => ({ ...platform('rate_limited'), retryAfterSeconds: wait });
 const platform = (code: PlatformErrorCode, issues: readonly Issue[] = []): Failure =>
   ({ status: PLATFORM_ERRORS[code], code, message: MESSAGES[code], issues });
 
@@ -157,6 +164,11 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
   for (const { contract, service, before } of routes) {
     if (contract.auth === 'webhook') throw new TypeError(`${contract.method} ${contract.path}: a webhook takes its own lane (M1-27)`);
     const route = `${contract.method} ${contract.path}`;
+    // A public or link route's class must be one the guards count, so none goes unlimited (RAD-39).
+    const addressClass = contract.auth === 'public' || contract.auth === 'link' ? contract.rateLimit : null;
+    if (addressClass !== null && !isRateLimitClass(addressClass)) {
+      throw new TypeError(`${route}: rateLimit "${addressClass}" isn't a rate-limit class (guards.ts's ADDRESS_LIMITS)`);
+    }
     // ADR-001 §7a: only the fixed lists may skip the key or keep no answer, or the handler refuses to start.
     if (contract.idempotency === 'exempt' && !onList(KEY_EXEMPT_ROUTES, route)) {
       throw new TypeError(`${route}: only KEY_EXEMPT_ROUTES may declare idempotency: 'exempt' (ADR-001 §7a)`);
@@ -178,6 +190,15 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
     const handle = async (req: Request, res: Response): Promise<void> => {
       const requestId = randomUUID();
       try {
+        // The origin guard ran first (above). Then the per-address limit, before the principal, the body or a
+        // transaction (ADR-001 §6): a public or link route counts per client address, for its class (RC-088).
+        if (deps.guards !== undefined && addressClass !== null && isRateLimitClass(addressClass)) {
+          const wait = await deps.guards.address(addressClass, req.ip ?? '');
+          if (wait > 0) {
+            send(res, limited(wait), requestId);
+            return;
+          }
+        }
         // A link route runs as the link's holder alone, never as whoever's session came with it (ADR-001 §6a).
         let principal = contract.auth === 'link' ? null : await deps.authenticate(req, route);
         if (contract.auth === 'session' && principal === null) {
@@ -185,6 +206,14 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           if (session.tokenIn(req.get('cookie')) !== null) res.clearCookie(session.name, COOKIE);
           send(res, platform('signed_out'), requestId);
           return;
+        }
+        // A signed-in person's requests count per person, over every route (RC-194).
+        if (deps.guards !== undefined && principal?.kind === 'user') {
+          const wait = await deps.guards.person(principal.userId);
+          if (wait > 0) {
+            send(res, limited(wait), requestId);
+            return;
+          }
         }
         const query = typeof req.query['input'] === 'string' ? req.query['input'] : undefined;
         const input = readInput(contract, { params: req.params as Record<string, string>, query, body: req.body });
@@ -300,6 +329,10 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         // Ids only: never the input, the output or a value from the database (RAD-29).
         if (failure.status >= 500) deps.log.error(`${route} failed (request ${requestId})`, err);
         send(res, failure, requestId);
+        // After the answer: keyed on the route's template, never its URL, so one failing route is one alert (RC-158).
+        if (failure.status >= 500) {
+          await deps.alert?.(`${route} failed with ${failure.code} (request ${requestId})`, `api ${route} ${failure.code}`);
+        }
       }
     };
     router[contract.method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete'](contract.path, handle);

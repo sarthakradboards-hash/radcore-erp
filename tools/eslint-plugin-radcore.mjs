@@ -382,6 +382,69 @@ const noTableExports = {
   },
 };
 
+// E7 (RAD-85, ADR-001 §6a): a module service reading a table that holds some key's records (the catalogue's
+// `records`; options.tables, '<source>#<export>') applies the record scope in the same function, the outermost one
+// around the read: `x.see(...)`, `x.can(...)` or lib-platform's `listScope(...)`. A read is the table as an argument of
+// `.from` or a join, imported by name (aliased or not) or through a namespace, or `.query.<table>`. It can't follow a
+// read or a check into another function, a table passed around as a value, a table reached through a relation
+// (`with:`) or a view, or whether the check names the right owner.
+const READS = new Set(['from', 'innerJoin', 'leftJoin', 'rightJoin', 'fullJoin', 'crossJoin']);
+const CHECKS = new Set(['see', 'can']);
+const scopeOnOwnedReads = {
+  meta: { type: 'problem', docs: { description: 'ADR-001 E7: a scoped read applies the record scope' }, schema: false,
+    messages: { m: '[E7] {{table}} holds records a role may see only its own of: apply ctx.see, ctx.can or listScope in this function (ADR-001 §6a)' } },
+  create(context) {
+    const tables = new Set(context.options[0]?.tables ?? []);
+    const names = new Set([...tables].map((t) => t.slice(t.lastIndexOf('#') + 1)));
+    const outermost = (n) => {
+      let f = null;
+      for (let p = n.parent; p; p = p.parent) if (/Function/.test(p.type)) f = p;
+      return f;
+    };
+    const bindingOf = (id) => findVariable(context.sourceCode.getScope(id), id.name)?.defs[0];
+    // '<source>#<export>' for a table argument: `leads`, `leads as l`, or `crm.leads` through `import * as crm`.
+    const tableOf = (a) => {
+      if (a.type === 'Identifier') {
+        const d = bindingOf(a);
+        if (d?.type !== 'ImportBinding' || d.node.type !== 'ImportSpecifier') return null;
+        return `${d.parent.source.value}#${d.node.imported.name ?? d.node.imported.value}`;
+      }
+      if (a.type === 'MemberExpression' && !a.computed && a.object.type === 'Identifier') {
+        const d = bindingOf(a.object);
+        return d?.type === 'ImportBinding' && d.node.type === 'ImportNamespaceSpecifier' ? `${d.parent.source.value}#${a.property.name}` : null;
+      }
+      return null;
+    };
+    const reads = [];
+    const checked = new Set();
+    return {
+      CallExpression(n) {
+        const c = n.callee;
+        if (c.type === 'MemberExpression' && !c.computed && c.property.type === 'Identifier') {
+          if (CHECKS.has(c.property.name)) checked.add(outermost(n));
+          if (READS.has(c.property.name)) {
+            for (const a of n.arguments) {
+              const t = tableOf(a);
+              if (t !== null && tables.has(t)) reads.push({ node: a, table: t, fn: outermost(n) });
+            }
+          }
+        }
+        if (c.type === 'Identifier' && c.name === 'listScope' && importSource(context, c) === '@radcore/lib-platform') checked.add(outermost(n));
+      },
+      // The relational API names the table by its key only: `tx.query.leads.findMany()`.
+      MemberExpression(n) {
+        if (!n.computed && n.property.type === 'Identifier' && names.has(n.property.name) && n.object.type === 'MemberExpression'
+          && !n.object.computed && n.object.property.type === 'Identifier' && n.object.property.name === 'query') {
+          reads.push({ node: n.property, table: n.property.name, fn: outermost(n) });
+        }
+      },
+      'Program:exit'() {
+        for (const r of reads) if (!checked.has(r.fn)) context.report({ node: r.node, messageId: 'm', data: { table: r.table } });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: 'radcore' },
   rules: {
@@ -390,6 +453,7 @@ export default {
     'e4-no-escape': restrict('ADR-001 E4: no escape hatch in libraries'),
     'd7-no-db-reexport': noDbReexport,
     'd7-no-table-exports': noTableExports,
+    'e7-scope-on-owned-reads': scopeOnOwnedReads,
     'no-sql': noSql,
     'no-query-strings': restrict('ADR-002 L2: no query strings'),
     'no-raw-execution': restrict('ADR-002 L3: no raw execution'),

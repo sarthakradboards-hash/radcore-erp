@@ -81,9 +81,22 @@ describe.skipIf(!url)('the shared rate-limit store', () => {
     try {
       const limiter = down.limiter({ prefix: prefix(), points: 3, windowSeconds: 60, blockSeconds: 120 });
       expect([await limiter.wait('a'), await limiter.hit('a')]).toEqual([120, 120]);
+      // RC-158's alert repeat check is the one limit that fails open: a lost alert is worse than a repeated one.
+      const open = down.limiter({ prefix: prefix(), points: 1, windowSeconds: 3600, blockSeconds: 0, failOpen: true });
+      expect([await open.wait('a'), await open.hit('a'), await open.hit('a')]).toEqual([0, 0, 0]);
     } finally {
       await down.end();
     }
+  });
+
+  // RC-158: the alert repeat check, as alerts.ts sets it: the first use in the hour goes, the rest wait out the hour.
+  it('lets one use per window through with no block', async () => {
+    const once = store.limiter({ prefix: prefix(), points: 1, windowSeconds: 3600, blockSeconds: 0, failOpen: true });
+    expect(await once.hit('api GET /notes/:id server_error')).toBe(0);
+    const wait = await once.hit('api GET /notes/:id server_error');
+    expect(wait).toBeGreaterThan(3500);
+    expect(wait).toBeLessThanOrEqual(3600);
+    expect(await once.hit('api POST /notes server_error')).toBe(0);
   });
 
   it('keeps no email address in the store, only its HMAC', async () => {

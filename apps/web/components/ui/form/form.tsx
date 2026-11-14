@@ -79,7 +79,7 @@ export function Form<I extends FieldValues, O extends FieldValues>(
       const { fields, rest } = placeIssues(e.envelope.issues, names.mounted);
       fields.forEach(({ name, message }, i) =>
         form.setError(name as never, { type: 'server', message }, { shouldFocus: i === 0 }));
-      const message = formAlert(e.code, messages?.[e.code] ?? SAID[e.code] ?? e.envelope.message, rest);
+      const message = formAlert(e.code, messages?.[e.code], SAID[e.code] ?? e.envelope.message, rest);
       if (message !== null) form.setError('root.server', { type: e.code, message });
       return;
     }

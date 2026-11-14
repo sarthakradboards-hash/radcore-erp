@@ -22,9 +22,10 @@ const MAX_ITEMS = 50;
 const words = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
   .toLowerCase().split(/[\s_.\-]+/);
 // A key written as one lower-case run is matched by its parts too: a `name` ending (firstname), or one of these words
-// at either end (phonenumber, workemail, accesstoken). Short words such as `pan` aren't, so `panel` stays.
+// at either end (phonenumber, workemail, accesstoken, accountnumber). Short words such as `pan` aren't, so `panel`
+// stays.
 const LONG = ['phone', 'mobile', 'email', 'password', 'aadhaar', 'aadhar', 'gstin', 'address', 'salary', 'token',
-  'secret'];
+  'secret', 'account'];
 const personName = (before: string) => !SYSTEM.has(before);
 const sensitiveWord = (w: string, before: string) => {
   if (w === 'name') return personName(before);

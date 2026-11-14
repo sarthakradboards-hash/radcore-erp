@@ -22,7 +22,7 @@ export function AdminNav() {
     <nav aria-label={t('admin.nav')} className="admin-nav">
       <ul>
         {ADMIN_PAGES.filter((page) => allowed(page, permissions)).map(({ href, label }) => (
-          <li key={href}><Link href={href} aria-current={here === href ? 'page' : undefined}>{t(label)}</Link></li>
+          <li key={href}><Link href={href} aria-current={here === href || here.startsWith(`${href}/`) ? 'page' : undefined}>{t(label)}</Link></li>
         ))}
       </ul>
     </nav>
@@ -30,7 +30,8 @@ export function AdminNav() {
 }
 
 const CODES = ['own_account', 'last_admin', 'role_not_grantable', 'email_taken', 'role_not_editable', 'matrix_changed',
-  'unknown_permission', 'permission_not_held', 'current_session'] as const;
+  'unknown_permission', 'permission_not_held', 'current_session', 'basics_required', 'permission_not_for_role',
+  'name_taken', 'role_in_use', 'role_not_deletable', 'not_a_template'] as const;
 /** The admin contracts' error codes in the screen's words, for Form's and ReasonDialog's `messages`. */
 export const MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`admin.err.${c}`)]));
 MESSAGES['range_too_long'] = t('admin.err.range_too_long', { days: String(AUDIT_RANGE_MAX_DAYS) });

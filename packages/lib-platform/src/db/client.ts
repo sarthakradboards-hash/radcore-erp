@@ -102,7 +102,9 @@ export function createHealthCheck(db: Database,
 
 /** One use of the shared store: a key prefix, how many points a key gets per window, and how long a key that used
  * them all is held. */
-type LimitSpec = { prefix: string; points: number; windowSeconds: number; blockSeconds: number };
+/** `failOpen`: when the store can't answer, let the use through instead of refusing it (the alert repeat check, where
+ * a lost alert is worse than a repeated one). Every limit on a request fails closed. */
+type LimitSpec = { prefix: string; points: number; windowSeconds: number; blockSeconds: number; failOpen?: boolean };
 
 /** Counts uses per key. Each answer is how many seconds the key must wait, 0 when it may go now. */
 export type Limiter = {
@@ -129,12 +131,13 @@ export function createLimiterStore(db: Database, log: Logger, keySecret: string)
   const pool = new pg.Pool({ ...connection(db), max: 2 });
   pool.on('error', (err) => log.error('rate-limit store connection lost; the pool will reconnect', err));
   return {
-    limiter({ prefix, points, windowSeconds, blockSeconds }: LimitSpec): Limiter {
+    limiter({ prefix, points, windowSeconds, blockSeconds, failOpen = false }: LimitSpec): Limiter {
       const rl = new RateLimiterPostgres({ storeClient: pool, schemaName: 'ratelimit', tableName: 'limits',
         tableCreated: true, keyPrefix: prefix, points, duration: windowSeconds, blockDuration: blockSeconds });
       const closed = (err: unknown): number => {
-        log.error(`rate-limit store did not answer for ${prefix}; refusing (fails closed)`, err);
-        return blockSeconds;
+        log.error(`rate-limit store did not answer for ${prefix}; ${failOpen ? 'letting it through (fails open)'
+          : 'refusing (fails closed)'}`, err);
+        return failOpen ? 0 : blockSeconds;
       };
       return {
         async wait(key) {
