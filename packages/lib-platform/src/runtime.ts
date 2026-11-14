@@ -17,6 +17,7 @@ export { createAuth, type Auth } from './auth/auth.ts';
 export { runBootstrapAdmin } from './auth/bootstrap.ts';
 export { newPasswordCheckFor } from './auth/new-password.ts';
 export { passwordResetEmailJob } from './auth/reset-email.ts';
+export { loadPrincipal } from './auth/principal.ts';
 export { authenticateSession } from './auth/sessions.ts';
 export { mailerFor } from './mail.ts';
 export { createDatabase, createHealthCheck } from './db/client.ts';
@@ -32,8 +33,7 @@ export type AppJobQueue = Omit<JobQueue, 'send' | 'sendAfter' | 'sendThrottled' 
 export const createJobQueue = (database: Config['database'], log: Logger): AppJobQueue => createPgBoss(database, log);
 export type { Logger } from './log.ts';
 
-// shortcut: no person can be loaded until RAD-35 (M1-17) provides the loader, so every job for a user is refused (fails
-// closed); the worker passes RAD-35's loader then.
+// A process that names no loader can run no job for a person: it fails closed. The worker passes loadPrincipal (RAD-35).
 const refuseEveryone: LoadPrincipal = async () => null;
 
 type QueueOptions = Omit<QueueSettings, 'deadLetter'> & { deadLetter?: string };

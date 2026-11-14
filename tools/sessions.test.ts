@@ -78,7 +78,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const account = createAccount({ passwords, lockout });
     const email = `user.${randomBytes(4).toString('hex')}@example.in`;
     const [user] = await asAdmin<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
-      password_set_at) values ($1, 'Asha Rao', 'active', $2, now()) returning id`, [email, await passwords.hash(PASSWORD)]);
+      password_set_at, role) values ($1, 'Asha Rao', 'active', $2, now(), 'hr') returning id`, [email, await passwords.hash(PASSWORD)]);
     const userId = user?.id ?? '';
     // A device name of this test's own, so its security events can be found even when they name no account.
     const device = `test ${randomBytes(6).toString('hex')}`;
@@ -117,7 +117,8 @@ describe.skipIf(!url)('sign-in sessions', () => {
     expect(expires?.getTime()).toBe(stored?.absolute.getTime());
     expect(Math.abs(since(stored?.absolute) - SESSION_ABSOLUTE_SECONDS * 1000)).toBeLessThan(5000);
     expect(Math.abs(since(stored?.idle) - SESSION_IDLE_SECONDS * 1000)).toBeLessThan(5000);
-    expect(await s.principalOf(token ?? '')).toEqual({ kind: 'user', userId: s.userId, sessionId: stored?.id, permissions: ['session:read'] });
+    expect(await s.principalOf(token ?? '')).toEqual({ kind: 'user', userId: s.userId, sessionId: stored?.id, role: 'hr',
+      permissions: ['resume_files:read', 'resume_files:write', 'session:read'], ownScope: [] });
     expect(await s.events()).toEqual([{ kind: 'sign_in', detail: {} }]);
   });
 
@@ -208,8 +209,8 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const token = await s.signInNow();
     const stored = await s.row(token);
     expect(await run(await s.as(token), getMyself)).toEqual({ user: { id: s.userId, displayName: 'Asha Rao' },
-      permissions: ['session:read'], session: { idleExpiresAt: stored?.idle.toISOString(),
-        // Every account needs a second factor until roles land (RAD-33, RAD-35), and this one has none yet.
+      permissions: ['resume_files:read', 'resume_files:write', 'session:read'], session: { idleExpiresAt: stored?.idle.toISOString(),
+        // HR needs a second factor (D-19, RAD-35), and this person has none yet.
         absoluteExpiresAt: stored?.absolute.toISOString() }, secondFactor: 'enrolment_required' });
   });
 
@@ -306,7 +307,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     }
   });
 
-  // Every account needs a second factor until RAD-35 (RAD-33), so the browser's way in is password, enrolment, code.
+  // This person's role (HR) needs a second factor (D-19), so the browser's way in is password, enrolment, code.
   it('signs in and out over HTTP with a __Host- cookie that is HttpOnly, Secure and SameSite=Lax', async () => {
     const s = await setup();
     const cfg = config(url ?? NO_DATABASE);

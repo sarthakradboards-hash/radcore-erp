@@ -50,7 +50,7 @@ describe.skipIf(!url)('listAuditTrail and listAuditedTables', () => {
   const settingKey = () => `ops.audit_${randomBytes(6).toString('hex')}`;
 
   it('reads a record\'s history newest first, each value on its side, and who did it by name (RC-030)', async () => {
-    const [[user]] = await as('system:test', [["insert into radcore.users (email, display_name) values ($1, 'Asha Rao') returning id",
+    const [[user]] = await as('system:test', [["insert into radcore.users (email, display_name, role) values ($1, 'Asha Rao', 'sales') returning id",
       [`asha.${randomBytes(4).toString('hex')}@example.com`]]]) as [[{ id: string }]];
     const key = settingKey();
     await as(`user:${user?.id ?? ''}`, [
@@ -70,7 +70,7 @@ describe.skipIf(!url)('listAuditTrail and listAuditedTables', () => {
   });
 
   it("arrives with personal data as stored, \"[redacted]\" on both sides, and names a system principal", async () => {
-    const [[user]] = await as('system:test', [["insert into radcore.users (email, display_name) values ($1, 'Ravi') returning id",
+    const [[user]] = await as('system:test', [["insert into radcore.users (email, display_name, role) values ($1, 'Ravi', 'sales') returning id",
       [`ravi.${randomBytes(4).toString('hex')}@example.com`]]]) as [[{ id: string }]];
     await as('system:test', [["update radcore.users set display_name = 'Ravi K' where id = $1", [user?.id]]]);
     const { items } = await list({ tableName: 'users', recordId: user?.id ?? '' });

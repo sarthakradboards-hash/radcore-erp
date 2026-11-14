@@ -60,7 +60,7 @@ describe.skipIf(!url)('an export, start to download', () => {
   // one-at-a-time rule never reaches across tests.
   const person = async (): Promise<Principal & { kind: 'user' }> => {
     const { rows } = await pool.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
-      insert into radcore.users (email, display_name) select $1, 'Asha' from p returning id`, [`asha.${randomUUID()}@example.com`]);
+      insert into radcore.users (email, display_name, role) select $1, 'Asha', 'sales' from p returning id`, [`asha.${randomUUID()}@example.com`]);
     return { kind: 'user', userId: rows[0]?.id ?? '', permissions: ['crm:export', 'session:read', 'audit:read'] };
   };
   // The person the other tests share: each of their exports finishes, so none stays queued.

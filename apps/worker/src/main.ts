@@ -4,8 +4,8 @@
 // transaction with a Ctx for its principal (RAD-44 step 3). pg-boss's schema comes from the migrations (0001, RAD-25),
 // so run `npm run db:migrate` first; without it the worker refuses to start ("pg-boss is not installed").
 import {
-  createAlerter, createDatabase, createJobQueue, mailerFor, passwordResetEmailJob, runJobs, startFileStore, startHeartbeat,
-  startProcess,
+  createAlerter, createDatabase, createJobQueue, loadPrincipal, mailerFor, passwordResetEmailJob, runJobs, startFileStore,
+  startHeartbeat, startProcess,
 } from '@radcore/lib-platform/runtime';
 import type { JobDefinition } from '@radcore/lib-platform';
 import exportJobs from './jobs/exports.ts';
@@ -21,7 +21,8 @@ await startProcess('worker', async ({ config, pool, log }) => {
   // Jobs that need what only start-up has: the mailer and PUBLIC_ORIGIN, for links (RAD-32).
   const withMail = [...jobs, passwordResetEmailJob({ mailer: mailerFor(config, log), publicOrigin: config.publicOrigin })];
   // The job queue and the outbox relay: the relay stops first, while the queue can still take its jobs.
-  const running = await runJobs(queue, withMail, log, { db: createDatabase(pool), alert, relay: true,
-    files: files.store });
+  // A job queued by a person runs as them, as they are now: their role's keys are read when it runs (RAD-35).
+  const db = createDatabase(pool);
+  const running = await runJobs(queue, withMail, log, { db, alert, relay: true, files: files.store, loadPrincipal: loadPrincipal(db) });
   return [startHeartbeat(config.heartbeatUrl, log), running, files];
 });

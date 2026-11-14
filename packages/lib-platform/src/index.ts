@@ -1,5 +1,7 @@
 export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } from './config.ts';
-export { principalId, type Ctx, type Files, type Principal, type SessionCookie, type SignInCookie } from './ctx.ts';
+export { principalId, type Ctx, type Files, type Owned, type Principal, type SessionCookie, type SignInCookie } from './ctx.ts';
+export { roleNeedsSecondFactor } from './auth/principal.ts';
+export { assignRole } from './auth/roles.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export {
   deviceOf, endAnySession, endCurrentSession, endOwnSession, endPersonSessions, endSessionsOf, getMyself, listAllSessions,
@@ -10,7 +12,7 @@ export {
   decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash, type ApprovalSpec,
   type ApprovalVersion, type Decision,
 } from './approvals.ts';
-export { decodeCursor, encodeCursor, isoMoment, momentKey, sortedCursor, type SortKey } from './lists.ts';
+export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
 export { defineRoute, type BeforeDeps, type Route } from './route.ts';
 export { csvWriter } from './export/csv.ts';

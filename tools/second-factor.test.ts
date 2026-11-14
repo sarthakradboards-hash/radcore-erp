@@ -83,7 +83,7 @@ describe.skipIf(!url)('the second sign-in factor', () => {
       lockout: createLockout(store.limiter({ prefix: `testpw${prefix}`, ...LOCKOUT })) }));
     const email = `admin.${prefix}@example.in`;
     const [user] = await asAdmin<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
-      password_set_at) values ($1, 'Asha Rao', 'active', $2, now()) returning id`, [email, await passwords.hash(PASSWORD)]);
+      password_set_at, role) values ($1, 'Asha Rao', 'active', $2, now(), 'admin') returning id`, [email, await passwords.hash(PASSWORD)]);
     const userId = user?.id ?? '';
     const device = `test ${prefix}`;
     // One browser: what it holds of each cookie, kept as the handler would set and clear them.
