@@ -2,9 +2,12 @@
 // must not. A word added to MONEY_WORDS is covered here without a new fixture.
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
-import { MONEY_WORDS, SUFFIX_ONLY } from '../eslint.config.mjs';
+import { MONEY_WORDS } from '../eslint.config.mjs';
 
-const eslint = new ESLint();
+// The name half only: the probe path isn't on disk, so it's in no tsconfig and gets no type information. The typed
+// half has its own fixtures (tools/boundary-fixtures/E6-branded-*, RAD-67).
+const eslint = new ESLint({ overrideConfig: { languageOptions: { parserOptions: { projectService: false } },
+  rules: { 'radcore/e6-branded-money': 'off' } } });
 const fires = async (name: string) => {
   const [r] = await eslint.lintText(`export const f = (${name}: string) => Number(${name}) * 2;\n`,
     { filePath: 'apps/web/lib/probe.ts' });
@@ -20,9 +23,9 @@ describe('E6 money words', () => {
     }
   });
 
-  it.each(SUFFIX_ONLY)('%s fires only as a camelCase ending', async (w) => {
-    expect(await fires(`credit${cap(w)}`)).toBe(true);
-    for (const name of [w, w.toUpperCase(), `MAX_${w.toUpperCase()}`]) expect(await fires(name), name).toBe(false);
+  // RAD-67: a credit limit is money; every other limit is a number (the false positive on #51).
+  it.each(['limit', 'LIMIT', 'MAX_LIMIT', 'retryLimit', 'rateLimit', 'timeLimit', 'sizeLimit'])('%s does not fire', async (n) => {
+    expect(await fires(n)).toBe(false);
   });
 
   it.each(['generate', 'separate', 'iterate', 'count', 'index', 'width', 'internet', 'planet'])('%s does not fire', async (n) => {

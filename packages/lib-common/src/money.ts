@@ -29,6 +29,18 @@ const RATE_SHAPE = shape(12, RATE_PLACES);
 const QTY_SHAPE = shape(15, MAX_QTY_PLACES);
 const PERCENT_SHAPE = shape(3, RATE_PLACES);
 
+// The kinds of decimal string, as types (RAD-67): what a wire schema parsed or a rounding function made. A brand is a
+// type only, so the value is still the string; E6's typed check refuses +, comparison and Number() on one, whatever
+// it's named, and on a Decimal. Each is a string, so it passes anywhere a decimal string is taken.
+/** Rupees to 2 places: moneyString's output, roundMoney and lineAmount. */
+export type Money = string & z.$brand<'Money'>;
+/** A unit price to 6 places: unitPriceString's output and roundRate. */
+export type Rate = string & z.$brand<'Rate'>;
+/** A quantity in its unit's places: quantityString's output and roundQty. */
+export type Quantity = string & z.$brand<'Quantity'>;
+/** A percentage: percentString's output. */
+export type Percent = string & z.$brand<'Percent'>;
+
 /** A decimal string or a Decimal. Strings must be plain decimals: no exponent, hex, spaces, `Infinity` or `NaN`. */
 export type DecimalInput = string | Decimal;
 
@@ -60,13 +72,13 @@ const checkPlaces = (places: number) => {
 };
 
 /** Money to 2 places, half-up: the wire form, for example "1250.50". */
-export const roundMoney = (x: DecimalInput): string => fixed(dec(x), MONEY_PLACES);
+export const roundMoney = (x: DecimalInput): Money => fixed(dec(x), MONEY_PLACES) as Money;
 /** A unit price to 6 places, half-up: "0.375000". */
-export const roundRate = (x: DecimalInput): string => fixed(dec(x), RATE_PLACES);
+export const roundRate = (x: DecimalInput): Rate => fixed(dec(x), RATE_PLACES) as Rate;
 /** A quantity to its unit's places (0 to 3), half-up. */
-export function roundQty(x: DecimalInput, places: number): string {
+export function roundQty(x: DecimalInput, places: number): Quantity {
   checkPlaces(places);
-  return fixed(dec(x), places);
+  return fixed(dec(x), places) as Quantity;
 }
 /** Whether a quantity already fits its unit, so 1.5 of a Nos (0 places) item is refused, not rounded. */
 export function fitsUnit(x: DecimalInput, places: number): boolean {
@@ -75,24 +87,26 @@ export function fitsUnit(x: DecimalInput, places: number): boolean {
 }
 
 /** A line's amount: quantity times rate, rounded to money once. 100000 at 0.375 is "37500.00" (RC-008). */
-export const lineAmount = (qty: DecimalInput, rate: DecimalInput): string => roundMoney(dec(qty).times(dec(rate)));
+export const lineAmount = (qty: DecimalInput, rate: DecimalInput): Money => roundMoney(dec(qty).times(dec(rate)));
 
 // Wire schemas. No .transform(): a contract describes the JSON exactly (ADR-001 §7a). Each takes a sign option, as
 // the columns do: money({ signed: true }) for balances and round-off, otherwise not negative.
-const decimalString = (re: RegExp, what: string) => (opts: { signed?: boolean } = {}) =>
+// The output carries its brand (Money, Rate, ...); the input is a plain string, as JSON sends it.
+const decimalString = <B extends string>(re: RegExp, what: string) => (opts: { signed?: boolean } = {}) =>
   z.string().regex(re, `Enter ${what}`)
-    .refine((s) => opts.signed === true || !s.startsWith('-'), `${what[0]?.toUpperCase()}${what.slice(1)} can't be negative`);
+    .refine((s) => opts.signed === true || !s.startsWith('-'), `${what[0]?.toUpperCase()}${what.slice(1)} can't be negative`)
+    .brand<B>();
 /** Rupees with up to 2 decimals: "1250.50". */
-export const moneyString = decimalString(MONEY_SHAPE, 'an amount with up to 2 decimals');
+export const moneyString = decimalString<'Money'>(MONEY_SHAPE, 'an amount with up to 2 decimals');
 /** A unit price with up to 6 decimals: "0.375" (RC-008). ADR-005's unitPrice(). */
-export const unitPriceString = decimalString(RATE_SHAPE, 'a price with up to 6 decimals');
+export const unitPriceString = decimalString<'Rate'>(RATE_SHAPE, 'a price with up to 6 decimals');
 /** A percentage (GST, cess, TDS, discount) with up to 6 decimals, 0 to 100 unless the law allows more (a cess):
  * ADR-005's percent(). */
 export const percentString = (opts: { max?: string } = {}) =>
-  decimalString(PERCENT_SHAPE, 'a percentage with up to 6 decimals')()
+  decimalString<'Percent'>(PERCENT_SHAPE, 'a percentage with up to 6 decimals')()
     .refine((s) => dec(s).lte(opts.max ?? '100'), `Enter a percentage up to ${opts.max ?? '100'}`);
 /** A quantity with up to 3 decimals. The line's unit narrows it further (fitsUnit). */
-export const quantityString = decimalString(QTY_SHAPE, 'a quantity with up to 3 decimals');
+export const quantityString = decimalString<'Quantity'>(QTY_SHAPE, 'a quantity with up to 3 decimals');
 
 // Display, en-IN: lakh and crore grouping. Intl formats a numeric string exactly, with no float on the way.
 // signDisplay 'negative' shows a value that rounds to zero as 0.00, never -0.00.

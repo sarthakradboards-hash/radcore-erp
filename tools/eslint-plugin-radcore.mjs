@@ -1,6 +1,7 @@
 // The local ESLint plugin for ADR-001's E-rules and ADR-002's L-rules. Each ADR rule is its own rule here, so a later
 // config block can never replace another rule's options (ADR-001 "One ESLint rule per E-rule"). Selectors and
 // patterns live in eslint.config.mjs as each rule's options; tools/eslint-options.json pins them.
+import ts from 'typescript';
 
 const DRIZZLE = /^drizzle-orm(\/|$)/;
 
@@ -445,6 +446,74 @@ const scopeOnOwnedReads = {
   },
 };
 
+// E6 by type (RAD-67): a value whose type carries one of lib-common's decimal brands (Money, Rate, Quantity, Percent),
+// or is a decimal.js Decimal, never meets +, -, *, /, %, **, <, <=, >, >=, Number(), parseFloat, Math or a unary sign,
+// whatever it's named; two of them never meet ===. A string brand would concatenate or compare as text, and a Decimal
+// would turn into its string on the way. The name list (e6-no-float-money) still covers values with no brand.
+const brandedMoney = {
+  meta: { type: 'problem', docs: { description: 'ADR-001 E6: no number maths or comparison on a branded decimal' },
+    schema: false, messages: { m: '{{message}} (a {{kind}})' } },
+  create(context) {
+    const services = context.sourceCode.parserServices;
+    if (!services?.program) return {};
+    const checker = services.program.getTypeChecker();
+    const { brands, classes, message } = context.options[0];
+    const BRAND_KEY = /^__@\$brand@/;
+    // The brand or class a type carries, through unions and intersections: `Money | null`, `string & $brand<'Money'>`.
+    const kindOf = (type, depth = 0) => {
+      if (depth > 4) return null;
+      if (type.isUnion() || type.isIntersection()) {
+        for (const t of type.types) { const k = kindOf(t, depth + 1); if (k) return k; }
+        return null;
+      }
+      const name = type.getSymbol()?.getName();
+      if (name !== undefined && classes.includes(name)) return name;
+      for (const p of type.getProperties()) {
+        if (!BRAND_KEY.test(p.getName())) continue;
+        const kind = checker.getTypeOfSymbol(p).getProperties().map((q) => q.getName()).find((n) => brands.includes(n));
+        if (kind) return kind;
+      }
+      return null;
+    };
+    const kind = (node) => kindOf(checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node)));
+    const check = (node, operand = node) => {
+      const k = operand && kind(operand);
+      if (k) context.report({ node, messageId: 'm', data: { message, kind: k } });
+      return Boolean(k);
+    };
+    const MATHS = new Set(['+', '-', '*', '/', '%', '**', '<', '<=', '>', '>=']);
+    const COMPOUND = new Set(['+=', '-=', '*=', '/=', '%=', '**=']);
+    const isConversion = (c) => (c.type === 'Identifier' && (c.name === 'Number' || c.name === 'parseFloat' || c.name === 'parseInt'))
+      || (c.type === 'MemberExpression' && c.object.type === 'Identifier'
+        && (c.object.name === 'Math' || (c.object.name === 'Number' && c.property.type === 'Identifier'
+          && /^parse(Float|Int)$/.test(c.property.name))));
+    // A `+` joining a branded value to plain text (`'Due: ' + roundMoney(x)`) is a label, as the name rule allows.
+    const plainText = (n) => !kind(n)
+      && (checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(n)).flags & ts.TypeFlags.StringLike) !== 0;
+    return {
+      BinaryExpression(node) {
+        if (node.operator === '+') {
+          if (!plainText(node.right) && check(node, node.left)) return;
+          if (!plainText(node.left)) check(node, node.right);
+        } else if (MATHS.has(node.operator)) {
+          if (!check(node, node.left)) check(node, node.right);
+        } else if (/^[!=]==?$/.test(node.operator) && kind(node.left) && kind(node.right)) {
+          check(node, node.left);
+        }
+      },
+      AssignmentExpression(node) {
+        if (COMPOUND.has(node.operator) && !check(node, node.left)) check(node, node.right);
+      },
+      UpdateExpression(node) { check(node, node.argument); },
+      UnaryExpression(node) { if (node.operator === '+' || node.operator === '-') check(node, node.argument); },
+      CallExpression(node) {
+        if (!isConversion(node.callee)) return;
+        for (const a of node.arguments) if (check(node, a.type === 'SpreadElement' ? a.argument : a)) return;
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: 'radcore' },
   rules: {
@@ -460,6 +529,7 @@ export default {
     'no-driver': restrict('ADR-002 L4: no driver outside the pool'),
     'no-raw-html': restrict('ADR-002 L6: no raw HTML'),
     'e6-no-float-money': restrict('ADR-001 E6: no floating-point maths or text comparison on money'),
+    'e6-branded-money': brandedMoney,
     'outbound-only': restrict('ADR-002 L8: outside calls go through the guarded client'),
     'tables-in-schema': restrict('ADR-002 L9a: tables are declared only in the schema'),
     'views-in-views': restrict('ADR-002 L9b: views are declared only in views'),
