@@ -20,6 +20,7 @@ export const core = {
   'shell.menu': 'Main menu',
   'shell.signedInAs': 'Signed in as {name}',
   'nav.home': 'Home',
+  'nav.admin': 'Admin',
   'enrol.qrAlt': 'QR code to add RadCore to your authenticator app',
   'enrol.typeKey': 'Can’t scan it? Type this key into the app instead:',
   'error.offline': 'RadCore could not be reached. Check the connection, then try again.',
