@@ -35,10 +35,11 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /admin/users/:id/invite': 'users:write',
   'POST /admin/users/:id/deactivate': 'users:write',
   'POST /admin/users/:id/reactivate': 'users:write',
-  // Admin: roles and the permission matrix (RAD-36), custom roles (RAD-83).
+  // Admin: roles and the permission matrix (RAD-36).
   'GET /admin/roles': 'roles:read',
   'GET /admin/permissions': 'roles:read',
   'PUT /admin/roles/:key/permissions': 'roles:write',
+  // Admin: custom roles and the built-in templates (RAD-83).
   'POST /admin/roles': 'roles:write',
   'PATCH /admin/roles/:key': 'roles:write',
   'POST /admin/roles/:key/delete': 'roles:write',
