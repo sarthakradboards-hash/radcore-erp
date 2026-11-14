@@ -22,6 +22,8 @@ const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: str
 const DAY = 86_400_000;
 const VIEW = 'sales.invoice_view';
 const ACCEPT = 'sales.estimate_accept';
+// A table of radcore's that exists today, standing in for the module's own (`invoices`).
+const TABLE = 'files';
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: ['sales:write'] };
 
 // Two link routes as a module would declare them: a read (no key), and a write (an ordinary write, with its key).
@@ -67,7 +69,7 @@ describe.skipIf(!url || !superUrl)('link routes', () => {
   const made = async (action: string, over: { uses?: number } = {}) => {
     const recordId = randomUUID();
     const expiresAt = new Date((await dbNow()).getTime() + 7 * DAY);
-    const link = await runInTransaction(db, WRITE, staff, randomUUID(), (ctx) => createLink(ctx, { action, recordId, expiresAt,
+    const link = await runInTransaction(db, WRITE, staff, randomUUID(), (ctx) => createLink(ctx, { action, recordTable: TABLE, recordId, expiresAt,
       ...(over.uses === undefined ? {} : { uses: over.uses }) }));
     return { ...link, recordId, expiresAt };
   };
@@ -86,7 +88,7 @@ describe.skipIf(!url || !superUrl)('link routes', () => {
     });
     expect(seen).toHaveBeenCalledWith({ kind: 'link', linkId: id, action: VIEW, recordId, permissions: [] }, { note: 'hi' });
     expect((await admin.query('select record_table, record_id, created_by from radcore.access_log where created_by = $1',
-      [`link:${id}`])).rows).toEqual([{ record_table: VIEW, record_id: recordId, created_by: `link:${id}` }]);
+      [`link:${id}`])).rows).toEqual([{ record_table: TABLE, record_id: recordId, created_by: `link:${id}` }]);
   });
 
   it('gives one answer to every token that isn\'t a live link for this action, whatever is wrong with it', async () => {

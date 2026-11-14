@@ -1,5 +1,5 @@
 {
-  "id": "b92659b7-3bea-45d0-8134-44d3d5211691",
+  "id": "5d73d5c6-f87c-4c9e-ae99-7931740c8eb1",
   "prevId": "13f977ea-9912-4460-a760-3f924660adf0",
   "version": "7",
   "dialect": "postgresql",
@@ -1063,6 +1063,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "record_table": {
+          "name": "record_table",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "record_id": {
           "name": "record_id",
           "type": "uuid",
@@ -1178,6 +1184,10 @@
         "ck_public_links_token_hash": {
           "name": "ck_public_links_token_hash",
           "value": "\"radcore\".\"public_links\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "ck_public_links_record_table": {
+          "name": "ck_public_links_record_table",
+          "value": "\"radcore\".\"public_links\".\"record_table\" ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || \"radcore\".\"public_links\".\"record_table\") is not null"
         },
         "ck_public_links_uses_left": {
           "name": "ck_public_links_uses_left",

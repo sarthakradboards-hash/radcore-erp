@@ -22,6 +22,9 @@ const ACTION = /^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sale
 export type NewLink = {
   /** The one thing the link lets its holder do, as its route contract names it. */
   action: string;
+  /** The table that record is in, as the module's tables name it (`invoices`): what access_log names when the link is
+   * used, so "who opened this record?" finds openings through links too. It must be one of radcore's tables. */
+  recordTable: string;
   /** The one record it lets them do it to. */
   recordId: string;
   /** When it stops working. Every link expires, within the `platform.public_link_max_days` setting (30 days). */
@@ -48,7 +51,7 @@ export async function createLink(ctx: Ctx, link: NewLink): Promise<{ id: string;
     throw new TypeError('a link\'s uses must be a whole number of at least 1');
   }
   const token = randomBytes(32).toString('base64url');
-  const [row] = await platformTx(ctx).insert(publicLinks).values({ action: link.action, recordId: link.recordId,
+  const [row] = await platformTx(ctx).insert(publicLinks).values({ action: link.action, recordTable: link.recordTable, recordId: link.recordId,
     tokenHash: sha256(token), expiresAt: link.expiresAt, usesLeft: link.uses ?? null }).returning({ id: publicLinks.id });
   if (row === undefined) throw new Error('the link was not stored');
   return { id: row.id, token };
@@ -109,11 +112,14 @@ export async function useLink(ctx: Ctx): Promise<void> {
 }
 
 /**
- * The access_log row for a request a link's holder made (ADR-005 §7c, the architect on RAD-41): what was opened, as the
- * link's action and record, by `link:<id>`. The generic handler writes it in a short write of its own once the
- * request's work has committed.
+ * The access_log row for a request a link's holder made (ADR-005 §7c, the architect on RAD-41): the record's table and
+ * id, like any opening, by `link:<id>`, whose link row names the action. The generic handler writes it in a short
+ * write of its own once the request's work has committed.
  */
 export async function recordLinkAccess(ctx: Ctx): Promise<void> {
   if (ctx.principal.kind !== 'link') throw new TypeError('recordLinkAccess needs a link principal');
-  await recordAccess(ctx.tx, ctx.principal.action, ctx.principal.recordId);
+  const [link] = await platformTx(ctx).select({ recordTable: publicLinks.recordTable }).from(publicLinks)
+    .where(eq(publicLinks.id, ctx.principal.linkId));
+  if (link === undefined) throw new Error('the link was not found');
+  await recordAccess(ctx.tx, link.recordTable, ctx.principal.recordId);
 }

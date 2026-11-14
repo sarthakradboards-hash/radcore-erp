@@ -315,9 +315,9 @@ a GET opens a full record:
 3. If that write fails, the request fails, and the record isn't returned without its log.
 
 A public link's request (`auth: 'link'`, ADR-001 §6a, RAD-41) is logged the same way, by the generic handler, after
-every such request's work commits. Its row's `record_table` holds the link's action (`sales.invoice_view`) and
-`record_id` the link's record: a link knows its action and record, not the record's table, and the pair still names
-exactly what was opened. The row's principal is `link:<id>`.
+every such request's work commits. Its row names the record's table and id, like any opening, and its principal is
+`link:<id>`, whose link row names the action. The module names the table when it makes the link
+(`public_links.record_table`, which must be one of radcore's tables).
 
 A full record is served, and its access logged, only when the browser's `Sec-Fetch-Site` is `same-origin`, or
 `none` (a typed address or a bookmark). Otherwise a cross-site link could make a person "open" a record they never

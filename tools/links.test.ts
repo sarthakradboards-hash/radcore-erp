@@ -3,7 +3,7 @@
 // is revoked or runs out of uses; and what its holder writes is stamped with the link's id. Here in tools/ because it
 // reads the tables and the audit log as an operator would.
 import { createHash, randomUUID } from 'node:crypto';
-import { createLink, linkPrincipal, linkUrl, listLinks, revokeLink, useLink, type Principal } from '@radcore/lib-platform';
+import { createLink, describeError, linkPrincipal, linkUrl, listLinks, revokeLink, useLink, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,8 @@ const url = process.env['TEST_DATABASE_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: ['sales:write'] };
 const ACTION = 'sales.invoice_view';
+// A table of radcore's that exists today, standing in for the module's own (`invoices`).
+const TABLE = 'files';
 const DAY = 86_400_000;
 
 describe.skipIf(!url)('public links', () => {
@@ -28,7 +30,7 @@ describe.skipIf(!url)('public links', () => {
   const made = async (over: { uses?: number; days?: number } = {}) => {
     const recordId = randomUUID();
     const expiresAt = new Date((await dbNow()).getTime() + (over.days ?? 7) * DAY);
-    const link = await as(staff, (ctx) => createLink(ctx, { action: ACTION, recordId, expiresAt,
+    const link = await as(staff, (ctx) => createLink(ctx, { action: ACTION, recordTable: TABLE, recordId, expiresAt,
       ...(over.uses === undefined ? {} : { uses: over.uses }) }));
     return { ...link, recordId, expiresAt };
   };
@@ -88,17 +90,21 @@ describe.skipIf(!url)('public links', () => {
     await as(principal ?? staff, (ctx) => useLink(ctx));
     expect(await holder(token)).not.toBeNull();
     const expiresAt = new Date((await dbNow()).getTime() + DAY);
-    await expect(as(principal ?? staff, (ctx) => createLink(ctx, { action: ACTION, recordId: randomUUID(), expiresAt })))
+    await expect(as(principal ?? staff, (ctx) => createLink(ctx, { action: ACTION, recordTable: TABLE, recordId: randomUUID(), expiresAt })))
       .rejects.toMatchObject({ code: 'forbidden' });
   });
 
   it('refuses a link with no future expiry, one past the 30-day maximum, a bad action, or a use count that isn\'t a whole number of at least 1', async () => {
     const soon = new Date((await dbNow()).getTime() + DAY);
-    const make = (over: object) => as(staff, (ctx) => createLink(ctx, { action: ACTION, recordId: randomUUID(), expiresAt: soon, ...over }));
+    const make = (over: object) => as(staff, (ctx) => createLink(ctx, { action: ACTION, recordTable: TABLE, recordId: randomUUID(), expiresAt: soon, ...over }));
     await expect(make({ expiresAt: new Date((await dbNow()).getTime() - DAY) })).rejects.toThrow('a link must expire in the future');
     await expect(make({ expiresAt: new Date((await dbNow()).getTime() + 31 * DAY) })).rejects.toThrow('at most 30 days');
     await expect(make({ action: 'Sales.View' })).rejects.toThrow('not a link action');
     await expect(make({ uses: 0 })).rejects.toThrow('at least 1');
     await expect(make({ uses: 1.5 })).rejects.toThrow('at least 1');
+    // Not a table of radcore's: access_log would name nothing anyone can look up (the architect on RAD-41).
+    const checkViolation = (err: unknown) => describeError(err).code === '23514';
+    await expect(make({ recordTable: 'no_such_table' })).rejects.toSatisfy(checkViolation);
+    await expect(make({ recordTable: 'Files; drop' })).rejects.toSatisfy(checkViolation);
   });
 });
