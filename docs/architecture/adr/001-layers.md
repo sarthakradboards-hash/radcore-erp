@@ -325,8 +325,9 @@ under these rules, each refused by name:
 - **Custom roles** can be created, copied, renamed and deleted. A role someone holds can't be deleted.
 - **Who changes them.** Changing a role's grants needs `roles:write`, and changing someone's role needs `users:write`.
   Admin and owner hold both, and both are bound by the rules below: nobody gives a key they don't hold.
-- **Keys that need the second factor.** The permission catalogue marks the keys that move money or reach payroll, HR
-  or user administration. A role holding any of them requires the second factor, whatever its own setting (D-19).
+- **Keys that need the second factor.** The permission catalogue marks the keys that move money, reach payroll, HR
+  or user administration, or set the company's tax identity (`company:write`, D-19). A role holding any of them
+  requires the second factor, whatever its own setting (D-19).
 - **Screens follow permissions.** The web shows what the person's keys allow, with no separate view setting.
 
 ### 7. The web client
