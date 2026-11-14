@@ -153,6 +153,28 @@ describe.skipIf(!url)('the migration runner', { timeout: 30_000 }, () => {
     });
   });
 
+  // RAD-35 (the auditor on #130): 0024_roles makes users.role NOT NULL. A database that already has people, such as a
+  // developer's after the bootstrap, must still take it: the first admin becomes admin, anyone else counter.
+  it('gives the people a database already has a role as 0024 makes it required: the first admin admin, the rest counter', async () => {
+    await withDatabase(async (db) => {
+      const roles = readJournal(MIGRATIONS_FOLDER).entries.findIndex((e) => e.tag.endsWith('_roles'));
+      expect(roles).toBeGreaterThan(0);
+      await withFolder(roles, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
+      await query(db, `begin;
+        set local app.principal = 'system:test';
+        insert into radcore.users (id, email, display_name) values
+          ('00000000-0000-4000-8000-000000000001', 'first.admin@example.in', 'First admin'),
+          ('00000000-0000-4000-8000-000000000002', 'someone@example.in', 'Someone');
+        insert into radcore.bootstrap (key, user_id) values ('first_admin', '00000000-0000-4000-8000-000000000001');
+        commit`);
+      await migrate(db);
+      expect(await query(db, 'select email, role, role_since is not null as since from radcore.users order by email')).toEqual([
+        { email: 'first.admin@example.in', role: 'admin', since: true }, { email: 'someone@example.in', role: 'counter', since: true }]);
+      expect(await query(db, "select is_nullable from information_schema.columns where table_schema = 'radcore' and table_name = 'users' and column_name = 'role'"))
+        .toEqual([{ is_nullable: 'NO' }]);
+    });
+  });
+
   it('is forward-only: an earlier release on a newer database changes nothing', async () => {
     await withDatabase(async (db) => {
       await migrate(db);

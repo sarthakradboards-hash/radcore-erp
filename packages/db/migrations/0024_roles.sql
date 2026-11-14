@@ -25,7 +25,8 @@ CREATE TABLE "radcore"."roles" (
 	CONSTRAINT "ck_roles_key" CHECK ("radcore"."roles"."key" ~ '^[a-z][a-z_]{1,31}$')
 );
 --> statement-breakpoint
-ALTER TABLE "radcore"."users" ADD COLUMN "role" text NOT NULL;--> statement-breakpoint
+-- Nullable at first, so a database that already has people takes it; set NOT NULL once each has a role (end of file).
+ALTER TABLE "radcore"."users" ADD COLUMN "role" text;--> statement-breakpoint
 ALTER TABLE "radcore"."users" ADD COLUMN "role_since" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "radcore"."role_grants" ADD CONSTRAINT "role_grants_role_roles_key_fk" FOREIGN KEY ("role") REFERENCES "radcore"."roles"("key") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."users" ADD CONSTRAINT "users_role_roles_key_fk" FOREIGN KEY ("role") REFERENCES "radcore"."roles"("key") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -73,3 +74,10 @@ UNION ALL
 SELECT 'accounts', k, 'all' FROM unnest(array['statement_files:read', 'statement_files:write']) AS k
 UNION ALL
 SELECT r, k, 'all' FROM unnest(array['stores', 'accounts']) AS r, unnest(array['import_files:read', 'import_files:write']) AS k;
+--> statement-breakpoint
+-- Anyone already here gets a role before the column tightens (the auditor on #130): the first admin is the admin, and
+-- anyone else the role with nothing but My work, for an admin to change. A fresh database has nobody, so nothing runs.
+UPDATE radcore.users SET role = CASE WHEN id IN (SELECT user_id FROM radcore.bootstrap) THEN 'admin' ELSE 'counter' END,
+  role_since = now() WHERE role IS NULL;
+--> statement-breakpoint
+ALTER TABLE "radcore"."users" ALTER COLUMN "role" SET NOT NULL;
