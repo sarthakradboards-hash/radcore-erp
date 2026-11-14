@@ -34,7 +34,7 @@ export function defineSeries(key: string, prefix: string): Series {
 export async function nextNumber(ctx: Ctx, series: Series, businessDate: string): Promise<string> {
   const prefix = ctx.settings.get(series.prefix);
   const year = financialYear(businessDate).label;
-  // The update sets `last` to itself; the database's trigger makes it exactly one more (migration 0032).
+  // The update sets `last` to itself; the database's trigger makes it exactly one more (migration 0033).
   const [row] = await platformTx(ctx).insert(numberCounters).values({ series: series.key, financialYear: year })
     .onConflictDoUpdate({ target: [numberCounters.series, numberCounters.financialYear], set: { last: numberCounters.last } })
     .returning({ last: numberCounters.last });

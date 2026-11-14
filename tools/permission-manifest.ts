@@ -51,6 +51,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /admin/audit': 'audit:read',
   'GET /admin/audit/tables': 'audit:read',
   'GET /admin/security-events': 'audit:read',
+  // The company profile (RAD-88): one company, set by whoever holds company:write.
+  'GET /admin/company': 'company:read',
+  'PUT /admin/company': 'company:write',
   // Files, by kind (RAD-43): each kind its own pair of keys.
   'POST /files/photo': 'photo_files:write',
   'POST /files/photo/:id/confirm': 'photo_files:write',
@@ -122,6 +125,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /admin/roles/:key/delete': PLATFORM,
   'POST /admin/roles/:key/reset': PLATFORM,
   'GET /admin/audit': PLATFORM,
+  // lib-accounts' services, which run under lib-platform's.
+  'GET /admin/company': ['lib-accounts', 'lib-platform'],
+  'PUT /admin/company': ['lib-accounts', 'lib-platform'],
   'GET /admin/audit/tables': PLATFORM,
   'GET /admin/security-events': PLATFORM,
   'POST /files/photo': PLATFORM,
