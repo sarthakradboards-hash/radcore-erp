@@ -135,8 +135,14 @@ describe.skipIf(!url)('roles and the permission matrix', () => {
     expect(await set('admin', ['session:read'])).toBe('role_not_editable');
     expect(await set(own, ['session:read'])).toBe('role_not_editable');
     expect(await set(target, ['session:read'], 'a'.repeat(64))).toBe('matrix_changed');
-    const unknown = await run(as, (ctx) => setRoleGrants(ctx, { key: target, grants: ['leads:fly', 'session:read'], version, reason }))
-      .catch((e: unknown) => e as AppError);
+    // With the matrix's version read just before, again if another file changed the matrix in between.
+    const tryUnknown = async () => {
+      const now = (await run(as, permissionMatrix)).version;
+      return run(as, (ctx) => setRoleGrants(ctx, { key: target, grants: ['leads:fly', 'session:read'], version: now, reason }))
+        .catch((e: unknown) => e as AppError);
+    };
+    let unknown = await tryUnknown();
+    for (let i = 0; i < 5 && (unknown as AppError).code === 'matrix_changed'; i++) unknown = await tryUnknown();
     expect([(unknown as AppError).code, (unknown as AppError).issues.map((i) => i.path)]).toEqual(['unknown_permission', [['grants', 0]]]);
     expect(await set('no_such_role', ['session:read'])).toBe('not_found');
     expect(await grantsOf(target)).toEqual([{ permission: 'session:read', scope: 'all' }]);
