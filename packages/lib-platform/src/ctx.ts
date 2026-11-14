@@ -28,14 +28,19 @@ export type Jobs = {
  */
 export type Files = Pick<FileStore, 'presignUpload' | 'downloadUrl'>;
 
-/** The session cookie, on the key-exempt routes only (ADR-001 §7a): set or cleared once the transaction commits. */
-export type SessionCookie = {
-  /** The request's short user-agent summary ("Chrome on Android"), with no IP. */
-  readonly device: string;
-  /** The session token the request's cookie already holds, if any. */
+/** One sign-in cookie: the token the request already holds, and a change applied once the transaction commits. */
+export type SignInCookie = {
   readonly incoming: string | null;
   set(token: string, expires: Date): void;
   clear(): void;
+};
+
+/** The sign-in cookies, on the sign-in routes only (ADR-001 §7a): the session's, and the pending sign-in's between the
+ * password and the second factor. */
+export type SessionCookie = SignInCookie & {
+  /** The request's short user-agent summary ("Chrome on Android"), with no IP. */
+  readonly device: string;
+  readonly pending: SignInCookie;
 };
 
 export type Ctx = {
@@ -47,7 +52,7 @@ export type Ctx = {
   readonly settings: Settings;
   /** `ctx.jobs.send(contract, input)`: the job runs after this transaction commits, never if it rolls back. */
   readonly jobs: Jobs;
-  /** Only on sign-in and sign-out's routes (the key-exempt list), whose answer sets or clears the cookie. */
+  /** Only on the sign-in routes: sign-in, its second-factor steps and sign-out (ADR-001 §7a). */
   readonly cookie?: SessionCookie;
   /** `ctx.files.presignUpload(kind, type)` and `ctx.files.downloadUrl(key, name)`: links, never bytes. */
   readonly files: Files;

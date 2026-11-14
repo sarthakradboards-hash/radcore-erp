@@ -24,6 +24,7 @@
     "csv-parse": "7.0.3",
     "csv-stringify": "6.9.0",
     "drizzle-orm": "0.45.4",
+    "otpauth": "9.5.2",
     "pg": "8.23.1",
     "pg-boss": "12.38.0",
     "pino": "10.4.0",
