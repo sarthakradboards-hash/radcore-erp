@@ -20,6 +20,8 @@ export const ADDRESS_LIMITS = {
   'token-link': { points: 120, windowSeconds: 60, blockSeconds: 60 },
   // GET /api/health (ADR-004 §2), which touches the database: the outside monitor checks a few times a minute.
   'health': { points: 60, windowSeconds: 60, blockSeconds: 60 },
+  // A page's error reports (RC-158): a page in an error loop sends a few, never hundreds.
+  'client-error': { points: 30, windowSeconds: 60, blockSeconds: 60 },
 } as const satisfies Record<string, Spec>;
 
 /** Requests per signed-in person, over every route (RC-194): a busy screen makes tens a minute, never hundreds. */
