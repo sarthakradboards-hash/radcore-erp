@@ -158,20 +158,14 @@ describe.skipIf(!url)('the outbox', () => {
       'select attempts, dead_at is not null as dead from radcore.jobs_outbox where id = $1', [row?.id])).rows[0];
     // These passes set aside after two tries, with no wait: other files' rows are held locked meanwhile, so the relay
     // skips them and only this row is tried that hard.
-    // Another relay may still try this row: tools/jobs.test.ts runs the real worker, whose relay takes every due row
-    // with its own limit and backoff. So how many tries the row has had isn't this test's to fix (it was 5 once, on
-    // dev at cdcefa0): it proves that this relay sets the row aside once its limit is reached, alerts once, and then
-    // takes it no more.
     const others = await pool.connect();
     try {
       await others.query('begin');
       await others.query('select id from radcore.jobs_outbox where request_id <> $1 for update skip locked', [requestId]);
-      await relayUntil(async () => expect(await stateOf()).toMatchObject({ dead: true }), queue, options);
-      const setAside = await stateOf();
-      expect(setAside?.attempts).toBeGreaterThanOrEqual(2);
+      await relayUntil(async () => expect(await stateOf()).toEqual({ attempts: 2, dead: true }), queue, options);
       // A row set aside is taken no more: another pass leaves it as it is, and alerts no more.
       await relayOutbox(db, queue, logger(), options);
-      expect(await stateOf()).toEqual(setAside);
+      expect(await stateOf()).toEqual({ attempts: 2, dead: true });
       expect(alert.mock.calls.map((c) => c[0]).filter((m) => m.includes(row?.id ?? '-'))).toHaveLength(1);
     } finally {
       await others.query('rollback');
