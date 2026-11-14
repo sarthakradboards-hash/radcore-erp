@@ -1,7 +1,8 @@
 # ADR-006: Ledger and posting
 
-- Status: proposed
-- Date: 2026-11-07
+- Status: accepted
+- Date: proposed 2026-11-07; accepted 2026-11-15, after a re-read against what M1 built, with batches and chassis
+  numbers (D-15) added (RAD-102, M2-18).
 - Ticket: RAD-60 (M2-01). The design basis for M2-03 (journal), M2-04 (numbers), M2-05 (stock), M2-06 (units) and
   M2-07 (books integrity).
 - Builds on: [ADR-001](001-layers.md) (lib-accounts owns the journal engine, lib-stock the stock and units engines;
@@ -22,7 +23,9 @@ v1's posting table was right on the common path (Technical report Theme 11). The
   (RC-206);
 - item locks blocked unrelated saves and could deadlock (RC-053);
 - the books check compared one total (RC-063);
-- a taken-back credit note was costed as a new return (RC-207), and a returned unit kept its sale (RC-128).
+- a taken-back credit note was costed as a new return (RC-207), and a returned unit kept its sale (RC-128);
+- a batch was a label: stock going out named none, a receipt line held one, and two suppliers' batch numbers were
+  merged (RC-028, D-15).
 
 This ADR sets the rules M2's engines build. It gives a hand-worked figure for every document (§8), so the tests
 assert numbers worked out away from the code (Technical report Theme 8).
@@ -38,6 +41,17 @@ A document's service, in its own library, posts inside the save's one transactio
 
 lib-stock may call lib-accounts (ADR-001 §4), so the stock engine posts its own revaluations (§4). lib-accounts
 never calls lib-stock.
+
+**One company (D-02, option A).** RadCore runs one legal entity. No ledger or document row carries a company id.
+The company profile (M2-02), its period lock and its financial years are the company's own rows.
+
+**Ledgers belong to the company, not to a person (E7, ADR-001 §6a).** No permission key lists a ledger table in
+its `records`: not `journal_entries`, `journal_lines`, `stock_movements`, `stock_positions`, `batches`,
+`stock_movement_batches`, `units` or `unit_events`. The engines read whole positions for whoever posts. Own scope
+applies to the documents that post to the ledgers, and a ledger report is gated by its own key.
+
+**Types.** The engines take and return lib-common's branded `Money`, `Rate` and `Quantity` (RAD-67). So E6's typed
+half covers every sum and comparison in them, and they round half up, as lib-common does.
 
 **One lock order (RC-053, M2-05).** Every posting takes its locks in this order, and no other:
 1. the company's period-lock row, and the filed-month lock row (M5-08), `FOR SHARE`. Moving a lock takes
@@ -255,6 +269,76 @@ been invoiced or taken back.
   stock, for example, has a `goods_receipt` entry and a `revaluation` entry (F15).
 - After the save, the **current** position of every touched item and location has value 0 when its quantity is 0,
   and a quantity below 0 only in negative-stock mode.
+- The batch checks in §4a.
+
+### 4a. Batches (D-15, M2-05, M4-02)
+
+Every stock item is tracked by batch, with no per-item switch (D-15). A batch carries quantity only: it never has a
+value or an average of its own, and §4's valuation runs per item and location as above. This is traceability, not
+batch costing.
+
+**A batch is its item's, from one supplier (RC-028).**
+- `batches (id, item_id, supplier_id, batch_no, batch_key)`. `supplier_id` is a party, or null for goods that came
+  from no supplier. `batch_no` is bounded text (ADR-005 §1), and `batch_key` is generated: the number in upper case,
+  without spaces.
+- A unique key on `(item_id, supplier_id, batch_key)` `NULLS NOT DISTINCT`. Two suppliers' "B-17" are two batches,
+  where v1 merged them.
+- `batches` is append-only (ADR-005 §7). A batch number entered wrongly is put right by moving the quantity to the
+  right batch (below), never by an edit, so the history stays as it happened.
+- Goods that carry no batch number take the receiving document's own number as their batch, with its supplier: a
+  goods receipt, opening stock, a job-work receipt or a count. So every unit of stock can still be traced to the
+  document that brought it in.
+
+**A movement's quantity, split by batch.**
+- `stock_movement_batches (id, movement_id, item_id, batch_id, qty)`, append-only, with `qty > 0`. `batch_id` is
+  null only for "batch unknown" (below).
+- `item_id` is the movement's, through a composite foreign key to `stock_movements (id, item_id)`, and a second one
+  to `batches (id, item_id)` keeps the batch the same item's. "Batch unknown" has no batch row, so only the first
+  applies to it.
+- A unique key on `(movement_id, batch_id)` `NULLS NOT DISTINCT`, so a movement names each batch once. One receipt
+  line can hold several lots, where v1 held one.
+- Kept apart from `stock_movements`, so a movement stays one row per document line. Splitting a line into a
+  movement per batch would round each issue on its own (§4) and break the line-share rules for part invoices and
+  take-backs.
+
+**Which batch moves.**
+- **Out:** the person picking names the batches from the goods. The engine never chooses: there's no first-in,
+  first-out or expiry order.
+- **Goods coming back** (a credit note that restocks, a delivery return, any cancellation's mirror) return to the
+  batches they left with. The engine takes them from the movement being undone, and a part return names which of
+  those batches, up to what each sent out less what has come back.
+- **A transfer's** `in` carries its `out`'s batches, and a job-work challan's likewise. A job-work receipt's goods
+  come in under the receipt's own number, as above.
+- **A serialised unit** keeps the batch it was received in (`units.batch_id`, §5), and a movement of serialised
+  units carries their batches.
+
+**Negative stock.** A delivery that takes a location below zero (§4) may leave the part beyond what's on hand with
+`batch_id` null: the goods' batch has not been received yet, so there's no batch row to name. That part shows as
+"batch unknown", below zero. When the goods arrive, their receipt names their real batch, which then holds the
+units that were already sold. A count (M4-06) puts it right: an `out` of the real batch and an `in` to "batch
+unknown", at one location and at the same value. The Stock in Hand lines would net to zero, so it posts no journal
+entry. A wrongly entered batch is moved to the right one the same way.
+
+**Checked at commit (RA007).**
+- Each `in` and `out` movement's batch rows add up to its quantity. A `revalue` has none. It's checked for every
+  movement the save wrote or gave batch rows to, so rows can't be added later to a movement already complete.
+- After the save, no touched item, location and batch is below zero. "Batch unknown" is never above zero, and below
+  zero only in negative-stock mode, so an `in` can name it only to bring it back towards zero.
+- A movement of serialised units carries, for each batch, as many units as its batch row says. This is counted with
+  §5's unit events.
+
+The checks need no lock of their own. A batch is inside its item and location, so the `stock_positions` lock (§1)
+already covers it. A new batch row is created with `INSERT … ON CONFLICT DO NOTHING`, only after the save has
+locked its stock positions. Two saves bringing in the same new batch then wait on its unique key only while
+holding positions already locked in order, so the wait can't form a cycle.
+
+**Reading it.**
+- `v_batch_on_hand` gives each item, location and batch: `in` rows minus `out` rows. An index on
+  `stock_movement_batches (batch_id)` serves it, the checks above and the recall query.
+- A recall query follows a batch's `out` rows to their movements' document lines, which are the deliveries, and
+  on to the invoices that bill them.
+- **Proof (M2-05, GL-021):** two lots received, 100 of lot 1 delivered. The view shows lot 1 as received minus 100,
+  and the recall query by lot 1 returns the delivery and its invoice.
 
 ### 5. Units by serial (M2-06)
 
@@ -268,6 +352,8 @@ separate columns (RC-027):
 | `promised_to` | Is it promised? | an order line, or null |
 | `location_id` | Where is it? | a location, or null while it's with a customer |
 | `sale_line_id` | Which sale is it on? | the delivery line it left on, or null |
+| `batch_id` | Which batch did it come in? | the batch it was received in (§4a), or null for a customer's own unit |
+| `chassis_no` | Which vehicle is it? | its chassis number, when its item has one (below), or null |
 
 So a customer's own scooter in the service bay (`customer`, at the service bay) is never counted as stock and can't
 be sold. A returned unit's sale is cleared (RC-128), which ends the customer warranty that came from it.
@@ -279,7 +365,7 @@ be sold. A returned unit's sale is cleared (RC-128), which ends the customer war
   the units engine (RC-026).
 - **Event kinds** are a fixed list in lib-common: `received`, `moved`, `reserved`, `released`, `delivered`,
   `delivery_returned`, `returned` (on a credit note), `returned_to_supplier`, `sent_to_job_work`,
-  `received_from_job_work`, `condition_changed`, `taken_in`, `handed_back` and `scrapped`.
+  `received_from_job_work`, `condition_changed`, `chassis_recorded`, `taken_in`, `handed_back` and `scrapped`.
 - **Each event is allowed only from certain states.** `unit_event_rules (kind, from_ownership)` is seeded by an
   owner migration, read-only to the runtime login, and checked against lib-common, like the posting rules. A refused event raises RA008. For example:
   - `received` needs no row yet, or `gone`, so a sold serial can't be received again at goods-receipt QC (RC-128);
@@ -291,7 +377,7 @@ be sold. A returned unit's sale is cleared (RC-128), which ends the customer war
     - **both**: `moved`, `sent_to_job_work`, `received_from_job_work`;
     - **in only**: `received`, `returned`, `delivery_returned`;
     - **out only**: `delivered`, `returned_to_supplier`, `scrapped`;
-    - **neither**: `reserved`, `released`, `condition_changed`, `taken_in`, `handed_back`.
+    - **neither**: `reserved`, `released`, `condition_changed`, `chassis_recorded`, `taken_in`, `handed_back`.
 
     A CHECK on the kind holds this.
   - Each reference points at a movement of the right direction: a composite foreign key from
@@ -302,6 +388,24 @@ be sold. A returned unit's sale is cleared (RC-128), which ends the customer war
     quantity, and each `in` movement as many naming it as `in_movement_id` (RA007). So a transfer of one unit is one
     event, counted once on each of its two movements.
   - The books check (§7) also compares, per item and location, the units we own there with the quantity on hand.
+- **A unit's batch** is named by its `received` event, which must be one of the batches on its `in` movement, and
+  it never changes (§4a). A composite foreign key to `batches (id, item_id)` keeps it the unit's own item's. A unit
+  taken in for service (`taken_in`) isn't our stock and has none.
+
+**Chassis numbers (D-15, M2-06, M2-10).** Some vehicles need a chassis number for their registration. Which ones
+is data, not code: each item has `has_chassis` (`boolean NOT NULL DEFAULT false`), set by an admin, so a new
+product can take chassis numbers without a code change (Sarthak, 14 Nov). `CHECK (not has_chassis or
+serialised)`: only a serialised item can have it.
+- `units.chassis_no` is bounded text, and `chassis_key` a generated column: the number in upper case, without
+  spaces or hyphens. A unique key on `chassis_key` across all items, where it's set: a chassis number names one
+  vehicle.
+- **`received`** must carry a chassis number when its item has the flag, and the trigger refuses one without it
+  (RA008). On `taken_in`, for a customer's vehicle in for service, it's optional.
+- **`chassis_recorded`**, from `ours` only and with a reason (`reason()`, RAD-36), records a number that's missing,
+  such as on a unit received before its item was flagged, or corrects one entered wrongly. The units audit trigger
+  keeps the old value and the new.
+- **`delivered`** is refused for a unit whose item has the flag and which has no chassis number (RA008), so every
+  such vehicle leaves with one for its papers.
 
 ### 6. What each document posts
 
@@ -372,7 +476,8 @@ The check runs in one read-only transaction at `REPEATABLE READ`, so every figur
 
 And, on the **current** position only (costs follow posting order, so an as-at position can hold a residue, §4):
 - every location at quantity 0 holds value 0;
-- serialised items: the units we own at each location equal the quantity there (`units` holds the current state).
+- serialised items: the units we own at each location equal the quantity there (`units` holds the current state);
+- batches: at each item and location, the batches' quantities add up to the quantity there (§4a).
 
 Every journey test ends with this check, and the parallel month compares against it (M5-18).
 
@@ -565,13 +670,40 @@ of basic, 1,800.00, and employer PF is the same. Professional tax is 200.00 and 
   59,565.30. Balance-sheet accounts aren't touched. A balance is a sum of lines, so the new year needs no opening
   entry.
 
+**F21. Batches** (M2-05, M4-02, M3-08). Start: no PAD at Stores. A receipt from supplier A of 10 PAD at 200.00:
+6 from lot L1 and 4 from lot L2. Supplier B's own lot L1 is already in another location.
+- Movement: Stores in 10, 2,000.00. Its batch rows: (A, L1) 6; (A, L2) 4. B's L1 is another batch, unique on
+  item, supplier and number.
+- Entry `goods_receipt`: Dr Stock in Hand (Stores) 2,000.00; Cr Goods Received Not Billed 2,000.00. The batches
+  don't change it.
+- A delivery of 7, picked as 6 of L1 and 1 of L2: Stores out 7, round(2,000.00 × 7 / 10, 2) = 1,400.00, one
+  movement with batch rows (A, L1) 6 and (A, L2) 1. The value is the item's average, whatever the batches.
+- After: Stores 3 at 600.00. `v_batch_on_hand`: (A, L1) 0, (A, L2) 3. A recall of (A, L1) returns this delivery,
+  then the invoice that bills it.
+- Variant, a pick of 7 from L1: refused (RA007), since L1 holds 6.
+- Variant, a delivery return of 2 of the 7: it names (A, L1) or (A, L2), up to 6 and 1, and nothing else.
+- Variant, an `in` of 1 to "batch unknown" while it's at 0: refused (RA007), since it would go above zero.
+- Variant, negative stock allowed and, instead of the 7, a delivery of 12 from the 10 on hand, the 2 extra not yet
+  received: the batch rows are
+  (A, L1) 6, (A, L2) 4, and unknown 2, so unknown is −2. A receipt of 5 of lot L3 comes in later, and the count
+  finds 3 of L3 on the shelf: it moves 2 out of (A, L3) and into unknown, at the same value, with no entry. After:
+  (A, L3) 3, unknown 0.
+
+**F22. A unit with a chassis number** (M2-06). SCOOTER's item has `has_chassis` set.
+- S-0006's `received` event without a chassis number: refused (RA008).
+- With `MA1EXAMPLE0000001`: accepted, and `chassis_key` is the same. Another unit, of any item, received with
+  `ma1-example-0000001` is refused, since its key is the same.
+- S-0002 came in before the flag was set and has none. Its `delivered` event is refused (RA008) until a
+  `chassis_recorded` event, with a reason, gives it one.
+
 ## Consequences
 
 - Each document's ticket (M3 to M6) builds its row of §6 and asserts its figure from §8. A document that isn't here
   adds a row and a figure to this ADR in its own PR.
 - The database refuses a manual journal on a control account, a document posted twice, unbalanced entries, stock
-  that disagrees with the books for a document, and a unit event its state doesn't allow. Two new error codes are
-  added to ADR-005 §9: RA007 (stock) and RA008 (units).
+  that disagrees with the books for a document, a batch taken below zero, a unit event its state doesn't allow,
+  and a flagged vehicle received or delivered without its chassis number. The error codes are ADR-005 §9's RA007
+  (stock and batches) and RA008 (units).
 - Stock value is per location, so Cost of Goods Sold depends on which location a sale ships from. Goods normally
   reach the showroom by transfer from Stores, at Stores' average, so the difference is small.
 - Sums over movements are read on every posting. At a dealership's volumes that's one indexed range read per item
@@ -598,3 +730,9 @@ fix figures:
   books check exists to find. Sums stay the source; a snapshot can be added later as a cache.
 - **Control accounts guarded by the service only.** That's v1's way, and a manual journal still reached them
   (RC-093). The composite key puts the rule in the database.
+- **Batch costing,** where each batch keeps its own value. D-15 chose traceability only, so a batch carries
+  quantity and the average stays per item and location.
+- **A batch column on `stock_movements`, one movement per batch.** It's one table fewer, but a line spread over
+  two batches would be two issues, each rounded on its own (§4), and the part-invoice and take-back shares would
+  have to be worked across several movements.
+- **A list of chassis variants in code.** Each new product would need a release. The item's flag is data (D-15).

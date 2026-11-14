@@ -160,6 +160,7 @@ A back-dated document is visible as one, and the lock is checked against `busine
 **Append-only tables, exactly:**
 - `journal_entries`, `journal_lines`;
 - `stock_movements`, `unit_events`;
+- `batches`, `stock_movement_batches` (D-15, ADR-006 §4a);
 - `payment_allocations`, `credit_applications`;
 - `audit_log`, `access_log`, `event_log`;
 - `webhook_delivery_attempts`.
@@ -274,8 +275,10 @@ They are append-only with explicit reversals:
   `redact` (written as `[redacted]`). Secrets, hashes and all personal data are redacted, and the schema test fails on
   an unlisted column. An update that changes nothing kept or redacted writes no row. Machinery tables (`saved_once`,
   `jobs_outbox`, `webhook_deliveries`, `sessions`, `change_reasons`, `user_sign_ins`) get the who-and-when trigger
-  only. A session's `last_seen_at` changes on every request, and its start and end are security events (RAD-34). A
-  person's last sign-in (`user_sign_ins`, RAD-36) is already a `sign_in` event.
+  only. Each is a queue, an intake record or working state: its own rows already say what happened and when, and
+  copying them would copy personal data into the append-only log (M6-16). A session's `last_seen_at` changes on every
+  request, and its start and end are security events (RAD-34). A person's last sign-in (`user_sign_ins`, RAD-36) is
+  already a `sign_in` event.
 - **Why a change was made** (RAD-36). When a write's contract asks for a reason (lib-common's `reason()`), the handler
   stores it in `change_reasons` and sets `app.reason_id`, and each audit row of that change carries `reason_id`, a
   reference, never the text. The reason's own table isn't copied into the audit log (`capture => false`), so the text
@@ -303,11 +306,12 @@ They are append-only with explicit reversals:
   - **Every partition** gets `REVOKE ALL ... FROM radcore_app, radcore_read`, whether a migration or the
     top-up (§8) made it. Rows go through the parent, and the owner's default privileges would otherwise let the
     app insert straight into an `audit_log` partition and forge audit rows.
-  - **Closed to the read-only login:** `radcore.secrets` (RAD-65). Its migration revokes everything from
-    `radcore_read`, and `tools/logins.test.ts` checks it. Also every `pii('pay')` column (RAD-40, D-20): the
-    migration that adds one revokes `radcore_read`'s SELECT on it, and `tools/logins.test.ts` lists it. The test
-    fails on any column named like pay (salary, wage, bank, IFSC, account number…) that isn't listed and closed,
-    unless its `NOT_PAY` list names it, with a reason, as business data that isn't pay.
+  - **Closed to the read-only login:** `radcore.secrets` (RAD-65) and `radcore.webhook_deliveries` (RAD-45). Each
+    one's migration revokes everything from `radcore_read`, and `tools/logins.test.ts` checks it. Also every
+    `pii('pay')` column (RAD-40, D-20): the migration that adds one revokes `radcore_read`'s SELECT on it, and
+    `tools/logins.test.ts` lists it. The test fails on any column named like pay (salary, wage, bank, IFSC, account
+    number…) that isn't listed and closed, unless its `NOT_PAY` list names it, with a reason, as business data that
+    isn't pay.
   - **The guard.** `tools/logins.test.ts` fails on any append-only table, log or view that `radcore_app` can
     still write, and on any partition either login holds a privilege on.
   - **The settings check** refuses `radcore_owner` as `DATABASE_URL` everywhere. In staging and production it
@@ -413,8 +417,8 @@ under 63 bytes (§1).
 | RA004 | a posted document was changed outside its cancel and write-once columns, moved to a status it may not reach, or deleted, or its lines were touched |
 | RA005 | a write ran with no principal in the request context |
 | RA006 | a document's header and lines disagree (total, round-off), or allocations exceed it |
-| RA007 | stock: a document's movements and its Stock in Hand lines disagree, an empty location holds value, a movement's units don't match its quantity, or an issue would take stock below zero (ADR-006 §4) |
-| RA008 | a unit event isn't allowed from the unit's current state (ADR-006 §5) |
+| RA007 | stock: a document's movements and its Stock in Hand lines disagree, an empty location holds value, a movement's units don't match its quantity, an issue would take stock below zero (ADR-006 §4), or a movement's batches don't add up to its quantity or take a batch below zero (ADR-006 §4a) |
+| RA008 | a unit event isn't allowed from the unit's current state, or a vehicle whose item has a chassis number is received or delivered without one (ADR-006 §5) |
 
 (The `RA` prefix keeps them apart from the register's RC-numbers, which name v1 defects.)
 
