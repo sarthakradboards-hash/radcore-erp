@@ -3,6 +3,7 @@ export { principalId, type Ctx, type Files, type Owned, type Principal, type Ses
 export { roleNeedsSecondFactor } from './auth/principal.ts';
 export { changeUserRole, listRolesFor, permissionMatrix, setRoleGrants } from './auth/roles-admin.ts';
 export { deactivatePerson, invitePerson, reactivatePerson, resendPersonInvite } from './auth/people-admin.ts';
+export { listPeople } from './auth/people-list.ts';
 export { assignRole } from './auth/roles.ts';
 export { AppError, RecordedRefusal } from './errors.ts';
 export { recordChangeReason } from './change-reasons.ts';

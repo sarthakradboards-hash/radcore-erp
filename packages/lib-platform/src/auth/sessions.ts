@@ -128,6 +128,9 @@ async function startSession(ctx: Ctx, cookie: SessionCookie, userId: string): Pr
   const token = randomBytes(32).toString('base64url');
   const now = new Date();
   const absolute = new Date(now.getTime() + SESSION_ABSOLUTE_SECONDS * 1000);
+  // The people list shows it (RAD-36). Written first: the session's insert below takes a share lock on the person's row
+  // through its foreign key, so two sign-ins that each took one and then updated the row would deadlock.
+  await platformTx(ctx).update(users).set({ lastSignInAt: now }).where(eq(users.id, userId));
   await platformTx(ctx).insert(sessions).values({ userId, tokenHash: sha256(token), device: cookie.device,
     idleExpiresAt: idleUntil(now, absolute), absoluteExpiresAt: absolute });
   await recordSecurityEvent(ctx, { kind: 'sign_in', detail: {} }, { userId, device: cookie.device });
