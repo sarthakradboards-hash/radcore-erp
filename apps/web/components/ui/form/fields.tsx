@@ -1,7 +1,9 @@
 'use client';
 // Every field has a visible <label> tied to its control, and its hint and error are read with it (M1-43, from M1-41).
 import { useId, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { isMasked } from '@radcore/lib-common';
 import { useFormContext, type FieldError } from 'react-hook-form';
+import { maskedLabel } from '../masked.tsx';
 import { useFieldName } from './form.tsx';
 
 type Common = { name: string; label: string; hint?: ReactNode };
@@ -72,16 +74,20 @@ export function RadioField({ name, label, hint, options }: Common & {
   );
 }
 
-/** A value the server masked for this person (a phone number, bank details). Shown read-only and never sent back:
- * the form leaves it out before checking and submitting, and edit contracts leave out-of-body fields alone (§7a). */
+/** A value the server masked for this person (a phone number, bank details): `{ masked }` on the wire (RAD-40).
+ * Shown read-only and never sent back: the form leaves it out before checking and submitting, and edit contracts
+ * leave out-of-body fields alone (§7a). A screen reader hears "Hidden" or "Hidden, ends 3210", not the bullets. */
 export function MaskedField({ name, label, hint }: Common) {
   useFieldName(name, 'masked');
   const id = useId();
   const value: unknown = useFormContext().getValues(name);
+  const mask = isMasked(value) ? value : { masked: '' };
+  const describedBy = [described(id, hint, undefined), `${id}-masked`].filter(Boolean).join(' ');
   return (
     <Frame id={id} label={label} hint={hint}>
       {/* No name and not registered, so it is no part of what the form sends. */}
-      <input id={id} readOnly value={typeof value === 'string' ? value : ''} aria-describedby={described(id, hint, undefined)} />
+      <input id={id} readOnly value={mask.masked} aria-describedby={describedBy} />
+      <span id={`${id}-masked`} className="visually-hidden">{maskedLabel(mask)}</span>
     </Frame>
   );
 }

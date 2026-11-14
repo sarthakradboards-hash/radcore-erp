@@ -101,7 +101,18 @@ test.describe('the form', () => {
       { name: 'Asha Traders & Sons', limit: '75000.50', note: 'Prefers morning delivery' });
     await expect(form(page).getByLabel('Phone')).toHaveValue('••••••3210');
     await expect(form(page).getByLabel('Phone')).toHaveJSProperty('readOnly', true);
+    // A screen reader hears the words, not "bullet bullet…" (RAD-103, the architect on RAD-40).
+    await expect(form(page).getByLabel('Phone')).toHaveAccessibleDescription('Hidden, ends 3210');
   });
+});
+
+test('a masked value reads "Hidden", or "Hidden, ends …" for a last-4 field; the bullets are hidden from screen readers', async ({ page }) => {
+  await open(page);
+  const values = page.getByRole('definition');
+  const list = page.locator('dl[aria-label="Masked values"]');
+  await expect(list.locator('[aria-hidden="true"]')).toHaveText(['••••••', '••••••234F']);
+  await expect(list.locator('.visually-hidden')).toHaveText(['Hidden', 'Hidden, ends 234F']);
+  await expect(values.filter({ hasText: 'Pune' })).toHaveText('Pune');
 });
 
 test.describe('the menu and dialogs', () => {
