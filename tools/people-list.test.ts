@@ -36,14 +36,13 @@ describe.skipIf(!url)('the people list', () => {
   async function people(tag: string, specs: { n: number; role?: string; status?: 'active' | 'invited' | 'disabled'; hoursAgo?: number | null }[]) {
     const ids: Record<number, string> = {};
     for (const { n, role = 'sales', status = 'active', hoursAgo = null } of specs) {
-      // The person and their sign-in row together, as an invite makes them.
-      const [row] = await asAdmin<{ id: string }>(`with u as (insert into radcore.users (email, display_name, status,
-        password_hash, password_set_at, role) values ($1, $2, $3, $4, case when $4::text is null then null else now() end, $5)
-        returning id)
-        insert into radcore.user_sign_ins (user_id, last_sign_in_at) select id,
-        case when $6::int is null then null else now() - make_interval(hours => $6::int) end from u returning user_id as id`,
+      // The person; the database makes their sign-in row (0031), which then gets the time.
+      const [row] = await asAdmin<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
+        password_set_at, role) values ($1, $2, $3, $4, case when $4::text is null then null else now() end, $5) returning id`,
       [`${tag}.${String(n)}@example.in`, `${tag} ${String(n)}`, status, status === 'invited' ? null : '$argon2id$v=19$m=19456,t=2,p=1$x$y',
-        role, hoursAgo]);
+        role]);
+      await asAdmin(`update radcore.user_sign_ins set last_sign_in_at =
+        case when $2::int is null then null else now() - make_interval(hours => $2::int) end where user_id = $1`, [row?.id, hoursAgo]);
       ids[n] = row?.id ?? '';
     }
     return ids;

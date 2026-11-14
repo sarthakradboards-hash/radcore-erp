@@ -4,7 +4,7 @@
 // reset link, so a disabled person can't get back in by any route. Each change is audited through the users trigger,
 // and a reason the contract asks for is kept with its audit rows by the handler.
 import { normaliseEmail } from '@radcore/lib-common';
-import { invites, passwordResets, platformTx, roles, userSignIns, users } from '@radcore/db/platform';
+import { invites, passwordResets, platformTx, roles, users } from '@radcore/db/platform';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { deactivateUser, inviteUser, reactivateUser, resendInvite } from '../contract.ts';
@@ -35,7 +35,6 @@ export async function invitePerson(ctx: Ctx, { email, displayName, role }: In<ty
   const [person] = await tx.insert(users).values({ email: address, displayName, role, roleSince: new Date() })
     .returning({ id: users.id });
   const id = person?.id ?? '';
-  await tx.insert(userSignIns).values({ userId: id });
   await ctx.jobs.send(INVITE_EMAIL, { userId: id });
   return { id };
 }
