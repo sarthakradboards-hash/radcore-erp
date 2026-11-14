@@ -95,6 +95,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /password-reset/request': PLATFORM,
   'POST /password-reset': PLATFORM,
   'POST /invites/accept': PLATFORM,
+  'POST /client-errors': PLATFORM,
   'POST /sign-out': PLATFORM,
   'GET /me': PLATFORM,
   'POST /me/password': PLATFORM,

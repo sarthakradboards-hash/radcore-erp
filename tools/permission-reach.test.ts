@@ -7,7 +7,7 @@
 import { readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative, resolve } from 'node:path';
-import { loadConfig, type JobDefinition, type Route } from '@radcore/lib-platform';
+import { createClientErrors, loadConfig, type JobDefinition, type Route } from '@radcore/lib-platform';
 import { createAuth } from '@radcore/lib-platform/runtime';
 import { testSettings } from '@radcore/test-helpers';
 import { cruise } from 'dependency-cruiser';
@@ -115,15 +115,17 @@ function disagreements(found: Readonly<Record<string, readonly string[]>>, table
 describe('the manifest’s reach', () => {
   const cfg = loadConfig(testSettings(), 'api');
   async function derived(): Promise<Record<string, readonly string[]>> {
-    const auth = await createAuth(cfg, { info: () => undefined, error: () => undefined });
+    const log = { info: () => undefined, error: () => undefined };
+    const auth = await createAuth(cfg, log);
+    const clientErrors = createClientErrors(log);
     let routes: readonly Route[];
     try {
-      routes = apiRoutes(auth);
+      routes = apiRoutes(auth, clientErrors);
     } finally {
       await auth.store.stop();
     }
     const jobs: readonly JobDefinition[] = workerJobs({ mailer: { send: async () => undefined }, publicOrigin: cfg.publicOrigin });
-    const routeFiles = entriesOf(LISTS.api, { 'auth.routes': auth.routes.length });
+    const routeFiles = entriesOf(LISTS.api, { 'auth.routes': auth.routes.length, 'clientErrors.routes': clientErrors.routes.length });
     const jobFiles = entriesOf(LISTS.worker, {});
     expect([routeFiles.length, jobFiles.length]).toEqual([routes.length, jobs.length]);
     const keys = [...routes.map((r) => `${r.contract.method} ${r.contract.path}`), ...jobs.map((j) => j.name)];
@@ -137,7 +139,7 @@ describe('the manifest’s reach', () => {
 
   it('reads each route file as the api mounts it, and finds the service’s own file', () => {
     // files.ts's first route is the photo upload, served by lib-platform's files engine.
-    const [first] = entriesOf(LISTS.api, { 'auth.routes': 0 });
+    const [first] = entriesOf(LISTS.api, { 'auth.routes': 0, 'clientErrors.routes': 0 });
     // A list built at start is sized from the runtime by name, wherever it sits; one with no size is refused.
     expect(() => entriesOf(LISTS.api, {})).toThrow('no runtime size given for auth.routes');
     expect(first?.some((f) => f.startsWith('packages/lib-platform/src/files/'))).toBe(true);

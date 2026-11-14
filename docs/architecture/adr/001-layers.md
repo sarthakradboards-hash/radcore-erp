@@ -282,9 +282,10 @@ route or job with no line, a line for one that's gone, or a check that differs, 
 CI. Every key named must be in the matrix's catalogue (`permissions.ts`). A change to a route's check changes its line
 in the same review. The manifest also lists, by hand, the libraries each route's and job's own code reaches
 (`ROUTE_REACH`, RAD-84). Its test works the reach out from the code: TypeScript resolves each route or job file's
-service, and what builds a route or job at start, to its file, and dependency-cruiser follows that file's imports to
-every library, lib-common aside. A route or job that starts reaching another module's services, or stops, fails CI
-until its line changes. It can't see a call made through a value rather than an import.
+service and `before`, and what builds a route or job at start, to their files, and dependency-cruiser follows those
+files' imports to every library, lib-common aside. A route or job that starts reaching another module's services, or
+stops, fails CI until its line changes. It lists libraries, not the services within one, and it can't see a call made
+through a value rather than an import.
 
 **How the scope rule reads (RAD-35).** A record's owner is named as audit rows name a principal (`user:<id>`): usually
 its `created_by`, or a module's own owner column. `ctx.can(perm, { owner })` answers it; `ctx.see(perm, { owner })`
