@@ -185,7 +185,8 @@ describe.skipIf(!url)('the migration runner', { timeout: 30_000 }, () => {
     it('stops, naming how many, when anyone else has no role, and applies none of it', async () => {
       await withDatabase(async (db) => {
         await before(db, 2);
-        await expect(migrate(db)).rejects.toThrow(/2 people have no role: assign roles before upgrading/);
+        // drizzle wraps the database's error; its cause is the migration's own message.
+        await expect(migrate(db)).rejects.toMatchObject({ cause: { message: expect.stringMatching(/^2 people have no role/) } });
         expect(await applied(db)).toBe(upTo);
         expect(await query(db, "select count(*)::int as n from information_schema.columns where table_schema = 'radcore' and table_name = 'users' and column_name = 'role'"))
           .toEqual([{ n: 0 }]);

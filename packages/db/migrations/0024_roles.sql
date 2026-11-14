@@ -86,7 +86,7 @@ DECLARE
 BEGIN
   SELECT count(*) INTO roleless FROM radcore.users WHERE role IS NULL;
   IF roleless > 0 THEN
-    RAISE EXCEPTION '% people have no role: assign roles before upgrading (RAD-35)', roleless;
+    RAISE EXCEPTION '% people have no role, and roles only arrive with this migration: remove them, or reset a development database (RAD-35)', roleless;
   END IF;
 END $$;
 --> statement-breakpoint

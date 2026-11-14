@@ -68,7 +68,7 @@ describe.skipIf(!url)('roles and record scope', () => {
   it("loads a person as their role is now: its keys, the own-only ones, and nothing cached (RC-095)", async () => {
     const role = roleKey();
     await sql("insert into radcore.roles (key, name, description) values ($1, 'Test role', 'For roles.test.ts')", [role]);
-    await sql("insert into radcore.role_grants (role, permission, scope) values ($1, 'leads:read', 'own'), ($1, 'audit:read', 'all')", [role]);
+    await sql("insert into radcore.role_grants (role, permission, scope) values ($1, 'session:read', 'all'), ($1, 'leads:read', 'own'), ($1, 'audit:read', 'all')", [role]);
     const id = await activePerson(role);
     expect(await load(`user:${id}`)).toEqual({ kind: 'user', userId: id, role, permissions: ['audit:read', 'leads:read', 'session:read'],
       ownScope: ['leads:read'] });
@@ -93,7 +93,7 @@ describe.skipIf(!url)('roles and record scope', () => {
   it("answers not_found for a record outside the person's scope, as for no record at all (RAD-7)", async () => {
     const role = roleKey();
     await sql("insert into radcore.roles (key, name, description) values ($1, 'Test role', 'For roles.test.ts')", [role]);
-    await sql("insert into radcore.role_grants (role, permission, scope) values ($1, 'leads:read', 'own')", [role]);
+    await sql("insert into radcore.role_grants (role, permission, scope) values ($1, 'session:read', 'all'), ($1, 'leads:read', 'own')", [role]);
     const id = await activePerson(role);
     const asha = await load(`user:${id}`);
     if (asha === null) throw new Error('the person did not load');
