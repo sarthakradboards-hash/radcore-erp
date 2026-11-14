@@ -17,13 +17,17 @@ describe('placeIssues', () => {
 
 describe('formAlert', () => {
   it('says what the server said, with the issues no field shows', () => {
-    expect(formAlert('conflict', 'Changed by someone else', [])).toBe('Changed by someone else');
-    expect(formAlert('invalid', 'Check the form', ['Not a GSTIN', 'Period is locked']))
+    expect(formAlert('conflict', undefined, 'Changed by someone else', [])).toBe('Changed by someone else');
+    expect(formAlert('invalid', undefined, 'Check the form', ['Not a GSTIN', 'Period is locked']))
       .toBe('Check the form: Not a GSTIN; Period is locked');
   });
 
+  it('lets the screen’s own words for a code stand alone, without the server’s issue text (e2e on #145)', () => {
+    expect(formAlert('role_in_use', 'People still hold this role.', 'role_in_use', ['1'])).toBe('People still hold this role.');
+  });
+
   it('says nothing for signed_out, which the signed-out dialog handles (RC-147)', () => {
-    expect(formAlert('signed_out', 'Sign in again.', [])).toBeNull();
+    expect(formAlert('signed_out', 'Signed out', 'Sign in again.', [])).toBeNull();
   });
 });
 

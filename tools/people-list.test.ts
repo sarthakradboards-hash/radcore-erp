@@ -1,5 +1,5 @@
 // RAD-36: the people list on a real PostgreSQL, as the runtime login. Paged by the sort column and id, so no row is
-// skipped or repeated; sorted by last sign-in on a key that's epoch for "never" (the architect on RAD-36), answering
+// skipped or repeated; sorted by last sign-in on user_sign_ins' key, epoch for "never" (the architect on RAD-36), answering
 // the real time or null. Each test finds only its own people, by a tag in their names: the database is shared.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -36,9 +36,12 @@ describe.skipIf(!url)('the people list', () => {
   async function people(tag: string, specs: { n: number; role?: string; status?: 'active' | 'invited' | 'disabled'; hoursAgo?: number | null }[]) {
     const ids: Record<number, string> = {};
     for (const { n, role = 'sales', status = 'active', hoursAgo = null } of specs) {
-      const [row] = await asAdmin<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
-        password_set_at, role, last_sign_in_at) values ($1, $2, $3, $4, case when $4::text is null then null else now() end, $5,
-        case when $6::int is null then null else now() - make_interval(hours => $6::int) end) returning id`,
+      // The person and their sign-in row together, as an invite makes them.
+      const [row] = await asAdmin<{ id: string }>(`with u as (insert into radcore.users (email, display_name, status,
+        password_hash, password_set_at, role) values ($1, $2, $3, $4, case when $4::text is null then null else now() end, $5)
+        returning id)
+        insert into radcore.user_sign_ins (user_id, last_sign_in_at) select id,
+        case when $6::int is null then null else now() - make_interval(hours => $6::int) end from u returning user_id as id`,
       [`${tag}.${String(n)}@example.in`, `${tag} ${String(n)}`, status, status === 'invited' ? null : '$argon2id$v=19$m=19456,t=2,p=1$x$y',
         role, hoursAgo]);
       ids[n] = row?.id ?? '';
@@ -100,6 +103,17 @@ describe.skipIf(!url)('the people list', () => {
       ['3', 'disabled', 'sales', 'not_required', false], ['4', 'active', 'accounts', 'enrolled', false]]);
     expect((await page(as, { filter: { search: tag, status: 'invited' }, limit: 10 })).items.map((r) => r.id)).toEqual([p[2]]);
     expect((await page(as, { filter: { search: tag, role: 'sales' }, limit: 10 })).items.map((r) => r.id)).toEqual([p[2], p[3]]);
+  });
+
+  it('needs a second factor for a role that holds such a key, even with its own setting off (roleNeedsSecondFactor)', async () => {
+    const tag = `ps${letters()}`;
+    // A stray grant on a role whose flag is off: sign-in asks for the factor, so the list says so too.
+    const key = `t_${letters()}`;
+    await asAdmin("insert into radcore.roles (key, name, description) values ($1, $1, 'For people-list.test.ts')", [key]);
+    await asAdmin("insert into radcore.role_grants (role, permission, scope) values ($1, 'pay:read', 'all')", [key]);
+    const p = await people(tag, [{ n: 1, role: key }]);
+    expect((await page(caller(), { filter: { search: tag }, limit: 10 })).items.map((r) => [r.id, r.secondFactor]))
+      .toEqual([[p[1], 'enrolment_required']]);
   });
 
   it('refuses a page key made under another sort', async () => {

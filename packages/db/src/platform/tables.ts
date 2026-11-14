@@ -74,31 +74,31 @@ export const users = radcoreTable('users', {
   role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
   // When the person gained their role (RAD-35): approval rules refuse a decider whose role is newer than the request.
   roleSince: timestamp({ withTimezone: true }),
-  // Null until their first session (RAD-36). The people list sorts on last_sign_in_sort, the same with never as epoch,
-  // since a sort key is never null (the architect on RAD-36); text mode keeps its microseconds for the page key.
-  lastSignInAt: timestamp({ withTimezone: true }),
-  lastSignInSort: timestamp({ withTimezone: true, mode: 'string' }).notNull()
-    .generatedAlwaysAs(sql`coalesce(last_sign_in_at, timestamptz 'epoch')`),
 }, (t) => [
   check('ck_users_status', sql`${t.status} in ('invited', 'active', 'disabled')`),
-  // Active means a password is set; invited means none yet. Disabled may be either: an invited person can be
-  // deactivated before they ever set one (RAD-36), and reactivating them puts them back to invited.
+  // Active has a password, invited none; disabled either, as an invite can be deactivated (RAD-36).
   check('ck_users_password', sql`(${t.status} <> 'active' or ${t.passwordHash} is not null) and (${t.status} <> 'invited' or ${t.passwordHash} is null)`),
   uniqueIndex('ux_users_email_key').on(t.emailKey),
   index('ix_users_role').on(t.role),
-  index('ix_users_last_sign_in').on(t.lastSignInSort, t.id),
 ]);
 
-/**
- * Roles (RAD-35, M1-17; the plan's page 4): each person signs in with one. `key` never changes, and `name` is what
- * people see. A role that needs the second sign-in factor says so (D-19). What a role may do is its grants.
- */
+/** Roles (RAD-35, M1-17; the plan's page 4): each person signs in with one. `key` never changes; `name` is what people
+ * see, and `name_key` (it without case or extra spaces) is unique, so no two roles look alike (RAD-83, RC-044). A role
+ * needing the second sign-in factor says so (D-19). What a role may do is its grants. */
 export const roles = radcoreTable('roles', {
   key: text().primaryKey(),
   name: boundedText({ max: 60 }).notNull(),
+  nameKey: text().notNull().generatedAlwaysAs(sql`lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))`),
   description: boundedText({ max: 500 }).notNull(),
   secondFactorRequired: boolean().notNull().default(false),
-}, (t) => [check('ck_roles_key', sql`${t.key} ~ '^[a-z][a-z_]{1,31}$'`)]);
+}, (t) => [check('ck_roles_key', sql`${t.key} ~ '^[a-z][a-z_]{1,31}$'`), uniqueIndex('ux_roles_name_key').on(t.nameKey)]);
+
+/** The built-in roles' templates (RAD-83): the grants each shipped with, seeded by migration; a reset restores them. */
+export const roleTemplates = radcoreTable('role_templates', {
+  role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
+  permission: text().notNull(), scope: text().notNull(),
+}, (t) => [primaryKey({ name: 'pk_role_templates', columns: [t.role, t.permission] }),
+  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own')`)]);
 
 /**
  * What a role may do (RAD-35, ADR-001 §6a): one permission key each, at a scope. `all` reaches every record of that
@@ -286,6 +286,16 @@ export const dataExports = radcoreTable('exports', {
     and ((${t.status} = 'ready') = (${t.rows} is not null)) and (${t.rows} is null or ${t.rows} >= 0)`),
   check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
 ]);
+
+/** When each person last signed in (RAD-36), made with the person and set when a session starts. Machinery, not
+ * row-audited (ADR-005 §7c): a sign-in is already a `sign_in` event. The people list sorts on `sort_key`, epoch for
+ * never, since a sort key is never null; text mode keeps its microseconds for the page key (the architect on RAD-36). */
+export const userSignIns = radcoreTable('user_sign_ins', {
+  userId: uuid().primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  lastSignInAt: timestamp({ withTimezone: true }),
+  sortKey: timestamp({ withTimezone: true, mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`coalesce(last_sign_in_at, timestamptz 'epoch')`),
+}, (t) => [index('ix_user_sign_ins_sort_key').on(t.sortKey, t.userId)]);
 
 /** Sign-in sessions (RAD-34, ADR-001 §7a): the cookie's token, stored as its SHA-256. Past either expiry, or ended, a
  * session signs nobody in. `device` names the browser, never an address. Not row-audited (ADR-005 §7c). */

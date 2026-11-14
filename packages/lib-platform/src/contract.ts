@@ -103,6 +103,7 @@ export const listRoles = defineContract({
   output: z.object({ roles: z.array(z.object({
     key: roleKey(), name: z.string(), description: z.string(), userCount: z.number().int().nonnegative(),
     secondFactorRequired: z.boolean(), grantable: z.boolean(),
+    builtIn: z.boolean(), // one of the plan's roles: reset to its template, never deleted (RAD-83)
   })) }),
 });
 
@@ -125,6 +126,48 @@ export const setRolePermissions = defineContract({
   input: z.object({ key: roleKey(), grants: permissionKeys, version: z.string(), reason: reason() }),
   output: z.object({ version: z.string() }),
   errors: ['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held', 'basics_required',
+    'permission_not_for_role'],
+});
+
+// Custom roles (RAD-83, decided 14 Nov): admin and owner make their own, and the plan's roles are editable templates.
+const roleName = () => z.string().trim().min(1, 'Name the role').max(60);
+const roleDescription = () => z.string().trim().max(500);
+
+/** A new role: blank, holding only the signed-in basics, or a copy of `copyFrom`'s grants and scopes (never its people
+ * or its second-factor setting, which follows its keys). Its key is made from its name and never changes. A copy
+ * can't carry a key the caller doesn't hold (permission_not_held). A key kept for named roles (D-20: pay:read) is left
+ * out and named in `droppedKeys`, never silently (the architect on RAD-83); that is the only reason a key is dropped
+ * (permission_not_for_role), and `[]` when none was. name_taken: two roles never share a name, whatever the case or
+ * spacing. */
+export const createRole = defineContract({
+  method: 'POST', path: '/admin/roles', auth: 'session', perm: 'roles:write', tx: write,
+  input: z.object({ name: roleName(), description: roleDescription(), copyFrom: roleKey().optional(), reason: reason() }),
+  output: z.object({ key: roleKey(), droppedKeys: permissionKeys }),
+  errors: ['name_taken', 'permission_not_held'],
+});
+
+/** A role's name or description; a built-in role keeps its key. Not the admin role, nor the caller's own, nor one
+ * holding a key the caller doesn't (permission_not_held). */
+export const updateRole = defineContract({
+  method: 'PATCH', path: '/admin/roles/:key', auth: 'session', perm: 'roles:write', tx: write,
+  input: z.object({ key: roleKey(), name: roleName().optional(), description: roleDescription().optional(), reason: reason() }),
+  output: z.object({}), errors: ['role_not_editable', 'name_taken', 'permission_not_held'],
+});
+
+/** A custom role nobody holds, and holding no key the caller doesn't (permission_not_held). role_in_use while anyone
+ * holds it, deactivated people included; a built-in role can't be. A
+ * POST, not a DELETE: a DELETE's input travels in the URL, and the reason is the person's own words. */
+export const deleteRole = defineContract({
+  method: 'POST', path: '/admin/roles/:key/delete', auth: 'session', perm: 'roles:write', tx: write,
+  input: z.object({ key: roleKey(), reason: reason() }), output: z.object({}), errors: ['role_not_deletable', 'role_in_use', 'permission_not_held'],
+});
+
+/** A built-in role's grants back to its template, as one change, under setRolePermissions' rules (a key the caller
+ * doesn't hold is neither given nor taken away). not_a_template: a custom role has none. */
+export const resetRole = defineContract({
+  method: 'POST', path: '/admin/roles/:key/reset', auth: 'session', perm: 'roles:write', tx: write,
+  input: z.object({ key: roleKey(), version: z.string(), reason: reason() }), output: z.object({ version: z.string() }),
+  errors: ['not_a_template', 'role_not_editable', 'matrix_changed', 'permission_not_held', 'basics_required',
     'permission_not_for_role'],
 });
 

@@ -76,6 +76,8 @@ describe.skipIf(!url)('inviting, deactivating and reactivating people', () => {
     expect(await asAdmin('select email, status, role, role_since is not null as since from radcore.users where id = $1', [id]))
       .toEqual([{ email: email.toLowerCase(), status: 'invited', role: plain, since: true }]);
     expect(queued).toEqual([[INVITE_EMAIL.name, { userId: id }]]);
+    // Made with their sign-in row, never signed in, so the people list shows them (the architect on RAD-36).
+    expect(await asAdmin('select last_sign_in_at from radcore.user_sign_ins where user_id = $1', [id])).toEqual([{ last_sign_in_at: null }]);
     const again = async (address: string, r: string) =>
       outcome(run(await mgr.as(), (ctx) => invitePerson(ctx, { email: address, displayName: 'X', role: r })));
     expect(await again(email.toUpperCase(), plain)).toBe('email_taken');

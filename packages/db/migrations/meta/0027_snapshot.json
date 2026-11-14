@@ -1,5 +1,5 @@
 {
-  "id": "50616cb2-d881-47b9-a284-d521f0327540",
+  "id": "32e31d06-bdb5-4648-8289-c78006d00819",
   "prevId": "f2a81c43-a409-4a13-b017-19819bfaeb70",
   "version": "7",
   "dialect": "postgresql",
@@ -1447,6 +1447,93 @@
       },
       "isRLSEnabled": false
     },
+    "radcore.role_templates": {
+      "name": "role_templates",
+      "schema": "radcore",
+      "columns": {
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "role_templates_role_roles_key_fk": {
+          "name": "role_templates_role_roles_key_fk",
+          "tableFrom": "role_templates",
+          "tableTo": "roles",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "role"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "pk_role_templates": {
+          "name": "pk_role_templates",
+          "columns": [
+            "role",
+            "permission"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_role_templates_scope": {
+          "name": "ck_role_templates_scope",
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "radcore.roles": {
       "name": "roles",
       "schema": "radcore",
@@ -1462,6 +1549,16 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "name_key": {
+          "name": "name_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
+          }
         },
         "description": {
           "name": "description",
@@ -1505,7 +1602,23 @@
           "default": "nullif(current_setting('app.principal', true), '')"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "ux_roles_name_key": {
+          "name": "ux_roles_name_key",
+          "columns": [
+            {
+              "expression": "name_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -2220,7 +2333,7 @@
         },
         "ck_users_password": {
           "name": "ck_users_password",
-          "value": "(\"radcore\".\"users\".\"status\" <> 'active' or \"radcore\".\"users\".\"password_hash\" is not null) and (\"radcore\".\"users\".\"status\" <> 'invited' or \"radcore\".\"users\".\"password_hash\" is null)"
+          "value": "(\"radcore\".\"users\".\"status\" = 'invited') = (\"radcore\".\"users\".\"password_hash\" is null)"
         }
       },
       "isRLSEnabled": false

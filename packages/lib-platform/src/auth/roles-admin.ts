@@ -10,7 +10,7 @@
 // is audited through the roles, role_grants and users triggers, each row pointing at the typed reason, which the
 // handler keeps first (change-reasons.ts).
 import { createHash } from 'node:crypto';
-import { platformTx, roleGrants, roles, users } from '@radcore/db/platform';
+import { platformTx, roleGrants, roles, roleTemplates, users } from '@radcore/db/platform';
 import { and, asc, count, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { getPermissionMatrix, listRoles, setRolePermissions, setUserRole } from '../contract.ts';
@@ -18,14 +18,15 @@ import type { Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import { PERMISSIONS, SIGNED_IN_BASICS } from '../permissions.ts';
 import { principalFor } from './principal.ts';
+import { afterGrantsChanged } from './role-rules.ts';
 import { endSessionsOf } from './sessions.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
-type Tx = ReturnType<typeof platformTx>;
+export type Tx = ReturnType<typeof platformTx>;
 
-const ADMIN = 'admin';
-const CATALOG = new Map(PERMISSIONS.map((p) => [p.key, p]));
+export const ADMIN = 'admin';
+export const CATALOG = new Map(PERMISSIONS.map((p) => [p.key, p]));
 
 /** The signed-in caller, with their role and keys read now, in this transaction, rather than taken from the
  * request's principal: a change in between (another admin demoting them) counts. */
@@ -52,7 +53,7 @@ export const mayGive = (caller: { role: string; permissions: readonly string[] }
   (role !== ADMIN || caller.role === ADMIN) && keys.every((k) => caller.permissions.includes(k));
 
 /** The matrix's version: the SHA-256 of every grant. Any write changes it, so a stale editor is caught. */
-async function matrixVersion(tx: Tx): Promise<string> {
+export async function matrixVersion(tx: Tx): Promise<string> {
   const rows = await tx.select({ role: roleGrants.role, permission: roleGrants.permission, scope: roleGrants.scope })
     .from(roleGrants).orderBy(asc(roleGrants.role), asc(roleGrants.permission));
   return createHash('sha256').update(rows.map((r) => `${r.role} ${r.permission} ${r.scope}`).join('\n')).digest('hex');
@@ -71,7 +72,9 @@ export async function listRolesFor(ctx: Ctx): Promise<Out<typeof listRoles>> {
     .where(inArray(users.status, ['active', 'invited'])).groupBy(users.role);
   const people = new Map(held.map((h) => [h.role, h.n]));
   const keys = await keysByRole(tx);
-  return { roles: rows.map((r) => ({ ...r, userCount: people.get(r.key) ?? 0, grantable: mayGive(caller, r.key, keys.get(r.key) ?? []) })) };
+  const builtIn = new Set((await tx.select({ role: roleTemplates.role }).from(roleTemplates)).map((t) => t.role));
+  return { roles: rows.map((r) => ({ ...r, userCount: people.get(r.key) ?? 0, grantable: mayGive(caller, r.key, keys.get(r.key) ?? []),
+    builtIn: builtIn.has(r.key) })) };
 }
 
 /** GET /admin/permissions (roles:read): every key, every role's grants, and the version a change must name. */
@@ -133,6 +136,8 @@ export async function setRoleGrants(ctx: Ctx, { key, grants, version }: In<typeo
   }
   if (removed.length > 0) await tx.delete(roleGrants).where(and(eq(roleGrants.role, key), inArray(roleGrants.permission, removed)));
   if (added.length > 0) await tx.insert(roleGrants).values(added.map((permission) => ({ role: key, permission, scope: 'all' })));
+  // A key needing the second factor turns it on for the role, and a shrinking role's people sign in again (RAD-83).
+  await afterGrantsChanged(ctx, key, { shrank: removed.length > 0 });
   return { version: await matrixVersion(tx) };
 }
 

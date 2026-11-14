@@ -194,15 +194,29 @@
     {
       "idx": 27,
       "version": "7",
-      "when": 1794657200202,
-      "tag": "0027_users_disabled_without_password",
+      "when": 1794656636179,
+      "tag": "0027_role_templates",
       "breakpoints": true
     },
     {
       "idx": 28,
       "version": "7",
-      "when": 1794657605043,
-      "tag": "0028_users_last_sign_in",
+      "when": 1794660276373,
+      "tag": "0028_owner_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794675650806,
+      "tag": "0029_users_disabled_without_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794676013458,
+      "tag": "0030_user_sign_ins",
       "breakpoints": true
     }
   ]

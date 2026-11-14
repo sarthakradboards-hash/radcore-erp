@@ -1,4 +1,7 @@
 {
+  "radcore/e7-scope-on-owned-reads": {
+    "tables": []
+  },
   "radcore/no-sql": {
     "allowNames": [
       "and",

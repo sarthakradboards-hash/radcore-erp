@@ -4,6 +4,10 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { readTable } from '../index.ts';
 
+// Each test here starts real import workers, and each worker loads the parser and lib-common afresh (about 1 s cold,
+// several on a loaded machine), at most two at a time: vitest's 5 s default is less than that start-up (RAD-46).
+vi.setConfig({ testTimeout: 30_000 });
+
 const seen = vi.hoisted(() => ({ options: [] as unknown[], live: 0, most: 0 }));
 vi.mock('node:worker_threads', async (importOriginal) => {
   const real = await importOriginal<{ Worker: new (...a: unknown[]) => { once(event: string, f: () => void): unknown } }>();

@@ -5,7 +5,7 @@
 // change. Each end is one session_ended security event per session; a sign-in is sign_in (ADR-005 §7c).
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { idString, normaliseEmail } from '@radcore/lib-common';
-import { after, pendingSignIns, platformTx, sessions, users } from '@radcore/db/platform';
+import { after, pendingSignIns, platformTx, sessions, userSignIns, users } from '@radcore/db/platform';
 import type { Database } from '@radcore/db/schema';
 import { and, desc, eq, gt, isNull, ne, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
@@ -128,9 +128,9 @@ async function startSession(ctx: Ctx, cookie: SessionCookie, userId: string): Pr
   const token = randomBytes(32).toString('base64url');
   const now = new Date();
   const absolute = new Date(now.getTime() + SESSION_ABSOLUTE_SECONDS * 1000);
-  // The people list shows it (RAD-36). Written first: the session's insert below takes a share lock on the person's row
-  // through its foreign key, so two sign-ins that each took one and then updated the row would deadlock.
-  await platformTx(ctx).update(users).set({ lastSignInAt: now }).where(eq(users.id, userId));
+  // The people list shows it (RAD-36). The row is made with the person; the upsert also covers one made before it.
+  await platformTx(ctx).insert(userSignIns).values({ userId, lastSignInAt: now })
+    .onConflictDoUpdate({ target: userSignIns.userId, set: { lastSignInAt: now } });
   await platformTx(ctx).insert(sessions).values({ userId, tokenHash: sha256(token), device: cookie.device,
     idleExpiresAt: idleUntil(now, absolute), absoluteExpiresAt: absolute });
   await recordSecurityEvent(ctx, { kind: 'sign_in', detail: {} }, { userId, device: cookie.device });
