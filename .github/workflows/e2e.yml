@@ -68,6 +68,8 @@ jobs:
         run: npm run e2e
         env:
           E2E_DATABASE_URL: postgres://radcore_app@postgres:5432/radcore_e2e
+          # Only the journeys' seeding writes as the superuser: their people and roles (RAD-58, e2e/people.ts).
+          E2E_SEED_DATABASE_URL: postgres://radcore@postgres:5432/radcore_e2e
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

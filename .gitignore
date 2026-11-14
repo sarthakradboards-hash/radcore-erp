@@ -14,3 +14,5 @@ coverage/
 # Playwright output (RAD-15)
 e2e/test-results/
 e2e/playwright-report/
+# The journeys' seeded people: this run's password, authenticator secrets and signed-in states (RAD-58).
+e2e/.auth/
