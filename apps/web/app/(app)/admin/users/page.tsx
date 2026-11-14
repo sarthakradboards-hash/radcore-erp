@@ -1,7 +1,8 @@
 'use client';
 // People (RAD-57, M1-14, M1-16, M1-18): invite, change a role, deactivate and reactivate, sign out everywhere.
-// The server says what may be done (`self`, a role's `grantable`) and refuses the rest with a named code.
-import { isMasked } from '@radcore/lib-common';
+// The server says what may be done (`self`, a role's `grantable`) and refuses the rest with a named code. The screen
+// offers only what the person may do (RC-151, e2e on RAD-57): writes need users:write, and role names, the role
+// column and the role pickers need roles:read, so a reader without it never calls listRoles for a 403.
 import { deactivateUser, endUserSessions, inviteUser, listRoles, listSessions, listUsers, reactivateUser, resendInvite, setUserRole } from '@radcore/lib-platform/contract';
 import { useState } from 'react';
 import { z } from 'zod';
@@ -11,6 +12,8 @@ import { ReasonDialog } from '../../../../components/ui/dialog/reason-dialog.tsx
 import { RadioField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { SearchBox } from '../../../../components/ui/form/search-box.tsx';
+import { useMe } from '../../../../components/shell/session-provider.tsx';
+import { Pii } from '../../../../components/ui/masked.tsx';
 import { announce } from '../../../../components/ui/live-region.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList, useApiMutation, useApiQuery } from '../../../../lib/api/query.ts';
@@ -33,7 +36,12 @@ export default function UsersPage() {
   const list = useApiList(listUsers, {
     filter: { ...(search === '' ? {} : { search }), ...(show === 'all' ? {} : { status: show }) },
   });
-  const roles = useApiQuery(listRoles, {}).data?.roles ?? [];
+  const { permissions } = useMe();
+  const mayWrite = permissions.includes('users:write');
+  const seesRoles = permissions.includes('roles:read');
+  // Inviting and changing a role pick from the role list, so they need both.
+  const mayPickRole = mayWrite && seesRoles;
+  const roles = useApiQuery(listRoles, {}, { enabled: seesRoles }).data?.roles ?? [];
   const roleName = (key: string) => roles.find((r) => r.key === key)?.name ?? key;
 
   const [inviting, setInviting] = useState(false);
@@ -50,7 +58,7 @@ export default function UsersPage() {
   const actions = (u: AdminUser): MenuItem[] => {
     const act = (kind: Acting['kind']) => () => setActing({ kind, user: u });
     return [
-      ...(u.status === 'disabled' ? [] : [{ label: t('admin.users.role.change'), onSelect: act('role') }]),
+      ...(u.status === 'disabled' || !mayPickRole ? [] : [{ label: t('admin.users.role.change'), onSelect: act('role') }]),
       ...(u.status === 'invited' ? [{ label: t('admin.users.resend'), onSelect: act('resend') }] : []),
       ...(u.status === 'active' ? [{ label: t('admin.users.endSessions'), onSelect: act('sessions') }] : []),
       u.status === 'disabled'
@@ -61,14 +69,15 @@ export default function UsersPage() {
 
   const columns: Column<AdminUser>[] = [
     { id: 'name', header: t('admin.users.col.name'), cell: (u) => (u.self ? t('admin.users.you', { name: u.displayName }) : u.displayName) },
-    // shortcut: a masked address shows its mask text until ui-2's piiText lands (RAD-103's kit part).
-    { id: 'email', header: t('admin.users.col.email'), cell: (u) => (isMasked(u.email) ? u.email.masked : u.email) },
-    { id: 'role', header: t('admin.users.col.role'), cell: (u) => roleName(u.role) },
+    // Masked without pii:read (RAD-103): "Hidden" to a screen reader, never the bullets.
+    { id: 'email', header: t('admin.users.col.email'), cell: (u) => <Pii value={u.email} /> },
+    ...(seesRoles ? [{ id: 'role', header: t('admin.users.col.role'), cell: (u: AdminUser) => roleName(u.role) }] : []),
     { id: 'status', header: t('admin.users.col.status'), cell: (u) => t(`admin.users.status.${u.status}`) },
     { id: 'factor', header: t('admin.users.col.factor'), cell: (u) => t(`admin.users.factor.${u.secondFactor}`) },
-    // Your own row has no actions: nobody changes their own role or account here (M1-18).
-    { id: 'actions', header: t('admin.users.col.actions'), cell: (u) => (u.self ? null
-      : <Menu label={t('admin.users.actionsFor', { name: u.displayName })} items={actions(u)} />) },
+    // Your own row has no actions: nobody changes their own role or account here (M1-18). No column at all without
+    // users:write, since every action is a write.
+    ...(mayWrite ? [{ id: 'actions', header: t('admin.users.col.actions'), cell: (u: AdminUser) => (u.self ? null
+      : <Menu label={t('admin.users.actionsFor', { name: u.displayName })} items={actions(u)} />) }] : []),
   ];
 
   const user = acting?.user;
@@ -78,9 +87,11 @@ export default function UsersPage() {
       <h1>{t('admin.users.title')}</h1>
       <div className="admin-toolbar">
         <SearchBox label={t('admin.users.search')} action={t('admin.audit.apply')} onSearch={setSearch} />
-        <button type="button" className="kit-button kit-button-primary" onClick={() => setInviting(true)}>
-          {t('admin.users.invite')}
-        </button>
+        {mayPickRole ? (
+          <button type="button" className="kit-button kit-button-primary" onClick={() => setInviting(true)}>
+            {t('admin.users.invite')}
+          </button>
+        ) : null}
       </div>
       <ChoiceButtons<Show> label={t('admin.users.status')} value={show} onChange={setShow} options={[
         { value: 'all', label: t('admin.users.status.all') }, { value: 'active', label: t('admin.users.status.active') },
