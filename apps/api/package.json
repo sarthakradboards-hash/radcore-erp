@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@radcore/lib-accounts": "*",
     "@radcore/lib-common": "*",
     "@radcore/lib-platform": "*",
     "express": "5.3.0"
