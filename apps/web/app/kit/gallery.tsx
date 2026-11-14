@@ -12,7 +12,8 @@ import { Pii } from '../../components/ui/masked.tsx';
 import { ApiError } from '../../lib/api-client.ts';
 
 // The phone arrives masked, as a pii() field does for a role without pii:read (RAD-40); the form never sends it.
-const party = z.object({ name: z.string().min(1, 'Enter a name'), phone: pii(z.string(), 'last4').optional(), limit: moneyString(),
+const party = z.object({ name: z.string().min(1, 'Enter a name'), phone: pii(z.string(), 'last4').optional(),
+  email: pii().optional(), limit: moneyString(),
   note: z.string() });
 
 const refuse = (issues: { path: string[]; message: string }[]) => new ApiError(400, {
@@ -33,7 +34,7 @@ export function Gallery({ children }: { children: ReactNode }) {
       <p>The name &quot;Taken&quot; is refused on the field, &quot;Elsewhere&quot; on a field not on screen, and
         &quot;Again&quot; as a save already made.</p>
       <Form aria-labelledby="party-form" schema={party}
-        defaultValues={{ name: 'Asha Traders', phone: { masked: '••••••3210' }, limit: '50000.00', note: '' }}
+        defaultValues={{ name: 'Asha Traders', phone: { masked: '••••••3210' }, email: 'asha@example.com', limit: '50000.00', note: '' }}
         onSubmit={async (values) => {
           if (values.name === 'Taken') throw refuse([{ path: ['name'], message: 'Another party has this name' }]);
           if (values.name === 'Elsewhere') throw refuse([{ path: ['gstin'], message: 'The GSTIN is not valid' }]);
@@ -44,6 +45,7 @@ export function Gallery({ children }: { children: ReactNode }) {
         }}>
         <TextField name="name" label="Name" autoComplete="off" />
         <MaskedField name="phone" label="Phone" />
+        <MaskedField name="email" label="Email" hint="Shown to you; changed on the person's own page." />
         <TextField name="limit" label="Credit limit (₹)" inputMode="decimal" />
         <TextAreaField name="note" label="Note" />
         <SubmitButton>Save party</SubmitButton>

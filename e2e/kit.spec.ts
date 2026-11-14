@@ -99,10 +99,16 @@ test.describe('the form', () => {
     await expect(alert(page)).toHaveText('');
     expect(JSON.parse((await lastSent(page).textContent()) ?? '{}')).toEqual(
       { name: 'Asha Traders & Sons', limit: '75000.50', note: 'Prefers morning delivery' });
-    await expect(form(page).getByLabel('Phone')).toHaveValue('••••••3210');
-    await expect(form(page).getByLabel('Phone')).toHaveJSProperty('readOnly', true);
-    // A screen reader hears the words, not "bullet bullet…" (RAD-103, the architect on RAD-40).
-    await expect(form(page).getByLabel('Phone')).toHaveAccessibleDescription('Hidden, ends 3210');
+    // The masked phone is text, not an input whose value would be voiced: a screen reader hears the words, not
+    // "bullet bullet…" (RAD-103, the architect on RAD-40; the auditor on #164).
+    const phone = form(page).getByRole('group', { name: 'Phone' });
+    await expect(form(page).getByRole('textbox', { name: 'Phone' })).toHaveCount(0);
+    await expect(phone.locator('[aria-hidden="true"]')).toHaveText('••••••3210');
+    await expect(phone.locator('.visually-hidden')).toHaveText('Hidden, ends 3210');
+    // A value this person may see shows as it is, never as "Hidden".
+    const email = form(page).getByRole('group', { name: 'Email' });
+    await expect(email).toContainText('asha@example.com');
+    await expect(email.locator('.visually-hidden')).toHaveCount(0);
   });
 });
 
