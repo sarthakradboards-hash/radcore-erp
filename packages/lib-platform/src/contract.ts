@@ -5,7 +5,6 @@ import {
   searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
-
 export { downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, type ExportContract } from './export/contract.ts';
 import { FILE_KINDS, type FileKind } from './files/kinds.ts';
 
@@ -332,6 +331,7 @@ export const SECURITY_EVENT_ROUTES = {
   'POST /files/resume/:id/download': ['download'],
   'POST /files/statement/:id/download': ['download'],
   'POST /files/import/:id/download': ['download'],
+  'POST /exports/:id/download': ['download'],
 } as const satisfies Record<string, readonly (typeof SECURITY_EVENT_KINDS)[number][]>;
 
 /** Security events (RAD-31's event_log), newest first on (occurred_at desc, seq desc), the audit viewer's second tab.
