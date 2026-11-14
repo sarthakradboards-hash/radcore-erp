@@ -273,8 +273,14 @@ see this employee's pay", not "does this principal hold hr:read". M1-17 defines 
 key at `own` or `all` scope (RAD-35). A list whose key the principal holds only at `own` is filtered to the principal's
 own records by the list engine, and get-one and writes check with `ctx.see` or `ctx.can`. Admin holds every key as an
 explicit grant, never a wildcard, and a test checks that it holds the whole catalogue. `users.role_since` and each
-grant's `created_at` say when a person gained a key, which the approval rules use (§8b). M1-19's manifest lists which
-services each route and job reaches, so a new reach shows up in review.
+grant's `created_at` say when a person gained a key, which the approval rules use (§8b).
+
+**The permission manifest (RAD-37, M1-19, RC-153).** `tools/permission-manifest.ts` states, by hand, the key each
+route checks (or `public`) and the principal each job runs as. Its test builds the api's and worker's real lists
+(`apiRoutes`, `workerJobs`, the same ones the processes mount), never reading the table from them. It fails on a
+route or job with no line, a line for one that's gone, or a check that differs, so deleting or lowering a check fails
+CI. Every key named must be in the matrix's catalogue (`permissions.ts`). A change to a route's check changes its line
+in the same review. Which services each route and job reaches isn't listed yet.
 
 **How the scope rule reads (RAD-35).** A record's owner is named as audit rows name a principal (`user:<id>`): usually
 its `created_by`, or a module's own owner column. `ctx.can(perm, { owner })` answers it; `ctx.see(perm, { owner })`
@@ -414,7 +420,7 @@ the server. The form shows the same rules but decides nothing.
   - A request that passes goes on as usual. A retried key repeats the check, which is harmless, and then replays
     or runs as saved-once says.
   - The service checks only `same_as_old`, because it needs the stored hash.
-  - The permission manifest test (M1-19) fails on a `newPassword()` field outside those three routes.
+  - lib-platform's contract test fails on a `newPassword()` field outside those three routes.
 - A refusal is `password_rejected`, with the reason on the password field: `too_short`, `breached` or
   `same_as_old`, never `invalid_input`. The schema's `.min()` would count UTF-16 units, so `newPassword()` sets
   only the 1024 cap and leaves the length rule to the check.
@@ -482,7 +488,7 @@ codes.
   - Each declares `idempotency: 'exempt'` on its route. It's exempt from the key only: the write-Origin check
     (M1-21) and the rate limits still apply.
   - The generic handler accepts the declaration only from those four routes, a fixed list in lib-platform, and
-    refuses to start otherwise. The permission manifest test (M1-19) fails on any other route that declares it.
+    refuses to start otherwise. lib-platform's contract test fails on any other route that declares it.
   - Repeating one is harmless. A second sign-in starts another session, listed under the person's sessions; a
     second sign-out finds no session; a TOTP code already used is refused (ADR-003); a second enrolment confirm
     finds no pending enrolment and is refused.
@@ -507,8 +513,7 @@ codes.
     secret is never at rest in the saved-once table.
   - A repeated key after a commit gets 409 `answer_not_kept`, and the client starts again with a new key.
   - The generic handler accepts the flag only from those routes, a fixed list in lib-platform
-    (`ANSWER_NOT_STORED_ROUTES`), and the permission manifest test (M1-19) fails on any other route that declares
-    it.
+    (`ANSWER_NOT_STORED_ROUTES`), and lib-platform's contract test fails on any other route that declares it.
   - Confirming an enrolment returns the recovery codes too, but it is exempt, so it stores nothing anyway.
 
 **Links that carry a token** (RAD-61). Invite and password-reset links carry their token in the URL fragment
