@@ -8,10 +8,11 @@ import {
   startHeartbeat, startProcess,
 } from '@radcore/lib-platform/runtime';
 import type { JobDefinition } from '@radcore/lib-platform';
+import exportJobs from './jobs/exports.ts';
 import platform from './jobs/platform.ts';
 
 // Each module's job file in ./jobs/ (ADR-001 §8) default-exports its defineJob list; spread them in here.
-const jobs: readonly JobDefinition[] = [...platform];
+const jobs: readonly JobDefinition[] = [...platform, ...exportJobs];
 
 await startProcess('worker', async ({ config, pool, log }) => {
   const alert = createAlerter(config.alertWebhookUrl, log);

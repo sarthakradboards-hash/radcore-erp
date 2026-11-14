@@ -8,6 +8,7 @@ import { assignRole, roleNeedsSecondFactor, type Principal } from '@radcore/lib-
 import { createDatabase, loadPrincipal, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { secondFactorStatus } from '../packages/lib-platform/src/auth/second-factor-status.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 
@@ -108,6 +109,11 @@ describe.skipIf(!url)('roles and record scope', () => {
     const needs = await runInTransaction(db, write, asTest, randomUUID(), async (ctx) =>
       Promise.all([admin, sales, nobody].map((u) => roleNeedsSecondFactor(ctx, u))));
     expect(needs).toEqual([true, false, false]);
+    // RAD-33's rule, through its own status: admin still has to enrol; sales and a person with no role sign in
+    // without one (the auditor on #130).
+    const status = await runInTransaction(db, write, asTest, randomUUID(), async (ctx) =>
+      Promise.all([admin, sales, nobody].map((u) => secondFactorStatus(ctx, u))));
+    expect(status).toEqual(['enrolment_required', 'not_required', 'not_required']);
   });
 
   it('gives a person a new role and ends their sessions, so they sign in again under it', async () => {

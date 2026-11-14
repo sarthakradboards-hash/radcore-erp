@@ -14,9 +14,9 @@ import { ensureLogins } from './db-logins.ts';
 
 const admin = (url: string) => new pg.Client({ connectionString: url });
 
-export default async function setup() {
-  const adminUrl = process.env['TEST_DATABASE_ADMIN_URL'];
-  if (!adminUrl) return undefined;
+/** A fresh database, its logins and its migrations, and how to drop it: the run's own, or one for a test whose
+ * processes must not share the run's (a real worker's outbox relay takes every due row in its database, RAD-79). */
+export async function freshDatabase(adminUrl: string): Promise<{ appUrl: string; ownerUrl: string; superUrl: string; drop(): Promise<void> }> {
   // The name is ours, from random hex, so it can be written into the statement; identifiers can't be bound.
   const name = `radcore_test_${randomBytes(16).toString('hex')}`;
   const client = admin(adminUrl);
@@ -31,22 +31,30 @@ export default async function setup() {
     u.searchParams.set('options', `-c role=${login}`);
     return u.toString();
   };
-  // Workers start after global setup, so they inherit these.
-  process.env['TEST_DATABASE_URL'] = as('radcore_app');
-  process.env['TEST_DATABASE_OWNER_URL'] = as('radcore_owner');
-  process.env['TEST_DATABASE_SUPERUSER_URL'] = url.toString();
   await ensureLogins(url.toString());
-
   const scripts = (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string> }).scripts ?? {};
   if (scripts['db:migrate']) {
     const r = spawnSync('npm run db:migrate', { stdio: 'inherit', shell: true, env: { ...process.env, MIGRATION_DATABASE_URL: as('radcore_owner') } });
     if (r.status !== 0) throw new Error('db:migrate failed on the fresh test database');
   }
-
-  return async () => {
-    const c = admin(adminUrl);
-    await c.connect();
-    await c.query(`drop database if exists ${name} with (force)`);
-    await c.end();
+  return {
+    appUrl: as('radcore_app'), ownerUrl: as('radcore_owner'), superUrl: url.toString(),
+    drop: async () => {
+      const c = admin(adminUrl);
+      await c.connect();
+      await c.query(`drop database if exists ${name} with (force)`);
+      await c.end();
+    },
   };
+}
+
+export default async function setup() {
+  const adminUrl = process.env['TEST_DATABASE_ADMIN_URL'];
+  if (!adminUrl) return undefined;
+  const db = await freshDatabase(adminUrl);
+  // Workers start after global setup, so they inherit these.
+  process.env['TEST_DATABASE_URL'] = db.appUrl;
+  process.env['TEST_DATABASE_OWNER_URL'] = db.ownerUrl;
+  process.env['TEST_DATABASE_SUPERUSER_URL'] = db.superUrl;
+  return db.drop;
 }

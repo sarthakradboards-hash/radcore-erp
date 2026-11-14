@@ -152,11 +152,14 @@ wraps the request's Drizzle transaction and exposes only:
   - the callback operators have no `sql`.
 
 **Exports.** An export that may be large runs as a job in one `{ readOnly: true, isolation: 'repeatable read' }`
-transaction, with its own `statementTimeoutMs` and a row cap.
+transaction, with its own `statementTimeoutMs` and a row cap of 1,000,000 (`EXPORT_MAX_ROWS`), just under a
+spreadsheet's 1,048,576 rows, so any export opens whole.
 - It writes the file to a local temporary file while the transaction is open, and uploads it to the file store
   **after commit**. There is no network call inside the transaction (ADR-001 §8).
 - One snapshot means rows written during the export can't be skipped or repeated, and no transaction waits on a slow
   client.
+- Past the cap, or when the export volume fills, the job fails `too_large` and keeps no file: an export is complete
+  or it fails, never cut short (RC-086). The export queue runs one job at a time per worker.
 
 **Queuing a job: the outbox (M1-26).**
 - `ctx.jobs.send` inserts a row into lib-platform's `jobs_outbox` table, in the caller's transaction, with the

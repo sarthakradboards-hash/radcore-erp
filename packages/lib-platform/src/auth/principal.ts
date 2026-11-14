@@ -3,7 +3,7 @@
 // every process (RC-095). Sessions (RAD-34) and the worker's user jobs (RAD-44 3b) both load a person this way.
 import { randomUUID } from 'node:crypto';
 import { idString } from '@radcore/lib-common';
-import { platformTx, roleGrants, users } from '@radcore/db/platform';
+import { platformTx, roleGrants, roles, users } from '@radcore/db/platform';
 import type { Database } from '@radcore/db/schema';
 import { and, eq } from 'drizzle-orm';
 import type { Ctx, Principal } from '../ctx.ts';
@@ -43,3 +43,10 @@ export const loadPrincipal = (db: Database): LoadPrincipal => async (by) => {
   if (!idString().safeParse(id).success) return null;
   return runInTransaction(db, READ, LOADER, randomUUID(), (ctx) => principalFor(ctx, id));
 };
+
+/** Whether the person's role asks for the second sign-in factor (D-19, RAD-33); a person with no role yet doesn't. */
+export async function roleNeedsSecondFactor(ctx: Ctx, userId: string): Promise<boolean> {
+  const [row] = await platformTx(ctx).select({ required: roles.secondFactorRequired }).from(users)
+    .innerJoin(roles, eq(roles.key, users.role)).where(eq(users.id, userId)).limit(1);
+  return row?.required ?? false;
+}

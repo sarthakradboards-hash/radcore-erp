@@ -6,13 +6,6 @@ import type { Ctx } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import { endSessionsOf } from './sessions.ts';
 
-/** Whether the person's role asks for the second sign-in factor (D-19, RAD-33); a person with no role yet doesn't. */
-export async function roleNeedsSecondFactor(ctx: Ctx, userId: string): Promise<boolean> {
-  const [row] = await platformTx(ctx).select({ required: roles.secondFactorRequired }).from(users)
-    .innerJoin(roles, eq(roles.key, users.role)).where(eq(users.id, userId)).limit(1);
-  return row?.required ?? false;
-}
-
 /**
  * Gives a person a role, and ends their sessions (`role_changed`, RAD-34) so they sign in again under it. The rules on
  * who may give which role, and that nobody changes their own, are RAD-36's service; this is the step it and the first

@@ -1,30 +1,35 @@
 'use client';
 // Pieces the admin screens share (RAD-57). The server decides who may do what (M1-14 to M1-18): the screens only
 // grey out what its flags say and word its error codes; they hold no permission rule of their own.
+import type { PermissionKey } from '@radcore/lib-common';
 import { AUDIT_RANGE_MAX_DAYS } from '@radcore/lib-platform/contract';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { z } from 'zod';
 import { Dialog, CloseButton } from '../../../components/ui/dialog/dialog.tsx';
 import { Form, SubmitButton } from '../../../components/ui/form/form.tsx';
+import { useMe } from '../../../components/shell/session-provider.tsx';
 import { announce } from '../../../components/ui/live-region.tsx';
 import { t, type MessageKey } from '../../../lib/i18n/index.ts';
 import './admin.css';
 
+// Each page names the permission its screen reads, so the sub-menu, like the main one, offers only what the person
+// may open (RC-151). The server still checks every request.
 const PAGES = [
-  ['/admin/users', 'admin.nav.users'],
-  ['/admin/roles', 'admin.nav.roles'],
-  ['/admin/permissions', 'admin.nav.permissions'],
-  ['/admin/sessions', 'admin.nav.sessions'],
-  ['/admin/audit', 'admin.nav.audit'],
-] as const satisfies readonly (readonly [string, MessageKey])[];
+  ['/admin/users', 'admin.nav.users', 'users:read'],
+  ['/admin/roles', 'admin.nav.roles', 'roles:read'],
+  ['/admin/permissions', 'admin.nav.permissions', 'roles:read'],
+  ['/admin/sessions', 'admin.nav.sessions', 'users:read'],
+  ['/admin/audit', 'admin.nav.audit', 'audit:read'],
+] as const satisfies readonly (readonly [string, MessageKey, PermissionKey])[];
 
 export function AdminNav() {
   const here = usePathname();
+  const { permissions } = useMe();
   return (
     <nav aria-label={t('admin.nav')} className="admin-nav">
       <ul>
-        {PAGES.map(([href, key]) => (
+        {PAGES.filter(([, , perm]) => permissions.includes(perm)).map(([href, key]) => (
           <li key={href}><Link href={href} aria-current={here === href ? 'page' : undefined}>{t(key)}</Link></li>
         ))}
       </ul>

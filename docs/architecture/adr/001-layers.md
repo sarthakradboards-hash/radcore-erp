@@ -212,9 +212,11 @@ request ─► origin and rate guards ─► principal (§6a: session, or a link
         ─► route permission (contract.perm) for that principal
         ─► new-password check, only on a field marked newPassword() (§7a): length, the bundled list,
            Pwned Passwords. It runs outside any transaction, with no pooled connection held
+        ─► the route's `before` step, if it has one (§8): outside any transaction, with `deps` (`secrets`, and `read`
+           for a short read-only transaction of its own)
         ─► one transaction with statement, lock and idle timeouts; Ctx built
         ─► saved-once claim (writes only): insert (principal, route, key, input hash) under a unique constraint
-        ─► service(ctx, input) ─► record-scope checks inside the service: ctx.can(...)
+        ─► service(ctx, input, { before }) ─► record-scope checks inside the service: ctx.can(...)
         ─► output checked against contract.output, camelCase as is, pii() fields masked for this principal
         ─► saved-once: store the masked answer on the claimed row ─► commit
         ─► errors mapped by code, never by message text
@@ -415,11 +417,35 @@ stored.
   Every refused sign-in is a `sign_in_failed` row, a locked address's included, whether or not an account has the
   address: recording only some would make a known address do different work, and timing would tell (RAD-64). The
   per-IP limit (RAD-39) bounds the rows one source can add (ADR-005 §7c).
-- **Only the key-exempt routes touch the cookie.** The handler gives just those routes `ctx.cookie`, and sets or
-  clears the cookie only after the transaction commits, so a rolled-back sign-in sets nothing.
+- **Only the sign-in routes touch the cookies.** The handler gives `ctx.cookie` to the key-exempt routes and to the
+  second-factor enrolment start (which stores no answer), and sets or clears each cookie only after the transaction
+  commits, so a rolled-back sign-in sets nothing.
 - **A failed sign-in is still recorded.** Its service throws `RecordedRefusal`. On a key-exempt route the handler
   commits that transaction, which holds the `sign_in_failed` event, and still answers with the refusal. Elsewhere it
   rolls back like any error.
+
+**The second factor** (M1-15, RAD-33, D-19). A TOTP authenticator (ADR-003's settings) and ten single-use recovery
+codes.
+- **Step 1 starts no session for someone with a factor, or whose role needs one.** It answers `second_factor` or
+  `enrol_second_factor` and sets the pending-sign-in cookie, `__Host-radcore_pending` (plain `radcore_pending` over
+  http, as above). The pending sign-in is a random token, stored as its SHA-256. It lasts five minutes and is spent
+  when the sign-in finishes. A missing, spent or expired one answers `sign_in_expired`.
+- **The verify step** takes a TOTP code or a recovery code (any case, dashes optional), then starts the session and
+  clears the pending cookie. A TOTP code is refused if its step isn't later than the last one accepted, so it works
+  once. A refusal is `sign_in_failed` (`second_factor` or `account_locked`), recorded through `RecordedRefusal`.
+- **Enrolling during sign-in.** Start answers the otpauth URI for a new 20-byte secret, replacing an unconfirmed one.
+  Confirm takes its first code, then confirms the factor, signs the person in and answers the ten recovery codes,
+  which are shown once.
+- **Signed in,** `POST /me/second-factor/recovery-codes` takes a current code, voids the old set and answers a new
+  one (`storesAnswer: false`).
+- **An admin** removes someone else's factor and codes after a lost phone
+  (`POST /admin/users/:id/second-factor/remove`). They enrol again at their next sign-in if their role needs it.
+- **Attempts:** five per account in 15 minutes, then a 15-minute wait. They're counted in the shared store, like the
+  sign-in lockout.
+- **Who needs a factor** is the role's `second_factor_required` (RAD-35): D-19's admin, owner, accounts and HR. A
+  person with no role yet needs none, and holds only My work.
+- The secret is kept by the secrets library. Each route seals or opens it in its `before` step (§8), so no KMS call
+  runs inside a transaction.
 
 **Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
 - It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
@@ -449,7 +475,8 @@ stored.
   - starting a second-factor enrolment (the new TOTP secret);
   - making new recovery codes;
   - asking for a file's download link, `POST /files/<kind>/:id/download` for photo, resume, statement and import
-    (RAD-43). The answer is a live presigned link, and a stored answer must carry no tokens (RC-132).
+    (RAD-43), or an export's, `POST /exports/:id/download` (RAD-47). The answer is a live presigned link, and a
+    stored answer must carry no tokens (RC-132).
 
   How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
@@ -534,12 +561,26 @@ takes two optional steps; `before(input, deps)` is the first.
 - **No other route.** The `before` and `afterCommit` steps are the only ways a job reaches the network. `before`'s
   first user is the upload check.
 
+**A route's outside call goes in its `before` step too** (RAD-33). `defineRoute(contract, service, { before })` runs
+`before(input, deps)` after the route permission, outside any transaction, and hands its result to the service as
+`meta.before`. `deps` holds `secrets` and `read(work)`, a short read-only transaction that closes before `before` goes
+on, so a KMS call never runs inside one. It also holds the request's principal and, on the sign-in routes, its
+cookies, so `before` knows whose row to read. The service checks that what `before` read is unchanged (`conflict` if
+not). The second-factor routes, its first users, compare the factor's ciphertext rather than `updated_at`, because
+each accepted code moves `last_step`, and with it `updated_at`, while the ciphertext is exactly what was opened. The
+new-password check (§7a) is the same idea, built into the handler.
+
 **A call that needs what the transaction decided goes in its `afterCommit` step** (RAD-32). `afterCommit(result,
 again)` runs after the service's transaction commits, with the service's result; `again` opens one more transaction,
 as the same principal, to record the outcome. The outcome is recorded through `again` only after the call has
 succeeded; the service never records it as done ("sent"), since the call may still fail. A retry runs the service
 again, so the service makes the step safe to repeat: the password-reset email, its first user, dedupes on its job id,
 and a link minted but never mailed is spent and replaced.
+
+**A job's transaction.** A job runs in a `read committed` write transaction, unless its contract gives `tx` (an
+export: `{ readOnly: true, isolation: 'repeatable read', statementTimeoutMs }`, ADR-002 Exports). A job for a user
+names its permission as `perm`. That is a key, or a pure function from the input to a key (the export job looks it up
+by kind), with no I/O. `afterCommit` gets the same `deps` as `before`.
 
 ### 8b. Platform engines, module functions
 
@@ -548,7 +589,7 @@ up into module libraries. So each module supplies the function that does its par
 the two together:
 
 ```ts
-defineExport(sales.contracts.exportInvoices, sales.invoiceExportRows),   // engine: paging, streaming, file format
+...defineExport(sales.salesExports),                                        // engine: paging, streaming, file format
 defineImport(stock.contracts.importItems, stock.importItemRow),          // engine: parsing, limits, per-row errors
 ...defineApproval(purchasing.contracts.poApproval, purchasing.poApproval), // engine: maker-checker record and hash
 ```
@@ -655,7 +696,7 @@ config test (ADR-002) calls `calculateConfigForFile` and asserts each local rule
 | T1 | the opaque transaction (§5) | TypeScript (`tsc --noEmit`, the typecheck job) | a library touches `ctx.tx.query`, `.select`, `.insert`, `.update`, `.delete`, `.execute` or `._`; or reaches another module's table through its own module transaction (`salesTx(ctx).query.parties`). Its proof lands with M1-08 (`Ctx` and the generic route handler), not with M0-07 (RAD-13). |
 | D8 | apps never touch the database directly | dependency-cruiser | `apps/api/**` or `apps/worker/**` imports `packages/db` |
 | D9 | no HTTP in libraries | dependency-cruiser | `packages/**` imports `express`, `next`, or anything under `apps/` |
-| E1 | no rule in a route or job file | local rule `radcore/e1-route-files` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator; or an argument of a `define*` call is itself a call (so `defineRoute(c, wrap(sales.x))` fails); or the file imports anything except libraries' `.` and `./contract` entries and the `define*` helpers. Route and job files hold only `defineRoute`, `defineWebhook`, `defineJob`, `defineExport`, `defineImport` and `defineApproval` calls. |
+| E1 | no rule in a route or job file | local rule `radcore/e1-route-files` on `apps/api/src/routes/**` and `apps/worker/src/jobs/**` | the file has a function (arrow, expression or declaration), `if`, `switch`, a loop, `?:`, `&&`/`\|\|`/`??`, or an arithmetic operator; or an argument of a `define*` call is itself a call (so `defineRoute(c, wrap(sales.x))` fails); or the file imports anything except libraries' `.` and `./contract` entries and the `define*` helpers. Route and job files hold only `defineRoute`, `defineWebhook`, `defineJob`, `defineExport`, `defineExportJob`, `defineImport` and `defineApproval` calls. |
 | E2 | file size | ESLint `max-lines` (`max: 400`, blank lines and comments counted) | any source file over 400 lines |
 | E3 | no I/O without an import | local rule `radcore/e3-no-io` on `packages/lib-common/**`, every `contract.ts` and every `src/rules/**` | use of `process`, `fetch`, `setTimeout`, `setInterval`, `crypto`, `Math.random`, `Date.now()` or `new Date()` with no argument. Time and randomness come in as arguments or from `ctx.clock`. |
 | E4 | no escape hatch in libraries | on `packages/lib-*/**` and `packages/db/src/*/repo.ts`, with type information: `@typescript-eslint/no-explicit-any`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-assignment` (these typed rules aren't shared with any other E- or L-rule); plus local rule `radcore/e4-no-escape`, which bans a double cast (`x as unknown as T`), `as any`, the `Reflect` global and importing `getTableConfig` | a library casts or reflects its way past T1 (`Reflect.get(ctx.tx, '_')`), or reads table metadata |
