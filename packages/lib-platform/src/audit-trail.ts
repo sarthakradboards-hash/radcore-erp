@@ -1,7 +1,7 @@
 // The audit trail (RAD-30 part 2, ADR-005 §7c): the audit trigger's rows, read by an admin (audit:read) within a date
 // range of at most AUDIT_RANGE_MAX_DAYS. Values arrive as stored: secret and personal-data columns were written as
 // "[redacted]" (references, not copies, M6-16), so nothing is masked here and nothing could be unmasked.
-import { after, auditLog, onIndiaDays, platformTx, users } from '@radcore/db/platform';
+import { after, auditLog, changeReasons, onIndiaDays, platformTx, users } from '@radcore/db/platform';
 import { vAuditedTables } from '@radcore/db/views';
 import { addDays, idString } from '@radcore/lib-common';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
@@ -31,6 +31,7 @@ export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output
   const rows = await tx.select({
     id: auditLog.id, occurredAt: auditLog.occurredAt, seq: auditLog.seq, tableName: auditLog.tableName,
     recordId: auditLog.recordId, op: auditLog.op, changed: auditLog.changed, createdBy: auditLog.createdBy,
+    reasonId: auditLog.reasonId,
   }).from(auditLog)
     .where(and(
       onIndiaDays(auditLog.occurredAt, occurred),
@@ -47,6 +48,10 @@ export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output
   const ids = [...new Set(page.map((r) => r.createdBy.replace(/^user:/, '')).filter(isUserId))];
   const names = new Map(ids.length === 0 ? [] : (await tx.select({ id: users.id, displayName: users.displayName })
     .from(users).where(inArray(users.id, ids))).map((u) => [u.id, u.displayName]));
+  // The reasons on this page, in one read (RAD-36): the rows hold only their ids.
+  const reasonIds = [...new Set(page.map((r) => r.reasonId).filter((r): r is string => r !== null))];
+  const reasons = new Map(reasonIds.length === 0 ? [] : (await tx.select({ id: changeReasons.id, reason: changeReasons.reason })
+    .from(changeReasons).where(inArray(changeReasons.id, reasonIds))).map((c) => [c.id, c.reason]));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({
@@ -57,6 +62,7 @@ export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output
       recordId: r.recordId,
       op: z.enum(['insert', 'update', 'delete']).parse(r.op),
       changed: changedOf(r.op, r.changed),
+      reason: r.reasonId === null ? null : reasons.get(r.reasonId) ?? null,
     })),
     next: rows.length > input.limit && last ? encodeCursor({ occurredAt: last.occurredAt, seq: last.seq }) : null,
   };

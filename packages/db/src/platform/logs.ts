@@ -18,6 +18,8 @@ export const auditLog = radcore.table('audit_log', {
   op: text().notNull(),
   changed: jsonb().notNull(),
   createdBy: text().notNull(),
+  // The change's reason, when it asked for one (RAD-36): change_reasons' id, from app.reason_id.
+  reasonId: uuid(),
 });
 
 /** Security events (RAD-31): written only through record_event, read by listSecurityEvents. */

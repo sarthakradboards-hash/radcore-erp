@@ -18,6 +18,7 @@ export const vMissingTriggers = radcore.view('v_schema_missing_triggers', {
     and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')
     and left(n.nspname, 3) <> 'pg_'
     and not (t.name = 'audit_row' and n.nspname = 'radcore'
-      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions'))
+      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions',
+        'change_reasons'))
     and not exists (select 1 from pg_catalog.pg_trigger g
       where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)`);
