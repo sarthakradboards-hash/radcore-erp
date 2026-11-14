@@ -292,6 +292,16 @@ under these rules, each refused by name:
 - A role change ends that person's sessions (`role_changed`), so the new role's keys and second-factor rule apply
   from their next sign-in.
 
+**Roles are data** (RAD-83, decided 14 Nov).
+- **Built-in roles.** The plan's 11 roles ship as built-in templates. Each can be edited, and reset to its template
+  (the grants shipped with it).
+- **Custom roles** can be created, copied, renamed and deleted. A role someone holds can't be deleted.
+- **Who changes them.** Changing a role's grants needs `roles:write`, and changing someone's role needs `users:write`.
+  Admin and owner hold both, and both are bound by the rules below: nobody gives a key they don't hold.
+- **Keys that need the second factor.** The permission catalogue marks the keys that move money or reach payroll, HR
+  or user administration. A role holding any of them requires the second factor, whatever its own setting (D-19).
+- **Screens follow permissions.** The web shows what the person's keys allow, with no separate view setting.
+
 ### 7. The web client
 
 `apps/web` builds its client from the same contracts: one client per module, for example
@@ -640,7 +650,7 @@ decision on one record never overlap.
 **Known limit:** an account invited before the request, possibly by the requester, can still approve. "The approver
 wasn't invited by the requester" isn't a rule, because the admin invites nearly everyone, so the admin's own
 requests could never be approved. Three things bound the limit:
-- only admin grants roles (RAD-36);
+- only admin and owner grant roles, and only keys they hold (RAD-36, RAD-83);
 - every grant is in the audit trail;
 - once role grants carry their time (RAD-35), the approver's approving role must also predate the request.
 

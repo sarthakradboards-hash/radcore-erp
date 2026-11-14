@@ -10,6 +10,7 @@ import {
   listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
   removeSecondFactor, resetPassword, requestPasswordReset, SECURITY_EVENT_ROUTES, securityEvent, setRolePermissions, setUserRole, signIn,
   startSecondFactorEnrolment, verifySecondFactor, importFiles, photoFiles, resumeFiles, statementFiles,
+  createRole, deleteRole, resetRole, updateRole,
 } from './contract.ts';
 
 const me = {
@@ -139,7 +140,7 @@ describe('the admin contracts', () => {
   const okFor = (c: { input: z.ZodType }, input: unknown) => c.input.safeParse(input).success;
 
   it('are admin-only: a session, one of five admin keys, read-only GETs, and no saved-once exemption', () => {
-    expect(admin).toHaveLength(16);
+    expect(admin).toHaveLength(20);
     for (const c of admin) {
       expect(c.auth).toBe('session');
       expect(['users:read', 'users:write', 'roles:read', 'roles:write', 'audit:read']).toContain(c.perm);
@@ -151,7 +152,9 @@ describe('the admin contracts', () => {
 
   it('take a typed reason for every change that removes access or power, and refuse a blank one', () => {
     for (const [c, rest] of [[setUserRole, { id, role: 'sales' }], [deactivateUser, { id }], [reactivateUser, { id }],
-      [removeSecondFactor, { id }], [setRolePermissions, { key: 'sales', grants: ['sales:read'], version: '7' }]] as const) {
+      [removeSecondFactor, { id }], [setRolePermissions, { key: 'sales', grants: ['sales:read'], version: '7' }],
+      [createRole, { name: 'Field sales', description: '' }], [updateRole, { key: 'sales', name: 'Sales' }], [deleteRole, { key: 't_x' }],
+      [resetRole, { key: 'sales', version: '7' }]] as const) {
       expect(okFor(c, { ...rest, reason: 'Moved to the sales team' })).toBe(true);
       expect(okFor(c, { ...rest, reason: '   ' })).toBe(false);
       expect(okFor(c, { ...rest, reason: 'x'.repeat(501) })).toBe(false);
@@ -167,6 +170,17 @@ describe('the admin contracts', () => {
     expect(setRolePermissions.errors).toEqual(['role_not_editable', 'matrix_changed', 'unknown_permission', 'permission_not_held',
       'basics_required', 'permission_not_for_role']);
     expect([endSession.errors, endUserSessions.errors]).toEqual([['current_session'], ['own_account']]);
+    // RAD-83: a copy passes on only the caller's own keys, a reset gives and takes away only those, and a role in use stays.
+    expect([createRole.errors, updateRole.errors, deleteRole.errors]).toEqual([['name_taken', 'permission_not_held',
+      'permission_not_for_role'], ['role_not_editable', 'name_taken'], ['role_not_deletable', 'role_in_use']]);
+    expect(resetRole.errors).toEqual(['not_a_template', ...setRolePermissions.errors.filter((e) => e !== 'unknown_permission')]);
+  });
+
+  it('take a role name, copying from a role key, and send the delete reason in the body (RAD-83)', () => {
+    expect(okFor(createRole, { name: '  ', description: '', reason: 'x' })).toBe(false);
+    expect(okFor(createRole, { name: 'x'.repeat(61), description: '', reason: 'x' })).toBe(false);
+    expect(okFor(createRole, { name: 'Field sales', description: '', copyFrom: 'Sales!', reason: 'x' })).toBe(false);
+    expect(deleteRole.method).toBe('POST');
   });
 
   it('sort people only by the declared columns', () => {

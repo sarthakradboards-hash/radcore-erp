@@ -20,7 +20,9 @@ type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 /** A key made from the name: lower-case letters and `_`, as ck_roles_key allows. A name with no Latin letters (हिसाब)
  * gets `role`. */
 export function keyFromName(name: string): string {
-  const base = name.toLowerCase().normalize('NFKD').replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 29).replace(/_+$/, '');
+  // Accents dropped first (é → e), then every other run of characters becomes one `_`.
+  const base = name.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '')
+    .slice(0, 29).replace(/_+$/, '');
   return base.length >= 2 ? base : 'role';
 }
 

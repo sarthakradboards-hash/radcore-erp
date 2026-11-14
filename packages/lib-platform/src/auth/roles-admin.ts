@@ -59,7 +59,7 @@ export async function matrixVersion(tx: Tx): Promise<string> {
   return createHash('sha256').update(rows.map((r) => `${r.role} ${r.permission} ${r.scope}`).join('\n')).digest('hex');
 }
 
-export const keyIssues = (grants: readonly string[], bad: readonly string[], code: string, message: (k: string) => string) =>
+const keyIssues = (grants: readonly string[], bad: readonly string[], code: string, message: (k: string) => string) =>
   grants.flatMap((k, i) => (bad.includes(k) ? [{ path: ['grants', i], code, message: message(k) }] : []));
 
 /** GET /admin/roles (roles:read): every role, with how many people hold it and whether the caller may give it. */
