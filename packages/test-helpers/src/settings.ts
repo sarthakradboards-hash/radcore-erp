@@ -7,6 +7,8 @@ type Settings = Record<string, string | undefined>;
 export const testPassword = (): string => 'p'.repeat(20);
 
 /** A multi-Region KMS key ARN in the form production needs (ADR-004 §4), for a key that doesn't exist. */
+/** A rate-limit HMAC key for tests (RAD-73): 32 bytes, base64url. */
+export const testRateLimitKey = (): string => Buffer.alloc(32, 9).toString('base64url');
 export const testKmsKeyArn = (): string => `arn:aws:kms:ap-south-1:${'1'.repeat(12)}:key/mrk-${'a'.repeat(32)}`;
 
 /** Every setting a development api needs; `overrides` replace or remove (with `undefined`) single ones. */
@@ -17,7 +19,8 @@ export function testSettings(overrides: Settings = {}): Settings {
     DB_POOL_MAX: '2', DB_POOL_WAIT_MS: '2000', DB_STATEMENT_TIMEOUT_MS: '1000', DB_LOCK_TIMEOUT_MS: '1000',
     DB_IDLE_TX_TIMEOUT_MS: '1000', S3_REGION: 'us-east-1', S3_BUCKET_FILES: 'radcore-files',
     S3_ENDPOINT: 'http://127.0.0.1:8333', S3_ACCESS_KEY_ID: 'test-id', S3_SECRET_ACCESS_KEY: 's'.repeat(20),
-    SECRETS_LOCAL_KEY: Buffer.alloc(32, 7).toString('base64url'), TURNSTILE_SITE_KEY: 'test-site', LOG_LEVEL: 'info',
+    SECRETS_LOCAL_KEY: Buffer.alloc(32, 7).toString('base64url'), RATE_LIMIT_KEY: testRateLimitKey(),
+    TURNSTILE_SITE_KEY: 'test-site', LOG_LEVEL: 'info',
     ...overrides,
   };
 }

@@ -1,5 +1,6 @@
 // The database pool and the job queue (ADR-002 L4's one place for the driver and pg-boss) and the health ping.
 // RAD-28 builds the pool; RAD-26 builds the Drizzle client on it. RAD-44 builds the queue.
+import { createHmac } from 'node:crypto';
 import { SCHEMA, type Database as Drizzle } from '@radcore/db/schema';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
@@ -119,8 +120,12 @@ const seconds = (ms: number) => Math.max(1, Math.ceil(ms / 1000));
  * The shared rate-limit store (ADR-003, RAD-32): rate-limiter-flexible on PostgreSQL, in `ratelimit.limits` (migration
  * 0007), on its own pool of 2 (ADR-004's connection budget). It fails closed: when the store can't be reached, every
  * answer is the whole block, so a limited action is refused. RAD-39 builds its per-IP limits on the same store.
+ * Every key is stored as its HMAC-SHA256 under `keySecret` (RATE_LIMIT_KEY, RAD-73), so an email or IP address can't
+ * be read back from the table by trying likely values. A new secret makes new keys, so rotating it resets the counts.
  */
-export function createLimiterStore(db: Database, log: Logger): LimiterStore {
+export function createLimiterStore(db: Database, log: Logger, keySecret: string): LimiterStore {
+  const secret = Buffer.from(keySecret, 'base64');
+  const keyOf = (key: string) => createHmac('sha256', secret).update(key).digest('hex');
   const pool = new pg.Pool({ ...connection(db), max: 2 });
   pool.on('error', (err) => log.error('rate-limit store connection lost; the pool will reconnect', err));
   return {
@@ -134,7 +139,7 @@ export function createLimiterStore(db: Database, log: Logger): LimiterStore {
       return {
         async wait(key) {
           try {
-            const res = await rl.get(key);
+            const res = await rl.get(keyOf(key));
             return res !== null && res.consumedPoints > points ? seconds(res.msBeforeNext) : 0;
           } catch (err) {
             return closed(err);
@@ -142,14 +147,14 @@ export function createLimiterStore(db: Database, log: Logger): LimiterStore {
         },
         async hit(key) {
           try {
-            await rl.consume(key);
+            await rl.consume(keyOf(key));
             return 0;
           } catch (err) {
             return err instanceof RateLimiterRes ? seconds(err.msBeforeNext) : closed(err);
           }
         },
         async reset(key) {
-          await rl.delete(key);
+          await rl.delete(keyOf(key));
         },
       };
     },

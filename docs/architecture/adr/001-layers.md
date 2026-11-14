@@ -325,7 +325,8 @@ the error and list envelopes. The platform contracts live in lib-platform's `./c
   - `rate_limited` counts requests per **client IP**, the address `api` takes from `proxy` through `TRUST_PROXY`
     (ADR-004 §3).
 
-  Both live in the shared store (ADR-003, rate-limiter-flexible).
+  Both live in the shared store (ADR-003, rate-limiter-flexible), which keeps each email or address only as its
+  HMAC under `RATE_LIMIT_KEY` (RAD-73, ADR-004 §5), never as it was typed.
 - **Nothing tells anyone an account exists:**
   - Failed attempts are counted for the email address typed, whether or not an account has it, so an unknown
     address locks the same way.

@@ -139,6 +139,8 @@ It can't read the owner secret.
 - `api` and `worker` fetch their runtime secrets at start through the role and keep them in memory. They are never
   in the environment and never in a file.
 - Rotating one means restarting the containers.
+- Rotating `RATE_LIMIT_KEY` also resets every rate-limit and sign-in lockout count, since each is kept under the
+  key's HMAC. That's all it loses: a locked address simply starts again, so it's safe to rotate at any time.
 - The RDS master credential is managed by RDS in Secrets Manager, and no application uses it.
 
 **Migrations run from CI, so the owner credential never reaches the server.** The deploy job runs in GitHub
@@ -270,6 +272,7 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 | `S3_FILES_ORIGIN` | the files bucket's origin as the browser sees it: `https://<bucket>.s3.<region>.amazonaws.com`, or SeaweedFS's `http://127.0.0.1:8333` in development and CI. `web`'s CSP lets pages upload to it (`connect-src`, `form-action`) and show previews from it (`img-src`), and allows no other outside origin (RAD-43) | no | all | Parameter Store | web |
 | `SECRETS_KMS_KEY_ID` | the multi-Region KMS key that wraps the secrets library's data keys | no | staging, production | Parameter Store | api, worker |
 | `SECRETS_LOCAL_KEY` | stand-in for KMS in development, CI and the test copy, at least 32 random bytes | **yes** | development, CI, review | generated `.env` / CI / Vercel (§7) | api, worker |
+| `RATE_LIMIT_KEY` | the key the rate-limit store hashes every key with (HMAC-SHA256), so the emails and IP addresses it counts can't be read back from the table by trying likely values (RAD-73). At least 32 random bytes. Rotating it resets every count | **yes** | all | Secrets Manager (M8 creates it at deploy) / generated `.env` / CI | api |
 | `MAIL_FROM` | the sender address for invites and resets (a verified SES identity) | no | staging, production | Parameter Store | api, worker |
 | `TURNSTILE_SITE_KEY` | the public "I am a person" check on public forms, served to the browser at run time | no | all | Parameter Store | api |
 | `TURNSTILE_SECRET` | verifies that check | **yes** | staging, production | Secrets Manager | api |
