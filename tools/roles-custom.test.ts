@@ -119,15 +119,15 @@ describe.skipIf(!url)('custom roles and templates', () => {
   });
 
   it('copies grants and scopes, never people or the second-factor setting, and only keys the caller holds', async () => {
-    const source = await role({ 'session:read': 'all', 'leads:read': 'own', 'audit:read': 'all' });
+    const source = await role({ 'session:read': 'all', 'photo_files:read': 'own', 'audit:read': 'all' });
     await asAdmin('update radcore.roles set second_factor_required = true where key = $1', [source]);
     await person(source);
     const mgr = await (await manager()).as();
-    // The manager lacks leads:read, so can't pass it on through a copy.
+    // The manager lacks photo_files:read, so can't pass it on through a copy.
     expect(await outcome(create(mgr, `T ${letters()}`, source))).toBe('permission_not_held');
     const as = await (await admin()).as();
     const { key } = await create(as, `T ${letters()}`, source);
-    expect([await grantsOf(key), await flagOf(key)]).toEqual([{ 'session:read': 'all', 'leads:read': 'own', 'audit:read': 'all' }, false]);
+    expect([await grantsOf(key), await flagOf(key)]).toEqual([{ 'session:read': 'all', 'photo_files:read': 'own', 'audit:read': 'all' }, false]);
     expect((await asAdmin('select 1 from radcore.users where role = $1', [key]))).toEqual([]);
     // D-20: owner holds pay:read, kept for admin and owner, so no copy of owner can.
     expect(await outcome(create(as, `T ${letters()}`, 'owner'))).toBe('permission_not_for_role');
@@ -149,8 +149,8 @@ describe.skipIf(!url)('custom roles and templates', () => {
     const mgr = await manager();
     const own = ((await mgr.as()) as { role?: string }).role ?? '';
     expect(await rename(await mgr.as(), own, `T ${letters()}`)).toBe('role_not_editable');
-    // The every-key rule (the auditor on #142): the manager lacks leads:read, so a role holding it isn't theirs to rename.
-    const stronger = await role({ 'session:read': 'all', 'leads:read': 'own' });
+    // The every-key rule (the auditor on #142): the manager lacks photo_files:read, so a role holding it isn't theirs to rename.
+    const stronger = await role({ 'session:read': 'all', 'photo_files:read': 'own' });
     expect([await rename(await mgr.as(), stronger, `T ${letters()}`), await rename(await mgr.as(), target, `T ${letters()}`)])
       .toEqual(['permission_not_held', 'ok']);
   });
@@ -166,8 +166,8 @@ describe.skipIf(!url)('custom roles and templates', () => {
     expect(await remove('sales')).toBe('role_not_deletable');
     expect(await remove(await role({ 'session:read': 'all' }, { 'session:read': 'all' }))).toBe('role_not_deletable');
     const empty = await role({ 'session:read': 'all', 'audit:read': 'all' });
-    // The every-key rule (the auditor on #142): the manager lacks leads:read, so can't delete a role holding it.
-    const stronger = await role({ 'session:read': 'all', 'leads:read': 'own' });
+    // The every-key rule (the auditor on #142): the manager lacks photo_files:read, so can't delete a role holding it.
+    const stronger = await role({ 'session:read': 'all', 'photo_files:read': 'own' });
     const mgr = await (await manager()).as();
     expect(await outcome(run(mgr, (ctx) => deleteCustomRole(ctx, { key: stronger, reason })))).toBe('permission_not_held');
     expect(await asAdmin('select 1 from radcore.roles where key = $1', [stronger])).toHaveLength(1);
@@ -176,15 +176,15 @@ describe.skipIf(!url)('custom roles and templates', () => {
   });
 
   it('resets a built-in role to its template, scopes included, and its people sign in again', async () => {
-    const template = { 'session:read': 'all', 'leads:read': 'own', 'audit:read': 'all' } as const;
-    const builtIn = await role({ 'session:read': 'all', 'leads:read': 'all', 'users:read': 'all' }, template);
+    const template = { 'session:read': 'all', 'photo_files:read': 'own', 'audit:read': 'all' } as const;
+    const builtIn = await role({ 'session:read': 'all', 'photo_files:read': 'all', 'users:read': 'all' }, template);
     const holder = await person(builtIn);
     const as = await (await admin()).as();
     const reset = (caller: Principal, key: string) => withVersion(caller, (ctx, version) => resetRoleToTemplate(ctx, { key, version, reason }));
     expect(await reset(as, builtIn)).toBe('ok');
     expect([await grantsOf(builtIn), await holder.sessionEnded()]).toEqual([template, 'role_changed']);
     expect(await reset(as, await role({ 'session:read': 'all' }))).toBe('not_a_template');
-    // Nor does a reset give a key the caller doesn't hold: the manager lacks leads:read.
+    // Nor does a reset give a key the caller doesn't hold: the manager lacks photo_files:read.
     const other = await role({ 'session:read': 'all' }, template);
     expect(await reset(await (await manager()).as(), other)).toBe('permission_not_held');
     expect(await grantsOf(other)).toEqual({ 'session:read': 'all' });
