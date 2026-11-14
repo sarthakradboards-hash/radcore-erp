@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { SignedOutDialog } from '../components/auth/signed-out-dialog.tsx';
 import { LiveRegion } from '../components/ui/live-region.tsx';
 import { ApiProvider } from '../lib/api/provider.tsx';
+import { ClientErrorListener } from '../lib/errors/client-error-listener.tsx';
 import { t } from '../lib/i18n/index.ts';
 import { OfflineBanner } from '../lib/offline/offline-banner.tsx';
 import '../styles/tokens.css';
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en-IN">
       <body>
+        <ClientErrorListener />
         <OfflineBanner />
         <ApiProvider>
           {children}
