@@ -5,7 +5,6 @@
 // it, readInput reads it back and checks it.
 import { z } from 'zod';
 import { dateString } from './dates.ts';
-import { piiPlan } from './pii.ts';
 
 /** ADR-001 §7a: the platform's error codes and their HTTP status. A contract adds its own, answered as 422. */
 export const PLATFORM_ERRORS = {
@@ -115,9 +114,6 @@ export type ContractSpec<M extends Method, I extends z.ZodType, O extends z.ZodT
   /** A write whose answer holds a secret: saved-once claims the key but stores no answer, and a repeat gets 409
    * `answer_not_kept` (ADR-001 §7a, RAD-32). Only the routes on lib-platform's fixed list may declare it. */
   storesAnswer?: false;
-  /** The table of the records its answer shows, when its output has pii() fields: each one shown unmasked is logged
-   * as a look at that table's record, the outermost object's `id` (ADR-005 §7c, RAD-40). */
-  records?: string;
 };
 export type Contract<M extends Method = Method, I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType,
   E extends string = string, X extends Idempotency = Idempotency> =
@@ -126,7 +122,6 @@ export type Contract<M extends Method = Method, I extends z.ZodType = z.ZodType,
 const PATH = /^(\/([a-z0-9]+(-[a-z0-9]+)*|:[a-z][A-Za-z0-9]*))+$/;
 const LINK_ACTION = /^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$/;
 const CODE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
-const TABLE = /^[a-z][a-z0-9_]*$/;
 
 // shortcut: input and output JSON Schemas must match and be representable, which refuses .transform(), a pipe to
 // another type, .default(), z.date() and z.bigint(); z.coerce and .trim() pass, so review still watches for them.
@@ -181,11 +176,6 @@ export function defineContract<const M extends Method, I extends z.ZodType, O ex
   if (new Set(errors).size !== errors.length) throw new TypeError(`${at}: an error code is listed twice`);
   wireExact(`${at} input`, spec.input);
   wireExact(`${at} output`, spec.output);
-  // Who looked is logged by the handler, so a contract that shows personal data says where its records are.
-  if (piiPlan(spec.output) !== null && spec.records === undefined) {
-    throw new TypeError(`${at}: its output has pii() fields, so it names its records' table (records)`);
-  }
-  if (spec.records !== undefined && !TABLE.test(spec.records)) throw new TypeError(`${at}: records is a table's name`);
   return Object.freeze({ ...spec, errors, params });
 }
 
