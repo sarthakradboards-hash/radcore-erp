@@ -141,11 +141,15 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const s = await setup();
     const tokens = await Promise.all([1, 2, 3, 4].map(async () => s.signInNow()));
     const [idle, old, ended] = tokens.map((t) => sha256(t));
-    await asAdmin("update radcore.sessions set idle_expires_at = now() - interval '1 second' where token_hash = $1", [idle]);
-    await asAdmin("update radcore.sessions set absolute_expires_at = now() - interval '1 second' where token_hash = $1", [old]);
+    // A minute past, so a small gap between the database's clock and the app's can't keep them alive.
+    await asAdmin("update radcore.sessions set idle_expires_at = now() - interval '1 minute' where token_hash = $1", [idle]);
+    await asAdmin("update radcore.sessions set absolute_expires_at = now() - interval '1 minute' where token_hash = $1", [old]);
     await asAdmin("update radcore.sessions set ended_at = now(), ended_reason = 'admin' where token_hash = $1", [ended]);
     expect(await Promise.all(tokens.map(async (t) => (await s.principalOf(t)) !== null))).toEqual([false, false, false, true]);
-    expect(await s.principalOf(`${tokens[3]?.slice(0, -1) ?? ''}A`)).toBeNull();
+    // A token one character off. Flipped, never set: a 32-byte token's last character is one of 16, 'A' among them,
+    // so overwriting it with 'A' left about one run in 16 with the real token (RAD-80's flake).
+    const live = tokens[3] ?? '';
+    expect(await s.principalOf(`${live.slice(0, -1)}${live.endsWith('A') ? 'E' : 'A'}`)).toBeNull();
     await asAdmin("update radcore.users set status = 'disabled' where id = $1", [s.userId]);
     expect(await s.principalOf(tokens[3] ?? '')).toBeNull();
   });
