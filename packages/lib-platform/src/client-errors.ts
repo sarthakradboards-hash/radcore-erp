@@ -23,8 +23,9 @@ export const ERROR_CLASSES = ['TypeError', 'ReferenceError', 'RangeError', 'Synt
 
 const MAX_STACK_LINES = 20;
 // A stack's frame lines only, as describeError keeps them: Chrome's and Edge's first line repeats the message, which
-// can quote input (the auditor on #154). V8 writes `    at f (url:1:2)`; Firefox and Safari write `f@url:1:2`.
-const FRAME = /^\s+at \S|^[^\s@]*@\S+:\d+:\d+$/;
+// can quote input (the auditor on #154). V8 writes `    at f (url:1:2)`; Firefox and Safari write `f@url:1:2`, whose
+// name may hold spaces: Safari's `global code@url:1:1`, Firefox's `setTimeout handler*f@url:1:2` (e2e on #154).
+const FRAME = /^\s+at \S|^[^@\n]*@\S+:\d+:\d+$/;
 const framesOf = (stack: string) => stack.split('\n').filter((l) => FRAME.test(l)).slice(0, MAX_STACK_LINES).join('\n');
 const PAGES = WEB_PAGES.map((t) => ({ t, re: new RegExp(`^${t.replace(/\[[^\]/]+\]/g, '[^/]+')}$`) }));
 

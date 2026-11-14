@@ -70,4 +70,14 @@ describe('the browser error report', () => {
       'render@https://radcore.example.in/_next/static/chunks/app.js:10:5'].join('\n'));
     expect(JSON.stringify(fields)).not.toContain('Asha');
   });
+
+  // e2e-playwright's SHOULD on #154: a frame's name may hold spaces in Safari and Firefox; a message line still goes.
+  it("keeps Safari's and Firefox's frames whose names hold spaces", async () => {
+    const { log, report } = setup();
+    const frames = ['global code@https://radcore.example.in/_next/static/chunks/app.js:1:1',
+      'setTimeout handler*tick@https://radcore.example.in/_next/static/chunks/app.js:1:2'];
+    await report({ name: 'TypeError', message: 'x', page: '/', stack: ["TypeError: reading 'Asha Rao'", ...frames].join('\n') });
+    const [, fields] = log.error.mock.calls[0] ?? [];
+    expect((fields as { stack: string }).stack).toBe(frames.join('\n'));
+  });
 });
