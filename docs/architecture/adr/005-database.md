@@ -325,7 +325,8 @@ a GET opens a full record:
 A public link's request (`auth: 'link'`, ADR-001 §6a, RAD-41) is logged the same way, by the generic handler, after
 every such request's work commits. Its row names the record's table and id, like any opening, and its principal is
 `link:<id>`, whose link row names the action. The module names the table when it makes the link
-(`public_links.record_table`, which must be one of radcore's tables).
+(`public_links.record_table`, which must be one of radcore's tables). That check runs only when a row is written, so
+a migration that renames such a table also updates `public_links.record_table`.
 
 A full record is served, and its access logged, only when the browser's `Sec-Fetch-Site` is `same-origin`, or
 `none` (a typed address or a bookmark). Otherwise a cross-site link could make a person "open" a record they never
