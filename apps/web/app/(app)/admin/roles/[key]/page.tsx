@@ -20,6 +20,7 @@ import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { MESSAGES } from '../../shared.tsx';
 import { byScreen } from '../by-screen.ts';
+import { flip, withEdits, type GrantEdits } from '../grant-edits.ts';
 
 type Acting = 'rename' | 'reset' | 'delete' | 'save';
 // Rename and delete are refused when the role holds a key you don't (#142): not "give", so their own words.
@@ -38,7 +39,7 @@ export default function RolePage() {
   const save = useApiMutation(setRolePermissions, refresh);
   const router = useRouter();
   const [acting, setActing] = useState<Acting | null>(null);
-  const [draft, setDraft] = useState<ReadonlySet<string> | null>(null);
+  const [edits, setEdits] = useState<GrantEdits>(new Map());
   const close = (open: boolean) => { if (!open) setActing(null); };
 
   const error = roles.error ?? matrix.error;
@@ -66,14 +67,10 @@ export default function RolePage() {
 
   const mayChange = grants.editable && me.permissions.includes('roles:write');
   const saved = new Set(grants.grants);
-  const shown = draft ?? saved;
+  const shown = withEdits(saved, edits);
   const changes = [...new Set([...saved, ...shown])].filter((k) => saved.has(k) !== shown.has(k)).length;
-  const toggle = (permission: string) => {
-    const next = new Set(shown);
-    if (!next.delete(permission)) next.add(permission);
-    setDraft(next);
-  };
-  // Someone saved first: load their version, keep these ticks, and let the person look again before saving.
+  const toggle = (permission: string) => setEdits(flip(saved, edits, permission));
+  // Someone saved first: load their version; this person's ticks and unticks stay laid over it, to check and save again.
   const reloadIfStale = async (e: unknown) => {
     if (e instanceof ApiError && e.code === 'matrix_changed') await matrix.refetch();
     throw e;
@@ -136,7 +133,7 @@ export default function RolePage() {
             <button type="button" className="kit-button kit-button-primary" disabled={changes === 0} onClick={() => setActing('save')}>
               {t('admin.roles.perms.save')}
             </button>
-            <button type="button" className="kit-button" disabled={changes === 0} onClick={() => setDraft(null)}>{t('admin.roles.perms.discard')}</button>
+            <button type="button" className="kit-button" disabled={changes === 0} onClick={() => setEdits(new Map())}>{t('admin.roles.perms.discard')}</button>
           </div>
         </>
       ) : null}
@@ -161,13 +158,13 @@ export default function RolePage() {
         title={t('admin.roles.perms.reason.title', named)} action={t('admin.roles.perms.save')} done={t('admin.roles.perms.saved', named)}
         onConfirm={async (reason) => {
           await save.submit({ key: role.key, grants: [...shown].sort(), version: m.version, reason }).catch(reloadIfStale);
-          setDraft(null);
+          setEdits(new Map());
         }} />
       <ReasonDialog open={acting === 'reset'} onOpenChange={close} messages={MESSAGES}
         title={t('admin.roles.reset.title', named)} action={t('admin.roles.reset')} done={t('admin.roles.reset.done', named)}
         onConfirm={async (reason) => {
           await reset.submit({ key: role.key, version: m.version, reason }).catch(reloadIfStale);
-          setDraft(null);
+          setEdits(new Map());
         }} />
       <ReasonDialog open={acting === 'delete'} onOpenChange={close} messages={WHOLE_ROLE}
         title={t('admin.roles.delete.title', named)} action={t('admin.roles.delete')} done={t('admin.roles.deleted', named)}
