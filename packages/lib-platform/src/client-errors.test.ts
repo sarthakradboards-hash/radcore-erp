@@ -71,6 +71,21 @@ describe('the browser error report', () => {
     expect(JSON.stringify(fields)).not.toContain('Asha');
   });
 
+  // The auditor's SHOULD on #161: a message that ends like a frame, on one line or several, never reaches the log.
+  it('drops a message line that ends like a frame, on one line or across several', async () => {
+    const frame = '    at send (https://radcore.example.in/_next/static/chunks/app.js:3:9)';
+    for (const message of ['send to asha@mail.example.in:25:1', 'could not send\nto asha@mail.example.in:25:1']) {
+      const { log, report } = setup();
+      await report({ name: 'TypeError', message, page: '/', stack: [`TypeError: ${message}`, frame].join('\n') });
+      const [, fields] = log.error.mock.calls[0] ?? [];
+      expect((fields as { stack: string }).stack, message).toBe(frame);
+    }
+    // A line that starts with the error's name is dropped even when the message the browser sent differs.
+    const { log, report } = setup();
+    await report({ name: 'TypeError', message: 'x', page: '/', stack: ['TypeError: y to asha@mail.example.in:25:1', frame].join('\n') });
+    expect((log.error.mock.calls[0]?.[1] as { stack: string }).stack).toBe(frame);
+  });
+
   // e2e-playwright's SHOULD on #154: a frame's name may hold spaces in Safari and Firefox; a message line still goes.
   it("keeps Safari's and Firefox's frames whose names hold spaces", async () => {
     const { log, report } = setup();

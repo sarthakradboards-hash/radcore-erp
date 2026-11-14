@@ -26,7 +26,13 @@ const MAX_STACK_LINES = 20;
 // can quote input (the auditor on #154). V8 writes `    at f (url:1:2)`; Firefox and Safari write `f@url:1:2`, whose
 // name may hold spaces: Safari's `global code@url:1:1`, Firefox's `setTimeout handler*f@url:1:2` (e2e on #154).
 const FRAME = /^\s+at \S|^[^@\n]*@\S+:\d+:\d+$/;
-const framesOf = (stack: string) => stack.split('\n').filter((l) => FRAME.test(l)).slice(0, MAX_STACK_LINES).join('\n');
+// V8's message line can itself end like a frame (`TypeError: send to asha@mail.example.in:25:1`), so the message is
+// cut off first, every line of it, and any other line starting `<name>:` goes too (the auditor on #161).
+function framesOf(stack: string, name: string, message: string): string {
+  const head = `${name}: ${message}`;
+  const rest = stack.startsWith(head) ? stack.slice(head.length) : stack;
+  return rest.split('\n').filter((l) => FRAME.test(l) && !l.startsWith(`${name}:`)).slice(0, MAX_STACK_LINES).join('\n');
+}
 const PAGES = WEB_PAGES.map((t) => ({ t, re: new RegExp(`^${t.replace(/\[[^\]/]+\]/g, '[^/]+')}$`) }));
 
 /** The page a path is, as one of WEB_PAGES, or null. */
@@ -42,7 +48,7 @@ export function createClientErrors(log: Logger, alert?: Alerter) {
       const page = pageOf(input.page);
       const cls = classOf(input.name);
       const { message } = describeError(Object.assign(new Error(input.message), { name: cls }));
-      const stack = scrubText(framesOf(input.stack ?? ''));
+      const stack = scrubText(framesOf(input.stack ?? '', input.name, input.message));
       log.error(`browser error (${input.kind}) on ${page ?? 'an unknown page'} (request ${ctx.requestId})`,
         { errorClass: cls, message, path: scrubText(routeOf(input.page)), stack });
       // Not awaited: posting must never hold this transaction open, and the alerter never throws.
