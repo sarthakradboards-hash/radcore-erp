@@ -1,6 +1,7 @@
 'use client';
 // People (RAD-57, M1-14, M1-16, M1-18): invite, change a role, deactivate and reactivate, sign out everywhere.
 // The server says what may be done (`self`, a role's `grantable`) and refuses the rest with a named code.
+import { isMasked } from '@radcore/lib-common';
 import { deactivateUser, endUserSessions, inviteUser, listRoles, listSessions, listUsers, reactivateUser, resendInvite, setUserRole } from '@radcore/lib-platform/contract';
 import { useState } from 'react';
 import { z } from 'zod';
@@ -60,7 +61,8 @@ export default function UsersPage() {
 
   const columns: Column<AdminUser>[] = [
     { id: 'name', header: t('admin.users.col.name'), cell: (u) => (u.self ? t('admin.users.you', { name: u.displayName }) : u.displayName) },
-    { id: 'email', header: t('admin.users.col.email'), cell: (u) => u.email },
+    // shortcut: a masked address shows its mask text until ui-2's piiText lands (RAD-103's kit part).
+    { id: 'email', header: t('admin.users.col.email'), cell: (u) => (isMasked(u.email) ? u.email.masked : u.email) },
     { id: 'role', header: t('admin.users.col.role'), cell: (u) => roleName(u.role) },
     { id: 'status', header: t('admin.users.col.status'), cell: (u) => t(`admin.users.status.${u.status}`) },
     { id: 'factor', header: t('admin.users.col.factor'), cell: (u) => t(`admin.users.factor.${u.secondFactor}`) },
