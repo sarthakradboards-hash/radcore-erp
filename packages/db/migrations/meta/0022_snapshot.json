@@ -1,5 +1,5 @@
 {
-  "id": "30ab7d23-11d8-4ea3-9546-2726ce11acaf",
+  "id": "386b0a13-0390-4557-900c-1d8f6d809895",
   "prevId": "a77d4eed-ff74-4c9d-84ac-e265d1a70e12",
   "version": "7",
   "dialect": "postgresql",
@@ -801,8 +801,8 @@
       },
       "isRLSEnabled": false
     },
-    "radcore.public_links": {
-      "name": "public_links",
+    "radcore.pending_sign_ins": {
+      "name": "pending_sign_ins",
       "schema": "radcore",
       "columns": {
         "id": {
@@ -812,14 +812,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
+        "user_id": {
+          "name": "user_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -836,21 +830,9 @@
           "primaryKey": false,
           "notNull": true
         },
-        "uses_left": {
-          "name": "uses_left",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
+        "used_at": {
+          "name": "used_at",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_by": {
-          "name": "revoked_by",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -884,8 +866,8 @@
         }
       },
       "indexes": {
-        "ux_public_links_token_hash": {
-          "name": "ux_public_links_token_hash",
+        "ux_pending_sign_ins_token_hash": {
+          "name": "ux_pending_sign_ins_token_hash",
           "columns": [
             {
               "expression": "token_hash",
@@ -899,17 +881,11 @@
           "method": "btree",
           "with": {}
         },
-        "ix_public_links_action_record_id": {
-          "name": "ix_public_links_action_record_id",
+        "ix_pending_sign_ins_user_id": {
+          "name": "ix_pending_sign_ins_user_id",
           "columns": [
             {
-              "expression": "action",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
+              "expression": "user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -921,28 +897,128 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "pending_sign_ins_user_id_users_id_fk": {
+          "name": "pending_sign_ins_user_id_users_id_fk",
+          "tableFrom": "pending_sign_ins",
+          "tableTo": "users",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_public_links_action": {
-          "name": "ck_public_links_action",
-          "value": "\"radcore\".\"public_links\".\"action\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service).[a-z][a-z0-9_]*$'"
-        },
-        "ck_public_links_token_hash": {
-          "name": "ck_public_links_token_hash",
-          "value": "\"radcore\".\"public_links\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
-        },
-        "ck_public_links_uses_left": {
-          "name": "ck_public_links_uses_left",
-          "value": "\"radcore\".\"public_links\".\"uses_left\" is null or \"radcore\".\"public_links\".\"uses_left\" >= 0"
-        },
-        "ck_public_links_revoked": {
-          "name": "ck_public_links_revoked",
-          "value": "(\"radcore\".\"public_links\".\"revoked_at\" is null) = (\"radcore\".\"public_links\".\"revoked_by\" is null)"
+        "ck_pending_sign_ins_token_hash": {
+          "name": "ck_pending_sign_ins_token_hash",
+          "value": "\"radcore\".\"pending_sign_ins\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
         }
       },
+      "isRLSEnabled": false
+    },
+    "radcore.recovery_codes": {
+      "name": "recovery_codes",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_hash": {
+          "name": "code_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_recovery_codes_user_id": {
+          "name": "ix_recovery_codes_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "recovery_codes_user_id_users_id_fk": {
+          "name": "recovery_codes_user_id_users_id_fk",
+          "tableFrom": "recovery_codes",
+          "tableTo": "users",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "radcore.saved_once": {
@@ -1057,6 +1133,115 @@
           "value": "\"radcore\".\"saved_once\".\"input_hash\" ~ '^[0-9a-f]{64}$'"
         }
       },
+      "isRLSEnabled": false
+    },
+    "radcore.second_factors": {
+      "name": "second_factors",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret": {
+          "name": "secret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret_key_id": {
+          "name": "secret_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_step": {
+          "name": "last_step",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_second_factors_user_id": {
+          "name": "ux_second_factors_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "second_factors_user_id_users_id_fk": {
+          "name": "second_factors_user_id_users_id_fk",
+          "tableFrom": "second_factors",
+          "tableTo": "users",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "radcore.secrets": {

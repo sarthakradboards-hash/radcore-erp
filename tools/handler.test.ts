@@ -4,7 +4,7 @@
 // Here in tools/ because server code may not call fetch (ADR-002 L8). The tables live in a schema of this file's own.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { defineContract, newPassword } from '@radcore/lib-common';
-import { AppError, defineRoute, loadConfig, RecordedRefusal, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, defineRoute, loadConfig, RecordedRefusal, type BeforeDeps, type Ctx, type Principal } from '@radcore/lib-platform';
 import { sql } from 'drizzle-orm';
 import { integer, pgSchema, text, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
@@ -295,6 +295,45 @@ describe.skipIf(!url)('the generic route handler', () => {
     });
     expect(cookieOnKeyed).toBeUndefined();
     expect([await count(`kept ${tag}`), await count(`dropped ${tag}`), await count(`keyed ${tag}`)]).toEqual([1, 0, 0]);
+  });
+
+  // RAD-33 (ADR-001 §8): a route's `before` step runs after the permission check, outside any transaction, with a
+  // short read-only one of its own, and its result reaches the service as meta.before.
+  it("runs a route's before step after the permission check, outside the transaction, and hands its result on", async () => {
+    const secrets = { keyId: 'local:test', encrypt: vi.fn(), decrypt: vi.fn(), reencrypt: vi.fn() };
+    const before = vi.fn(async (input: { body: string; n: number }, deps: BeforeDeps) => ({
+      seen: input.body,
+      principal: deps.principal.kind === 'user' ? deps.principal.userId : 'none',
+      // The short read: as this request's principal, and read-only.
+      read: await deps.read(async (ctx) => (await notesTx(ctx).select({ p: sql<string>`current_setting('app.principal')`,
+        ro: sql<string>`current_setting('transaction_read_only')` }).from(notes).limit(1))[0]),
+      secrets: deps.secrets === secrets,
+    }));
+    const service = vi.fn(async (_ctx: Ctx, _input: { body: string; n: number }, meta: { before: unknown }) => {
+      seenBefore = meta.before;
+      return { id: 'n-1' };
+    });
+    let seenBefore: unknown;
+    const serveWith = async (principal: Principal, fn: (base: string) => Promise<void>) => {
+      const server = await listen(createApp(config(), logger(), { db, authenticate: async () => principal, secrets,
+        routes: [defineRoute(addNote, service, { before })] }), 0, '127.0.0.1');
+      try {
+        await fn(`http://127.0.0.1:${server.port}`);
+      } finally {
+        await server.stop();
+      }
+    };
+    await serveWith(user(['notes:read']), async (base) => {
+      expect((await post(base, { body: 'refused', n: 1 })).status).toBe(403);
+    });
+    expect(before).not.toHaveBeenCalled();
+    await serveWith(user(['notes:write']), async (base) => {
+      expect((await post(base, { body: 'kept', n: 1 })).status).toBe(200);
+    });
+    expect(seenBefore).toEqual({ seen: 'kept', principal: 'u-1', read: { p: 'user:u-1', ro: 'on' }, secrets: true });
+    // A route with a before step needs the secrets library to mount.
+    expect(() => createApp(config(), logger(), { db, authenticate: async () => null,
+      routes: [defineRoute(addNote, service, { before })] })).toThrow(/before step needs the secrets library/);
   });
 
   it('marks every answer no-store, and never names the server', async () => {

@@ -76,6 +76,9 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   'packages/lib-common/src/money.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/contract.ts': {
     rules: [...LIB, 'radcore/e3-no-io', 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
+  // A contract entry's part kept in src/contract/ gets the entry's rules (RAD-33).
+  'packages/lib-platform/src/contract/sign-in.ts': {
+    rules: [...LIB, 'radcore/e3-no-io', 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/rules/tax.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/index.ts': { rules: [...LIB, 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
   'packages/lib-platform/src/import/isolate.ts': {

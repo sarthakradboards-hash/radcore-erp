@@ -2,11 +2,13 @@
 // after 30 minutes idle or 12 hours, whichever is first, or when it's ended: by sign-out, by the person, by an admin,
 // or by a password change or reset. Each start and end is a security event. The cookie is set only after commit.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { AppError, loadConfig, RecordedRefusal, sessionCookieFor, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, createSecrets, loadConfig, RecordedRefusal, sessionCookieFor, type Ctx, type Principal } from '@radcore/lib-platform';
 import { authenticateSession, createAuth, createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { testPassword, testSettings } from '@radcore/test-helpers';
+import { fakeClock, testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { Secret, URI } from 'otpauth';
+import { codeAt } from './second-factor-fixture.ts';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import platform from '../apps/api/src/routes/platform.ts';
 import { createAccount } from '../packages/lib-platform/src/auth/account.ts';
@@ -62,6 +64,10 @@ describe.skipIf(!url)('sign-in sessions', () => {
     }
   }
   const PUBLIC: Principal = { kind: 'system', name: 'public', permissions: [] };
+  // The handler's cookie channel, as a sign-in route gets it: the session cookie and the pending sign-in's.
+  const channel = (device: string, over: { incoming?: string | null; set?: (t: string, e: Date) => void; clear?: () => void } = {}) =>
+    ({ device, incoming: over.incoming ?? null, set: over.set ?? vi.fn(), clear: over.clear ?? vi.fn(),
+      pending: { incoming: null, set: vi.fn(), clear: vi.fn() } });
   const run = <R>(principal: Principal, fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, write, principal, randomUUID(), fn);
   const outcome = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
 
@@ -79,7 +85,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     // Signs in through the route's service as the handler runs it, and returns the token its cookie would carry.
     const signInNow = async (incoming: string | null = null) => {
       const set = vi.fn<(token: string, expires: Date) => void>();
-      await run(PUBLIC, (ctx) => signIn({ ...ctx, cookie: { device, incoming, set, clear: vi.fn() } }, { email, password: PASSWORD }));
+      await run(PUBLIC, (ctx) => signIn({ ...ctx, cookie: channel(device, { incoming, set }) }, { email, password: PASSWORD }));
       return set.mock.calls[0]?.[0] ?? '';
     };
     const principalOf = async (token: string, touch = false) => authenticateSession(db, token, { touch });
@@ -100,7 +106,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
   it('starts a session on sign-in: the token in the cookie, only its hash stored, and a sign_in event', async () => {
     const s = await setup();
     const set = vi.fn<(token: string, expires: Date) => void>();
-    expect(await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, incoming: null, set, clear: vi.fn() } },
+    expect(await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: channel(s.device, { set }) },
       { email: s.email, password: PASSWORD }))).toEqual({ next: 'done' });
     const [token, expires] = set.mock.calls[0] ?? [];
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -118,7 +124,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
   it('records a failed sign-in, for the account or for nobody, and starts no session', async () => {
     const s = await setup();
     const set = vi.fn();
-    const attempt = (email: string) => run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, incoming: null, set, clear: vi.fn() } },
+    const attempt = (email: string) => run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: channel(s.device, { set }) },
       { email, password: 'not the password at all' }).catch((e: unknown) => e));
     // The handler commits a RecordedRefusal's transaction; here the catch inside it does the same.
     const wrong = await attempt(s.email);
@@ -186,7 +192,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const set = vi.fn();
     for (const email of [s.email, unknown]) {
       for (let i = 0; i < LOCKOUT.points + 3; i += 1) {
-        await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: { device: s.device, incoming: null, set, clear: vi.fn() } },
+        await run(PUBLIC, (ctx) => s.signIn({ ...ctx, cookie: channel(s.device, { set }) },
           { email, password: 'not the password at all' }).catch((e: unknown) => e));
       }
     }
@@ -203,7 +209,8 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const stored = await s.row(token);
     expect(await run(await s.as(token), getMyself)).toEqual({ user: { id: s.userId, displayName: 'Asha Rao' },
       permissions: ['session:read'], session: { idleExpiresAt: stored?.idle.toISOString(),
-        absoluteExpiresAt: stored?.absolute.toISOString() }, secondFactor: 'not_required' });
+        // Every account needs a second factor until roles land (RAD-33, RAD-35), and this one has none yet.
+        absoluteExpiresAt: stored?.absolute.toISOString() }, secondFactor: 'enrolment_required' });
   });
 
   it("lists the person's own live sessions a page at a time, newest activity first, marking this one", async () => {
@@ -238,7 +245,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const token = await s.signInNow();
     const clear = vi.fn();
     const me = await s.as(token);
-    await run(me, (ctx) => endCurrentSession({ ...ctx, cookie: { device: s.device, incoming: null, set: vi.fn(), clear } }));
+    await run(me, (ctx) => endCurrentSession({ ...ctx, cookie: channel(s.device, { clear }) }));
     expect([clear.mock.calls.length, await s.principalOf(token)]).toEqual([1, null]);
     expect(await s.events()).toEqual([{ kind: 'sign_in', detail: {} }, { kind: 'session_ended', detail: { reason: 'sign_out' } }]);
   });
@@ -299,19 +306,36 @@ describe.skipIf(!url)('sign-in sessions', () => {
     }
   });
 
+  // Every account needs a second factor until RAD-35 (RAD-33), so the browser's way in is password, enrolment, code.
   it('signs in and out over HTTP with a __Host- cookie that is HttpOnly, Secure and SameSite=Lax', async () => {
     const s = await setup();
     const cfg = config(url ?? NO_DATABASE);
-    const auth = await createAuth(cfg, log);
+    const clock = fakeClock('2026-11-14T06:00:00Z');
+    const auth = await createAuth(cfg, log, { now: clock.now });
     const app = createApp(cfg, log, { db, routes: [...platform, ...auth.routes], newPasswordCheck: async () => null,
+      secrets: createSecrets(cfg.secrets),
       authenticate: (req, route) => authenticateSession(db, tokenIn(req.get('cookie')), { touch: route !== 'GET /me' }) });
     const server = await listen(app, 0, '127.0.0.1');
     const base = `http://127.0.0.1:${server.port}`;
     const headers = { 'content-type': 'application/json', origin: cfg.publicOrigin, 'user-agent': CHROME_ANDROID };
     try {
-      const signedIn = await fetch(`${base}/sign-in`, { method: 'POST', headers, body: JSON.stringify({ email: s.email, password: PASSWORD }) });
-      expect([signedIn.status, await signedIn.json()]).toEqual([200, { next: 'done' }]);
-      const cookie = signedIn.headers.get('set-cookie') ?? '';
+      const password = await fetch(`${base}/sign-in`, { method: 'POST', headers, body: JSON.stringify({ email: s.email, password: PASSWORD }) });
+      expect([password.status, await password.json()]).toEqual([200, { next: 'enrol_second_factor' }]);
+      const pendingCookie = password.headers.get('set-cookie') ?? '';
+      expect(pendingCookie).toMatch(/^__Host-radcore_pending=[A-Za-z0-9_-]{43}; Path=\/; Expires=.+; HttpOnly; Secure; SameSite=Lax$/);
+      const pending = { ...headers, cookie: pendingCookie.split(';')[0] ?? '' };
+      // The enrolment start isn't key-exempt: it takes a saved-once key, and stores no answer (it holds the secret).
+      const started = await fetch(`${base}/sign-in/second-factor/enrolment`, { method: 'POST', body: '{}',
+        headers: { ...pending, 'idempotency-key': randomUUID() } });
+      const { otpauthUri } = (await started.json()) as { otpauthUri: string };
+      const secret = (URI.parse(otpauthUri) as { secret: Secret }).secret.base32;
+      const signedIn = await fetch(`${base}/sign-in/second-factor/enrolment/confirm`, { method: 'POST', headers: pending,
+        body: JSON.stringify({ code: codeAt(secret, clock.now()) }) });
+      expect([signedIn.status, ((await signedIn.json()) as { recoveryCodes: string[] }).recoveryCodes]).toEqual([200, expect.any(Array)]);
+      // The session's cookie is set and the pending one cleared, in the same answer.
+      const cookies = signedIn.headers.getSetCookie();
+      expect(cookies.find((c) => c.startsWith('__Host-radcore_pending='))).toMatch(/^__Host-radcore_pending=; Path=\/; Expires=Thu, 01 Jan 1970/);
+      const cookie = cookies.find((c) => c.startsWith('__Host-radcore_session=')) ?? '';
       expect(cookie).toMatch(/^__Host-radcore_session=[A-Za-z0-9_-]{43}; Path=\/; Expires=.+; HttpOnly; Secure; SameSite=Lax$/);
       const token = tokenIn(cookie.split(';')[0]) ?? '';
       expect((await s.row(token))?.device).toBe('Chrome on Android');
@@ -328,7 +352,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
       const wrong = await fetch(`${base}/sign-in`, { method: 'POST', headers, body: JSON.stringify({ email: s.email, password: 'nope nope nope' }) });
       expect([wrong.status, ((await wrong.json()) as { code: string }).code, wrong.headers.get('set-cookie')])
         .toEqual([422, 'invalid_credentials', null]);
-      expect((await s.events()).map((e) => e.kind)).toEqual(['sign_in', 'session_ended', 'sign_in_failed']);
+      expect((await s.events()).map((e) => e.kind)).toEqual(['second_factor_changed', 'sign_in', 'session_ended', 'sign_in_failed']);
     } finally {
       await server.stop();
       await auth.store.stop();
