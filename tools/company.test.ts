@@ -2,12 +2,13 @@
 // database refuses a second company (RC-010), and nothing is invoiced until the GSTIN, address and state are set,
 // the state being the GSTIN's own, never a default (RC-112). The profile is one row every test would share, so each
 // test runs in a transaction that is rolled back, and leaves no company behind for another file or test.
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { companyForInvoice, getCompanyProfile, setCompanyProfile } from '@radcore/lib-accounts';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, roleNeedsSecondFactor, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { SECOND_FACTOR_KEYS } from '../packages/lib-platform/src/permissions.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -21,6 +22,11 @@ const profile = { ...fields, reason: 'Setting up the books' };
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
   expect.fail('TEST_DATABASE_URL is not set: in CI the company tests must run, not skip');
+});
+
+// D-19 widened (Sarthak, 15 Nov): the company profile sets the tax identity every invoice prints.
+it('marks company:write as a key that needs the second factor, and company:read not', () => {
+  expect([SECOND_FACTOR_KEYS.includes('company:write'), SECOND_FACTOR_KEYS.includes('company:read')]).toEqual([true, false]);
 });
 
 class RolledBack extends Error {}
@@ -41,6 +47,24 @@ describe.skipIf(!url)('the company profile', { timeout: 30_000 }, () => {
     return out as R;
   }
   const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
+
+  it('asks the second factor of someone whose role holds company:write, whatever the role says (D-19)', async () => {
+    const role = `t_${[...randomBytes(10)].map((b) => String.fromCharCode(97 + (b % 26))).join('')}`;
+    const c = await superPool.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      await c.query("insert into radcore.roles (key, name, description) values ($1, $1, 'For company.test.ts')", [role]);
+      await c.query("insert into radcore.role_grants (role, permission, scope) values ($1, 'session:read', 'all'), ($1, 'company:write', 'all')", [role]);
+      const { rows } = await c.query<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash, role)
+        values ($1, 'Test', 'active', 'x', $2) returning id`, [`company.${randomUUID()}@example.test`, role]);
+      await c.query('commit');
+      const id = rows[0]?.id ?? '';
+      expect(await runInTransaction(db, write, AS, randomUUID(), (ctx) => roleNeedsSecondFactor(ctx, id))).toBe(true);
+    } finally {
+      c.release();
+    }
+  });
 
   it('refuses to invoice before the profile is set, and has no state to fall back on (RC-112)', async () => {
     expect(await rolledBack(async (ctx) => [await getCompanyProfile(ctx), await code(companyForInvoice(ctx))]))
