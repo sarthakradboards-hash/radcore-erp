@@ -123,9 +123,10 @@ describe.skipIf(!url)('an export, start to download', () => {
     await download();
     const key = /export\/[0-9a-f-]{36}/.exec(link)?.[0] ?? '';
     expect((uploaded.get(key) ?? '').replace(/^﻿/, '').trimEnd().split('\n')).toEqual(['name,phone', 'Party 0,+919876543210']);
-    const row = { record_table: 'data_exports', created_by: `user:${reader.userId}` };
-    expect((await pool.query('select record_table, created_by from radcore.access_log where record_id = $1', [exportId])).rows)
-      .toEqual([row, row]);
+    // The export's own table, a real one (the architect on #156).
+    const row = { record_table: 'exports', created_by: `user:${reader.userId}`, real: true };
+    expect((await pool.query(`select record_table, created_by, to_regclass('radcore.' || record_table) is not null as real
+      from radcore.access_log where record_id = $1`, [exportId])).rows).toEqual([row, row]);
   });
 
   it('fails too_large past its cap and uploads nothing, rather than a truncated file', async () => {

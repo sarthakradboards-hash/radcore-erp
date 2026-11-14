@@ -304,8 +304,10 @@ They are append-only with explicit reversals:
     top-up (§8) made it. Rows go through the parent, and the owner's default privileges would otherwise let the
     app insert straight into an `audit_log` partition and forge audit rows.
   - **Closed to the read-only login:** `radcore.secrets` (RAD-65). Its migration revokes everything from
-    `radcore_read`, and `tools/logins.test.ts` checks it. Also every `pii('pay')` column (RAD-40, D-20). The
-    migration that adds one revokes `radcore_read`'s SELECT on it, and `tools/logins.test.ts` names it.
+    `radcore_read`, and `tools/logins.test.ts` checks it. Also every `pii('pay')` column (RAD-40, D-20): the
+    migration that adds one revokes `radcore_read`'s SELECT on it, and `tools/logins.test.ts` lists it. The test
+    fails on any column named like pay (salary, wage, bank, IFSC, account number…) that isn't listed and closed,
+    unless its `NOT_PAY` list names it, with a reason, as business data that isn't pay.
   - **The guard.** `tools/logins.test.ts` fails on any append-only table, log or view that `radcore_app` can
     still write, and on any partition either login holds a privilege on.
   - **The settings check** refuses `radcore_owner` as `DATABASE_URL` everywhere. In staging and production it
@@ -329,7 +331,7 @@ outside a `piiRecord`.
   record isn't returned without its log.
 - A list page logs each row that is a look, at most `MAX_LIMIT` (200) per page.
 - An export doesn't log its rows: it can hold 1,000,000, and its transaction is read-only. Its file is kept (D-12) and
-  records what it held. Each `POST /exports/:id/download` writes `record_access('data_exports', <id>)`.
+  records what it held. Each `POST /exports/:id/download` writes `record_access('exports', <id>)`.
 
 A public link's request (`auth: 'link'`, ADR-001 §6a, RAD-41) is logged the same way, by the generic handler, after
 every such request's work commits. Its row names the record's table and id, like any opening, and its principal is
@@ -345,8 +347,7 @@ looked at, for example to make it seem they viewed someone's pay.
   `web`'s server components. `web` forwards the browser's own value **unchanged** on every call to `api`, and never
   sets one itself.
 - A request without the header, or with `cross-site` or `same-site`, gets its `pii()` fields masked. A link from an
-  email is one of these. The person opens the record with one click, which is a same-origin
-  request.
+  email is one of these. The person opens the record with one click, which is a same-origin request.
 - The generic handler answers such a request as if its principal held neither `pii:read` nor `pay:read`, and logs
   nothing (RAD-40).
 

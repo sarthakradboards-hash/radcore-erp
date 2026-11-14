@@ -22,8 +22,9 @@ const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const logger = () => ({ info: vi.fn<(m: string) => void>(), error: vi.fn<(m: string, e?: unknown) => void>() });
 
-const person = piiRecord('t_people', z.object({ id: idString(), name: z.string(), phone: pii(z.string(), 'last4'),
-  salary: pii(z.string(), 'pay'), manager: piiRecord('t_managers', z.object({ id: idString(), phone: pii(z.string(), 'last4') })).nullable() }));
+// Two of radcore's tables stand in for a module's own (people, their managers): a look names a real table.
+const person = piiRecord('users', z.object({ id: idString(), name: z.string(), phone: pii(z.string(), 'last4'),
+  salary: pii(z.string(), 'pay'), manager: piiRecord('files', z.object({ id: idString(), phone: pii(z.string(), 'last4') })).nullable() }));
 type Person = z.output<typeof person>;
 const getPerson = defineContract({ method: 'POST', path: '/t/people/one', auth: 'session', perm: 'people:read', tx: read,
   input: z.object({ id: idString(), manager: idString().optional() }), output: person });
@@ -91,7 +92,7 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
       expect([body.phone, body.salary]).toEqual(['+919876543210', MASKED_PAY]);
       // The looks are in the log by the time the answer arrives.
       expect((await looksAt([id, manager])).map((r) => [r.record_id, r.record_table, r.created_by]).sort())
-        .toEqual([[id, 't_people', by], [manager, 't_managers', by]].sort());
+        .toEqual([[id, 'users', by], [manager, 'files', by]].sort());
     });
   });
 
@@ -110,6 +111,16 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
       expect(((await (await post('/t/people/one', { id: typed })).json()) as Person).phone).toBe('+919876543210');
     }, 'none');
     expect((await looksAt([typed])).length).toBe(1);
+  });
+
+  it('logs every look against a real table, as public_links checks its own (the architect on #156)', async () => {
+    const [id, manager] = [randomUUID(), randomUUID()];
+    await serve(as(['pii:read']), async (post) => {
+      expect((await post('/t/people/one', { id, manager })).status).toBe(200);
+    });
+    expect(await looksAt([id, manager])).toHaveLength(2);
+    const { rows } = await admin.query("select distinct record_table from radcore.access_log where to_regclass('radcore.' || record_table) is null");
+    expect(rows).toEqual([]);
   });
 
   it('logs one look per record a list page shows unmasked', async () => {
@@ -140,7 +151,7 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
       expect((await post('/t/people/save', { id, name: 'Asha' }, key)).status).toBe(200);
       expect((await post('/t/people/save', { id, name: 'Asha' }, key)).status).toBe(200);
     });
-    expect((await looksAt([id])).map((r) => r.record_table)).toEqual(['t_people']);
+    expect((await looksAt([id])).map((r) => r.record_table)).toEqual(['users']);
   });
 
   it('refuses a write that sends a mask back, at any depth, before the service runs, and saves bulleted text', async () => {

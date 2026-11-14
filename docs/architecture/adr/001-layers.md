@@ -551,9 +551,9 @@ codes.
 - There is no total count. A screen that needs counts, such as count cards, calls a count contract of its own, so a
   list never adds up a whole ledger (RC-176).
 
-**Masked fields (RAD-40).** A `pii()` field that its principal can't see arrives as `{ masked: "••••••" }`, and its
-wire type is `T | { masked: string }`, so a screen can't miss it. The mask is always six bullets, so it doesn't give
-away the length.
+**Masked fields (RAD-40).** A `pii()` field that its principal can't see arrives as
+`{ masked: "••••••" }`, and its wire type is `T | { masked: string }`, so a screen can't miss it. The mask is
+always six bullets, so it doesn't give away the length.
 - `pii(schema)` is masked whole. `pii(schema, 'last4')`, for an identifier like a phone or PAN, keeps the last 4
   characters (`"••••••3210"`) when the value has at least 8.
 - Salaries and bank details carry `pii(schema, 'pay')`, masked whole. It needs `pay:read`, which only admin and owner
@@ -564,8 +564,8 @@ away the length.
   semantics), so a field left out is left alone.
 - The server refuses an input string that starts with six `•` (U+2022), with `invalid_input`. A masked value can
   never be saved over the real one, and text pasted from a bulleted list still saves.
-- An export marks its personal columns the same way, `exportContract(kind, perm, filter, columns, { phone: 'last4' })`,
-  and its file masks them for a starter without the key.
+- An export names its personal columns and their kind, `exportContract(…, { phone: 'last4' })`, and its file masks
+  them as a screen would for the person who started it.
 
 **Same origin, no CORS.**
 - Caddy serves `web` at `/` and `api` at `/api` on one origin (ADR-004).

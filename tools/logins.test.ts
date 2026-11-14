@@ -31,6 +31,10 @@ const EVERY = 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
 const PAY_COLUMNS: readonly string[] = [];
 // A column whose name says pay must be on that list, so a pay column can't land unlisted and readable.
 const PAY_LIKE = '(salar|wage|ctc|gross|net_pay|basic_pay|bank|ifsc|account_number|iban|upi_id)';
+// Columns PAY_LIKE matches that aren't pay, as 'table.column', each with its reason, such as an invoice's
+// gross_amount or a payment's bank_account_id: business data the read-only login keeps (the architect and the auditor
+// on #156). The test skips them.
+const NOT_PAY: Readonly<Record<string, string>> = {};
 const PAY_READABLE = `select c.table_name || '.' || c.column_name as col,
     has_column_privilege('radcore_read', format('radcore.%I', c.table_name), c.column_name, 'SELECT') as readable
   from information_schema.columns c join pg_catalog.pg_class r on r.relname = c.table_name
@@ -206,17 +210,22 @@ describe.skipIf(!url)('the three logins', () => {
 
   it("closes every pay column to the read-only login, and finds one left off the list or readable (RAD-40, D-20)", async () => {
     await inRollback(async (c) => {
-      const found = async (listed: readonly string[]) =>
-        (await c.query<{ col: string; readable: boolean }>(PAY_READABLE, [listed])).rows;
-      // Every pay-like column is listed, and none listed is readable.
-      expect((await found(PAY_COLUMNS)).filter((r) => !PAY_COLUMNS.includes(r.col) || r.readable)).toEqual([]);
+      // A pay-like column that isn't listed, or a listed one the read-only login can read; NOT_PAY's are skipped.
+      const problems = async (listed: readonly string[], notPay: Readonly<Record<string, string>>) =>
+        (await c.query<{ col: string; readable: boolean }>(PAY_READABLE, [listed])).rows
+          .filter((r) => notPay[r.col] === undefined && (!listed.includes(r.col) || r.readable));
+      expect(await problems(PAY_COLUMNS, NOT_PAY)).toEqual([]);
       // The check finds a pay column made the way the owner's default privileges leave it, then closed column by column.
       await c.query('set local role radcore_owner');
       await c.query('create table radcore.t_payslips (id int primary key, net_pay numeric, note text)');
-      expect(await found([])).toEqual([{ col: 't_payslips.net_pay', readable: true }]);
+      expect(await problems([], {})).toEqual([{ col: 't_payslips.net_pay', readable: true }]);
       await c.query('revoke select on radcore.t_payslips from radcore_read');
       await c.query('grant select (id, note) on radcore.t_payslips to radcore_read');
-      expect(await found(['t_payslips.net_pay'])).toEqual([{ col: 't_payslips.net_pay', readable: false }]);
+      expect(await problems(['t_payslips.net_pay'], {})).toEqual([]);
+      // A false match is named in NOT_PAY with its reason, and stays readable.
+      await c.query('create table radcore.t_invoices (id int primary key, gross_amount numeric)');
+      expect(await problems(['t_payslips.net_pay'], {})).toEqual([{ col: 't_invoices.gross_amount', readable: true }]);
+      expect(await problems(['t_payslips.net_pay'], { 't_invoices.gross_amount': 'an invoice total, not pay' })).toEqual([]);
     });
   });
 

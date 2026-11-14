@@ -91,6 +91,20 @@ describe('piiPlan and maskOutput', () => {
     expect(maskOutput(planOf(person), masked, ALL)).toEqual({ value: masked, looks: [{ table: 'people', id: 'p-1' }] });
   });
 
+  it("still masks a field zod has copied: described, given meta, refined (the auditor on #156)", () => {
+    for (const email of [pii().describe('Their address'), pii().meta({ title: 'Email' }), pii().refine(() => true),
+      pii(z.string(), 'pay').describe('x').optional()]) {
+      const plan = planOf(piiRecord('users', z.object({ id: idString(), email })));
+      expect(maskOutput(plan, { id: 'u-1', email: 'a.person@example.in' }, []).value).toEqual({ id: 'u-1', email: { masked: SIX } });
+    }
+    const kept = planOf(piiRecord('users', z.object({ id: idString(), phone: pii(z.string(), 'last4').describe('Phone') })));
+    expect(maskOutput(kept, { id: 'u-1', phone: '+919876543210' }, []).value).toEqual({ id: 'u-1', phone: { masked: '••••••3210' } });
+  });
+
+  it('refuses a pii() field behind a lazy, which the walk would otherwise miss', () => {
+    expect(() => piiPlan(piiRecord('users', z.object({ id: idString(), email: z.lazy(() => pii()) })))).toThrow(/lazy can't be masked/);
+  });
+
   it('has no plan for an output without pii()', () => {
     expect(piiPlan(listOf(z.object({ id: idString(), name: z.string() })))).toBeNull();
   });

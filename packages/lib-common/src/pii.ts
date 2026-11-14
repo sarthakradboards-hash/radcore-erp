@@ -10,15 +10,18 @@ export type PiiKind = 'whole' | 'last4' | 'pay';
 /** A value the server hid from this principal, as the wire sends it. */
 export type Masked = { masked: string };
 
-const masked = z.object({ masked: z.string() }).strict();
+const maskShape = () => z.object({ masked: z.string() }).strict();
+const masked = maskShape();
+// One mask schema per kind, as a pii() field's second option. zod's copies (.describe(), .meta(), .refine(), and the
+// wrappers) keep a union's options, so a field is known by its mask wherever a copy of it goes (the auditor on #156).
+const MASKS: Readonly<Record<PiiKind, z.ZodType>> = { whole: maskShape(), last4: maskShape(), pay: maskShape() };
+const MASK_KINDS = new Map<z.ZodType, PiiKind>(Object.entries(MASKS).map(([k, s]) => [s, k as PiiKind]));
 /** The mask is always six bullets, so it gives no length away. */
 const BULLETS = '••••••';
 /** Whether a principal holding these keys sees this kind of data unmasked. */
 export const maySee = (kind: PiiKind, permissions: readonly string[]): boolean =>
   permissions.includes(kind === 'pay' ? 'pay:read' : 'pii:read');
 
-/** The fields the handler masks. */
-export const piiFields = z.registry<{ kind: PiiKind }>();
 /** The object schemas that are records: a look at one is logged against its table. */
 export const piiRecords = z.registry<{ table: string }>();
 
@@ -26,9 +29,7 @@ export const piiRecords = z.registry<{ table: string }>();
  * screen's type has to handle both. It sits inside a piiRecord. Inputs never use it: an edit leaves out what it can't
  * see (patch semantics). */
 export function pii<T extends z.ZodType = z.ZodString>(schema?: T, kind: PiiKind = 'whole') {
-  const field = z.union([(schema ?? z.string()) as T, masked]);
-  piiFields.add(field as z.ZodType, { kind });
-  return field;
+  return z.union([(schema ?? z.string()) as T, MASKS[kind] as typeof masked]);
 }
 /** An object schema holding pii() fields, and the table its records are in, so a customer reached through an order
  * is logged against `customers`. It has an `id`, the record's. */
@@ -48,8 +49,14 @@ export function maskOf(value: unknown, kind: PiiKind): Masked {
 /** Where the pii() fields are in an output schema, and the records they belong to. */
 export type PiiPlan = { kind: PiiKind } | { fields: Readonly<Record<string, PiiPlan>>; table?: string } | { each: PiiPlan };
 
-// Every schema a schema holds, whatever its kind: zod keeps them on its def (shape, element, options, innerType…).
+/** A pii() field's kind, from its mask option, or undefined for any other schema. */
+const kindOf = (s: z.ZodType): PiiKind | undefined =>
+  s instanceof z.ZodUnion ? (s.options as z.ZodType[]).map((o) => MASK_KINDS.get(o)).find((k) => k !== undefined) : undefined;
+
+// Every schema a schema holds, whatever its kind: zod keeps them on its def (shape, element, options, innerType…), and
+// a lazy behind its getter.
 function children(s: z.ZodType): z.ZodType[] {
+  if (s instanceof z.ZodLazy) return [s.unwrap() as z.ZodType];
   const def: object = s._zod.def;
   return Object.values(def).flatMap((v: unknown) => {
     if (v instanceof z.ZodType) return [v];
@@ -61,7 +68,7 @@ function children(s: z.ZodType): z.ZodType[] {
 function holdsPii(s: z.ZodType, seen = new Set<z.ZodType>()): boolean {
   if (seen.has(s)) return false;
   seen.add(s);
-  return piiFields.has(s) || children(s).some((c) => holdsPii(c, seen));
+  return kindOf(s) !== undefined || children(s).some((c) => holdsPii(c, seen));
 }
 
 function merge(a: PiiPlan, b: PiiPlan): PiiPlan {
@@ -77,10 +84,10 @@ function merge(a: PiiPlan, b: PiiPlan): PiiPlan {
 }
 
 function planOf(schema: z.ZodType, inRecord: boolean): PiiPlan | null {
-  const meta = piiFields.get(schema);
-  if (meta !== undefined) {
+  const kind = kindOf(schema);
+  if (kind !== undefined) {
     if (!inRecord) throw new TypeError('a pii() field sits outside any piiRecord, so its look has no table to log under');
-    return { kind: meta.kind };
+    return { kind };
   }
   if (!holdsPii(schema)) return null;
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable || schema instanceof z.ZodReadonly
@@ -104,7 +111,7 @@ function planOf(schema: z.ZodType, inRecord: boolean): PiiPlan | null {
   throw new TypeError(`a pii() field under a ${schema._zod.def.type} can't be masked: use an object or an array`);
 }
 /** The output's pii() fields, or null when it has none. It refuses a pii() field outside a piiRecord, a piiRecord
- * without an id, and a pii() field under a wrapper it can't follow (a record, a tuple, a pipe), so no field goes
+ * without an id, and a pii() field under a wrapper it can't follow (a record, a tuple, a pipe, a lazy), so no field goes
  * unmasked or unlogged because the walk missed it. */
 export const piiPlan = (schema: z.ZodType): PiiPlan | null => planOf(schema, false);
 

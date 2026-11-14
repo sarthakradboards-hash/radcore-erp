@@ -135,6 +135,6 @@ export async function exportDownload(ctx: Ctx, input: z.output<typeof downloadEx
   const url = await ctx.files.downloadUrl(row.storeKey, `${row.kind}.csv`);
   await recordSecurityEvent(ctx, { kind: 'download', detail: { fileId: row.id } },
     { userId: ctx.principal.kind === 'user' ? ctx.principal.userId : null, device: null });
-  await recordLooks(ctx, [{ table: 'data_exports', id: row.id }]);
+  await recordLooks(ctx, [{ table: 'exports', id: row.id }]);
   return { url };
 }
