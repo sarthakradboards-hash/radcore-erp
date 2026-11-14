@@ -166,9 +166,12 @@ describe.skipIf(!url)('the three logins', () => {
         outbox: 'select * from radcore.jobs_outbox',
         // RAD-45: webhook payloads may be personal.
         deliveries: 'select * from radcore.webhook_deliveries',
+        // RAD-41: a link, yes; its token's hash, never.
+        links: 'select id, action, record_id, expires_at from radcore.public_links',
+        linkHashes: 'select token_hash from radcore.public_links',
         temp: 'create temp table t (x int)',
       })).toEqual({ select: 'ok', insert: DENIED, update: DENIED, delete: DENIED, queue: DENIED, secrets: DENIED, outbox: DENIED, deliveries: DENIED,
-        temp: DENIED });
+        links: 'ok', linkHashes: DENIED, temp: DENIED });
     });
   });
 

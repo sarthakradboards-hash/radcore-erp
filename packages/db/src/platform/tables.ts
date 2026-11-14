@@ -82,36 +82,23 @@ export const users = radcoreTable('users', {
   index('ix_users_role').on(t.role),
 ]);
 
-/**
- * Roles (RAD-35, M1-17; the plan's page 4): each person signs in with one. `key` never changes, and `name` is what
- * people see. A role that needs the second sign-in factor says so (D-19). What a role may do is its grants. People
- * make their own roles too (RAD-83), so `name_key` (the name without case or extra spaces) is unique: no two roles look
- * alike on screen, as v1's store and stores did (RC-044).
- */
+/** Roles (RAD-35, M1-17; the plan's page 4): each person signs in with one. `key` never changes; `name` is what people
+ * see, and `name_key` (it without case or extra spaces) is unique, so no two roles look alike (RAD-83, RC-044). A role
+ * needing the second sign-in factor says so (D-19). What a role may do is its grants. */
 export const roles = radcoreTable('roles', {
   key: text().primaryKey(),
   name: boundedText({ max: 60 }).notNull(),
   nameKey: text().notNull().generatedAlwaysAs(sql`lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))`),
   description: boundedText({ max: 500 }).notNull(),
   secondFactorRequired: boolean().notNull().default(false),
-}, (t) => [
-  check('ck_roles_key', sql`${t.key} ~ '^[a-z][a-z_]{1,31}$'`),
-  uniqueIndex('ux_roles_name_key').on(t.nameKey),
-]);
+}, (t) => [check('ck_roles_key', sql`${t.key} ~ '^[a-z][a-z_]{1,31}$'`), uniqueIndex('ux_roles_name_key').on(t.nameKey)]);
 
-/**
- * The built-in roles' templates (RAD-83; the architect on RAD-83): the grants each of the plan's roles shipped with,
- * seeded by migration and never changed by the app. "Reset to template" puts a built-in role's grants back to these;
- * a role with no rows here is a custom one, which can be deleted.
- */
+/** The built-in roles' templates (RAD-83): the grants each shipped with, seeded by migration; a reset restores them. */
 export const roleTemplates = radcoreTable('role_templates', {
   role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
-  permission: text().notNull(),
-  scope: text().notNull(),
-}, (t) => [
-  primaryKey({ name: 'pk_role_templates', columns: [t.role, t.permission] }),
-  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own')`),
-]);
+  permission: text().notNull(), scope: text().notNull(),
+}, (t) => [primaryKey({ name: 'pk_role_templates', columns: [t.role, t.permission] }),
+  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own')`)]);
 
 /**
  * What a role may do (RAD-35, ADR-001 §6a): one permission key each, at a scope. `all` reaches every record of that
@@ -380,3 +367,34 @@ export const changeReasons = radcoreTable('change_reasons', {
   id: id(),
   reason: boundedText({ max: 500 }).notNull(),
 });
+
+/**
+ * Public links (RAD-41, ADR-001 §6a, RC-047): a link sent to a customer or a member of staff (an invoice, an estimate,
+ * a payslip) lets its holder do one `action` on one record, `record_id` in `record_table`, until `expires_at`, unless
+ * revoked first.
+ * Only the SHA-256 of its token is stored (`token_hash`), and nothing else ever holds the token: other tables, and the
+ * audit trail (`link:<id>`), name the link by its id. `uses_left` counts down for a link with a set number of uses
+ * (null: any number until it expires). Audited, with the hash redacted; the read-only login can't read the hash.
+ */
+export const publicLinks = radcoreTable('public_links', {
+  id: id(),
+  action: text().notNull(),
+  // The table the record is in, as access_log names it (the architect on RAD-41): set by the module making the link.
+  recordTable: text().notNull(),
+  recordId: uuid().notNull(),
+  tokenHash: text().notNull(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  usesLeft: integer(),
+  revokedAt: timestamp({ withTimezone: true }),
+  revokedBy: text(),
+}, (t) => [
+  check('ck_public_links_action', sql`${t.action} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$'`),
+  check('ck_public_links_token_hash', sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+  // A table of radcore's, by its plain name: "who opened this record?" finds a link's openings under it.
+  check('ck_public_links_record_table', sql`${t.recordTable} ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || ${t.recordTable}) is not null`),
+  check('ck_public_links_uses_left', sql`${t.usesLeft} is null or ${t.usesLeft} >= 0`),
+  // A revocation says who revoked it, and when.
+  check('ck_public_links_revoked', sql`(${t.revokedAt} is null) = (${t.revokedBy} is null)`),
+  uniqueIndex('ux_public_links_token_hash').on(t.tokenHash),
+  index('ix_public_links_action_record_id').on(t.action, t.recordId),
+]);

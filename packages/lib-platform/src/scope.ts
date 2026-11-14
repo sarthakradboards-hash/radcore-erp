@@ -6,6 +6,8 @@ import { principalId, type Owned, type Principal } from './ctx.ts';
 export function mayUse(p: Principal, permission: string, record?: Owned): boolean {
   if (!p.permissions.includes(permission)) return false;
   if (record === undefined || p.kind === 'system') return true;
+  // A link's holder holds no key (ADR-001 §6a), so it was refused above; its one record is the link's (RAD-41).
+  if (p.kind === 'link') return false;
   // A key the role holds only over its own records reaches a record the person owns, and nothing else.
   return !(p.ownScope ?? []).includes(permission) || record.owner === principalId(p);
 }

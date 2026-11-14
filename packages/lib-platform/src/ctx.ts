@@ -6,7 +6,7 @@ import type { z } from 'zod';
 import type { FileStore } from './files/store.ts';
 import type { Settings } from './settings.ts';
 
-/** Who a request or job runs as (ADR-001 §6a). Link principals arrive with M1-23. */
+/** Who a request or job runs as (ADR-001 §6a). */
 export type Principal =
   | { readonly kind: 'user'; readonly userId: string; readonly permissions: readonly string[];
       /** The sign-in session the request came with (RAD-34): "this device" in the sessions list. */
@@ -15,7 +15,10 @@ export type Principal =
       readonly role?: string;
       /** Of `permissions`, those the role holds only over the person's own records (RAD-35); the rest reach all. */
       readonly ownScope?: readonly string[] }
-  | { readonly kind: 'system'; readonly name: string; readonly permissions: readonly string[] };
+  | { readonly kind: 'system'; readonly name: string; readonly permissions: readonly string[] }
+  /** A public link's holder (RAD-41): only the link's one action, on its one record. `permissions` is always empty. */
+  | { readonly kind: 'link'; readonly linkId: string; readonly action: string; readonly recordId: string;
+      readonly permissions: readonly string[] };
 
 /** What send needs of a job contract (jobs.ts's JobContract has it); named here so ctx.ts imports no jobs.ts (D1). */
 type QueuedJob<I> = { readonly name: string; readonly input: z.ZodType<I> };
@@ -76,4 +79,5 @@ export type Ctx = {
 };
 
 /** How audit rows and `app.principal` name a principal: `user:<id>` or `system:<name>`. */
-export const principalId = (p: Principal): string => (p.kind === 'user' ? `user:${p.userId}` : `system:${p.name}`);
+export const principalId = (p: Principal): string =>
+  (p.kind === 'user' ? `user:${p.userId}` : p.kind === 'link' ? `link:${p.linkId}` : `system:${p.name}`);

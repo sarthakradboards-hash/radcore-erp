@@ -1,5 +1,5 @@
 {
-  "id": "a3282259-a353-4cdc-bff2-591f12d7f9b7",
+  "id": "f2a81c43-a409-4a13-b017-19819bfaeb70",
   "prevId": "f8957801-f400-4360-8d5c-8cbf7e3f407d",
   "version": "7",
   "dialect": "postgresql",
@@ -1105,6 +1105,160 @@
       },
       "isRLSEnabled": false
     },
+    "radcore.public_links": {
+      "name": "public_links",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_table": {
+          "name": "record_table",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_id": {
+          "name": "record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uses_left": {
+          "name": "uses_left",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_by": {
+          "name": "revoked_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_public_links_token_hash": {
+          "name": "ux_public_links_token_hash",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_public_links_action_record_id": {
+          "name": "ix_public_links_action_record_id",
+          "columns": [
+            {
+              "expression": "action",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_public_links_action": {
+          "name": "ck_public_links_action",
+          "value": "\"radcore\".\"public_links\".\"action\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service).[a-z][a-z0-9_]*$'"
+        },
+        "ck_public_links_token_hash": {
+          "name": "ck_public_links_token_hash",
+          "value": "\"radcore\".\"public_links\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "ck_public_links_record_table": {
+          "name": "ck_public_links_record_table",
+          "value": "\"radcore\".\"public_links\".\"record_table\" ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || \"radcore\".\"public_links\".\"record_table\") is not null"
+        },
+        "ck_public_links_uses_left": {
+          "name": "ck_public_links_uses_left",
+          "value": "\"radcore\".\"public_links\".\"uses_left\" is null or \"radcore\".\"public_links\".\"uses_left\" >= 0"
+        },
+        "ck_public_links_revoked": {
+          "name": "ck_public_links_revoked",
+          "value": "(\"radcore\".\"public_links\".\"revoked_at\" is null) = (\"radcore\".\"public_links\".\"revoked_by\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "radcore.recovery_codes": {
       "name": "recovery_codes",
       "schema": "radcore",
@@ -1293,93 +1447,6 @@
       },
       "isRLSEnabled": false
     },
-    "radcore.role_templates": {
-      "name": "role_templates",
-      "schema": "radcore",
-      "columns": {
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "permission": {
-          "name": "permission",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scope": {
-          "name": "scope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "role_templates_role_roles_key_fk": {
-          "name": "role_templates_role_roles_key_fk",
-          "tableFrom": "role_templates",
-          "tableTo": "roles",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "role"
-          ],
-          "columnsTo": [
-            "key"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "pk_role_templates": {
-          "name": "pk_role_templates",
-          "columns": [
-            "role",
-            "permission"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_role_templates_scope": {
-          "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "radcore.roles": {
       "name": "roles",
       "schema": "radcore",
@@ -1395,16 +1462,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "name_key": {
-          "name": "name_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
-            "type": "stored"
-          }
         },
         "description": {
           "name": "description",
@@ -1448,23 +1505,7 @@
           "default": "nullif(current_setting('app.principal', true), '')"
         }
       },
-      "indexes": {
-        "ux_roles_name_key": {
-          "name": "ux_roles_name_key",
-          "columns": [
-            {
-              "expression": "name_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
