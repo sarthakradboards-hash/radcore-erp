@@ -50,6 +50,7 @@ const CONDITIONAL = [
   `:matches(IfStatement, ConditionalExpression, LogicalExpression, SwitchStatement, CatchClause) ${ASSERT}`,
 ].map(sel('[RC-156] An assertion always runs: no expect or assert inside if, ?:, &&, ||, ??, switch or catch'));
 
+const ASSERTS_IN = /\b(expect|assert)\s*[.(]/;
 // The name a call starts from: `it`, `it.each(t)`, `test.skipIf(x)` and `it.only` all start from it or test.
 type Callee = { type: string; name?: string; object?: Callee; callee?: Callee };
 const rootName = (n: Callee | undefined): string | undefined => {
@@ -74,10 +75,12 @@ function testNames(program: { body: Declared[] }): Set<string> {
   return names;
 }
 // An early `return` under a condition skips the assertions after it: `if (!rows.length) return;`. Selectors can't
-// say "the nearest function is the test's own callback", so this one check is a small rule.
+// say "the nearest function is the test's own callback", so this one check is a small rule. A callback handed to
+// forEach and the like is a loop body, so a conditional return there skips its assertions too (the auditor on #157).
+const ITERATORS = new Set(['forEach', 'map', 'flatMap', 'some', 'every', 'filter', 'find', 'findIndex', 'reduce']);
 const earlyReturn: Rule.RuleModule = {
   meta: { type: 'problem', schema: [],
-    messages: { m: '[RC-156] An assertion always runs: no return inside if, switch or catch in a test' } },
+    messages: { m: '[RC-156] An assertion always runs: no return inside if, switch or catch in a test or a loop callback that asserts' } },
   create: (context) => ({
     ReturnStatement(node) {
       const tests = testNames(context.sourceCode.ast as unknown as { body: Declared[] });
@@ -85,20 +88,42 @@ const earlyReturn: Rule.RuleModule = {
       for (const a of [...context.sourceCode.getAncestors(node)].reverse()) {
         if (a.type === 'IfStatement' || a.type === 'SwitchStatement' || a.type === 'CatchClause') conditional = true;
         if (a.type === 'ArrowFunctionExpression' || a.type === 'FunctionExpression' || a.type === 'FunctionDeclaration') {
-          const parent: Callee | null = (a as Rule.Node).parent;
-          const isTest = parent?.type === 'CallExpression' && parent.callee !== a && tests.has(rootName(parent.callee) ?? '');
-          if (conditional && isTest) context.report({ node, messageId: 'm' });
+          const parent = (a as Rule.Node).parent as Callee & { callee?: { property?: { name?: string } } } | null;
+          const called = parent?.type === 'CallExpression' && parent.callee !== a;
+          const isTest = called && tests.has(rootName(parent.callee) ?? '');
+          const isLoopBody = called && ITERATORS.has(parent.callee?.property?.name ?? '')
+            && ASSERTS_IN.test(context.sourceCode.text.slice(node.range?.[1] ?? 0, a.range?.[1] ?? 0));
+          if (conditional && (isTest || isLoopBody)) context.report({ node, messageId: 'm' });
           return;
         }
       }
     },
   }),
 };
+// An extended test is declared in the file that uses it, so the checks above see its name (the auditor on #157):
+// one imported from elsewhere would be just another call to them.
+const exportedExtend: Rule.RuleModule = {
+  meta: { type: 'problem', schema: [],
+    messages: { m: '[RC-156] Extend it or test in the test file that uses it, so the hygiene checks see those tests' } },
+  create: (context) => {
+    const extended = (n: Callee | null | undefined) => n?.type === 'CallExpression'
+      && (n.callee as { property?: { name?: string } } | undefined)?.property?.name === 'extend'
+      && /^(it|test)$/.test(rootName(n.callee) ?? '');
+    return {
+      'ExportNamedDeclaration > VariableDeclaration > VariableDeclarator'(node: Rule.Node & { init?: Callee | null }) {
+        if (extended(node.init)) context.report({ node, messageId: 'm' });
+      },
+      ExportDefaultDeclaration(node: Rule.Node & { declaration: Callee }) {
+        if (extended(node.declaration)) context.report({ node, messageId: 'm' });
+      },
+    };
+  },
+};
 // A `continue`, or a `break` out of the loop, under a condition skips the assertions in a loop of them (RAD-59):
-// `for (const r of rows) { if (!r.ok) continue; expect(r.total).toBe(1); }` can assert nothing.
+// `for (const r of rows) { if (!r.ok) continue; expect(r.total).toBe(1); }` can assert nothing. A `continue` skips
+// only what follows it, so one after the last assertion is fine; a `break` skips every later row's assertions.
 const LOOPS = new Set(['ForStatement', 'ForInStatement', 'ForOfStatement', 'WhileStatement', 'DoWhileStatement']);
 const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration']);
-const ASSERTS_IN = /\b(expect|assert)\s*[.(]/;
 const skippedLoop: Rule.RuleModule = {
   meta: { type: 'problem', schema: [],
     messages: { m: '[RC-156] An assertion always runs: no continue or break under a condition in a loop of assertions' } },
@@ -113,7 +138,9 @@ const skippedLoop: Rule.RuleModule = {
         if (!LOOPS.has(a.type)) continue;
         const parent = (a as Rule.Node).parent as { type: string; label?: { name: string } } | null;
         if (node.label && !(parent?.type === 'LabeledStatement' && parent.label?.name === node.label.name)) continue;
-        if (conditional && ASSERTS_IN.test(context.sourceCode.getText(a))) context.report({ node, messageId: 'm' });
+        const skipped = isBreak ? context.sourceCode.getText(a)
+          : context.sourceCode.text.slice(node.range?.[1] ?? 0, a.range?.[1] ?? 0);
+        if (conditional && ASSERTS_IN.test(skipped)) context.report({ node, messageId: 'm' });
         return;
       }
     };
@@ -150,8 +177,10 @@ const eslint = new ESLint({ overrideConfigFile: true, overrideConfig: [
   { linterOptions: { noInlineConfig: true } },
   block([...TEST_FILES, 'packages/test-helpers/**'], TS, TEST_MODE),
   block([], TEST_FILES, [...CLOCK, ...SLEEP, ...CONDITIONAL, ...SHARED, ...RELAY, ...SKIP]),
-  { files: TEST_FILES, plugins: { hygiene: { rules: { 'early-return': earlyReturn, 'skipped-loop': skippedLoop } } },
-    rules: { 'hygiene/early-return': 'error', 'hygiene/skipped-loop': 'error' } },
+  { plugins: { hygiene: { rules: { 'early-return': earlyReturn, 'skipped-loop': skippedLoop, 'exported-extend': exportedExtend } } } },
+  { files: TEST_FILES, rules: { 'hygiene/early-return': 'error', 'hygiene/skipped-loop': 'error' } },
+  // Everywhere, test helpers included: that's where a shared extended test would live.
+  { files: TS, languageOptions: { parser: tseslint.parser }, rules: { 'hygiene/exported-extend': 'error' } },
 ] });
 const problems = (results: ESLint.LintResult[]) =>
   results.flatMap((r) => r.messages.map((m) => `${r.filePath}:${m.line} ${m.message}`));
@@ -243,10 +272,21 @@ describe('each check fails its violating samples', () => {
     ["it('a', ({ skip }) => { skip(); expect(a).toBe(1); });", 'RC-156'],
     ["it('a', (ctx) => { ctx.skip(!db, 'no database'); expect(a).toBe(1); });", 'RC-156'],
     ["const dbTest = test.extend({});\ndbTest('a', () => { if (!rows.length) return; expect(rows[0]).toBe(1); });", 'RC-156'],
-    ["export const deep = it.extend({});\nconst deeper = deep.extend({});\ndeeper.each([1])('a', () => { if (x) return; expect(a).toBe(1); });", 'RC-156'],
+    ["const deep = it.extend({});\nconst deeper = deep.extend({});\ndeeper.each([1])('a', () => { if (x) return; expect(a).toBe(1); });", 'RC-156'],
+    // The auditor's SHOULDs on #157: a loop callback that returns early before asserting, and a shared extended test.
+    ["rows.forEach((r) => { if (!r.ok) return; expect(r.total).toBe(1); });", 'RC-156'],
+    ["it('a', () => { rows.map(function (r) { if (!r) { return 0; } expect(r).toBe(1); return 1; }); });", 'RC-156'],
+    ["rows.every((r) => { switch (r) { case 0: return true; } assert(r); return true; });", 'RC-156'],
+    ["export const dbTest = test.extend({});", 'RC-156'],
+    ["export default it.extend({});", 'RC-156'],
   ])('test: %s', async (code, tag) => {
     expect((await lintSample(code, TEST)).join('\n')).toContain(`[${tag}]`);
   });
+});
+
+it('refuses an extended test exported from a test helper, where a shared one would live', async () => {
+  expect((await lintSample("import { test } from 'vitest';\nexport const dbTest = test.extend({});",
+    'packages/test-helpers/src/db-test.ts')).join('\n')).toContain('[RC-156] Extend it or test');
 });
 
 describe('each check lets the safe forms through', () => {
@@ -278,6 +318,10 @@ describe('each check lets the safe forms through', () => {
   it('a loop whose continue or break skips no assertion, and a skip decided before the test', async () => {
     const code = [
       "import { expect, it, test } from 'vitest';",
+      // A continue after the last assertion, and a loop callback whose early return comes after its assertion.
+      'for (const r of rows) { expect(r).toBeTruthy(); if (r > 1) continue; n += r; }',
+      'rows.forEach((r) => { expect(r).toBeTruthy(); if (!r) return; n += r; });',
+      'const kept = rows.filter((r) => { if (!r) return false; return r > 1; });',
       'for (const r of rows) { if (!r) continue; total += r; }',
       'expect(total).toBe(3);',
       'for (const r of rows) { switch (r) { case 1: n += 1; break; default: n += 2; } expect(n).toBeGreaterThan(0); }',
