@@ -153,25 +153,43 @@ describe.skipIf(!url)('the migration runner', { timeout: 30_000 }, () => {
     });
   });
 
-  // RAD-35 (the auditor on #130): 0024_roles makes users.role NOT NULL. A database that already has people, such as a
-  // developer's after the bootstrap, must still take it: the first admin becomes admin, anyone else counter.
-  it('gives the people a database already has a role as 0024 makes it required: the first admin admin, the rest counter', async () => {
-    await withDatabase(async (db) => {
-      const roles = readJournal(MIGRATIONS_FOLDER).entries.findIndex((e) => e.tag.endsWith('_roles'));
-      expect(roles).toBeGreaterThan(0);
-      await withFolder(roles, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
+  // RAD-35 (the auditor and the coordinator on #130): 0024_roles makes users.role NOT NULL as an upgrade (ADR-004). A
+  // database that already has its first admin, such as a developer's after the bootstrap, takes it with them made admin;
+  // one with anyone else still without a role stops, saying so, rather than inventing one.
+  describe('0024_roles on a database that already has people', () => {
+    const FIRST = '00000000-0000-4000-8000-000000000001';
+    const upTo = readJournal(MIGRATIONS_FOLDER).entries.findIndex((e) => e.tag.endsWith('_roles'));
+    // A database migrated as the release before 0024 had it, holding its first admin and `others` more people.
+    const before = async (db: string, others: number) => {
+      expect(upTo).toBeGreaterThan(0);
+      await withFolder(upTo, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
+      const more = Array.from({ length: others }, (_, i) => `, ('00000000-0000-4000-8000-00000000010${String(i)}', 'p${String(i)}@example.in', 'Person')`);
       await query(db, `begin;
         set local app.principal = 'system:test';
-        insert into radcore.users (id, email, display_name) values
-          ('00000000-0000-4000-8000-000000000001', 'first.admin@example.in', 'First admin'),
-          ('00000000-0000-4000-8000-000000000002', 'someone@example.in', 'Someone');
-        insert into radcore.bootstrap (key, user_id) values ('first_admin', '00000000-0000-4000-8000-000000000001');
+        insert into radcore.users (id, email, display_name) values ('${FIRST}', 'first.admin@example.in', 'First admin')${more.join('')};
+        insert into radcore.bootstrap (key, user_id) values ('first_admin', '${FIRST}');
         commit`);
-      await migrate(db);
-      expect(await query(db, 'select email, role, role_since is not null as since from radcore.users order by email')).toEqual([
-        { email: 'first.admin@example.in', role: 'admin', since: true }, { email: 'someone@example.in', role: 'counter', since: true }]);
-      expect(await query(db, "select is_nullable from information_schema.columns where table_schema = 'radcore' and table_name = 'users' and column_name = 'role'"))
-        .toEqual([{ is_nullable: 'NO' }]);
+    };
+
+    it('makes the first admin an admin, then the role required', async () => {
+      await withDatabase(async (db) => {
+        await before(db, 0);
+        await migrate(db);
+        expect(await query(db, 'select email, role, role_since is not null as since from radcore.users'))
+          .toEqual([{ email: 'first.admin@example.in', role: 'admin', since: true }]);
+        expect(await query(db, "select is_nullable from information_schema.columns where table_schema = 'radcore' and table_name = 'users' and column_name = 'role'"))
+          .toEqual([{ is_nullable: 'NO' }]);
+      });
+    });
+
+    it('stops, naming how many, when anyone else has no role, and applies none of it', async () => {
+      await withDatabase(async (db) => {
+        await before(db, 2);
+        await expect(migrate(db)).rejects.toThrow(/2 people have no role: assign roles before upgrading/);
+        expect(await applied(db)).toBe(upTo);
+        expect(await query(db, "select count(*)::int as n from information_schema.columns where table_schema = 'radcore' and table_name = 'users' and column_name = 'role'"))
+          .toEqual([{ n: 0 }]);
+      });
     });
   });
 

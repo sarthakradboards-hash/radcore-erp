@@ -75,9 +75,19 @@ SELECT 'accounts', k, 'all' FROM unnest(array['statement_files:read', 'statement
 UNION ALL
 SELECT r, k, 'all' FROM unnest(array['stores', 'accounts']) AS r, unnest(array['import_files:read', 'import_files:write']) AS k;
 --> statement-breakpoint
--- Anyone already here gets a role before the column tightens (the auditor on #130): the first admin is the admin, and
--- anyone else the role with nothing but My work, for an admin to change. A fresh database has nobody, so nothing runs.
-UPDATE radcore.users SET role = CASE WHEN id IN (SELECT user_id FROM radcore.bootstrap) THEN 'admin' ELSE 'counter' END,
-  role_since = now() WHERE role IS NULL;
+-- An upgrade (ADR-004, expand then contract): the first admin, named by the bootstrap record, is the admin. Anyone else
+-- already here has no role this migration can choose for them, so it stops and says so, rather than invent one (the
+-- coordinator on #130). A fresh database has nobody, so this does nothing there.
+UPDATE radcore.users SET role = 'admin', role_since = now() WHERE role IS NULL AND id IN (SELECT user_id FROM radcore.bootstrap);
+--> statement-breakpoint
+DO $$
+DECLARE
+  roleless bigint;
+BEGIN
+  SELECT count(*) INTO roleless FROM radcore.users WHERE role IS NULL;
+  IF roleless > 0 THEN
+    RAISE EXCEPTION '% people have no role: assign roles before upgrading (RAD-35)', roleless;
+  END IF;
+END $$;
 --> statement-breakpoint
 ALTER TABLE "radcore"."users" ALTER COLUMN "role" SET NOT NULL;
