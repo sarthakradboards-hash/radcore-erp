@@ -19,3 +19,8 @@ export async function recordEvent(handle: Tx, e: EventRow): Promise<void> {
   await rawOf(handle).execute(
     sql`select radcore.record_event(${e.kind}, ${e.userId}::uuid, ${e.device}, ${JSON.stringify(e.detail)}::jsonb)`);
 }
+
+/** Appends a record's opening to access_log, in a short write of its own after the read commits (ADR-005 §7c). */
+export async function recordAccess(handle: Tx, recordTable: string, recordId: string): Promise<void> {
+  await rawOf(handle).execute(sql`select radcore.record_access(${recordTable}, ${recordId})`);
+}

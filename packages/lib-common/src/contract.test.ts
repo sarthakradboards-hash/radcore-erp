@@ -46,6 +46,21 @@ describe('defineContract refuses a contract that breaks a rule', () => {
     expect(() => defineContract({ ...base, ...change } as typeof base)).toThrow(TypeError);
   });
 
+  it('takes a link route only as a POST whose body has the token, for a <module>.<what> action (RAD-41)', () => {
+    const link = { method: 'POST', path: '/l/invoice', auth: 'link', action: 'sales.invoice_view', rateLimit: 'token-link',
+      perm: null, tx: { readOnly: true, isolation: 'read committed' }, input: z.object({ token: z.string() }),
+      output: z.object({}) } as const;
+    expect(defineContract(link)).toMatchObject({ auth: 'link', action: 'sales.invoice_view' });
+    for (const change of [{ method: 'GET' }, { input: z.object({ id: z.string() }) }, { action: 'Sales.View' },
+      { path: '/l/:token', input: z.object({ token: z.string() }) },
+      // The record is the link's: an id the holder could name would serve another record (auditor on #134).
+      { input: z.object({ token: z.string(), invoiceId: z.string() }) },
+      { input: z.object({ token: z.string(), id: z.string() }) },
+      { input: z.object({ token: z.string(), invoice_id: z.string() }) }]) {
+      expect(() => defineContract({ ...link, ...change } as typeof link)).toThrow(/link route/);
+    }
+  });
+
   it('refuses a writing GET and a repeatable-read write even past the types', () => {
     // As plain JavaScript would call it: the types refuse both, so this is the runtime half.
     const untyped = defineContract as (spec: object) => unknown;
