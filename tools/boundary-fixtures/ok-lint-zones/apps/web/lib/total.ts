@@ -17,3 +17,6 @@ export const retries = (retryLimit: number, rateLimit: number) => retryLimit * 2
 // A plain string array may be mapped to numbers, and a branded one stays in decimals.
 export const counts = (xs: string[]) => xs.map(Number);
 export const biggest = (xs: string[]) => xs.map((x) => roundMoney(x)).reduce((a, b) => (dec(a).gt(b) ? a : b));
+// A branded value may be checked against null or undefined; anything else compares with dec().eq().
+export const missing = (x: string | null) => (x === null ? null : roundMoney(x)) === null;
+export const unset = (m: ReturnType<typeof roundMoney> | undefined) => m !== undefined && dec(m).eq('0');

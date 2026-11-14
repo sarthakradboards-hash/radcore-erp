@@ -501,6 +501,9 @@ const brandedMoney = {
       || (c.type === 'MemberExpression' && c.object.type === 'Identifier'
         && (c.object.name === 'Math' || (c.object.name === 'Number' && c.property.type === 'Identifier'
           && /^parse(Float|Int)$/.test(c.property.name))));
+    // `null`, `undefined` or `void 0`: the one thing a branded value may be compared with.
+    const nullish = (n) => (n.type === 'Literal' && n.value === null) || (n.type === 'Identifier' && n.name === 'undefined')
+      || (n.type === 'UnaryExpression' && n.operator === 'void');
     // A `+` joining a branded value to plain text (`'Due: ' + roundMoney(x)`) is a label, as the name rule allows.
     const plainText = (n) => !kind(n)
       && (checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(n)).flags & ts.TypeFlags.StringLike) !== 0;
@@ -511,8 +514,11 @@ const brandedMoney = {
           if (!plainText(node.left)) check(node, node.right);
         } else if (MATHS.has(node.operator)) {
           if (!check(node, node.left)) check(node, node.right);
-        } else if (/^[!=]==?$/.test(node.operator) && kind(node.left) && kind(node.right)) {
-          check(node, node.left);
+        } else if (/^[!=]==?$/.test(node.operator)) {
+          // "0", "0.5" and "0.50" are one amount, so a branded value compared with anything but null or undefined is
+          // a text comparison: dec(a).eq(b) (the architect on #159).
+          if (!nullish(node.right) && check(node, node.left)) return;
+          if (!nullish(node.left)) check(node, node.right);
         }
       },
       AssignmentExpression(node) {
