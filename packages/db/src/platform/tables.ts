@@ -287,13 +287,18 @@ export const dataExports = radcoreTable('exports', {
   check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
 ]);
 
-/**
- * Sign-in sessions (M1-16, RAD-34, ADR-001 §7a). The cookie holds a random token; only its SHA-256 is stored, so the
- * table can't be used to sign anyone in. `idle_expires_at` moves forward on the person's own requests and
- * `absolute_expires_at` never moves; a session past either, or with `ended_at`, signs nobody in. `device` is a short
- * user-agent summary, with no IP. It's stamped who-and-when but not row-audited: `last_seen_at` changes on every
- * request, and a session's start and end are security events (RAD-31).
- */
+/** When each person last signed in (RAD-36), made with the person and set when a session starts. Machinery, not
+ * row-audited (ADR-005 §7c): a sign-in is already a `sign_in` event. The people list sorts on `sort_key`, epoch for
+ * never, since a sort key is never null; text mode keeps its microseconds for the page key (the architect on RAD-36). */
+export const userSignIns = radcoreTable('user_sign_ins', {
+  userId: uuid().primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  lastSignInAt: timestamp({ withTimezone: true }),
+  sortKey: timestamp({ withTimezone: true, mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`coalesce(last_sign_in_at, timestamptz 'epoch')`),
+}, (t) => [index('ix_user_sign_ins_sort_key').on(t.sortKey, t.userId)]);
+
+/** Sign-in sessions (RAD-34, ADR-001 §7a): the cookie's token, stored as its SHA-256. Past either expiry, or ended, a
+ * session signs nobody in. `device` names the browser, never an address. Not row-audited (ADR-005 §7c). */
 export const sessions = radcoreTable('sessions', {
   id: id(),
   userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -313,12 +318,8 @@ export const sessions = radcoreTable('sessions', {
   index('ix_sessions_user_id').on(t.userId),
 ]);
 
-/**
- * Second factors (M1-15, RAD-33, D-19): a person's TOTP authenticator, at most one. The secret is kept by the secrets
- * library: `secret` is its ciphertext, bound to this table, column and row, and `secret_key_id` the key that wrapped
- * it. `confirmed_at` is null while an enrolment waits for its first code; starting again replaces that row.
- * `last_step` is the last accepted 30-second step, so a code is refused if it's used again (ADR-003).
- */
+/** A person's TOTP authenticator (RAD-33, D-19): `secret` is the secrets library's ciphertext for this row. Unconfirmed
+ * until its first code; `last_step` is the last accepted 30-second step, so a code works once (ADR-003). */
 export const secondFactors = radcoreTable('second_factors', {
   id: id(),
   userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -341,11 +342,8 @@ export const recoveryCodes = radcoreTable('recovery_codes', {
   index('ix_recovery_codes_user_id').on(t.userId),
 ]);
 
-/**
- * A sign-in between its password and its second factor (M1-15, ADR-001 §7a): the pending-sign-in cookie holds a
- * random token, and only its SHA-256 is stored. It lasts five minutes and is spent when the sign-in finishes, so it
- * can't stand in for a session or be used twice.
- */
+/** A sign-in between its password and its second factor (RAD-33): the pending cookie's token, stored as its SHA-256,
+ * for five minutes, spent when the sign-in finishes. */
 export const pendingSignIns = radcoreTable('pending_sign_ins', {
   id: id(),
   userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -358,11 +356,8 @@ export const pendingSignIns = radcoreTable('pending_sign_ins', {
   index('ix_pending_sign_ins_user_id').on(t.userId),
 ]);
 
-/**
- * Why a change was made (RAD-36, ADR-005 §7c): the reason an admin typed, once per change. Each audit row of the change
- * carries its id (`audit_log.reason_id`), never its text, so the text can be corrected or erased later without touching
- * an append-only row. Written only through radcore.record_change_reason, and not copied into the audit log.
- */
+/** Why a change was made (RAD-36, ADR-005 §7c): its audit rows carry this id, never the text. Written only through
+ * radcore.record_change_reason; not copied into the audit log. */
 export const changeReasons = radcoreTable('change_reasons', {
   id: id(),
   reason: boundedText({ max: 500 }).notNull(),

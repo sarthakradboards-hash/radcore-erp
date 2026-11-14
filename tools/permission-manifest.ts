@@ -33,6 +33,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /admin/users/:id/sessions/end': 'users:write',
   'POST /admin/users/:id/second-factor/remove': 'users:write',
   'PUT /admin/users/:id/role': 'users:write',
+  'GET /admin/users': 'users:read',
   'POST /admin/users': 'users:write',
   'POST /admin/users/:id/invite': 'users:write',
   'POST /admin/users/:id/deactivate': 'users:write',
