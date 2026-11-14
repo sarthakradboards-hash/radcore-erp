@@ -24,6 +24,8 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'roles:read', module: 'Admin', label: 'See roles and what each may do' },
   { key: 'roles:write', module: 'Admin', label: 'Change what each role may do', secondFactor: true },
   { key: 'audit:read', module: 'Admin', label: 'Read the audit trail and security events' },
+  { key: 'items:read', module: 'Items', label: 'See items, their categories and units' },
+  { key: 'items:write', module: 'Items', label: 'Add and change items and their categories' },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
   { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'], secondFactor: true },
   { key: 'photo_files:read', module: 'Files', label: 'See job photos' },
