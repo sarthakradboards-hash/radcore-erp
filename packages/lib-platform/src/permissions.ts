@@ -36,6 +36,13 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'statement_files:write', module: 'Files', label: 'Upload bank statements', secondFactor: true },
   { key: 'import_files:read', module: 'Files', label: 'See import files' },
   { key: 'import_files:write', module: 'Files', label: 'Upload import files' },
+  // HR (M2-14, RAD-92): the employee master. Writing it reaches HR, so it needs the second factor (D-19); reading is a
+  // directory whose contact details stay masked without pii:read. Any role may be granted either (Sarthak, 15 Nov).
+  { key: 'employees:read', module: 'HR', label: 'See the employee list' },
+  { key: 'employees:write', module: 'HR', label: 'Add and change employees, switch them off', secondFactor: true },
+  // Cost prices (RC-164): a field marked cost() is masked whole without it, on screens and in exports. Any role may be
+  // granted it; admin, owner, accounts and stores start with it (the architect on RAD-92; Sarthak, 15 Nov).
+  { key: 'cost:read', module: 'Costs', label: 'See cost prices' },
 ].map((p) => Object.freeze(p)));
 
 /**

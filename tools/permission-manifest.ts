@@ -67,6 +67,10 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/import': 'import_files:write',
   'POST /files/import/:id/confirm': 'import_files:write',
   'POST /files/import/:id/download': 'import_files:read',
+  // HR (RAD-92): the employee master.
+  'GET /hr/employees': 'employees:read',
+  'POST /hr/employees': 'employees:write',
+  'PATCH /hr/employees/:id': 'employees:write',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -89,6 +93,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
  * the reach out from the code, never from here, so a route or job that starts reaching another module's services, or
  * stops, fails CI until its line here changes, in the same review. */
 const PLATFORM = ['lib-platform'];
+const HR = ['lib-hr', 'lib-platform'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -142,6 +147,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/import': PLATFORM,
   'POST /files/import/:id/confirm': PLATFORM,
   'POST /files/import/:id/download': PLATFORM,
+  // HR's routes reach lib-hr and, through it, lib-platform.
+  'GET /hr/employees': HR,
+  'POST /hr/employees': HR,
+  'PATCH /hr/employees/:id': HR,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,
