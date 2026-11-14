@@ -69,6 +69,41 @@ describe('createAlerter', () => {
       .map((text) => JSON.stringify({ text })));
     expect(log.error.mock.calls.map((c) => c[0]).filter((m) => m.startsWith('ALERT: '))).toHaveLength(5);
   });
+
+  // RC-158: repeats are keyed on what failed (a route template), counted in the shared store, never in this process.
+  it('posts one alert per key while the store holds it, logs every one, and always posts an alert with no key', async () => {
+    const log = logger();
+    const t = fake();
+    const seen = new Map<string, number>();
+    const specs: unknown[] = [];
+    const repeats = { end: async () => undefined, limiter: (spec: unknown) => {
+      specs.push(spec);
+      const hit = async (key: string) => {
+        seen.set(key, (seen.get(key) ?? 0) + 1);
+        return (seen.get(key) ?? 0) > 1 ? 1800 : 0;
+      };
+      return { hit, wait: hit, reset: async () => undefined };
+    } };
+    const alert = createAlerter(HOOK, log, { transport: t.transport, repeats });
+    await alert('GET /notes/:id failed (request r1)', 'api GET /notes/:id server_error');
+    await alert('GET /notes/:id failed (request r2)', 'api GET /notes/:id server_error');
+    await alert('POST /notes failed (request r3)', 'api POST /notes server_error');
+    await alert('job x failed');
+    await alert('job x failed');
+    expect(t.sent.map((s) => s.body)).toEqual(['GET /notes/:id failed (request r1)', 'POST /notes failed (request r3)',
+      'job x failed', 'job x failed'].map((text) => JSON.stringify({ text })));
+    expect(log.error.mock.calls.map((c) => c[0]).filter((m) => m.startsWith('ALERT: '))).toHaveLength(5);
+    expect(log.info).toHaveBeenCalledWith('alert: posted already within the hour, so this one is in the logs only');
+    // One hour per key, and a store that can't answer lets the alert through.
+    expect(specs).toEqual([{ prefix: 'alert', points: 1, windowSeconds: 3600, blockSeconds: 0, failOpen: true }]);
+  });
+
+  it('counts no repeats without a webhook: the alert is a log line only', async () => {
+    const hit = vi.fn(async () => 0);
+    const repeats = { limiter: () => ({ hit, wait: hit, reset: async () => undefined }), end: async () => undefined };
+    await createAlerter(null, logger(), { repeats })('x', 'k');
+    expect(hit).not.toHaveBeenCalled();
+  });
 });
 
 describe('startHeartbeat', () => {

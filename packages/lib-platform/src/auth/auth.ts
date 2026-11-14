@@ -38,6 +38,8 @@ export async function createAuth(config: Config, log: Logger, { now }: { now?: (
       defineRoute(newRecoveryCodes, factor.newRecoveryCodes, { before: factor.openForNewCodes }),
       defineRoute(removeSecondFactor, factor.remove), defineRoute(acceptInvite, account.acceptInvite),
       defineRoute(resetPassword, account.resetPassword), defineRoute(changePassword, account.changePassword)],
+    /** The shared rate-limit store, for the api's other counts (alert repeats, RC-158). */
+    limits: store,
     store: { name: 'rate-limit store', stop: () => store.end() },
   });
 }

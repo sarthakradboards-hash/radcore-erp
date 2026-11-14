@@ -26,7 +26,9 @@ const UNQUOTED: [RegExp, string][] = [
   [/^Invalid time zone specified: [\s\S]*$/, 'Invalid time zone specified: …'],
   [/^Unknown encoding: [\s\S]*$/, 'Unknown encoding: …'],
   [/^[\s\S]* could not be cloned\.$/, '… could not be cloned.'],
+  [/^Invalid currency code : [\s\S]*$/, 'Invalid currency code : …'],
 ];
+// Temporal's parse errors (Node 26) name what was wrong, never the text: log.test.ts holds them to that.
 const PG_FIELDS = ['code', 'table', 'column', 'constraint', 'routine'] as const;
 const field = (o: object, k: string): string | undefined => {
   const v: unknown = (o as Record<string, unknown>)[k];

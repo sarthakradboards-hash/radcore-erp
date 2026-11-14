@@ -24,9 +24,9 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
   });
   if (api !== undefined) {
     // Webhooks first: their own lane, with the raw body, ahead of the browser routes' guards and JSON parser.
-    mountWebhooks(app, api.webhooks ?? [], { db: api.db, log });
+    mountWebhooks(app, api.webhooks ?? [], { db: api.db, log, alert: api.alert });
     mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin,
-      newPasswordCheck: api.newPasswordCheck, files: api.files, secrets: api.secrets });
+      newPasswordCheck: api.newPasswordCheck, files: api.files, secrets: api.secrets, alert: api.alert });
   }
   return app;
 }

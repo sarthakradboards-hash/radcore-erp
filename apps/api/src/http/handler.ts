@@ -20,7 +20,7 @@ import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, linkPrinc
 import {
   acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword, startSecondFactorEnrolment,
 } from '@radcore/lib-platform/contract';
-import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
+import { runInTransaction, type Alerter, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
 
 type Database = Parameters<typeof runInTransaction>[0];
@@ -40,6 +40,8 @@ export type HandlerDeps = {
   files?: Files | undefined;
   /** The secrets library, for routes' `before` steps (RAD-33). A route with one refuses to mount without it. */
   secrets?: Secrets | undefined;
+  /** Alerts on an unexpected failure, one per route and code per hour (RC-158). The api always passes it. */
+  alert?: Alerter | undefined;
 };
 const READ = { readOnly: true, isolation: 'read committed' } as const;
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
@@ -300,6 +302,10 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         // Ids only: never the input, the output or a value from the database (RAD-29).
         if (failure.status >= 500) deps.log.error(`${route} failed (request ${requestId})`, err);
         send(res, failure, requestId);
+        // After the answer: keyed on the route's template, never its URL, so one failing route is one alert (RC-158).
+        if (failure.status >= 500) {
+          await deps.alert?.(`${route} failed with ${failure.code} (request ${requestId})`, `api ${route} ${failure.code}`);
+        }
       }
     };
     router[contract.method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete'](contract.path, handle);

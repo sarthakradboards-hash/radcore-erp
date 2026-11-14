@@ -187,6 +187,28 @@ describe.skipIf(!url)('the generic route handler', () => {
     });
   });
 
+  // RC-158: an unexpected failure alerts, keyed on the route's template, so /notes/a and /notes/b are one key.
+  it('alerts on a 500 with the route template as its key, after answering, and not on a 4xx', async () => {
+    const alert = vi.fn<(message: string, key?: string) => Promise<void>>(async () => undefined);
+    let code = 'not_listed_anywhere';
+    const app = createApp(config(), logger(), { db, alert, authenticate: async () => user(['notes:read']), routes: [
+      defineRoute(getNote, async () => {
+        throw new AppError(code, 'x');
+      })] });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      const base = `http://127.0.0.1:${server.port}`;
+      expect([(await fetch(`${base}/notes/a`)).status, (await fetch(`${base}/notes/b`)).status]).toEqual([500, 500]);
+      code = 'not_found';
+      expect((await fetch(`${base}/notes/c`)).status).toBe(404);
+    } finally {
+      await server.stop();
+    }
+    expect(alert.mock.calls.map(([message, key]) => [message.replace(/request \S+\)/, 'request …)'), key])).toEqual([
+      ['GET /notes/:id failed with server_error (request …)', 'api GET /notes/:id server_error'],
+      ['GET /notes/:id failed with server_error (request …)', 'api GET /notes/:id server_error']]);
+  });
+
   it('maps a platform code to its status, and a code the contract does not list to 500', async () => {
     let code = 'not_found';
     await serve(user(['notes:write']), async () => {
