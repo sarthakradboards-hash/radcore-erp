@@ -57,7 +57,8 @@ half covers every sum and comparison in them, and they round half up, as lib-com
 1. the company's period-lock row, and the filed-month lock row (M5-08), `FOR SHARE`. Moving a lock takes
    `FOR UPDATE`, so it waits for the postings in flight (RC-163, M5-09);
 2. the documents being posted, `ORDER BY id FOR UPDATE` (ADR-005 §7a);
-3. the stock positions, `ORDER BY item_id, location_id FOR UPDATE` (§4);
+3. the stock positions, `ORDER BY item_id, location_id FOR UPDATE` (§4), then any new batch rows, created in
+   `(item_id, supplier_id, batch_key)` order (§4a);
 4. the units, `ORDER BY id FOR UPDATE` (§5);
 5. the numbering series (M2-04), last. A number is drawn only once every check has passed, and the series row is
    held for the shortest time.
@@ -286,7 +287,7 @@ batch costing.
 **A batch is its item's, from one supplier (RC-028).**
 - `batches (id, item_id, supplier_id, batch_no, batch_key)`. `supplier_id` is a party, or null for goods that came
   from no supplier. `batch_no` is bounded text (ADR-005 §1), and `batch_key` is generated: the number in upper case,
-  without spaces.
+  without spaces or hyphens, as `chassis_key` is (§5). So "B-17" and "b17" are one batch.
 - A unique key on `(item_id, supplier_id, batch_key)` `NULLS NOT DISTINCT`. Two suppliers' "B-17" are two batches,
   where v1 merged them.
 - `batches` is append-only (ADR-005 §7). A batch number entered wrongly is put right by moving the quantity to the
@@ -328,15 +329,17 @@ entry. A wrongly entered batch is moved to the right one the same way.
 **Checked at commit (RA007).**
 - Each `in` and `out` movement's batch rows add up to its quantity. A `revalue` has none. It's checked for every
   movement the save wrote or gave batch rows to, so rows can't be added later to a movement already complete.
-- After the save, no touched item, location and batch is below zero. "Batch unknown" is never above zero, and below
-  zero only in negative-stock mode, so an `in` can name it only to bring it back towards zero.
+- After the save, no touched batch, at its item and location, is below zero. "Batch unknown" is never above zero,
+  and below zero only in negative-stock mode, so an `in` can name it only to bring it back towards zero.
 - A movement of serialised units carries, for each batch, as many units as its batch row says. This is counted with
   §5's unit events.
 
-The checks need no lock of their own. A batch is inside its item and location, so the `stock_positions` lock (§1)
-already covers it. A new batch row is created with `INSERT … ON CONFLICT DO NOTHING`, only after the save has
-locked its stock positions. Two saves bringing in the same new batch then wait on its unique key only while
-holding positions already locked in order, so the wait can't form a cycle.
+**Locks (RC-053).** The checks need no lock of their own: a batch's quantity at a location is read under that
+location's `stock_positions` lock (§1). New batch rows are the one shared key a save writes outside its positions,
+because a batch spans locations. A save creates them with `INSERT … ON CONFLICT DO NOTHING`, after its position
+locks, in `(item_id, supplier_id, batch_key)` order, with a null `supplier_id` first. Two saves bringing in the same
+new lots then wait on their unique keys in the same order, so the waits can't form a cycle. **Proof (M2-05):** two
+saves that bring the same two new lots, in opposite order and into different locations, both finish.
 
 **Reading it.**
 - `v_batch_on_hand` gives each item, location and batch: `in` rows minus `out` rows. An index on
