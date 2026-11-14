@@ -6,7 +6,7 @@ import {
   changeUserRole, createCustomRole, deactivatePerson, defineRoute, deleteCustomRole, endAnySession, endCurrentSession, endOwnSession,
   endPersonSessions, getMyself, listAllSessions,
   exportDownload, exportStatus, listAuditedTablesList, listAuditTrailPage, listOwnSessions, listSecurityEventsPage,
-  invitePerson, listRolesFor, permissionMatrix, reactivatePerson, renameRole, requestPasswordReset, resendPersonInvite,
+  invitePerson, listPeople, listRolesFor, permissionMatrix, reactivatePerson, renameRole, requestPasswordReset, resendPersonInvite,
   resetRoleToTemplate, setRoleGrants,
 } from '@radcore/lib-platform';
 import * as contract from '@radcore/lib-platform/contract';
@@ -29,6 +29,7 @@ export default [
   defineRoute(contract.getPermissionMatrix, permissionMatrix),
   defineRoute(contract.setRolePermissions, setRoleGrants),
   defineRoute(contract.setUserRole, changeUserRole),
+  defineRoute(contract.listUsers, listPeople),
   defineRoute(contract.inviteUser, invitePerson),
   defineRoute(contract.resendInvite, resendPersonInvite),
   defineRoute(contract.deactivateUser, deactivatePerson),
