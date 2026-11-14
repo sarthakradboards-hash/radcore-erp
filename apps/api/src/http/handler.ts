@@ -6,15 +6,17 @@
 //   ─► a write claims its saved-once key (M1-09): an earlier committed answer is replayed here
 //   ─► a reason() field is kept as the change's reason, which its audit rows point at (RAD-36)
 //   ─► service(ctx, input, { before })
-//   ─► output checked against contract.output, camelCase as is (RC-199) ─► a write keeps its answer ─► commit ─► 200
+//   ─► output checked against contract.output, camelCase as is (RC-199) ─► pii() fields masked for this principal
+//   (RAD-40) ─► a write keeps its masked answer ─► commit ─► who saw what unmasked, in a short write of its own ─► 200
 //   ─► errors mapped by code: a thrown AppError's code or a PostgreSQL SQLSTATE, never message text (RC-216)
 // The sign-in routes (sign-in, its second-factor steps, sign-out) get ctx.cookie, applied only once the transaction
 // commits (RAD-34, RAD-33).
-// Still to come, each with its ticket: rate guards (M1-21), pii() masking (M1-22) and webhooks' own lane (M1-27).
+// Still to come, each with its ticket: rate guards (M1-21) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
-import { BUSINESS_RULE_STATUS, newPasswordFields, reasonFields, PASSWORD_MIN_LENGTH, PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
+import { BUSINESS_RULE_STATUS, maskedInputPath, maskOutput, newPasswordFields, piiPlan, reasonFields, PASSWORD_MIN_LENGTH,
+  PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type PlatformErrorCode } from '@radcore/lib-common';
 import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, linkPrincipal, originAllowed, recordChangeReason,
-  RecordedRefusal, recordLinkAccess, useLink, type Files, type Principal, type Route, type Secrets, type SessionCookie,
+  RecordedRefusal, recordLinkAccess, recordLooks, useLink, type Files, type Principal, type Route, type Secrets, type SessionCookie,
   type SignInCookie,
 } from '@radcore/lib-platform';
 import {
@@ -174,6 +176,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
       throw new TypeError(`${route}: a newPassword() field needs the new-password check, and none was given`);
     }
     const secrets = deps.secrets;
+    const plan = piiPlan(contract.output);
     if (before !== undefined && secrets === undefined) throw new TypeError(`${route}: a before step needs the secrets library`);
     const handle = async (req: Request, res: Response): Promise<void> => {
       const requestId = randomUUID();
@@ -190,6 +193,13 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         const input = readInput(contract, { params: req.params as Record<string, string>, query, body: req.body });
         if (!input.ok) {
           send(res, platform('invalid_input', input.error.issues), requestId);
+          return;
+        }
+        // A masked value sent back would be saved over the real one (ADR-001 §7a).
+        const maskedAt = contract.tx.readOnly ? null : maskedInputPath(input.value);
+        if (maskedAt !== null) {
+          send(res, platform('invalid_input', [{ path: maskedAt, code: 'masked_value',
+            message: 'This value is hidden from you, so it can’t be saved' }]), requestId);
           return;
         }
         // What the service gets: the input, less a link route's token, which no service, log or audit row ever sees.
@@ -235,6 +245,15 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         const signInRoute = exempt || route === ENROLMENT_START;
         const changes: { session: CookieChange; pending: CookieChange } = { session: null, pending: null };
         let refused: RecordedRefusal | null = null;
+        // The records this principal saw a pii() value of unmasked, logged once the read commits (ADR-005 §7c).
+        let looks: string[] = [];
+        const shown = (answer: unknown): unknown => {
+          if (plan === null) return answer;
+          const m = maskOutput(plan, answer, (principal ?? PUBLIC).permissions);
+          if (m.unattributed) throw new OutputMismatch(`${route}: a pii() value is shown with no record id to log it under`);
+          looks = m.looks;
+          return m.value;
+        };
         const cookieIn = (kind: 'session' | 'pending', tokenIn: (h: string | undefined) => string | null): SignInCookie =>
           Object.freeze({ incoming: tokenIn(req.get('cookie')),
             set: (token: string, expires: Date) => { changes[kind] = { token, expires }; },
@@ -254,7 +273,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           // A key-exempt route sends no key and claims none; a route whose answer holds a secret claims and keeps nothing.
           const once = contract.tx.readOnly || contract.idempotency === 'exempt' ? null
             : await claimSavedOnce(ctx, { route, key, input: work, storesAnswer: contract.storesAnswer !== false });
-          if (once?.replay === true) return once.answer;
+          if (once?.replay === true) return shown(once.answer);
           // Why: kept once, before the service writes, so every audit row of this change carries its id (RAD-36).
           const why = reasonKey === undefined ? undefined : (input.value as Record<string, unknown>)[reasonKey];
           if (typeof why === 'string') await recordChangeReason(ctx, why);
@@ -272,8 +291,9 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           }
           const checked = contract.output.safeParse(answer);
           if (!checked.success) throw new OutputMismatch(`${route}: the output doesn't match its contract`);
-          await once?.keep(checked.data);
-          return checked.data;
+          const answered = shown(checked.data);
+          await once?.keep(answered);
+          return answered;
         }, deps.files);
         // After the commit: a cookie for a session that rolled back would sign nobody in.
         for (const [kind, name] of [['session', session.name], ['pending', pending.name]] as const) {
@@ -288,10 +308,14 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c). A read-only
         // link spends its use here, before anything is answered: if the last use went to a request racing this one,
         // this one gets the same not_found, and sees nothing.
-        if (principal?.kind === 'link') {
-          await runInTransaction(deps.db, WRITE, principal, requestId, async (ctx) => {
-            if (contract.tx.readOnly) await useLink(ctx);
-            await recordLinkAccess(ctx);
+        // Each record shown unmasked is logged the same way, before the answer goes out: no log, no answer.
+        if (principal?.kind === 'link' || looks.length > 0) {
+          await runInTransaction(deps.db, WRITE, principal ?? PUBLIC, requestId, async (ctx) => {
+            if (principal?.kind === 'link') {
+              if (contract.tx.readOnly) await useLink(ctx);
+              await recordLinkAccess(ctx);
+            }
+            if (contract.records !== undefined) await recordLooks(ctx, contract.records, looks);
           });
         }
         res.status(200).json(output);
