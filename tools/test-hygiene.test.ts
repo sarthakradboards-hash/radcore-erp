@@ -56,6 +56,23 @@ const rootName = (n: Callee | undefined): string | undefined => {
   if (n?.type === 'Identifier') return n.name;
   return n?.type === 'MemberExpression' || n?.type === 'CallExpression' ? rootName(n.object ?? n.callee) : undefined;
 };
+// A test is a call to it or test, or to a name made from one with `.extend(...)` at the top of the file (RAD-59):
+// `const dbTest = test.extend({ ... })` defines tests too, so the checks below must see them.
+type Declared = { type: string; declarations?: { id: { type: string; name?: string }; init?: Callee | null }[];
+  declaration?: Declared | null };
+function testNames(program: { body: Declared[] }): Set<string> {
+  const names = new Set(['it', 'test']);
+  for (const s of program.body) {
+    const decl = s.type === 'ExportNamedDeclaration' ? s.declaration : s;
+    for (const d of decl?.type === 'VariableDeclaration' ? decl.declarations ?? [] : []) {
+      const init = d.init;
+      const extended = init?.type === 'CallExpression' && init.callee?.type === 'MemberExpression'
+        && (init.callee as { property?: { name?: string } }).property?.name === 'extend';
+      if (extended && d.id.type === 'Identifier' && d.id.name && names.has(rootName(init.callee) ?? '')) names.add(d.id.name);
+    }
+  }
+  return names;
+}
 // An early `return` under a condition skips the assertions after it: `if (!rows.length) return;`. Selectors can't
 // say "the nearest function is the test's own callback", so this one check is a small rule.
 const earlyReturn: Rule.RuleModule = {
@@ -63,12 +80,13 @@ const earlyReturn: Rule.RuleModule = {
     messages: { m: '[RC-156] An assertion always runs: no return inside if, switch or catch in a test' } },
   create: (context) => ({
     ReturnStatement(node) {
+      const tests = testNames(context.sourceCode.ast as unknown as { body: Declared[] });
       let conditional = false;
       for (const a of [...context.sourceCode.getAncestors(node)].reverse()) {
         if (a.type === 'IfStatement' || a.type === 'SwitchStatement' || a.type === 'CatchClause') conditional = true;
         if (a.type === 'ArrowFunctionExpression' || a.type === 'FunctionExpression' || a.type === 'FunctionDeclaration') {
           const parent: Callee | null = (a as Rule.Node).parent;
-          const isTest = parent?.type === 'CallExpression' && parent.callee !== a && /^(it|test)$/.test(rootName(parent.callee) ?? '');
+          const isTest = parent?.type === 'CallExpression' && parent.callee !== a && tests.has(rootName(parent.callee) ?? '');
           if (conditional && isTest) context.report({ node, messageId: 'm' });
           return;
         }
@@ -76,6 +94,38 @@ const earlyReturn: Rule.RuleModule = {
     },
   }),
 };
+// A `continue`, or a `break` out of the loop, under a condition skips the assertions in a loop of them (RAD-59):
+// `for (const r of rows) { if (!r.ok) continue; expect(r.total).toBe(1); }` can assert nothing.
+const LOOPS = new Set(['ForStatement', 'ForInStatement', 'ForOfStatement', 'WhileStatement', 'DoWhileStatement']);
+const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration']);
+const ASSERTS_IN = /\b(expect|assert)\s*[.(]/;
+const skippedLoop: Rule.RuleModule = {
+  meta: { type: 'problem', schema: [],
+    messages: { m: '[RC-156] An assertion always runs: no continue or break under a condition in a loop of assertions' } },
+  create: (context) => {
+    const check = (node: Rule.Node & { label?: { name: string } | null | undefined }, isBreak: boolean) => {
+      let conditional = false;
+      for (const a of [...context.sourceCode.getAncestors(node)].reverse()) {
+        if (FUNCTIONS.has(a.type)) return;
+        // An unlabelled break inside a switch ends the switch, not the loop.
+        if (isBreak && !node.label && a.type === 'SwitchStatement') return;
+        if (a.type === 'IfStatement' || a.type === 'SwitchStatement' || a.type === 'CatchClause') conditional = true;
+        if (!LOOPS.has(a.type)) continue;
+        const parent = (a as Rule.Node).parent as { type: string; label?: { name: string } } | null;
+        if (node.label && !(parent?.type === 'LabeledStatement' && parent.label?.name === node.label.name)) continue;
+        if (conditional && ASSERTS_IN.test(context.sourceCode.getText(a))) context.report({ node, messageId: 'm' });
+        return;
+      }
+    };
+    return { ContinueStatement: (node) => check(node, false), BreakStatement: (node) => check(node, true) };
+  },
+};
+// A test that skips itself while it runs (`ctx.skip()`, or a destructured `skip()`) asserts nothing and still shows
+// as run on the condition it hid (RAD-59). it.skip(name, fn) and skipIf, decided before the test, stay allowed.
+const SKIP = [
+  "CallExpression[callee.property.name='skip']:not([arguments.1.type=/FunctionExpression$/])",
+  "CallExpression[callee.name='skip']",
+].map(sel('[RC-156] An assertion always runs: no skip() inside a test; decide it before, with it.skipIf'));
 // shortcut: a module-level `const` array or object mutated by tests isn't caught here; the shuffled order is
 // what fails such a test. Add a selector if one turns up.
 const SHARED = [
@@ -99,8 +149,9 @@ const eslint = new ESLint({ overrideConfigFile: true, overrideConfig: [
   { ignores: ['**/node_modules/**', 'apps/web/.next/**', 'tools/boundary-fixtures/**'] },
   { linterOptions: { noInlineConfig: true } },
   block([...TEST_FILES, 'packages/test-helpers/**'], TS, TEST_MODE),
-  block([], TEST_FILES, [...CLOCK, ...SLEEP, ...CONDITIONAL, ...SHARED, ...RELAY]),
-  { files: TEST_FILES, plugins: { hygiene: { rules: { 'early-return': earlyReturn } } }, rules: { 'hygiene/early-return': 'error' } },
+  block([], TEST_FILES, [...CLOCK, ...SLEEP, ...CONDITIONAL, ...SHARED, ...RELAY, ...SKIP]),
+  { files: TEST_FILES, plugins: { hygiene: { rules: { 'early-return': earlyReturn, 'skipped-loop': skippedLoop } } },
+    rules: { 'hygiene/early-return': 'error', 'hygiene/skipped-loop': 'error' } },
 ] });
 const problems = (results: ESLint.LintResult[]) =>
   results.flatMap((r) => r.messages.map((m) => `${r.filePath}:${m.line} ${m.message}`));
@@ -183,6 +234,16 @@ describe('each check fails its violating samples', () => {
     ["describe.each([1])('x %s', () => { var n = 0; });", 'RC-222'],
     ['await relayOutbox(db, queue, log);', 'RC-222'],
     ['await relayOutbox(db, queue, log, { batch: 3 });', 'RC-222'],
+    // RAD-59: a loop that can skip its assertions, a test that skips itself, and tests made with test.extend.
+    ['for (const r of rows) { if (!r.ok) continue; expect(r.total).toBe(1); }', 'RC-156'],
+    ['for (const r of rows) { if (r.done) break; expect(r.total).toBe(1); }', 'RC-156'],
+    ['while (next()) { switch (k) { case 1: continue; } assert(a); }', 'RC-156'],
+    ['outer: for (const a of xs) { for (const b of a) { if (b) continue outer; } expect(a).toBe(1); }', 'RC-156'],
+    ["it('a', (ctx) => { if (!db) ctx.skip(); expect(a).toBe(1); });", 'RC-156'],
+    ["it('a', ({ skip }) => { skip(); expect(a).toBe(1); });", 'RC-156'],
+    ["it('a', (ctx) => { ctx.skip(!db, 'no database'); expect(a).toBe(1); });", 'RC-156'],
+    ["const dbTest = test.extend({});\ndbTest('a', () => { if (!rows.length) return; expect(rows[0]).toBe(1); });", 'RC-156'],
+    ["export const deep = it.extend({});\nconst deeper = deep.extend({});\ndeeper.each([1])('a', () => { if (x) return; expect(a).toBe(1); });", 'RC-156'],
   ])('test: %s', async (code, tag) => {
     expect((await lintSample(code, TEST)).join('\n')).toContain(`[${tag}]`);
   });
@@ -209,6 +270,23 @@ describe('each check lets the safe forms through', () => {
       // A return inside a helper the test calls, not in the test's own callback.
       "it('b', () => { const pick = (r: number[]) => { if (!r.length) return 0; return r[0]; }; expect(pick([2])).toBe(2); });",
       "const fmt = new Intl.DateTimeFormat('en-IN').format(d);",
+    ].join('\n');
+    expect(await lintSample(code, TEST)).toEqual([]);
+  });
+
+  // RAD-59's controls: loops that skip only work no assertion depends on, a switch's own break, and static skips.
+  it('a loop whose continue or break skips no assertion, and a skip decided before the test', async () => {
+    const code = [
+      "import { expect, it, test } from 'vitest';",
+      'for (const r of rows) { if (!r) continue; total += r; }',
+      'expect(total).toBe(3);',
+      'for (const r of rows) { switch (r) { case 1: n += 1; break; default: n += 2; } expect(n).toBeGreaterThan(0); }',
+      "for (const r of rows) { const pick = (xs: number[]) => { for (const x of xs) { if (x) return x; } return 0; }; expect(pick(r)).toBe(1); }",
+      "it.skip('later', () => { expect(1).toBe(1); });",
+      "describe.skip('later', () => { it('a', () => { expect(1).toBe(1); }); });",
+      "it.skipIf(!db)('needs a database', () => { expect(db).toBeTruthy(); });",
+      "const dbTest = test.extend({});",
+      "dbTest('b', () => { const first = (r: number[]) => { if (!r.length) return 0; return r[0]; }; expect(first([2])).toBe(2); });",
     ].join('\n');
     expect(await lintSample(code, TEST)).toEqual([]);
   });

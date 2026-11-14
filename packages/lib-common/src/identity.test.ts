@@ -34,8 +34,7 @@ describe('RC-045: GSTIN checked by format, state and check character', () => {
   it('catches every single-character change to a valid GSTIN', () => {
     const g = '27AAPFU0939F1ZV';
     for (let i = 0; i < 15; i++) {
-      for (const c of '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
-        if (c === g[i]) continue;
+      for (const c of [...'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'].filter((x) => x !== g[i])) {
         expect(isGstin(g.slice(0, i) + c + g.slice(i + 1)), `${i}:${c}`).toBe(false);
       }
     }
