@@ -43,7 +43,13 @@ describe.skipIf(!url)('the second sign-in factor', () => {
   const cfg = config(url ?? NO_DATABASE);
   const store = createLimiterStore(cfg.database, log);
   const passwordsReady = createPasswords();
-  const secrets = createSecrets(cfg.secrets);
+  // The secrets library, counting its decrypts: each is a KMS call in production.
+  const real = createSecrets(cfg.secrets);
+  const decrypts = { n: 0 };
+  const secrets = { ...real, keyId: real.keyId, decrypt: async (...args: Parameters<typeof real.decrypt>) => {
+    decrypts.n += 1;
+    return real.decrypt(...args);
+  } };
   afterAll(async () => {
     await store.end();
     await pool.end();
@@ -226,6 +232,11 @@ describe.skipIf(!url)('the second sign-in factor', () => {
     expect(await outcome(s.verify({ kind: 'totp', code: codeAt(secret, s.clock.now()) })))
       .toBe('recorded:account_locked');
     expect((await s.events()).at(-1)).toEqual({ kind: 'sign_in_failed', detail: { reason: 'account_locked' } });
+    // Once locked, a guess opens nothing: no KMS call is spent on it (the auditor on #132).
+    const before = decrypts.n;
+    expect(await outcome(s.verify({ kind: 'totp', code: codeAt(secret, s.clock.now()) }))).toBe('recorded:account_locked');
+    expect(await outcome(s.newCodes(codeAt(secret, s.clock.now())))).toBe('account_locked');
+    expect(decrypts.n).toBe(before);
   });
 
   it('makes new recovery codes for a signed-in person with a current code; the old ones stop working', async () => {
