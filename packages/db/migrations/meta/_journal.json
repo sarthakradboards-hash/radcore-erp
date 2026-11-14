@@ -211,6 +211,13 @@
       "when": 1794675650806,
       "tag": "0029_users_disabled_without_password",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794676013458,
+      "tag": "0030_user_sign_ins",
+      "breakpoints": true
     }
   ]
 }

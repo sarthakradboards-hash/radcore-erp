@@ -5,7 +5,7 @@
 // the command does nothing. The email goes out after the transaction commits (ADR-001 §8), then is marked sent.
 import { createHash, randomBytes } from 'node:crypto';
 import { emailString, normaliseEmail } from '@radcore/lib-common';
-import { bootstrap, invites, platformTx, users } from '@radcore/db/platform';
+import { bootstrap, invites, platformTx, userSignIns, users } from '@radcore/db/platform';
 import type { Database } from '@radcore/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Principal } from '../ctx.ts';
@@ -50,6 +50,7 @@ export async function bootstrapAdmin(db: Database, { email, reissue, mailer, pub
       const [user] = await tx.insert(users).values({ email: seed, displayName: 'Administrator', role: 'admin', roleSince: new Date() })
         .returning({ id: users.id });
       userId = user?.id ?? '';
+      await tx.insert(userSignIns).values({ userId });
       await tx.insert(bootstrap).values({ key: 'first_admin', userId });
       outcome = 'invited';
     } else if (record.status !== 'invited') {
