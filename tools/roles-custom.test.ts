@@ -134,7 +134,7 @@ describe.skipIf(!url)('custom roles and templates', () => {
     // in its answer and in the change's reason (the architect on RAD-83).
     const copy = await create(as, `T ${letters()}`, 'owner');
     const { 'pay:read': pay, ...rest } = await grantsOf('owner');
-    expect([pay, await grantsOf(copy.key), copy.droppedKeys]).toEqual(['all', rest, [{ key: 'pay:read', reason: 'permission_not_for_role' }]]);
+    expect([pay, await grantsOf(copy.key), copy.droppedKeys]).toEqual(['all', rest, ['pay:read']]);
     const why = await asAdmin<{ reason: string }>(`select distinct r.reason from radcore.audit_log a join radcore.change_reasons r
       on r.id = a.reason_id where a.table_name = 'roles' and a.record_id = $1`, [copy.key]);
     expect(why).toEqual([{ reason: `${reason} (Not copied, kept for named roles: pay:read)` }]);

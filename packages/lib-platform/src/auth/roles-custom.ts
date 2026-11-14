@@ -100,7 +100,7 @@ export async function createCustomRole(ctx: Ctx, { name, description, copyFrom, 
   await sameNameRefused(tx.insert(roles).values({ key, name, description }));
   if (grants.length > 0) await tx.insert(roleGrants).values(grants.map((g) => ({ role: key, ...g })));
   await afterGrantsChanged(ctx, key, { shrank: false });
-  return { key, droppedKeys: dropped.map((k) => ({ key: k, reason: 'permission_not_for_role' as const })) };
+  return { key, droppedKeys: dropped.toSorted() };
 }
 
 /** PATCH /admin/roles/:key: a role's name or description. Its key never changes. */
