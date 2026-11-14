@@ -39,10 +39,14 @@ export async function invitePerson(ctx: Ctx, { email, displayName, role }: In<ty
   return { id };
 }
 
-/** POST /admin/users/:id/invite (users:write): a new link for someone still invited; the old one stops working. */
+/** POST /admin/users/:id/invite (users:write): a new link for someone still invited; the old one stops working, so
+ * only someone who may give their role resends it (the auditor on #143). */
 export async function resendPersonInvite(ctx: Ctx, { id }: In<typeof resendInvite>): Promise<Out<typeof resendInvite>> {
-  const [person] = await platformTx(ctx).select({ status: users.status }).from(users).where(eq(users.id, id)).limit(1);
+  const caller = await callerOf(ctx);
+  const tx = platformTx(ctx);
+  const [person] = await tx.select({ status: users.status, role: users.role }).from(users).where(eq(users.id, id)).limit(1);
   if (person === undefined) throw new AppError('not_found', 'There is no such person');
+  if (!mayGive(caller, person.role, (await keysByRole(tx)).get(person.role) ?? [])) throw notGrantable();
   if (person.status !== 'invited') throw new AppError('not_invited', 'This person has already set up their account');
   await ctx.jobs.send(INVITE_EMAIL, { userId: id });
   return {};

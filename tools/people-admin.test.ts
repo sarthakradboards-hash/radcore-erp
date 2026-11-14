@@ -93,6 +93,12 @@ describe.skipIf(!url)('inviting, deactivating and reactivating people', () => {
     expect(await run(await a.as(), (ctx) => resendPersonInvite(ctx, { id: invited.id }), queued)).toEqual({});
     expect(queued).toEqual([[INVITE_EMAIL.name, { userId: invited.id }]]);
     expect(await outcome(run(await a.as(), (ctx) => resendPersonInvite(ctx, { id: active.id })))).toBe('not_invited');
+    // An invited admin's or owner's link isn't for a manager to spend (the auditor on #143).
+    const mgr = await manager();
+    const [invitedAdmin, invitedOwner] = [await person('admin', 'invited'), await person('owner', 'invited')];
+    expect([await outcome(run(await mgr.as(), (ctx) => resendPersonInvite(ctx, { id: invitedAdmin.id }))),
+      await outcome(run(await mgr.as(), (ctx) => resendPersonInvite(ctx, { id: invitedOwner.id })))])
+      .toEqual(['role_not_grantable', 'role_not_grantable']);
   });
 
   it('emails a one-time link to someone invited, spends their older link, and sends nothing more on a rerun', async () => {
