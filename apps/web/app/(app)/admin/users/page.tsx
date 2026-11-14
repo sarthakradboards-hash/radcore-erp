@@ -9,6 +9,7 @@ import { Menu, type MenuItem } from '../../../../components/ui/dialog/menu.tsx';
 import { ReasonDialog } from '../../../../components/ui/dialog/reason-dialog.tsx';
 import { RadioField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
+import { SearchBox } from '../../../../components/ui/form/search-box.tsx';
 import { announce } from '../../../../components/ui/live-region.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList, useApiMutation, useApiQuery } from '../../../../lib/api/query.ts';
@@ -26,7 +27,6 @@ const roleOptions = (roles: readonly Role[]) =>
 const later = (text: string) => setTimeout(() => announce(text), 0);
 
 export default function UsersPage() {
-  const [typed, setTyped] = useState('');
   const [search, setSearch] = useState('');
   const [show, setShow] = useState<Show>('all');
   const list = useApiList(listUsers, {
@@ -75,13 +75,7 @@ export default function UsersPage() {
     <>
       <h1>{t('admin.users.title')}</h1>
       <div className="admin-toolbar">
-        <form role="search" className="admin-toolbar" onSubmit={(e) => { e.preventDefault(); setSearch(typed.trim()); }}>
-          <div className="kit-field">
-            <label htmlFor="users-search">{t('admin.users.search')}</label>
-            <input id="users-search" type="search" value={typed} maxLength={100} onChange={(e) => setTyped(e.target.value)} />
-          </div>
-          <button type="submit" className="kit-button">{t('admin.audit.apply')}</button>
-        </form>
+        <SearchBox label={t('admin.users.search')} action={t('admin.audit.apply')} onSearch={setSearch} />
         <button type="button" className="kit-button kit-button-primary" onClick={() => setInviting(true)}>
           {t('admin.users.invite')}
         </button>
