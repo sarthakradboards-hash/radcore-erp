@@ -30,22 +30,28 @@ it('makes a role key from its name', () => {
     .toEqual(['field_sales_north', 'celine_s_team', 'role', 'role', `t_${'a'.repeat(27)}`]);
 });
 
-describe.skipIf(!url)('custom roles and templates', () => {
+// Each test sets up several roles and people before it asserts, so a loaded full run gets more than the default 5 s.
+describe.skipIf(!url)('custom roles and templates', { timeout: 30_000 }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 3 });
   const db = createDatabase(pool);
-  afterAll(() => pool.end());
+  // The set-up statements share a few connections rather than opening one each, which was slow under load (RAD-83).
+  const superPool = new pg.Pool({ connectionString: superUrl, max: 2 });
+  afterAll(async () => { await Promise.all([pool.end(), superPool.end()]); });
 
   async function asAdmin<T extends pg.QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> {
-    const c = new pg.Client({ connectionString: superUrl });
-    await c.connect();
+    const c = await superPool.connect();
     try {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
       const { rows } = await c.query<T>(text, values);
       await c.query('commit');
       return rows;
+    } catch (e) {
+      // A failed statement leaves the transaction aborted; the connection goes back to the pool clean.
+      await c.query('rollback');
+      throw e;
     } finally {
-      await c.end();
+      c.release();
     }
   }
   const run = <R>(principal: Principal, fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, write, principal, randomUUID(), fn);
