@@ -289,6 +289,15 @@ throws `not_found` out of scope, so it answers 404 like a record that doesn't ex
 lists. A person's role and grants are read from the database on every request and every job (`loadPrincipal`), never
 cached, so a change applies at once in every process (RC-095).
 
+**A forgotten scope fails lint (RAD-85, E7).** The catalogue names, for each key, the tables that hold its records
+(`records`). Any key may be granted at `own`, so a module service (`src/services/**`) that reads one of those tables
+must apply the scope in the outermost function around the read: `ctx.see`, `ctx.can` or `listScope`. This is a
+backstop to the list engine's filter and each module's own-scope tests. It can't follow a read or a check into another
+function, a table passed around as a value, a table reached through a relation (`with:`) or a view, or whether the
+check names the right owner. A service that rightly reads past the scope can't say so in a comment, since no comment
+switches a rule off (`noInlineConfig`): it is named, with its reason, in E7's options, which the config test pins. That
+exemption is built with the first real case; E7's tables are empty today.
+
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:
 - Only an admin gives or takes away the admin role, and nobody gives or takes away a role whose keys they don't all
@@ -752,9 +761,10 @@ config test (ADR-002) calls `calculateConfigForFile` and asserts each local rule
 | E4 | no escape hatch in libraries | on `packages/lib-*/**` and `packages/db/src/*/repo.ts`, with type information: `@typescript-eslint/no-explicit-any`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-assignment` (these typed rules aren't shared with any other E- or L-rule); plus local rule `radcore/e4-no-escape`, which bans a double cast (`x as unknown as T`), `as any`, the `Reflect` global and importing `getTableConfig` | a library casts or reflects its way past T1 (`Reflect.get(ctx.tx, '_')`), or reads table metadata |
 | E5 | no switching the type checker off | `@typescript-eslint/ban-ts-comment` at `error`, with no description allowance, over `packages/**` and `apps/**` | a `// @ts-ignore`, `// @ts-expect-error`, `// @ts-nocheck` or `// @ts-check` comment (T1 would otherwise be silenced on one line) |
 | E6 | no float maths or text comparison on money (M1-01, RC-215) | local rule `radcore/e6-no-float-money` on `apps/**` and `packages/**` | `parseFloat` or `Number.parseFloat` anywhere; or a value named like money, a rate or a quantity (`total`, `grandTotal`, `totalGST`, `unit_price`, `cgst`, `grossSalary`, `creditLimit`, and the other words in `eslint.config.mjs`) appears anywhere inside `Number()`, `Math.*` or a unary `+` or `-`; is an operand, bare or inside `?.`, `!`, `as`, `satisfies` or a spread, of `-`, `*`, `/`, `%`, `**`, a `+` that isn't joining a string, a compound assignment or `++`/`--`; is compared with `<`, `<=`, `>` or `>=`; or is compared with `===`, `!==`, `==` or `!=` to another such value; or such a name is declared with `number` anywhere in its type or a `.number()` schema anywhere in its value. Money is a decimal string on the wire (§7a), so these convert it to a float or compare it as text (`"9.00" > "10.00"`). Use lib-common: `dec(a).plus(b)`, `dec(a).gt(b)`, `dec(a).cmp(b)`, `dec(a).eq(b)` |
+| E7 | a scoped read applies the record scope (§6a, RAD-85) | local rule `radcore/e7-scope-on-owned-reads` on `packages/lib-*/src/services/**`, test files out, with the catalogue's `records` tables as its options | a function reads one of those tables (as an argument of `.from` or a join, imported by name, aliased or through a namespace, or as `.query.<table>`) and the outermost function around the read calls none of `ctx.see`, `ctx.can` or `listScope` |
 
 **Proof.** Every rule has one violating fixture per clause, kept in `tools/boundary-fixtures/<rule>-<clause>/`, so
-D4, D5, D7, E1 and E3 have one fixture for each thing they forbid. D7's fixtures include a type-only import with a
+D4, D5, D7, E1, E3 and E7 have one fixture for each thing they forbid. D7's fixtures include a type-only import with a
 single cast (`(ctx.tx as SalesTx).query.invoices` from lib-crm). E4's include `Reflect.get(ctx.tx, '_')`, and E5's
 include `// @ts-expect-error` above a T1 violation.
 A CI job runs each check against each fixture on

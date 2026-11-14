@@ -41,6 +41,8 @@ export async function createAuth(config: Config, log: Logger, { now }: { now?: (
       defineRoute(resetPassword, account.resetPassword), defineRoute(changePassword, account.changePassword)],
     /** The request rate limits (RAD-39), on the same store. */
     guards: createRequestGuards(store),
+    /** The shared rate-limit store, for the api's other counts (alert repeats, RC-158). */
+    limits: store,
     store: { name: 'rate-limit store', stop: () => store.end() },
   });
 }

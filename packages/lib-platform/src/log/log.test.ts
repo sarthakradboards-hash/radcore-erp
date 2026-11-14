@@ -183,8 +183,20 @@ describe('auditor-2 SHOULDs at 8f4a910: messages that carry their input unquoted
     ['a time zone', () => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asha Rao' }), 'Invalid time zone specified: …'],
     ['an encoding', () => Buffer.from('x').toString('Asha Rao' as BufferEncoding), 'Unknown encoding: …'],
     ['structuredClone', () => structuredClone({ f: () => 'Asha Rao' }), '… could not be cloned.'],
+    // The auditor's SHOULD on #59: Intl quotes a currency code without quotes.
+    ['a currency', () => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'Asha Rao' }), 'Invalid currency code : …'],
   ])('drops the input from a %s error and keeps the rest', (_, f, message) => {
     expect(describeError(thrown(f)).message).toBe(message);
+  });
+
+  // The auditor's other SHOULD on #59. Node 26's Temporal names what was wrong and never the text; if a Node update
+  // starts quoting the input, this fails and the message gets a row above. Node 24 has no Temporal, so it skips there.
+  const temporal = (globalThis as { Temporal?: Record<string, { from(s: string): unknown }> }).Temporal;
+  it.skipIf(temporal === undefined).each(['PlainDate', 'PlainDateTime', 'PlainTime', 'Instant', 'ZonedDateTime', 'Duration',
+    'PlainYearMonth', 'PlainMonthDay'])("keeps no input from Temporal.%s.from's parse error", (kind) => {
+    const message = describeError(thrown(() => temporal?.[kind]?.from('Asha Rao 9876543210'))).message;
+    expect(message).toMatch(/^Temporal error: /);
+    expect(message).not.toMatch(/Asha|9876/);
   });
 });
 
@@ -196,7 +208,7 @@ describe('auditor-2 SHOULDs at 8f4a910: key spellings', () => {
   };
 
   it.each(['workemail', 'billingaddress', 'apisecret', 'accesstoken', 'aadhar', 'aadharNumber', 'customer_aadhar',
-    'name', 'leadName', 'contact_name', 'firstname'])('redacts %s', (key) => {
+    'name', 'leadName', 'contact_name', 'firstname', 'accountnumber', 'bankaccount'])('redacts %s', (key) => {
     expect(kept(key)).toBe('[redacted]');
   });
 

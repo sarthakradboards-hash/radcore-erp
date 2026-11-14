@@ -11,8 +11,7 @@ import { cleanSavedOnce, savedOnceCleanup } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
 // The full pg-boss queue, to send to it directly as an operator; the apps' queue can't (RAD-44).
 import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
-import exportJobs from '../apps/worker/src/jobs/exports.ts';
-import platformJobs from '../apps/worker/src/jobs/platform.ts';
+import { workerJobs } from '../apps/worker/src/worker-jobs.ts';
 import { platformTx, savedOnce } from '@radcore/db/platform';
 import { factory, testPassword, testSettings } from '@radcore/test-helpers';
 import { freshDatabase } from './test-database.ts';
@@ -129,9 +128,10 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
       const exited = once(worker, 'exit');
       try {
         await vi.waitFor(() => expect(out.join('')).toContain('worker: started'), { timeout: 30_000, interval: 250 });
-        // What the worker runs: its job files' list, plus the jobs built at start with what only start-up has (RAD-32's
-        // reset email). Counted from the list, so a new job doesn't need this line changed.
-        expect(out.join('')).toContain(`job queue: running ${platformJobs.length + exportJobs.length + 1} job(s)`);
+        // What the worker runs: workerJobs, the start-built emails included (RAD-32, RAD-36). Counted from the list, so
+        // a new job doesn't need this line changed.
+        const jobs = workerJobs({ mailer: { send: async () => undefined }, publicOrigin: 'http://127.0.0.1' }).length;
+        expect(out.join('')).toContain(`job queue: running ${String(jobs)} job(s)`);
       } finally {
         worker.kill('SIGTERM');
       }

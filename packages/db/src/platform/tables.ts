@@ -76,8 +76,8 @@ export const users = radcoreTable('users', {
   roleSince: timestamp({ withTimezone: true }),
 }, (t) => [
   check('ck_users_status', sql`${t.status} in ('invited', 'active', 'disabled')`),
-  // Active means a password is set; invited means none yet.
-  check('ck_users_password', sql`(${t.status} = 'invited') = (${t.passwordHash} is null)`),
+  // Active has a password, invited none; disabled either, as an invite can be deactivated (RAD-36).
+  check('ck_users_password', sql`(${t.status} <> 'active' or ${t.passwordHash} is not null) and (${t.status} <> 'invited' or ${t.passwordHash} is null)`),
   uniqueIndex('ux_users_email_key').on(t.emailKey),
   index('ix_users_role').on(t.role),
 ]);

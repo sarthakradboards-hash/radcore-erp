@@ -22,7 +22,7 @@ import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, isRateLim
 import {
   acceptInvite, ANSWER_NOT_STORED_ROUTES, changePassword, KEY_EXEMPT_ROUTES, resetPassword, startSecondFactorEnrolment,
 } from '@radcore/lib-platform/contract';
-import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
+import { runInTransaction, type Alerter, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
 
 type Database = Parameters<typeof runInTransaction>[0];
@@ -45,6 +45,8 @@ export type HandlerDeps = {
   /** The rate limits in the shared store (RAD-39): per client address on public and link routes, per person on
    * signed-in ones. The api always passes them; a test of something else may leave them out. */
   guards?: RequestGuards | undefined;
+  /** Alerts on an unexpected failure, one per route and code per hour (RC-158). The api always passes it. */
+  alert?: Alerter | undefined;
 };
 const READ = { readOnly: true, isolation: 'read committed' } as const;
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
@@ -356,6 +358,10 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         // Ids only: never the input, the output or a value from the database (RAD-29).
         if (failure.status >= 500) deps.log.error(`${route} failed (request ${requestId})`, err);
         send(res, failure, requestId);
+        // After the answer: keyed on the route's template, never its URL, so one failing route is one alert (RC-158).
+        if (failure.status >= 500) {
+          await deps.alert?.(`${route} failed with ${failure.code} (request ${requestId})`, `api ${route} ${failure.code}`);
+        }
       }
     };
     router[contract.method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete'](contract.path, handle);

@@ -1,11 +1,19 @@
 // Alerts and the worker's heartbeat (ADR-004 §2, §5; RAD-44 step 4), both over ADR-002 L8's outbound client. Their
 // URLs carry a token in the path, so both clients log the origin only (`logPath: false`). In development and CI the
 // settings are unset: an alert is an error log line, and there's no heartbeat.
+import type { LimiterStore } from './db/client.ts';
 import { createOutbound, type Transport } from './http/outbound.ts';
 import type { Logger } from './log.ts';
 
-/** Raises an alert for people to act on. The message must already be safe to show: never a payload or a secret. */
-export type Alerter = (message: string) => Promise<void>;
+/**
+ * Raises an alert for people to act on. The message must already be safe to show: never a payload or a secret. A
+ * `key` names what failed (`api POST /sales/invoices/:id server_error`): one alert per key is posted per hour.
+ */
+export type Alerter = (message: string, key?: string) => Promise<void>;
+
+// RC-158: repeats are counted per key in the shared store, so they're held across restarts and across servers. A
+// route template, never a full URL, so one failing route is one key. If the store can't answer, the alert posts.
+const REPEATS = { prefix: 'alert', points: 1, windowSeconds: 3600, blockSeconds: 0, failOpen: true } as const;
 
 /** ADR-004 §2: the worker sends one every 5 minutes; the outside monitor alerts after 15 without one. */
 const HEARTBEAT_EVERY_MS = 5 * 60_000;
@@ -26,8 +34,10 @@ const originOf = (url: string): string => new URL(url).origin;
  * thousand jobs dead-lettering) doesn't flood the channel or get the webhook rate-limited.
  */
 export function createAlerter(webhookUrl: string | null, log: Logger,
-  { transport, burst = ALERT_BURST, windowMs = ALERT_WINDOW_MS }: { transport?: Transport; burst?: number; windowMs?: number } = {},
+  { transport, burst = ALERT_BURST, windowMs = ALERT_WINDOW_MS, repeats }:
+  { transport?: Transport; burst?: number; windowMs?: number; repeats?: LimiterStore } = {},
 ): Alerter {
+  const once = repeats?.limiter(REPEATS);
   const client = webhookUrl === null ? null : createOutbound(
     { name: 'alert', allowedOrigins: [originOf(webhookUrl)], logPath: false }, { log, ...(transport && { transport }) });
   const span = { start: Number.NEGATIVE_INFINITY, posted: 0 };
@@ -41,9 +51,13 @@ export function createAlerter(webhookUrl: string | null, log: Logger,
       log.error('alert: the webhook could not be reached, so the alert above was not delivered', err);
     }
   };
-  return async (message) => {
+  return async (message, key) => {
     log.error(`ALERT: ${message}`);
     if (webhookUrl === null) return;
+    if (key !== undefined && once !== undefined && await once.hit(key) > 0) {
+      log.info('alert: posted already within the hour, so this one is in the logs only');
+      return;
+    }
     const now = Date.now();
     if (now - span.start >= windowMs) Object.assign(span, { start: now, posted: 0 });
     span.posted += 1;

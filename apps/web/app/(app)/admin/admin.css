@@ -28,3 +28,16 @@
 .admin-tabs [role="tab"][data-state="active"] { background-color: var(--surface-selected); font-weight: 600; }
 .admin-tabs [role="tabpanel"] { display: grid; gap: var(--space-4); }
 .admin-tabs [role="tabpanel"][hidden] { display: none; }
+/* A link that looks like the kit's button (a role's Change, on the matrix). */
+.admin a.kit-button { display: inline-flex; align-items: center; justify-content: center; border: 1px solid currentColor; color: inherit; text-decoration: none; }
+.admin-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
+.admin-facts dt { font-weight: 600; }
+.admin-facts dd { margin: 0; }
+.admin-group { display: grid; gap: var(--space-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: var(--space-3); margin: 0; }
+.admin-group legend { font-weight: 600; padding: 0 var(--space-1); }
+.admin-grant { display: flex; gap: var(--space-2); align-items: start; min-block-size: var(--tap); }
+.admin-grant input { inline-size: 1.25rem; block-size: 1.25rem; margin-block-start: 0.125rem; flex: none; }
+.admin-grant.admin-changed { background-color: var(--surface-selected); }
+.admin-notice { border-inline-start: 4px solid var(--accent); padding: var(--space-2) var(--space-3); background-color: var(--surface); }
+.admin-notice p, .admin-notice ul { margin: 0; }
+.admin-notice p { font-weight: 600; }

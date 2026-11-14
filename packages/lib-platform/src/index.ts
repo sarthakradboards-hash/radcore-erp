@@ -2,6 +2,7 @@ export { ConfigError, loadConfig, type AppEnv, type Config, type ProcessName } f
 export { principalId, type Ctx, type Files, type Owned, type Principal, type SessionCookie, type SignInCookie } from './ctx.ts';
 export { roleNeedsSecondFactor } from './auth/principal.ts';
 export { changeUserRole, listRolesFor, permissionMatrix, setRoleGrants } from './auth/roles-admin.ts';
+export { deactivatePerson, invitePerson, reactivatePerson, resendPersonInvite } from './auth/people-admin.ts';
 export { createCustomRole, deleteCustomRole, renameRole, resetRoleToTemplate } from './auth/roles-custom.ts';
 export { assignRole } from './auth/roles.ts';
 export { AppError, RecordedRefusal } from './errors.ts';

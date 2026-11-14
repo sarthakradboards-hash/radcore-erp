@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Principal, Webhook } from '@radcore/lib-platform';
 import { takeDelivery } from '@radcore/lib-platform';
-import { runInTransaction, type Logger } from '@radcore/lib-platform/runtime';
+import { runInTransaction, type Alerter, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type Express, type Response } from 'express';
 
 type Database = Parameters<typeof runInTransaction>[0];
@@ -18,7 +18,7 @@ const answer = (res: Response, status: number, code: string, message: string, re
   res.status(status).json({ code, message, issues: [], requestId });
 
 /** Mounts each webhook before the browser routes' guards and body parser. */
-export function mountWebhooks(app: Express, hooks: readonly Webhook[], deps: { db: Database; log: Logger }): void {
+export function mountWebhooks(app: Express, hooks: readonly Webhook[], deps: { db: Database; log: Logger; alert?: Alerter | undefined }): void {
   const router = express.Router();
   for (const hook of hooks) {
     router.post(hook.contract.path, express.raw({ type: () => true, limit: '1mb' }), async (req, res) => {
@@ -40,6 +40,7 @@ export function mountWebhooks(app: Express, hooks: readonly Webhook[], deps: { d
         // Ids only, never the body (RAD-29).
         deps.log.error(`${hook.source} failed (request ${requestId})`, err);
         answer(res, 500, 'server_error', 'Something went wrong on our side', requestId);
+        await deps.alert?.(`the ${hook.source} webhook failed (request ${requestId})`, `api webhook ${hook.contract.path}`);
       }
     });
   }

@@ -202,7 +202,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const reasons = (known: boolean) => rows.filter((r) => r.known === known).map((r) => r.reason);
     const expected = [...Array<string>(LOCKOUT.points).fill('invalid_credentials'), ...Array<string>(3).fill('account_locked')];
     expect([reasons(true), reasons(false)]).toEqual([expected, expected]);
-  });
+  }, 30_000); // 26 Argon2id checks at the production cost
 
   it('answers /me with the person, their permissions and when this session ends', async () => {
     const s = await setup();

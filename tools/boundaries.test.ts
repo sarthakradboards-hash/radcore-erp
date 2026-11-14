@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 const FIXTURES = 'tools/boundary-fixtures';
 // Type-aware linting builds a TypeScript program on first use; a cold CI runner can take a while.
 const LINT_TIMEOUT = 180_000;
-const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6',
+const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7',
   'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b', 'T1'];
 const CONTROLS = { depcruise: 'ok-allowed-imports', eslint: 'ok-lint-zones', tsc: 'ok-opaque-tx' };
 
@@ -71,6 +71,7 @@ const ESLINT_IDS: Record<string, string[]> = {
   E4: ['radcore/e4-no-escape'],
   E5: ['@typescript-eslint/ban-ts-comment'],
   E6: ['radcore/e6-no-float-money'],
+  E7: ['radcore/e7-scope-on-owned-reads'],
   L1: ['radcore/no-sql'],
   L2: ['radcore/no-query-strings'],
   L3: ['radcore/no-raw-execution'],
