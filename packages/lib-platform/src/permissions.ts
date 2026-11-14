@@ -8,24 +8,27 @@ export type Permission = {
   readonly label: string;
   /** Only these roles may hold it, whatever the matrix says (D-20: only admin and owner see pay). */
   readonly onlyRoles?: readonly string[];
+  /** A role holding it needs the second sign-in factor, whatever its own setting (D-19, RAD-83): keys that move money
+   * or reach payroll, HR or user administration. Each such module's keys join with it. */
+  readonly secondFactor?: boolean;
 };
 
 /** In the order the matrix shows them: by module, then by key. */
 export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'session:read', module: 'My work', label: 'Their own account: profile, password and sessions' },
   { key: 'users:read', module: 'Admin', label: 'See people and their sessions' },
-  { key: 'users:write', module: 'Admin', label: 'Invite people, change their role, deactivate them' },
+  { key: 'users:write', module: 'Admin', label: 'Invite people, change their role, deactivate them', secondFactor: true },
   { key: 'roles:read', module: 'Admin', label: 'See roles and what each may do' },
-  { key: 'roles:write', module: 'Admin', label: 'Change what each role may do' },
+  { key: 'roles:write', module: 'Admin', label: 'Change what each role may do', secondFactor: true },
   { key: 'audit:read', module: 'Admin', label: 'Read the audit trail and security events' },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
-  { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'] },
+  { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'], secondFactor: true },
   { key: 'photo_files:read', module: 'Files', label: 'See job photos' },
   { key: 'photo_files:write', module: 'Files', label: 'Upload job photos' },
-  { key: 'resume_files:read', module: 'Files', label: 'See applicants’ résumés' },
-  { key: 'resume_files:write', module: 'Files', label: 'Upload applicants’ résumés' },
-  { key: 'statement_files:read', module: 'Files', label: 'See bank statements' },
-  { key: 'statement_files:write', module: 'Files', label: 'Upload bank statements' },
+  { key: 'resume_files:read', module: 'Files', label: 'See applicants’ résumés', secondFactor: true },
+  { key: 'resume_files:write', module: 'Files', label: 'Upload applicants’ résumés', secondFactor: true },
+  { key: 'statement_files:read', module: 'Files', label: 'See bank statements', secondFactor: true },
+  { key: 'statement_files:write', module: 'Files', label: 'Upload bank statements', secondFactor: true },
   { key: 'import_files:read', module: 'Files', label: 'See import files' },
   { key: 'import_files:write', module: 'Files', label: 'Upload import files' },
 ].map((p) => Object.freeze(p)));
@@ -36,3 +39,6 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
  * and My work's other keys join this list as they're declared.
  */
 export const SIGNED_IN_BASICS: readonly string[] = Object.freeze(['session:read']);
+
+/** The keys whose holder needs the second sign-in factor (D-19, RAD-83). */
+export const SECOND_FACTOR_KEYS: readonly string[] = Object.freeze(PERMISSIONS.filter((p) => p.secondFactor).map((p) => p.key));
