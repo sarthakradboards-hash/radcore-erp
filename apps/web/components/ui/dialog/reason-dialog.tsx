@@ -6,9 +6,10 @@ import { announce } from '../live-region.tsx';
 import { TextAreaField } from '../form/fields.tsx';
 import { Form, SubmitButton } from '../form/form.tsx';
 import { CloseButton, Dialog } from './dialog.tsx';
+import { t } from '../../../lib/i18n/index.ts';
 
 // Only "something typed"; the contract's own rules (length and the like) come back as an issue on `reason`.
-const schema = z.object({ reason: z.string().trim().min(1, 'Say why, in your own words') });
+const schema = z.object({ reason: z.string().trim().min(1, t('kit.reason.required')) });
 
 type ReasonDialogProps = {
   open: boolean;
@@ -21,9 +22,11 @@ type ReasonDialogProps = {
   onConfirm: (reason: string) => Promise<unknown>;
   /** Said to screen readers once it is done: "Invoice cancelled". */
   done: string;
+  /** The screen's wording for the contract's error codes, as on Form. */
+  messages?: Partial<Record<string, string>>;
 };
 
-export function ReasonDialog({ open, onOpenChange, title, action, onConfirm, done }: ReasonDialogProps) {
+export function ReasonDialog({ open, onOpenChange, title, action, onConfirm, done, messages }: ReasonDialogProps) {
   const confirm = async ({ reason }: z.output<typeof schema>) => {
     await onConfirm(reason);
     onOpenChange(false);
@@ -32,10 +35,11 @@ export function ReasonDialog({ open, onOpenChange, title, action, onConfirm, don
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={title}>
-      <Form schema={schema} defaultValues={{ reason: '' }} onSubmit={confirm} saved={false}>
-        <TextAreaField name="reason" label="Reason" hint="Kept with the record and shown in its history." />
+      <Form schema={schema} defaultValues={{ reason: '' }} onSubmit={confirm} saved={false}
+        {...(messages === undefined ? {} : { messages })}>
+        <TextAreaField name="reason" label={t('kit.reason.label')} hint={t('kit.reason.hint')} />
         <div className="kit-actions">
-          <CloseButton>Keep it</CloseButton>
+          <CloseButton>{t('kit.reason.keep')}</CloseButton>
           <SubmitButton>{action}</SubmitButton>
         </div>
       </Form>

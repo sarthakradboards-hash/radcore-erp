@@ -59,7 +59,7 @@ out.
   - saved-once keys and job state.
 - **Uploads go straight to S3, with limits the bucket enforces.** The browser uploads with a presigned **POST**.
   A presigned PUT can't limit size. The POST policy fixes:
-  - the exact `bucket` and `key` (made by the server);
+  - the exact `bucket` and `key` (made by the server, under `incoming/`);
   - the `Content-Type`;
   - a `content-length-range` for the kind of file;
   - an expiry of 5 minutes.
@@ -67,7 +67,11 @@ out.
   The client can't set an ACL, encryption or any other field: encryption is the bucket's default (KMS). The
   bucket's CORS allows `POST` from `PUBLIC_ORIGIN` only (ADR-001 §7a).
   - Limits by kind: photos 10 MB, resumes 5 MB, bank statements 15 MB, import files 25 MB (M1-25).
-  - After upload, the API checks the stored object's size and magic bytes before the file is used.
+  - After upload, a job copies the object from `incoming/<kind>/<uuid>` to `<kind>/<uuid>`, which no POST policy
+    names, once (a retried job checks the copy it already made), then checks the copy's size, type and magic bytes,
+    and removes the upload. Only that checked copy is ever downloaded, so bytes posted again to the upload key while
+    its policy lasts never reach a reader (RAD-43). A refused copy stays where it is, never served: only a file
+    checked as ready gets a download link.
   - Downloads are short-lived presigned GETs with `Content-Disposition: attachment`.
   - Neither the API nor the database holds a whole file.
 - **Connections.** The API and worker connect straight to RDS from their own pools: no transaction-mode pooler,
@@ -118,7 +122,10 @@ and `worker` may reach it, by an allowlist:
   day, not at the next audit. M8 also proves it once from a shell inside `web`.
 
 **What the instance role may do**, and nothing else:
-- read and write objects in the files bucket;
+- read and write objects in the files bucket, and delete them under `incoming/` (an upload, once its checked copy
+  is made, RAD-43);
+- list the files bucket (`s3:ListBucket`), so a missing object answers 404, which the upload check relies on. Without
+  it S3 answers 403 for a missing object. It shows key names only, which are server-made ids;
 - use the secrets KMS key (encrypt, decrypt, generate data keys);
 - read the named **runtime** secrets in Secrets Manager (`DATABASE_URL`, `TURNSTILE_SECRET`, `ALERT_WEBHOOK_URL`,
   `HEARTBEAT_URL`), and the runtime settings in Parameter Store;
@@ -142,10 +149,10 @@ Actions with its own AWS role, assumed through OIDC (no stored keys). That role 
 2. opens an SSM port-forwarding session through the server to RDS, which isn't public;
 3. runs the `migrate` image in CI with the owner login. TLS is still verified through the tunnel: `ssl.servername`
    is the RDS endpoint name, so `verify-full` checks the right certificate. It runs under `lock_timeout = 5s` and a
-   statement timeout, so a migration never queues behind live traffic for long;
-4. runs the partition top-up (ADR-005 §8) the same way;
-5. closes the session;
-6. tells the server, through SSM, to pull the new images **by digest** and swap containers.
+   statement timeout, so a migration never queues behind live traffic for long. The same step tops up the log
+   partitions under the same lock (ADR-005 §8);
+4. closes the session;
+5. tells the server, through SSM, to pull the new images **by digest** and swap containers.
 
 Deploys are serialised: one GitHub Actions concurrency group per environment, with `cancel-in-progress: false`, so
 two deploys never overlap and a running one is never cut off. The previous five image digests are kept.
@@ -215,8 +222,9 @@ the deploy job through SSM:
   names the Hyderabad replica key. Without that, it would copy nothing.
   - A daily canary object is written in Mumbai. The monitor alerts if it hasn't appeared in Hyderabad within an
     hour.
-  - Lifecycle rules abort incomplete uploads after a day. Old versions are kept: D-12 keeps all data, so none
-    expires.
+  - Lifecycle rules abort incomplete uploads after a day, and expire everything under `incoming/` after a day,
+    current and old versions alike: an upload is working data, and its checked copy is the record (D-12). Old
+    versions elsewhere are kept: D-12 keeps all data, so none expires.
   - A bucket policy denies any request not over TLS.
 - **RDS** has deletion protection on, keeps its automated backups on deletion, and replicates them to `ap-south-2`
   with a key in that region. M8-01 confirms that the Mumbai-to-Hyderabad pair is offered, and sets the retention
@@ -259,6 +267,7 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 | `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` | connection timeouts (ADR-002 §4) | no | all | Parameter Store | api, worker |
 | `S3_REGION`, `S3_BUCKET_FILES` | where files live | no | all | Parameter Store | api, worker |
 | `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | the S3-compatible dev server (SeaweedFS) in development and CI only | **yes** | development, CI | generated `.env` / CI | api, worker |
+| `S3_FILES_ORIGIN` | the files bucket's origin as the browser sees it: `https://<bucket>.s3.<region>.amazonaws.com`, or SeaweedFS's `http://127.0.0.1:8333` in development and CI. `web`'s CSP lets pages upload to it (`connect-src`, `form-action`) and show previews from it (`img-src`), and allows no other outside origin (RAD-43) | no | all | Parameter Store | web |
 | `SECRETS_KMS_KEY_ID` | the multi-Region KMS key that wraps the secrets library's data keys | no | staging, production | Parameter Store | api, worker |
 | `SECRETS_LOCAL_KEY` | stand-in for KMS in development, CI and the test copy, at least 32 random bytes | **yes** | development, CI, review | generated `.env` / CI / Vercel (§7) | api, worker |
 | `MAIL_FROM` | the sender address for invites and resets (a verified SES identity) | no | staging, production | Parameter Store | api, worker |
@@ -272,6 +281,7 @@ browser gets what it needs (for example the Turnstile site key) from the server 
 **Start-up refuses when:**
 - `SECRETS_KMS_KEY_ID` and `SECRETS_LOCAL_KEY` aren't exactly one of them set;
 - `S3_ENDPOINT` or static S3 keys are set in staging or production;
+- `S3_FILES_ORIGIN` (in `web`) isn't an origin alone (no path or wildcard), or isn't `https://` outside development and CI;
 - `APP_ENV` is `development` or `ci` while `NODE_ENV` is `production`;
 - a setting its column marks as required is missing;
 - the database URL doesn't verify TLS in staging or production.

@@ -1,0 +1,8 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Specs run code in the browser (page.evaluate), so they need the DOM's types; the root project leaves them out.
+    "lib": ["es2024", "dom", "dom.iterable"]
+  },
+  "include": ["."]
+}

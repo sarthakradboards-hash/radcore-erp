@@ -3,8 +3,8 @@
 // before commit, camelCase as is, and errors mapped by code: a thrown code or a SQLSTATE, never message text.
 // Here in tools/ because server code may not call fetch (ADR-002 L8). The tables live in a schema of this file's own.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { defineContract } from '@radcore/lib-common';
-import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
+import { defineContract, newPassword } from '@radcore/lib-common';
+import { AppError, defineRoute, loadConfig, RecordedRefusal, type Ctx, type Principal } from '@radcore/lib-platform';
 import { sql } from 'drizzle-orm';
 import { integer, pgSchema, text, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
@@ -13,13 +13,12 @@ import { z } from 'zod';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import type { HandlerDeps } from '../apps/api/src/http/handler.ts';
-import { defineRoute } from '../apps/api/src/http/route.ts';
 import { moduleTx } from '../packages/db/src/module-tx.ts';
 import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
 
 // The owner login: this file makes a schema and a table of its own (RAD-24).
 const url = process.env['TEST_DATABASE_OWNER_URL'];
-const fixture = pgSchema(`handler_${randomBytes(6).toString('hex')}`);
+const fixture = pgSchema(`test_handler_${randomBytes(6).toString('hex')}`);
 const notes = fixture.table('notes', { id: uuid().primaryKey().defaultRandom(), body: text().notNull(), n: integer().notNull() });
 const notesTx = moduleTx({ notes });
 
@@ -91,7 +90,7 @@ describe.skipIf(!url)('the generic route handler', () => {
     const [row] = await notesTx(ctx).insert(notes).values(input).returning({ id: notes.id });
     return { id: row?.id ?? '' };
   };
-  const signOutService = vi.fn(async () => ({}));
+  const signOutService = vi.fn<(ctx: Ctx) => Promise<Record<string, never>>>(async () => ({}));
   // Every write carries its saved-once key (ADR-001 §7a): a UUID, new per submit.
   const post = (base: string, body: unknown, key: string | null = randomUUID()) => fetch(`${base}/notes`, {
     method: 'POST', body: JSON.stringify(body),
@@ -172,6 +171,22 @@ describe.skipIf(!url)('the generic route handler', () => {
     expect(await count(body)).toBe(0);
   });
 
+  // ADR-001 §7a (RAD-61): only rate_limited and account_locked say when to retry, in the body and in Retry-After.
+  it('answers account_locked with retryAfterSeconds and the same Retry-After header, and other codes with neither', async () => {
+    let thrown = new AppError('account_locked', 'Locked for now', [], 840);
+    await serve(user(['notes:write']), async () => {
+      throw thrown;
+    }, async (base) => {
+      const locked = await post(base, { body: 'x', n: 1 });
+      expect([locked.status, locked.headers.get('retry-after'), ((await locked.json()) as { retryAfterSeconds?: number }).retryAfterSeconds])
+        .toEqual([429, '840', 840]);
+      thrown = new AppError('not_found', 'Gone', [], 840);
+      const other = await post(base, { body: 'x', n: 1 });
+      expect([other.status, other.headers.get('retry-after'), 'retryAfterSeconds' in ((await other.json()) as object)])
+        .toEqual([404, null, false]);
+    });
+  });
+
   it('maps a platform code to its status, and a code the contract does not list to 500', async () => {
     let code = 'not_found';
     await serve(user(['notes:write']), async () => {
@@ -235,6 +250,53 @@ describe.skipIf(!url)('the generic route handler', () => {
     expect(service).not.toHaveBeenCalled();
   });
 
+  // RAD-34: the session cookie rides only on the key-exempt routes, whose answers are never stored and replayed, and
+  // is set only once the transaction commits. A RecordedRefusal (a failed sign-in's record) commits only there. These
+  // settings' origin is http, so the cookie is the development form (sessionCookieFor); tools/sessions.test has https.
+  it('sets the cookie only from a key-exempt route and only after commit; a recorded refusal commits only there', async () => {
+    const TOKEN = 'a'.repeat(43);
+    const exemptPost = (base: string) => fetch(`${base}/sign-out`, { method: 'POST', body: '{}',
+      headers: { 'content-type': 'application/json', origin: ORIGIN, 'user-agent': 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0' } });
+    const tag = randomBytes(4).toString('hex');
+    const exemptWrites = (body: string, then: () => never) => async (ctx: Ctx) => {
+      await notesTx(ctx).insert(notes).values({ body, n: 1 });
+      ctx.cookie?.set(TOKEN, new Date('2099-01-01T00:00:00Z'));
+      return then();
+    };
+    let cookieOnKeyed: unknown = 'unset';
+    await serve(user(['session:read', 'notes:write']), async (ctx, input) => {
+      cookieOnKeyed = ctx.cookie;
+      await insert(ctx, input);
+      throw new RecordedRefusal('note_too_long', 'Too long');
+    }, async (base) => {
+      // Set, and the device named from the User-Agent.
+      let device: string | undefined;
+      signOutService.mockImplementationOnce(async (ctx: Ctx) => {
+        ctx.cookie?.set(TOKEN, new Date('2099-01-01T00:00:00Z'));
+        device = ctx.cookie?.device;
+        return {};
+      });
+      const ok = await exemptPost(base);
+      expect([ok.status, ok.headers.get('set-cookie')]).toEqual([200,
+        `radcore_session=${TOKEN}; Path=/; Expires=Thu, 01 Jan 2099 00:00:00 GMT; HttpOnly; SameSite=Lax`]);
+      expect(device).toBe('Firefox on Windows');
+      // A recorded refusal on an exempt route: its work commits and its cookie is set, and the caller gets the refusal.
+      signOutService.mockImplementationOnce(exemptWrites(`kept ${tag}`, () => { throw new RecordedRefusal('conflict', 'Kept'); }));
+      const kept = await exemptPost(base);
+      expect([kept.status, ((await kept.json()) as { code: string }).code, kept.headers.get('set-cookie') !== null])
+        .toEqual([409, 'conflict', true]);
+      // Any other failure rolls back, and no cookie is set for what never committed.
+      signOutService.mockImplementationOnce(exemptWrites(`dropped ${tag}`, () => { throw new AppError('conflict', 'Dropped'); }));
+      const dropped = await exemptPost(base);
+      expect([dropped.status, dropped.headers.get('set-cookie')]).toEqual([409, null]);
+      // A keyed route gets no cookie, and a recorded refusal there rolls back like any other.
+      const keyed = await post(base, { body: `keyed ${tag}`, n: 1 });
+      expect([keyed.status, keyed.headers.get('set-cookie')]).toEqual([422, null]);
+    });
+    expect(cookieOnKeyed).toBeUndefined();
+    expect([await count(`kept ${tag}`), await count(`dropped ${tag}`), await count(`keyed ${tag}`)]).toEqual([1, 0, 0]);
+  });
+
   it('marks every answer no-store, and never names the server', async () => {
     await serve(user(['notes:read']), insert, async (base) => {
       for (const res of [await fetch(`${base}/notes/n-1`), await post(base, { body: '', n: 1 }), await fetch(`${base}/who`)]) {
@@ -270,6 +332,53 @@ describe.skipIf(!url)('the generic route handler', () => {
       expect(lines).toEqual([`POST /notes failed (request ${requestId})`]);
       expect(JSON.stringify(log.error.mock.calls.map(([m]) => m))).not.toContain(PERSONAL);
     });
+  });
+});
+
+// ADR-001 §7a (RAD-32): a field marked newPassword() is checked before the transaction opens, so the check's network
+// call never holds a transaction or a pooled connection, and a refusal never reaches the service.
+describe.skipIf(!url)('the new-password check before the transaction', () => {
+  const setPassword = defineContract({ method: 'POST', path: '/passwords', auth: 'session', perm: 'notes:write',
+    tx: { readOnly: false, isolation: 'read committed' }, input: z.object({ password: newPassword() }), output: z.object({}),
+    errors: ['password_rejected'] });
+  const check = vi.fn(async (p: string) => (p.length < 15 ? 'too_short' as const : p.includes('breach') ? 'breached' as const : null));
+
+  it('refuses a short or breached password with password_rejected on its field, before the service and the transaction', async () => {
+    const pool = new pg.Pool({ connectionString: url, max: 1 });
+    const service = vi.fn(async () => ({}));
+    const app = createApp(config(), logger(), { db: createDatabase(pool), authenticate: async () => user(['notes:write']),
+      newPasswordCheck: check, routes: [defineRoute(setPassword, service)] });
+    const server = await listen(app, 0, '127.0.0.1');
+    const send = async (password: string) => {
+      const res = await fetch(`http://127.0.0.1:${server.port}/passwords`, { method: 'POST', body: JSON.stringify({ password }),
+        headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID(), origin: ORIGIN } });
+      const body = (await res.json()) as { code?: string; issues?: { path: unknown[]; code: string }[] };
+      return [res.status, body.code, body.issues?.map((i) => [i.path, i.code])];
+    };
+    try {
+      expect(await send('too short')).toEqual([422, 'password_rejected', [[['password'], 'too_short']]]);
+      expect(await send('a breach of the lighthouse')).toEqual([422, 'password_rejected', [[['password'], 'breached']]]);
+      expect(service).not.toHaveBeenCalled();
+      expect(await send('the lighthouse keeps its own time')).toEqual([200, undefined, undefined]);
+      expect(service).toHaveBeenCalledTimes(1);
+    } finally {
+      await server.stop();
+      await pool.end();
+    }
+  });
+
+  // The auditor's SHOULD on #100: a wrapped input would hide the field, so the three password routes must show one.
+  it('refuses to mount a password route whose new password the check cannot find', () => {
+    const hidden = defineContract({ method: 'POST', path: '/invites/accept', auth: 'public', rateLimit: 'token-link', perm: null,
+      tx: { readOnly: false, isolation: 'read committed' }, input: z.object({ token: z.string(), password: z.string() }),
+      output: z.object({}), errors: ['password_rejected'] });
+    expect(() => createApp(config(), logger(), { db: createDatabase(new pg.Pool()), authenticate: async () => null,
+      newPasswordCheck: check, routes: [defineRoute(hidden, async () => ({}))] })).toThrow(/newPassword\(\) field/);
+  });
+
+  it('refuses to mount a newPassword() field without a check to run (fails closed)', () => {
+    expect(() => createApp(config(), logger(), { db: createDatabase(new pg.Pool()), authenticate: async () => null,
+      routes: [defineRoute(setPassword, async () => ({}))] })).toThrow(/new-password check/);
   });
 });
 

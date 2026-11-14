@@ -105,6 +105,11 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
     // As the runtime logins will (ADR-005 §7c): unqualified names resolve in `radcore` only, never in `public`.
     await client.query('set local search_path = radcore');
     await client.query("set local app.principal = 'system:test'");
+    // The helper fixtures get their triggers as a real table's migration gives them (RAD-30, ADR-005 §5).
+    // Every column listed, as a real table's migration lists them: these are all business values, so all kept.
+    await client.query("select radcore.audit_attach('fixture_units', keep => array['label', 'active', 'code_key', 'label_key'])");
+    await client.query(`select radcore.audit_attach('fixture_lines', keep => array['unit_code', 'amount', 'balance',
+      'foreign_amount', 'line_price', 'line_qty', 'stock_qty', 'tax', 'cess', 'fx', 'note', 'short_note'])`);
     // Rows every test may rely on; each test's own writes run in a savepoint, so the shuffled order doesn't matter.
     await client.query("insert into fixture_units (code, label) values ('nos', 'Numbers'), ('store', 'Store')");
   });
@@ -120,12 +125,23 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
   });
 
   const rows = async (view: string) => (await client.query<Record<string, string>>(`select * from ${view}`)).rows;
-  const outside = (schemaName: string) => (r: Record<string, string>) => r['schema_name'] !== schemaName;
+  // Test fixtures: this file's guard_bad, and the short-lived schemas other test files make, each named test_…, which
+  // the guard may see mid-run. Every other schema is checked, so a schema added later is guarded from its first day.
+  const FIXTURE = /^(guard_bad|test_[a-z0-9_]+)$/;
+  const notFixture = (r: Record<string, string>) => !FIXTURE.test(r['schema_name'] ?? '');
+  // Every schema the database may hold. One not here, and not a fixture, fails: add it here, deliberately.
+  const KNOWN = ['radcore', 'public', 'drizzle', 'pgboss', 'ratelimit', 'radcore_ext'];
+
+  it('holds no schema it doesn’t know, besides the fixtures', async () => {
+    const { rows: found } = await client.query<{ name: string }>(`select nspname::text as name from pg_namespace
+      where nspname not in ('pg_catalog', 'information_schema') and left(nspname, 3) <> 'pg_' order by 1`);
+    expect(found.map((r) => r.name).filter((n) => !FIXTURE.test(n) && !KNOWN.includes(n))).toEqual([]);
+  });
 
   it('finds no rule broken outside the fixture schema (the real schema and the helper fixtures)', async () => {
     for (const view of ['v_schema_numeric_without_check', 'v_schema_fk_without_index', 'v_schema_missing_audit', 'v_schema_enums',
-      'v_schema_public_relations']) {
-      expect((await rows(view)).filter(outside('guard_bad')), view).toEqual([]);
+      'v_schema_public_relations', 'v_schema_missing_triggers', 'v_schema_audit_columns']) {
+      expect((await rows(view)).filter(notFixture), view).toEqual([]);
     }
   });
 
@@ -136,6 +152,10 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
     expect((await inBad('v_schema_fk_without_index')).map((r) => r['table_name'])).toEqual(['children']);
     expect((await inBad('v_schema_missing_audit')).map((r) => r['table_name']).sort()).toEqual(['children', 'parents', 'raw_numbers']);
     expect(await inBad('v_schema_enums')).toEqual([{ schema_name: 'guard_bad', type_name: 'colour' }]);
+    // RAD-30: a table made without radcore.audit_attach has neither trigger.
+    expect((await inBad('v_schema_missing_triggers')).map((r) => `${String(r['table_name'])} ${String(r['missing'])}`).sort())
+      .toEqual(['children audit_row', 'children stamp_who_when', 'parents audit_row', 'parents stamp_who_when',
+        'raw_numbers audit_row', 'raw_numbers stamp_who_when']);
   });
 
   it('reports a table or view in public (ADR-005 §7c)', async () => {
@@ -209,7 +229,8 @@ describe.skipIf(!url)('schema rules on PostgreSQL', () => {
     await client.query('savepoint principal');
     try {
       await client.query("set local app.principal = ''");
-      expect(await attempt("insert into fixture_lines (unit_code, amount) values ('nos', 1)")).toBe('23502');
+      // RA005 from the who-and-when trigger (ADR-005 §5), before the NOT NULL behind it would answer 23502.
+      expect(await attempt("insert into fixture_lines (unit_code, amount) values ('nos', 1)")).toBe('RA005');
     } finally {
       await client.query('rollback to savepoint principal');
     }

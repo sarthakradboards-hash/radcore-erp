@@ -4,10 +4,14 @@
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { GetObjectCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Client,
+  S3ServiceException,
+} from '@aws-sdk/client-s3';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Config } from '../config.ts';
+import type { Logger } from '../log.ts';
 import { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './kinds.ts';
 import { confirmsType, MAGIC_BYTES } from './magic.ts';
 
@@ -15,15 +19,23 @@ import { confirmsType, MAGIC_BYTES } from './magic.ts';
 const DOWNLOAD_SECONDS = 60;
 /** How long an upload link works (ADR-004 §2). */
 const UPLOAD_SECONDS = 5 * 60;
+/**
+ * Where a browser's upload lands: `incoming/<kind>/<uuid>`, the only key its POST policy names. The check copies it to
+ * `<kind>/<uuid>`, which no browser policy names, and checks and serves only that copy (auditor-2 on #112).
+ */
+const INCOMING = 'incoming/';
 
 export type FileStore = {
   /** A short-lived link that downloads the file as an attachment named `filename`, never cached. */
   downloadUrl(key: string, filename: string): Promise<string>;
-  /** After an upload, before the file is used: it exists, its size and type fit its kind, and it begins the way its
-   * type must (magic bytes). */
+  /** After an upload, before the file is used: copies the upload from `incoming/<key>` to `key`, then checks the copy:
+   * it exists, its size and type fit its kind, and it begins the way its type must (magic bytes). The upload is then
+   * removed. Only a ready file's `key`, holding exactly the checked bytes, is ever downloaded; a refused copy stays,
+   * never served, since the instance role deletes only under incoming/ (ADR-004 §2). */
   verifyUpload(key: string, kind: FileKind): Promise<{ size: number; contentType: string }>;
-  /** A 5-minute presigned POST for one new file of `kind` and type `contentType`, at a key the server makes. The
-   * bucket refuses a bigger file, another type, another key or any extra field (ADR-004 §2). */
+  /** A 5-minute presigned POST for one new file of `kind` and type `contentType`, at a key the server makes: `key` is
+   * where the checked file will live, and the POST writes only `incoming/<key>`. The bucket refuses a bigger file,
+   * another type, another key or any extra field (ADR-004 §2). */
   presignUpload(kind: FileKind, contentType: string): Promise<{ key: string; url: string; fields: Record<string, string> }>;
   /** The server's own upload, such as a finished export (RAD-47): streams the local file at `path`, after the work's
    * transaction has committed, to a new key `<kind>/<uuid>` the store makes. The file's size is known, so one
@@ -39,13 +51,67 @@ export class UploadRefused extends Error {
   }
 }
 
+type Credentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string; expiration?: Date };
+/** The SDK's own credential chain, which may fetch (the instance role's comes from IMDS); `forceRefresh` fetches anew. */
+export type CredentialSource = (options?: { forceRefresh?: boolean }) => Promise<Credentials>;
+
+/** Refresh this long before the credentials expire; the instance role's last about six hours. */
+const REFRESH_AHEAD_MS = 15 * 60_000;
+/** A failed refresh is tried again this soon, while the current credentials still work. */
+const RETRY_MS = 60_000;
+
+/**
+ * Credentials fetched before anything signs, and refreshed in the background (auditor-2, ADR-001 §8): left to itself,
+ * the SDK fetches the instance role's credentials on the first signature and again when they near expiry, so a
+ * presign inside a transaction could make a network call. Here signing only reads what's held.
+ */
+export async function heldCredentials(source: CredentialSource, log: Logger): Promise<{ read: () => Promise<Credentials>; stop(): void }> {
+  let current = await source();
+  let timer: NodeJS.Timeout | undefined;
+  let stopped = false;
+  const schedule = (ms: number) => {
+    if (stopped) return;
+    timer = setTimeout(() => void refresh(), ms);
+    timer.unref();
+  };
+  const untilRefresh = () => current.expiration === undefined ? null
+    : Math.max(current.expiration.getTime() - Date.now() - REFRESH_AHEAD_MS, RETRY_MS);
+  const refresh = async () => {
+    try {
+      current = await source({ forceRefresh: true });
+      const next = untilRefresh();
+      if (next !== null) schedule(next);
+    } catch (err) {
+      log.error('file store: refreshing the S3 credentials failed; trying again in a minute', err);
+      schedule(RETRY_MS);
+    }
+  };
+  const first = untilRefresh();
+  if (first !== null) schedule(first);
+  return { read: async () => current, stop: () => { stopped = true; clearTimeout(timer); } };
+}
+
+/**
+ * The process's file store, for the api and worker mains: with keys in settings (development and CI) it signs with
+ * them; with the instance role it holds credentials fetched now and refreshed in the background. Stop it on the way out.
+ */
+export async function startFileStore(s3: Config['s3'], log: Logger): Promise<{ store: FileStore; name: string; stop(): Promise<void> }> {
+  if (s3.accessKeyId !== null && s3.secretAccessKey !== null) {
+    return { store: createFileStore(s3), name: 'file store', stop: async () => undefined };
+  }
+  // A client with no keys gives the SDK's default chain: the instance role in staging and production.
+  const held = await heldCredentials(new S3Client({ region: s3.region }).config.credentials, log);
+  return { store: createFileStore(s3, s3Client(s3, held.read)), name: 'file store', stop: async () => held.stop() };
+}
+
 /** The S3 client from settings: the instance role in staging and production, the dev store's keys elsewhere. */
-function s3Client(s3: Config['s3']): S3Client {
+function s3Client(s3: Config['s3'], held?: () => Promise<Credentials>): S3Client {
   return new S3Client({
     region: s3.region,
     ...(s3.endpoint !== null ? { endpoint: s3.endpoint, forcePathStyle: true } : {}),
     ...(s3.accessKeyId !== null && s3.secretAccessKey !== null
-      ? { credentials: { accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey } } : {}),
+      ? { credentials: { accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey } }
+      : held === undefined ? {} : { credentials: held }),
     // A checksum is signed only where S3 requires one, so a presigned link's body isn't held to the empty body's.
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
@@ -75,21 +141,42 @@ export function createFileStore(s3: Config['s3'], client: S3Client = s3Client(s3
       // Keys are made by the server as `<kind>/<uuid>`, so a key can't be passed off as another kind's.
       if (!key.startsWith(`${kind}/`)) throw new UploadRefused(`the key isn't a ${kind} key`);
       const rule = FILE_KINDS[kind];
-      const meta = await client.send(new HeadObjectCommand({ Bucket, Key: key })).catch((err: unknown) => {
-        if (err instanceof NotFound) throw new UploadRefused('nothing was uploaded');
+      // First a copy of the upload as it is now: the browser may POST again to its key until the policy expires, but
+      // what's checked, and later downloaded, is this copy, so bytes posted after the check never reach a reader.
+      // The copy is made once: a retried job (it can rerun even after the file was recorded ready) checks the copy
+      // already made, and never copies newer bytes over it (auditor). Only this job writes `key`, so nothing races
+      // between the HEAD and the copy.
+      const copied = await client.send(new HeadObjectCommand({ Bucket, Key: key })).then(() => true, (err: unknown) => {
+        if (err instanceof NotFound) return false;
         throw err;
       });
-      const size = meta.ContentLength ?? 0;
-      if (size === 0) throw new UploadRefused('the file is empty');
-      if (size > rule.maxBytes) throw new UploadRefused(`the file is larger than ${rule.maxBytes} bytes`);
-      const contentType = meta.ContentType ?? '';
-      if (!(rule.types as readonly string[]).includes(contentType)) {
-        throw new UploadRefused(`a ${kind} can't be ${JSON.stringify(contentType)}`);
+      if (!copied) {
+        await client.send(new CopyObjectCommand({ Bucket, Key: key, CopySource: `${Bucket}/${INCOMING}${key}` }))
+          .catch((err: unknown) => {
+            // Nothing was uploaded: the check below says so.
+            if (!(err instanceof S3ServiceException && err.$metadata.httpStatusCode === 404)) throw err;
+          });
       }
-      const first = await client.send(new GetObjectCommand({ Bucket, Key: key, Range: `bytes=0-${MAGIC_BYTES - 1}` }));
-      const head = await first.Body?.transformToByteArray() ?? new Uint8Array();
-      if (!confirmsType(contentType, head)) throw new UploadRefused(`the file doesn't begin the way a ${contentType} must`);
-      return { size, contentType };
+      try {
+        const meta = await client.send(new HeadObjectCommand({ Bucket, Key: key })).catch((err: unknown) => {
+          if (err instanceof NotFound) throw new UploadRefused('nothing was uploaded');
+          throw err;
+        });
+        const size = meta.ContentLength ?? 0;
+        if (size === 0) throw new UploadRefused('the file is empty');
+        if (size > rule.maxBytes) throw new UploadRefused(`the file is larger than ${rule.maxBytes} bytes`);
+        const contentType = meta.ContentType ?? '';
+        if (!(rule.types as readonly string[]).includes(contentType)) {
+          throw new UploadRefused(`a ${kind} can't be ${JSON.stringify(contentType)}`);
+        }
+        const first = await client.send(new GetObjectCommand({ Bucket, Key: key, Range: `bytes=0-${MAGIC_BYTES - 1}` }));
+        const head = await first.Body?.transformToByteArray() ?? new Uint8Array();
+        if (!confirmsType(contentType, head)) throw new UploadRefused(`the file doesn't begin the way a ${contentType} must`);
+        return { size, contentType };
+      } finally {
+        // The upload has served its turn either way; a retry works from the copy.
+        await client.send(new DeleteObjectCommand({ Bucket, Key: `${INCOMING}${key}` }));
+      }
     },
 
     async presignUpload(kind, contentType) {
@@ -98,9 +185,10 @@ export function createFileStore(s3: Config['s3'], client: S3Client = s3Client(s3
         throw new UploadRefused(`a ${kind} can't be ${JSON.stringify(contentType)}`);
       }
       const key = `${kind}/${randomUUID()}`;
-      // The policy fixes the bucket and this key (the library adds both), the type, the size range and the expiry.
-      // S3 refuses any form field the policy doesn't name, so the browser can't add an ACL or other settings.
-      const { url, fields } = await createPresignedPost(client, { Bucket, Key: key, Expires: UPLOAD_SECONDS,
+      // The policy fixes the bucket and the upload's key under incoming/ (the library adds both), the type, the size
+      // range and the expiry. S3 refuses any form field the policy doesn't name, so the browser can't add an ACL or
+      // other settings, and it can never write `key` itself, where the checked copy will live.
+      const { url, fields } = await createPresignedPost(client, { Bucket, Key: `${INCOMING}${key}`, Expires: UPLOAD_SECONDS,
         Fields: { 'Content-Type': contentType }, Conditions: [['content-length-range', 1, rule.maxBytes]] });
       return { key, url, fields };
     },

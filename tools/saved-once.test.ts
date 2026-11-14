@@ -4,20 +4,19 @@
 // Here in tools/ because it calls the API with fetch (ADR-002 L8). The routes' table lives in a schema of its own.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { defineContract } from '@radcore/lib-common';
-import { AppError, loadConfig, type Principal } from '@radcore/lib-platform';
+import { AppError, defineRoute, loadConfig, type Principal } from '@radcore/lib-platform';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import { integer, pgSchema, text, uuid } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createApp, listen } from '../apps/api/src/app.ts';
-import { defineRoute } from '../apps/api/src/http/route.ts';
 import { moduleTx } from '../packages/db/src/module-tx.ts';
 import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
 
 // The owner login: this file makes a schema and a table of its own (RAD-24).
 const url = process.env['TEST_DATABASE_OWNER_URL'];
-const fixture = pgSchema(`saved_once_${randomBytes(6).toString('hex')}`);
+const fixture = pgSchema(`test_saved_once_${randomBytes(6).toString('hex')}`);
 const orders = fixture.table('orders', { id: uuid().primaryKey().defaultRandom(), item: text().notNull(), qty: integer().notNull() });
 const ordersTx = moduleTx({ orders });
 

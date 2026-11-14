@@ -387,6 +387,29 @@ the server. The form shows the same rules but decides nothing.
 password change, the person's sessions) use one key, `session:read`, which every role holds. Ending the current
 session from the sessions list is refused with `current_session`: sign-out does that, because it clears the cookie.
 
+**Sessions** (M1-16, RAD-34). A session is a random token in the `__Host-radcore_session` cookie; only its SHA-256 is
+stored.
+- **Over plain http (development and CI only), the cookie is `radcore_session` and not Secure.** WebKit stores a
+  Secure cookie from `http://127.0.0.1` but never sends it back, so Safari couldn't stay signed in. Deployed origins
+  are https, which config enforces.
+- It signs nobody in after **30 minutes without a request or 12 hours after sign-in**, whichever comes first
+  (Sarthak, 11 Nov 2026), or once it's ended. A request moves the idle expiry on, never past the 12 hours. `GET /me`
+  doesn't count, since the shell reads it every minute.
+- It ends on sign-out; when the person ends it from their sessions list; when an admin ends it; on a password change
+  (the person's other sessions) or reset (all of them); and on a role change or deactivation (RAD-35, RAD-36).
+- A sign-in ends the session the browser's cookie already names, so none lingers on a shared computer.
+- A request whose cookie names an ended or expired session gets 401 `signed_out`, and the cookie is cleared with it,
+  sign-out's included.
+- A sign-in is a `sign_in` security event, and each session that ends is a `session_ended` event with the reason.
+  Every refused sign-in is a `sign_in_failed` row, a locked address's included, whether or not an account has the
+  address: recording only some would make a known address do different work, and timing would tell (RAD-64). The
+  per-IP limit (RAD-39) bounds the rows one source can add (ADR-005 §7c).
+- **Only the key-exempt routes touch the cookie.** The handler gives just those routes `ctx.cookie`, and sets or
+  clears the cookie only after the transaction commits, so a rolled-back sign-in sets nothing.
+- **A failed sign-in is still recorded.** Its service throws `RecordedRefusal`. On a key-exempt route the handler
+  commits that transaction, which holds the `sign_in_failed` event, and still answers with the refusal. Elsewhere it
+  rolls back like any error.
+
 **Saved-once key.** Every write contract (`tx.readOnly: false`, ADR-002 §4) requires an `Idempotency-Key` header:
 - It is a UUID made by `apps/web` once per submit. The client keeps it across retries of that submit and makes a
   new one only after a success (Design notes A-0).
@@ -411,12 +434,19 @@ session from the sessions list is refused with `current_session`: sign-out does 
     seconds for a fresh code, because the one they just used is spent. If its answer is lost, the person signs in
     again and makes new recovery codes from their account (M1-15).
 - **Answers that hold a secret aren't stored** (RAD-32). A route whose answer holds a secret declares
-  `storesAnswer: false`: starting a second-factor enrolment (the new TOTP secret) and making new recovery codes.
+  `storesAnswer: false`:
+  - starting a second-factor enrolment (the new TOTP secret);
+  - making new recovery codes;
+  - asking for a file's download link, `POST /files/<kind>/:id/download` for photo, resume, statement and import
+    (RAD-43). The answer is a live presigned link, and a stored answer must carry no tokens (RC-132).
+
+  How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
     secret is never at rest in the saved-once table.
   - A repeated key after a commit gets 409 `answer_not_kept`, and the client starts again with a new key.
-  - The generic handler accepts the flag only from those two routes, a fixed list in lib-platform, and the
-    permission manifest test (M1-19) fails on any other route that declares it.
+  - The generic handler accepts the flag only from those routes, a fixed list in lib-platform
+    (`ANSWER_NOT_STORED_ROUTES`), and the permission manifest test (M1-19) fails on any other route that declares
+    it.
   - Confirming an enrolment returns the recovery codes too, but it is exempt, so it stores nothing anyway.
 
 **Links that carry a token** (RAD-61). Invite and password-reset links carry their token in the URL fragment
@@ -467,6 +497,39 @@ one) and records the result in its own transaction. A rolled-back invoice theref
 and a slow provider never holds a transaction open past the idle timeout. The one outside call a request makes
 itself, the breached-password check, runs in the generic handler before the transaction opens (§6, §7a).
 
+**Files through `ctx`** (RAD-43, M1-25). `ctx.files` gives a service the file store's two presigning calls,
+`presignUpload` and `downloadUrl`, and nothing else.
+- **Presigning is safe inside the transaction.** It signs locally with the store's credentials and sends nothing,
+  and the store loads its credentials when the process starts.
+- **The two calls that reach S3 run outside any transaction:** `verifyUpload` (the HEAD and the first 1 KB) and
+  `putFile`.
+  - Confirming an upload records the file as `checking` and queues a job. The job verifies the file in its
+    `before` step (below), then records `ready` or `refused` in its own transaction.
+  - An export uploads its file after its commit (ADR-002, Exports).
+  - Only a file that is `ready` can be downloaded.
+- **Ctx's members** are then `tx`, `principal`, `requestId`, `settings`, `jobs` and `files`. `ctx.files` is frozen
+  like `ctx.jobs`, and the Ctx test in `tools/module-tx.test.ts` pins the list.
+- **Each process builds its store once,** from `config.s3`, in the `api` and `worker` mains, and hands it to
+  `runInTransaction`. There's no process-wide registry, so a test passes its own store.
+
+**A job's outside call goes in its `before` step** (RAD-43). `defineJob(contract, service, { before, afterCommit })`
+takes two optional steps; `before(input, deps)` is the first.
+- **When it runs.** The worker calls it outside any transaction, after rechecking the job's principal (§6a), so a
+  revoked permission stops the job before anything leaves the process.
+- **Its result.** The service gets the result as `meta.before` and records it in the job's own transaction. A
+  retry runs `before` again, so a call with side effects there carries the provider's idempotency key.
+- **What it can reach.** `deps` holds the worker's clients for outside calls: `files` (the whole store) today, and
+  the outbound client when the first provider job needs it.
+- **No other route.** The `before` and `afterCommit` steps are the only ways a job reaches the network. `before`'s
+  first user is the upload check.
+
+**A call that needs what the transaction decided goes in its `afterCommit` step** (RAD-32). `afterCommit(result,
+again)` runs after the service's transaction commits, with the service's result; `again` opens one more transaction,
+as the same principal, to record the outcome. The outcome is recorded through `again` only after the call has
+succeeded; the service never records it as done ("sent"), since the call may still fail. A retry runs the service
+again, so the service makes the step safe to repeat: the password-reset email, its first user, dedupes on its job id,
+and a link minted but never mailed is spent and replaced.
+
 ### 8b. Platform engines, module functions
 
 lib-platform's lists, exports, imports and approvals are engines that know no module, and lib-platform can't call
@@ -476,11 +539,31 @@ the two together:
 ```ts
 defineExport(sales.contracts.exportInvoices, sales.invoiceExportRows),   // engine: paging, streaming, file format
 defineImport(stock.contracts.importItems, stock.importItemRow),          // engine: parsing, limits, per-row errors
-defineApproval('purchase-order', purchasing.approvePurchaseOrder),       // engine: maker-checker record and hash
+...defineApproval(purchasing.contracts.poApproval, purchasing.poApproval), // engine: maker-checker record and hash
 ```
 
 The module function runs under `ctx` like any service. Scope, rules and `pii()` masking apply to an export exactly
 as they do on a screen (M1-22, M1-28, M1-29, M1-20).
+
+**Approvals (maker-checker, M1-20, RAD-38).** A module's `contract.ts` declares
+`approvalContracts('purchase-order', 'purchasing:approve')`. That gives three contracts under one static
+permission: the pending list, one request with its version hash, and the decision. The route file spreads
+`...defineApproval(contracts, spec)`, where `spec` is the module's part: the version the approver sees, and what
+approving and rejecting do. A decision is made in one transaction, with the record's row locked, and is refused
+unless:
+- **a user decides,** who holds the permission and isn't the requester (`own_request`);
+- **the approver's account was created before the request** (`approver_too_new`), so a requester can't invite a
+  fresh account to approve it;
+- **the version is the one the approver saw** (`version_changed`). It's a SHA-256 over sorted-key JSON of what the
+  approver is shown, taken when the request is made and checked again at the decision;
+- **the request is still pending,** and a conditional status update means two approvers can't both win.
+
+**Known limit:** an account invited before the request, possibly by the requester, can still approve. "The approver
+wasn't invited by the requester" isn't a rule, because the admin invites nearly everyone, so the admin's own
+requests could never be approved. Three things bound the limit:
+- only admin grants roles (RAD-36);
+- every grant is in the audit trail;
+- once role grants carry their time (RAD-35), the approver's approving role must also predate the request.
 
 ### 8a. Inbound work from outside services
 

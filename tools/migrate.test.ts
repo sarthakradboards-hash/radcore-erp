@@ -109,11 +109,13 @@ describe('the migration files', () => {
       !== lf(readFileSync(join(MIGRATIONS_FOLDER, `${m.tag}.sql`), 'utf8'))).map((m) => m.tag)).toEqual([]);
   });
 
-  // ADR-002: L3 is off in migrate.ts for the advisory lock only.
-  it('migrate.ts makes exactly one raw call, the lock', () => {
+  // ADR-002: L3 is off in migrate.ts for the advisory lock and the partition top-up under it (ADR-005 §8) only.
+  it('migrate.ts makes exactly two raw calls, the lock and the partition top-up', () => {
     const source = readFileSync(join(MIGRATIONS_FOLDER, '..', 'src', 'migrate.ts'), 'utf8');
     // \b, not \(, so a generic call such as client.query<Row>( counts too.
-    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query']);
+    expect(source.match(/\.(query|execute|unsafe)\b/g)).toEqual(['.query', '.query']);
+    expect(source.match(/query\('([^']*)'/g)).toEqual(["query('select pg_advisory_lock(hashtextextended($1, 0))'",
+      "query('select radcore.add_log_partitions($1)'"]);
   });
 
   it("creates pg-boss's schema from pg-boss's own construction plan (ADR-002 §4)", () => {
@@ -124,7 +126,9 @@ describe('the migration files', () => {
   });
 });
 
-describe.skipIf(!url)('the migration runner', () => {
+// Each test migrates a whole empty database (eleven migrations, the audit engine's among them), alongside the rest of
+// the suite: 5 s isn't enough under that load.
+describe.skipIf(!url)('the migration runner', { timeout: 30_000 }, () => {
   it('migrates an empty database, and a second run finds nothing to do', async () => {
     await withDatabase(async (db) => {
       await migrate(db);
@@ -139,7 +143,7 @@ describe.skipIf(!url)('the migration runner', () => {
 
   it('upgrades a database an earlier release migrated', async () => {
     await withDatabase(async (db) => {
-      await withFolder(1, [], (dir) => migrate(db, dir));
+      await withFolder(1, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
       expect(await applied(db)).toBe(1);
       expect(await hasSchema(db, 'pgboss')).toBe(false);
       await migrate(db);
@@ -151,7 +155,7 @@ describe.skipIf(!url)('the migration runner', () => {
   it('is forward-only: an earlier release on a newer database changes nothing', async () => {
     await withDatabase(async (db) => {
       await migrate(db);
-      await withFolder(1, [], (dir) => migrate(db, dir));
+      await withFolder(1, [], (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
       expect(await applied(db)).toBe(MIGRATIONS);
     });
   });
@@ -159,7 +163,7 @@ describe.skipIf(!url)('the migration runner', () => {
   it('applies nothing when one pending migration fails', async () => {
     await withDatabase(async (db) => {
       await withFolder(MIGRATIONS, ['create table public.probe (x int);', 'select from no_such_table;'], async (dir) => {
-        await expect(migrate(db, dir)).rejects.toThrow(/no_such_table/);
+        await expect(migrate(db, { migrationsFolder: dir, topUp: false })).rejects.toThrow(/no_such_table/);
       });
       expect(await applied(db)).toBe(0);
       expect(await hasSchema(db, 'radcore')).toBe(false);
@@ -217,7 +221,7 @@ describe.skipIf(!url)('the migration runner', () => {
     await withDatabase(async (db) => {
       await withFolder(MIGRATIONS, ["create table public.probe as select current_setting('app.principal') as principal,"
         + " current_setting('lock_timeout') as lock_timeout, current_setting('statement_timeout') as statement_timeout;"],
-      (dir) => migrate(db, dir));
+      (dir) => migrate(db, { migrationsFolder: dir, topUp: false }));
       expect(await query(db, 'select * from public.probe'))
         .toEqual([{ principal: 'system:migrate', lock_timeout: '5s', statement_timeout: '15min' }]);
     });

@@ -12,15 +12,16 @@ const PINNED = JSON.parse(readFileSync('tools/eslint-options.json', 'utf8')) as
 
 it('each zone is exactly the ADR-002 table', () => {
   expect(ZONES).toEqual({
-    'radcore/no-query-strings': [VIEW, 'packages/db/src/request-context.ts'],
-    'radcore/no-raw-execution': ['packages/db/src/request-context.ts', 'packages/db/src/migrate.ts'],
+    'radcore/no-query-strings': [VIEW, 'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts'],
+    'radcore/no-raw-execution': ['packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts',
+      'packages/db/src/migrate.ts'],
     'radcore/no-driver': ['packages/lib-platform/src/db/client.ts', 'packages/db/src/migrate.ts'],
     'radcore/tables-in-schema': ['packages/db/src/*/tables.ts', 'packages/db/src/columns.ts'],
     'radcore/views-in-views': [VIEW],
     'radcore/outbound-only': ['packages/lib-platform/src/http/outbound.ts'],
   });
   expect(L1_SQL_ZONE).toEqual([VIEW, 'packages/db/src/*/tables.ts', 'packages/db/src/columns.ts',
-    'packages/db/src/request-context.ts']);
+    'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts']);
   expect(L1_EXTRA_NAMES).toEqual({
     'packages/db/src/*/relations.ts': ['relations'],
     'packages/db/src/conditions.ts': ['notInArray'],
@@ -59,6 +60,10 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   'packages/db/src/request-context.ts': {
     rules: without(SERVER, 'radcore/no-query-strings', 'radcore/no-raw-execution'),
     l1: { ...L1.zone, helper: 'applyRequestContext' }, typed: false, server: true },
+  // The calls to the log functions (RAD-31): `sql` in its exported functions only.
+  'packages/db/src/log-writers.ts': {
+    rules: without(SERVER, 'radcore/no-query-strings', 'radcore/no-raw-execution'),
+    l1: { ...L1.zone, exportedFunctions: true }, typed: false, server: true },
   'packages/lib-sales/src/services/invoices.test.ts': {
     rules: LIB, l1: { ...L1.base, importExpressions: false }, typed: true, server: true },
   // Beyond ADR-002's seven: a view's test file is outside the zone, and so is a web page.

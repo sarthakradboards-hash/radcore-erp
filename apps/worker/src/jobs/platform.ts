@@ -1,4 +1,9 @@
 // lib-platform's own jobs (ADR-001 §8): declarations only.
-import { cleanSavedOnce, defineJob, savedOnceCleanup } from '@radcore/lib-platform';
+import {
+  checkUpload, cleanOutbox, cleanSavedOnce, defineJob, fileCheck, outboxCleanup, recordFileCheck, savedOnceCleanup,
+  secretsExpiryWatch, watchSecretExpiry, watchStuckDeliveries, webhookStuckWatch,
+} from '@radcore/lib-platform';
 
-export default [defineJob(savedOnceCleanup, cleanSavedOnce)];
+export default [defineJob(savedOnceCleanup, cleanSavedOnce), defineJob(outboxCleanup, cleanOutbox),
+  defineJob(secretsExpiryWatch, watchSecretExpiry), defineJob(webhookStuckWatch, watchStuckDeliveries),
+  defineJob(fileCheck, recordFileCheck, { before: checkUpload })];

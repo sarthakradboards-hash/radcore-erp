@@ -3,11 +3,14 @@
 // `ctx.tx` has no members, so a service can only hand it to its own module transaction (`salesTx(ctx)`) (T1).
 import type { Tx } from '@radcore/db/schema';
 import type { z } from 'zod';
+import type { FileStore } from './files/store.ts';
 import type { Settings } from './settings.ts';
 
 /** Who a request or job runs as (ADR-001 §6a). Link principals arrive with M1-23. */
 export type Principal =
-  | { readonly kind: 'user'; readonly userId: string; readonly permissions: readonly string[] }
+  | { readonly kind: 'user'; readonly userId: string; readonly permissions: readonly string[];
+      /** The sign-in session the request came with (RAD-34): "this device" in the sessions list. */
+      readonly sessionId?: string }
   | { readonly kind: 'system'; readonly name: string; readonly permissions: readonly string[] };
 
 /** What send needs of a job contract (jobs.ts's JobContract has it); named here so ctx.ts imports no jobs.ts (D1). */
@@ -19,6 +22,22 @@ export type Jobs = {
   send<I>(job: QueuedJob<I>, input: I): Promise<void>;
 };
 
+/**
+ * The file store's two signing calls (RAD-43, ADR-001 §8): they sign locally and send nothing, so they're safe inside a
+ * transaction. Checking an upload and the server's own put reach S3, so they run outside one (a job, or after commit).
+ */
+export type Files = Pick<FileStore, 'presignUpload' | 'downloadUrl'>;
+
+/** The session cookie, on the key-exempt routes only (ADR-001 §7a): set or cleared once the transaction commits. */
+export type SessionCookie = {
+  /** The request's short user-agent summary ("Chrome on Android"), with no IP. */
+  readonly device: string;
+  /** The session token the request's cookie already holds, if any. */
+  readonly incoming: string | null;
+  set(token: string, expires: Date): void;
+  clear(): void;
+};
+
 export type Ctx = {
   readonly tx: Tx;
   readonly principal: Principal;
@@ -28,6 +47,10 @@ export type Ctx = {
   readonly settings: Settings;
   /** `ctx.jobs.send(contract, input)`: the job runs after this transaction commits, never if it rolls back. */
   readonly jobs: Jobs;
+  /** Only on sign-in and sign-out's routes (the key-exempt list), whose answer sets or clears the cookie. */
+  readonly cookie?: SessionCookie;
+  /** `ctx.files.presignUpload(kind, type)` and `ctx.files.downloadUrl(key, name)`: links, never bytes. */
+  readonly files: Files;
 };
 
 /** How audit rows and `app.principal` name a principal: `user:<id>` or `system:<name>`. */

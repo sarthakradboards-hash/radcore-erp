@@ -128,6 +128,7 @@ const restrict = (description) => ({
  *         `radcore.view(...).as()`, on the schema imported from exactly '../src/columns.ts'), and the file may export only
  *         drizzle declarations (tables, views, columns), so no zone file can hand out an SQL value of its own
  *   helper: in request-context.ts, the one function whose body may use `sql`
+ *   exportedFunctions: in log-writers.ts, each exported function's body may use `sql`, and the file may export them
  *   importExpressions: false in test files, which may use import() for mocking
  */
 const noSql = {
@@ -158,7 +159,10 @@ const noSql = {
         && m.parent.callee === m && ['../src/columns.ts', '../src/columns'].includes(importSource(context, root) ?? '');
     };
     const inHelper = (node) => {
-      for (let p = node.parent; p; p = p.parent) if (p.type === 'FunctionDeclaration' && p.id?.name === o.helper) return true;
+      for (let p = node.parent; p; p = p.parent) {
+        if (p.type !== 'FunctionDeclaration') continue;
+        if (p.id?.name === o.helper || (o.exportedFunctions && p.parent.type === 'ExportNamedDeclaration')) return true;
+      }
       return false;
     };
     // Inside the zone: only as the tag of a template that is the direct argument of an allowed call (so no
@@ -166,7 +170,7 @@ const noSql = {
     const allowed = (node) => {
       if (!o.zone) return false;
       if (node.parent.type === 'ImportSpecifier') return node.parent.imported.name === node.parent.local.name;
-      if (o.helper && inHelper(node)) return true;
+      if ((o.helper || o.exportedFunctions) && inHelper(node)) return true;
       const tt = node.parent;
       if (tt.type !== 'TaggedTemplateExpression' || tt.tag !== node) return false;
       // `sql\`... ${n}\`.inlineParams()` renders a number into DDL as a literal, not a `$1` bind parameter (a CHECK's
@@ -237,7 +241,9 @@ const noSql = {
       const d = n.declaration;
       if (!d && n.specifiers.length === 0) return true; // `export {}` hands nothing on
       if (n.exportKind === 'type' || d?.type === 'TSTypeAliasDeclaration' || d?.type === 'TSInterfaceDeclaration') return true;
-      if (d?.type === 'FunctionDeclaration') return (Boolean(o.helper) && d.id?.name === o.helper) || returnsValue(d, 0);
+      if (d?.type === 'FunctionDeclaration') {
+        return Boolean(o.exportedFunctions) || (Boolean(o.helper) && d.id?.name === o.helper) || returnsValue(d, 0);
+      }
       return d?.type === 'VariableDeclaration' && d.kind === 'const' && d.declarations.every((v) => isValue(v.init));
     };
     return {

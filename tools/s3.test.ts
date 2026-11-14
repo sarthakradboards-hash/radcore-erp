@@ -1,7 +1,9 @@
 // Smoke test for the dev object store (SeaweedFS in compose.dev.yml): a presigned PUT, then a presigned GET.
 // It needs the running store, so it runs where S3_ENDPOINT is set: CI's compose job, which has the store, or locally
 // after `npm run db:up`. In CI it fails instead of skipping (RC-019); the test job, which has no store, excludes it.
-import { CreateBucketCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -63,11 +65,14 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     const s3 = client();
     const bucket = `files-${randomUUID()}`;
     await s3.send(new CreateBucketCommand({ Bucket: bucket }));
+    // An upload as the browser's POST leaves it: under incoming/, where the check copies it from.
     const put = (Key: string, body: Buffer | string, ContentType: string) =>
-      s3.send(new PutObjectCommand({ Bucket: bucket, Key, Body: body, ContentType }));
+      s3.send(new PutObjectCommand({ Bucket: bucket, Key: `incoming/${Key}`, Body: body, ContentType }));
     const files = createFileStore({ region: env['S3_REGION'] ?? '', bucket, endpoint: env['S3_ENDPOINT'] ?? '',
       accessKeyId: env['S3_ACCESS_KEY_ID'] ?? '', secretAccessKey: env['S3_SECRET_ACCESS_KEY'] ?? '' }, s3);
-    return { put, files };
+    // Whether an object is there.
+    const exists = (Key: string) => s3.send(new HeadObjectCommand({ Bucket: bucket, Key })).then(() => true, () => false);
+    return { put, files, exists };
   };
 
   it('accepts an upload that fits its kind, and serves it as a never-cached attachment', async () => {
@@ -93,6 +98,31 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     await expect(files.verifyUpload(text, 'resume')).rejects.toThrow('upload refused: a resume can\'t be "text/plain"');
     await expect(files.verifyUpload(empty, 'resume')).rejects.toThrow('upload refused: the file is empty');
     await expect(files.verifyUpload(none, 'resume')).rejects.toThrow('upload refused: nothing was uploaded');
+  });
+
+  it('checks a copy and removes the upload, refused or not; a retry checks the copy again (auditor-2 on #112)', async () => {
+    const { put, files, exists } = await store();
+    const [ok, refused] = [`resume/${randomUUID()}`, `resume/${randomUUID()}`];
+    await put(ok, '%PDF-1.7 resume', 'application/pdf');
+    await put(refused, 'hello', 'text/plain');
+    await files.verifyUpload(ok, 'resume');
+    await expect(files.verifyUpload(refused, 'resume')).rejects.toThrow('upload refused');
+    expect(await Promise.all([ok, `incoming/${ok}`, refused, `incoming/${refused}`].map(exists))).toEqual([true, false, true, false]);
+    // The job's retry, after the upload was removed: the copy is checked again.
+    expect(await files.verifyUpload(ok, 'resume')).toEqual({ size: 15, contentType: 'application/pdf' });
+  });
+
+  it('serves the bytes it checked, even when the browser posts other bytes afterwards and the job runs again', async () => {
+    const { files } = await store();
+    const upload = await files.presignUpload('resume', 'application/pdf');
+    expect(await post(upload.url, upload.fields, 1024)).toBe(204);
+    await files.verifyUpload(upload.key, 'resume');
+    // Within the policy's five minutes, the same fields again: a bigger body that begins the same way.
+    expect(await post(upload.url, upload.fields, 2048)).toBe(204);
+    // The job retried after it recorded the file ready: it checks its copy, and copies nothing new over it (auditor).
+    expect(await files.verifyUpload(upload.key, 'resume')).toEqual({ size: 1024, contentType: 'application/pdf' });
+    const get = await fetch(await files.downloadUrl(upload.key, 'cv.pdf'));
+    expect((await get.arrayBuffer()).byteLength).toBe(1024);
   });
 
   it('refuses a file whose first bytes don\'t match its declared type', async () => {
@@ -142,10 +172,23 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
 // real bucket with the instance role; RAD-43's upload criterion is met when it's green there. Our code never sends
 // such a field; the policy is the bucket's guard against a browser that does. A refused POST stores nothing.
 describe.runIf(REAL_S3)('file store on real S3', () => {
-  it('refuses a presigned POST with a field its policy doesn\'t name, such as an ACL', async () => {
-    const files = createFileStore({ region: env['S3_REGION'] ?? '', bucket: env['S3_BUCKET_FILES'] ?? '', endpoint: null,
-      accessKeyId: null, secretAccessKey: null });
+  it('takes a POST within its policy, and refuses one with a field the policy doesn\'t name, such as an ACL', async () => {
+    const s3 = { region: env['S3_REGION'] ?? '', bucket: env['S3_BUCKET_FILES'] ?? '', endpoint: null, accessKeyId: null,
+      secretAccessKey: null };
+    const files = createFileStore(s3);
     const upload = await files.presignUpload('resume', 'application/pdf');
-    expect(await post(upload.url, { ...upload.fields, acl: 'public-read' }, 1024)).toBe(403);
+    try {
+      // The clean POST first, so a 403 below can't come from a missing role permission or the wrong bucket (auditor-2).
+      expect(await post(upload.url, upload.fields, 1024)).toBe(204);
+      // The check with the instance role: its first HEAD finds no copy yet, which only answers 404 (not 403) when the
+      // role may list the bucket (ADR-004 §2), and the check depends on that (auditor on #123).
+      expect(await files.verifyUpload(upload.key, 'resume')).toEqual({ size: 1024, contentType: 'application/pdf' });
+      const again = await files.presignUpload('resume', 'application/pdf');
+      expect(await post(again.url, { ...again.fields, acl: 'public-read' }, 1024)).toBe(403);
+    } finally {
+      // The upload, if the check didn't get to remove it; the refused POST stored nothing. The checked copy stays, as
+      // every checked file does: the instance role deletes only under incoming/ (ADR-004 §2).
+      await new S3Client({ region: s3.region }).send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: `incoming/${upload.key}` }));
+    }
   });
 });

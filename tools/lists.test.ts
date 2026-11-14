@@ -10,10 +10,10 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { trigramIndex } from '../packages/db/src/columns.ts';
 import { after, escapeLike, onDates, onIndiaDays, searchWords } from '../packages/db/src/lists.ts';
-import { decodeCursor, encodeCursor, sortedCursor } from '../packages/lib-platform/src/lists.ts';
+import { decodeCursor, encodeCursor, momentKey, sortedCursor } from '../packages/lib-platform/src/lists.ts';
 import { z } from 'zod';
 
-const fixture = pgSchema('list_fixture');
+const fixture = pgSchema('test_list_fixture');
 const entries = fixture.table('entries', {
   id: uuid().primaryKey(),
   name: text().notNull(),
@@ -33,8 +33,8 @@ describe('the SQL each condition builds', () => {
   it('escapes LIKE\'s own characters in a search (RC-203)', () => {
     expect(escapeLike('50% off a_b c\\d')).toBe('50\\% off a\\_b c\\\\d');
     expect(show(searchWords([entries.name, entries.note], ' 50%  a_b ')))
-      .toEqual({ sql: '(("list_fixture"."entries"."name" ilike $1 or "list_fixture"."entries"."note" ilike $2) and '
-        + '("list_fixture"."entries"."name" ilike $3 or "list_fixture"."entries"."note" ilike $4))',
+      .toEqual({ sql: '(("test_list_fixture"."entries"."name" ilike $1 or "test_list_fixture"."entries"."note" ilike $2) and '
+        + '("test_list_fixture"."entries"."name" ilike $3 or "test_list_fixture"."entries"."note" ilike $4))',
       params: ['%50\\%%', '%50\\%%', '%a\\_b%', '%a\\_b%'] });
   });
 
@@ -47,20 +47,20 @@ describe('the SQL each condition builds', () => {
 
   it('compares the date column as it is, never a function of it (RC-202)', () => {
     expect(show(onDates(entries.entryDate, { from: '2026-04-01', to: '2026-04-30' }))).toEqual({
-      sql: '("list_fixture"."entries"."entry_date" >= $1 and "list_fixture"."entries"."entry_date" <= $2)',
+      sql: '("test_list_fixture"."entries"."entry_date" >= $1 and "test_list_fixture"."entries"."entry_date" <= $2)',
       params: ['2026-04-01', '2026-04-30'] });
   });
 
   it('turns India dates into moments for a timestamp column, both days included', () => {
     expect(show(onIndiaDays(entries.at, { from: '2026-11-07', to: '2026-11-07' }))).toEqual({
-      sql: '("list_fixture"."entries"."at" >= $1 and "list_fixture"."entries"."at" < $2)',
+      sql: '("test_list_fixture"."entries"."at" >= $1 and "test_list_fixture"."entries"."at" < $2)',
       params: ['2026-11-06T18:30:00.000Z', '2026-11-07T18:30:00.000Z'] });
   });
 
   it('starts a newest-first page strictly after the last row\'s sort key', () => {
     expect(show(after([entries.entryDate, entries.id], ['2026-04-02', 'b'], 'desc'))).toEqual({
-      sql: '("list_fixture"."entries"."entry_date" < $1 or ("list_fixture"."entries"."entry_date" = $2 and '
-        + '"list_fixture"."entries"."id" < $3))',
+      sql: '("test_list_fixture"."entries"."entry_date" < $1 or ("test_list_fixture"."entries"."entry_date" = $2 and '
+        + '"test_list_fixture"."entries"."id" < $3))',
       params: ['2026-04-02', '2026-04-02', 'b'] });
     expect(() => after([entries.entryDate, entries.id], ['2026-04-02'], 'desc')).toThrow(TypeError);
     // auditor-2 SHOULD on #69: `col < null` is never true, so a null key value would end the list early.
@@ -82,17 +82,17 @@ describe.skipIf(!url)('list conditions on PostgreSQL', () => {
   beforeAll(async () => {
     await client.connect();
     await client.query('begin');
-    await client.query('create schema list_fixture');
-    await client.query(`create table list_fixture.entries (id uuid primary key, name text not null,
+    await client.query('create schema test_list_fixture');
+    await client.query(`create table test_list_fixture.entries (id uuid primary key, name text not null,
       note text not null default '', entry_date date not null, at timestamptz not null default now())`);
-    await client.query('create index ix_entries_date_id on list_fixture.entries (entry_date desc, id desc)');
+    await client.query('create index ix_entries_date_id on test_list_fixture.entries (entry_date desc, id desc)');
     // Eleven rows over five dates, three on one date, so paging crosses ties.
     const names = ['50% off', '500 off', 'a_b', 'axb', 'Asha Motors', 'asha traders', 'Ravi', 'Tea', 'Fuel', 'Rent', 'Misc'];
     for (const [i, name] of names.entries()) {
-      await client.query('insert into list_fixture.entries (id, name, entry_date) values ($1, $2, $3)',
+      await client.query('insert into test_list_fixture.entries (id, name, entry_date) values ($1, $2, $3)',
         [id(i + 1), name, `2026-04-0${String(1 + (i % 5))}`]);
     }
-    await client.query('analyze list_fixture.entries');
+    await client.query('analyze test_list_fixture.entries');
   });
 
   afterAll(async () => {
@@ -166,18 +166,38 @@ describe.skipIf(!url)('list conditions on PostgreSQL', () => {
     const order = all.sort((a, b) => (a.entryDate === b.entryDate ? b.id.localeCompare(a.id) : b.entryDate.localeCompare(a.entryDate)));
     expect(seen).toEqual(order.map((r) => r.id));
   });
+
+  // auditor-2 on #109: every row here was written in one transaction, so all share now() to the microsecond. Paged one
+  // at a time on (at, id) through the cursor, each must come once: a key cut to milliseconds would skip the rest.
+  it('pages rows of one transaction one at a time on a timestamp key, through the cursor, skipping none', async () => {
+    const pageKey = z.strictObject({ at: momentKey(), id: z.uuid() });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let pages = 0; pages < 20; pages++) {
+      const key: { at: string; id: string } | undefined = cursor === null ? undefined : decodeCursor(pageKey, cursor);
+      const rows: { id: string; at: string }[] = await db.select({ id: entries.id, at: entries.at }).from(entries)
+        .where(after([entries.at, entries.id], key ? [key.at, key.id] : undefined, 'desc'))
+        .orderBy(desc(entries.at), desc(entries.id)).limit(1 + 1);
+      const last = rows[0];
+      if (last) seen.push(last.id);
+      cursor = rows.length > 1 && last ? encodeCursor({ at: last.at, id: last.id }) : null;
+      if (cursor === null) break;
+    }
+    expect(seen).toHaveLength(11);
+    expect(new Set(seen).size).toBe(11);
+  });
 });
 
 // RC-160: a search's ILIKE '%…%' served by a trigram index. pg_trgm is in radcore_ext (ADR-005 §7c, migration
 // 0006_pg_trgm), where neither login has USAGE; the index works without it.
-const trgm = pgSchema('trgm_fixture');
+const trgm = pgSchema('test_trgm_fixture');
 const parties = trgm.table('parties', { id: uuid().primaryKey(), name: text().notNull() },
   (t) => [trigramIndex('ix_parties_name_trgm', t.name)]);
 const ddl = async () => generateMigration(generateDrizzleJson({}), generateDrizzleJson({ trgm, parties }, undefined, undefined, 'snake_case'));
 
 it("writes the trigram index with radcore_ext's operator class", async () => {
   expect(await ddl()).toContain(
-    'CREATE INDEX "ix_parties_name_trgm" ON "trgm_fixture"."parties" USING gin ("name" radcore_ext.gin_trgm_ops);');
+    'CREATE INDEX "ix_parties_name_trgm" ON "test_trgm_fixture"."parties" USING gin ("name" radcore_ext.gin_trgm_ops);');
 });
 
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -195,12 +215,12 @@ describe.skipIf(!superUrl)('the trigram index, searched as the app login (RC-160
     // Made as the owner would make it, from the helper's own DDL; then read as the app, all in one rolled-back transaction.
     await client.query('set local role radcore_owner');
     for (const statement of await ddl()) await client.query(statement);
-    await client.query('grant usage on schema trgm_fixture to radcore_app');
-    await client.query('grant select on trgm_fixture.parties to radcore_app');
-    await client.query(`insert into trgm_fixture.parties (id, name)
+    await client.query('grant usage on schema test_trgm_fixture to radcore_app');
+    await client.query('grant select on test_trgm_fixture.parties to radcore_app');
+    await client.query(`insert into test_trgm_fixture.parties (id, name)
       select gen_random_uuid(), 'Party ' || n from generate_series(1, 500) n`);
-    await client.query("insert into trgm_fixture.parties (id, name) values (gen_random_uuid(), 'Asha Motors')");
-    await client.query('analyze trgm_fixture.parties');
+    await client.query("insert into test_trgm_fixture.parties (id, name) values (gen_random_uuid(), 'Asha Motors')");
+    await client.query('analyze test_trgm_fixture.parties');
     await client.query('set local role radcore_app');
   });
 
@@ -214,11 +234,11 @@ describe.skipIf(!superUrl)('the trigram index, searched as the app login (RC-160
     try {
       await client.query('set local enable_seqscan = off');
       const { rows } = await client.query<{ 'QUERY PLAN': string }>(
-        "explain select id from trgm_fixture.parties where name ilike '%sha mot%'");
+        "explain select id from test_trgm_fixture.parties where name ilike '%sha mot%'");
       const plan = rows.map((r) => r['QUERY PLAN']).join('\n');
       expect(plan).toContain('Bitmap Index Scan on ix_parties_name_trgm');
       expect(plan).not.toMatch(/Seq Scan/);
-      const found = await client.query<{ name: string }>("select name from trgm_fixture.parties where name ilike '%sha mot%'");
+      const found = await client.query<{ name: string }>("select name from test_trgm_fixture.parties where name ilike '%sha mot%'");
       expect(found.rows).toEqual([{ name: 'Asha Motors' }]);
     } finally {
       await client.query('rollback to savepoint plan');

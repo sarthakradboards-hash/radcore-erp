@@ -8,7 +8,10 @@ import { once } from 'node:events';
 import { loadConfig } from '@radcore/lib-platform';
 import { defineJob } from '@radcore/lib-platform';
 import { cleanSavedOnce, savedOnceCleanup } from '@radcore/lib-platform';
-import { createDatabase, createJobQueue, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
+import { createDatabase, runInTransaction, runJobs } from '@radcore/lib-platform/runtime';
+// The full pg-boss queue, to send to it directly as an operator; the apps' queue can't (RAD-44).
+import { createJobQueue } from '../packages/lib-platform/src/db/client.ts';
+import platformJobs from '../apps/worker/src/jobs/platform.ts';
 import { platformTx, savedOnce } from '@radcore/db/platform';
 import { factory, testPassword, testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
@@ -27,6 +30,8 @@ const databaseUrl = () => {
 };
 const database = () => loadConfig(testSettings({ DATABASE_URL: databaseUrl() }), 'worker').database;
 const system = { kind: 'system', name: 'test', permissions: [] } as const;
+// Every job's pg-boss data is its envelope: the input and who queued it (RAD-44 step 3).
+const envelope = (input: unknown) => ({ input, by: 'system:test' });
 
 // Query the queue's own tables, as an operator would; the app never does.
 const asOperator = async <T extends pg.QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> => {
@@ -61,7 +66,7 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
     });
     const stop = await runJobs(queue, [job], logger(), { db });
     try {
-      const id = await queue.send(job.name, {});
+      const id = await queue.send(job.name, envelope({}));
       await vi.waitFor(async () => expect(await rowsFor([key])).toEqual([{ key, createdBy: 'system:test' }]),
         { timeout: 30_000, interval: 250 });
       expect(seen).toEqual([{ principal: system, requestId: id }]);
@@ -81,7 +86,7 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
     });
     const stop = await runJobs(queue, [job], log, { db });
     try {
-      await queue.send(job.name, {});
+      await queue.send(job.name, envelope({}));
       await vi.waitFor(() => expect(log.error).toHaveBeenCalledWith(expect.stringContaining(`ALERT: job ${job.name} failed`)),
         { timeout: 30_000, interval: 250 });
       expect(await rowsFor([key])).toEqual([]);
@@ -99,7 +104,7 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
     });
     const stop = await runJobs(queue, [defineJob(savedOnceCleanup, cleanSavedOnce)], logger(), { db });
     try {
-      await queue.send(savedOnceCleanup.name, null);
+      await queue.send(savedOnceCleanup.name, envelope(null));
       await vi.waitFor(async () => expect((await rowsFor([old, live])).map((r) => r.key)).toEqual([live]),
         { timeout: 30_000, interval: 250 });
     } finally {
@@ -118,7 +123,9 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
     const exited = once(worker, 'exit');
     try {
       await vi.waitFor(() => expect(out.join('')).toContain('worker: started'), { timeout: 30_000, interval: 250 });
-      expect(out.join('')).toContain('job queue: running 1 job(s)'); // lib-platform's saved-once clean-up
+      // What the worker runs: its job files' list, plus the jobs built at start with what only start-up has (RAD-32's
+      // reset email). Counted from the list, so a new job doesn't need this line changed.
+      expect(out.join('')).toContain(`job queue: running ${platformJobs.length + 1} job(s)`);
     } finally {
       worker.kill('SIGTERM');
     }
@@ -154,15 +161,15 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
     const gone = defineJob({ ...name(), principal: system, input: z.object({ n: z.number() }), deleteOnComplete: true }, ran);
     const stop = await runJobs(queue, [keep, gone], logger(), { db });
     try {
-      const keptId = await queue.send(keep.name, { n: 1 });
-      const goneId = await queue.send(gone.name, { n: 2 });
+      const keptId = await queue.send(keep.name, envelope({ n: 1 }));
+      const goneId = await queue.send(gone.name, envelope({ n: 2 }));
       await vi.waitFor(async () => {
         const rows = await asOperator<{ id: string; state: string }>(`select id, state from ${SCHEMA}.job where id = any($1)`,
           [[keptId, goneId]]);
         expect(rows).toEqual([{ id: keptId, state: 'completed' }]);
       }, { timeout: 30_000, interval: 250 });
-      expect(ran).toHaveBeenCalledWith(expect.objectContaining({ principal: system }), { n: 1 }, { jobId: keptId });
-      expect(ran).toHaveBeenCalledWith(expect.anything(), { n: 2 }, { jobId: goneId });
+      expect(ran).toHaveBeenCalledWith(expect.objectContaining({ principal: system }), { n: 1 }, { jobId: keptId, alert: expect.any(Function) });
+      expect(ran).toHaveBeenCalledWith(expect.anything(), { n: 2 }, { jobId: goneId, alert: expect.any(Function) });
     } finally {
       await stop.stop();
     }
@@ -175,7 +182,7 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
       async () => { throw new Error('provider down'); });
     const stop = await runJobs(queue, [job], log, { db });
     try {
-      const id = await queue.send(job.name, { card: 'reset-link-payload' });
+      const id = await queue.send(job.name, envelope({ card: 'reset-link-payload' }));
       await vi.waitFor(() => {
         expect(log.error).toHaveBeenCalledWith(expect.stringContaining(`ALERT: job ${job.name} failed after all its attempts`));
       }, { timeout: 30_000, interval: 250 });

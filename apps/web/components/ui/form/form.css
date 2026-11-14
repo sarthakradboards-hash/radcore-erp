@@ -35,3 +35,10 @@
 .kit-button-danger { background-color: var(--danger); color: var(--on-accent); border-color: var(--danger); }
 .kit-button:disabled { cursor: progress; opacity: 0.7; }
 .kit-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+
+.kit-radios { border: 0; padding: 0; margin: 0; }
+.kit-radios legend { font-weight: 600; padding: 0; }
+.kit-radio { display: flex; gap: var(--space-2); align-items: start; min-block-size: var(--tap); padding-block: var(--space-1); }
+.kit-radio > span { display: grid; }
+.kit-radio input { inline-size: 1.25rem; block-size: 1.25rem; margin-block-start: 0.125rem; }
+.kit-radio:has(input:disabled) { color: var(--text-muted); }

@@ -88,9 +88,14 @@ const linkToken = <TName extends string>(name: TName) => radcoreTable(name, {
   tokenHash: text().notNull(),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
   usedAt: timestamp({ withTimezone: true }),
+  // The job that emailed this link (RAD-32): a job run twice finds its own row and sends nothing more.
+  jobId: uuid(),
+  // When the email went out. A link minted but never sent is spent and replaced on the job's retry.
+  sentAt: timestamp({ withTimezone: true }),
 }, (t) => [
   check(`ck_${name}_token_hash`, sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
   uniqueIndex(`ux_${name}_token_hash`).on(t.tokenHash),
+  uniqueIndex(`ux_${name}_job_id`).on(t.jobId),
   index(`ix_${name}_user_id`).on(t.userId),
 ]);
 export const invites = linkToken('invites');
@@ -119,4 +124,92 @@ export const jobsOutbox = radcoreTable('jobs_outbox', {
   check('ck_jobs_outbox_attempts', sql`${t.attempts} >= 0`),
   // The relay's pass reads the live rows that are due, oldest first.
   index('ix_jobs_outbox_due').on(t.nextAttemptAt).where(isNull(t.deadAt)),
+]);
+
+/**
+ * Webhook deliveries (ADR-001 §8a, RAD-45, RC-084): every signed delivery from an outside service, stored once before
+ * it's answered, then handed to its job through the outbox in the same transaction. `source` is the webhook's route
+ * (`POST /hooks/...`); `delivery_id` is the provider's own id, or a hash of the raw body where it sends none. Two unique
+ * indexes are the replay guard, so a repeat is answered and acted on once: on the provider's id, and on `body_sha256`,
+ * the SHA-256 of the signed raw body, because many providers send the id in an unsigned header that a resender could
+ * change (auditor-2, RC-084). `payload` is the raw body as
+ * received. `processed_at` is set by the job in its own transaction, so a delivery left unprocessed can be found
+ * and alerted on. The read-only login can't read it (its migration revokes radcore_read): payloads may be personal.
+ */
+export const webhookDeliveries = radcoreTable('webhook_deliveries', {
+  id: id(),
+  source: text().notNull(),
+  deliveryId: text().notNull(),
+  bodySha256: text().notNull(),
+  payload: text().notNull(),
+  processedAt: timestamp({ withTimezone: true }),
+}, (t) => [
+  uniqueIndex('ux_webhook_deliveries_source_delivery_id').on(t.source, t.deliveryId),
+  uniqueIndex('ux_webhook_deliveries_source_body_sha256').on(t.source, t.bodySha256),
+  check('ck_webhook_deliveries_body_sha256', sql`${t.bodySha256} ~ '^[0-9a-f]{64}$'`),
+  // The stuck-delivery watch reads the unprocessed ones, oldest first.
+  index('ix_webhook_deliveries_unprocessed').on(t.createdAt).where(isNull(t.processedAt)),
+]);
+
+/**
+ * The first admin (ADR-004 §3, RC-021): one permanent row, made by the bootstrap-admin command, so its invite is minted
+ * once ever and a later deploy can't mint another. The runtime login may add it, never change or remove it.
+ */
+export const bootstrap = radcoreTable('bootstrap', {
+  key: text().primaryKey(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_bootstrap_key', sql`${t.key} = 'first_admin'`),
+  uniqueIndex('ux_bootstrap_user_id').on(t.userId),
+]);
+
+/**
+ * Files people upload (RAD-43, ADR-004 §2, RC-096, RC-191); an export is RAD-47's own row. The bytes live in S3, under
+ * `store_key` (`<kind>/<uuid>`, made by the server); this row is what the app knows about them. A browser upload is
+ * `pending` until the person confirms it, `checking` while a job checks it in S3 (size, type, magic bytes: a network
+ * call, so never inside a request's transaction, ADR-001 §8), then `ready` or `refused`. Only a ready file downloads.
+ * `filename` is the name the person gave it, shown on download. Kept permanently, like all data (D-12): there's no
+ * deletion job. Audited like any record.
+ */
+export const files = radcoreTable('files', {
+  id: id(),
+  kind: text().notNull(),
+  storeKey: text().notNull(),
+  filename: boundedText({ max: 255 }).notNull(),
+  contentType: text().notNull(),
+  size: integer(),
+  status: text().notNull().default('pending'),
+}, (t) => [
+  uniqueIndex('ux_files_store_key').on(t.storeKey),
+  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import')`),
+  check('ck_files_status', sql`${t.status} in ('pending', 'checking', 'ready', 'refused')`),
+  check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
+  // A ready file has its checked size.
+  check('ck_files_size', sql`(${t.status} <> 'ready' or ${t.size} is not null) and (${t.size} is null or ${t.size} > 0)`),
+]);
+
+/**
+ * Sign-in sessions (M1-16, RAD-34, ADR-001 §7a). The cookie holds a random token; only its SHA-256 is stored, so the
+ * table can't be used to sign anyone in. `idle_expires_at` moves forward on the person's own requests and
+ * `absolute_expires_at` never moves; a session past either, or with `ended_at`, signs nobody in. `device` is a short
+ * user-agent summary, with no IP. It's stamped who-and-when but not row-audited: `last_seen_at` changes on every
+ * request, and a session's start and end are security events (RAD-31).
+ */
+export const sessions = radcoreTable('sessions', {
+  id: id(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+  tokenHash: text().notNull(),
+  device: boundedText({ max: 80 }).notNull(),
+  // Read as PostgreSQL's own text: the session lists page on it (lib-platform's momentKey).
+  lastSeenAt: timestamp({ withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  idleExpiresAt: timestamp({ withTimezone: true }).notNull(),
+  absoluteExpiresAt: timestamp({ withTimezone: true }).notNull(),
+  endedAt: timestamp({ withTimezone: true }),
+  endedReason: text(),
+}, (t) => [
+  check('ck_sessions_token_hash', sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+  check('ck_sessions_ended_reason', sql`${t.endedReason} in ('sign_out', 'admin', 'password_changed', 'password_reset', 'role_changed', 'deactivated')`),
+  check('ck_sessions_ended', sql`(${t.endedAt} is null) = (${t.endedReason} is null)`),
+  uniqueIndex('ux_sessions_token_hash').on(t.tokenHash),
+  index('ix_sessions_user_id').on(t.userId),
 ]);
