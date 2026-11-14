@@ -64,6 +64,8 @@ describe.skipIf(!url)('webhook intake', () => {
   const stored = async (deliveryId: string) => (await pool.query<{ processed: boolean }>(
     'select processed_at is not null as processed from radcore.webhook_deliveries where source = $1 and delivery_id = $2',
     [hook.source, deliveryId])).rows;
+  // One relay pass, as the worker's relay would make it. Callers retry it with the check they wait on: the outbox is
+  // shared with other test files, whose rows may be ahead of this one's (RAD-79).
   const runQueuedWork = async () => {
     if (state.queue) await relayOutbox(db, state.queue, logger());
   };
@@ -76,8 +78,10 @@ describe.skipIf(!url)('webhook intake', () => {
     // Answered, stored, and nothing run yet: the work isn't awaited inside the request.
     expect(await stored(id)).toEqual([{ processed: false }]);
     expect(handled.mock.calls.filter(([d]) => d.payload === body)).toEqual([]);
-    await runQueuedWork();
-    await vi.waitFor(async () => expect(await stored(id)).toEqual([{ processed: true }]), { timeout: 30_000, interval: 250 });
+    await vi.waitFor(async () => {
+      await runQueuedWork();
+      expect(await stored(id)).toEqual([{ processed: true }]);
+    }, { timeout: 30_000, interval: 250 });
     expect(handled).toHaveBeenCalledWith(expect.objectContaining({ payload: body, deliveryId: id }),
       { kind: 'system', name: 'test-orders', permissions: ['sales:write'] });
   }, 60_000);
@@ -88,8 +92,10 @@ describe.skipIf(!url)('webhook intake', () => {
     expect([(await deliver(body, { 'x-test-delivery': id })).status, (await deliver(body, { 'x-test-delivery': id })).status])
       .toEqual([200, 200]);
     expect(await stored(id)).toHaveLength(1);
-    await runQueuedWork();
-    await vi.waitFor(async () => expect(await stored(id)).toEqual([{ processed: true }]), { timeout: 30_000, interval: 250 });
+    await vi.waitFor(async () => {
+      await runQueuedWork();
+      expect(await stored(id)).toEqual([{ processed: true }]);
+    }, { timeout: 30_000, interval: 250 });
     expect(handled.mock.calls.filter(([d]) => d.payload === body)).toHaveLength(1);
   }, 60_000);
 
@@ -99,8 +105,10 @@ describe.skipIf(!url)('webhook intake', () => {
     expect([(await deliver(body, { 'x-test-delivery': first })).status, (await deliver(body, { 'x-test-delivery': second })).status])
       .toEqual([200, 200]);
     expect([await stored(first), await stored(second)].map((r) => r.length)).toEqual([1, 0]);
-    await runQueuedWork();
-    await vi.waitFor(async () => expect(await stored(first)).toEqual([{ processed: true }]), { timeout: 30_000, interval: 250 });
+    await vi.waitFor(async () => {
+      await runQueuedWork();
+      expect(await stored(first)).toEqual([{ processed: true }]);
+    }, { timeout: 30_000, interval: 250 });
     expect(handled.mock.calls.filter(([d]) => d.payload === body)).toHaveLength(1);
   }, 60_000);
 

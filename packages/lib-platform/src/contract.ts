@@ -253,6 +253,7 @@ export const listSecurityEvents = defineContract({
   errors: ['range_too_long'],
 });
 
+export { approvalContracts } from './approval-contracts.ts';
 /**
  * A kind of uploaded file's three routes (RAD-43, RC-096): each kind has its own `<kind>_files:read` and `:write`, so a
  * role that may attach bill photos can't open statements. The browser uploads straight to S3 (RC-191):

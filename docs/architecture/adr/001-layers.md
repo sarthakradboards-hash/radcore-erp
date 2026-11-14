@@ -586,12 +586,22 @@ permission: the pending list, one request with its version hash, and the decisio
 `...defineApproval(contracts, spec)`, where `spec` is the module's part: the version the approver sees, and what
 approving and rejecting do. A decision is made in one transaction, with the record's row locked, and is refused
 unless:
-- **a user decides,** who holds the permission and isn't the requester (`own_request`);
+- **a user decides,** who holds the permission;
+- **the decider made no change to what is being approved** (`own_request`): they're not the requester, and made no
+  change to the record or its parts since its last approval (or since it was made). The engine reads the makers from
+  the audit log: each part table is attached with `owner =>` its record's key and `owner_table =>` its record's table,
+  so its audit rows carry the record's id (`owner_id`). "Since" is by the log's write order (`seq`), so a save that
+  began before the approval but wrote after it still counts. Jobs aren't makers. Writes made by a decision itself (a
+  send-back's status and reason) don't make the decider a maker. A spec's `approved` and `rejected` change only the
+  record's status and decision fields, never what is approved;
 - **the approver's account was created before the request** (`approver_too_new`), so a requester can't invite a
   fresh account to approve it;
 - **the version is the one the approver saw** (`version_changed`). It's a SHA-256 over sorted-key JSON of what the
   approver is shown, taken when the request is made and checked again at the decision;
 - **the request is still pending,** and a conditional status update means two approvers can't both win.
+
+Every write to a part locks its record's row first (a trigger from `audit_attach`'s `owner`), so a save and a
+decision on one record never overlap.
 
 **Known limit:** an account invited before the request, possibly by the requester, can still approve. "The approver
 wasn't invited by the requester" isn't a rule, because the admin invites nearly everyone, so the admin's own
