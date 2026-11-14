@@ -45,7 +45,7 @@ describe.skipIf(!url)('the sign-in credential step', () => {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
       const { rows: [u] } = await c.query<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
-        password_set_at) values ($1, 'Test', $2, $3, case when $3::text is null then null else now() end) returning id`,
+        password_set_at, role) values ($1, 'Test', $2, $3, case when $3::text is null then null else now() end, 'sales') returning id`,
       [email, status, passwordHash]);
       await c.query('commit');
       return { email, id: u?.id ?? '' };

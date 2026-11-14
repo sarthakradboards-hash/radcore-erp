@@ -70,8 +70,8 @@ export const users = radcoreTable('users', {
   passwordHash: text(),
   passwordSetAt: timestamp({ withTimezone: true }),
   status: text().notNull().default('invited'),
-  // The person's one role (RAD-35, the plan's page 4); none yet means My work alone, until an admin gives one.
-  role: text().references(() => roles.key, { onDelete: 'restrict' }),
+  // The person's one role (RAD-35, the plan's page 4): every person has one, given when they're invited.
+  role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
   // When the person gained their role (RAD-35): approval rules refuse a decider whose role is newer than the request.
   roleSince: timestamp({ withTimezone: true }),
 }, (t) => [

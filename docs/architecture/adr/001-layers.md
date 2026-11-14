@@ -443,8 +443,7 @@ codes.
   enrol again at their next sign-in if their role needs it.
 - **Attempts:** five per account in 15 minutes, then a 15-minute wait. They're counted in the shared store, like the
   sign-in lockout.
-- **Who needs a factor** is the role's `second_factor_required` (RAD-35): D-19's admin, owner, accounts and HR. A
-  person with no role yet needs none, and holds only My work.
+- **Who needs a factor** is the role's `second_factor_required` (RAD-35): D-19's admin, owner, accounts and HR.
 - The secret is kept by the secrets library. Each route seals or opens it in its `before` step (§8), so no KMS call
   runs inside a transaction.
 

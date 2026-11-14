@@ -11,8 +11,8 @@ export type Principal =
   | { readonly kind: 'user'; readonly userId: string; readonly permissions: readonly string[];
       /** The sign-in session the request came with (RAD-34): "this device" in the sessions list. */
       readonly sessionId?: string;
-      /** The person's role (RAD-35), or null before an admin gives one. */
-      readonly role?: string | null;
+      /** The person's role (RAD-35). */
+      readonly role?: string;
       /** Of `permissions`, those the role holds only over the person's own records (RAD-35); the rest reach all. */
       readonly ownScope?: readonly string[] }
   | { readonly kind: 'system'; readonly name: string; readonly permissions: readonly string[] };

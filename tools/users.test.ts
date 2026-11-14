@@ -32,7 +32,7 @@ async function outcome(c: pg.Client, text: string, values: unknown[] = []): Prom
     return (error as { code?: string }).code ?? 'unknown';
   }
 }
-const addUser = 'insert into radcore.users (email, display_name) values ($1, $2) returning id';
+const addUser = "insert into radcore.users (email, display_name, role) values ($1, $2, 'sales') returning id";
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 describe.skipIf(!url)('the users table', () => {

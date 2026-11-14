@@ -1,5 +1,5 @@
 {
-  "id": "332220d5-d698-4c5d-b3d6-713fe863f5f5",
+  "id": "13f977ea-9912-4460-a760-3f924660adf0",
   "prevId": "24d84d16-84a0-48d2-bb27-7e708079b43e",
   "version": "7",
   "dialect": "postgresql",
@@ -1904,7 +1904,7 @@
           "name": "role",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "role_since": {
           "name": "role_since",

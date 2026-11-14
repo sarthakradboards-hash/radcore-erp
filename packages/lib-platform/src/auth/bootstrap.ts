@@ -14,7 +14,6 @@ import { createDatabase, createPool } from '../db/client.ts';
 import { runInTransaction } from '../db/transaction.ts';
 import type { Logger } from '../log.ts';
 import { mailerFor, maskEmail, type Mailer } from '../mail.ts';
-import { assignRole } from './roles.ts';
 
 export type BootstrapOutcome = 'invited' | 'reissued' | 'already_bootstrapped' | 'admin_exists';
 
@@ -47,11 +46,11 @@ export async function bootstrapAdmin(db: Database, { email, reissue, mailer, pub
     let userId: string;
     let outcome: Minted['outcome'];
     if (record === undefined) {
-      const [user] = await tx.insert(users).values({ email: seed, displayName: 'Administrator' }).returning({ id: users.id });
+      // Always the admin role, from the first write: no first admin can exist without it (RC-021).
+      const [user] = await tx.insert(users).values({ email: seed, displayName: 'Administrator', role: 'admin', roleSince: new Date() })
+        .returning({ id: users.id });
       userId = user?.id ?? '';
       await tx.insert(bootstrap).values({ key: 'first_admin', userId });
-      // Always the admin role, in the same transaction as the invite: no caller can make a first admin without it (RC-021).
-      await assignRole(ctx, userId, 'admin');
       outcome = 'invited';
     } else if (record.status !== 'invited') {
       return 'admin_exists';

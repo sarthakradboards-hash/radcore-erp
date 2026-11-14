@@ -89,7 +89,7 @@ describe.skipIf(!url)('maker-checker', () => {
     try {
       await client.query('begin');
       await client.query("select set_config('app.principal', 'system:test', true)");
-      const { rows } = await client.query<{ id: string }>('insert into radcore.users (email, display_name) values ($1, $2) returning id',
+      const { rows } = await client.query<{ id: string }>("insert into radcore.users (email, display_name, role) values ($1, $2, 'sales') returning id",
         [`approver-${randomUUID()}@example.test`, 'Test person']);
       await client.query('commit');
       return rows[0]?.id ?? '';

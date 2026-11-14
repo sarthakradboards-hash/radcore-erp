@@ -10,8 +10,6 @@ import type { Ctx, Principal } from '../ctx.ts';
 import { runInTransaction } from '../db/transaction.ts';
 import type { LoadPrincipal } from '../jobs.ts';
 
-/** Every person holds this whatever their role: their own account and sessions, the start of My work. */
-const MY_WORK: readonly string[] = Object.freeze(['session:read']);
 const LOADER: Principal = Object.freeze({ kind: 'system', name: 'principal-loader', permissions: Object.freeze([]) });
 const READ = { readOnly: true, isolation: 'read committed' } as const;
 
@@ -24,9 +22,10 @@ export async function principalFor(ctx: Ctx, userId: string, sessionId?: string)
   const [person] = await tx.select({ role: users.role }).from(users)
     .where(and(eq(users.id, userId), eq(users.status, 'active'))).limit(1);
   if (person === undefined) return null;
-  const grants = person.role === null ? [] : await tx.select({ permission: roleGrants.permission, scope: roleGrants.scope })
+  // Only what the role grants: every role is seeded with My work's keys, and nothing is added here (ADR-001 §6a).
+  const grants = await tx.select({ permission: roleGrants.permission, scope: roleGrants.scope })
     .from(roleGrants).where(eq(roleGrants.role, person.role));
-  const permissions = [...new Set([...MY_WORK, ...grants.map((g) => g.permission)])].toSorted();
+  const permissions = grants.map((g) => g.permission).toSorted();
   const ownScope = grants.filter((g) => g.scope === 'own').map((g) => g.permission).toSorted();
   return Object.freeze({
     kind: 'user', userId, ...(sessionId === undefined ? {} : { sessionId }), role: person.role,
@@ -44,7 +43,7 @@ export const loadPrincipal = (db: Database): LoadPrincipal => async (by) => {
   return runInTransaction(db, READ, LOADER, randomUUID(), (ctx) => principalFor(ctx, id));
 };
 
-/** Whether the person's role asks for the second sign-in factor (D-19, RAD-33); a person with no role yet doesn't. */
+/** Whether the person's role asks for the second sign-in factor (D-19, RAD-33). */
 export async function roleNeedsSecondFactor(ctx: Ctx, userId: string): Promise<boolean> {
   const [row] = await platformTx(ctx).select({ required: roles.secondFactorRequired }).from(users)
     .innerJoin(roles, eq(roles.key, users.role)).where(eq(users.id, userId)).limit(1);

@@ -25,7 +25,7 @@ CREATE TABLE "radcore"."roles" (
 	CONSTRAINT "ck_roles_key" CHECK ("radcore"."roles"."key" ~ '^[a-z][a-z_]{1,31}$')
 );
 --> statement-breakpoint
-ALTER TABLE "radcore"."users" ADD COLUMN "role" text;--> statement-breakpoint
+ALTER TABLE "radcore"."users" ADD COLUMN "role" text NOT NULL;--> statement-breakpoint
 ALTER TABLE "radcore"."users" ADD COLUMN "role_since" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "radcore"."role_grants" ADD CONSTRAINT "role_grants_role_roles_key_fk" FOREIGN KEY ("role") REFERENCES "radcore"."roles"("key") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."users" ADD CONSTRAINT "users_role_roles_key_fk" FOREIGN KEY ("role") REFERENCES "radcore"."roles"("key") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -39,17 +39,13 @@ SELECT radcore.audit_attach('role_grants', keep => array['scope']);
 SELECT radcore.audit_attach('users', keep => array['status', 'password_set_at', 'role', 'role_since'],
   redact => array['email', 'email_key', 'display_name', 'password_hash']);
 --> statement-breakpoint
--- The seed below is stamped and audited, so it names its principal here, as migrate() does on its own connection: a
--- migration URL carrying its own `options` (the test setup's `-c role=…`) replaces the one migrate() adds (auditor on #130).
-SELECT set_config('app.principal', 'system:migrate', true);
---> statement-breakpoint
--- The plan's 11 roles (page 4), one per person. `counter` is the plan's Store, the counter staff: a key one letter
--- from `stores` was v1's defect RC-044. D-19 asks the second factor of owner, admin, accounts and HR.
+-- The plan's 11 roles (page 4), one per person. `counter` is the plan's Store, the counter staff, shown as "Counter
+-- (store)": a key one letter from `stores` was v1's defect RC-044 (the architect on RAD-35). D-19 asks the second factor of owner, admin, accounts and HR.
 INSERT INTO radcore.roles (key, name, description, second_factor_required) VALUES
   ('owner', 'Owner', 'The founder: every dashboard, reads every section, approves; creates no day-to-day documents and manages no users', true),
   ('admin', 'Admin', 'Whoever sets up the system: masters, price lists, users and roles, permissions, settings, the audit trail; holds every permission', true),
   ('marketing', 'Marketing', 'Lead sources, campaign links and QR codes, ad spend, the marketing dashboard; reads and edits leads', false),
-  ('counter', 'Store', 'Counter staff at the store: walk-ins, the quick bill, repeat-customer lookup, sharing invoices', false),
+  ('counter', 'Counter (store)', 'Counter staff at the store: walk-ins, the quick bill, repeat-customer lookup, sharing invoices', false),
   ('sales', 'Sales', 'Pipeline and follow-ups, quotes and dealer orders, bookings with an advance, the sales dashboard', false),
   ('stores', 'Stores', 'Whoever receives and issues goods: purchase orders, inward and QC, transfers, counts and adjustments, imports', false),
   ('accounts', 'Accounts', 'Whoever runs the books: bills, payments, expenses, the books and reports, bank reconciliation, GST, payroll', true),
@@ -77,6 +73,3 @@ UNION ALL
 SELECT 'accounts', k, 'all' FROM unnest(array['statement_files:read', 'statement_files:write']) AS k
 UNION ALL
 SELECT r, k, 'all' FROM unnest(array['stores', 'accounts']) AS r, unnest(array['import_files:read', 'import_files:write']) AS k;
---> statement-breakpoint
--- A first admin made before this migration (RAD-32's bootstrap) gets the admin role now, so they aren't locked out (RC-021).
-UPDATE radcore.users SET role = 'admin', role_since = now() WHERE id IN (SELECT user_id FROM radcore.bootstrap) AND role IS NULL;

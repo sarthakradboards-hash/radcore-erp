@@ -12,6 +12,6 @@ export async function secondFactorStatus(ctx: Ctx, userId: string): Promise<Seco
   const [factor] = await platformTx(ctx).select({ id: secondFactors.id }).from(secondFactors)
     .where(and(eq(secondFactors.userId, userId), isNotNull(secondFactors.confirmedAt))).limit(1);
   if (factor !== undefined) return 'enrolled';
-  // From the person's role (RAD-35): D-19's admin, owner, accounts and HR need one; a person with no role yet doesn't.
+  // From the person's role (RAD-35): D-19's admin, owner, accounts and HR need one.
   return await roleNeedsSecondFactor(ctx, userId) ? 'enrolment_required' : 'not_required';
 }

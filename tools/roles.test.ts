@@ -43,7 +43,7 @@ describe.skipIf(!url)('roles and record scope', () => {
   }
   // Role keys are lower-case letters and underscores.
   const roleKey = () => `t_${[...randomBytes(8)].map((b) => String.fromCharCode(97 + (b % 26))).join('')}`;
-  const activePerson = async (role: string | null) => (await sql<{ id: string }>(`insert into radcore.users
+  const activePerson = async (role: string) => (await sql<{ id: string }>(`insert into radcore.users
     (email, display_name, status, password_hash, role) values ($1, 'Test person', 'active', 'x', $2) returning id`,
   [`p-${randomUUID()}@example.test`, role]))[0]?.id ?? '';
 
@@ -79,8 +79,9 @@ describe.skipIf(!url)('roles and record scope', () => {
     expect((await load(`user:${id}`))?.permissions).toEqual(['leads:read', 'session:read']);
   });
 
-  it('loads nobody who is gone, disabled or not a person, and a person with no role yet gets My work alone', async () => {
-    const id = await activePerson(null);
+  it("loads nobody who is gone, disabled or not a person, and gives a role's keys and nothing more", async () => {
+    // The plan's Store role holds only My work's key among M1's: nothing is added in code (ADR-001 §6a).
+    const id = await activePerson('counter');
     expect((await load(`user:${id}`))?.permissions).toEqual(['session:read']);
     await sql("update radcore.users set status = 'disabled' where id = $1", [id]);
     expect(await load(`user:${id}`)).toBeNull();
@@ -104,15 +105,15 @@ describe.skipIf(!url)('roles and record scope', () => {
     });
   });
 
-  it("asks the second factor of a person whose role needs it (D-19), and not of one without a role", async () => {
-    const [admin, sales, nobody] = [await activePerson('admin'), await activePerson('sales'), await activePerson(null)];
+  it("asks the second factor of a person whose role needs it (D-19), and not of one whose role does not", async () => {
+    const [admin, sales, counter] = [await activePerson('admin'), await activePerson('sales'), await activePerson('counter')];
     const needs = await runInTransaction(db, write, asTest, randomUUID(), async (ctx) =>
-      Promise.all([admin, sales, nobody].map((u) => roleNeedsSecondFactor(ctx, u))));
+      Promise.all([admin, sales, counter].map((u) => roleNeedsSecondFactor(ctx, u))));
     expect(needs).toEqual([true, false, false]);
-    // RAD-33's rule, through its own status: admin still has to enrol; sales and a person with no role sign in
+    // RAD-33's rule, through its own status: admin still has to enrol; sales and the counter staff sign in
     // without one (the auditor on #130).
     const status = await runInTransaction(db, write, asTest, randomUUID(), async (ctx) =>
-      Promise.all([admin, sales, nobody].map((u) => secondFactorStatus(ctx, u))));
+      Promise.all([admin, sales, counter].map((u) => secondFactorStatus(ctx, u))));
     expect(status).toEqual(['enrolment_required', 'not_required', 'not_required']);
   });
 
