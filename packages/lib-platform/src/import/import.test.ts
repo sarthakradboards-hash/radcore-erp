@@ -2,10 +2,14 @@
 // 9111, a bad row is reported, not dropped), within ADR-003's parser limits.
 import { Readable } from 'node:stream';
 import { crc32, deflateRawSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { amountCell, checkRows, collectUpload, dateCell, decodeText, IMPORT_LIMITS, ImportFileError, parseAmountCell,
   parseDateCell, readTable, sniffDelimiter } from '../index.ts';
+
+// Each test here starts real import workers, and each worker loads the parser and lib-common afresh (about 1 s cold,
+// several on a loaded machine), at most two at a time: vitest's 5 s default is less than that start-up (RAD-46).
+vi.setConfig({ testTimeout: 30_000 });
 
 const utf8 = (s: string) => new TextEncoder().encode(s);
 const NS = 'http://schemas.openxmlformats.org';

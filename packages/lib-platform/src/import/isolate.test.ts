@@ -1,7 +1,11 @@
 // ADR-003 §7 on a real worker: a file that takes too long or needs too much memory is refused, and the parse
 // itself crosses back intact. import.test.ts reads every other file through this same worker.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ImportFileError, ISOLATE_LIMITS, readTable } from '../index.ts';
+
+// Each test here starts real import workers, and each worker loads the parser and lib-common afresh (about 1 s cold,
+// several on a loaded machine), at most two at a time: vitest's 5 s default is less than that start-up (RAD-46).
+vi.setConfig({ testTimeout: 30_000 });
 
 const csv = (rows: number) => new TextEncoder().encode(
   ['Narration,Amount', ...Array.from({ length: rows }, (_, i) => `"Line ${String(i)} with some text",${String(i)}.50`)].join('\n'));
