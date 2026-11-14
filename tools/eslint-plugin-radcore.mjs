@@ -475,12 +475,26 @@ const brandedMoney = {
       }
       return null;
     };
-    const kind = (node) => kindOf(checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node)));
-    const check = (node, operand = node) => {
-      const k = operand && kind(operand);
+    const typeOf = (node) => checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node));
+    const kind = (node) => kindOf(typeOf(node));
+    // The brand an array or tuple holds (`Money[]`, `readonly Rate[]`, `[Money, Money]`), for a spread or a callback
+    // (the auditor on #159): `Math.max(...amounts)`, `amounts.map(Number)`.
+    const elementKindOf = (type, depth = 0) => {
+      if (depth > 4) return null;
+      for (const t of type.isUnion() ? type.types : [type]) {
+        if (!checker.isArrayType(t) && !checker.isTupleType(t)) continue;
+        for (const e of checker.getTypeArguments(t)) {
+          const k = kindOf(e) ?? elementKindOf(e, depth + 1);
+          if (k) return k;
+        }
+      }
+      return null;
+    };
+    const report = (node, k) => {
       if (k) context.report({ node, messageId: 'm', data: { message, kind: k } });
       return Boolean(k);
     };
+    const check = (node, operand = node) => report(node, operand && kind(operand));
     const MATHS = new Set(['+', '-', '*', '/', '%', '**', '<', '<=', '>', '>=']);
     const COMPOUND = new Set(['+=', '-=', '*=', '/=', '%=', '**=']);
     const isConversion = (c) => (c.type === 'Identifier' && (c.name === 'Number' || c.name === 'parseFloat' || c.name === 'parseInt'))
@@ -507,8 +521,16 @@ const brandedMoney = {
       UpdateExpression(node) { check(node, node.argument); },
       UnaryExpression(node) { if (node.operator === '+' || node.operator === '-') check(node, node.argument); },
       CallExpression(node) {
-        if (!isConversion(node.callee)) return;
-        for (const a of node.arguments) if (check(node, a.type === 'SpreadElement' ? a.argument : a)) return;
+        if (isConversion(node.callee)) {
+          for (const a of node.arguments) {
+            if (report(node, a.type === 'SpreadElement' ? elementKindOf(typeOf(a.argument)) ?? kind(a.argument) : kind(a))) return;
+          }
+          return;
+        }
+        // A conversion handed to a call on a branded array: amounts.map(Number), rates.reduce(Math.max).
+        if (node.callee.type === 'MemberExpression' && node.arguments.some(isConversion)) {
+          report(node, elementKindOf(typeOf(node.callee.object)));
+        }
       },
     };
   },

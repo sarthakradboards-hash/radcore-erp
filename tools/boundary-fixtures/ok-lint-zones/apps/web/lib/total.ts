@@ -14,3 +14,6 @@ export const twice = (n: number) => n * 2 + 1 > 3;
 export const due = (x: string) => 'Due: ' + roundMoney(x);
 export const larger = (a: string, b: string) => dec(lineAmount(a, '1')).gt(dec(b));
 export const retries = (retryLimit: number, rateLimit: number) => retryLimit * 2 + rateLimit;
+// A plain string array may be mapped to numbers, and a branded one stays in decimals.
+export const counts = (xs: string[]) => xs.map(Number);
+export const biggest = (xs: string[]) => xs.map((x) => roundMoney(x)).reduce((a, b) => (dec(a).gt(b) ? a : b));
