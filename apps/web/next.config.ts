@@ -19,6 +19,8 @@ const SECURITY_HEADERS = [
 // Development and CI have no Caddy, so the browser's /api calls reach the api through Next; deployed, Caddy routes
 // /api (ADR-004). An allow-list, like lib-platform's config: an unset, misspelled or 'review' APP_ENV gets no rewrite.
 // Next fixes rewrites at `next build`, so the APP_ENV and API_INTERNAL_URL at build time decide, not a later restart.
+// So the production web image is built without APP_ENV=ci and API_INTERNAL_URL, and carries no rewrite (auditor on
+// #88). Whichever ticket adds that image build keeps it so; Caddy routes /api there.
 const DEV_CI = ['development', 'ci'];
 const apiRewrites = () => {
   const api = process.env['API_INTERNAL_URL'];
