@@ -3,11 +3,11 @@
 // export's status and download (RAD-47), roles and the permission matrix (RAD-36), custom roles (RAD-83), and people (RAD-36).
 // Sign-in and the password routes need Argon2id and the lockout store, so they're built at start (createAuth's routes).
 import {
-  changeUserRole, createCustomRole, deactivatePerson, defineExport, defineRoute, deleteCustomRole, endAnySession, endCurrentSession, endOwnSession,
+  changeUserRole, createCustomRole, deactivatePerson, defineRoute, deleteCustomRole, endAnySession, endCurrentSession, endOwnSession,
   endPersonSessions, getMyself, listAllSessions,
   exportDownload, exportStatus, listAuditedTablesList, listAuditTrailPage, listOwnSessions, listSecurityEventsPage,
   invitePerson, listPeople, listRolesFor, permissionMatrix, reactivatePerson, renameRole, requestPasswordReset, resendPersonInvite,
-  resetRoleToTemplate, setRoleGrants,
+  resetRoleToTemplate, setRoleGrants, startMastersExport,
 } from '@radcore/lib-platform';
 import * as contract from '@radcore/lib-platform/contract';
 
@@ -39,5 +39,5 @@ export default [
   defineRoute(contract.deleteRole, deleteCustomRole),
   defineRoute(contract.resetRole, resetRoleToTemplate),
   // The masters workbook's start route (RAD-92): the contract alone; the worker joins its sheets.
-  ...defineExport([contract.mastersExport]),
+  defineRoute(contract.mastersExport.start, startMastersExport),
 ];

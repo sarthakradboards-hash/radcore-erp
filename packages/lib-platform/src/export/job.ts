@@ -16,7 +16,7 @@ import { AppError } from '../errors.ts';
 import { defineJob, type JobDefinition } from '../jobs.ts';
 import { defineRoute, type Route } from '../route.ts';
 import { recordSecurityEvent } from '../security-events.ts';
-import { EXPORT_MAX_ROWS, type ExportContract, type WorkbookContract } from './contract.ts';
+import { EXPORT_MAX_ROWS, mastersExport, type ExportContract, type WorkbookContract } from './contract.ts';
 import { ExportTooLarge, queuedExport, writeExportFile, writeWorkbookFile, type ExportRows, type ExportSheet } from './engine.ts';
 
 /** A module's export, ready to wire: its contract with the module's row function. */
@@ -76,10 +76,14 @@ async function startExport(ctx: Ctx, m: Startable, filter: unknown): Promise<{ e
   return { exportId: row.id };
 }
 
-/** Each export's start route, `POST /<module>/<name>/exports`, for the API's route file: a list's export, or a workbook's
- * contract alone (its sheets are the worker's). */
+/** Each export's start route, `POST /<module>/<name>/exports`, for the API's route file. */
 export const defineExport = (exports: readonly Startable[]): Route[] =>
   exports.map((m) => defineRoute(m.start, (ctx, input) => startExport(ctx, m, input.filter)));
+
+/** The masters workbook's start (RAD-92): its contract alone, since its sheets are joined in the worker. The API's route
+ * file mounts it with `defineRoute(contract.mastersExport.start, startMastersExport)`. */
+export const startMastersExport = (ctx: Ctx, input: z.output<typeof mastersExport.start.input>) =>
+  startExport(ctx, mastersExport, input.filter);
 
 type Written =
   | { exportId: string; kind: string; skip: true }

@@ -82,6 +82,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /stock/locations': 'locations:read',
   'POST /stock/locations': 'locations:write',
   'PATCH /stock/locations/:id': 'locations:write',
+  // The masters workbook's start route (RAD-92): each sheet's own read key is checked again when the job runs.
+  'POST /platform/masters/exports': 'masters:export',
   // HR (RAD-92): the employee master.
   'GET /hr/employees': 'employees:read',
   'POST /hr/employees': 'employees:write',
@@ -178,6 +180,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /stock/locations': STOCK,
   'POST /stock/locations': STOCK,
   'PATCH /stock/locations/:id': STOCK,
+  // The workbook's start route takes only its contract (the architect on RAD-92): lib-platform's own.
+  'POST /platform/masters/exports': PLATFORM,
   // HR's routes reach lib-hr and, through it, lib-platform.
   'GET /hr/employees': HR,
   'POST /hr/employees': HR,
@@ -190,5 +194,6 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'platform.file-check': PLATFORM,
   'platform.password-reset-email': PLATFORM,
   'platform.invite-email': PLATFORM,
-  'platform.export': PLATFORM,
+  // The export job runs every export, the masters workbook's sheets from lib-stock and lib-hr among them (RAD-92).
+  'platform.export': ['lib-hr', 'lib-platform', 'lib-stock'],
 };

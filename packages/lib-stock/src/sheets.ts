@@ -3,6 +3,7 @@
 // in only for a starter holding its key when the job runs. Items carry no cost field yet: RAD-89 part 3 adds cost()
 // and its column here, masked without cost:read.
 import type { ExportRow, ExportSheet } from '@radcore/lib-platform';
+import { KIND_LABELS } from './location-kinds.ts';
 import { listCategories, listItemsPage } from './services/items.ts';
 import { listPlaces } from './services/locations.ts';
 
@@ -12,7 +13,9 @@ const locations: ExportSheet = {
   name: 'Locations', perm: 'locations:read', columns: ['code', 'name', 'kind', 'active'],
   rows: async (ctx, _filter, page) => {
     const { items, next } = await listPlaces(ctx, { filter: {}, ...page });
-    return { items: items.map((l): ExportRow => ({ code: l.code, name: l.name, kind: l.kind, active: yesNo(l.active) })), next };
+    // The kind as its screens name it: its label, as an admin may have renamed it (#181).
+    return { items: items.map((l): ExportRow => ({ code: l.code, name: l.name, kind: ctx.settings.get(KIND_LABELS[l.kind]),
+      active: yesNo(l.active) })), next };
   },
 };
 

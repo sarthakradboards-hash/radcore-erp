@@ -4,10 +4,11 @@
 // shortcut: write-excel-file builds the whole file in memory, so a workbook's rows are gathered first; fine at master
 // sizes (thousands of rows), not for a ledger. Use a streaming writer if a workbook ever holds one.
 import writeXlsxFile from 'write-excel-file/node';
-import type { ExportRow } from './engine.ts';
 
-/** One sheet as it's written: its name, its columns in order (each a key of the rows) and its rows. */
-export type WorkbookSheet = { readonly name: string; readonly columns: readonly string[]; readonly rows: readonly ExportRow[] };
+/** One sheet as it's written: its name, its columns in order (each a key of the rows) and its rows, an export's rows as
+ * the engine masked them. */
+export type WorkbookSheet = { readonly name: string; readonly columns: readonly string[];
+  readonly rows: readonly Readonly<Record<string, string | number | null>>[] };
 
 /** Writes the sheets to `path` as one XLSX workbook. */
 export async function writeXlsx(path: string, sheets: readonly WorkbookSheet[]): Promise<void> {
