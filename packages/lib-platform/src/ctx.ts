@@ -2,6 +2,7 @@
 // the settings.
 // `ctx.tx` has no members, so a service can only hand it to its own module transaction (`salesTx(ctx)`) (T1).
 import type { Tx } from '@radcore/db/schema';
+import type { Sight } from '@radcore/lib-common';
 import type { z } from 'zod';
 import type { FileStore } from './files/store.ts';
 import type { Settings } from './settings.ts';
@@ -76,6 +77,13 @@ export type Ctx = {
   /** As `can`, but a record outside the principal's scope throws not_found: the same answer as no such record, so
    * nobody learns that a record they may not see exists (404, not 403; RAD-7). */
   see(permission: string, record: Owned): void;
+  /**
+   * May this request be shown a kind of personal data (`whole`, `last4`, `pay`), given a record's own key if it names
+   * one (`seenWith`, RAD-90)? The same answer the handler masks the answer with, so a service that searches or sorts
+   * by a personal field asks it too, and the two can't disagree (the auditor on #166). The handler sets it per request,
+   * Sec-Fetch-Site included (ADR-005 §7c); a job's or a test's Ctx answers from the principal's keys.
+   */
+  readonly shows: Sight;
 };
 
 /** How audit rows and `app.principal` name a principal: `user:<id>` or `system:<name>`. */

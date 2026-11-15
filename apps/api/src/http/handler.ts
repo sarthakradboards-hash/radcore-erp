@@ -14,7 +14,7 @@
 // Still to come, each with its ticket: rate guards (M1-21) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, maskedInputPath, maskOutput, newPasswordFields, piiPlan, reasonFields, PASSWORD_MIN_LENGTH,
-  PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, type Issue, type Look, type PlatformErrorCode } from '@radcore/lib-common';
+  PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, sightOf, type Issue, type Look, type PlatformErrorCode } from '@radcore/lib-common';
 import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, isRateLimitClass, linkPrincipal, originAllowed,
   recordChangeReason, RecordedRefusal, recordLinkAccess, recordLooks, useLink, type Files, type Principal, type RequestGuards,
   type Route, type Secrets, type SessionCookie, type SignInCookie,
@@ -287,10 +287,11 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         let looks: Look[] = [];
         // Only a request the browser says came from this app, or from a typed address, opens a record in full: a
         // cross-site link can't make someone "look" at a record they never saw (ADR-005 §7c), so it sees masks.
-        const direct = DIRECT.has(req.get('sec-fetch-site') ?? '');
+        // The service is given the same answer (ctx.shows), so it searches and sorts only by what it may show.
+        const sight = sightOf((principal ?? PUBLIC).permissions, DIRECT.has(req.get('sec-fetch-site') ?? ''));
         const shown = (answer: unknown): unknown => {
           if (plan === null) return answer;
-          const m = maskOutput(plan, answer, direct ? (principal ?? PUBLIC).permissions : []);
+          const m = maskOutput(plan, answer, sight);
           looks = m.looks;
           return m.value;
         };
@@ -323,7 +324,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           if (contract.auth === 'link' && !contract.tx.readOnly) await useLink(ctx);
           let answer: unknown;
           try {
-            answer = await service(cookie === undefined ? ctx : Object.freeze({ ...ctx, cookie }), work, meta);
+            answer = await service(Object.freeze({ ...ctx, shows: sight, ...(cookie === undefined ? {} : { cookie }) }), work, meta);
           } catch (err) {
             // A failed sign-in's record commits; the person still gets the refusal (RAD-34).
             if (!(exempt && err instanceof RecordedRefusal)) throw err;

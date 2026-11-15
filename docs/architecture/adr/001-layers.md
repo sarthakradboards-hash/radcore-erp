@@ -566,6 +566,9 @@ always six bullets, so it doesn't give away the length.
   hold (D-20, Sarthak, 6 Nov 2026), so a role with `pii:read` still gets them masked (M1-22).
 - The generic handler masks after the output check and before saved-once keeps the answer, so a stored answer never
   holds what its principal couldn't see.
+- A service asks `ctx.shows(kind, seenWith?)` before it searches or sorts by a personal field. It's the same answer
+  the handler masks with, keys and Sec-Fetch-Site included, so a service can't find people by an address it then
+  hides (RAD-103).
 - Edit forms show it read-only and never send it back. Edit contracts change only the fields they receive (patch
   semantics), so a field left out is left alone.
 - The server refuses an input string that starts with six `•` (U+2022), with `invalid_input`. A masked value can
