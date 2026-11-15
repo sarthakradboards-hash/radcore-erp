@@ -76,7 +76,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/import': 'import_files:write',
   'POST /files/import/:id/confirm': 'import_files:write',
   'POST /files/import/:id/download': 'import_files:read',
-  // Stock (RAD-92): locations.
+  // Stock (RAD-92): locations, and their kinds' labels.
+  'GET /stock/location-kinds': 'locations:read',
+  'PUT /stock/location-kinds/:kind': 'locations:write',
   'GET /stock/locations': 'locations:read',
   'POST /stock/locations': 'locations:write',
   'PATCH /stock/locations/:id': 'locations:write',
@@ -171,6 +173,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/import/:id/confirm': PLATFORM,
   'POST /files/import/:id/download': PLATFORM,
   // Stock's routes reach lib-stock and, through it, lib-platform.
+  'GET /stock/location-kinds': STOCK,
+  'PUT /stock/location-kinds/:kind': STOCK,
   'GET /stock/locations': STOCK,
   'POST /stock/locations': STOCK,
   'PATCH /stock/locations/:id': STOCK,
