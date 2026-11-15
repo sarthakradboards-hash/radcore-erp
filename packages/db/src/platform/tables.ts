@@ -252,7 +252,7 @@ export const files = radcoreTable('files', {
   status: text().notNull().default('pending'),
 }, (t) => [
   uniqueIndex('ux_files_store_key').on(t.storeKey),
-  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import')`),
+  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import', 'item_picture')`),
   check('ck_files_status', sql`${t.status} in ('pending', 'checking', 'ready', 'refused')`),
   check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
   // A ready file has its checked size.
