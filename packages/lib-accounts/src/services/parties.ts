@@ -27,6 +27,13 @@ const answer = <R extends KindFlags>({ customer, dealer, franchisee, supplier, .
 /** The contract's list of kinds as the four columns, or nothing when it isn't being set. */
 const flags = (kinds: readonly Kind[] | undefined): Partial<KindFlags> =>
   (kinds === undefined ? {} : Object.fromEntries(PARTY_KINDS.map((k) => [k, kinds.includes(k)])));
+/** A party's own fields, picked by name from what was sent: never the input spread whole, so a caller that skips the
+ * contract can't set credit terms or anything else through create or change (the auditor on #180). */
+const OWN = ['name', 'gstin', 'pan', 'composition', 'stateCode', 'phone', 'email', 'addressLine1', 'addressLine2', 'city', 'pincode'] as const;
+type Own = Pick<In<typeof createParty>, (typeof OWN)[number]>;
+const own = (p: { [K in keyof Own]?: Own[K] | undefined }): Partial<Own> =>
+  Object.fromEntries(OWN.filter((k) => p[k] !== undefined).map((k) => [k, p[k]])) as Partial<Own>;
+
 /** The stored forms of a phone and an email. */
 const stored = <T extends { phone?: string | null | undefined; email?: string | null | undefined }>(p: T): T => ({
   ...p,
@@ -76,8 +83,8 @@ export async function addParty(ctx: Ctx, input: In<typeof createParty>): Promise
   // The contract checks these too; a service called from another library gets the same refusal, not a CHECK's.
   const issues = partyTaxIssues(input);
   if (issues.length > 0) throw new AppError('invalid_input', 'Check the party’s GSTIN, PAN and state', issues);
-  const { kinds, ...rest } = input;
-  const [row] = await gstinOnce(accountsTx(ctx).insert(parties).values({ ...stored(rest), ...flags(kinds) }).returning({ id: parties.id }));
+  const values = { ...(stored(own(input)) as Own), ...flags(input.kinds) };
+  const [row] = await gstinOnce(accountsTx(ctx).insert(parties).values(values).returning({ id: parties.id }));
   if (row === undefined) throw new Error('The party was not saved');
   return row;
 }
@@ -91,8 +98,7 @@ export async function changeParty(ctx: Ctx, { id, ...change }: In<typeof updateP
   const issues = partyTaxIssues({ gstin: change.gstin === undefined ? now.gstin : change.gstin, pan: change.pan === undefined ? now.pan : change.pan,
     stateCode: change.stateCode ?? now.stateCode, composition: change.composition ?? now.composition });
   if (issues.length > 0) throw new AppError('invalid_input', 'Check the party’s GSTIN, PAN and state', issues);
-  const { kinds, ...rest } = change;
-  const fields = Object.fromEntries(Object.entries({ ...stored(rest), ...flags(kinds) }).filter(([, v]) => v !== undefined));
+  const fields = { ...stored(own(change)), ...flags(change.kinds), ...(change.active === undefined ? {} : { active: change.active }) };
   if (Object.keys(fields).length > 0) await gstinOnce(tx.update(parties).set(fields).where(eq(parties.id, id)));
   return {};
 }

@@ -1,5 +1,5 @@
 {
-  "id": "978d9afe-0def-4dbb-bdcc-306911afbe8c",
+  "id": "1a318e99-7d6b-42d9-b4f1-0f93a622e891",
   "prevId": "476df7d4-8322-477d-88f0-cedcf85ff4e7",
   "version": "7",
   "dialect": "postgresql",
@@ -1820,7 +1820,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" <> 'parties:contact' or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -1907,7 +1907,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" <> 'parties:contact' or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false

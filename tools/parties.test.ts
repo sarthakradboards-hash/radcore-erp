@@ -11,6 +11,7 @@ import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime'
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { PERMISSIONS, SECOND_FACTOR_KEYS } from '../packages/lib-platform/src/permissions.ts';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import accounts from '../apps/api/src/routes/accounts.ts';
 
@@ -28,6 +29,12 @@ const fields = (o: Record<string, unknown> = {}) => ({
   name: `Test party ${letters(8)}`, kinds: ['customer'] as ('customer' | 'dealer' | 'franchisee' | 'supplier')[], gstin: null,
   pan: null, composition: false, stateCode: '29', phone: '98765 43210', email: 'Asha@Example.IN', addressLine1: 'Plot 4',
   addressLine2: null, city: 'Bengaluru', pincode: '560058', ...o,
+});
+
+// Sarthak (RAD-90): credit terms need the second factor (D-19); contact details have a key of their own, at all scope.
+it('marks parties:manage as needing the second factor, and parties:contact as all-scope only without it', () => {
+  expect([SECOND_FACTOR_KEYS.includes('parties:manage'), SECOND_FACTOR_KEYS.includes('parties:contact')]).toEqual([true, false]);
+  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact']);
 });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
@@ -69,8 +76,10 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
         await c.query('rollback');
         return r;
       };
-      expect(await Promise.all([refused(`gstin = '${g}'`), refused('composition = true'), refused('customer = false'),
-        refused("phone = '98765'")])).toEqual(['ck_parties_state', 'ck_parties_composition', 'ck_parties_kinds', 'ck_parties_phone']);
+      // One at a time on the one connection, each breaking only the rule it names (the auditor on #180).
+      const got = [];
+      for (const set of [`gstin = '${g}'`, 'composition = true', 'customer = false', "phone = '98765'"]) got.push(await refused(set));
+      expect(got).toEqual(['ck_parties_state', 'ck_parties_composition', 'ck_parties_kinds', 'ck_parties_phone']);
     } finally {
       c.release();
     }
@@ -120,5 +129,23 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     const shown = await fetchAs(user(['pii:read']));
     expect([shown['phone'], shown['email']]).toEqual(['+919876543210', 'asha@example.in']);
     expect(await looks()).toBe(1);
+  });
+
+  it('refuses an own-scope grant of parties:contact in the database, which unmasks by key, not scope', async () => {
+    const c = await superPool.connect();
+    try {
+      const grant = async (table: string, scope: string) => {
+        await c.query('begin');
+        await c.query("set local app.principal = 'system:test'");
+        const r = await c.query(`insert into radcore.${table} (role, permission, scope) values ('technician', 'parties:contact', $1)`, [scope])
+          .then(() => 'ok', (e: { constraint?: string }) => e.constraint);
+        await c.query('rollback');
+        return r;
+      };
+      expect([await grant('role_grants', 'own'), await grant('role_templates', 'own'), await grant('role_grants', 'all')])
+        .toEqual(['ck_role_grants_scope', 'ck_role_templates_scope', 'ok']);
+    } finally {
+      c.release();
+    }
   });
 });

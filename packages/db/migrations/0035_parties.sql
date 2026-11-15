@@ -39,8 +39,12 @@ CREATE TABLE "radcore"."parties" (
 	CONSTRAINT "ck_parties_credit_days" CHECK ("radcore"."parties"."credit_days" between 0 and 365)
 );
 --> statement-breakpoint
+ALTER TABLE "radcore"."role_grants" DROP CONSTRAINT "ck_role_grants_scope";--> statement-breakpoint
+ALTER TABLE "radcore"."role_templates" DROP CONSTRAINT "ck_role_templates_scope";--> statement-breakpoint
 CREATE UNIQUE INDEX "ux_parties_gstin" ON "radcore"."parties" USING btree ("gstin");--> statement-breakpoint
-CREATE INDEX "ix_parties_name_trgm" ON "radcore"."parties" USING gin ("name" radcore_ext.gin_trgm_ops);
+CREATE INDEX "ix_parties_name_trgm" ON "radcore"."parties" USING gin ("name" radcore_ext.gin_trgm_ops);--> statement-breakpoint
+ALTER TABLE "radcore"."role_grants" ADD CONSTRAINT "ck_role_grants_scope" CHECK ("radcore"."role_grants"."scope" in ('all', 'own') and ("radcore"."role_grants"."permission" <> 'parties:contact' or "radcore"."role_grants"."scope" = 'all'));--> statement-breakpoint
+ALTER TABLE "radcore"."role_templates" ADD CONSTRAINT "ck_role_templates_scope" CHECK ("radcore"."role_templates"."scope" in ('all', 'own') and ("radcore"."role_templates"."permission" <> 'parties:contact' or "radcore"."role_templates"."scope" = 'all'));
 --> statement-breakpoint
 -- Audited like every table (ADR-005 §5, §7c), with the personal columns written as [redacted] (RAD-40, M6-16): the
 -- trail says a phone or an address changed, never what it was.
@@ -52,15 +56,19 @@ SELECT radcore.audit_attach('parties',
 REVOKE DELETE, TRUNCATE ON radcore.parties FROM radcore_app;
 --> statement-breakpoint
 -- The parties keys (RAD-90), ordinary catalogue keys any role can be given (Sarthak: dynamic). The plan's starting
--- grants, in each role's template too, so a reset keeps them (RAD-83). Credit terms are parties:manage only.
+-- grants, in each role's template too, so a reset keeps them (RAD-83). Credit terms are parties:manage only, with the
+-- second factor (D-19, Sarthak). parties:contact shows a party's contact details on screens (Sarthak: "via own
+-- permission"): sales and the store counter, plus admin, and owner so it can grant it on; technician isn't given it.
 INSERT INTO radcore.role_grants (role, permission, scope)
 SELECT r, 'parties:read', 'all' FROM unnest(array['admin', 'owner', 'sales', 'counter', 'accounts', 'stores', 'service_head']) AS r
 UNION ALL SELECT r, 'parties:write', 'all' FROM unnest(array['admin', 'sales', 'counter', 'accounts', 'stores']) AS r
 UNION ALL SELECT r, 'parties:manage', 'all' FROM unnest(array['admin', 'owner', 'accounts']) AS r
+UNION ALL SELECT r, 'parties:contact', 'all' FROM unnest(array['admin', 'owner', 'sales', 'counter']) AS r
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 INSERT INTO radcore.role_templates (role, permission, scope)
 SELECT r, 'parties:read', 'all' FROM unnest(array['admin', 'owner', 'sales', 'counter', 'accounts', 'stores', 'service_head']) AS r
 UNION ALL SELECT r, 'parties:write', 'all' FROM unnest(array['admin', 'sales', 'counter', 'accounts', 'stores']) AS r
 UNION ALL SELECT r, 'parties:manage', 'all' FROM unnest(array['admin', 'owner', 'accounts']) AS r
+UNION ALL SELECT r, 'parties:contact', 'all' FROM unnest(array['admin', 'owner', 'sales', 'counter']) AS r
 ON CONFLICT DO NOTHING;
