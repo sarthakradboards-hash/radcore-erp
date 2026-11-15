@@ -38,15 +38,17 @@ describe.skipIf(!url || !superUrl)('the employee master', () => {
   });
 
   // A server with hr's routes, signed in as `principal`.
+  // The handler shows personal data only to a same-origin (or typed-in) request (ADR-001 §7a), so serve() sends the
+  // Sec-Fetch-Site a browser on the app's own page sends, unless a test says otherwise.
   async function serve<T>(principal: Principal, fn: (call: (method: string, path: string, body?: object) =>
-    Promise<{ status: number; body: Record<string, unknown> }>) => Promise<T>): Promise<T> {
+    Promise<{ status: number; body: Record<string, unknown> }>) => Promise<T>, site = 'same-origin'): Promise<T> {
     const app = createApp(config(), { info: () => undefined, error: () => undefined }, { db, authenticate: async () => principal,
       routes: hr });
     const server = await listen(app, 0, '127.0.0.1');
     try {
       return await fn(async (method, path, body) => {
         const res = await fetch(`http://127.0.0.1:${server.port}${path}`, { method, ...(body === undefined ? {} : {
-          body: JSON.stringify(body) }), headers: { 'content-type': 'application/json', origin: ORIGIN,
+          body: JSON.stringify(body) }), headers: { 'content-type': 'application/json', origin: ORIGIN, 'sec-fetch-site': site,
           ...(method === 'GET' ? {} : { 'idempotency-key': randomUUID() }) } });
         return { status: res.status, body: (await res.json()) as Record<string, unknown> };
       });
@@ -55,6 +57,19 @@ describe.skipIf(!url || !superUrl)('the employee master', () => {
     }
   }
   // A GET's input is one JSON `input` parameter (the handler's readInput).
+  // A write as the superuser, in a transaction with a principal, as the who-and-when trigger requires (ADR-005 §5).
+  async function asSuper<T extends pg.QueryResultRow>(text: string, values: unknown[]): Promise<T[]> {
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      const { rows } = await c.query<T>(text, values);
+      await c.query('commit');
+      return rows;
+    } finally {
+      c.release();
+    }
+  }
   const list = (search: string, status?: 'active' | 'inactive') => `/hr/employees?input=${encodeURIComponent(JSON.stringify(
     { filter: { search, ...(status === undefined ? {} : { status }) }, limit: 10 }))}`;
 
@@ -82,6 +97,10 @@ describe.skipIf(!url || !superUrl)('the employee master', () => {
     const looks = async () => Number((await su.query("select count(*) from radcore.access_log where record_table = 'employees' and record_id = $1",
       [id])).rows[0]?.count);
     expect(await looks()).toBe(0);
+    // A cross-site request is answered as if its sender held none of the keys: masked even with pii:read, and no look.
+    const crossSite = await serve(hrStaff(true), async (call) => (await call('GET', list(code))).body['items'], 'cross-site');
+    expect(crossSite).toEqual([expect.objectContaining({ phone: { masked: '••••••6789' }, email: { masked: '••••••' } })]);
+    expect(await looks()).toBe(0);
     await serve(hrStaff(true), async (call) => call('GET', list(code)));
     expect(await looks()).toBe(1);
   });
@@ -102,9 +121,11 @@ describe.skipIf(!url || !superUrl)('the employee master', () => {
     });
   });
 
+  // The built-in roles only: another file's test copies roles, and its copies hold these keys too (auditor-2).
   it('grants the starting keys from the plan, and none of them is held back to named roles', async () => {
     const { rows } = await su.query<{ grant: string }>(`select permission || ' ' || role as grant from radcore.role_grants
-      where permission in ('employees:read', 'employees:write', 'cost:read') order by permission, role`);
+      where permission in ('employees:read', 'employees:write', 'cost:read')
+        and role in (select role from radcore.role_templates) order by permission, role`);
     expect(rows.map((r) => r.grant)).toEqual([
       ...['accounts', 'admin', 'owner', 'stores'].map((r) => `cost:read ${r}`),
       ...['accounts', 'admin', 'hr', 'operations', 'owner', 'service_head'].map((r) => `employees:read ${r}`),
@@ -114,9 +135,9 @@ describe.skipIf(!url || !superUrl)('the employee master', () => {
   // Sarthak, 15 Nov: the new keys stay dynamic, so an owner gives the service manager cost:read on the role screen. Done
   // inside a transaction that's rolled back, so the shared database's grants stay as shipped for the other files.
   it('lets an owner grant cost:read to the service manager role', async () => {
-    const [user] = (await su.query<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
+    const [user] = await asSuper<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
       password_set_at, role) values ($1, 'Owner', 'active', '$argon2id$v=19$m=19456,t=2,p=1$x$y', now(), 'owner') returning id`,
-    [`owner.${tag().toLowerCase()}@example.in`])).rows;
+    [`owner.${tag().toLowerCase()}@example.in`]);
     const owner = (await runInTransaction(db, WRITE, SYSTEM, randomUUID(), (ctx) => principalFor(ctx, user?.id ?? ''))) ?? SYSTEM;
     const seen = { grants: [] as string[] };
     const done = await runInTransaction(db, WRITE, owner, randomUUID(), async (ctx: Ctx) => {
