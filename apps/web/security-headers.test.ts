@@ -80,4 +80,15 @@ describe('content security policy', () => {
     });
     expect(proxy(req).headers.get('x-middleware-request-x-radcore-asked-path')).toBe('/admin/users?status=invited');
   });
+
+  it.each([{ 'next-router-prefetch': '1' }, { purpose: 'prefetch' }])(
+    'on a prefetch (%j) removes a sent asked-path header, and sets no CSP (e2e on #177)', (prefetch) => {
+      const res = proxy(new NextRequest('http://127.0.0.1:3000/admin/roles', {
+        headers: { ...prefetch, 'x-radcore-asked-path': '/account/sessions' },
+      }));
+      // NextResponse.next({ request }) lists the request's headers in x-middleware-override-headers: removed means absent.
+      expect(res.headers.get('x-middleware-override-headers')?.split(',')).not.toContain('x-radcore-asked-path');
+      expect(res.headers.get('x-middleware-request-x-radcore-asked-path')).toBeNull();
+      expect(res.headers.get('content-security-policy')).toBeNull();
+    });
 });
