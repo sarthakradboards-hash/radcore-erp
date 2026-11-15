@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { ASKED_PATH_HEADER } from './components/auth/safe-next.ts';
 import { filesOrigin } from './files-origin.ts';
 
 // RC-146. The App Router streams each page's data in inline scripts that differ per request, so the hash list of
@@ -33,6 +34,11 @@ export function proxy(request: NextRequest) {
   const csp = contentSecurityPolicy(nonce, process.env.NODE_ENV === 'development', filesOrigin(process.env));
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('Content-Security-Policy', csp);
+  // The page asked for, for the (app) layout's sign-in redirect (RAD-55). Always set here, so a value the browser sent
+  // is overwritten; Next's own _rsc cache-buster is left out.
+  const asked = request.nextUrl.clone();
+  asked.searchParams.delete('_rsc');
+  requestHeaders.set(ASKED_PATH_HEADER, `${asked.pathname}${asked.search}`);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', csp);
   return response;

@@ -73,4 +73,11 @@ describe('content security policy', () => {
     expect(nonces[0]).toMatch(/^[A-Za-z0-9+/=]{40,}$/);
     expect(nonces[0]).not.toBe(nonces[1]);
   });
+
+  it('passes the page asked for to the renderer, without _rsc, and overwrites one the browser sent (RAD-55)', () => {
+    const req = new NextRequest('http://127.0.0.1:3000/admin/users?status=invited&_rsc=abc12', {
+      headers: { 'x-radcore-asked-path': '//evil.example' },
+    });
+    expect(proxy(req).headers.get('x-middleware-request-x-radcore-asked-path')).toBe('/admin/users?status=invited');
+  });
 });

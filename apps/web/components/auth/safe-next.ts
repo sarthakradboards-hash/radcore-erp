@@ -3,7 +3,6 @@
 
 /**
  * The path to open after sign-in, given the `next` query value and this site's origin. Always a same-origin path.
- * @public sign-in screen API: its first caller is RAD-55's sign-in page.
  */
 export function safeNext(next: string | null | undefined, origin: string): string {
   // Browsers treat "\" as "/" in URLs, so "/\evil.example" would leave the site.
@@ -21,4 +20,17 @@ export function safeNext(next: string | null | undefined, origin: string): strin
   } catch {
     return '/';
   }
+}
+
+/** The page the proxy says was asked for (ASKED_PATH_HEADER), set on every page request so a server layout can read it. */
+export const ASKED_PATH_HEADER = 'x-radcore-asked-path';
+
+/**
+ * Where to send someone who isn't signed in, so they come back to the page they asked for (RAD-55). The path goes
+ * through safeNext here as well as on the sign-in page, so a crafted one never even reaches the link. Only the
+ * path matters, so any origin will do for the check.
+ */
+export function signInHref(asked: string | null | undefined): string {
+  const next = safeNext(asked, 'https://radcore.invalid');
+  return next === '/' ? '/sign-in' : `/sign-in?next=${encodeURIComponent(next)}`;
 }
