@@ -1,7 +1,7 @@
 // lib-stock's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every contract
 // file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, searchText, skuString,
+  defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, searchText, skuString,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 
@@ -115,6 +115,21 @@ const locationCode = () => z.string().trim().min(1, 'Enter a code').max(20)
   .regex(/^[A-Za-z0-9][A-Za-z0-9-]*$/, 'Use letters, digits and -');
 const locationName = () => z.string().trim().min(1, 'Enter a name').max(120);
 const status = z.enum(['active', 'inactive']);
+
+/** Each kind, in LOCATION_KINDS' order, with the label screens show and whether stock there may be sold. A location's
+ * answers carry only its kind's code; screens and the masters workbook take the label from here. */
+export const listLocationKinds = defineContract({
+  method: 'GET', path: '/stock/location-kinds', auth: 'session', perm: 'locations:read', tx: read, input: z.object({}),
+  output: z.object({ kinds: z.array(z.object({ kind: locationKind, label: z.string(), sellable: z.boolean() })) }),
+});
+
+/** Renames one kind's label; `null` puts its default back. The code stays. label_in_use: another kind already shows
+ * this label, compared without case or outer spaces, so two kinds never look the same. */
+export const setLocationKindLabel = defineContract({
+  method: 'PUT', path: '/stock/location-kinds/:kind', auth: 'session', perm: 'locations:write', tx: write,
+  input: z.object({ kind: locationKind, label: locationKindLabel().nullable() }), output: z.object({}),
+  errors: ['label_in_use'],
+});
 
 const location = z.object({ id: idString(), code: z.string(), name: z.string(), kind: locationKind, active: z.boolean() });
 

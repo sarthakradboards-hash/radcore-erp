@@ -81,7 +81,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Item pictures (RAD-89): uploaded with the items key; no download route, since they're viewed inline.
   'POST /files/item-picture': 'items:write',
   'POST /files/item-picture/:id/confirm': 'items:write',
-  // Stock (RAD-92): locations.
+  // Stock (RAD-92): locations, and their kinds' labels.
+  'GET /stock/location-kinds': 'locations:read',
+  'PUT /stock/location-kinds/:kind': 'locations:write',
   'GET /stock/locations': 'locations:read',
   'POST /stock/locations': 'locations:write',
   'PATCH /stock/locations/:id': 'locations:write',
@@ -180,6 +182,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/item-picture': PLATFORM,
   'POST /files/item-picture/:id/confirm': PLATFORM,
   // Stock's routes reach lib-stock and, through it, lib-platform.
+  'GET /stock/location-kinds': STOCK,
+  'PUT /stock/location-kinds/:kind': STOCK,
   'GET /stock/locations': STOCK,
   'POST /stock/locations': STOCK,
   'PATCH /stock/locations/:id': STOCK,
