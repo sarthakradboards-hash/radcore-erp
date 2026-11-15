@@ -82,7 +82,9 @@ describe.skipIf(!url || !superUrl)('locations', () => {
   // The architect on RAD-92, from the plan's role table: everyone who touches stock reads locations; admin writes them.
   it('grants locations:read to every role but HR and marketing, and locations:write to admin only', async () => {
     const { rows } = await admin_.query<{ role: string; permission: string }>(
-      "select role, permission from radcore.role_grants where permission like 'locations:%' order by permission, role");
+      // The built-in roles only: another file's test copies roles, and its copies hold these keys too (auditor-2).
+      `select role, permission from radcore.role_grants where permission like 'locations:%'
+        and role in (select role from radcore.role_templates) order by permission, role`);
     expect(rows.map((r) => `${r.permission} ${r.role}`)).toEqual([
       ...['accounts', 'admin', 'counter', 'operations', 'owner', 'sales', 'service_head', 'stores', 'technician']
         .map((r) => `locations:read ${r}`), 'locations:write admin']);
