@@ -82,6 +82,10 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /stock/locations': 'locations:read',
   'POST /stock/locations': 'locations:write',
   'PATCH /stock/locations/:id': 'locations:write',
+  // HR (RAD-92): the employee master.
+  'GET /hr/employees': 'employees:read',
+  'POST /hr/employees': 'employees:write',
+  'PATCH /hr/employees/:id': 'employees:write',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -105,6 +109,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
  * stops, fails CI until its line here changes, in the same review. */
 const PLATFORM = ['lib-platform'];
 const STOCK = ['lib-platform', 'lib-stock'];
+const HR = ['lib-hr', 'lib-platform'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -173,6 +178,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /stock/locations': STOCK,
   'POST /stock/locations': STOCK,
   'PATCH /stock/locations/:id': STOCK,
+  // HR's routes reach lib-hr and, through it, lib-platform.
+  'GET /hr/employees': HR,
+  'POST /hr/employees': HR,
+  'PATCH /hr/employees/:id': HR,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,
