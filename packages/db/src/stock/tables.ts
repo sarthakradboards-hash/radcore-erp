@@ -1,4 +1,4 @@
-// lib-stock's tables (ADR-001 §3, §5). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
+// lib-stock's tables (ADR-001 §3, §5): items (RAD-89) and locations (RAD-92). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, smallint, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, radcoreTable, trigramIndex } from '../columns.ts';
@@ -53,4 +53,24 @@ export const items = radcoreTable('items', {
   check('ck_items_hsn', sql`${t.hsn} ~ '^[0-9]{4}([0-9]{2}){0,2}$'`),
   check('ck_items_barcode', sql`${t.barcode} ~ '^[!-~]{1,48}$'`),
   check('ck_items_chassis', sql`not ${t.hasChassis} or ${t.serialised}`),
+]);
+
+/**
+ * A place stock can be: the sales floor, the stock room, a service bay, a franchisee, a job worker. Its kind is one
+ * of lib-common's fixed LOCATION_KINDS (ADR-005 §4). Its code is unique whatever its case or spacing (`code_key`).
+ * Switched off, never deleted (ADR-005 §3, D-12). A franchisee's or job worker's party comes later, expand-only.
+ */
+export const locations = radcoreTable('locations', {
+  id: id(),
+  code: boundedText({ max: 20 }).notNull(),
+  name: boundedText({ max: 120 }).notNull(),
+  kind: text().notNull(),
+  active: boolean().notNull().default(true),
+  codeKey: text().notNull().generatedAlwaysAs(sql`upper(btrim(code))`),
+}, (t) => [
+  // LOCATION_KINDS' codes, written out because L1 allows only a plain `sql` here; tables.test.ts holds the two equal.
+  check('ck_locations_kind',
+    sql`${t.kind} in ('store', 'stores', 'service_bay', 'franchisee', 'rejected', 'demo', 'job_work', 'in_transit')`),
+  uniqueIndex('ux_locations_code_key').on(t.codeKey),
+  index('ix_locations_kind').on(t.kind),
 ]);
