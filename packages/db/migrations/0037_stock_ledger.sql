@@ -97,7 +97,7 @@ CREATE VIEW "radcore"."v_schema_missing_triggers" AS (select n.nspname::text as 
       where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal));
 --> statement-breakpoint
 -- RAD-24's rule for a view's migration: no writing through a view, since a simple view writes as its owner.
-REVOKE INSERT, UPDATE, DELETE ON "radcore"."v_schema_missing_triggers" FROM radcore_app;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "radcore"."v_schema_missing_triggers" FROM radcore_app;
 --> statement-breakpoint
 -- The stock ledger is append-only (ADR-005 §7, RAD-93): an update, delete or truncate raises RA001. A correction is a
 -- new mirror-image row, never an edit.
