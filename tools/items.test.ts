@@ -159,5 +159,14 @@ describe.skipIf(!url)('items and units of measure', { timeout: 30_000 }, () => {
     expect([await code(run((ctx) => dropItemPicture(ctx, { id, fileId: ready }))), await code(run((ctx) => dropItemPicture(ctx, { id, fileId: ready })))])
       .toEqual(['ok', 'not_found']);
     expect((await run((ctx) => getItemById(ctx, { id }))).pictures).toHaveLength(7);
+    // The gap a removed picture leaves is filled, never a place past the last (the auditor on #178).
+    const full = await run((ctx) => getItemById(ctx, { id }));
+    const middle = full.pictures[3]?.fileId ?? '';
+    expect(await attach(await file('item_picture', 'ready'))).toBe('ok');
+    expect(await code(run((ctx) => dropItemPicture(ctx, { id, fileId: middle })))).toBe('ok');
+    const refill = await file('item_picture', 'ready');
+    expect(await attach(refill)).toBe('ok');
+    const order = (await run((ctx) => getItemById(ctx, { id }))).pictures.map((p) => p.fileId);
+    expect([order.length, order[3]]).toEqual([8, refill]);
   });
 });

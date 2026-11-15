@@ -2,7 +2,7 @@
 // the tables' triggers. A quantity follows its item's unit (RC-162): checkQuantity is what every stock document calls.
 import { after, itemCategories, itemPictures, items, searchWords, stockTx, unitsOfMeasure } from '@radcore/db/stock';
 import { AppError, decodeCursor, encodeCursor, readyFile, viewLinks, type Ctx } from '@radcore/lib-platform';
-import { and, asc, count, eq, inArray, max, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   attachItemPicture, createItem, createItemCategory, getItem, listItemCategories, listItems, listUnitsOfMeasure, removeItemPicture,
@@ -112,16 +112,19 @@ export async function getItemById(ctx: Ctx, { id }: In<typeof getItem>): Promise
   return answer;
 }
 
-/** POST /items/:id/pictures: the file must be a ready item picture; it goes last. The item's row is locked, so two
- * pictures added at once take turns and never share a position. */
+/** POST /items/:id/pictures: the file must be a ready item picture; it takes the lowest free place, so a gap left by
+ * a removed picture is filled. The item's row is locked, so two pictures added at once take turns and never share a
+ * place (the auditor on #178: the next after the last could be 8, past the CHECK). */
 export async function addItemPicture(ctx: Ctx, { id, fileId }: In<typeof attachItemPicture>): Promise<Out<typeof attachItemPicture>> {
   const tx = stockTx(ctx);
   const [item] = await tx.select({ id: items.id }).from(items).where(eq(items.id, id)).limit(1).for('update');
   if (item === undefined) throw new AppError('not_found', 'There is no such item');
   await readyFile(ctx, 'item_picture', fileId);
-  const [held] = await tx.select({ n: count(), last: max(itemPictures.position) }).from(itemPictures).where(eq(itemPictures.itemId, id));
-  if ((held?.n ?? 0) >= MAX_PICTURES) throw new AppError('too_many_pictures', `An item has at most ${MAX_PICTURES} pictures`);
-  await uniquely(tx.insert(itemPictures).values({ fileId, itemId: id, position: (held?.last ?? -1) + 1 }),
+  const taken = new Set((await tx.select({ position: itemPictures.position }).from(itemPictures).where(eq(itemPictures.itemId, id)))
+    .map((p) => p.position));
+  const position = Array.from({ length: MAX_PICTURES }, (_, i) => i).find((i) => !taken.has(i));
+  if (position === undefined) throw new AppError('too_many_pictures', `An item has at most ${MAX_PICTURES} pictures`);
+  await uniquely(tx.insert(itemPictures).values({ fileId, itemId: id, position }),
     { item_pictures_pkey: new AppError('picture_attached', 'This picture is already on an item') });
   return {};
 }
