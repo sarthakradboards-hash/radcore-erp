@@ -80,9 +80,10 @@ describe.skipIf(!url)('roles and record scope', () => {
   });
 
   it("loads nobody who is gone, disabled or not a person, and gives a role's keys and nothing more", async () => {
-    // The plan's Store role holds only My work's key among M1's: nothing is added in code (ADR-001 §6a).
+    // The plan's Store role holds My work's key and, from M2, reading locations (RAD-92): exactly its grants, nothing
+    // added in code (ADR-001 §6a).
     const id = await activePerson('counter');
-    expect((await load(`user:${id}`))?.permissions).toEqual(['session:read']);
+    expect((await load(`user:${id}`))?.permissions).toEqual(['locations:read', 'session:read']);
     await sql("update radcore.users set status = 'disabled' where id = $1", [id]);
     expect(await load(`user:${id}`)).toBeNull();
     expect(await load(`user:${randomUUID()}`)).toBeNull();
