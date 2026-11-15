@@ -243,8 +243,15 @@
     {
       "idx": 34,
       "version": "7",
-      "when": 1794719139471,
-      "tag": "0034_number_counters",
+      "when": 1794719109156,
+      "tag": "0034_locations",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794720722467,
+      "tag": "0035_number_counters",
       "breakpoints": true
     }
   ]

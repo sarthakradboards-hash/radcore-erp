@@ -53,6 +53,17 @@ html { scroll-padding-top: calc(env(safe-area-inset-top) + var(--shell-header-h)
 .shell-user { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-muted);
   font-size: var(--text-sm); }
 .shell-user p { margin: 0; }
+/* Sign out's failure alert hangs just below the header bar instead of inside it, so the sticky header keeps the one
+   row the scroll padding allows for (WCAG 2.4.11; e2e on #176). */
+.shell-user [role="alert"] {
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+}
 /* A phone: the name stays for screen readers only, so the header keeps one row of --shell-header-h and the
    scroll padding still clears it (WCAG 2.4.11). Sign out, and its failure alert, stay in view (auditor-2 on #169). */
 @media (max-width: 30rem) {
