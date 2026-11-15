@@ -81,6 +81,10 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Item pictures (RAD-89): uploaded with the items key; no download route, since they're viewed inline.
   'POST /files/item-picture': 'items:write',
   'POST /files/item-picture/:id/confirm': 'items:write',
+  // Stock (RAD-92): locations.
+  'GET /stock/locations': 'locations:read',
+  'POST /stock/locations': 'locations:write',
+  'PATCH /stock/locations/:id': 'locations:write',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -170,6 +174,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/import/:id/download': PLATFORM,
   'POST /files/item-picture': PLATFORM,
   'POST /files/item-picture/:id/confirm': PLATFORM,
+  // Stock's routes reach lib-stock and, through it, lib-platform.
+  'GET /stock/locations': STOCK,
+  'POST /stock/locations': STOCK,
+  'PATCH /stock/locations/:id': STOCK,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,

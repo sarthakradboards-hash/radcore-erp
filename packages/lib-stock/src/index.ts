@@ -4,3 +4,4 @@ export {
   renameCategory,
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
+export { addPlace, listPlaces, updatePlace } from './services/locations.ts';
