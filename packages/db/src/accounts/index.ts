@@ -4,6 +4,7 @@ import * as tables from './tables.ts';
 
 export { notInNonEmpty } from '../conditions.ts';
 export * from './tables.ts';
+export { after, searchWords } from '../lists.ts';
 
 /** accounts's module transaction: `accountsTx(ctx)` reads, and writes only, accounts's own tables (ADR-002 §4). */
 export const accountsTx = moduleTx({ ...tables });

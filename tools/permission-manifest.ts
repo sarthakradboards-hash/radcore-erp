@@ -63,6 +63,12 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // The company profile (RAD-88): one company, set by whoever holds company:write.
   'GET /admin/company': 'company:read',
   'PUT /admin/company': 'company:write',
+  // Parties (RAD-90): credit terms only with parties:manage.
+  'GET /parties': 'parties:read',
+  'GET /parties/:id': 'parties:read',
+  'POST /parties': 'parties:write',
+  'PATCH /parties/:id': 'parties:write',
+  'PUT /parties/:id/credit': 'parties:manage',
   // Files, by kind (RAD-43): each kind its own pair of keys.
   'POST /files/photo': 'photo_files:write',
   'POST /files/photo/:id/confirm': 'photo_files:write',
@@ -147,6 +153,11 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // lib-accounts' services, which run under lib-platform's.
   'GET /admin/company': ['lib-accounts', 'lib-platform'],
   'PUT /admin/company': ['lib-accounts', 'lib-platform'],
+  'GET /parties': ['lib-accounts', 'lib-platform'],
+  'GET /parties/:id': ['lib-accounts', 'lib-platform'],
+  'POST /parties': ['lib-accounts', 'lib-platform'],
+  'PATCH /parties/:id': ['lib-accounts', 'lib-platform'],
+  'PUT /parties/:id/credit': ['lib-accounts', 'lib-platform'],
   'GET /admin/audit/tables': PLATFORM,
   'GET /admin/security-events': PLATFORM,
   'POST /files/photo': PLATFORM,
