@@ -12,7 +12,8 @@
 }
 
 .kit-field { display: grid; gap: var(--space-1); }
-.kit-field label { font-weight: 600; }
+.kit-field label, .kit-field-label { font-weight: 600; }
+.kit-field-value { margin: 0; overflow-wrap: anywhere; }
 .kit-field input, .kit-field textarea {
   min-block-size: var(--field-h);
   padding: var(--space-2);
