@@ -275,8 +275,11 @@ export const dataExports = radcoreTable('exports', {
   rows: integer(),
   storeKey: text(),
   failure: text(),
+  // The file's format (RAD-92): a list's CSV, or a workbook's XLSX. It names the download.
+  format: text().notNull().default('csv'),
 }, (t) => [
   uniqueIndex('ux_exports_store_key').on(t.storeKey),
+  check('ck_exports_format', sql`${t.format} in ('csv', 'xlsx')`),
   check('ck_exports_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'`),
   check('ck_exports_status', sql`${t.status} in ('queued', 'ready', 'failed')`),
   check('ck_exports_failure', sql`(${t.status} = 'failed') = (${t.failure} is not null)

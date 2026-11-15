@@ -5,7 +5,10 @@ import {
   sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
-export { downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, type ExportContract } from './export/contract.ts';
+export {
+  downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, mastersExport, workbookContract, type ExportContract,
+  type WorkbookContract,
+} from './export/contract.ts';
 import { FILE_KINDS, type FileKind } from './files/kinds.ts';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */
