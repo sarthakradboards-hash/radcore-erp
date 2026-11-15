@@ -22,3 +22,13 @@ test('a browser can’t steer the sign-in link: the proxy overwrites a sent aske
   expect(res.status()).toBe(307);
   expect(res.headers()['location']).toMatch(/\/sign-in\?next=%2Fadmin%2Froles$/);
 });
+
+for (const prefetch of [{ 'next-router-prefetch': '1' }, { purpose: 'prefetch' }]) {
+  test(`on a prefetch (${Object.keys(prefetch)[0]}), a sent asked-path header never reaches ?next= (RAD-55, e2e on #177)`, async ({ request }) => {
+    const res = await request.get('/admin/roles', {
+      maxRedirects: 0, headers: { ...prefetch, 'x-radcore-asked-path': '/account/sessions' },
+    });
+    expect(res.status()).toBe(307);
+    expect(res.headers()['location']).not.toContain('account');
+  });
+}
