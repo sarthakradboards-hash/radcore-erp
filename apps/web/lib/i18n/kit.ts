@@ -5,6 +5,8 @@ export const kit = {
   'kit.form.alreadySaved': 'This was already saved; check the list before saving again.',
   'kit.form.saved': 'Saved',
   'kit.dialog.close': 'Close',
+  'kit.masked': 'Hidden',
+  'kit.masked.ends': 'Hidden, ends {end}',
   'kit.reason.required': 'Say why, in your own words',
   'kit.reason.label': 'Reason',
   'kit.reason.hint': 'Kept with the record and shown in its history.',
