@@ -50,7 +50,14 @@ html { scroll-padding-top: calc(env(safe-area-inset-top) + var(--shell-header-h)
 .shell-header a { display: inline-flex; align-items: center; min-block-size: var(--tap); padding: 0 var(--space-3);
   border-radius: var(--radius-sm); }
 .shell-header a[aria-current="page"] { background: var(--surface-selected); color: var(--text); }
-.shell-user { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
+.shell-user { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-muted);
+  font-size: var(--text-sm); }
+.shell-user p { margin: 0; }
+/* A phone: the name stays for screen readers only, so the header keeps one row of --shell-header-h and the
+   scroll padding still clears it (WCAG 2.4.11). Sign out stays in view. */
+@media (max-width: 30rem) {
+  .shell-user p { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 #main { display: block; padding: var(--space-4); }
 #main:focus { outline: none; }
 
