@@ -1,5 +1,5 @@
 {
-  "id": "9bfad45a-efc9-4a88-add0-c98068547505",
+  "id": "c67d78e3-47e7-4eac-b862-a99011e780f4",
   "prevId": "1f24b596-8bc8-4cfe-9c00-3e7ab671c396",
   "version": "7",
   "dialect": "postgresql",
@@ -953,80 +953,6 @@
           "value": "\"radcore\".\"jobs_outbox\".\"attempts\" >= 0"
         }
       },
-      "isRLSEnabled": false
-    },
-    "radcore.number_counters": {
-      "name": "number_counters",
-      "schema": "radcore",
-      "columns": {
-        "series": {
-          "name": "series",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "financial_year": {
-          "name": "financial_year",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prefix": {
-          "name": "prefix",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last": {
-          "name": "last",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "pk_number_counters": {
-          "name": "pk_number_counters",
-          "columns": [
-            "series",
-            "financial_year"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "radcore.password_resets": {
@@ -2776,6 +2702,405 @@
         }
       },
       "isRLSEnabled": false
+    },
+    "radcore.item_categories": {
+      "name": "item_categories",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name_key": {
+          "name": "name_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_item_categories_name_key": {
+          "name": "ux_item_categories_name_key",
+          "columns": [
+            {
+              "expression": "name_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_item_categories_name": {
+          "name": "ck_item_categories_name",
+          "value": "char_length(\"radcore\".\"item_categories\".\"name\") <= 80"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.items": {
+      "name": "items",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sku_key": {
+          "name": "sku_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "upper(sku)",
+            "type": "stored"
+          }
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hsn": {
+          "name": "hsn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit": {
+          "name": "unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "barcode": {
+          "name": "barcode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serialised": {
+          "name": "serialised",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "has_chassis": {
+          "name": "has_chassis",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_items_sku_key": {
+          "name": "ux_items_sku_key",
+          "columns": [
+            {
+              "expression": "sku_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ux_items_barcode": {
+          "name": "ux_items_barcode",
+          "columns": [
+            {
+              "expression": "barcode",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_items_category_id": {
+          "name": "ix_items_category_id",
+          "columns": [
+            {
+              "expression": "category_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_items_unit": {
+          "name": "ix_items_unit",
+          "columns": [
+            {
+              "expression": "unit",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_items_name_trgm": {
+          "name": "ix_items_name_trgm",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "radcore_ext.gin_trgm_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "items_category_id_item_categories_id_fk": {
+          "name": "items_category_id_item_categories_id_fk",
+          "tableFrom": "items",
+          "tableTo": "item_categories",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "items_unit_units_of_measure_code_fk": {
+          "name": "items_unit_units_of_measure_code_fk",
+          "tableFrom": "items",
+          "tableTo": "units_of_measure",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "unit"
+          ],
+          "columnsTo": [
+            "code"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_items_name": {
+          "name": "ck_items_name",
+          "value": "char_length(\"radcore\".\"items\".\"name\") <= 200"
+        },
+        "ck_items_sku": {
+          "name": "ck_items_sku",
+          "value": "\"radcore\".\"items\".\"sku\" ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$'"
+        },
+        "ck_items_hsn": {
+          "name": "ck_items_hsn",
+          "value": "\"radcore\".\"items\".\"hsn\" ~ '^[0-9]{4}([0-9]{2}){0,2}$'"
+        },
+        "ck_items_barcode": {
+          "name": "ck_items_barcode",
+          "value": "\"radcore\".\"items\".\"barcode\" ~ '^[!-~]{1,48}$'"
+        },
+        "ck_items_chassis": {
+          "name": "ck_items_chassis",
+          "value": "not \"radcore\".\"items\".\"has_chassis\" or \"radcore\".\"items\".\"serialised\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.units_of_measure": {
+      "name": "units_of_measure",
+      "schema": "radcore",
+      "columns": {
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decimals": {
+          "name": "decimals",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_units_of_measure_name": {
+          "name": "ck_units_of_measure_name",
+          "value": "char_length(\"radcore\".\"units_of_measure\".\"name\") <= 60"
+        },
+        "ck_units_of_measure_code": {
+          "name": "ck_units_of_measure_code",
+          "value": "\"radcore\".\"units_of_measure\".\"code\" ~ '^[A-Z]{3}$'"
+        },
+        "ck_units_of_measure_decimals": {
+          "name": "ck_units_of_measure_decimals",
+          "value": "\"radcore\".\"units_of_measure\".\"decimals\" between 0 and 3"
+        }
+      },
+      "isRLSEnabled": false
     }
   },
   "enums": {},
@@ -2918,7 +3243,7 @@
           "notNull": false
         }
       },
-      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')\n    and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore'\n      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions',\n        'change_reasons', 'user_sign_ins', 'number_counters'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')\n    and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore'\n      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions',\n        'change_reasons', 'user_sign_ins'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
       "name": "v_schema_missing_triggers",
       "schema": "radcore",
       "isExisting": false,

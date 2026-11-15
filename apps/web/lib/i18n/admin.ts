@@ -29,6 +29,7 @@ export const admin = {
 
   'admin.users.title': 'People',
   'admin.users.search': 'Search by name or email',
+  'admin.users.search.names': 'Search by name',
   'admin.users.status': 'Show',
   'admin.users.status.all': 'Everyone',
   'admin.users.status.active': 'Active',

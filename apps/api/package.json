@@ -15,6 +15,7 @@
     "@radcore/lib-accounts": "*",
     "@radcore/lib-common": "*",
     "@radcore/lib-platform": "*",
+    "@radcore/lib-stock": "*",
     "express": "5.3.0"
   },
   "devDependencies": {

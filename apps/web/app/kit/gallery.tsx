@@ -1,6 +1,6 @@
 'use client';
 // Fake saves stand in for the API: each answers the way a refusing route does, with the error envelope (ADR-001 §7a).
-import { moneyString } from '@radcore/lib-common';
+import { moneyString, pii } from '@radcore/lib-common';
 import { useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import { Dialog } from '../../components/ui/dialog/dialog.tsx';
@@ -8,9 +8,12 @@ import { Menu } from '../../components/ui/dialog/menu.tsx';
 import { ReasonDialog } from '../../components/ui/dialog/reason-dialog.tsx';
 import { MaskedField, TextAreaField, TextField } from '../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../components/ui/form/form.tsx';
+import { Pii } from '../../components/ui/masked.tsx';
 import { ApiError } from '../../lib/api-client.ts';
 
-const party = z.object({ name: z.string().min(1, 'Enter a name'), phone: z.string().optional(), limit: moneyString(),
+// The phone arrives masked, as a pii() field does for a role without pii:read (RAD-40); the form never sends it.
+const party = z.object({ name: z.string().min(1, 'Enter a name'), phone: pii(z.string(), 'last4').optional(),
+  email: pii().optional(), limit: moneyString(),
   note: z.string() });
 
 const refuse = (issues: { path: string[]; message: string }[]) => new ApiError(400, {
@@ -31,7 +34,7 @@ export function Gallery({ children }: { children: ReactNode }) {
       <p>The name &quot;Taken&quot; is refused on the field, &quot;Elsewhere&quot; on a field not on screen, and
         &quot;Again&quot; as a save already made.</p>
       <Form aria-labelledby="party-form" schema={party}
-        defaultValues={{ name: 'Asha Traders', phone: '••••••3210', limit: '50000.00', note: '' }}
+        defaultValues={{ name: 'Asha Traders', phone: { masked: '••••••3210' }, email: 'asha@example.com', limit: '50000.00', note: '' }}
         onSubmit={async (values) => {
           if (values.name === 'Taken') throw refuse([{ path: ['name'], message: 'Another party has this name' }]);
           if (values.name === 'Elsewhere') throw refuse([{ path: ['gstin'], message: 'The GSTIN is not valid' }]);
@@ -41,12 +44,20 @@ export function Gallery({ children }: { children: ReactNode }) {
           setSent(JSON.stringify(values));
         }}>
         <TextField name="name" label="Name" autoComplete="off" />
-        <MaskedField name="phone" label="Phone" hint="Hidden for your role." />
+        <MaskedField name="phone" label="Phone" />
+        <MaskedField name="email" label="Email" hint="Shown to you; changed on the person's own page." />
         <TextField name="limit" label="Credit limit (₹)" inputMode="decimal" />
         <TextAreaField name="note" label="Note" />
         <SubmitButton>Save party</SubmitButton>
       </Form>
       <p>Last sent: <output aria-label="Last sent">{sent}</output></p>
+
+      <h2>Masked values</h2>
+      <dl aria-label="Masked values">
+        <dt>Email</dt><dd><Pii value={{ masked: '••••••' }} /></dd>
+        <dt>PAN</dt><dd><Pii value={{ masked: '••••••234F' }} /></dd>
+        <dt>City</dt><dd><Pii value="Pune" /></dd>
+      </dl>
 
       <h2>Actions</h2>
       <Menu label="Actions for INV-0042" items={[
