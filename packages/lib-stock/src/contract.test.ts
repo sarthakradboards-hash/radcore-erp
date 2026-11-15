@@ -12,7 +12,8 @@ const ok = (c: { input: { safeParse(v: unknown): { success: boolean } } }, v: un
 
 describe('the item contracts', () => {
   it('read with items:read and change with items:write', () => {
-    const all = Object.values(contracts);
+    // The item contracts: the entry also holds locations' (RAD-92), checked by their own keys in tools/locations.test.ts.
+    const all = Object.values(contracts).filter((c) => !c.path.startsWith('/stock/locations'));
     expect(all.every((c) => c.perm === (c.method === 'GET' ? 'items:read' : 'items:write'))).toBe(true);
     expect(all.every((c) => c.tx.readOnly === (c.method === 'GET'))).toBe(true);
   });
