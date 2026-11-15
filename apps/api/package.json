@@ -16,6 +16,7 @@
     "@radcore/lib-common": "*",
     "@radcore/lib-hr": "*",
     "@radcore/lib-platform": "*",
+    "@radcore/lib-stock": "*",
     "express": "5.3.0"
   },
   "devDependencies": {

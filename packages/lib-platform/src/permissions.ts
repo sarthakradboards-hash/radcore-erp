@@ -26,6 +26,8 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'audit:read', module: 'Admin', label: 'Read the audit trail and security events' },
   { key: 'company:read', module: 'Company', label: 'See the company’s name, GSTIN and address' },
   { key: 'company:write', module: 'Company', label: 'Set the company’s name, GSTIN and address, which every invoice prints', secondFactor: true },
+  { key: 'items:read', module: 'Items', label: 'See items, their categories and units' },
+  { key: 'items:write', module: 'Items', label: 'Add and change items and their categories' },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
   { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'], secondFactor: true },
   { key: 'photo_files:read', module: 'Files', label: 'See job photos' },
@@ -36,6 +38,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'statement_files:write', module: 'Files', label: 'Upload bank statements', secondFactor: true },
   { key: 'import_files:read', module: 'Files', label: 'See import files' },
   { key: 'import_files:write', module: 'Files', label: 'Upload import files' },
+  // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so the keys name no records.
+  { key: 'locations:read', module: 'Stock', label: 'See locations' },
+  { key: 'locations:write', module: 'Stock', label: 'Add and change locations, switch them off' },
   // HR (M2-14, RAD-92): the employee master. Writing it reaches HR, so it needs the second factor (D-19); reading is a
   // directory whose contact details stay masked without pii:read. Any role may be granted either (Sarthak, 15 Nov).
   { key: 'employees:read', module: 'HR', label: 'See the employee list' },

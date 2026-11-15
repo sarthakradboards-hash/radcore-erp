@@ -5,6 +5,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import * as accounts from './accounts/tables.ts';
 import * as hr from './hr/tables.ts';
 import * as platform from './platform/tables.ts';
+import * as stock from './stock/tables.ts';
 import { applyRequestContext, type RequestContext } from './request-context.ts';
 import { bind, unbind, type RawTx, type Tx } from './tx.ts';
 
@@ -13,9 +14,10 @@ export type { Tx } from './tx.ts';
 export * from './accounts/tables.ts';
 export * from './hr/tables.ts';
 export * from './platform/tables.ts';
+export * from './stock/tables.ts';
 
 /** Every module's tables and relations, as they land: the same files drizzle.config.ts lists. */
-export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...accounts, ...hr });
+export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...accounts, ...hr, ...stock });
 
 /** The Drizzle client lib-platform builds on its pool. */
 export type Database = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;

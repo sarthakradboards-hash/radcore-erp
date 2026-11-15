@@ -3,6 +3,7 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { ASKED_PATH_HEADER, signInHref } from '../../components/auth/safe-next.ts';
 import { SessionProvider } from '../../components/shell/session-provider.tsx';
 import { Shell } from '../../components/shell/shell.tsx';
 import { readMe } from '../../lib/session/read-me.ts';
@@ -10,8 +11,8 @@ import { readMe } from '../../lib/session/read-me.ts';
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const h = await headers();
   const me = await readMe({ cookie: h.get('cookie'), forwardedFor: h.get('x-forwarded-for') });
-  // shortcut: no ?next= back to the page asked for, since a layout can't see its path; RAD-55 adds it with sign-in.
-  if (!me) redirect('/sign-in');
+  // Back to the page asked for after signing in: the proxy passes its path, since a layout can't see its own (RAD-55).
+  if (!me) redirect(signInHref(h.get(ASKED_PATH_HEADER)));
   return (
     <SessionProvider initial={me}>
       <Shell>{children}</Shell>
