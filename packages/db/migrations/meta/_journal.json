@@ -246,13 +246,6 @@
       "when": 1794719109156,
       "tag": "0034_locations",
       "breakpoints": true
-    },
-    {
-      "idx": 35,
-      "version": "7",
-      "when": 1794721278220,
-      "tag": "0035_parties",
-      "breakpoints": true
     }
   ]
 }
