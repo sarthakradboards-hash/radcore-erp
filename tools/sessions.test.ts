@@ -118,7 +118,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     expect(Math.abs(since(stored?.absolute) - SESSION_ABSOLUTE_SECONDS * 1000)).toBeLessThan(5000);
     expect(Math.abs(since(stored?.idle) - SESSION_IDLE_SECONDS * 1000)).toBeLessThan(5000);
     expect(await s.principalOf(token ?? '')).toEqual({ kind: 'user', userId: s.userId, sessionId: stored?.id, role: 'hr',
-      permissions: ['resume_files:read', 'resume_files:write', 'session:read'], ownScope: [] });
+      permissions: ['employees:read', 'employees:write', 'resume_files:read', 'resume_files:write', 'session:read'], ownScope: [] });
     expect(await s.events()).toEqual([{ kind: 'sign_in', detail: {} }]);
   });
 
@@ -209,7 +209,7 @@ describe.skipIf(!url)('sign-in sessions', () => {
     const token = await s.signInNow();
     const stored = await s.row(token);
     expect(await run(await s.as(token), getMyself)).toEqual({ user: { id: s.userId, displayName: 'Asha Rao' },
-      permissions: ['resume_files:read', 'resume_files:write', 'session:read'], session: { idleExpiresAt: stored?.idle.toISOString(),
+      permissions: ['employees:read', 'employees:write', 'resume_files:read', 'resume_files:write', 'session:read'], session: { idleExpiresAt: stored?.idle.toISOString(),
         // HR needs a second factor (D-19, RAD-35), and this person has none yet.
         absoluteExpiresAt: stored?.absolute.toISOString() }, secondFactor: 'enrolment_required' });
   });
