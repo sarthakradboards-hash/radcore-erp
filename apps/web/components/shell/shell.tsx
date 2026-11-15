@@ -26,7 +26,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </ul>
         </nav>
         <div className="shell-user">
-          <p>{t('shell.signedInAs', { name: me.user.displayName })}</p>
+          <p className="shell-user-name">{t('shell.signedInAs', { name: me.user.displayName })}</p>
           <SignOutButton userId={me.user.id} />
         </div>
       </header>
