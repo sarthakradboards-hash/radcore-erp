@@ -2,7 +2,8 @@
 // and a request answers every setting from its one read.
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineSetting, settingRow, Settings } from '../src/index.ts';
+import { defineSetting, saveSetting, settingRow, Settings, type Ctx } from '../src/index.ts';
+import { linkMaxDays } from './links.ts';
 
 const prefix = defineSetting('sales.invoice_prefix', z.string().regex(/^[A-Z]{2,5}$/), 'INV');
 const idleMinutes = defineSetting('platform.session_idle_minutes', z.number().int().min(5).max(480), 30);
@@ -41,5 +42,16 @@ describe('settingRow', () => {
   it('checks a value before it can be stored', () => {
     expect(settingRow(prefix, 'RB')).toEqual({ key: 'sales.invoice_prefix', value: 'RB' });
     expect(() => settingRow(idleMinutes, 2)).toThrow();
+  });
+});
+
+// auditor-2 on #181: lib-platform exports some of its own settings, so a module's service could pass one in. saveSetting
+// refuses any platform.* setting before it touches the database. A module's own (stock.*, sales.*) is written as before,
+// on PostgreSQL, in tools/location-kind-labels.test.ts.
+describe('saveSetting', () => {
+  it.each([idleMinutes, linkMaxDays])("refuses lib-platform's own setting $key, before any write", async (def) => {
+    const ctx = new Proxy({}, { get: () => { throw new Error('the database was reached'); } }) as Ctx;
+    await expect(saveSetting(ctx, def, 1)).rejects.toThrow(/is lib-platform's: a module can't change it/);
+    await expect(saveSetting(ctx, def, null)).rejects.toThrow(/is lib-platform's/);
   });
 });
