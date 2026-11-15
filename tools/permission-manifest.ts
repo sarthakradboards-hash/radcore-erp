@@ -51,6 +51,15 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /admin/audit': 'audit:read',
   'GET /admin/audit/tables': 'audit:read',
   'GET /admin/security-events': 'audit:read',
+  // Items, their categories and units of measure (RAD-89).
+  'GET /units-of-measure': 'items:read',
+  'GET /item-categories': 'items:read',
+  'POST /item-categories': 'items:write',
+  'PATCH /item-categories/:id': 'items:write',
+  'GET /items': 'items:read',
+  'GET /items/:id': 'items:read',
+  'POST /items': 'items:write',
+  'PATCH /items/:id': 'items:write',
   // The company profile (RAD-88): one company, set by whoever holds company:write.
   'GET /admin/company': 'company:read',
   'PUT /admin/company': 'company:write',
@@ -130,6 +139,15 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /admin/roles/:key/delete': PLATFORM,
   'POST /admin/roles/:key/reset': PLATFORM,
   'GET /admin/audit': PLATFORM,
+  // lib-stock's services, which run under lib-platform's.
+  'GET /units-of-measure': STOCK,
+  'GET /item-categories': STOCK,
+  'POST /item-categories': STOCK,
+  'PATCH /item-categories/:id': STOCK,
+  'GET /items': STOCK,
+  'GET /items/:id': STOCK,
+  'POST /items': STOCK,
+  'PATCH /items/:id': STOCK,
   // lib-accounts' services, which run under lib-platform's.
   'GET /admin/company': ['lib-accounts', 'lib-platform'],
   'PUT /admin/company': ['lib-accounts', 'lib-platform'],
