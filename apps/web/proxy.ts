@@ -29,7 +29,18 @@ export function contentSecurityPolicy(nonce: string, dev: boolean, files: string
   ].join('; ');
 }
 
+/** A Next router prefetch: it renders no page of its own, so it gets no CSP and no asked path. */
+const isPrefetch = (request: NextRequest) =>
+  request.headers.has('next-router-prefetch') || request.headers.get('purpose') === 'prefetch';
+
 export function proxy(request: NextRequest) {
+  if (isPrefetch(request)) {
+    // The layout must only ever see an asked path this proxy set, so one the browser sent is removed here too
+    // (e2e on #177): one rule, in one place, for every page request.
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete(ASKED_PATH_HEADER);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
   const csp = contentSecurityPolicy(nonce, process.env.NODE_ENV === 'development', filesOrigin(process.env));
   const requestHeaders = new Headers(request.headers);
@@ -45,9 +56,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Pages only: static files and prefetches carry no inline script. The other headers are in next.config.ts.
-  matcher: [{
-    source: '/((?!_next/static|_next/image|favicon.ico).*)',
-    missing: [{ type: 'header', key: 'next-router-prefetch' }, { type: 'header', key: 'purpose', value: 'prefetch' }],
-  }],
+  // Pages only: static files carry no inline script. Prefetches come through so the asked-path header is always the
+  // proxy's own, but get no CSP (isPrefetch). The other headers are in next.config.ts.
+  matcher: [{ source: '/((?!_next/static|_next/image|favicon.ico).*)' }],
 };
