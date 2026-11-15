@@ -12,24 +12,24 @@
 import {
   batches, stockMovementBatches, stockMovements, stockPositions, stockTx,
 } from '@radcore/db/stock';
-import { dec, roundMoney, roundRate, type Money } from '@radcore/lib-common';
+import { dec, roundMoney, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, isNull, or, sum } from 'drizzle-orm';
 
 /** A batch named on goods coming in: its number, and how many of the line's units are in it. */
-export type BatchIn = { readonly batchNo: string; readonly qty: string };
+export type BatchIn = { readonly batchNo: string; readonly qty: Quantity };
 /** A batch named on goods going out or moving: the batch's id, or null for "batch unknown", and how many units. */
-export type BatchOut = { readonly batchId: string | null; readonly qty: string };
+export type BatchOut = { readonly batchId: string | null; readonly qty: Quantity };
 
 /** Goods coming into a location at a rate, split by batch. */
 export type StockIn = { readonly itemId: string; readonly locationId: string; readonly sourceLineId?: string | null;
-  readonly qty: string; readonly rate: string; readonly batches: readonly BatchIn[] };
+  readonly qty: Quantity; readonly rate: Rate; readonly batches: readonly BatchIn[] };
 /** Goods going out of a location, split by the batches picked. */
 export type StockOut = { readonly itemId: string; readonly locationId: string; readonly sourceLineId?: string | null;
-  readonly qty: string; readonly batches: readonly BatchOut[] };
+  readonly qty: Quantity; readonly batches: readonly BatchOut[] };
 /** Goods moving from one location to another, split by the batches picked; they arrive in the same batches. */
 export type StockTransfer = { readonly itemId: string; readonly from: string; readonly to: string;
-  readonly sourceLineId?: string | null; readonly qty: string; readonly batches: readonly BatchOut[] };
+  readonly sourceLineId?: string | null; readonly qty: Quantity; readonly batches: readonly BatchOut[] };
 
 /** One document's stock: the document it comes from, its business date, and its lines in the order they post. */
 export type StockPosting = {
@@ -43,7 +43,7 @@ export type StockPosting = {
 
 /** What one movement posted: the journal engine's Stock in Hand line for it comes from its item, location and value. */
 export type PostedMovement = { readonly id: string; readonly itemId: string; readonly locationId: string;
-  readonly direction: 'in' | 'out'; readonly qty: string; readonly value: Money };
+  readonly direction: 'in' | 'out'; readonly qty: Quantity; readonly value: Money };
 
 /** A batch number as the database keys it (`batch_key`): upper case, without spaces or hyphens (§4a). */
 export const batchKey = (batchNo: string): string => batchNo.toUpperCase().replace(/[\s-]/g, '');
@@ -98,7 +98,7 @@ async function position(ctx: Ctx, itemId: string, locationId: string): Promise<{
 
 /** An issue's value (§4): all of it when it empties the location, so an empty location holds no value; otherwise the
  * share round(V × q / Q, 2). Beyond what's on hand it's refused (negative stock comes in RAD-93's second PR). */
-async function issueValue(ctx: Ctx, itemId: string, locationId: string, qty: string): Promise<Money> {
+async function issueValue(ctx: Ctx, itemId: string, locationId: string, qty: Quantity): Promise<Money> {
   const on = await position(ctx, itemId, locationId);
   const [q, Q] = [dec(qty), dec(on.qty)];
   if (q.gt(Q)) {
@@ -118,6 +118,14 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const outs = p.outs ?? [];
   const transfers = p.transfers ?? [];
   for (const [n, line] of [...ins, ...outs, ...transfers].entries()) {
+    if (!dec(line.qty).gt(0) || line.batches.some((b) => !dec(b.qty).gt(0))) {
+      throw new AppError('qty_not_positive', 'A quantity must be more than zero',
+        [{ path: ['lines', n, 'qty'], code: 'not_positive', message: 'Enter a quantity above zero' }]);
+    }
+    if ('from' in line && line.from === line.to) {
+      throw new AppError('transfer_same_location', 'A transfer must go to another location',
+        [{ path: ['lines', n, 'to'], code: 'same_location', message: 'Pick a different location' }]);
+    }
     const named = line.batches.reduce((s, b) => s.plus(dec(b.qty)), dec('0'));
     if (!named.eq(dec(line.qty))) {
       throw new AppError('batches_mismatch', 'The batches don’t add up to the quantity',
@@ -131,7 +139,7 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const base = { sourceTable: p.sourceTable, sourceId: p.sourceId, businessDate: p.businessDate };
   const posted: PostedMovement[] = [];
   const write = async (m: { itemId: string; locationId: string; sourceLineId?: string | null | undefined; direction: 'in' | 'out';
-    qty: string; value: Money; rate?: string }, rows: readonly { batchId: string | null; qty: string }[]) => {
+    qty: Quantity; value: Money; rate?: Rate }, rows: readonly { batchId: string | null; qty: Quantity }[]) => {
     const [row] = await tx.insert(stockMovements).values({ ...base, itemId: m.itemId, locationId: m.locationId,
       sourceLineId: m.sourceLineId ?? null, direction: m.direction, qty: m.qty, value: m.value, rate: m.rate ?? null })
       .returning({ id: stockMovements.id });

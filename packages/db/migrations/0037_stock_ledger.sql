@@ -67,6 +67,7 @@ CREATE TABLE "radcore"."stock_positions" (
 	CONSTRAINT "pk_stock_positions" PRIMARY KEY("item_id","location_id")
 );
 --> statement-breakpoint
+DROP VIEW "radcore"."v_schema_missing_triggers";--> statement-breakpoint
 ALTER TABLE "radcore"."batches" ADD CONSTRAINT "batches_item_id_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "radcore"."items"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."stock_movement_batches" ADD CONSTRAINT "fk_stock_movement_batches_movement" FOREIGN KEY ("movement_id","item_id") REFERENCES "radcore"."stock_movements"("id","item_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."stock_movement_batches" ADD CONSTRAINT "fk_stock_movement_batches_batch" FOREIGN KEY ("batch_id","item_id") REFERENCES "radcore"."batches"("id","item_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -82,6 +83,22 @@ CREATE INDEX "ix_stock_movements_item_location" ON "radcore"."stock_movements" U
 CREATE INDEX "ix_stock_movements_location" ON "radcore"."stock_movements" USING btree ("location_id");--> statement-breakpoint
 CREATE INDEX "ix_stock_movements_source" ON "radcore"."stock_movements" USING btree ("source_table","source_id");--> statement-breakpoint
 CREATE INDEX "ix_stock_positions_location" ON "radcore"."stock_positions" USING btree ("location_id");--> statement-breakpoint
+CREATE VIEW "radcore"."v_schema_missing_triggers" AS (select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)
+  where c.relkind in ('r', 'p') and not c.relispartition
+    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')
+    and left(n.nspname, 3) <> 'pg_'
+    and not (t.name = 'audit_row' and n.nspname = 'radcore'
+      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions',
+        'change_reasons', 'user_sign_ins', 'stock_positions'))
+    and not exists (select 1 from pg_catalog.pg_trigger g
+      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal));
+--> statement-breakpoint
+-- RAD-24's rule for a view's migration: no writing through a view, since a simple view writes as its owner.
+REVOKE INSERT, UPDATE, DELETE ON "radcore"."v_schema_missing_triggers" FROM radcore_app;
+--> statement-breakpoint
 -- The stock ledger is append-only (ADR-005 §7, RAD-93): an update, delete or truncate raises RA001. A correction is a
 -- new mirror-image row, never an edit.
 CREATE TRIGGER refuse_change BEFORE UPDATE OR DELETE ON radcore.stock_movements FOR EACH ROW EXECUTE FUNCTION radcore.refuse_change();
@@ -96,7 +113,11 @@ CREATE TRIGGER refuse_change BEFORE UPDATE OR DELETE ON radcore.stock_movement_b
 --> statement-breakpoint
 CREATE TRIGGER refuse_truncate BEFORE TRUNCATE ON radcore.stock_movement_batches FOR EACH STATEMENT EXECUTE FUNCTION radcore.refuse_change();
 --> statement-breakpoint
--- Stamped and audited like every table (ADR-005 §5, §7c): who posted each row and when.
+-- And by grants (ADR-005 §7): the app's login may only add rows.
+REVOKE UPDATE, DELETE, TRUNCATE ON radcore.stock_movements, radcore.batches, radcore.stock_movement_batches FROM radcore_app;
+--> statement-breakpoint
+-- Append-only ledgers are audited in full, every column kept (ADR-005 §7c): the audit row records the login and client
+-- address that wrote each row, which the row itself doesn't.
 SELECT radcore.audit_attach('stock_movements', keep => array['item_id', 'location_id', 'source_table', 'source_id',
   'source_line_id', 'direction', 'qty', 'value', 'rate', 'business_date', 'posted_at', 'reverses_movement_id']);
 --> statement-breakpoint
@@ -104,7 +125,8 @@ SELECT radcore.audit_attach('batches', keep => array['item_id', 'supplier_id', '
 --> statement-breakpoint
 SELECT radcore.audit_attach('stock_movement_batches', keep => array['movement_id', 'item_id', 'batch_id', 'qty']);
 --> statement-breakpoint
--- The lock rows (ADR-006 §1) hold no figures and are never removed: the app's login can't delete them.
-SELECT radcore.audit_attach('stock_positions');
+-- The lock rows (ADR-006 §1) hold only the key they're locked by, so they're machinery (ADR-005 §7c, the architect on
+-- RAD-93): stamped who-and-when, not row-audited. They're never removed: the app's login can't delete them.
+SELECT radcore.audit_attach('stock_positions', capture => false);
 --> statement-breakpoint
 REVOKE DELETE, TRUNCATE ON radcore.stock_positions FROM radcore_app;

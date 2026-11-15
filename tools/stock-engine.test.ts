@@ -7,6 +7,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
+import { quantityString, unitPriceString } from '@radcore/lib-common';
 import { addCategory, addItem, addPlace, postStock, type StockPosting } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -17,6 +18,9 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const DATE = '2026-11-15';
 const staff: Principal = { kind: 'user', userId: '00000000-0000-4000-8000-000000000095',
   permissions: ['items:write', 'locations:write'] };
+// The engine takes branded quantities and rates (ADR-006 §1 Types), as a contract's schema hands them over.
+const q = (s: string) => quantityString().parse(s);
+const r = (s: string) => unitPriceString().parse(s);
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 
 describe.skipIf(!url || !superUrl)('the stock engine', () => {
@@ -52,19 +56,19 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
       from radcore.stock_movements where item_id = $1 and location_id = $2`, [itemId, locationId]);
     return [Number(rows[0]?.qty).toFixed(0), Number(rows[0]?.value).toFixed(2)];
   };
-  const lot = (batchNo: string, qty: string) => ({ batchNo, qty });
+  const lot = (batchNo: string, qty: string) => ({ batchNo, qty: q(qty) });
 
   // F13: a transfer takes the source's average; demo stock keeps its own (RC-205).
   it('moves a unit to Demo at the Stores average, and a later receipt into Stores leaves the demo unit at its cost', async () => {
     const { itemId, places: [stores = '', demo = ''] } = await setup(['stores', 'demo']);
-    await post({ ins: [{ itemId, locationId: stores, qty: '4', rate: '61250', batches: [lot('S1', '4')] }] });
+    await post({ ins: [{ itemId, locationId: stores, qty: q('4'), rate: r('61250'), batches: [lot('S1', '4')] }] });
     const [{ batch } = { batch: '' }] = (await su.query<{ batch: string }>('select id as batch from radcore.batches where item_id = $1', [itemId])).rows;
-    const moved = await post({ transfers: [{ itemId, from: stores, to: demo, qty: '1', batches: [{ batchId: batch, qty: '1' }] }] });
+    const moved = await post({ transfers: [{ itemId, from: stores, to: demo, qty: q('1'), batches: [{ batchId: batch, qty: q('1') }] }] });
     expect(moved.map((m) => [m.direction, m.value])).toEqual([['out', '61250.00'], ['in', '61250.00']]);
     expect([await onHand(itemId, stores), await onHand(itemId, demo)]).toEqual([['3', '183750.00'], ['1', '61250.00']]);
-    await post({ ins: [{ itemId, locationId: stores, qty: '1', rate: '63000', batches: [lot('S2', '1')] }] });
+    await post({ ins: [{ itemId, locationId: stores, qty: q('1'), rate: r('63000'), batches: [lot('S2', '1')] }] });
     // Stores' average is now (183,750.00 + 63,000.00) / 4 = 61,687.50: an issue of one takes exactly that.
-    const [issued] = await post({ outs: [{ itemId, locationId: stores, qty: '1', batches: [{ batchId: batch, qty: '1' }] }] });
+    const [issued] = await post({ outs: [{ itemId, locationId: stores, qty: q('1'), batches: [{ batchId: batch, qty: q('1') }] }] });
     expect(issued?.value).toBe('61687.50');
     expect(await onHand(itemId, demo)).toEqual(['1', '61250.00']);
   });
@@ -72,42 +76,47 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
   // F14, and an issue that empties a location takes all of its value.
   it('issues at the average, and takes the exact remainder when a location is emptied', async () => {
     const { itemId, places: [shop = ''] } = await setup(['store']);
-    await post({ ins: [{ itemId, locationId: shop, qty: '7', rate: '200', batches: [lot('P1', '7')] }] });
+    await post({ ins: [{ itemId, locationId: shop, qty: q('7'), rate: r('200'), batches: [lot('P1', '7')] }] });
     const [{ batch } = { batch: '' }] = (await su.query<{ batch: string }>('select id as batch from radcore.batches where item_id = $1', [itemId])).rows;
-    const [short] = await post({ outs: [{ itemId, locationId: shop, qty: '1', batches: [{ batchId: batch, qty: '1' }] }] });
+    const [short] = await post({ outs: [{ itemId, locationId: shop, qty: q('1'), batches: [{ batchId: batch, qty: q('1') }] }] });
     expect([short?.value, await onHand(itemId, shop)]).toEqual(['200.00', ['6', '1200.00']]);
-    await post({ ins: [{ itemId, locationId: shop, qty: '3', rate: '233.33', batches: [lot('P1', '3')] }] });
-    const [all] = await post({ outs: [{ itemId, locationId: shop, qty: '9', batches: [{ batchId: batch, qty: '9' }] }] });
+    await post({ ins: [{ itemId, locationId: shop, qty: q('3'), rate: r('233.33'), batches: [lot('P1', '3')] }] });
+    const [all] = await post({ outs: [{ itemId, locationId: shop, qty: q('9'), batches: [{ batchId: batch, qty: q('9') }] }] });
     expect([all?.value, await onHand(itemId, shop)]).toEqual(['1899.99', ['0', '0.00']]);
   });
 
   // F21: a receipt split across two lots, then a delivery of 7 across both at 2,200.00 / 11; "L-2" and "l 2" are one batch.
   it('records each line by batch, one batch per item and number however it is written', async () => {
     const { itemId, places: [stores = ''] } = await setup(['stores']);
-    await post({ ins: [{ itemId, locationId: stores, qty: '10', rate: '200', batches: [lot('L1', '6'), lot('L-2', '4')] }] });
-    await post({ ins: [{ itemId, locationId: stores, qty: '1', rate: '200', batches: [lot('l 2', '1')] }] });
+    await post({ ins: [{ itemId, locationId: stores, qty: q('10'), rate: r('200'), batches: [lot('L1', '6'), lot('L-2', '4')] }] });
+    await post({ ins: [{ itemId, locationId: stores, qty: q('1'), rate: r('200'), batches: [lot('l 2', '1')] }] });
     const { rows: lots } = await su.query<{ id: string; key: string }>(
       'select id, batch_key as key from radcore.batches where item_id = $1 order by batch_key', [itemId]);
     expect(lots.map((l) => l.key)).toEqual(['L1', 'L2']);
     const [l1 = '', l2 = ''] = lots.map((l) => l.id);
-    const [out] = await post({ outs: [{ itemId, locationId: stores, qty: '7', batches: [{ batchId: l1, qty: '6' }, { batchId: l2, qty: '1' }] }] });
+    const [out] = await post({ outs: [{ itemId, locationId: stores, qty: q('7'), batches: [{ batchId: l1, qty: q('6') }, { batchId: l2, qty: q('1') }] }] });
     expect(out?.value).toBe('1400.00');
     const { rows } = await su.query<{ batch: string; qty: string }>(
       'select batch_id as batch, qty::text from radcore.stock_movement_batches where movement_id = $1 order by qty desc', [out?.id]);
     expect(rows.map((r) => [r.batch, Number(r.qty)])).toEqual([[l1, 6], [l2, 1]]);
   });
 
-  it("refuses a line whose batches don't add up, and an issue beyond what's on hand", async () => {
+  it("refuses a line whose batches don't add up, an issue beyond what's on hand, a quantity of zero and a transfer to itself", async () => {
     const { itemId, places: [stores = ''] } = await setup(['stores']);
-    expect(await failure({ ins: [{ itemId, locationId: stores, qty: '5', rate: '10', batches: [lot('X', '4')] }] })).toBe('batches_mismatch');
-    await post({ ins: [{ itemId, locationId: stores, qty: '2', rate: '10', batches: [lot('X', '2')] }] });
-    expect(await failure({ outs: [{ itemId, locationId: stores, qty: '3', batches: [{ batchId: null, qty: '3' }] }] })).toBe('not_enough_stock');
+    expect(await failure({ ins: [{ itemId, locationId: stores, qty: q('5'), rate: r('10'), batches: [lot('X', '4')] }] })).toBe('batches_mismatch');
+    await post({ ins: [{ itemId, locationId: stores, qty: q('2'), rate: r('10'), batches: [lot('X', '2')] }] });
+    expect(await failure({ outs: [{ itemId, locationId: stores, qty: q('3'), batches: [{ batchId: null, qty: q('3') }] }] })).toBe('not_enough_stock');
+    expect(await failure({ outs: [{ itemId, locationId: stores, qty: q('0'), batches: [] }] })).toBe('qty_not_positive');
+    expect(await failure({ ins: [{ itemId, locationId: stores, qty: q('1'), rate: r('10'), batches: [lot('X', '1'), lot('Y', '0')] }] }))
+      .toBe('qty_not_positive');
+    expect(await failure({ transfers: [{ itemId, from: stores, to: stores, qty: q('1'), batches: [{ batchId: null, qty: q('1') }] }] }))
+      .toBe('transfer_same_location');
   });
 
   // ADR-005 §7: a correction is a new row, never an edit; even the owner is refused by the trigger.
   it('keeps the ledger append-only', async () => {
     const { itemId, places: [stores = ''] } = await setup(['stores']);
-    const [moved] = await post({ ins: [{ itemId, locationId: stores, qty: '1', rate: '10', batches: [lot('A', '1')] }] });
+    const [moved] = await post({ ins: [{ itemId, locationId: stores, qty: q('1'), rate: r('10'), batches: [lot('A', '1')] }] });
     for (const statement of ['update radcore.stock_movements set qty = 2 where id = $1', 'delete from radcore.stock_movements where id = $1']) {
       await expect(su.query(statement, [moved?.id])).rejects.toMatchObject({ code: 'RA001' });
     }
@@ -116,9 +125,9 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
   // §1 (RC-053): two saves touching the same positions in opposite order both finish, again and again.
   it('lets two saves that touch the same positions in opposite order both finish', async () => {
     const { itemId, places: [a = '', b = ''] } = await setup(['stores', 'store']);
-    await post({ ins: [{ itemId, locationId: a, qty: '50', rate: '10', batches: [lot('C', '50')] }, { itemId, locationId: b, qty: '50', rate: '10', batches: [lot('C', '50')] }] });
+    await post({ ins: [{ itemId, locationId: a, qty: q('50'), rate: r('10'), batches: [lot('C', '50')] }, { itemId, locationId: b, qty: q('50'), rate: r('10'), batches: [lot('C', '50')] }] });
     const [{ batch } = { batch: '' }] = (await su.query<{ batch: string }>('select id as batch from radcore.batches where item_id = $1', [itemId])).rows;
-    const move = (from: string, to: string) => post({ transfers: [{ itemId, from, to, qty: '1', batches: [{ batchId: batch, qty: '1' }] }] });
+    const move = (from: string, to: string) => post({ transfers: [{ itemId, from, to, qty: q('1'), batches: [{ batchId: batch, qty: q('1') }] }] });
     for (let round = 0; round < 10; round += 1) await Promise.all([move(a, b), move(b, a), move(a, b), move(b, a)]);
     expect([(await onHand(itemId, a))[0], (await onHand(itemId, b))[0]]).toEqual(['50', '50']);
   });
@@ -130,8 +139,8 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
     for (let round = 0; round < 5; round += 1) {
       const [one, two] = [`N${tag()}`, `N${tag()}`];
       await Promise.all([
-        post({ ins: [{ itemId, locationId: x, qty: '2', rate: '10', batches: [lot(one, '1'), lot(two, '1')] }] }),
-        post({ ins: [{ itemId, locationId: y, qty: '2', rate: '10', batches: [lot(two, '1'), lot(one, '1')] }] }),
+        post({ ins: [{ itemId, locationId: x, qty: q('2'), rate: r('10'), batches: [lot(one, '1'), lot(two, '1')] }] }),
+        post({ ins: [{ itemId, locationId: y, qty: q('2'), rate: r('10'), batches: [lot(two, '1'), lot(one, '1')] }] }),
       ]);
       const { rows } = await su.query('select 1 from radcore.batches where item_id = $1 and batch_key in ($2, $3)', [itemId, one, two]);
       expect(rows).toHaveLength(2);
