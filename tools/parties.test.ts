@@ -18,7 +18,8 @@ import accounts from '../apps/api/src/routes/accounts.ts';
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const write = { readOnly: false, isolation: 'read committed' } as const;
-const AS: Principal = { kind: 'system', name: 'test', permissions: [] };
+const AS: Principal = { kind: 'system', name: 'test', permissions: ['parties:manage'] };
+const NO_MANAGE: Principal = { kind: 'system', name: 'test', permissions: [] };
 const letters = (n: number) => [...randomBytes(n)].map((b) => String.fromCharCode(65 + (b % 26))).join('');
 /** A valid GSTIN of its own, in Karnataka (29): a fresh PAN with a company's 4th letter, and its check character. */
 const gstin = () => {
@@ -91,6 +92,9 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     await run((ctx) => setCreditTerms(ctx, { id, creditDays: 30, creditLimit: moneyString().parse('50000.00'), reason: 'Agreed with the dealer' }));
     expect(await run((ctx) => getPartyById(ctx, { id }))).toMatchObject({ creditDays: 30, creditLimit: '50000.00' });
     expect(await code(run((ctx) => setCreditTerms(ctx, { id: randomUUID(), creditDays: null, creditLimit: null, reason: 'x' })))).toBe('not_found');
+    // The service checks parties:manage itself, so a caller from another library can't set terms without it.
+    expect(await code(runInTransaction(db, write, NO_MANAGE, randomUUID(), (ctx) =>
+      setCreditTerms(ctx, { id, creditDays: 60, creditLimit: null, reason: 'x' })))).toBe('forbidden');
   });
 
   it('lists by name, found by a word of the name or the whole GSTIN, filtered by kind and active', async () => {

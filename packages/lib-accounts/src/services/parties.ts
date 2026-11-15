@@ -105,6 +105,8 @@ export async function changeParty(ctx: Ctx, { id, ...change }: In<typeof updateP
 
 /** PUT /parties/:id/credit (parties:manage): the reason was kept by the handler before this runs. */
 export async function setCreditTerms(ctx: Ctx, { id, creditDays, creditLimit }: In<typeof setPartyCredit>): Promise<Out<typeof setPartyCredit>> {
+  // The route checks this key; a caller from another library is checked here too, so credit terms need it either way.
+  if (!ctx.can('parties:manage')) throw new AppError('forbidden', 'Setting credit terms needs parties:manage');
   const done = await accountsTx(ctx).update(parties).set({ creditDays, creditLimit }).where(eq(parties.id, id)).returning({ id: parties.id });
   if (done.length === 0) throw new AppError('not_found', 'There is no such party');
   return {};

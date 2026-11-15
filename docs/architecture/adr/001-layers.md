@@ -565,10 +565,6 @@ always six bullets, so it doesn't give away the length.
   characters (`"••••••3210"`) when the value has at least 8.
 - Salaries and bank details carry `pii(schema, 'pay')`, masked whole. It needs `pay:read`, which only admin and owner
   hold (D-20, Sarthak, 6 Nov 2026), so a role with `pii:read` still gets them masked (M1-22).
-- A `piiRecord` may name one more key that shows its own `whole` and `last4` fields: `piiRecord('parties', schema, {
-  seenWith: 'parties:contact' })` (RAD-90). It reaches that record's fields only, never a record nested in it or pay,
-  and every look is logged as usual. Exports don't take it: a file unmasks `pii()` columns only with `pii:read`, so
-  contacts can be seen on a screen without being downloaded as a list. Such a key is granted at `all` scope only.
 - The generic handler masks after the output check and before saved-once keeps the answer, so a stored answer never
   holds what its principal couldn't see.
 - Edit forms show it read-only and never send it back. Edit contracts change only the fields they receive (patch
