@@ -63,6 +63,10 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // The company profile (RAD-88): one company, set by whoever holds company:write.
   'GET /admin/company': 'company:read',
   'PUT /admin/company': 'company:write',
+  // GST rates by date (RAD-91).
+  'GET /gst/rates': 'gst:read',
+  'GET /gst/rates/in-force': 'gst:read',
+  'PUT /gst/rates': 'gst:write',
   // Files, by kind (RAD-43): each kind its own pair of keys.
   'POST /files/photo': 'photo_files:write',
   'POST /files/photo/:id/confirm': 'photo_files:write',
@@ -160,6 +164,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // lib-accounts' services, which run under lib-platform's.
   'GET /admin/company': ['lib-accounts', 'lib-platform'],
   'PUT /admin/company': ['lib-accounts', 'lib-platform'],
+  'GET /gst/rates': ['lib-gst', 'lib-platform'],
+  'GET /gst/rates/in-force': ['lib-gst', 'lib-platform'],
+  'PUT /gst/rates': ['lib-gst', 'lib-platform'],
   'GET /admin/audit/tables': PLATFORM,
   'GET /admin/security-events': PLATFORM,
   'POST /files/photo': PLATFORM,
