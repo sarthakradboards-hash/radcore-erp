@@ -3,5 +3,6 @@ export {
   addCategory, addItem, changeItem, checkQuantity, getItemById, listCategories, listItemsPage, listUnits, renameCategory,
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
+export { listKinds, setKindLabel } from './services/location-kinds.ts';
 export { addPlace, listPlaces, updatePlace } from './services/locations.ts';
 export { stockSheets } from './sheets.ts';
