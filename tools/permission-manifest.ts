@@ -60,6 +60,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /items/:id': 'items:read',
   'POST /items': 'items:write',
   'PATCH /items/:id': 'items:write',
+  'POST /items/:id/pictures': 'items:write',
+  'DELETE /items/:id/pictures/:fileId': 'items:write',
   // The company profile (RAD-88): one company, set by whoever holds company:write.
   'GET /admin/company': 'company:read',
   'PUT /admin/company': 'company:write',
@@ -80,6 +82,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/import': 'import_files:write',
   'POST /files/import/:id/confirm': 'import_files:write',
   'POST /files/import/:id/download': 'import_files:read',
+  // Item pictures (RAD-89): uploaded with the items key; no download route, since they're viewed inline.
+  'POST /files/item-picture': 'items:write',
+  'POST /files/item-picture/:id/confirm': 'items:write',
   // Stock (RAD-92): locations, and their kinds' labels.
   'GET /stock/location-kinds': 'locations:read',
   'PUT /stock/location-kinds/:kind': 'locations:write',
@@ -159,6 +164,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /items/:id': STOCK,
   'POST /items': STOCK,
   'PATCH /items/:id': STOCK,
+  'POST /items/:id/pictures': STOCK,
+  'DELETE /items/:id/pictures/:fileId': STOCK,
   // lib-accounts' services, which run under lib-platform's.
   'GET /admin/company': ['lib-accounts', 'lib-platform'],
   'PUT /admin/company': ['lib-accounts', 'lib-platform'],
@@ -179,6 +186,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/import': PLATFORM,
   'POST /files/import/:id/confirm': PLATFORM,
   'POST /files/import/:id/download': PLATFORM,
+  'POST /files/item-picture': PLATFORM,
+  'POST /files/item-picture/:id/confirm': PLATFORM,
   // Stock's routes reach lib-stock and, through it, lib-platform.
   'GET /stock/location-kinds': STOCK,
   'PUT /stock/location-kinds/:kind': STOCK,
