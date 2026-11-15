@@ -3,7 +3,7 @@
 // that rolls back gives its number back; concurrent saves take turns and never share or skip one; and the database,
 // not the app, decides the next number. Each test uses its own series, since the database is shared.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { defineSeries, nextNumber, SERIES_MAX, type Principal } from '@radcore/lib-platform';
+import { defineSeries, nextNumber, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -73,6 +73,23 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
     expect(() => defineSeries('Platform.bad', 'JV')).toThrow(/<module>.<name>/);
   });
 
+  it('keeps a year to the prefix its first number took: a change applies from the next financial year (CA-44)', async () => {
+    const s = series('JV');
+    expect(await draw(s, '2026-11-14')).toBe('JV/26-27/00001');
+    await asAdmin("insert into radcore.settings (key, value) values ($1, '\"JRN\"')", [s.prefix.key]);
+    // The app sending another prefix on a later draw doesn't change the year's either.
+    expect(await draw(s, '2027-01-10')).toBe('JV/26-27/00002');
+    expect(await draw(s, '2027-04-01')).toBe('JRN/27-28/00001');
+  });
+
+  it('takes the digits its series declares: 5 by default, more for a series no rule bounds', async () => {
+    const journal = defineSeries(`platform.t_${letters()}`, 'JV', { digits: 7 });
+    expect(await draw(journal, '2026-11-14')).toBe('JV/26-27/0000001');
+    expect(journal.max).toBe(9_999_999);
+    expect(() => defineSeries('platform.t_bad', 'JV', { digits: 3 })).toThrow(/4 to 9 digits/);
+    expect(() => defineSeries('platform.t_bad', 'JV', { digits: 10 })).toThrow(/4 to 9 digits/);
+  });
+
   it('draws a number in one query (RC-200)', async () => {
     const s = series();
     const counts = await runInTransaction(db, write, staff, randomUUID(), async (ctx) => {
@@ -114,8 +131,8 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
       const { rows } = await c.query<{ last: number }>(
-        'update radcore.number_counters set last = 500 where series = $1 returning last', [s.key]);
-      expect(rows).toEqual([{ last: 2 }]);
+        "update radcore.number_counters set last = 500, prefix = 'XX' where series = $1 returning last, prefix", [s.key]);
+      expect(rows).toEqual([{ last: 2, prefix: 'TS' }]);
       const moved = await c.query("update radcore.number_counters set financial_year = '2030-31' where series = $1", [s.key])
         .catch((e: unknown) => (e as { code?: string }).code);
       expect(moved).toBe('RA001');
@@ -132,7 +149,7 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
     await draw(s, '2026-11-14');
     // Only the owner, skipping the triggers, can put a counter at its last number.
     await asAdmin(`set local session_replication_role = replica;
-      update radcore.number_counters set last = ${String(SERIES_MAX)} where series = '${s.key}'`);
+      update radcore.number_counters set last = ${String(s.max)} where series = '${s.key}'`);
     await expect(draw(s, '2026-11-14')).rejects.toMatchObject({ code: 'series_full' });
   });
 });

@@ -1,6 +1,7 @@
 CREATE TABLE "radcore"."number_counters" (
 	"series" text NOT NULL,
 	"financial_year" text NOT NULL,
+	"prefix" text NOT NULL,
 	"last" integer DEFAULT 1 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
@@ -27,7 +28,8 @@ REVOKE INSERT, UPDATE, DELETE ON "radcore"."v_schema_missing_triggers" FROM radc
 --> statement-breakpoint
 -- RAD-87 (ADR-006 §3, RC-206, RC-200): gap-free numbers. A series' first draw in a financial year inserts its row at 1;
 -- every later draw updates it, and this trigger makes that exactly the last number plus one, whatever the app sent,
--- so no code can skip a number, reuse one, or move a counter to another series or year. The draw's row lock holds
+-- so no code can skip a number, reuse one, or move a counter to another series or year. The year keeps the prefix its
+-- first number took, so a change to the prefix setting applies from the next financial year (the architect on #171). The draw's row lock holds
 -- until commit, so concurrent saves take turns, and a save that rolls back gives its number back.
 CREATE FUNCTION radcore.number_counter_step() RETURNS trigger LANGUAGE plpgsql
 SET search_path = pg_catalog, radcore, pg_temp AS $$
@@ -38,6 +40,7 @@ BEGIN
     RAISE EXCEPTION 'a number counter keeps its series and year' USING ERRCODE = 'RA001';
   ELSE
     NEW.last := OLD.last + 1;
+    NEW.prefix := OLD.prefix;
   END IF;
   RETURN NEW;
 END $$;

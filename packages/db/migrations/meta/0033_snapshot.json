@@ -1,5 +1,5 @@
 {
-  "id": "ac60bff8-2367-439a-ba72-0852503d39bd",
+  "id": "9bfad45a-efc9-4a88-add0-c98068547505",
   "prevId": "1f24b596-8bc8-4cfe-9c00-3e7ab671c396",
   "version": "7",
   "dialect": "postgresql",
@@ -967,6 +967,12 @@
         },
         "financial_year": {
           "name": "financial_year",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prefix": {
+          "name": "prefix",
           "type": "text",
           "primaryKey": false,
           "notNull": true

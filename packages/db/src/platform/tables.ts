@@ -287,10 +287,10 @@ export const dataExports = radcoreTable('exports', {
   check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
 ]);
 
-/** Number series (RAD-87, ADR-006 §3): the last number drawn per series and financial year. A trigger moves `last` up
- * by exactly one, whatever is sent, so nothing skips or reuses a number. Machinery, not row-audited (ADR-005 §7c). */
+/** Number series (RAD-87, ADR-006 §3): per series and financial year, the prefix its first number took and the last
+ * number drawn. A trigger moves `last` up by exactly one and keeps the prefix. Machinery (ADR-005 §7c). */
 export const numberCounters = radcoreTable('number_counters', {
-  series: text().notNull(), financialYear: text().notNull(), last: integer().notNull().default(1),
+  series: text().notNull(), financialYear: text().notNull(), prefix: text().notNull(), last: integer().notNull().default(1),
 }, (t) => [primaryKey({ name: 'pk_number_counters', columns: [t.series, t.financialYear] })]);
 
 /** When each person last signed in (RAD-36): made with the person by a trigger on users (0031), set when a session
