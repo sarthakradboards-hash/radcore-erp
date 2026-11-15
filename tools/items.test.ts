@@ -105,4 +105,18 @@ describe.skipIf(!url)('items and units of measure', { timeout: 30_000 }, () => {
     expect(await find(made[2]?.sku ?? '')).toEqual([made[2]?.id]);
     expect(await find(`${word}-0`)).toEqual([made[0]?.id]);
   });
+
+  it('switches an item off rather than deleting it, and the app can delete no item or category (ADR-005 §3)', async () => {
+    const categoryId = await category();
+    const { id } = await newItem({ categoryId });
+    expect(await code(run((ctx) => changeItem(ctx, { id, active: false })))).toBe('ok');
+    const listed = async (active?: boolean) => (await run((ctx) => listItemsPage(ctx, {
+      filter: { categoryId, ...(active === undefined ? {} : { active }) }, limit: 10 }))).items.map((i) => [i.id, i.active]);
+    expect([await listed(), await listed(true), await listed(false)]).toEqual([[[id, false]], [], [[id, false]]]);
+    // As the app's own login: masters are switched off, never deleted, and the units are read-only.
+    const refused = (q: string, v: unknown[] = []) => pool.query(q, v).then(() => 'ok', (e: { code?: string }) => e.code);
+    expect(await Promise.all([refused('delete from radcore.items where id = $1', [id]),
+      refused('delete from radcore.item_categories where id = $1', [categoryId]),
+      refused("update radcore.units_of_measure set decimals = 1 where code = 'NOS'")])).toEqual(['42501', '42501', '42501']);
+  });
 });

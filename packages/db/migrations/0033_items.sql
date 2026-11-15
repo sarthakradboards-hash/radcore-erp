@@ -20,6 +20,7 @@ CREATE TABLE "radcore"."items" (
 	"barcode" text,
 	"serialised" boolean DEFAULT false NOT NULL,
 	"has_chassis" boolean DEFAULT false NOT NULL,
+	"active" boolean DEFAULT true NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -58,7 +59,13 @@ SELECT radcore.audit_attach('units_of_measure', keep => array['name', 'decimals'
 --> statement-breakpoint
 SELECT radcore.audit_attach('item_categories', keep => array['name', 'name_key']);
 --> statement-breakpoint
-SELECT radcore.audit_attach('items', keep => array['sku', 'sku_key', 'name', 'category_id', 'hsn', 'unit', 'barcode', 'serialised', 'has_chassis']);
+SELECT radcore.audit_attach('items', keep => array['sku', 'sku_key', 'name', 'category_id', 'hsn', 'unit', 'barcode', 'serialised', 'has_chassis', 'active']);
+--> statement-breakpoint
+-- Masters are switched off, never deleted (ADR-005 §3): an item has `active`, and a category stays while items name it.
+REVOKE DELETE, TRUNCATE ON radcore.items, radcore.item_categories FROM radcore_app;
+--> statement-breakpoint
+-- The units are seeded here and read-only to the app.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.units_of_measure FROM radcore_app;
 --> statement-breakpoint
 -- GST's unit quantity codes the business uses, each with the decimals its quantities may have (RC-162): a count has
 -- none, so 1.5 Nos can't be entered.

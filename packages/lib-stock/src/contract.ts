@@ -39,13 +39,14 @@ export const renameItemCategory = defineContract({
 /** An item as it's answered. */
 const item = z.object({
   id: idString(), sku: z.string(), name: z.string(), categoryId: idString(), hsn: z.string(), unit: unitCode(),
-  barcode: z.string().nullable(), serialised: z.boolean(), hasChassis: z.boolean(),
+  barcode: z.string().nullable(), serialised: z.boolean(), hasChassis: z.boolean(), active: z.boolean(),
 });
 
-/** GET /items (items:read): items by name, a page at a time, searched by name, SKU or barcode, filtered by category. */
+/** GET /items (items:read): items by name, a page at a time, searched by name, SKU or barcode, filtered by category
+ * and by whether they're active (left out, both). */
 export const listItems = defineContract({
   method: 'GET', path: '/items', auth: 'session', perm: 'items:read', tx: read,
-  input: listInput(z.object({ search: searchText().optional(), categoryId: idString().optional() })),
+  input: listInput(z.object({ search: searchText().optional(), categoryId: idString().optional(), active: z.boolean().optional() })),
   output: listOf(item),
 });
 
@@ -77,9 +78,10 @@ export const createItem = defineContract({
   output: z.object({ id: idString() }), errors: ['sku_taken', 'barcode_taken', 'unknown_category', 'unknown_unit'],
 });
 
-/** PATCH /items/:id (items:write): any of an item's fields but its SKU, which documents print and search by. */
+/** PATCH /items/:id (items:write): any of an item's fields but its SKU, which documents print and search by. An item
+ * is switched off (`active: false`), never deleted (ADR-005 §3). */
 export const updateItem = defineContract({
   method: 'PATCH', path: '/items/:id', auth: 'session', perm: 'items:write', tx: write,
-  input: z.object(itemFields).partial().extend({ id: idString() }),
+  input: z.object(itemFields).partial().extend({ id: idString(), active: z.boolean().optional() }),
   output: z.object({}), errors: ['barcode_taken', 'unknown_category', 'unknown_unit', 'chassis_needs_serial'],
 });

@@ -33,5 +33,7 @@ describe('the item contracts', () => {
 
   it('change anything but the SKU, which documents print and search by', () => {
     expect(updateItem.input.parse({ id: item.categoryId, name: 'Scooter', sku: 'OTHER' })).toEqual({ id: item.categoryId, name: 'Scooter' });
+    // Switched off, never deleted (ADR-005 §3); a new item is always active.
+    expect(updateItem.input.parse({ id: item.categoryId, active: false })).toEqual({ id: item.categoryId, active: false });
   });
 });

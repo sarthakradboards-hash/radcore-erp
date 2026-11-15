@@ -80,8 +80,12 @@ describe.skipIf(!url)('roles and record scope', () => {
   });
 
   it("loads nobody who is gone, disabled or not a person, and gives a role's keys and nothing more", async () => {
-    // The plan's Store role holds only My work's key among M1's: nothing is added in code (ADR-001 §6a).
-    const id = await activePerson('counter');
+    // A role of this test's own, holding one key: the principal has exactly that, nothing added in code (ADR-001 §6a).
+    // Not a plan role, whose keys each module's migration adds to (the auditor on #172).
+    const role = roleKey();
+    await sql("insert into radcore.roles (key, name, description) values ($1, $1, 'For roles.test.ts')", [role]);
+    await sql("insert into radcore.role_grants (role, permission, scope) values ($1, 'session:read', 'all')", [role]);
+    const id = await activePerson(role);
     expect((await load(`user:${id}`))?.permissions).toEqual(['session:read']);
     await sql("update radcore.users set status = 'disabled' where id = $1", [id]);
     expect(await load(`user:${id}`)).toBeNull();

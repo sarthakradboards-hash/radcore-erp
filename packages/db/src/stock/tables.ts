@@ -29,7 +29,7 @@ export const itemCategories = radcoreTable('item_categories', {
  * barcode where there is one. The HSN is 4, 6 or 8 digits; its GST rate is lib-gst's, by date (M2-12). An item is
  * serialised when each piece is a unit with its own serial (M2-06). `has_chassis` (D-15, ADR-006 §5) marks the vehicles
  * whose units carry a chassis number; only a serialised item can have it. Batches are on every item's movements
- * (M2-05), so there is no batch flag.
+ * (M2-05), so there is no batch flag. An item is switched off (`active` false), never deleted (ADR-005 §3).
  */
 export const items = radcoreTable('items', {
   id: id(),
@@ -42,6 +42,7 @@ export const items = radcoreTable('items', {
   barcode: text(),
   serialised: boolean().notNull().default(false),
   hasChassis: boolean().notNull().default(false),
+  active: boolean().notNull().default(true),
 }, (t) => [
   uniqueIndex('ux_items_sku_key').on(t.skuKey),
   uniqueIndex('ux_items_barcode').on(t.barcode),

@@ -15,7 +15,7 @@ type Tx = ReturnType<typeof stockTx>;
 
 const itemColumns = {
   id: items.id, sku: items.sku, name: items.name, categoryId: items.categoryId, hsn: items.hsn, unit: items.unit,
-  barcode: items.barcode, serialised: items.serialised, hasChassis: items.hasChassis,
+  barcode: items.barcode, serialised: items.serialised, hasChassis: items.hasChassis, active: items.active,
 };
 const field = (path: string, code: string, message: string) => [{ path: [path], code, message }];
 
@@ -74,13 +74,14 @@ export async function renameCategory(ctx: Ctx, { id, name }: In<typeof renameIte
 /** GET /items: by name, then id, so a page key is unique and paging never skips or repeats. */
 export async function listItemsPage(ctx: Ctx, input: In<typeof listItems>): Promise<Out<typeof listItems>> {
   const key = input.after === undefined ? undefined : decodeCursor(z.object({ name: z.string().max(200), id: z.uuid() }), input.after);
-  const { search, categoryId } = input.filter;
+  const { search, categoryId, active } = input.filter;
   // Words in the name or SKU, or the whole text as a scanned barcode.
   const words = searchWords([items.name, items.sku], search);
   const rows = await stockTx(ctx).select(itemColumns).from(items)
     .where(and(
       words === undefined ? undefined : or(words, eq(items.barcode, (search ?? '').trim())),
       categoryId === undefined ? undefined : eq(items.categoryId, categoryId),
+      active === undefined ? undefined : eq(items.active, active),
       after([items.name, items.id], key && [key.name, key.id], 'asc'),
     ))
     .orderBy(asc(items.name), asc(items.id)).limit(input.limit + 1);
@@ -118,6 +119,8 @@ export async function changeItem(ctx: Ctx, { id, ...change }: In<typeof updateIt
   }
   // shortcut: turning has_chassis off is refused while a unit of the item has a chassis number (ADR-006 §5,
   // `chassis_numbers_recorded`, RA008); units arrive with M2-06, whose migration adds this check and its trigger.
+  // shortcut: a unit change (its decimals) and a serialised change are free while there is no stock; once stock
+  // exists (M2-05, M2-06) each must be refused while the item has movements or units, and those tickets add it.
   await checkRefs(tx, change);
   const fields = Object.fromEntries(Object.entries(change).filter(([, v]) => v !== undefined));
   if (Object.keys(fields).length > 0) {
