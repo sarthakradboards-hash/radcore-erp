@@ -253,13 +253,6 @@
       "when": 1794719842290,
       "tag": "0035_employees",
       "breakpoints": true
-    },
-    {
-      "idx": 36,
-      "version": "7",
-      "when": 1794721723338,
-      "tag": "0036_parties",
-      "breakpoints": true
     }
   ]
 }
