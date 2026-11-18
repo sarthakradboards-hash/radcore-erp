@@ -162,9 +162,18 @@ describe.skipIf(!url || !superUrl)('the journal', { timeout: 30_000 }, () => {
     }
   });
 
-  it('refuses a date in a financial year that was never opened (RC-111)', async () => {
+  it('refuses a date in a financial year that was never opened, by name, and in the database (RC-111)', async () => {
     expect(await code(run((ctx) => postEntry(ctx, { kind: 'opening', businessDate: '2031-05-01', source: source(),
-      lines: [dr('cash', '10.00'), cr('opening_equity', '10.00')] })))).toBe('23503');
+      lines: [dr('cash', '10.00'), cr('opening_equity', '10.00')] })))).toBe('year_not_open');
+    expect(await asApp(({ entry }) => [[`insert into radcore.journal_entries (id, number, kind, business_date, source_table, source_id)
+      values ($1, $2, 'opening', '2031-05-01', 'files', $3)`, [entry, `RAW/${letters()}`, randomUUID()]]]))
+      .toBe('23503 fk_journal_entries_fy_start');
+  });
+
+  it("closes the period lock and an opened year to the app login's own writes (the auditor on #203)", async () => {
+    expect(await asApp(() => [["update radcore.period_lock set locked_through = '2030-03-31' where id = 1", []]])).toBe('42501');
+    expect(await asApp(() => [['delete from radcore.period_lock', []]])).toBe('42501');
+    expect(await asApp(() => [["delete from radcore.financial_years where start = '2026-04-01'", []]])).toBe('42501');
   });
 
   it('numbers entries without gaps: a save that fails gives its number back (RC-206)', async () => {
@@ -252,6 +261,18 @@ describe.skipIf(!url || !superUrl)('the journal', { timeout: 30_000 }, () => {
     expect(await code(run((ctx) => reverseEntry(ctx, { entryId: original.id, businessDate: '2026-11-21' })))).toBe('already_reversed');
   });
 
+  it('never reverses a reversal, which would post a cancelled entry again (the auditor on #203)', async () => {
+    const original = await run((ctx) => postEntry(ctx, { kind: 'opening', businessDate: DAY, source: source(),
+      lines: [dr('cash', '25.00'), cr('opening_equity', '25.00')] }));
+    const reversal = await run((ctx) => reverseEntry(ctx, { entryId: original.id, businessDate: DAY }));
+    expect(await code(run((ctx) => reverseEntry(ctx, { entryId: reversal.id, businessDate: DAY })))).toBe('reversal_not_reversible');
+    // Written raw, the database refuses it at commit: the original's own lines again, reversing the reversal.
+    const cash = await accountId('cash');
+    const equity = await accountId('opening_equity');
+    expect(await asApp(({ entry }) => [rawEntry(entry, 'opening', { reverses: reversal.id }),
+      rawLine(entry, 1, cash, 'none', { debit: '25' }), rawLine(entry, 2, equity, 'opening', { credit: '25' })])).toBe('RA002');
+  });
+
   it("refuses, at commit, a reversal that isn't its original's lines swapped (RA002)", async () => {
     const original = await run((ctx) => postEntry(ctx, { kind: 'opening', businessDate: DAY, source: source(),
       lines: [dr('cash', '40.00'), cr('opening_equity', '40.00')] }));
@@ -264,6 +285,30 @@ describe.skipIf(!url || !superUrl)('the journal', { timeout: 30_000 }, () => {
     expect(await asApp(({ entry }) => [rawEntry(entry, 'transfer', { reverses: original.id }),
       rawLine(entry, 1, cash, 'none', { credit: '40' }, 'transfer'), rawLine(entry, 2, cash, 'none', { debit: '40' }, 'transfer')]))
       .toBe('23503 fk_journal_entries_reverses');
+  });
+
+  it('never puts an account group inside itself, however deep (the auditor on #203)', async () => {
+    const made: string[] = [];
+    const add = async (parent: string | null) => {
+      const c = await pool.connect();
+      try {
+        await c.query('begin');
+        await c.query("set local app.principal = 'system:test'");
+        const { rows } = await c.query<{ id: string }>("insert into radcore.accounts (name, type, parent_id) values ($1, 'expense', $2) returning id",
+          [`Group ${letters()}`, parent]);
+        await c.query('commit');
+        made.push(rows[0]?.id ?? '');
+        return rows[0]?.id ?? '';
+      } finally {
+        c.release();
+      }
+    };
+    const top = await add(null);
+    const middle = await add(top);
+    const bottom = await add(middle);
+    expect(await asApp(() => [['update radcore.accounts set parent_id = $2 where id = $1', [top, bottom]]])).toBe('23514');
+    expect(await asApp(() => [['update radcore.accounts set parent_id = $1 where id = $1', [middle]]])).toBe('23514');
+    expect(made).toHaveLength(3);
   });
 
   it("keeps the system accounts: renamed, never removed, and only they are control accounts", async () => {

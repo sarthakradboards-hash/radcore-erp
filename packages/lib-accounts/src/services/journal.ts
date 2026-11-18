@@ -53,6 +53,10 @@ async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; sourc
   if (lock?.through !== null && lock?.through !== undefined && e.businessDate <= lock.through) {
     refuse('period_locked', `The books are locked through ${lock.through}`);
   }
+  // A named answer for a year nobody opened; the database's foreign key holds it too (RC-111).
+  const year = financialYear(e.businessDate);
+  const [open] = await tx.select({ start: financialYears.start }).from(financialYears).where(eq(financialYears.start, year.start)).limit(1);
+  if (open === undefined) refuse('year_not_open', `The financial year ${year.label} isn't open`);
   // Every line's account and control kind in one read.
   const ids = e.lines.flatMap((l) => ('id' in l.account ? [l.account.id] : []));
   const keys = e.lines.flatMap((l) => ('system' in l.account ? [l.account.system] : []));
@@ -102,6 +106,8 @@ export async function reverseEntry(ctx: Ctx, r: Readonly<{ entryId: string; busi
   const [already] = await tx.select({ id: journalEntries.id }).from(journalEntries)
     .where(eq(journalEntries.reversesEntryId, original.id)).limit(1);
   if (already !== undefined) refuse('already_reversed', `Entry ${original.number} is already reversed`);
+  // Reversing a reversal would post a cancelled document again: post the document anew instead (the auditor on #203).
+  if (original.reversesEntryId !== null) refuse('reversal_not_reversible', `Entry ${original.number} is itself a reversal`);
   if (original.kind === 'manual' && (r.reason ?? '') === '') refuse('reason_required', 'Say why the journal is reversed');
   const lines = await tx.select().from(journalLines).where(eq(journalLines.entryId, original.id)).orderBy(asc(journalLines.lineNo));
   return write(ctx, {

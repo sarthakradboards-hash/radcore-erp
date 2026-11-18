@@ -225,7 +225,35 @@ END $$;
 --> statement-breakpoint
 CREATE TRIGGER keep_system_account BEFORE DELETE ON radcore.accounts FOR EACH ROW EXECUTE FUNCTION radcore.keep_system_account();
 --> statement-breakpoint
+-- A group never holds itself, however deep (the auditor on #203): the chain of parents from the new one up must not
+-- reach the account. UNION, not UNION ALL, so a walk ends even on a loop the trigger didn't make.
+CREATE FUNCTION radcore.guard_account_parent() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, radcore, pg_temp AS $$
+BEGIN
+  IF NEW.parent_id IS NOT NULL AND EXISTS (
+      WITH RECURSIVE up(id, parent_id) AS (
+        SELECT a.id, a.parent_id FROM radcore.accounts a WHERE a.id = NEW.parent_id
+        UNION SELECT a.id, a.parent_id FROM radcore.accounts a JOIN up ON a.id = up.parent_id)
+      SELECT 1 FROM up WHERE up.id = NEW.id) THEN
+    RAISE EXCEPTION 'account % would be inside its own group', NEW.name USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END $$;
+--> statement-breakpoint
+CREATE TRIGGER guard_account_parent BEFORE INSERT OR UPDATE OF parent_id ON radcore.accounts
+  FOR EACH ROW EXECUTE FUNCTION radcore.guard_account_parent();
+--> statement-breakpoint
 INSERT INTO radcore.period_lock (id) VALUES (1);
+--> statement-breakpoint
+-- The lock moves only through its own path, with its reason and audit trail (M5-09), never by the app login's own
+-- write; a posting only reads it. A financial year, once opened, stays (the auditor on #203).
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.period_lock FROM radcore_app;
+--> statement-breakpoint
+-- A posting reads the row FOR SHARE (ADR-006 §1), and a row lock needs UPDATE on at least one column. So the app gets
+-- UPDATE on `id` alone, which ck_period_lock_one pins to 1: it can lock the row, never move the lock.
+GRANT UPDATE (id) ON radcore.period_lock TO radcore_app;
+--> statement-breakpoint
+REVOKE UPDATE, DELETE, TRUNCATE ON radcore.financial_years FROM radcore_app;
 --> statement-breakpoint
 -- An entry is stamped with the database's own posting time and transaction (ADR-005 §6), and refused on or before
 -- the period lock (RA003, RC-163). The engine has read the lock row FOR SHARE first, so the check is under the lock.
@@ -313,6 +341,11 @@ BEGIN
   IF lines < 2 OR debits <> credits THEN
     RAISE EXCEPTION 'journal entry % doesn''t balance: % lines, debits %, credits %', e.number, lines, debits, credits
       USING ERRCODE = 'RA002';
+  END IF;
+  -- A reversal is never reversed: that would post a cancelled document's entry again (the auditor on #203).
+  IF e.reverses_entry_id IS NOT NULL AND EXISTS (SELECT 1 FROM radcore.journal_entries o
+      WHERE o.id = e.reverses_entry_id AND o.reverses_entry_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'journal entry % reverses a reversal: post the document again instead', e.number USING ERRCODE = 'RA002';
   END IF;
   IF e.reverses_entry_id IS NOT NULL THEN
     SELECT count(*) INTO differ FROM (
