@@ -316,6 +316,13 @@
       "when": 1795029599792,
       "tag": "0044_stock_commit_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795030992582,
+      "tag": "0045_journal_routes",
+      "breakpoints": true
     }
   ]
 }

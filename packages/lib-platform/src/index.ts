@@ -27,6 +27,7 @@ export {
 } from './approvals.ts';
 export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
+export { principalsOf } from './principals.ts';
 export { defineRoute, type BeforeDeps, type Route } from './route.ts';
 export { csvWriter } from './export/csv.ts';
 export { amountCell, checkRows, dateCell, parseAmountCell, parseDateCell, type ImportResult, type RowError } from './import/cells.ts';
