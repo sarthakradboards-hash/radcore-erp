@@ -20,8 +20,10 @@ const write = { readOnly: false, isolation: 'read committed' } as const;
 const AS: Principal = { kind: 'system', name: 'test', permissions: [] };
 const tag = () => randomBytes(4).toString('hex');
 
-it('makes drafting and approving prices second-factor keys, and reading them not', () => {
-  expect(['prices:write', 'prices:approve', 'prices:read'].map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([true, true, false]);
+// Whether writing and approving prices needs the second factor is Sarthak's (D-19): one switch sets both, never reading.
+it('treats drafting and approving prices alike for the second factor, and never reading them', () => {
+  const [w, a, r] = ['prices:write', 'prices:approve', 'prices:read'].map((k) => SECOND_FACTOR_KEYS.includes(k));
+  expect([w === a, r]).toEqual([true, false]);
 });
 
 it.runIf(process.env['CI'] && !(url && ownerUrl))('has its test database in CI', () => {

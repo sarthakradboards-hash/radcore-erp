@@ -1,7 +1,7 @@
 // Discount limits (M2-13, RAD-98): the most a person may take off a list price without a discount approval, by their
-// role. A role with no limit of its own takes the default setting, sales.discount_limit_default (0% unless an admin
-// changes it, so any discount needs approval until someone decides otherwise). M3's quotes and bills ask
-// discountAllowed for each line.
+// role. A role with no limit of its own takes the default setting, sales.discount_limit_default: 0% (D-21, Sarthak on
+// 18 Nov: "0%, approval needed"), so any discount needs approval unless a role's own limit allows it. An admin can
+// change it without code. M3's quotes and bills ask discountAllowed for each line.
 import { discountLimits, salesTx } from '@radcore/db/sales';
 import { dec, percentString, type DecimalInput } from '@radcore/lib-common';
 import { AppError, defineSetting, saveSetting, type Ctx } from '@radcore/lib-platform';
@@ -12,7 +12,7 @@ import type { listDiscountLimits, setDiscountLimit } from '../contract.ts';
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
-/** The limit for a role with none of its own (D-21's register default: none, 0%). */
+/** The limit for a role with none of its own: 0% (D-21, docs/decisions.md). */
 const defaultDiscountLimit = defineSetting<string>('sales.discount_limit_default', percentString(), '0');
 
 /** The most this person may take off a list price, in percent: their role's limit, else the default. A job, a link
