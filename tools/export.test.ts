@@ -57,6 +57,7 @@ describe.skipIf(!url)('an export, start to download', () => {
       return { key, size: 1 };
     }),
     downloadUrl: async (key, name) => `https://files.test/${key}?name=${name}`,
+    viewUrl: async (key) => `https://files.test/${key}?view`,
     verifyUpload: async () => ({ size: 0, contentType: '' }),
     presignUpload: async () => ({ key: '', url: '', fields: {} }),
   };

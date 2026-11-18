@@ -225,6 +225,55 @@
       "when": 1794677363589,
       "tag": "0031_user_sign_ins_row",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794680860255,
+      "tag": "0032_company",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794718096309,
+      "tag": "0033_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794719109156,
+      "tag": "0034_locations",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794719842290,
+      "tag": "0035_employees",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794722235064,
+      "tag": "0036_gst_rates",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794722888340,
+      "tag": "0037_item_pictures",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794723760956,
+      "tag": "0038_number_counters",
+      "breakpoints": true
     }
   ]
 }

@@ -47,7 +47,10 @@ describe.skipIf(!url)('the people list', () => {
     }
     return ids;
   }
-  const caller = (userId: string = randomUUID()): Principal => ({ kind: 'user', userId, permissions: ['users:read'] });
+  const caller = (userId: string = randomUUID(), more: string[] = []): Principal =>
+    ({ kind: 'user', userId, permissions: ['users:read', ...more] });
+  // Someone who may see addresses, so may find and order people by them (RAD-103).
+  const reader = () => caller(randomUUID(), ['pii:read']);
   const page = (as: Principal, input: { filter: Record<string, unknown>; sort?: Sort; limit: number; after?: string }) =>
     runInTransaction(db, read, as, randomUUID(), (ctx: Ctx) => listPeople(ctx, input as never));
   /** Every row, page by page, so a skipped or repeated row shows. */
@@ -82,7 +85,7 @@ describe.skipIf(!url)('the people list', () => {
   it('sorts by name by default, and by address, both ways, a page at a time', async () => {
     const tag = `pn${letters()}`;
     const p = await people(tag, [{ n: 3 }, { n: 1 }, { n: 2 }, { n: 4 }]);
-    const as = caller();
+    const as = reader();
     expect(await all(as, { search: tag }, { column: 'displayName', desc: false }, 3)).toEqual([p[1], p[2], p[3], p[4]]);
     expect((await page(as, { filter: { search: tag }, limit: 10 })).items.map((r) => r.displayName))
       .toEqual([1, 2, 3, 4].map((n) => `${tag} ${String(n)}`));
@@ -115,10 +118,23 @@ describe.skipIf(!url)('the people list', () => {
       .toEqual([[p[1], 'enrolment_required']]);
   });
 
+  it("doesn't find or order people by an address the caller can't see (RAD-103)", async () => {
+    const tag = `pm${letters()}`;
+    const p = await people(tag, [{ n: 1 }, { n: 2 }]);
+    // Their addresses are `<tag>.<n>@example.in`: ".1@" is in an address only, never in a name.
+    expect((await page(reader(), { filter: { search: `${tag}.1@` }, limit: 10 })).items.map((r) => r.id)).toEqual([p[1]]);
+    expect((await page(caller(), { filter: { search: `${tag}.1@` }, limit: 10 })).items).toEqual([]);
+    expect((await page(caller(), { filter: { search: tag }, limit: 10 })).items.map((r) => r.id)).toEqual([p[1], p[2]]);
+    const sorted = await page(caller(), { filter: { search: tag }, sort: { column: 'email', desc: false }, limit: 10 })
+      .catch((e: unknown) => e as AppError);
+    expect([(sorted as AppError).code, (sorted as AppError).issues.map((i) => [i.path, i.code])])
+      .toEqual(['invalid_input', [[['sort', 'column'], 'needs_pii_read']]]);
+  });
+
   it('refuses a page key made under another sort', async () => {
     const tag = `pk${letters()}`;
     await people(tag, [{ n: 1 }, { n: 2 }]);
-    const as = caller();
+    const as = reader();
     const first = await page(as, { filter: { search: tag }, sort: { column: 'email', desc: false }, limit: 1 });
     const other = await page(as, { filter: { search: tag }, sort: { column: 'displayName', desc: false }, limit: 1, after: first.next ?? '' })
       .catch((e: unknown) => e);

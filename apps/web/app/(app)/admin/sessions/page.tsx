@@ -2,7 +2,7 @@
 // Sessions (RAD-57, M1-16): every live session, or one person's, and ending one. Your own current session is ended
 // by signing out, so it has no End button (the server refuses it as current_session anyway).
 import { endSession, listSessions, listUsers } from '@radcore/lib-platform/contract';
-import { formatMoment } from '@radcore/lib-common';
+import { formatMoment, isMasked } from '@radcore/lib-common';
 import { useState } from 'react';
 import { Picker } from '../../../../components/ui/picker/picker.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
@@ -41,7 +41,7 @@ export default function SessionsPage() {
       <div className="admin-toolbar">
         <Picker label={t('admin.sessions.person')} hint={t('admin.sessions.person.hint')} query={query} onQueryChange={setQuery}
           options={found.items} loading={found.isFetching} error={found.error} value={person} onChange={setPerson}
-          optionKey={(u) => u.id} optionLabel={(u) => u.displayName} optionDetail={(u) => u.email} />
+          optionKey={(u) => u.id} optionLabel={(u) => u.displayName} optionDetail={(u) => (isMasked(u.email) ? null : u.email)} />
         {person === null ? null : (
           <button type="button" className="kit-button" onClick={() => setPerson(null)}>{t('admin.sessions.clear')}</button>
         )}

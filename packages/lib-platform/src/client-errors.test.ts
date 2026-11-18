@@ -86,6 +86,18 @@ describe('the browser error report', () => {
     expect((log.error.mock.calls[0]?.[1] as { stack: string }).stack).toBe(frame);
   });
 
+  // The auditor's nit on #162: the report's message is cut to 1,000 characters, but V8's stack holds all of it.
+  it('drops a message over 1,000 characters whose tail ends like a frame, before the first V8 frame', async () => {
+    const frame = '    at send (https://radcore.example.in/_next/static/chunks/app.js:3:9)';
+    const full = `${'x'.repeat(1200)} send to asha@mail.example.in:25:1`;
+    const { log, report } = setup();
+    await report({ name: 'TypeError', message: full.slice(0, 1000), page: '/',
+      stack: [`TypeError: ${full}`, 'and on asha@mail.example.in:25:2', frame].join('\n') });
+    const [, fields] = log.error.mock.calls[0] ?? [];
+    expect((fields as { stack: string }).stack).toBe(frame);
+    expect(JSON.stringify(fields)).not.toContain('asha');
+  });
+
   // e2e-playwright's SHOULD on #154: a frame's name may hold spaces in Safari and Firefox; a message line still goes.
   it("keeps Safari's and Firefox's frames whose names hold spaces", async () => {
     const { log, report } = setup();

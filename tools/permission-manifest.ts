@@ -51,6 +51,24 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /admin/audit': 'audit:read',
   'GET /admin/audit/tables': 'audit:read',
   'GET /admin/security-events': 'audit:read',
+  // Items, their categories and units of measure (RAD-89).
+  'GET /units-of-measure': 'items:read',
+  'GET /item-categories': 'items:read',
+  'POST /item-categories': 'items:write',
+  'PATCH /item-categories/:id': 'items:write',
+  'GET /items': 'items:read',
+  'GET /items/:id': 'items:read',
+  'POST /items': 'items:write',
+  'PATCH /items/:id': 'items:write',
+  'POST /items/:id/pictures': 'items:write',
+  'DELETE /items/:id/pictures/:fileId': 'items:write',
+  // The company profile (RAD-88): one company, set by whoever holds company:write.
+  'GET /admin/company': 'company:read',
+  'PUT /admin/company': 'company:write',
+  // GST rates by date (RAD-91).
+  'GET /gst/rates': 'gst:read',
+  'GET /gst/rates/in-force': 'gst:read',
+  'PUT /gst/rates': 'gst:write',
   // Files, by kind (RAD-43): each kind its own pair of keys.
   'POST /files/photo': 'photo_files:write',
   'POST /files/photo/:id/confirm': 'photo_files:write',
@@ -64,6 +82,19 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/import': 'import_files:write',
   'POST /files/import/:id/confirm': 'import_files:write',
   'POST /files/import/:id/download': 'import_files:read',
+  // Item pictures (RAD-89): uploaded with the items key; no download route, since they're viewed inline.
+  'POST /files/item-picture': 'items:write',
+  'POST /files/item-picture/:id/confirm': 'items:write',
+  // Stock (RAD-92): locations, and their kinds' labels.
+  'GET /stock/location-kinds': 'locations:read',
+  'PUT /stock/location-kinds/:kind': 'locations:write',
+  'GET /stock/locations': 'locations:read',
+  'POST /stock/locations': 'locations:write',
+  'PATCH /stock/locations/:id': 'locations:write',
+  // HR (RAD-92): the employee master.
+  'GET /hr/employees': 'employees:read',
+  'POST /hr/employees': 'employees:write',
+  'PATCH /hr/employees/:id': 'employees:write',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -86,6 +117,8 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
  * the reach out from the code, never from here, so a route or job that starts reaching another module's services, or
  * stops, fails CI until its line here changes, in the same review. */
 const PLATFORM = ['lib-platform'];
+const STOCK = ['lib-platform', 'lib-stock'];
+const HR = ['lib-hr', 'lib-platform'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -122,6 +155,23 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /admin/roles/:key/delete': PLATFORM,
   'POST /admin/roles/:key/reset': PLATFORM,
   'GET /admin/audit': PLATFORM,
+  // lib-stock's services, which run under lib-platform's.
+  'GET /units-of-measure': STOCK,
+  'GET /item-categories': STOCK,
+  'POST /item-categories': STOCK,
+  'PATCH /item-categories/:id': STOCK,
+  'GET /items': STOCK,
+  'GET /items/:id': STOCK,
+  'POST /items': STOCK,
+  'PATCH /items/:id': STOCK,
+  'POST /items/:id/pictures': STOCK,
+  'DELETE /items/:id/pictures/:fileId': STOCK,
+  // lib-accounts' services, which run under lib-platform's.
+  'GET /admin/company': ['lib-accounts', 'lib-platform'],
+  'PUT /admin/company': ['lib-accounts', 'lib-platform'],
+  'GET /gst/rates': ['lib-gst', 'lib-platform'],
+  'GET /gst/rates/in-force': ['lib-gst', 'lib-platform'],
+  'PUT /gst/rates': ['lib-gst', 'lib-platform'],
   'GET /admin/audit/tables': PLATFORM,
   'GET /admin/security-events': PLATFORM,
   'POST /files/photo': PLATFORM,
@@ -136,6 +186,18 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/import': PLATFORM,
   'POST /files/import/:id/confirm': PLATFORM,
   'POST /files/import/:id/download': PLATFORM,
+  'POST /files/item-picture': PLATFORM,
+  'POST /files/item-picture/:id/confirm': PLATFORM,
+  // Stock's routes reach lib-stock and, through it, lib-platform.
+  'GET /stock/location-kinds': STOCK,
+  'PUT /stock/location-kinds/:kind': STOCK,
+  'GET /stock/locations': STOCK,
+  'POST /stock/locations': STOCK,
+  'PATCH /stock/locations/:id': STOCK,
+  // HR's routes reach lib-hr and, through it, lib-platform.
+  'GET /hr/employees': HR,
+  'POST /hr/employees': HR,
+  'PATCH /hr/employees/:id': HR,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,

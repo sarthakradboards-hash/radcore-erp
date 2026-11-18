@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { ASKED_PATH_HEADER } from './components/auth/safe-next.ts';
 import { filesOrigin } from './files-origin.ts';
 
 // RC-146. The App Router streams each page's data in inline scripts that differ per request, so the hash list of
@@ -28,20 +29,34 @@ export function contentSecurityPolicy(nonce: string, dev: boolean, files: string
   ].join('; ');
 }
 
+/** A Next router prefetch: it renders no page of its own, so it gets no CSP and no asked path. */
+const isPrefetch = (request: NextRequest) =>
+  request.headers.has('next-router-prefetch') || request.headers.get('purpose') === 'prefetch';
+
 export function proxy(request: NextRequest) {
+  if (isPrefetch(request)) {
+    // The layout must only ever see an asked path this proxy set, so one the browser sent is removed here too
+    // (e2e on #177): one rule, in one place, for every page request.
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete(ASKED_PATH_HEADER);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
   const csp = contentSecurityPolicy(nonce, process.env.NODE_ENV === 'development', filesOrigin(process.env));
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('Content-Security-Policy', csp);
+  // The page asked for, for the (app) layout's sign-in redirect (RAD-55). Always set here, so a value the browser sent
+  // is overwritten; Next's own _rsc cache-buster is left out.
+  const asked = request.nextUrl.clone();
+  asked.searchParams.delete('_rsc');
+  requestHeaders.set(ASKED_PATH_HEADER, `${asked.pathname}${asked.search}`);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', csp);
   return response;
 }
 
 export const config = {
-  // Pages only: static files and prefetches carry no inline script. The other headers are in next.config.ts.
-  matcher: [{
-    source: '/((?!_next/static|_next/image|favicon.ico).*)',
-    missing: [{ type: 'header', key: 'next-router-prefetch' }, { type: 'header', key: 'purpose', value: 'prefetch' }],
-  }],
+  // Pages only: static files carry no inline script. Prefetches come through so the asked-path header is always the
+  // proxy's own, but get no CSP (isPrefetch). The other headers are in next.config.ts.
+  matcher: [{ source: '/((?!_next/static|_next/image|favicon.ico).*)' }],
 };

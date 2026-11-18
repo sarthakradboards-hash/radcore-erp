@@ -5,9 +5,11 @@
 // so the join is inner and the key is never missing (the architect on RAD-36). The answer is the real time, or null.
 import { after, platformTx, roleGrants, roles, searchWords, secondFactors, userSignIns, users } from '@radcore/db/platform';
 import { and, asc, desc, eq, inArray, isNotNull, or } from 'drizzle-orm';
+import { maySee } from '@radcore/lib-common';
 import { z } from 'zod';
 import type { listUsers } from '../contract.ts';
 import type { Ctx } from '../ctx.ts';
+import { AppError } from '../errors.ts';
 import { decodeCursor, encodeCursor, momentKey, sortedCursor } from '../lists.ts';
 import { SECOND_FACTOR_KEYS } from '../permissions.ts';
 
@@ -25,6 +27,12 @@ const SORTS = {
 export async function listPeople(ctx: Ctx, input: In): Promise<Out> {
   const self = ctx.principal.kind === 'user' ? ctx.principal.userId : '';
   const sort = input.sort ?? { column: 'displayName', desc: false };
+  // The address is pii() (RAD-103): someone who sees it masked can't find people by it, or learn its order.
+  const seesEmail = maySee('whole', ctx.principal.permissions);
+  if (sort.column === 'email' && !seesEmail) {
+    throw new AppError('invalid_input', 'Sort by name or last sign-in', [{ path: ['sort', 'column'], code: 'needs_pii_read',
+      message: 'Addresses are hidden from you, so you can’t sort by them' }]);
+  }
   const { column, value } = SORTS[sort.column];
   const key = input.after === undefined ? undefined
     : decodeCursor(sortedCursor(sort, value), input.after);
@@ -34,7 +42,7 @@ export async function listPeople(ctx: Ctx, input: In): Promise<Out> {
     role: users.role, lastSignInAt: userSignIns.lastSignInAt, sortValue: column }).from(users)
     .innerJoin(userSignIns, eq(userSignIns.userId, users.id))
     .where(and(
-      searchWords([users.displayName, users.email], search),
+      searchWords(seesEmail ? [users.displayName, users.email] : [users.displayName], search),
       status === undefined ? undefined : eq(users.status, status),
       role === undefined ? undefined : eq(users.role, role),
       after([column, users.id], key && [key.value, key.id], sort.desc ? 'desc' : 'asc'),

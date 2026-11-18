@@ -27,11 +27,17 @@ const MAX_STACK_LINES = 20;
 // name may hold spaces: Safari's `global code@url:1:1`, Firefox's `setTimeout handler*f@url:1:2` (e2e on #154).
 const FRAME = /^\s+at \S|^[^@\n]*@\S+:\d+:\d+$/;
 // V8's message line can itself end like a frame (`TypeError: send to asha@mail.example.in:25:1`), so the message is
-// cut off first, every line of it, and any other line starting `<name>:` goes too (the auditor on #161).
+// cut off first, every line of it, and any other line starting `<name>:` goes too (the auditor on #161). A V8 stack
+// holds the whole message even when the report's was cut to 1,000 characters, so everything before its first `at`
+// frame goes as well, on the server, whatever the reporter sent (the auditor on #162). Firefox's and Safari's stacks
+// hold no message.
+const V8_FRAME = /^\s+at \S/;
 function framesOf(stack: string, name: string, message: string): string {
   const head = `${name}: ${message}`;
-  const rest = stack.startsWith(head) ? stack.slice(head.length) : stack;
-  return rest.split('\n').filter((l) => FRAME.test(l) && !l.startsWith(`${name}:`)).slice(0, MAX_STACK_LINES).join('\n');
+  const lines = (stack.startsWith(head) ? stack.slice(head.length) : stack).split('\n');
+  const firstV8 = lines.findIndex((l) => V8_FRAME.test(l));
+  return lines.slice(Math.max(firstV8, 0)).filter((l) => FRAME.test(l) && !l.startsWith(`${name}:`))
+    .slice(0, MAX_STACK_LINES).join('\n');
 }
 const PAGES = WEB_PAGES.map((t) => ({ t, re: new RegExp(`^${t.replace(/\[[^\]/]+\]/g, '[^/]+')}$`) }));
 
