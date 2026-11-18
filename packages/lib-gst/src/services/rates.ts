@@ -45,7 +45,9 @@ export async function listRatesPage(ctx: Ctx, input: In<typeof listGstRates>): P
   return { items: page, next: rows.length > input.limit && last ? encodeCursor({ hsn: last.hsn, from: last.effectiveFrom, id: last.id }) : null };
 }
 
-/** PUT /gst/rates (gst:write): a new row, or the same code and date corrected. The reason was kept by the handler. */
+/** PUT /gst/rates (gst:write): a new row, or the same code and date corrected. The reason was kept by the handler.
+ * A correction also changes what gstRateFor answers for past dates, so a document copies the rate onto each line when
+ * it posts, and a posted invoice never changes with a later correction (auditor-2 on #184; M3's invoices). */
 export async function putGstRate(ctx: Ctx, { hsn, effectiveFrom, rate, source, note }: In<typeof setGstRate>): Promise<Out<typeof setGstRate>> {
   const [row] = await gstTx(ctx).insert(gstRates).values({ hsn, effectiveFrom, rate, source, note })
     .onConflictDoUpdate({ target: [gstRates.hsn, gstRates.effectiveFrom], set: { rate, source, note } }).returning({ id: gstRates.id });

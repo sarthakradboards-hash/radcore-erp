@@ -72,4 +72,22 @@ describe.skipIf(!url)('GST rates by date', { timeout: 30_000 }, () => {
       `${item.slice(0, 6)}@2017-07-01`, `${item.slice(0, 6)}@2025-09-22`, `${item}@2025-09-22`]);
     expect(second.next).toBeNull();
   });
+
+  // RAD-91's seed (CA-34): the 22 Sep 2025 rows for our goods, each citing its schedule and entry, read through the
+  // lookup at an item's full code. Before that date none of them is in force.
+  it('takes the seeded 22 Sep 2025 rates for our goods, each naming its notification entry', async () => {
+    const seeded = async (hsn: string) => run((ctx) => gstRateFor(ctx, hsn, '2025-10-01'));
+    const got = [];
+    for (const hsn of ['87116010', '85044010', '87141090', '85076000', '85013111', '40114010', '40139049', '95069990']) {
+      const r = await seeded(hsn);
+      got.push([hsn, r.rate, r.source.match(/Sch [IV]+, S\. No\. \d+/)?.[0]]);
+    }
+    expect(got).toEqual([
+      ['87116010', '5.000000', 'Sch I, S. No. 441'], ['85044010', '5.000000', 'Sch I, S. No. 438'],
+      ['87141090', '18.000000', 'Sch II, S. No. 547'], ['85076000', '18.000000', 'Sch II, S. No. 480'],
+      ['85013111', '18.000000', 'Sch II, S. No. 474'], ['40114010', '18.000000', 'Sch II, S. No. 137'],
+      ['40139049', '18.000000', 'Sch II, S. No. 139'], ['95069990', '5.000000', 'Sch I, S. No. 499'],
+    ]);
+    expect(await code(run((ctx) => gstRateFor(ctx, '87116010', '2025-09-21')))).toBe('no_gst_rate');
+  });
 });
