@@ -48,3 +48,7 @@
 .admin-cards li { display: grid; gap: var(--space-1); align-content: start; padding: var(--space-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
 .admin-cards img { inline-size: 100%; block-size: auto; aspect-ratio: 3 / 2; object-fit: cover; border-radius: var(--radius-sm); }
 .admin-card-blank { display: grid; place-items: center; aspect-ratio: 3 / 2; background-color: var(--surface); border-radius: var(--radius-sm); }
+.admin-reason { display: block; max-inline-size: 24rem; overflow-wrap: anywhere; white-space: pre-line; }
+.admin-reason summary { display: inline; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 0.2em; }
+.admin-reason[open] summary { text-decoration: none; }
+.admin-reason[open] .admin-reason-more { display: none; }

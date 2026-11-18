@@ -316,6 +316,8 @@ export const admin = {
   'admin.audit.col.what': 'Record',
   'admin.audit.col.op': 'Change',
   'admin.audit.col.changes': 'Values',
+  'admin.audit.col.reason': 'Why',
+  'admin.audit.reason.none': 'No reason asked',
   'admin.audit.system': 'System: {name}',
   'admin.audit.link': 'Public link {id}',
   'admin.audit.unknown': 'Unknown',

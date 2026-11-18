@@ -100,7 +100,7 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Outside services in tests | msw | 3.0.3 | MIT | hand-made payloads that skipped the production path (RC-143) |
 | Browser journeys | @playwright/test | 1.64.1 | Apache-2.0 | none (RC-150) |
 | Accessibility scan | @axe-core/playwright | 4.14.0 | MPL-2.0 (dev only, unmodified) | none |
-| Mutation testing | @stryker-mutator/core, @stryker-mutator/vitest-runner | 10.0.0, 10.0.0 | Apache-2.0 | a desk-check estimate only (RC-069) |
+| Mutation testing | @stryker-mutator/core, @stryker-mutator/vitest-runner | 10.1.1, 10.1.1 | Apache-2.0 | a desk-check estimate only (RC-069) |
 
 **Tooling and checks**
 
