@@ -15,6 +15,9 @@ describe('which GST rate applies', () => {
     expect(rowInForce([old8, new4])).toBe(new4);
     expect(rowInForce([new4, old8])).toBe(new4);
     expect(rowInForce([new4, new6, old8])).toBe(new6);
+    // The longer code wins a tie wherever it sits, not by being seen last (RAD-96).
+    expect(rowInForce([new6, new4])).toBe(new6);
+    expect(rowInForce([new6, old8, new4])).toBe(new6);
     expect(rowInForce([])).toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { z } from 'zod';
 import {
-  amountInWords, dec, fitsUnit, formatMoney, formatNumber, lineAmount, moneyString, percentString, quantityString,
+  amountInWords, dec, Decimal, fitsUnit, formatMoney, formatNumber, lineAmount, moneyString, percentString, quantityString,
   unitPriceString,
   roundMoney, roundQty, roundRate, sum, type Money, type Percent, type Quantity, type Rate,
 } from './index.ts';
@@ -152,5 +152,49 @@ describe('review fixes', () => {
     expect(percentString().safeParse('1000').success).toBe(false);
     expect(percentString({ max: '290' }).safeParse('204').success).toBe(true);
     expect(percentString().safeParse('-5').success).toBe(false);
+  });
+});
+
+// RAD-96 (RC-069): each test here kills a mutant that survived the first mutation run. A message is what the user
+// reads, so a changed one is a change no test noticed.
+describe('mutation survivors', () => {
+  const message = (r: { error?: { issues: readonly { message: string }[] } }) => r.error?.issues[0]?.message;
+
+  it('keeps 40 digits and writes no exponent from 1e-40 to 1e40, whatever decimal.js defaults to', () => {
+    expect(new Decimal(1).div(3).toString()).toBe(`0.${'3'.repeat(40)}`);
+    expect(new Decimal('1e-30').toString()).toBe(`0.${'0'.repeat(29)}1`);
+    expect(new Decimal('1e30').toString()).toBe(`1${'0'.repeat(30)}`);
+  });
+
+  it('names what it refuses', () => {
+    expect(() => dec('1e5')).toThrow('Not a decimal number: "1e5"');
+    expect(() => dec(new Decimal(1).div(0))).toThrow('Not a finite number: Infinity');
+    expect(() => formatMoney('abc')).toThrow('Not a decimal number: "abc"');
+    expect(() => formatNumber('1', 7)).toThrow('0 to 6 places, not 7');
+  });
+
+  it.each([-1, 1.5, 4])('refuses a unit with %s places, rounding or checking', (p) => {
+    expect(() => roundQty('1', p)).toThrow(`A unit has 0 to 3 decimal places, not ${p}`);
+    expect(() => fitsUnit('1', p)).toThrow(`A unit has 0 to 3 decimal places, not ${p}`);
+  });
+
+  it('takes a unit of 0 to 3 places', () => {
+    expect([roundQty('1.5', 0), roundQty('1.2345', 3)]).toEqual(['2', '1.235']);
+    expect([fitsUnit('1', 0), fitsUnit('1.234', 3)]).toEqual([true, true]);
+  });
+
+  it('formats a Decimal too small for its own string form, and up to 6 places', () => {
+    expect(formatNumber(new Decimal('1e-50'), 2)).toBe('0.00');
+    expect(formatNumber('1.5', 6)).toBe('1.500000');
+  });
+
+  it('tells the user what to enter', () => {
+    expect(message(moneyString().safeParse('1.234'))).toBe('Enter an amount with up to 2 decimals');
+    expect(message(moneyString().safeParse('-1'))).toBe('An amount with up to 2 decimals can\'t be negative');
+    expect(message(unitPriceString().safeParse('x'))).toBe('Enter a price with up to 6 decimals');
+    expect(message(quantityString().safeParse('x'))).toBe('Enter a quantity with up to 3 decimals');
+    expect(message(percentString().safeParse('x'))).toBe('Enter a percentage with up to 6 decimals');
+    expect(message(percentString().safeParse('101'))).toBe('Enter a percentage up to 100');
+    expect(message(percentString({ max: '290' }).safeParse('291'))).toBe('Enter a percentage up to 290');
   });
 });

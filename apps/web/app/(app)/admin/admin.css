@@ -44,3 +44,7 @@
 .admin-kinds { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .admin-kinds li { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); align-items: center; min-block-size: var(--tap); }
 .admin-kinds li > :first-child { font-weight: 600; min-inline-size: 12rem; }
+.admin-reason { display: block; max-inline-size: 24rem; overflow-wrap: anywhere; white-space: pre-line; }
+.admin-reason summary { display: inline; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 0.2em; }
+.admin-reason[open] summary { text-decoration: none; }
+.admin-reason[open] .admin-reason-more { display: none; }

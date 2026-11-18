@@ -3,6 +3,10 @@
 import { defineContract, idString, listInput, listOf, momentString } from '@radcore/lib-common';
 import { z } from 'zod';
 
+/** Who did something, as the screens show it (principals.ts): a person's name, or null for a link or the system. A
+ * display name isn't pii(). The audit trail and security events answer the same. */
+export const principalOut = z.object({ kind: z.enum(['user', 'system', 'link']), id: z.string(), displayName: z.string().nullable() });
+
 const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
 
@@ -11,6 +15,7 @@ const write = { readOnly: false, isolation: 'read committed' } as const;
  * module's contract.ts declares `approvalContracts('purchase-order', 'purchasing:approve')`, and its route file spreads
  * `...defineApproval(contracts, spec)`.
  * - listPending: the oldest pending requests within the approver's scope.
+ * - `requestedBy` and `decidedBy` are principals with the person's name (principalOut), not stored keys.
  * - getApproval: one request with the record's version as it is now. `versionHash` is what was requested,
  *   `currentHash` what the record hashes to now, and `changed` says they differ (then it can only be rejected).
  * - decide: approve the version the screen showed (`versionHash`), or reject with a reason. Refused with
@@ -19,15 +24,15 @@ const write = { readOnly: false, isolation: 'read committed' } as const;
 export const approvalContracts = <K extends string>(kind: K, perm: `${string}:${string}`) => {
   const request = z.object({
     id: idString(), recordId: idString(), status: z.enum(['pending', 'approved', 'rejected', 'superseded']),
-    requestedBy: z.string(), requestedAt: momentString(),
-    decidedBy: z.string().nullable(), decidedAt: momentString().nullable(), reason: z.string().nullable(),
+    requestedBy: principalOut, requestedAt: momentString(),
+    decidedBy: principalOut.nullable(), decidedAt: momentString().nullable(), reason: z.string().nullable(),
   });
   const hash = () => z.string().regex(/^[0-9a-f]{64}$/, 'Not a version');
   return Object.freeze({
     listPending: defineContract({
       method: 'GET', path: `/approvals/${kind}`, auth: 'session', perm, tx: read,
       input: listInput(z.object({})),
-      output: listOf(z.object({ id: idString(), recordId: idString(), requestedBy: z.string(), requestedAt: momentString() })),
+      output: listOf(z.object({ id: idString(), recordId: idString(), requestedBy: principalOut, requestedAt: momentString() })),
     }),
     getApproval: defineContract({
       method: 'GET', path: `/approvals/${kind}/:id`, auth: 'session', perm, tx: read,
