@@ -72,8 +72,9 @@ export function partyTaxIssues(p: { gstin: string | null; pan: string | null; st
   return issues;
 }
 
-/** A party as it's answered: phone, email and address are personal data, masked without pii:read (RAD-40), and
- * each record shown unmasked is logged as a look. The name is a business's, on every document. */
+/** A party as it's answered: phone, email and address are personal data, masked unless the person holds pii:read or
+ * parties:contact (Sarthak: "via own permission"; #182's seenWith), and each record shown unmasked is logged as a look.
+ * The name is a business's, on every document. */
 const party = piiRecord('parties', z.object({
   id: idString(), name: z.string(), kinds: z.array(z.enum(PARTY_KINDS)), gstin: z.string().nullable(),
   pan: z.string().nullable(), composition: z.boolean(), stateCode: z.string(),
@@ -81,7 +82,7 @@ const party = piiRecord('parties', z.object({
   addressLine1: pii(z.string().nullable()), addressLine2: pii(z.string().nullable()), city: pii(z.string().nullable()),
   pincode: pii(z.string().nullable()),
   creditDays: z.number().int().nullable(), creditLimit: moneyString().nullable(), active: z.boolean(),
-}));
+}), { seenWith: 'parties:contact' });
 
 /** GET /parties (parties:read): by name, a page at a time, searched by name or GSTIN, filtered by kind and active. */
 export const listParties = defineContract({

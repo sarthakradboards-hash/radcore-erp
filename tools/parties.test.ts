@@ -112,7 +112,7 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     expect(await pool.query('delete from radcore.parties where id = $1', [a.id]).then(() => 'ok', (e: { code?: string }) => e.code)).toBe('42501');
   });
 
-  it('masks a party’s phone, email and address without pii:read over the real route, and logs a look with it', async () => {
+  it('masks a party’s phone, email and address without pii:read or parties:contact over the real route, and logs a look with either', async () => {
     const { id } = await add();
     const user = (permissions: string[]): Principal => ({ kind: 'user', userId: randomUUID(), permissions: ['parties:read', ...permissions] });
     const cfg = loadConfig(testSettings(), 'api');
@@ -120,7 +120,7 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
       const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => p, routes: accounts }), 0, '127.0.0.1');
       try {
         const sent = requestFor(getParty, { id });
-        return await (await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { headers: { origin: cfg.publicOrigin } })).json() as Record<string, unknown>;
+        return await (await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { headers: { origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin' } })).json() as Record<string, unknown>;
       } finally {
         await server.stop();
       }
@@ -133,6 +133,10 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     const shown = await fetchAs(user(['pii:read']));
     expect([shown['phone'], shown['email']]).toEqual(['+919876543210', 'asha@example.in']);
     expect(await looks()).toBe(1);
+    // parties:contact shows a party's contact details without pii:read (the record's seenWith key), and logs a look too.
+    const contact = await fetchAs(user(['parties:contact']));
+    expect([contact['phone'], contact['email'], contact['city']]).toEqual(['+919876543210', 'asha@example.in', expect.any(String)]);
+    expect(await looks()).toBe(2);
   });
 
   it('refuses an own-scope grant of parties:contact in the database, which unmasks by key, not scope', async () => {

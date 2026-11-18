@@ -60,8 +60,8 @@ describe('the party contracts', () => {
     expect(ok({ ...party, phone: '12' })).toBe(false);
   });
 
-  it('mask the phone keeping its last 4, and the email and address whole, but never the name', () => {
-    expect(piiPlan(getParty.output)).toEqual({ table: 'parties', fields: { phone: { kind: 'last4' }, email: { kind: 'whole' },
+  it('mask the phone keeping its last 4, and the email and address whole, but never the name, unless seen with parties:contact', () => {
+    expect(piiPlan(getParty.output)).toEqual({ table: 'parties', seenWith: 'parties:contact', fields: { phone: { kind: 'last4' }, email: { kind: 'whole' },
       addressLine1: { kind: 'whole' }, addressLine2: { kind: 'whole' }, city: { kind: 'whole' }, pincode: { kind: 'whole' } } });
   });
 });
