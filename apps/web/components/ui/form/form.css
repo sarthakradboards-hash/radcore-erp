@@ -12,6 +12,8 @@
 }
 
 .kit-field { display: grid; gap: var(--space-1); }
+/* A control's own minimum width (a file input's) must not widen the field past a 320 px screen (WCAG 1.4.10; e2e on #198). */
+.kit-field > * { min-inline-size: 0; }
 .kit-field label, .kit-field-label { font-weight: 600; }
 .kit-field-value { margin: 0; overflow-wrap: anywhere; }
 .kit-field input, .kit-field textarea, .kit-field select {
