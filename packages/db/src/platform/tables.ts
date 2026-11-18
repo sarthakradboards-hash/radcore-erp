@@ -1,7 +1,7 @@
 // lib-platform's tables (ADR-001 §3). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { isNotNull, isNull, sql } from 'drizzle-orm';
-import { boolean, check, index, integer, jsonb, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, radcoreTable } from '../columns.ts';
+import { boolean, check, index, integer, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boundedText, id, json, radcoreTable } from '../columns.ts';
 
 /**
  * Settings, and nothing else (RC-161): one row per setting a library declares with defineSetting, keyed
@@ -10,7 +10,7 @@ import { boundedText, id, radcoreTable } from '../columns.ts';
  */
 export const settings = radcoreTable('settings', {
   key: text().primaryKey(),
-  value: jsonb().notNull(),
+  value: json().notNull(),
 }, (t) => [check('ck_settings_key', sql`${t.key} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'`)]);
 
 /**
@@ -48,7 +48,7 @@ export const savedOnce = radcoreTable('saved_once', {
   route: text().notNull(),
   key: uuid().notNull(),
   inputHash: text().notNull(),
-  answer: jsonb(),
+  answer: json(),
   kept: boolean().notNull().default(false),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
 }, (t) => [
@@ -152,7 +152,7 @@ export const passwordResets = linkToken('password_resets');
 export const jobsOutbox = radcoreTable('jobs_outbox', {
   id: id(),
   name: text().notNull(),
-  data: jsonb().notNull(),
+  data: json().notNull(),
   principal: text().notNull(),
   requestId: text().notNull(),
   attempts: integer().notNull().default(0),
@@ -271,7 +271,7 @@ export const files = radcoreTable('files', {
 export const dataExports = radcoreTable('exports', {
   id: id(),
   kind: text().notNull(),
-  filter: jsonb().notNull(),
+  filter: json().notNull(),
   status: text().notNull().default('queued'),
   rows: integer(),
   storeKey: text(),
