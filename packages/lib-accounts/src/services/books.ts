@@ -12,7 +12,7 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 /** GET /accounts: every account, by name. */
-export async function chartOfAccounts(ctx: Ctx, _input: In<typeof listAccounts>): Promise<Out<typeof listAccounts>> {
+export async function chartOfAccounts(ctx: Ctx): Promise<Out<typeof listAccounts>> {
   const rows = await accountsTx(ctx).select({ id: accounts.id, name: accounts.name, systemKey: accounts.systemKey, type: accounts.type,
     controlKind: accounts.controlKind, parentId: accounts.parentId }).from(accounts).orderBy(asc(accounts.nameKey), asc(accounts.id));
   return { items: rows.map((a) => ({ ...a, type: z.enum(ACCOUNT_TYPES).parse(a.type),

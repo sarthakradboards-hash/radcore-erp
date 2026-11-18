@@ -34,16 +34,17 @@ describe.skipIf(!url || !superUrl)('the journal routes', { timeout: 30_000 }, ()
   const db = createDatabase(pool);
   const run = <R>(fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, write, AS, randomUUID(), fn);
   const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
-  let accountOf: (system: string) => string = () => '';
+  const accountOf = async (system: string) =>
+    (await pool.query<{ id: string }>('select id from radcore.accounts where system_key = $1', [system])).rows[0]?.id ?? `no ${system}`;
   const m = (s: string) => s as Money;
-  const manual = (date: string, amount: string, more: { debit?: string; credit?: string } = {}) =>
-    run((ctx) => postManual(ctx, { businessDate: date, reason: 'Bank charges',
-      lines: [{ accountId: accountOf(more.debit ?? 'round_off'), debit: m(amount) }, { accountId: accountOf(more.credit ?? 'bank'), credit: m(amount) }] }));
+  const manual = async (date: string, amount: string, more: { debit?: string; credit?: string } = {}) => {
+    const [dr, cr] = [await accountOf(more.debit ?? 'round_off'), await accountOf(more.credit ?? 'bank')];
+    return run((ctx) => postManual(ctx, { businessDate: date, reason: 'Bank charges',
+      lines: [{ accountId: dr, debit: m(amount) }, { accountId: cr, credit: m(amount) }] }));
+  };
 
   beforeAll(async () => {
     await run((ctx) => openFinancialYear(ctx, YEAR.from));
-    const chart = await run((ctx) => chartOfAccounts(ctx, {}));
-    accountOf = (system) => chart.items.find((a) => a.systemKey === system)?.id ?? `no ${system}`;
   });
   afterAll(async () => {
     await pool.end();
@@ -60,7 +61,7 @@ describe.skipIf(!url || !superUrl)('the journal routes', { timeout: 30_000 }, ()
   });
 
   it('lists the chart of accounts with each account’s type, group and control flag', async () => {
-    const { items } = await run((ctx) => chartOfAccounts(ctx, {}));
+    const { items } = await run((ctx) => chartOfAccounts(ctx));
     expect(items.find((a) => a.systemKey === 'debtors')).toMatchObject({ type: 'asset', controlKind: 'party', control: true, parentId: null });
     expect(items.find((a) => a.systemKey === 'cash')).toMatchObject({ type: 'asset', controlKind: 'none', control: false });
   });
@@ -72,21 +73,22 @@ describe.skipIf(!url || !superUrl)('the journal routes', { timeout: 30_000 }, ()
     expect(entry).toMatchObject({ id, number, businessDate: '2028-05-10', kind: 'manual', total: '150.00', reason: 'Bank charges',
       reversesEntryId: null, reversedBy: null, postedBy: { kind: 'system', id: 'test', displayName: null } });
     expect(entry.lines).toEqual([
-      { lineNo: 1, account: { id: accountOf('round_off'), name: expect.any(String) }, debit: '150.00', credit: '0.00',
+      { lineNo: 1, account: { id: await accountOf('round_off'), name: expect.any(String) }, debit: '150.00', credit: '0.00',
         partyId: null, itemId: null, locationId: null },
-      { lineNo: 2, account: { id: accountOf('bank'), name: expect.any(String) }, debit: '0.00', credit: '150.00',
+      { lineNo: 2, account: { id: await accountOf('bank'), name: expect.any(String) }, debit: '0.00', credit: '150.00',
         partyId: null, itemId: null, locationId: null },
     ]);
     expect(await code(run((ctx) => journalEntryById(ctx, { id: randomUUID() })))).toBe('not_found');
   });
 
   it('refuses a manual journal by name: a control account, unbalanced, or a year never opened', async () => {
+    const [roundOff, bank] = [await accountOf('round_off'), await accountOf('bank')];
     expect(await code(manual('2028-05-11', '10.00', { debit: 'output_cgst' }))).toBe('control_account');
     expect(await code(run((ctx) => postManual(ctx, { businessDate: '2028-05-11', reason: 'x',
-      lines: [{ accountId: accountOf('round_off'), debit: m('10.00') }, { accountId: accountOf('bank'), credit: m('9.00') }] })))).toBe('unbalanced');
+      lines: [{ accountId: roundOff, debit: m('10.00') }, { accountId: bank, credit: m('9.00') }] })))).toBe('unbalanced');
     expect(await code(manual('2031-05-11', '10.00'))).toBe('year_not_open');
     expect(await code(run((ctx) => postManual(ctx, { businessDate: '2028-05-11', reason: 'x',
-      lines: [{ accountId: randomUUID(), debit: m('10.00') }, { accountId: accountOf('bank'), credit: m('10.00') }] })))).toBe('unknown_account');
+      lines: [{ accountId: randomUUID(), debit: m('10.00') }, { accountId: bank, credit: m('10.00') }] })))).toBe('unknown_account');
   });
 
   it('reverses an entry once, with a reason, and shows each side of the pair', async () => {
