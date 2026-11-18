@@ -1,5 +1,5 @@
 {
-  "id": "293bd1c6-35f9-4d10-bf69-ad107689c402",
+  "id": "6518ab9f-78b4-4c13-832d-764b2d94b73a",
   "prevId": "6f547356-9bc0-4942-bafd-cc22533099a0",
   "version": "7",
   "dialect": "postgresql",
@@ -594,7 +594,7 @@
         },
         "ck_journal_entries_manual": {
           "name": "ck_journal_entries_manual",
-          "value": "\"radcore\".\"journal_entries\".\"kind\" <> 'manual' or (\"radcore\".\"journal_entries\".\"source_table\" = 'journal_entries' and \"radcore\".\"journal_entries\".\"source_id\" = \"radcore\".\"journal_entries\".\"id\" and \"radcore\".\"journal_entries\".\"reason\" is not null)"
+          "value": "\"radcore\".\"journal_entries\".\"kind\" <> 'manual' or (\"radcore\".\"journal_entries\".\"source_table\" = 'journal_entries' and \"radcore\".\"journal_entries\".\"reason\" is not null\n    and (\"radcore\".\"journal_entries\".\"source_id\" = \"radcore\".\"journal_entries\".\"id\" or \"radcore\".\"journal_entries\".\"source_id\" = \"radcore\".\"journal_entries\".\"reverses_entry_id\"))"
         }
       },
       "isRLSEnabled": false
@@ -5246,16 +5246,6 @@
           "notNull": true,
           "default": "now()"
         },
-        "fy_start": {
-          "name": "fy_start",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
-            "type": "stored"
-          }
-        },
         "reverses_movement_id": {
           "name": "reverses_movement_id",
           "type": "uuid",
@@ -5292,21 +5282,6 @@
         }
       },
       "indexes": {
-        "ix_stock_movements_fy_start": {
-          "name": "ix_stock_movements_fy_start",
-          "columns": [
-            {
-              "expression": "fy_start",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "ux_stock_movements_reverses": {
           "name": "ux_stock_movements_reverses",
           "columns": [
@@ -5407,20 +5382,6 @@
             "id"
           ],
           "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "fk_stock_movements_fy_start": {
-          "name": "fk_stock_movements_fy_start",
-          "tableFrom": "stock_movements",
-          "tableTo": "financial_years",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "fy_start"
-          ],
-          "columnsTo": [
-            "start"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "fk_stock_movements_reverses": {

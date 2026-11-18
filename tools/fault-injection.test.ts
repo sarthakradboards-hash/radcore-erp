@@ -25,13 +25,19 @@ it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
 
 describe.skipIf(!url || !superUrl)('a save that fails halfway (RC-157)', { timeout: 60_000 }, () => {
   // `at` > 0 kills the connection just before the save's at-th statement; `sent` counts the statements either way.
-  const fault = { at: 0, sent: 0 };
+  // `refuse` has the first statement it matches refused by the database instead, the connection left alive.
+  const fault: { at: number; sent: number; refuse: RegExp | undefined } = { at: 0, sent: 0, refuse: undefined };
   const admin = new pg.Pool({ connectionString: superUrl, max: 1 });
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   pool.on('connect', (client) => {
     const query = client.query.bind(client) as (...args: unknown[]) => unknown;
     (client as unknown as { query: (...args: unknown[]) => unknown }).query = (...args: unknown[]) => {
       fault.sent += 1;
+      const text = typeof args[0] === 'string' ? args[0] : (args[0] as { text?: string } | undefined)?.text ?? '';
+      if (fault.refuse?.test(text) === true) {
+        fault.refuse = undefined;
+        return query('select 1/0');
+      }
       if (fault.sent !== fault.at) return query(...args);
       // The owner ends the save's backend, then the statement goes out on the dead connection: the database sees the
       // connection drop mid-transaction. The app login itself may not end a backend whose session is the owner's.
@@ -99,5 +105,14 @@ describe.skipIf(!url || !superUrl)('a save that fails halfway (RC-157)', { timeo
     const { after } = await killEachStep(draw, () => counter(series.key, YEAR));
     expect(after).toBe(1);
     expect(await draw()).toBe('FI/29-30/00002');
+  });
+
+  it('releases the connection when the database refuses how a transaction starts, the connection alive (the auditor on #206)', async () => {
+    // A standby refuses a read-write transaction (25006), for one: the connection lives on, and the save fails with it.
+    fault.refuse = /isolation level/i;
+    const failed = await run((ctx) => nextNumber(ctx, defineSeries(`platform.t_fault_${randomUUID().slice(0, 8)}`, 'FR'), DAY))
+      .then(() => 'saved', (e: unknown) => String((e as { cause?: { code?: string } }).cause?.code ?? (e as { code?: string }).code));
+    expect([failed, fault.refuse]).toEqual(['22012', undefined]);
+    await vi.waitFor(() => expect(pool.totalCount - pool.idleCount).toBe(0));
   });
 });

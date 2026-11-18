@@ -1,15 +1,14 @@
 // lib-platform's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every
 // contract file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  dateString, defineContract, emailString, idString, listInput, listOf, momentString, pii, piiRecord, reason, searchText,
-  sortInput,
+  dateString, defineContract, emailString, idString, listInput, listOf, momentString, pii, piiRecord, principalOut, reason,
+  searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 export {
   downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, mastersExport, workbookContract, type ExportContract,
   type WorkbookContract,
 } from './export/contract.ts';
-import { principalOut } from './approval-contracts.ts';
 import { FILE_KINDS, fileKeys, type FileKind } from './files/kinds.ts';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */

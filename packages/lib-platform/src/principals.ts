@@ -2,10 +2,9 @@
 // "system:<name>", ADR-001 §6a), answered as { kind, id, displayName }, a person's name read once per page. A display
 // name isn't pii(): the people list shows it to anyone with users:read.
 import { platformTx, users } from '@radcore/db/platform';
-import { idString } from '@radcore/lib-common';
+import { idString, type principalOut } from '@radcore/lib-common';
 import { inArray } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { principalOut } from './approval-contracts.ts';
 import type { Ctx } from './ctx.ts';
 
 type PrincipalOut = z.input<typeof principalOut>;
