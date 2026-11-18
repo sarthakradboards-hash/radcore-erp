@@ -2,7 +2,10 @@
 // The state isn't sent: it's the GSTIN's (RC-112).
 import { describe, expect, it } from 'vitest';
 import { piiPlan } from '@radcore/lib-common';
-import { createParty, getCompany, getParty, listParties, setCompany, setPartyCredit, updateParty } from './contract.ts';
+import {
+  createParty, getCompany, getJournal, getParty, listAccounts, listJournal, listParties, postJournal, reverseJournal, setCompany,
+  setPartyCredit, updateParty,
+} from './contract.ts';
 
 const profile = {
   legalName: 'Radboards Pvt Ltd', gstin: '27AAPFU0939F1ZV', addressLine1: 'Plot 4, MIDC', addressLine2: null, city: 'Pune',
@@ -63,5 +66,44 @@ describe('the party contracts', () => {
   it('mask the phone keeping its last 4, and the email and address whole, but never the name, unless seen with parties:contact', () => {
     expect(piiPlan(getParty.output)).toEqual({ table: 'parties', seenWith: 'parties:contact', fields: { phone: { kind: 'last4' }, email: { kind: 'whole' },
       addressLine1: { kind: 'whole' }, addressLine2: { kind: 'whole' }, city: { kind: 'whole' }, pincode: { kind: 'whole' } } });
+  });
+});
+
+// RAD-86's routes (M2-16's screens): the chart and the journal read with journal:read; a manual journal posted with
+// journal:post and an entry reversed with journal:reverse, each with a reason. There's no edit and no delete.
+describe('the journal contracts', () => {
+  const ID = '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01';
+  const manual = { businessDate: '2026-11-14', reason: 'Bank charges for October',
+    lines: [{ accountId: ID, debit: '100.00' }, { accountId: '8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', credit: '100.00' }] };
+  const ok = (input: unknown) => postJournal.input.safeParse(input).success;
+
+  it('read with journal:read; post with journal:post and reverse with journal:reverse, as writes', () => {
+    expect([listAccounts, listJournal, getJournal, postJournal, reverseJournal].map((c) => `${c.method} ${c.path} ${c.perm} ${c.tx.readOnly}`))
+      .toEqual(['GET /accounts journal:read true', 'GET /journal journal:read true', 'GET /journal/:id journal:read true',
+        'POST /journal journal:post false', 'POST /journal/:id/reverse journal:reverse false']);
+  });
+
+  it('take a manual journal of two lines or more, each a debit or a credit above zero, with a reason', () => {
+    expect(ok(manual)).toBe(true);
+    expect(ok({ ...manual, reason: ' ' })).toBe(false);
+    expect(ok({ ...manual, lines: manual.lines.slice(0, 1) })).toBe(false);
+    expect(ok({ ...manual, lines: [{ accountId: ID, debit: '1.00', credit: '1.00' }, manual.lines[1]] })).toBe(false);
+    expect(ok({ ...manual, lines: [{ accountId: ID }, manual.lines[1]] })).toBe(false);
+    expect(ok({ ...manual, lines: [{ accountId: ID, debit: '0.00' }, manual.lines[1]] })).toBe(false);
+    expect(ok({ ...manual, lines: [{ accountId: ID, debit: '1.001' }, manual.lines[1]] })).toBe(false);
+    expect(ok({ ...manual, businessDate: '2026-02-30' })).toBe(false);
+  });
+
+  it("name the engine's refusals, and take a reversal's date and reason", () => {
+    expect(postJournal.errors).toEqual(['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'period_locked', 'year_not_open']);
+    expect(reverseJournal.errors).toEqual(['already_reversed', 'reversal_not_reversible', 'period_locked', 'year_not_open']);
+    expect(reverseJournal.input.safeParse({ id: ID, businessDate: '2026-11-14', reason: 'Posted twice' }).success).toBe(true);
+    expect(reverseJournal.input.safeParse({ id: ID, businessDate: '2026-11-14' }).success).toBe(false);
+  });
+
+  it('filter the journal by business dates and kind', () => {
+    const list = (filter: unknown) => listJournal.input.safeParse({ filter, limit: 50 }).success;
+    expect([list({ from: '2026-04-01', to: '2027-03-31', kind: 'manual' }), list({ from: '2026-05-01', to: '2026-04-01' }),
+      list({ kind: 'gift' })]).toEqual([true, false, false]);
   });
 });

@@ -1,8 +1,9 @@
 // lib-accounts' route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every
 // contract file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  defineContract, emailString, gstinString, idString, listInput, listOf, moneyString, panString, phoneString, pii, piiRecord,
-  reason, searchText, stateCodeString,
+  ACCOUNT_TYPES, CONTROL_KINDS, dateRange, dateString, dec, defineContract, emailString, ENTRY_KINDS, gstinString, idString,
+  listInput, listOf, momentString, moneyString, panString, phoneString, pii, piiRecord, principalOut, reason, searchText,
+  stateCodeString,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 
@@ -120,4 +121,65 @@ export const setPartyCredit = defineContract({
   input: z.object({ id: idString(), creditDays: z.number().int().min(0).max(365).nullable(), creditLimit: moneyString().nullable(),
     reason: reason() }),
   output: z.object({}),
+});
+
+// The chart of accounts and the journal (RAD-86, M2-16's screens; ADR-006 §2, §3). The books are only posted and
+// reversed: there's no route to edit or delete an entry. Posting and reversing move money, so their keys need the
+// second factor (D-19).
+
+/** An account as the chart lists it. `control` is true for a control account, which no manual journal touches. */
+const account = z.object({
+  id: idString(), name: z.string(), systemKey: z.string().nullable(), type: z.enum(ACCOUNT_TYPES),
+  controlKind: z.enum(CONTROL_KINDS), control: z.boolean(), parentId: idString().nullable(),
+});
+
+/** GET /accounts (journal:read): every account, by name. The chart is small, so it's one answer, not pages. */
+export const listAccounts = defineContract({
+  method: 'GET', path: '/accounts', auth: 'session', perm: 'journal:read', tx: read,
+  input: z.object({}), output: z.object({ items: z.array(account) }),
+});
+
+/** An entry as the journal lists it: `total` is its debits' sum; `reversedBy` the entry reversing it, if any. */
+const entry = z.object({
+  id: idString(), number: z.string(), businessDate: dateString(), kind: z.enum(ENTRY_KINDS),
+  source: z.object({ table: z.string(), id: idString() }), total: moneyString(), reversesEntryId: idString().nullable(),
+  reversedBy: idString().nullable(), postedAt: momentString(), postedBy: principalOut,
+});
+
+/** GET /journal (journal:read): newest business date first, then number, a page at a time; by dates and kind. */
+export const listJournal = defineContract({
+  method: 'GET', path: '/journal', auth: 'session', perm: 'journal:read', tx: read,
+  input: listInput(dateRange().and(z.object({ kind: z.enum(ENTRY_KINDS).optional() }))),
+  output: listOf(entry),
+});
+
+/** GET /journal/:id (journal:read): one entry, its reason and its lines, each a debit or a credit. */
+export const getJournal = defineContract({
+  method: 'GET', path: '/journal/:id', auth: 'session', perm: 'journal:read', tx: read,
+  input: z.object({ id: idString() }),
+  output: entry.extend({ reason: z.string().nullable(), lines: z.array(z.object({
+    lineNo: z.number().int(), account: z.object({ id: idString(), name: z.string() }), debit: moneyString(), credit: moneyString(),
+    partyId: idString().nullable(), itemId: idString().nullable(), locationId: idString().nullable(),
+  })) }),
+});
+
+/** A manual journal's line: one account, and a debit or a credit above zero. */
+const manualLine = z.object({ accountId: idString(), debit: moneyString().optional(), credit: moneyString().optional() })
+  .refine((l) => (l.debit === undefined) !== (l.credit === undefined), 'Enter a debit or a credit, not both')
+  .refine((l) => dec(l.debit ?? l.credit ?? '0').gt(0), 'Enter an amount above zero');
+
+/** POST /journal (journal:post): a manual journal on ordinary accounts, with the reason it was made (RC-093). */
+export const postJournal = defineContract({
+  method: 'POST', path: '/journal', auth: 'session', perm: 'journal:post', tx: write,
+  input: z.object({ businessDate: dateString(), reason: reason(), lines: z.array(manualLine).min(2, 'Enter two lines or more').max(200) }),
+  output: z.object({ id: idString(), number: z.string() }),
+  errors: ['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'period_locked', 'year_not_open'],
+});
+
+/** POST /journal/:id/reverse (journal:reverse): the entry's lines swapped, dated `businessDate`, with the reason. */
+export const reverseJournal = defineContract({
+  method: 'POST', path: '/journal/:id/reverse', auth: 'session', perm: 'journal:reverse', tx: write,
+  input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
+  output: z.object({ id: idString(), number: z.string() }),
+  errors: ['already_reversed', 'reversal_not_reversible', 'period_locked', 'year_not_open'],
 });

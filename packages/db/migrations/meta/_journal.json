@@ -302,6 +302,13 @@
       "when": 1795027642904,
       "tag": "0042_parties",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795029448919,
+      "tag": "0043_journal_routes",
+      "breakpoints": true
     }
   ]
 }

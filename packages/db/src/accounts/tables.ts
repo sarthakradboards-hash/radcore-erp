@@ -95,7 +95,9 @@ export const journalEntries = radcoreTable('journal_entries', {
   check('ck_journal_entries_kind', sql`${t.kind} in ('opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice', 'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work', 'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer', 'manual', 'year_close')`),
   check('ck_journal_entries_source_table', sql`${t.sourceTable} ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || ${t.sourceTable}) is not null`),
   // A manual journal is its own document, and says why.
-  check('ck_journal_entries_manual', sql`${t.kind} <> 'manual' or (${t.sourceTable} = 'journal_entries' and ${t.sourceId} = ${t.id} and ${t.reason} is not null)`),
+  // A manual journal is its own document; its reversal belongs to the same document, the original (RAD-86's routes).
+  check('ck_journal_entries_manual', sql`${t.kind} <> 'manual' or (${t.sourceTable} = 'journal_entries' and ${t.reason} is not null
+    and (${t.sourceId} = ${t.id} or ${t.sourceId} = ${t.reversesEntryId}))`),
   unique('ux_journal_entries_source').on(t.sourceTable, t.sourceId, t.kind, t.reversesEntryId).nullsNotDistinct(),
   unique('ux_journal_entries_id_kind').on(t.id, t.kind),
   unique('ux_journal_entries_id_kind_date').on(t.id, t.kind, t.businessDate),
