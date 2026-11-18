@@ -52,12 +52,12 @@ export async function openTransaction<R>(db: Database, spec: TxSpec, who: Omit<R
   fn: (tx: Tx) => Promise<R>): Promise<R> {
   check(spec);
   return db.transaction(async (raw) => {
-    await applyRequestContext(raw as unknown as RawTx, { ...who, statementTimeoutMs: spec.statementTimeoutMs });
+    await applyRequestContext(raw as unknown as RawTx, spec, { ...who, statementTimeoutMs: spec.statementTimeoutMs });
     const handle = bind(raw as unknown as RawTx);
     try {
       return await fn(handle);
     } finally {
       unbind(handle);
     }
-  }, { isolationLevel: spec.isolation, accessMode: spec.readOnly ? 'read only' : 'read write' });
+  });
 }
