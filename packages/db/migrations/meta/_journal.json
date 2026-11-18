@@ -306,8 +306,15 @@
     {
       "idx": 43,
       "version": "7",
-      "when": 1795029448919,
-      "tag": "0043_journal_routes",
+      "when": 1795028373815,
+      "tag": "0043_stock_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795030170793,
+      "tag": "0044_journal_routes",
       "breakpoints": true
     }
   ]

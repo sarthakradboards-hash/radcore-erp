@@ -7,3 +7,4 @@ export { quantityFits } from './rules/quantity.ts';
 export { listKinds, setKindLabel } from './services/location-kinds.ts';
 export { addPlace, listPlaces, updatePlace } from './services/locations.ts';
 export { stockSheets } from './sheets.ts';
+export { batchKey, postStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
