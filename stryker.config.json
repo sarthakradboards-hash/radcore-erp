@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "RAD-96 (M2-08, RC-069): mutation testing on the money, GST and (with M2-03) posting functions. A surviving mutant is a change to the maths no test noticed. The score must stay at or above 80%.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "vitest": {
+    "configFile": "vitest.config.ts",
+    "related": true
+  },
+  "mutate": [
+    "packages/lib-common/src/money.ts",
+    "packages/lib-gst/src/rules/rates.ts"
+  ],
+  "coverageAnalysis": "perTest",
+  "reporters": [
+    "clear-text",
+    "progress",
+    "html"
+  ],
+  "htmlReporter": {
+    "fileName": "reports/mutation/index.html"
+  },
+  "thresholds": {
+    "high": 90,
+    "low": 80,
+    "break": 80
+  },
+  "tempDirName": ".stryker-tmp",
+  "concurrency": 4,
+  "timeoutMS": 30000,
+  "_comment_tz": "Stryker runs vitest in worker threads, which share their process's time zone, so lib-common's test.env TZ can't reach them, and Node on Windows ignores a TZ given at launch. Each test-runner process sets it first instead, so the suite runs outside India as it does under vitest (RC-204).",
+  "testRunnerNodeArgs": [
+    "--import",
+    "data:text/javascript,process.env.TZ='America/Los_Angeles'"
+  ]
+}

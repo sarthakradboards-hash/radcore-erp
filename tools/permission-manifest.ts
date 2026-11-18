@@ -69,6 +69,12 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /gst/rates': 'gst:read',
   'GET /gst/rates/in-force': 'gst:read',
   'PUT /gst/rates': 'gst:write',
+  // Parties (RAD-90): credit terms only with parties:manage.
+  'GET /parties': 'parties:read',
+  'GET /parties/:id': 'parties:read',
+  'POST /parties': 'parties:write',
+  'PATCH /parties/:id': 'parties:write',
+  'PUT /parties/:id/credit': 'parties:manage',
   // Price lists, their approval and discount limits (RAD-98).
   'GET /price-lists': 'prices:read',
   'GET /price-lists/:id': 'prices:read',
@@ -109,6 +115,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /stock/locations': 'locations:read',
   'POST /stock/locations': 'locations:write',
   'PATCH /stock/locations/:id': 'locations:write',
+  // The masters workbook's start route (RAD-92): each sheet's own read key is checked again when the job runs.
+  'POST /platform/masters/exports': 'masters:export',
   // HR (RAD-92): the employee master.
   'GET /hr/employees': 'employees:read',
   'POST /hr/employees': 'employees:write',
@@ -190,6 +198,11 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /gst/rates': ['lib-gst', 'lib-platform'],
   'GET /gst/rates/in-force': ['lib-gst', 'lib-platform'],
   'PUT /gst/rates': ['lib-gst', 'lib-platform'],
+  'GET /parties': ['lib-accounts', 'lib-platform'],
+  'GET /parties/:id': ['lib-accounts', 'lib-platform'],
+  'POST /parties': ['lib-accounts', 'lib-platform'],
+  'PATCH /parties/:id': ['lib-accounts', 'lib-platform'],
+  'PUT /parties/:id/credit': ['lib-accounts', 'lib-platform'],
   'GET /price-lists': ['lib-platform', 'lib-sales'],
   'GET /price-lists/:id': ['lib-platform', 'lib-sales'],
   'POST /price-lists': ['lib-platform', 'lib-sales'],
@@ -229,6 +242,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /stock/locations': STOCK,
   'POST /stock/locations': STOCK,
   'PATCH /stock/locations/:id': STOCK,
+  // The workbook's start route takes only its contract (the architect on RAD-92): lib-platform's own.
+  'POST /platform/masters/exports': PLATFORM,
   // HR's routes reach lib-hr and, through it, lib-platform.
   'GET /hr/employees': HR,
   'POST /hr/employees': HR,
@@ -241,5 +256,6 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'platform.file-check': PLATFORM,
   'platform.password-reset-email': PLATFORM,
   'platform.invite-email': PLATFORM,
-  'platform.export': PLATFORM,
+  // The export job runs every export, the masters workbook's sheets from lib-stock and lib-hr among them (RAD-92).
+  'platform.export': ['lib-hr', 'lib-platform', 'lib-stock'],
 };

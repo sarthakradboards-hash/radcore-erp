@@ -15,6 +15,7 @@ import type { z } from 'zod';
 import type { approvalContracts } from './approval-contracts.ts';
 import { principalId, type Ctx } from './ctx.ts';
 import { AppError } from './errors.ts';
+import { principalsOf } from './principals.ts';
 import { defineRoute, type Route } from './route.ts';
 
 /** A version is plain JSON: what the approver's screen shows, and what's hashed. */
@@ -85,11 +86,11 @@ export async function listPendingApprovals<V extends ApprovalVersion>(ctx: Ctx, 
     requestedBy: approvals.requestedBy, requestedAt: approvals.createdAt })
     .from(approvals).where(and(eq(approvals.kind, spec.kind), isNull(approvals.decidedAt)))
     .orderBy(asc(approvals.createdAt), asc(approvals.id)).limit(limit);
-  const items: { id: string; recordId: string; requestedBy: string; requestedAt: string }[] = [];
-  for (const r of rows) {
-    if (await spec.version(ctx, r.recordId, { forUpdate: false }) !== null) items.push({ ...r, requestedAt: r.requestedAt.toISOString() });
-  }
-  return { items, next: null };
+  const inScope: typeof rows = [];
+  for (const r of rows) if (await spec.version(ctx, r.recordId, { forUpdate: false }) !== null) inScope.push(r);
+  const principal = await principalsOf(ctx, inScope.map((r) => r.requestedBy));
+  return { items: inScope.map((r) => ({ ...r, requestedBy: principal(r.requestedBy), requestedAt: r.requestedAt.toISOString() })),
+    next: null };
 }
 
 /** A request with the record as it is now: `changed` when it no longer hashes to the version requested. */
@@ -102,8 +103,10 @@ export async function showApproval<V extends ApprovalVersion>(ctx: Ctx, spec: Ap
   const version = await spec.version(ctx, request.recordId, { forUpdate: false });
   if (version === null) throw notFound();
   const current = versionHash(version);
+  const principal = await principalsOf(ctx, [request.requestedBy, request.decidedBy ?? '']);
   // The table's CHECK holds status to these four.
-  return { ...request, status: request.status as Status, requestedAt: request.requestedAt.toISOString(),
+  return { ...request, status: request.status as Status, requestedBy: principal(request.requestedBy),
+    decidedBy: request.decidedBy === null ? null : principal(request.decidedBy), requestedAt: request.requestedAt.toISOString(),
     decidedAt: request.decidedAt?.toISOString() ?? null, version, currentHash: current, changed: current !== request.versionHash };
 }
 

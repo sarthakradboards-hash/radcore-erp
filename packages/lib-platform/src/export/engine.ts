@@ -6,7 +6,7 @@ import { createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { dataExports, platformTx } from '@radcore/db/platform';
-import { maskOf, maySee, type PiiKind } from '@radcore/lib-common';
+import { maskOf, type PiiKind, type Sight } from '@radcore/lib-common';
 import { and, eq, gt } from 'drizzle-orm';
 import type { z } from 'zod';
 import { EXPORT_MAX_ROWS, type downloadExport, type getExport } from './contract.ts';
@@ -15,6 +15,7 @@ import { AppError } from '../errors.ts';
 import { recordLooks } from '../looks.ts';
 import { recordSecurityEvent } from '../security-events.ts';
 import { csvWriter } from './csv.ts';
+import { writeXlsx, type WorkbookSheet } from './xlsx.ts';
 
 /** One row of an export: its columns' values, written as text. */
 export type ExportRow = Readonly<Record<string, string | number | null>>;
@@ -33,9 +34,10 @@ export type ExportDefinition<F> = {
   readonly pii?: Readonly<Partial<Record<string, PiiKind>>>;
 };
 
-/** A row as this principal may see it: each pii column they lack the key for written as its mask's text. */
-function masker(def: ExportDefinition<unknown>, permissions: readonly string[]): (row: ExportRow) => ExportRow {
-  const hidden = Object.entries(def.pii ?? {}).filter((e): e is [string, PiiKind] => e[1] !== undefined && !maySee(e[1], permissions));
+/** A row as this principal may see it: each pii column they lack the key for written as its mask's text. A file asks
+ * with no record's own key, so contacts unmask only with pii:read (the architect on RAD-90). */
+function masker(pii: ExportDefinition<unknown>['pii'], shows: Sight): (row: ExportRow) => ExportRow {
+  const hidden = Object.entries(pii ?? {}).filter((e): e is [string, PiiKind] => e[1] !== undefined && !shows(e[1]));
   if (hidden.length === 0) return (row) => row;
   return (row) => {
     const out: Record<string, string | number | null> = { ...row };
@@ -71,7 +73,7 @@ const PAGE = 1_000;
 export async function writeExportFile<F>(ctx: Ctx, def: ExportDefinition<F>, filter: F, path: string,
   cap: number = EXPORT_MAX_ROWS): Promise<number> {
   const csv = csvWriter(def.columns);
-  const shown = masker(def as ExportDefinition<unknown>, ctx.principal.permissions);
+  const shown = masker(def.pii, ctx.shows);
   // pipeline closes the file on success and destroys both streams on any error, so nothing is left open.
   const done = pipeline(csv, createWriteStream(path));
   let rows = 0;
@@ -98,10 +100,54 @@ export async function writeExportFile<F>(ctx: Ctx, def: ExportDefinition<F>, fil
   }
 }
 
+/** One list of a workbook export (RAD-92): its sheet's name, the key a starter must hold for it to be in the file, its
+ * columns, their personal data and its rows, read as its screen's list reads them. */
+export type ExportSheet<F = unknown> = {
+  readonly name: string;
+  readonly perm: string;
+  readonly columns: readonly string[];
+  readonly pii?: Readonly<Partial<Record<string, PiiKind>>>;
+  readonly rows: ExportRows<F>;
+};
+
+/**
+ * Writes a workbook export to `path`: one sheet for each list whose key the starter holds when the job runs (ctx.can,
+ * on the principal the job loaded fresh), so the file never shows more than their screens would. Each sheet is masked
+ * as its screen is. Past `cap` rows in all, or on a full volume, it throws ExportTooLarge; on any failure the partial
+ * file is removed. Answers how many rows it wrote.
+ */
+export async function writeWorkbookFile<F>(ctx: Ctx, sheets: readonly ExportSheet<F>[], filter: F, path: string,
+  cap: number = EXPORT_MAX_ROWS): Promise<number> {
+  let rows = 0;
+  try {
+    const written: WorkbookSheet[] = [];
+    for (const sheet of sheets.filter((s) => ctx.can(s.perm))) {
+      const shown = masker(sheet.pii, ctx.shows);
+      const items: ExportRow[] = [];
+      let after: string | undefined;
+      do {
+        const page = await sheet.rows(ctx, filter, { ...(after === undefined ? {} : { after }), limit: PAGE });
+        rows += page.items.length;
+        if (rows > cap) throw new ExportTooLarge(`${sheet.name}: the workbook has more than ${String(cap)} rows`);
+        items.push(...page.items.map(shown));
+        after = page.next ?? undefined;
+      } while (after !== undefined);
+      written.push({ name: sheet.name, columns: sheet.columns, rows: items });
+    }
+    await writeXlsx(path, written);
+    return rows;
+  } catch (error) {
+    await rm(path, { force: true });
+    if ((error as { code?: string }).code === 'ENOSPC') throw new ExportTooLarge('the export volume is full');
+    throw error;
+  }
+}
+
 /** The person's own export, or not_found: an export is only ever its starter's. */
 async function ownExport(ctx: Ctx, id: string) {
   const [row] = await platformTx(ctx).select({ id: dataExports.id, kind: dataExports.kind, status: dataExports.status,
-    rows: dataExports.rows, storeKey: dataExports.storeKey, failure: dataExports.failure, createdAt: dataExports.createdAt })
+    rows: dataExports.rows, storeKey: dataExports.storeKey, failure: dataExports.failure, createdAt: dataExports.createdAt,
+    format: dataExports.format })
     .from(dataExports)
     .where(and(eq(dataExports.id, id), eq(dataExports.createdBy, principalId(ctx.principal)))).limit(1);
   if (row === undefined) throw new AppError('not_found', 'There is no such export');
@@ -132,7 +178,7 @@ export async function exportDownload(ctx: Ctx, input: z.output<typeof downloadEx
 ): Promise<z.input<typeof downloadExport.output>> {
   const row = await ownExport(ctx, input.id);
   if (row.status !== 'ready' || row.storeKey === null) throw new AppError('not_ready', 'This export is not ready to download');
-  const url = await ctx.files.downloadUrl(row.storeKey, `${row.kind}.csv`);
+  const url = await ctx.files.downloadUrl(row.storeKey, `${row.kind}.${row.format}`);
   await recordSecurityEvent(ctx, { kind: 'download', detail: { fileId: row.id } },
     { userId: ctx.principal.kind === 'user' ? ctx.principal.userId : null, device: null });
   await recordLooks(ctx, [{ table: 'exports', id: row.id }]);
