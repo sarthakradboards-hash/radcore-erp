@@ -51,10 +51,12 @@ describe.skipIf(!url || !superUrl)('the journal routes', { timeout: 30_000 }, ()
     await admin.end();
   });
 
+  // Built-in roles only: other test files copy grants into custom roles of their own.
   it('grants the journal keys to admin, owner and accounts, in each role and its template', async () => {
     for (const table of ['role_grants', 'role_templates']) {
       const { rows } = await admin.query<{ permission: string; roles: string[] }>(`select permission, array_agg(role order by role) roles
-        from radcore.${table} where permission like 'journal:%' group by permission order by permission`);
+        from radcore.${table} where permission like 'journal:%' and role in (select role from radcore.role_templates)
+        group by permission order by permission`);
       expect(rows, table).toEqual(['journal:post', 'journal:read', 'journal:reverse'].map((permission) =>
         ({ permission, roles: ['accounts', 'admin', 'owner'] })));
     }
