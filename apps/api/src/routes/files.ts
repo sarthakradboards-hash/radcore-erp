@@ -1,6 +1,8 @@
 // Uploaded files' routes (RAD-43): declarations only. Each kind has its own read and write permissions.
-import { defineRoute, importFileService, photoFileService, resumeFileService, statementFileService } from '@radcore/lib-platform';
-import { importFiles, photoFiles, resumeFiles, statementFiles } from '@radcore/lib-platform/contract';
+import {
+  defineRoute, importFileService, itemPictureFileService, photoFileService, resumeFileService, statementFileService,
+} from '@radcore/lib-platform';
+import { importFiles, itemPictureFiles, photoFiles, resumeFiles, statementFiles } from '@radcore/lib-platform/contract';
 
 export default [
   defineRoute(photoFiles.startUpload, photoFileService.startUpload),
@@ -15,4 +17,7 @@ export default [
   defineRoute(importFiles.startUpload, importFileService.startUpload),
   defineRoute(importFiles.confirmUpload, importFileService.confirmUpload),
   defineRoute(importFiles.downloadLink, importFileService.downloadLink),
+  // Item pictures (RAD-89): upload and confirm only; they're seen through the item's answer, inline.
+  defineRoute(itemPictureFiles.startUpload, itemPictureFileService.startUpload),
+  defineRoute(itemPictureFiles.confirmUpload, itemPictureFileService.confirmUpload),
 ];

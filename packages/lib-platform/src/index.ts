@@ -41,13 +41,15 @@ export { createLog, type Fields, type Log, type LogOptions } from './log/logger.
 export { describeError, type ErrorDescription } from './log/safe-error.ts';
 export { routeOf, scrubText } from './log/scrub.ts';
 export { createSecrets, expiringBefore, SecretPlaceMismatch, type SecretPlace, type Secrets } from './secrets.ts';
+export { defineSeries, nextNumber, type Series } from './numbering.ts';
 export { defineSetting, settingRow, Settings, type SettingDef, type SettingRow } from './settings.ts';
 export { saveSetting } from './settings-store.ts';
 export { claimSavedOnce, cleanSavedOnce, SAVED_ONCE_KEEP_MS, savedOnceCleanup, type SavedOnce, type SavedOnceClaim, type SavedOnceClass } from './saved-once.ts';
 export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './files/kinds.ts';
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
 export {
-  checkUpload, fileCheck, importFileService, photoFileService, recordFileCheck, resumeFileService, statementFileService,
+  checkUpload, fileCheck, importFileService, itemPictureFileService, photoFileService, readyFile, recordFileCheck, resumeFileService,
+  statementFileService, viewLinks,
 } from './files/service.ts';
 export { cleanOutbox, outboxCleanup } from './outbox.ts';
 export { listAuditedTablesList, listAuditTrailPage } from './audit-trail.ts';
@@ -58,5 +60,7 @@ export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
   type WebhookVerifier,
 } from './webhooks.ts';
-export { EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows } from './export/engine.ts';
-export { defineExport, defineExportJob, exportOf, type ModuleExport } from './export/job.ts';
+export {
+  EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows, type ExportSheet,
+} from './export/engine.ts';
+export { defineExport, defineExportJob, exportOf, startMastersExport, workbookOf, type ModuleExport } from './export/job.ts';

@@ -1,3 +1,6 @@
+ALTER TABLE "radcore"."batches" DROP CONSTRAINT "ck_batches_supplier";--> statement-breakpoint
+ALTER TABLE "radcore"."batches" ADD CONSTRAINT "batches_supplier_id_parties_id_fk" FOREIGN KEY ("supplier_id") REFERENCES "radcore"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "ix_batches_supplier" ON "radcore"."batches" USING btree ("supplier_id");--> statement-breakpoint
 CREATE VIEW "radcore"."v_batch_on_hand" AS (select m.item_id, m.location_id, b.batch_id,
     sum(case m.direction when 'in' then b.qty else -b.qty end) as qty
   from radcore.stock_movement_batches b

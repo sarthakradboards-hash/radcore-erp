@@ -2,12 +2,12 @@
 // locations and their kinds' labels (RAD-92).
 import { defineRoute } from '@radcore/lib-platform';
 import {
-  addCategory, addItem, addPlace, changeItem, getItemById, listCategories, listItemsPage, listKinds, listPlaces, listUnits,
-  renameCategory, setKindLabel, updatePlace,
+  addCategory, addItem, addItemPicture, addPlace, changeItem, dropItemPicture, getItemById, listCategories, listItemsPage,
+  listKinds, listPlaces, listUnits, renameCategory, setKindLabel, updatePlace,
 } from '@radcore/lib-stock';
 import {
-  addLocation, createItem, createItemCategory, getItem, listItemCategories, listItems, listLocationKinds, listLocations,
-  listUnitsOfMeasure, renameItemCategory, setLocationKindLabel, updateItem, updateLocation,
+  addLocation, attachItemPicture, createItem, createItemCategory, getItem, listItemCategories, listItems, listLocationKinds,
+  listLocations, listUnitsOfMeasure, removeItemPicture, renameItemCategory, setLocationKindLabel, updateItem, updateLocation,
 } from '@radcore/lib-stock/contract';
 
 export default [
@@ -19,6 +19,8 @@ export default [
   defineRoute(getItem, getItemById),
   defineRoute(createItem, addItem),
   defineRoute(updateItem, changeItem),
+  defineRoute(attachItemPicture, addItemPicture),
+  defineRoute(removeItemPicture, dropItemPicture),
   defineRoute(listLocationKinds, listKinds),
   defineRoute(setLocationKindLabel, setKindLabel),
   defineRoute(listLocations, listPlaces),

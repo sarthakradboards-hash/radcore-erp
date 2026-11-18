@@ -1,6 +1,6 @@
 {
-  "id": "2ec501bb-2551-408b-897c-eaa431a53ec4",
-  "prevId": "e5537b8a-8b18-4227-955d-394caf499ea2",
+  "id": "4d9d5b27-2988-4d4b-a813-0d24cb6c3b00",
+  "prevId": "c12f4bfa-b4dc-4d82-a20b-39b386986308",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -925,7 +925,7 @@
         },
         "ck_files_kind": {
           "name": "ck_files_kind",
-          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import')"
+          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import', 'item_picture')"
         },
         "ck_files_status": {
           "name": "ck_files_status",
@@ -1208,6 +1208,80 @@
           "value": "\"radcore\".\"jobs_outbox\".\"attempts\" >= 0"
         }
       },
+      "isRLSEnabled": false
+    },
+    "radcore.number_counters": {
+      "name": "number_counters",
+      "schema": "radcore",
+      "columns": {
+        "series": {
+          "name": "series",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "financial_year": {
+          "name": "financial_year",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prefix": {
+          "name": "prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last": {
+          "name": "last",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "pk_number_counters": {
+          "name": "pk_number_counters",
+          "columns": [
+            "series",
+            "financial_year"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "radcore.password_resets": {
@@ -2958,124 +3032,6 @@
       },
       "isRLSEnabled": false
     },
-    "radcore.batches": {
-      "name": "batches",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "supplier_id": {
-          "name": "supplier_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "batch_no": {
-          "name": "batch_no",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "batch_key": {
-          "name": "batch_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "upper(regexp_replace(batch_no, '[[:space:]-]', '', 'g'))",
-            "type": "stored"
-          }
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "batches_item_id_items_id_fk": {
-          "name": "batches_item_id_items_id_fk",
-          "tableFrom": "batches",
-          "tableTo": "items",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "ux_batches_item_supplier_key": {
-          "name": "ux_batches_item_supplier_key",
-          "nullsNotDistinct": true,
-          "columns": [
-            "item_id",
-            "supplier_id",
-            "batch_key"
-          ]
-        },
-        "ux_batches_id_item": {
-          "name": "ux_batches_id_item",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "item_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_batches_batch_no": {
-          "name": "ck_batches_batch_no",
-          "value": "char_length(\"radcore\".\"batches\".\"batch_no\") <= 40"
-        },
-        "ck_batches_supplier": {
-          "name": "ck_batches_supplier",
-          "value": "\"radcore\".\"batches\".\"supplier_id\" is null"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "radcore.item_categories": {
       "name": "item_categories",
       "schema": "radcore",
@@ -3157,6 +3113,121 @@
         "ck_item_categories_name": {
           "name": "ck_item_categories_name",
           "value": "char_length(\"radcore\".\"item_categories\".\"name\") <= 80"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.item_pictures": {
+      "name": "item_pictures",
+      "schema": "radcore",
+      "columns": {
+        "file_id": {
+          "name": "file_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_item_pictures_item_position": {
+          "name": "ux_item_pictures_item_position",
+          "columns": [
+            {
+              "expression": "item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "item_pictures_file_id_files_id_fk": {
+          "name": "item_pictures_file_id_files_id_fk",
+          "tableFrom": "item_pictures",
+          "tableTo": "files",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "item_pictures_item_id_items_id_fk": {
+          "name": "item_pictures_item_id_items_id_fk",
+          "tableFrom": "item_pictures",
+          "tableTo": "items",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_item_pictures_position": {
+          "name": "ck_item_pictures_position",
+          "value": "\"radcore\".\"item_pictures\".\"position\" between 0 and 7"
         }
       },
       "isRLSEnabled": false
@@ -3530,553 +3601,6 @@
       },
       "isRLSEnabled": false
     },
-    "radcore.stock_movement_batches": {
-      "name": "stock_movement_batches",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "movement_id": {
-          "name": "movement_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "batch_id": {
-          "name": "batch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "qty": {
-          "name": "qty",
-          "type": "numeric(18, 3)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ix_stock_movement_batches_movement_item": {
-          "name": "ix_stock_movement_batches_movement_item",
-          "columns": [
-            {
-              "expression": "movement_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_stock_movement_batches_batch": {
-          "name": "ix_stock_movement_batches_batch",
-          "columns": [
-            {
-              "expression": "batch_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fk_stock_movement_batches_movement": {
-          "name": "fk_stock_movement_batches_movement",
-          "tableFrom": "stock_movement_batches",
-          "tableTo": "stock_movements",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "movement_id",
-            "item_id"
-          ],
-          "columnsTo": [
-            "id",
-            "item_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "fk_stock_movement_batches_batch": {
-          "name": "fk_stock_movement_batches_batch",
-          "tableFrom": "stock_movement_batches",
-          "tableTo": "batches",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "batch_id",
-            "item_id"
-          ],
-          "columnsTo": [
-            "id",
-            "item_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "ux_stock_movement_batches_movement_batch": {
-          "name": "ux_stock_movement_batches_movement_batch",
-          "nullsNotDistinct": true,
-          "columns": [
-            "movement_id",
-            "batch_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_stock_movement_batches_qty": {
-          "name": "ck_stock_movement_batches_qty",
-          "value": "\"radcore\".\"stock_movement_batches\".\"qty\" > 0 and \"radcore\".\"stock_movement_batches\".\"qty\" <> 'NaN'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.stock_movements": {
-      "name": "stock_movements",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location_id": {
-          "name": "location_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_table": {
-          "name": "source_table",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_line_id": {
-          "name": "source_line_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "direction": {
-          "name": "direction",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "qty": {
-          "name": "qty",
-          "type": "numeric(18, 3)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rate": {
-          "name": "rate",
-          "type": "numeric(18, 6)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "posted_at": {
-          "name": "posted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "reverses_movement_id": {
-          "name": "reverses_movement_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_stock_movements_reverses": {
-          "name": "ux_stock_movements_reverses",
-          "columns": [
-            {
-              "expression": "reverses_movement_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_stock_movements_item_location": {
-          "name": "ix_stock_movements_item_location",
-          "columns": [
-            {
-              "expression": "item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "location_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_stock_movements_location": {
-          "name": "ix_stock_movements_location",
-          "columns": [
-            {
-              "expression": "location_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_stock_movements_source": {
-          "name": "ix_stock_movements_source",
-          "columns": [
-            {
-              "expression": "source_table",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "stock_movements_item_id_items_id_fk": {
-          "name": "stock_movements_item_id_items_id_fk",
-          "tableFrom": "stock_movements",
-          "tableTo": "items",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "stock_movements_location_id_locations_id_fk": {
-          "name": "stock_movements_location_id_locations_id_fk",
-          "tableFrom": "stock_movements",
-          "tableTo": "locations",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "location_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "fk_stock_movements_reverses": {
-          "name": "fk_stock_movements_reverses",
-          "tableFrom": "stock_movements",
-          "tableTo": "stock_movements",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "reverses_movement_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "ux_stock_movements_id_item": {
-          "name": "ux_stock_movements_id_item",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "item_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_stock_movements_qty": {
-          "name": "ck_stock_movements_qty",
-          "value": "\"radcore\".\"stock_movements\".\"qty\" >= 0 and \"radcore\".\"stock_movements\".\"qty\" <> 'NaN'"
-        },
-        "ck_stock_movements_value": {
-          "name": "ck_stock_movements_value",
-          "value": "\"radcore\".\"stock_movements\".\"value\" <> 'NaN'"
-        },
-        "ck_stock_movements_rate": {
-          "name": "ck_stock_movements_rate",
-          "value": "\"radcore\".\"stock_movements\".\"rate\" >= 0 and \"radcore\".\"stock_movements\".\"rate\" <> 'NaN'"
-        },
-        "ck_stock_movements_direction": {
-          "name": "ck_stock_movements_direction",
-          "value": "\"radcore\".\"stock_movements\".\"direction\" in ('in', 'out', 'revalue')"
-        },
-        "ck_stock_movements_revalue_qty": {
-          "name": "ck_stock_movements_revalue_qty",
-          "value": "(\"radcore\".\"stock_movements\".\"direction\" = 'revalue') = (\"radcore\".\"stock_movements\".\"qty\" = 0)"
-        },
-        "ck_stock_movements_value_sign": {
-          "name": "ck_stock_movements_value_sign",
-          "value": "\"radcore\".\"stock_movements\".\"direction\" = 'revalue' or \"radcore\".\"stock_movements\".\"value\" >= 0"
-        },
-        "ck_stock_movements_rate_in": {
-          "name": "ck_stock_movements_rate_in",
-          "value": "\"radcore\".\"stock_movements\".\"rate\" is null or \"radcore\".\"stock_movements\".\"direction\" = 'in'"
-        },
-        "ck_stock_movements_source_table": {
-          "name": "ck_stock_movements_source_table",
-          "value": "\"radcore\".\"stock_movements\".\"source_table\" ~ '^[a-z][a-z0-9_]*$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.stock_positions": {
-      "name": "stock_positions",
-      "schema": "radcore",
-      "columns": {
-        "item_id": {
-          "name": "item_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location_id": {
-          "name": "location_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ix_stock_positions_location": {
-          "name": "ix_stock_positions_location",
-          "columns": [
-            {
-              "expression": "location_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "stock_positions_item_id_items_id_fk": {
-          "name": "stock_positions_item_id_items_id_fk",
-          "tableFrom": "stock_positions",
-          "tableTo": "items",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "stock_positions_location_id_locations_id_fk": {
-          "name": "stock_positions_location_id_locations_id_fk",
-          "tableFrom": "stock_positions",
-          "tableTo": "locations",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "location_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "pk_stock_positions": {
-          "name": "pk_stock_positions",
-          "columns": [
-            "item_id",
-            "location_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "radcore.units_of_measure": {
       "name": "units_of_measure",
       "schema": "radcore",
@@ -4200,39 +3724,6 @@
       "isExisting": false,
       "materialized": false
     },
-    "radcore.v_batch_on_hand": {
-      "columns": {
-        "itemId": {
-          "name": "itemId",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "locationId": {
-          "name": "locationId",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "batchId": {
-          "name": "batchId",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "qty": {
-          "name": "qty",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "definition": "select m.item_id, m.location_id, b.batch_id,\n    sum(case m.direction when 'in' then b.qty else -b.qty end) as qty\n  from radcore.stock_movement_batches b\n  join radcore.stock_movements m on m.id = b.movement_id and m.item_id = b.item_id\n  group by m.item_id, m.location_id, b.batch_id",
-      "name": "v_batch_on_hand",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
-    },
     "radcore.v_schema_enums": {
       "columns": {
         "schemaName": {
@@ -4323,7 +3814,7 @@
           "notNull": false
         }
       },
-      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')\n    and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore'\n      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions',\n        'change_reasons', 'user_sign_ins', 'stock_positions'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
+      "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')\n    and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore'\n      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions',\n        'change_reasons', 'user_sign_ins', 'number_counters'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
       "name": "v_schema_missing_triggers",
       "schema": "radcore",
       "isExisting": false,

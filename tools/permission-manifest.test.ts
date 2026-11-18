@@ -5,11 +5,12 @@
 import { loadConfig, type JobDefinition, type Route } from '@radcore/lib-platform';
 import { createAuth } from '@radcore/lib-platform/runtime';
 import { createClientErrors } from '@radcore/lib-platform';
+import { piiPlan, type PiiPlan } from '@radcore/lib-common';
 import { testSettings } from '@radcore/test-helpers';
 import { describe, expect, it } from 'vitest';
 import { apiRoutes } from '../apps/api/src/routes.ts';
 import { workerJobs } from '../apps/worker/src/worker-jobs.ts';
-import { PERMISSIONS } from '../packages/lib-platform/src/permissions.ts';
+import { PERMISSIONS, type Permission } from '../packages/lib-platform/src/permissions.ts';
 import { JOB_PRINCIPALS, ROUTE_CHECKS } from './permission-manifest.ts';
 
 /** What a route checks, in the manifest's words: its key; `public`, with any key it also names, which shouldn't be
@@ -33,6 +34,21 @@ function disagreements(mounted: Readonly<Record<string, string>>, table: Readonl
     ...Object.keys(table).filter((k) => !(k in mounted)).map((k) => `${k}: in the manifest, but nothing mounts it`),
     ...Object.keys(mounted).filter((k) => k in table && table[k] !== mounted[k])
       .map((k) => `${k}: checks ${mounted[k] ?? ''}, but the manifest says ${table[k] ?? ''}`),
+  ];
+}
+
+/** Every key a record in an answer names as `seenWith`, anywhere in the answer. */
+const seenWithKeys = (plan: PiiPlan | null): string[] => (plan === null || 'kind' in plan ? [] : 'each' in plan ? seenWithKeys(plan.each)
+  : [...(plan.seenWith === undefined ? [] : [plan.seenWith]), ...Object.values(plan.fields).flatMap((f) => seenWithKeys(f))]);
+
+/** A key that shows a record's personal fields must say so in the catalogue (`unmasks`, RAD-90) and be all-only, so
+ * the matrix warns of it and an own-scope grant can't show every record's; and no key says so without unmasking one. */
+function unmaskIssues(used: readonly string[], catalogue: readonly Permission[]): string[] {
+  const seen = new Set(used);
+  return [
+    ...[...seen].filter((k) => !catalogue.some((p) => p.key === k && p.unmasks === true && p.allOnly === true))
+      .map((k) => `${k}: a record is seen with it, but the catalogue doesn't mark it unmasks and all-only`),
+    ...catalogue.filter((p) => p.unmasks === true && !seen.has(p.key)).map((p) => `${p.key}: marked unmasks, but no record is seen with it`),
   ];
 }
 
@@ -77,6 +93,17 @@ describe('the permission manifest', () => {
     ['a route that was removed', (m: Record<string, string>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== 'GET /me'))],
   ])('fails on %s', async (_, tamper) => {
     expect(disagreements(tamper(await mountedRoutes()), ROUTE_CHECKS)).toHaveLength(1);
+  });
+
+  it('marks every key a record is seen with as unmasks and all-only, and no other (RAD-90)', async () => {
+    const used = (await apiList()).flatMap((r) => seenWithKeys(piiPlan(r.contract.output)));
+    expect(used).toContain('parties:contact');
+    expect(unmaskIssues(used, PERMISSIONS)).toEqual([]);
+    // A record seen with a key the catalogue doesn't mark is refused, and so is a mark nothing uses.
+    expect(unmaskIssues([...used, 'session:read'], PERMISSIONS)).toEqual([
+      "session:read: a record is seen with it, but the catalogue doesn't mark it unmasks and all-only"]);
+    expect(unmaskIssues(used, PERMISSIONS.map((p) => (p.key === 'parties:contact' ? { ...p, allOnly: false } : p)))).toHaveLength(1);
+    expect(unmaskIssues([], PERMISSIONS)).toEqual(['parties:contact: marked unmasks, but no record is seen with it']);
   });
 
   it('names a link route by its action, and catches a public route that also names a key', () => {

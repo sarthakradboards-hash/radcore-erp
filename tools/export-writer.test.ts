@@ -4,14 +4,16 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { sightOf } from '@radcore/lib-common';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Ctx } from '../packages/lib-platform/src/ctx.ts';
 import { ExportTooLarge, writeExportFile, type ExportDefinition, type ExportRow } from '../packages/lib-platform/src/export/engine.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'export-writer-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
-// The writer reads only the principal's keys, for pii columns, and hands ctx to the page function, which these ignore.
-const as = (permissions: string[]) => ({ principal: { kind: 'system', name: 'test', permissions } }) as unknown as Ctx;
+// The writer reads only ctx.shows, for pii columns, and hands ctx to the page function, which these ignore.
+const as = (permissions: string[]) =>
+  ({ principal: { kind: 'system', name: 'test', permissions }, shows: sightOf(permissions) }) as unknown as Ctx;
 const ctx = as([]);
 
 // A list of `total` rows served `per` at a time through an opaque `after`, as a screen's keyset paging would.

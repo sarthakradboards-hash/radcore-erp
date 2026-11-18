@@ -5,7 +5,7 @@
 // (Sarthak, 15 Nov). Each test makes codes of its own, so the shuffled order doesn't matter.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { platformTx, roleGrants } from '@radcore/db/platform';
-import { loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { testPassword, testSettings } from '@radcore/test-helpers';
 import { eq } from 'drizzle-orm';
@@ -140,7 +140,7 @@ describe.skipIf(!url || !superUrl)('the employee master', () => {
     [`owner.${tag().toLowerCase()}@example.in`]);
     const owner = (await runInTransaction(db, WRITE, SYSTEM, randomUUID(), (ctx) => principalFor(ctx, user?.id ?? ''))) ?? SYSTEM;
     const seen = { grants: [] as string[] };
-    const done = await runInTransaction(db, WRITE, owner, randomUUID(), async (ctx: Ctx) => {
+    const grant = () => runInTransaction(db, WRITE, owner, randomUUID(), async (ctx: Ctx) => {
       const { version } = await permissionMatrix(ctx);
       const held = (await platformTx(ctx).select({ p: roleGrants.permission }).from(roleGrants)
         .where(eq(roleGrants.role, 'service_head'))).map((g) => g.p);
@@ -150,6 +150,10 @@ describe.skipIf(!url || !superUrl)('the employee master', () => {
         .where(eq(roleGrants.role, 'service_head'))).map((g) => g.p);
       throw new Rollback();
     }).catch((e: unknown) => e);
+    // Another file may change the matrix between the read and the write (as in roles-admin.test.ts, #160): the version
+    // check refuses that, so read it again and retry on matrix_changed.
+    let done = await grant();
+    for (let i = 0; i < 5 && done instanceof AppError && done.code === 'matrix_changed'; i++) done = await grant();
     expect(done).toBeInstanceOf(Rollback);
     expect(seen.grants).toContain('cost:read');
     const after = await su.query("select 1 from radcore.role_grants where role = 'service_head' and permission = 'cost:read'");

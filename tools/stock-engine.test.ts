@@ -113,6 +113,26 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
       .toBe('transfer_same_location');
   });
 
+  // RAD-90 (#180): a batch's supplier is a party, or none; an id that's no party is refused. Rolled back, so the shared
+  // database keeps no test party.
+  it("keeps a batch's supplier to a party", async () => {
+    const { itemId } = await setup([]);
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      const { rows: [party] } = await c.query<{ id: string }>(
+        "insert into radcore.parties (name, supplier, state_code) values ('Pads and Co', true, '27') returning id");
+      const batch = (supplier: string | undefined, no: string) =>
+        c.query('insert into radcore.batches (item_id, supplier_id, batch_no) values ($1, $2, $3)', [itemId, supplier, no]);
+      await batch(party?.id, 'S1');
+      await expect(batch(randomUUID(), 'S2')).rejects.toMatchObject({ code: '23503' });
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+  });
+
   // ADR-005 §7: a correction is a new row, never an edit; even the owner is refused by the trigger.
   it('keeps the ledger append-only', async () => {
     const { itemId, places: [stores = ''] } = await setup(['stores']);

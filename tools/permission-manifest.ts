@@ -60,6 +60,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /items/:id': 'items:read',
   'POST /items': 'items:write',
   'PATCH /items/:id': 'items:write',
+  'POST /items/:id/pictures': 'items:write',
+  'DELETE /items/:id/pictures/:fileId': 'items:write',
   // The company profile (RAD-88): one company, set by whoever holds company:write.
   'GET /admin/company': 'company:read',
   'PUT /admin/company': 'company:write',
@@ -67,6 +69,12 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /gst/rates': 'gst:read',
   'GET /gst/rates/in-force': 'gst:read',
   'PUT /gst/rates': 'gst:write',
+  // Parties (RAD-90): credit terms only with parties:manage.
+  'GET /parties': 'parties:read',
+  'GET /parties/:id': 'parties:read',
+  'POST /parties': 'parties:write',
+  'PATCH /parties/:id': 'parties:write',
+  'PUT /parties/:id/credit': 'parties:manage',
   // Files, by kind (RAD-43): each kind its own pair of keys.
   'POST /files/photo': 'photo_files:write',
   'POST /files/photo/:id/confirm': 'photo_files:write',
@@ -80,12 +88,17 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/import': 'import_files:write',
   'POST /files/import/:id/confirm': 'import_files:write',
   'POST /files/import/:id/download': 'import_files:read',
+  // Item pictures (RAD-89): uploaded with the items key; no download route, since they're viewed inline.
+  'POST /files/item-picture': 'items:write',
+  'POST /files/item-picture/:id/confirm': 'items:write',
   // Stock (RAD-92): locations, and their kinds' labels.
   'GET /stock/location-kinds': 'locations:read',
   'PUT /stock/location-kinds/:kind': 'locations:write',
   'GET /stock/locations': 'locations:read',
   'POST /stock/locations': 'locations:write',
   'PATCH /stock/locations/:id': 'locations:write',
+  // The masters workbook's start route (RAD-92): each sheet's own read key is checked again when the job runs.
+  'POST /platform/masters/exports': 'masters:export',
   // HR (RAD-92): the employee master.
   'GET /hr/employees': 'employees:read',
   'POST /hr/employees': 'employees:write',
@@ -159,12 +172,19 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /items/:id': STOCK,
   'POST /items': STOCK,
   'PATCH /items/:id': STOCK,
+  'POST /items/:id/pictures': STOCK,
+  'DELETE /items/:id/pictures/:fileId': STOCK,
   // lib-accounts' services, which run under lib-platform's.
   'GET /admin/company': ['lib-accounts', 'lib-platform'],
   'PUT /admin/company': ['lib-accounts', 'lib-platform'],
   'GET /gst/rates': ['lib-gst', 'lib-platform'],
   'GET /gst/rates/in-force': ['lib-gst', 'lib-platform'],
   'PUT /gst/rates': ['lib-gst', 'lib-platform'],
+  'GET /parties': ['lib-accounts', 'lib-platform'],
+  'GET /parties/:id': ['lib-accounts', 'lib-platform'],
+  'POST /parties': ['lib-accounts', 'lib-platform'],
+  'PATCH /parties/:id': ['lib-accounts', 'lib-platform'],
+  'PUT /parties/:id/credit': ['lib-accounts', 'lib-platform'],
   'GET /admin/audit/tables': PLATFORM,
   'GET /admin/security-events': PLATFORM,
   'POST /files/photo': PLATFORM,
@@ -179,12 +199,16 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/import': PLATFORM,
   'POST /files/import/:id/confirm': PLATFORM,
   'POST /files/import/:id/download': PLATFORM,
+  'POST /files/item-picture': PLATFORM,
+  'POST /files/item-picture/:id/confirm': PLATFORM,
   // Stock's routes reach lib-stock and, through it, lib-platform.
   'GET /stock/location-kinds': STOCK,
   'PUT /stock/location-kinds/:kind': STOCK,
   'GET /stock/locations': STOCK,
   'POST /stock/locations': STOCK,
   'PATCH /stock/locations/:id': STOCK,
+  // The workbook's start route takes only its contract (the architect on RAD-92): lib-platform's own.
+  'POST /platform/masters/exports': PLATFORM,
   // HR's routes reach lib-hr and, through it, lib-platform.
   'GET /hr/employees': HR,
   'POST /hr/employees': HR,
@@ -197,5 +221,6 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'platform.file-check': PLATFORM,
   'platform.password-reset-email': PLATFORM,
   'platform.invite-email': PLATFORM,
-  'platform.export': PLATFORM,
+  // The export job runs every export, the masters workbook's sheets from lib-stock and lib-hr among them (RAD-92).
+  'platform.export': ['lib-hr', 'lib-platform', 'lib-stock'],
 };

@@ -8,9 +8,24 @@ export const FILE_KINDS = {
   resume: { maxBytes: 5 * MB, types: ['application/pdf'] },
   statement: { maxBytes: 15 * MB, types: ['application/pdf', 'text/csv', XLSX] },
   import: { maxBytes: 25 * MB, types: ['text/csv', XLSX] },
-} as const satisfies Record<string, { maxBytes: number; types: readonly string[] }>;
+  // Item pictures (RAD-89, ADR-004 §2): the one view kind, shown inline in the app rather than downloaded, so a link
+  // writes no download event. JPEG, PNG and WebP only: browsers can't show HEIC in a page. Uploaded and seen with the
+  // items keys, not file keys of their own.
+  item_picture: { maxBytes: 5 * MB, types: ['image/jpeg', 'image/png', 'image/webp'], view: true,
+    perms: { read: 'items:read', write: 'items:write' } },
+} as const satisfies Record<string, { maxBytes: number; types: readonly string[]; view?: true;
+  perms?: { read: string; write: string } }>;
 
 export type FileKind = keyof typeof FILE_KINDS;
+
+type Key = `${string}:${string}`;
+/** The keys that upload and see a kind: its own (`photo_files:write`), or the ones it names. */
+export const fileKeys = (kind: FileKind): { read: Key; write: Key } => {
+  const rule = FILE_KINDS[kind] as { perms?: { read: Key; write: Key } };
+  return rule.perms ?? { read: `${kind}_files:read`, write: `${kind}_files:write` };
+};
+/** Whether a kind is viewed inline (item pictures) rather than downloaded with a recorded event. */
+export const isViewKind = (kind: FileKind): boolean => (FILE_KINDS[kind] as { view?: true }).view === true;
 
 /** Files the server writes itself, never uploaded by a browser: no presigned policy, so no size limit of their own;
  * the export's row cap and its size-limited volume bound them (RAD-47). */
