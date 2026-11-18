@@ -13,7 +13,7 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 /** The limit for a role with none of its own (D-21's register default: none, 0%). */
-export const defaultDiscountLimit = defineSetting<string>('sales.discount_limit_default', percentString(), '0');
+const defaultDiscountLimit = defineSetting<string>('sales.discount_limit_default', percentString(), '0');
 
 /** The most this person may take off a list price, in percent: their role's limit, else the default. A job, a link
  * or a person with no role has the default. */

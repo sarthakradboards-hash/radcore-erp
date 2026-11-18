@@ -33,8 +33,7 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
   const ownerPool = new pg.Pool({ connectionString: ownerUrl, max: 1 });
   const db = createDatabase(pool);
   const people = { maker: '', approver: '' };
-  let itemA = '';
-  let itemB = '';
+  const items = { a: '', b: '' };
 
   const run = <R>(fn: (ctx: Ctx) => Promise<R>, who: Principal = AS) => runInTransaction(db, write, who, randomUUID(), fn);
   const as = (userId: string, role = 'admin'): Principal => ({ kind: 'user', userId, role, permissions: [] });
@@ -69,38 +68,39 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
     const categoryId = (await run((ctx) => addCategory(ctx, { name: `Test ${tag()}` }))).id;
     const item = async () => (await run((ctx) => addItem(ctx, { sku: `P-${tag()}`, name: 'Test scooter', categoryId, hsn: '87116020',
       unit: 'NOS', barcode: null, serialised: false, hasChassis: false }))).id;
-    [itemA, itemB] = [await item(), await item()];
+    items.a = await item();
+    items.b = await item();
   });
   afterAll(async () => { await Promise.all([pool.end(), ownerPool.end()]); });
 
   it('prices nothing from a draft, and never lets its maker approve it (RC-037)', async () => {
-    const { id, requestId, versionHash } = await sent({ [itemA]: '84999.50' });
-    expect(await code(price(id, itemA))).toBe('no_price');
+    const { id, requestId, versionHash } = await sent({ [items.a]: '84999.50' });
+    expect(await code(price(id, items.a))).toBe('no_price');
     expect(await code(approve(requestId, versionHash, people.maker))).toBe('own_request');
-    expect(await code(price(id, itemA))).toBe('no_price');
+    expect(await code(price(id, items.a))).toBe('no_price');
   });
 
   it('puts the approved version in force, with its tax-inclusive flag, and refuses an item it doesn’t price', async () => {
-    const { id, draftId, requestId, versionHash } = await sent({ [itemA]: '84999.50' }, true);
+    const { id, draftId, requestId, versionHash } = await sent({ [items.a]: '84999.50' }, true);
     await approve(requestId, versionHash);
-    expect(await price(id, itemA)).toEqual({ versionId: draftId, rate: '84999.500000', taxInclusive: true });
-    expect(await code(price(id, itemB))).toBe('no_price');
+    expect(await price(id, items.a)).toEqual({ versionId: draftId, rate: '84999.500000', taxInclusive: true });
+    expect(await code(price(id, items.b))).toBe('no_price');
     expect((await run((ctx) => getVersion(ctx, { id: draftId }))).state).toBe('in_force');
   });
 
   it('keeps the old price until a new draft is approved, then supersedes it', async () => {
-    const { id, draftId: first, requestId, versionHash } = await sent({ [itemA]: '100' });
+    const { id, draftId: first, requestId, versionHash } = await sent({ [items.a]: '100' });
     await approve(requestId, versionHash);
     const { draftId } = await run((ctx) => startDraft(ctx, { id }), as(people.maker));
     expect(draftId).not.toBe(first);
     // The draft starts as a copy of the version in force, and asking again gives the same draft.
     expect((await run((ctx) => startDraft(ctx, { id }), as(people.maker))).draftId).toBe(draftId);
-    await run((ctx) => putRates(ctx, { id: draftId, rates: [{ itemId: itemA, rate: rate('120') }, { itemId: itemB, rate: rate('5.375') }] }), as(people.maker));
+    await run((ctx) => putRates(ctx, { id: draftId, rates: [{ itemId: items.a, rate: rate('120') }, { itemId: items.b, rate: rate('5.375') }] }), as(people.maker));
     await run((ctx) => setTax(ctx, { id: draftId, taxInclusive: false }), as(people.maker));
-    expect((await price(id, itemA)).rate).toBe('100.000000');
+    expect((await price(id, items.a)).rate).toBe('100.000000');
     const request = await run((ctx) => askApproval(ctx, { id: draftId }), as(people.maker));
     await approve(request.id, request.versionHash);
-    expect([await price(id, itemA), await price(id, itemB)]).toEqual([
+    expect([await price(id, items.a), await price(id, items.b)]).toEqual([
       { versionId: draftId, rate: '120.000000', taxInclusive: false }, { versionId: draftId, rate: '5.375000', taxInclusive: false }]);
     expect((await run((ctx) => getVersion(ctx, { id: first }))).state).toBe('superseded');
     const listed = await run((ctx) => listListsPage(ctx, { filter: {}, limit: 200 }));
@@ -108,22 +108,22 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
   });
 
   it('never changes an approved version, and approves only the version sent', async () => {
-    const { draftId, requestId, versionHash } = await sent({ [itemA]: '10' });
+    const { draftId, requestId, versionHash } = await sent({ [items.a]: '10' });
     // Changed after it was sent: that version can't be approved; it must be sent again.
-    await run((ctx) => putRates(ctx, { id: draftId, rates: [{ itemId: itemA, rate: rate('9') }] }), as(people.maker));
+    await run((ctx) => putRates(ctx, { id: draftId, rates: [{ itemId: items.a, rate: rate('9') }] }), as(people.maker));
     expect(await code(approve(requestId, versionHash))).toBe('version_changed');
     const again = await run((ctx) => askApproval(ctx, { id: draftId }), as(people.maker));
     await approve(again.id, again.versionHash);
-    expect(await code(run((ctx) => putRates(ctx, { id: draftId, rates: [{ itemId: itemA, rate: rate('1') }] })))).toBe('not_a_draft');
+    expect(await code(run((ctx) => putRates(ctx, { id: draftId, rates: [{ itemId: items.a, rate: rate('1') }] })))).toBe('not_a_draft');
     expect(await code(run((ctx) => setTax(ctx, { id: draftId, taxInclusive: false })))).toBe('not_a_draft');
     expect(await code(run((ctx) => askApproval(ctx, { id: draftId })))).toBe('not_a_draft');
   });
 
   it('prices nothing from a list switched off, refuses an unknown item and a name taken', async () => {
-    const { id, requestId, versionHash } = await sent({ [itemA]: '10' });
+    const { id, requestId, versionHash } = await sent({ [items.a]: '10' });
     await approve(requestId, versionHash);
     await run((ctx) => changeList(ctx, { id, active: false }));
-    expect(await code(price(id, itemA))).toBe('no_price');
+    expect(await code(price(id, items.a))).toBe('no_price');
     const { draftId: next } = await run((ctx) => startDraft(ctx, { id }));
     expect(await code(run((ctx) => putRates(ctx, { id: next, rates: [{ itemId: randomUUID(), rate: rate('1') }] })))).toBe('unknown_item');
     const name = `Test list ${tag()}`;
