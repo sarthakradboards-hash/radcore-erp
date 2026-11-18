@@ -667,6 +667,9 @@ defineImport(stock.contracts.importItems, stock.importItemRow),          // engi
 The module function runs under `ctx` like any service. Scope, rules and `pii()` masking apply to an export exactly
 as they do on a screen (M1-22, M1-28, M1-29, M1-20).
 
+A workbook of several modules' sheets (`workbookOf`, RAD-92) is joined in the worker's start-up job list
+(`worker-jobs.ts`), since no library may import two modules. Its start route takes only the contract.
+
 **Approvals (maker-checker, M1-20, RAD-38).** A module's `contract.ts` declares
 `approvalContracts('purchase-order', 'purchasing:approve')`. That gives three contracts under one static
 permission: the pending list, one request with its version hash, and the decision. The route file spreads

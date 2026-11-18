@@ -7,7 +7,7 @@ import {
   endPersonSessions, getMyself, listAllSessions,
   exportDownload, exportStatus, listAuditedTablesList, listAuditTrailPage, listOwnSessions, listSecurityEventsPage,
   invitePerson, listPeople, listRolesFor, permissionMatrix, reactivatePerson, renameRole, requestPasswordReset, resendPersonInvite,
-  resetRoleToTemplate, setRoleGrants,
+  resetRoleToTemplate, setRoleGrants, startMastersExport,
 } from '@radcore/lib-platform';
 import * as contract from '@radcore/lib-platform/contract';
 
@@ -38,4 +38,6 @@ export default [
   defineRoute(contract.updateRole, renameRole),
   defineRoute(contract.deleteRole, deleteCustomRole),
   defineRoute(contract.resetRole, resetRoleToTemplate),
+  // The masters workbook's start route (RAD-92): the contract alone; the worker joins its sheets.
+  defineRoute(contract.mastersExport.start, startMastersExport),
 ];
