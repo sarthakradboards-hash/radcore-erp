@@ -38,7 +38,7 @@ const L1 = { base: { allowNames: ALLOW }, zone: { allowNames: [...ALLOW, 'sql'],
 // Every sample here is TypeScript in a tsconfig, so E6's typed half is on for each (RAD-67).
 const EVERYWHERE = ['radcore/no-driver', 'radcore/no-raw-html', 'radcore/e6-no-float-money', 'radcore/e6-branded-money',
   'radcore/tables-in-schema',
-  'radcore/views-in-views',
+  'radcore/views-in-views', 'radcore/no-jsonb',
   'radcore/no-subpath-imports', 'radcore/no-declare'];
 const SERVER = ['radcore/no-query-strings', 'radcore/no-raw-execution', 'radcore/outbound-only', ...EVERYWHERE];
 const LIB = [...SERVER, 'radcore/e4-no-escape', 'radcore/d7-no-db-reexport'];
