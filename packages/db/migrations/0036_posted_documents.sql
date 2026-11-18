@@ -15,7 +15,9 @@ CREATE TABLE radcore.state_transitions (
   updated_by text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
   CONSTRAINT pk_state_transitions PRIMARY KEY (document_table, from_status, to_status),
   CONSTRAINT ck_state_transitions_document_table CHECK (document_table ~ '^[a-z][a-z0-9_]*$'),
-  CONSTRAINT ck_state_transitions_moves CHECK (from_status <> to_status)
+  CONSTRAINT ck_state_transitions_moves CHECK (from_status <> to_status),
+  -- Cancelled is final by the table's own rule, not only by what a migration seeds (the auditor on #185).
+  CONSTRAINT ck_state_transitions_cancelled_final CHECK (from_status <> 'cancelled')
 );
 --> statement-breakpoint
 -- A change to what a document may do is audited (ADR-005 §5, §7c).
@@ -43,6 +45,15 @@ DECLARE
   n jsonb;
   c text;
 BEGIN
+  -- A column named in the trigger's arguments that the table doesn't have would never be checked, so it's refused
+  -- on the first write, before anything is written (the auditor on #185).
+  FOREACH c IN ARRAY cancel_columns || once_columns LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
+                   WHERE a.attrelid = TG_RELID AND a.attname = c AND a.attnum > 0 AND NOT a.attisdropped) THEN
+      RAISE EXCEPTION 'guard_posted_document on % names %, which it has no column of', TG_TABLE_NAME, c
+        USING ERRCODE = '42703';
+    END IF;
+  END LOOP;
   IF TG_OP = 'INSERT' THEN
     n := to_jsonb(NEW);
     IF NEW.status IS DISTINCT FROM draft THEN
@@ -106,6 +117,11 @@ DECLARE
   parent uuid;
   status text;
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
+                 WHERE a.attrelid = TG_RELID AND a.attname = parent_column AND a.attnum > 0 AND NOT a.attisdropped) THEN
+    RAISE EXCEPTION 'guard_document_line on % names %, which it has no column of', TG_TABLE_NAME, parent_column
+      USING ERRCODE = '42703';
+  END IF;
   IF TG_OP = 'INSERT' THEN
     parent := (to_jsonb(NEW)->>parent_column)::uuid;
   ELSE

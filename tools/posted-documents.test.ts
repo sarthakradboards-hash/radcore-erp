@@ -76,6 +76,26 @@ describe.skipIf(!url || !appUrl)('posted documents', () => {
     }
   });
 
+  it('refuses a move out of cancelled in the table itself, and a guard naming a column its table lacks (the auditor on #185)', async () => {
+    await withInvoice(async (run, id) => {
+      expect(await run("set local role radcore_owner")).toBe('ok');
+      expect(await run(`insert into radcore.state_transitions (document_table, from_status, to_status)
+        values ('t_invoices', 'cancelled', 'posted')`)).toBe('23514');
+      expect(await run(`create trigger guard_typo before insert or update or delete on radcore.t_invoices
+        for each row execute function radcore.guard_posted_document('draft', 'cancelled_on', 'irn')`)).toBe('ok');
+      expect(await run(`create trigger guard_line_typo before insert or update or delete on radcore.t_invoice_lines
+        for each row execute function radcore.guard_document_line('t_invoices', 'invoice', 'draft')`)).toBe('ok');
+      expect(await run('set local role radcore_app')).toBe('ok');
+      expect(await run("insert into radcore.t_invoices (status, total) values ('draft', 1)")).toBe('42703');
+      // Take the misnamed guard off again, so a draft can be made for the line's case.
+      expect(await run('set local role radcore_owner')).toBe('ok');
+      expect(await run('drop trigger guard_typo on radcore.t_invoices')).toBe('ok');
+      expect(await run('set local role radcore_app')).toBe('ok');
+      const doc = await id();
+      expect(await run('insert into radcore.t_invoice_lines (invoice_id, amount) values ($1, 1)', [doc])).toBe('42703');
+    });
+  });
+
   it('is inserted only as a draft, with its cancel and write-once columns empty', async () => {
     await withInvoice(async (run) => {
       expect(await run("insert into radcore.t_invoices (status, total) values ('posted', 100)")).toBe('RA004');
