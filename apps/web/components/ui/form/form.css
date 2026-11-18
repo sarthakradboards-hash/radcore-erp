@@ -14,7 +14,7 @@
 .kit-field { display: grid; gap: var(--space-1); }
 .kit-field label, .kit-field-label { font-weight: 600; }
 .kit-field-value { margin: 0; overflow-wrap: anywhere; }
-.kit-field input, .kit-field textarea {
+.kit-field input, .kit-field textarea, .kit-field select {
   min-block-size: var(--field-h);
   padding: var(--space-2);
   border-radius: var(--radius-sm);
@@ -45,3 +45,6 @@
 .kit-radio:has(input:disabled) { color: var(--text-muted); }
 
 .kit-search { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; }
+.kit-check-row { display: flex; gap: var(--space-2); align-items: center; min-block-size: var(--tap); }
+.kit-check-row input { inline-size: 1.25rem; block-size: 1.25rem; min-block-size: 0; padding: 0; flex: none; }
+.kit-check-row label { font-weight: 400; }

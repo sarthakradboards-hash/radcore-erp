@@ -25,6 +25,8 @@ const th = (page: Page, name: string) => table(page).getByRole('columnheader', {
 const fetchedLog = (page: Page) => page.locator('output[aria-label="Fetched"]');
 const chosen = (page: Page) => page.locator('output[aria-label="Chosen"]');
 const picker = (page: Page) => page.getByRole('combobox', { name: 'Party' });
+// The picker's own suggestions: a native select's options on the page are options too (WebKit lists them).
+const suggestions = (page: Page) => page.getByRole('listbox', { name: 'Suggestions' }).getByRole('option');
 const cellTexts = (page: Page, col: number) => rows(page).locator(`td:nth-child(${col})`).allTextContents();
 
 /** Opens /kit once React has hydrated it (typing before that is lost), with the list's first page or the board. */
@@ -41,7 +43,7 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme }); // after loading: Firefox drops a scheme set before navigating
     expect(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(scheme === 'dark');
     await picker(page).fill('Farida');
-    await expect(page.getByRole('option').first()).toBeVisible(LOAD);
+    await expect(suggestions(page).first()).toBeVisible(LOAD);
     await expectAccessible(page);
   });
 }
@@ -98,7 +100,7 @@ test.describe('the form', () => {
     await expect(announced(page, 'Saved')).toHaveCount(1);
     await expect(alert(page)).toHaveText('');
     expect(JSON.parse((await lastSent(page).textContent()) ?? '{}')).toEqual(
-      { name: 'Asha Traders & Sons', limit: '75000.50', note: 'Prefers morning delivery' });
+      { name: 'Asha Traders & Sons', limit: '75000.50', city: 'Pune', gstRegistered: false, note: 'Prefers morning delivery' });
     // The masked phone is text, not an input whose value would be voiced: a screen reader hears the words, not
     // "bullet bullet…" (RAD-103, the architect on RAD-40; the auditor on #164).
     const phone = form(page).getByRole('group', { name: 'Phone' });
@@ -110,6 +112,25 @@ test.describe('the form', () => {
     await expect(email).toContainText('asha@example.com');
     await expect(email.locator('.visually-hidden')).toHaveCount(0);
   });
+});
+
+test('a select and a checkbox are labelled, work by keyboard, and send what was chosen (RAD-99)', async ({ page }) => {
+  await open(page);
+  const city = field(page, 'City');
+  await expect(city).toHaveValue('Pune');
+  await city.selectOption('Surat');
+  const gst = field(page, 'GST registered');
+  await gst.focus();
+  await page.keyboard.press('Space');
+  await expect(gst).toBeChecked();
+  await expect(gst).toHaveAccessibleDescription('Tick if the party has a GSTIN.');
+  await field(page, 'Name').fill('Asha Traders');
+  await save(page).click();
+  await expect(announced(page, 'Saved')).toHaveCount(1);
+  expect(JSON.parse((await lastSent(page).textContent()) ?? '{}')).toMatchObject({ city: 'Surat', gstRegistered: true });
+  await city.selectOption('');
+  await save(page).click();
+  await expect(city).toHaveAccessibleDescription('Choose a city');
 });
 
 test('a masked value reads "Hidden", or "Hidden, ends …" for a last-4 field; the bullets are hidden from screen readers', async ({ page }) => {
@@ -293,7 +314,7 @@ test.describe('the picker', () => {
     await open(page);
     const input = picker(page);
     await input.fill('2050');
-    const only = page.getByRole('option');
+    const only = suggestions(page);
     await expect(only).toHaveCount(1, LOAD);
     await expect(only).toHaveText(/^Gopal Traders 2050\s*Pune$/);
     await expect(input).toHaveAttribute('aria-expanded', 'true');
@@ -312,7 +333,7 @@ test.describe('the picker', () => {
     await open(page);
     const input = picker(page);
     await input.fill('Asha Traders 21');
-    await expect(page.getByRole('option')).toHaveCount(8, LOAD);
+    await expect(suggestions(page)).toHaveCount(8, LOAD);
     for (const key of ['ArrowDown', 'ArrowDown', 'ArrowUp']) {
       await page.keyboard.press(key);
       const selected = await page.locator('[cmdk-item][data-selected="true"]').getAttribute('id');
@@ -323,7 +344,7 @@ test.describe('the picker', () => {
     await expect(input).toHaveAttribute('aria-expanded', 'false');
     await expect(chosen(page)).toHaveText('');
     await input.fill('Devi Traders 1004');
-    await page.getByRole('option', { name: /Devi Traders 1004/ }).click();
+    await suggestions(page).filter({ hasText: /Devi Traders 1004/ }).click();
     await expect(chosen(page)).toHaveText('Devi Traders 1004');
     await input.fill('zzzz');
     await expect(page.getByText('Nothing matches “zzzz”')).toBeVisible(LOAD);
