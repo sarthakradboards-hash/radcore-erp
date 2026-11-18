@@ -11,6 +11,12 @@ export type Permission = {
   /** A role holding it needs the second sign-in factor, whatever its own setting (D-19, RAD-83): keys that move money
    * or reach payroll, HR or user administration. Each such module's keys join with it. */
   readonly secondFactor?: boolean;
+  /** Granted at `all` scope only (RAD-90): a key a piiRecord names as `seenWith` unmasks by key, not scope, so an `own`
+   * grant would show every record's personal fields. The database refuses an `own` grant of it. */
+  readonly allOnly?: boolean;
+  /** A piiRecord names it as `seenWith` (RAD-90, #182): holding it shows that record's personal fields, as pii:read
+   * does, so the matrix warns of it. It's all-only too; the manifest test holds the two lists equal. */
+  readonly unmasks?: boolean;
   /** The tables holding the records this key reaches, as `<db entry>#<table export>` ('@radcore/db/crm#leads'). Any
    * key may be granted at `own` scope, so a module service reading one of these applies the scope (E7, RAD-85). */
   readonly records?: readonly string[];
@@ -30,6 +36,10 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'gst:write', module: 'GST', label: 'Add and correct GST rates, which every invoice uses', secondFactor: true },
   { key: 'items:read', module: 'Items', label: 'See items, their categories and units' },
   { key: 'items:write', module: 'Items', label: 'Add and change items and their categories' },
+  { key: 'parties:read', module: 'Parties', label: 'See customers, dealers, franchisees and suppliers' },
+  { key: 'parties:write', module: 'Parties', label: 'Add and change parties' },
+  { key: 'parties:contact', module: 'Parties', label: 'See customers’ and suppliers’ contact details', allOnly: true, unmasks: true },
+  { key: 'parties:manage', module: 'Parties', label: 'Set a party’s credit days and credit limit', secondFactor: true },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
   { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'], secondFactor: true },
   { key: 'photo_files:read', module: 'Files', label: 'See job photos' },

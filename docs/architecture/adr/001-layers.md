@@ -326,9 +326,9 @@ under these rules, each refused by name:
 - **Who changes them.** Changing a role's grants needs `roles:write`, and changing someone's role needs `users:write`.
   Admin and owner hold both, and both are bound by the rules below: nobody gives a key they don't hold.
 - **Keys that need the second factor.** The permission catalogue marks the keys that move money, reach payroll, HR
-  or user administration, or set the company's tax identity or the GST rates every invoice charges (`company:write`,
-  `gst:write`, D-19). A role holding any of them
-  requires the second factor, whatever its own setting (D-19).
+  or user administration, or set the company's tax identity, a customer's credit terms or the GST rates every
+  invoice charges (`company:write`, `parties:manage`, `gst:write`, D-19). A role holding any of them requires the
+  second factor, whatever its own setting (D-19).
 - **Screens follow permissions.** The web shows what the person's keys allow, with no separate view setting.
 
 ### 7. The web client
@@ -569,7 +569,8 @@ always six bullets, so it doesn't give away the length.
   `piiRecord('parties', schema, { seenWith: 'parties:contact' })` (RAD-90). It reaches that record's fields only,
   never a record nested in it or pay, and every look is logged as usual. Exports don't take it: a file unmasks
   `pii()` columns only with `pii:read`, so contacts can be seen on a screen without being downloaded as a list. Such a
-  key is granted at `all` scope only.
+  key is granted at `all` scope only, and the catalogue marks it `unmasks`, so the matrix warns of it. The manifest
+  test refuses a record seen with a key not so marked, and a mark no record uses.
 - The generic handler masks after the output check and before saved-once keeps the answer, so a stored answer never
   holds what its principal couldn't see.
 - A service asks `ctx.shows(kind, seenWith?)` before it searches or sorts by a personal field. It's the same answer

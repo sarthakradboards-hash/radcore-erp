@@ -4,3 +4,4 @@ export {
   JOURNAL_SERIES, openFinancialYear, postEntry, postManualJournal, reverseEntry,
   type AccountRef, type JournalLine, type NewEntry, type Posted,
 } from './services/journal.ts';
+export { addParty, changeParty, getPartyById, listPartiesPage, setCreditTerms } from './services/parties.ts';

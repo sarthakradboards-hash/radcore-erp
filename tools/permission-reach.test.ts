@@ -147,7 +147,8 @@ describe('the manifest’s reach', () => {
     expect(() => entriesOf(LISTS.api, {})).toThrow('no runtime size given for auth.routes');
     expect(first?.some((f) => f.startsWith('packages/lib-platform/src/files/'))).toBe(true);
     expect(readdirSync(join('apps', 'api', 'src', 'routes')).every((f) => f.endsWith('.ts'))).toBe(true);
-  });
+    // The type checker resolves the route files' symbols on first use: past vitest's 5 s under a full parallel run.
+  }, 30_000);
 
   it('counts a module library a file reaches, and never lib-common', async () => {
     expect(await reachOf([['packages/lib-sales/src/index.ts'], ['packages/lib-common/src/index.ts'], ['packages/lib-platform/src/route.ts']]))
