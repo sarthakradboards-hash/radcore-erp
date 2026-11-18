@@ -267,13 +267,6 @@
       "when": 1794722888340,
       "tag": "0037_item_pictures",
       "breakpoints": true
-    },
-    {
-      "idx": 38,
-      "version": "7",
-      "when": 1795004599314,
-      "tag": "0038_price_lists",
-      "breakpoints": true
     }
   ]
 }
