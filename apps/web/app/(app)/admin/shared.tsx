@@ -56,13 +56,13 @@ export function ChoiceButtons<V extends string>({ label, value, options, onChang
 const nothing = z.object({});
 
 /** Asks before an action that takes no reason (ending sessions). A refusal shows in the dialog, worded. */
-export function ConfirmDialog({ open, onOpenChange, title, body, action, onConfirm, done }: {
+export function ConfirmDialog({ open, onOpenChange, title, body, action, onConfirm, done, messages = MESSAGES }: {
   open: boolean; onOpenChange: (open: boolean) => void; title: string; body: string; action: string;
-  onConfirm: () => Promise<string | void>; done: string;
+  onConfirm: () => Promise<string | void>; done: string; messages?: Partial<Record<string, string>>;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={title} description={body}>
-      <Form schema={nothing} defaultValues={{}} saved={false} messages={MESSAGES}
+      <Form schema={nothing} defaultValues={{}} saved={false} messages={messages}
         onSubmit={async () => {
           const said = await onConfirm();
           onOpenChange(false);

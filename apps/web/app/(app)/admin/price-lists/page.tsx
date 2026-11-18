@@ -3,8 +3,9 @@
 // someone other than its maker, RAD-38) and whether a draft is waiting. prices:write adds a list (it starts as an empty
 // draft), renames one, and switches one off or back on; none of these changes a price, so none needs approval.
 // The rates, the draft and the approval queue live on their own pages.
-import { formatMoment } from '@radcore/lib-common';
+import { formatDate } from '@radcore/lib-common';
 import { createPriceList, listPriceLists, updatePriceList } from '@radcore/lib-sales/contract';
+import Link from 'next/link';
 import { useState } from 'react';
 import { z } from 'zod';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
@@ -45,9 +46,9 @@ export default function PriceListsPage() {
     { label: t(l.active ? 'admin.locations.switchOff' : 'admin.locations.switchOn'), onSelect: () => setActing({ kind: 'toggle', list: l }) },
   ];
   const columns: Column<PriceList>[] = [
-    { id: 'name', header: t('admin.prices.name'), cell: (l) => l.name },
+    { id: 'name', header: t('admin.prices.name'), cell: (l) => <Link href={`/admin/price-lists/${l.id}`}>{l.name}</Link> },
     { id: 'inForce', header: t('admin.prices.inForce'),
-      cell: (l) => (l.inForce === null ? t('admin.prices.notApproved') : t('admin.prices.since', { when: formatMoment(l.inForce.approvedAt) })) },
+      cell: (l) => (l.inForce === null ? t('admin.prices.notApproved') : t('admin.prices.since', { when: formatDate(l.inForce.inForceFrom) })) },
     { id: 'tax', header: t('admin.prices.tax'),
       cell: (l) => (l.inForce === null ? '' : t(l.inForce.taxInclusive ? 'admin.prices.tax.inclusive' : 'admin.prices.tax.exclusive')) },
     { id: 'draft', header: t('admin.prices.draft'), cell: (l) => t(l.draftId === null ? 'admin.prices.draft.none' : 'admin.prices.draft.open') },

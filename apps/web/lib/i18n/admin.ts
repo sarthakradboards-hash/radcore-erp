@@ -12,6 +12,7 @@ export const admin = {
   'admin.nav.gst': 'GST rates',
   'admin.nav.parties': 'Parties',
   'admin.nav.prices': 'Price lists',
+  'admin.nav.priceApprovals': 'Price approvals',
   'admin.reason': 'Reason',
   'admin.cancel': 'Keep it',
   'admin.listStale': 'This list was out of date and has been refreshed. Check it, then try again.',
