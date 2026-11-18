@@ -41,3 +41,5 @@
 .admin-notice { border-inline-start: 4px solid var(--accent); padding: var(--space-2) var(--space-3); background-color: var(--surface); }
 .admin-notice p, .admin-notice ul { margin: 0; }
 .admin-notice p { font-weight: 600; }
+.admin-reason { display: block; max-inline-size: 24rem; overflow-wrap: anywhere; white-space: pre-line; }
+.admin-reason summary { cursor: pointer; }

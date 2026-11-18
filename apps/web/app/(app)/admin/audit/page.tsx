@@ -47,6 +47,20 @@ function Pairs({ pairs }: { pairs: readonly (readonly [string, string])[] }) {
   );
 }
 
+// A reason is up to 500 characters (lib-common's reason()). A long one starts folded, so the table stays readable;
+// the native <details> opens it in place, by keyboard too, and nothing of it is ever hidden for good.
+const SHORT_REASON = 140;
+function Reason({ text }: { text: string | null }) {
+  if (text === null) return <span className="kit-field-hint">{t('admin.audit.reason.none')}</span>;
+  if (text.length <= SHORT_REASON) return <span className="admin-reason">{text}</span>;
+  return (
+    <details className="admin-reason">
+      <summary>{`${text.slice(0, SHORT_REASON).trimEnd()}…`}</summary>
+      {text}
+    </details>
+  );
+}
+
 const changeColumns: Column<AuditRow>[] = [
   { id: 'when', header: t('admin.audit.col.when'), cell: (r) => formatMoment(r.occurredAt) },
   { id: 'who', header: t('admin.audit.col.who'), cell: (r) => who(r.principal) },
@@ -55,6 +69,8 @@ const changeColumns: Column<AuditRow>[] = [
   { id: 'changes', header: t('admin.audit.col.changes'), cell: (r) => <Pairs pairs={Object.entries(r.changed).map(
     ([column, { old: before, new: after }]) => [column,
       r.op === 'update' ? `${show(before)} → ${show(after)}` : show(r.op === 'insert' ? after : before)] as const)} /> },
+  // Why, in the person's own words, when the change asked for a reason (RAD-36; e2e on #191 found it never showed).
+  { id: 'reason', header: t('admin.audit.col.reason'), cell: (r) => <Reason text={r.reason} /> },
 ];
 
 const eventColumns: Column<SecurityEvent>[] = [
