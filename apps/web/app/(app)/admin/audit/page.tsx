@@ -15,6 +15,7 @@ import { DataTable, type Column } from '../../../../components/ui/table/data-tab
 import { ApiError } from '../../../../lib/api-client.ts';
 import { useApiList, useApiQuery, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
+import { foldReason } from './fold.ts';
 import { ChoiceButtons, MESSAGES } from '../shared.tsx';
 import type { AdminUser, AuditOp, AuditRow, SecurityEvent, SecurityEventKind } from '../types.ts';
 
@@ -49,16 +50,16 @@ function Pairs({ pairs }: { pairs: readonly (readonly [string, string])[] }) {
 
 // A reason is up to 500 characters (lib-common's reason()). A long one starts folded, so the table stays readable;
 // the native <details> opens it in place, by keyboard too, and nothing of it is ever hidden for good. Its summary is
-// the first part and the body the rest, so the open reason reads once, in order (e2e on #196: it read the start twice);
-// the "…" shows only while it's folded.
-const SHORT_REASON = 140;
+// the first part and the body the rest (fold.ts), so the open reason reads once, in order; the "…" shows only while
+// it's folded.
 function Reason({ text }: { text: string | null }) {
   if (text === null) return <span className="kit-field-hint">{t('admin.audit.reason.none')}</span>;
-  if (text.length <= SHORT_REASON) return <span className="admin-reason">{text}</span>;
+  const fold = foldReason(text);
+  if (fold === null) return <span className="admin-reason">{text}</span>;
   return (
     <details className="admin-reason">
-      <summary>{text.slice(0, SHORT_REASON)}<span className="admin-reason-more" aria-hidden="true">…</span></summary>
-      {text.slice(SHORT_REASON)}
+      <summary>{fold.start}<span className="admin-reason-more" aria-hidden="true">…</span></summary>
+      {fold.rest}
     </details>
   );
 }
