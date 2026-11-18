@@ -58,7 +58,31 @@ export function createPool(db: Database, log: Logger): pg.Pool {
  * the runtime entry only. The schema argument is for tests with tables of their own.
  */
 export function createDatabase(pool: pg.Pool, schema: Readonly<Record<string, unknown>> = SCHEMA): Drizzle {
+  releaseWhenLost(pool);
   return drizzle({ client: pool, schema, casing: 'snake_case' });
+}
+
+// A checked-out connection that is lost (a database restart, a dropped network) is released here with its error, so
+// the pool drops it, and its holder's own later release does nothing. pg-pool listens for a connection's errors only
+// while it is idle, so without this the loss would be an unhandled 'error' event. And Drizzle 0.45.4 sends a
+// transaction's BEGIN before its try/finally (node-postgres/session.js), so a connection lost on BEGIN would never be
+// released, and the pool would lose that slot for good. Both were found by RAD-97's fault injection.
+function releaseWhenLost(pool: pg.Pool): void {
+  const lost = new WeakMap<pg.PoolClient, (err: Error) => void>();
+  pool.on('acquire', (client) => {
+    const onLost = (err: Error) => {
+      const release = client.release;
+      client.release = () => undefined;
+      release(err);
+    };
+    lost.set(client, onLost);
+    client.on('error', onLost);
+  });
+  pool.on('release', (_err, client) => {
+    const onLost = lost.get(client);
+    if (onLost !== undefined) client.removeListener('error', onLost);
+    lost.delete(client);
+  });
 }
 
 /**
