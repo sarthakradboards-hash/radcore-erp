@@ -139,13 +139,15 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     expect(await looks()).toBe(2);
   });
 
-  it('refuses an own-scope grant of parties:contact in the database, which unmasks by key, not scope', async () => {
+  // Every allOnly key, so a new one fails here until the database's CHECKs name it too (auditor-2 on #180).
+  it.each(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key))(
+    'refuses an own-scope grant of %s in the database, which unmasks by key, not scope', async (key) => {
     const c = await superPool.connect();
     try {
       const grant = async (table: string, scope: string) => {
         await c.query('begin');
         await c.query("set local app.principal = 'system:test'");
-        const r = await c.query(`insert into radcore.${table} (role, permission, scope) values ('technician', 'parties:contact', $1)`, [scope])
+        const r = await c.query(`insert into radcore.${table} (role, permission, scope) values ('technician', $1, $2)`, [key, scope])
           .then(() => 'ok', (e: { constraint?: string }) => e.constraint);
         await c.query('rollback');
         return r;
