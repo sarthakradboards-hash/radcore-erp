@@ -21,8 +21,7 @@ export const MAX_QTY_PLACES = 3;
 
 // Integer digits follow ADR-005's column widths: numeric(18,2) money, numeric(18,6) unit price, numeric(18,3)
 // quantity, numeric(9,6) percent. No leading zeros, so "0001250.50" is refused.
-const shape = (intDigits: number, places: number) =>
-  new RegExp(`^-?(0|[1-9]\\d{0,${intDigits - 1}})${places > 0 ? `(\\.\\d{1,${places}})?` : ''}$`);
+const shape = (intDigits: number, places: number) => new RegExp(`^-?(0|[1-9]\\d{0,${intDigits - 1}})(\\.\\d{1,${places}})?$`);
 const ANY_DECIMAL = /^-?\d+(\.\d+)?$/;
 const MONEY_SHAPE = shape(16, MONEY_PLACES);
 const RATE_SHAPE = shape(12, RATE_PLACES);
@@ -104,7 +103,8 @@ export const unitPriceString = decimalString<'Rate'>(RATE_SHAPE, 'a price with u
  * ADR-005's percent(). */
 export const percentString = (opts: { max?: string } = {}) =>
   decimalString<'Percent'>(PERCENT_SHAPE, 'a percentage with up to 6 decimals')()
-    .refine((s) => dec(s).lte(opts.max ?? '100'), `Enter a percentage up to ${opts.max ?? '100'}`);
+    // zod runs this even when the shape failed; a malformed string is the shape's error, never a throw (RAD-96).
+    .refine((s) => !ANY_DECIMAL.test(s) || dec(s).lte(opts.max ?? '100'), `Enter a percentage up to ${opts.max ?? '100'}`);
 /** A quantity with up to 3 decimals. The line's unit narrows it further (fitsUnit). */
 export const quantityString = decimalString<'Quantity'>(QTY_SHAPE, 'a quantity with up to 3 decimals');
 
