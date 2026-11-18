@@ -86,6 +86,12 @@ export async function renameCategory(ctx: Ctx, { id, name }: In<typeof renameIte
 
 /** GET /items: by name, then id, so a page key is unique and paging never skips or repeats. */
 export async function listItemsPage(ctx: Ctx, input: In<typeof listItems>): Promise<Out<typeof listItems>> {
+  const { items: page, next } = await listItemRows(ctx, input);
+  return { items: await withPictures(ctx, page), next };
+}
+
+/** GET /items' page without its pictures, for the masters workbook, which signs no picture links (auditor-2 on #205). */
+export async function listItemRows(ctx: Ctx, input: In<typeof listItems>): Promise<{ items: ItemRow[]; next: string | null }> {
   const key = input.after === undefined ? undefined : decodeCursor(z.object({ name: z.string().max(200), id: z.uuid() }), input.after);
   const { search, categoryId, active } = input.filter;
   // Words in the name or SKU, or the whole text as a scanned barcode.
@@ -100,7 +106,7 @@ export async function listItemsPage(ctx: Ctx, input: In<typeof listItems>): Prom
     .orderBy(asc(items.name), asc(items.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
-  return { items: await withPictures(ctx, page), next: rows.length > input.limit && last ? encodeCursor({ name: last.name, id: last.id }) : null };
+  return { items: page, next: rows.length > input.limit && last ? encodeCursor({ name: last.name, id: last.id }) : null };
 }
 
 /** GET /items/:id. */

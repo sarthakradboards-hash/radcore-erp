@@ -222,5 +222,6 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'platform.password-reset-email': PLATFORM,
   'platform.invite-email': PLATFORM,
   // The export job runs every export, the masters workbook's sheets from lib-stock and lib-hr among them (RAD-92).
-  'platform.export': ['lib-hr', 'lib-platform', 'lib-stock'],
+  // lib-stock's entry holds its stock engine too, which posts revaluations through lib-accounts (RAD-93).
+  'platform.export': ['lib-accounts', 'lib-hr', 'lib-platform', 'lib-stock'],
 };

@@ -8,8 +8,9 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { quantityString, unitPriceString } from '@radcore/lib-common';
-import { addCategory, addItem, addPlace, postStock, type StockPosting } from '@radcore/lib-stock';
+import { addCategory, addItem, addPlace, type StockPosting } from '@radcore/lib-stock';
 import pg from 'pg';
+import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 import { afterAll, describe, expect, it } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -33,7 +34,7 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
   });
   const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(db, WRITE, staff, randomUUID(), fn);
   const post = (p: Omit<StockPosting, 'sourceTable' | 'sourceId' | 'businessDate'>) =>
-    run((ctx) => postStock(ctx, { sourceTable: 'test_documents', sourceId: randomUUID(), businessDate: DATE, ...p }));
+    run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ...p }));
   const failure = (p: Parameters<typeof post>[0]) => post(p).then(() => 'ok',
     (e: unknown) => (e instanceof AppError ? e.code : String((e as { cause?: { code?: string } }).cause?.code ?? e)));
 
@@ -127,6 +128,32 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
         c.query('insert into radcore.batches (item_id, supplier_id, batch_no) values ($1, $2, $3)', [itemId, supplier, no]);
       await batch(party?.id, 'S1');
       await expect(batch(randomUUID(), 'S2')).rejects.toMatchObject({ code: '23503' });
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+  });
+
+  // ADR-005 §6 and ADR-006 §4: a movement needs its year opened (RC-111), and none posts on or before the period lock
+  // (RA003), checked by the movements' own trigger, since a movement of value 0 has no journal line. Written raw, in a
+  // rolled-back transaction, so the shared period lock is moved only there.
+  it('refuses a movement in a year not opened, or on or before the period lock', async () => {
+    const { itemId, places: [stores = ''] } = await setup(['stores']);
+    const c = await su.connect();
+    const movement = (date: string) => c.query(`insert into radcore.stock_movements (item_id, location_id, source_table, source_id,
+      direction, qty, value, rate, business_date) values ($1, $2, 'files', $3, 'in', 1, 0, 0, $4)`, [itemId, stores, randomUUID(), date]);
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      await c.query("insert into radcore.financial_years (start) values ('2026-04-01') on conflict do nothing");
+      await c.query('savepoint s');
+      await expect(movement('2041-05-01')).rejects.toMatchObject({ code: '23503', constraint: 'fk_stock_movements_fy_start' });
+      await c.query('rollback to savepoint s');
+      await c.query("update radcore.period_lock set locked_through = '2026-11-15' where id = 1");
+      await expect(movement(DATE)).rejects.toMatchObject({ code: 'RA003' });
+      await c.query('rollback to savepoint s');
+      await c.query("update radcore.period_lock set locked_through = '2026-11-14' where id = 1");
+      await movement(DATE);
     } finally {
       await c.query('rollback');
       c.release();

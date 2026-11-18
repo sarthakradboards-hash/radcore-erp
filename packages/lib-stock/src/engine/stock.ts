@@ -10,10 +10,12 @@
 // - negative stock (RC-062) when the company allows it: only a delivery may go below zero, the part beyond what's on
 //   hand at an estimate, and the receipt that follows revalues, so no value is left without units (F15).
 // The database checks the batches and positions again at commit (RA007, `stock_commit_check`), whatever path wrote.
-// shortcut: the Stock in Hand lines it hands the journal engine are RAD-93's third PR, after RAD-86 part 1.
+// The document posts its own entry from the movements answered here; the engine posts only the revaluations it makes,
+// as the document's one `revaluation` entry (§1, F15).
 import {
   batches, stockMovementBatches, stockMovements, stockPositions, stockTx,
 } from '@radcore/db/stock';
+import { postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq, isNull, or, sum } from 'drizzle-orm';
@@ -240,5 +242,19 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
       await write({ itemId: i.itemId, locationId: i.locationId, sourceLineId: i.sourceLineId, direction: 'revalue', qty: NO_UNITS, value: change }, []);
     }
   }
+  const revalued = posted.filter((m) => m.direction === 'revalue');
+  if (revalued.length > 0) {
+    await postEntry(ctx, { kind: 'revaluation', businessDate: p.businessDate, source: { table: p.sourceTable, id: p.sourceId },
+      lines: revalued.flatMap(revaluationLines) });
+  }
   return posted;
+}
+
+// A revaluation down is Dr Cost of Goods Sold, Cr Stock in Hand; up, the other way round (ADR-006 §4, F15).
+function revaluationLines(m: PostedMovement): JournalLine[] {
+  const amount = roundMoney(dec(m.value).abs());
+  const stock = { account: { system: 'stock' }, itemId: m.itemId, locationId: m.locationId };
+  const cogs = { account: { system: 'cogs' } };
+  return dec(m.value).isNegative() ? [{ ...cogs, debit: amount }, { ...stock, credit: amount }]
+    : [{ ...stock, debit: amount }, { ...cogs, credit: amount }];
 }
