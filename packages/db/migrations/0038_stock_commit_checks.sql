@@ -8,7 +8,8 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "radcore"."v_batch_on_hand" FROM radc
 --> statement-breakpoint
 -- ADR-006 §4 and §4a, checked at commit (RA007, RAD-93), for each movement a save wrote or gave batch rows to:
 -- - an `in` or `out` movement's batch rows add up to its quantity, and a `revalue` has none;
--- - its item's position at its location holds no value at zero units, and is below zero only in negative-stock mode;
+-- - its item's position at its location holds no value at zero units, and is below zero only in negative-stock mode,
+--   on no day from the movement's business date onward either (§4's back-dated issue);
 -- - no batch it names is below zero there, and "batch unknown" (a null batch) is never above zero, and below zero
 --   only in negative-stock mode.
 -- Negative-stock mode is lib-stock's `stock.negative_stock` setting, read here so no path can disagree with the engine.
@@ -41,6 +42,17 @@ BEGIN
   END IF;
   IF on_qty < 0 AND NOT negative THEN
     RAISE EXCEPTION 'item % at location % would go below zero', m.item_id, m.location_id USING ERRCODE = 'RA007';
+  END IF;
+  -- §4: with negative stock off, no day from this movement's business date onward is below zero, so a back-dated issue
+  -- can't make a later day negative.
+  IF NOT negative AND EXISTS (SELECT 1 FROM (
+      SELECT x.business_date, sum(sum(CASE x.direction WHEN 'in' THEN x.qty WHEN 'out' THEN -x.qty ELSE 0 END))
+        OVER (ORDER BY x.business_date) AS level
+      FROM radcore.stock_movements x WHERE x.item_id = m.item_id AND x.location_id = m.location_id
+      GROUP BY x.business_date) d
+    WHERE d.business_date >= m.business_date AND d.level < 0) THEN
+    RAISE EXCEPTION 'item % at location % would go below zero on a day from %', m.item_id, m.location_id, m.business_date
+      USING ERRCODE = 'RA007';
   END IF;
   SELECT b.batch_id, sum(CASE x.direction WHEN 'in' THEN b.qty ELSE -b.qty END) AS qty INTO bad
     FROM radcore.stock_movement_batches b

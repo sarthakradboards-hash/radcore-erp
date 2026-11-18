@@ -137,4 +137,51 @@ describe.skipIf(!url || !superUrl)('negative stock and the commit checks', () =>
       .toBe('not_enough_stock');
     expect(await failure({ outs: [{ itemId, locationId, qty: q('1'), batches: [{ batchId: b, qty: q('1') }] }] }, '2026-11-11')).toBe('ok');
   });
+
+  it('lets a back-dated delivery go below zero in negative-stock mode, where a later day needs no cover', async () => {
+    await negative(true);
+    const { itemId, locationId } = await place();
+    await post({ ins: [{ itemId, locationId, qty: q('5'), rate: r('100'), batches: [{ batchNo: 'B', qty: q('5') }] }] }, '2026-11-10');
+    const b = await lotId(itemId, 'B');
+    await post({ outs: [{ itemId, locationId, qty: q('4'), batches: [{ batchId: b, qty: q('4') }] }] }, '2026-11-12');
+    expect(await failure({ outs: [{ itemId, locationId, qty: q('1'), delivery: true, batches: [{ batchId: b, qty: q('1') }] }] }, '2026-11-11'))
+      .toBe('ok');
+  });
+
+  // The estimate is the last `in`'s cost, and a transfer in has a value but no rate.
+  it('estimates from a transfer in when a location was stocked only by transfers', async () => {
+    await negative(true);
+    const { itemId, locationId: store } = await place();
+    const { id: shop } = await run((ctx) => addPlace(ctx, { code: `L${tag()}`, name: `Shop ${tag()}`, kind: 'store' }));
+    await post({ ins: [{ itemId, locationId: store, qty: q('2'), rate: r('50'), batches: [{ batchNo: 'T', qty: q('2') }] }] });
+    const t = await lotId(itemId, 'T');
+    await post({ transfers: [{ itemId, from: store, to: shop, qty: q('2'), batches: [{ batchId: t, qty: q('2') }] }] });
+    const [sale] = await post({ outs: [{ itemId, locationId: shop, qty: q('3'), delivery: true,
+      batches: [{ batchId: t, qty: q('2') }, { batchId: null, qty: q('1') }] }] });
+    expect(sale?.value).toBe('150.00');
+  });
+
+  // The database holds the back-dated rule too, whatever path writes: here a raw insert the engine would refuse.
+  it('refuses at commit a back-dated out that leaves a later day below zero, though the total stays above (RA007)', async () => {
+    await negative(false);
+    const { itemId, locationId } = await place();
+    await post({ ins: [{ itemId, locationId, qty: q('5'), rate: r('100'), batches: [{ batchNo: 'B', qty: q('5') }] }] }, '2026-11-10');
+    const b = await lotId(itemId, 'B');
+    await post({ outs: [{ itemId, locationId, qty: q('4'), batches: [{ batchId: b, qty: q('4') }] }] }, '2026-11-12');
+    await post({ ins: [{ itemId, locationId, qty: q('10'), rate: r('100'), batches: [{ batchNo: 'B', qty: q('10') }] }] }, '2026-11-13');
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      const { rows: [moved] } = await c.query<{ id: string }>(`insert into radcore.stock_movements
+        (item_id, location_id, source_table, source_id, direction, qty, value, business_date)
+        values ($1, $2, 'test_documents', $3, 'out', 2, 200, '2026-11-11') returning id`, [itemId, locationId, randomUUID()]);
+      await c.query('insert into radcore.stock_movement_batches (movement_id, item_id, batch_id, qty) values ($1, $2, $3, 2)',
+        [moved?.id, itemId, b]);
+      await expect(c.query('commit')).rejects.toMatchObject({ code: 'RA007' });
+    } finally {
+      await c.query('rollback').catch(() => undefined);
+      c.release();
+    }
+  });
 });

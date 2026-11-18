@@ -16,7 +16,7 @@ import {
 } from '@radcore/db/stock';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
-import { and, asc, desc, eq, isNotNull, isNull, or, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, or, sum } from 'drizzle-orm';
 import { z } from 'zod';
 
 /** Whether a delivery may take a location below zero (RC-062, ADR-006 §4). The database's commit check reads the same
@@ -129,19 +129,21 @@ function lowestFrom(rows: readonly DateRow[], from: string) {
   return low ?? run;
 }
 
-/** The location's last `in` rate for the item: negative stock's estimate (§4).
+/** The location's last `in` rate for the item: negative stock's estimate (§4). A transfer in carries no rate, so its
+ * value over its quantity stands for one, and a location stocked only by transfers still has an estimate.
  * shortcut: the item's purchase price is the fallback once items carry one (purchasing, M4); until then, none. */
 async function estimate(ctx: Ctx, itemId: string, locationId: string): Promise<string | undefined> {
-  const [row] = await stockTx(ctx).select({ rate: stockMovements.rate }).from(stockMovements)
-    .where(and(eq(stockMovements.itemId, itemId), eq(stockMovements.locationId, locationId), eq(stockMovements.direction, 'in'),
-      isNotNull(stockMovements.rate)))
+  const [row] = await stockTx(ctx).select({ rate: stockMovements.rate, qty: stockMovements.qty, value: stockMovements.value })
+    .from(stockMovements)
+    .where(and(eq(stockMovements.itemId, itemId), eq(stockMovements.locationId, locationId), eq(stockMovements.direction, 'in')))
     .orderBy(desc(stockMovements.postedAt), desc(stockMovements.id)).limit(1);
-  return row?.rate ?? undefined;
+  if (row === undefined) return undefined;
+  return row.rate ?? dec(row.value).div(dec(row.qty)).toFixed();
 }
 
-/** An issue's value (§4). Within what's on hand from its date onward: all of it when it empties the location, else
- * round(V × q / Q, 2). A delivery in negative-stock mode may go further: what's there at its value, the rest at the
- * estimate. Anything else beyond is refused. */
+/** An issue's value (§4): all of what's on hand when it empties the location, else round(V × q / Q, 2). A delivery in
+ * negative-stock mode may go further: what's there at its value, the rest at the estimate. Any other issue is held to
+ * the lowest running quantity from its date onward, so a back-dated one can't make a later day negative. */
 async function issueValue(ctx: Ctx, itemId: string, locationId: string, qty: Quantity, date: string, negative: boolean): Promise<Money> {
   const rows = await byDate(ctx, itemId, locationId);
   const on = position(rows);
@@ -155,7 +157,7 @@ async function issueValue(ctx: Ctx, itemId: string, locationId: string, qty: Qua
     const held = on.qty.gt(0) ? on.qty : dec('0');
     return roundMoney((on.qty.gt(0) ? on.value : dec('0')).plus(q.minus(held).times(dec(rate))));
   }
-  const low = lowestFrom(rows, date);
+  const low = negative ? on.qty : lowestFrom(rows, date); // a delivery that may go below zero needs no later day's cover
   if (q.gt(low)) {
     throw new AppError('not_enough_stock', 'There isn’t that much of this item here',
       [{ path: ['qty'], code: 'short', message: `Only ${low.toFixed()} on hand from ${date} on` }]);
