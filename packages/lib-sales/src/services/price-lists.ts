@@ -10,8 +10,8 @@ import {
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
-  createPriceList, getPrice, getPriceListVersion, listPriceListRates, listPriceLists, putPriceListRates,
-  requestPriceListApproval, setPriceListTax, startPriceListDraft, updatePriceList,
+  createPriceList, getPrice, getPriceList, getPriceListVersion, listPriceLists, putPriceListRates, requestPriceListApproval,
+  setPriceListTax, startPriceListDraft, updatePriceList,
 } from '../contract.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -33,38 +33,50 @@ async function refused<T>(write: Promise<T>): Promise<T> {
   }
 }
 
-const notFound = () => new AppError('not_found', 'There is no such price list');
-const inForceNow = and(isNotNull(priceListVersions.inForceFrom), isNull(priceListVersions.supersededFrom));
+export const notFound = () => new AppError('not_found', 'There is no such price list');
+export const inForceNow = and(isNotNull(priceListVersions.inForceFrom), isNull(priceListVersions.supersededFrom));
 /** The version in force on a business date: from its in_force_from, until the day before its superseded_from. */
 const inForceOn = (on: string) => and(lte(priceListVersions.inForceFrom, on),
   or(isNull(priceListVersions.supersededFrom), gt(priceListVersions.supersededFrom, on)));
 
-/** GET /price-lists (prices:read): by name, a page at a time, each with its version in force and its draft. */
+type ListRow = Out<typeof getPriceList>;
+
+/** Lists as screens show them, each with its version in force now and its draft: the versions not superseded. */
+async function withVersions(ctx: Ctx, lists: readonly { id: string; name: string; active: boolean }[]): Promise<ListRow[]> {
+  const versions = lists.length === 0 ? [] : await salesTx(ctx).select({ id: priceListVersions.id, listId: priceListVersions.priceListId,
+    taxInclusive: priceListVersions.taxInclusive, inForceFrom: priceListVersions.inForceFrom }).from(priceListVersions)
+    .where(and(inArray(priceListVersions.priceListId, lists.map((r) => r.id)), isNull(priceListVersions.supersededFrom)));
+  return lists.map((r) => {
+    const live = versions.find((v) => v.listId === r.id && v.inForceFrom !== null);
+    return { id: r.id, name: r.name, active: r.active,
+      inForce: live?.inForceFrom ? { versionId: live.id, taxInclusive: live.taxInclusive, inForceFrom: live.inForceFrom } : null,
+      draftId: versions.find((v) => v.listId === r.id && v.inForceFrom === null)?.id ?? null };
+  });
+}
+
+/** GET /price-lists (prices:read): by name, a page at a time. */
 export async function listListsPage(ctx: Ctx, input: In<typeof listPriceLists>): Promise<Out<typeof listPriceLists>> {
   const key = input.after === undefined ? undefined : decodeCursor(sortedCursor(NAME_SORT, z.string().max(80)), input.after);
   const { search, status } = input.filter;
-  const tx = salesTx(ctx);
-  const rows = await tx.select({ id: priceLists.id, name: priceLists.name, active: priceLists.active, nameKey: priceLists.nameKey })
+  const rows = await salesTx(ctx).select({ id: priceLists.id, name: priceLists.name, active: priceLists.active, nameKey: priceLists.nameKey })
     .from(priceLists)
     .where(and(searchWords([priceLists.name], search),
       status === undefined ? undefined : eq(priceLists.active, status === 'active'),
       after([priceLists.nameKey, priceLists.id], key && [key.value, key.id], 'asc')))
     .orderBy(asc(priceLists.nameKey), asc(priceLists.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
-  // The draft and the version in force now: the versions not superseded.
-  const versions = page.length === 0 ? [] : await tx.select({ id: priceListVersions.id, listId: priceListVersions.priceListId,
-    taxInclusive: priceListVersions.taxInclusive, inForceFrom: priceListVersions.inForceFrom }).from(priceListVersions)
-    .where(and(inArray(priceListVersions.priceListId, page.map((r) => r.id)), isNull(priceListVersions.supersededFrom)));
   const last = page.at(-1);
-  return {
-    items: page.map((r) => {
-      const live = versions.find((v) => v.listId === r.id && v.inForceFrom !== null);
-      return { id: r.id, name: r.name, active: r.active,
-        inForce: live?.inForceFrom ? { versionId: live.id, taxInclusive: live.taxInclusive, inForceFrom: live.inForceFrom } : null,
-        draftId: versions.find((v) => v.listId === r.id && v.inForceFrom === null)?.id ?? null };
-    }),
-    next: rows.length > input.limit && last ? encodeCursor({ ...NAME_SORT, value: last.nameKey, id: last.id }) : null,
-  };
+  return { items: await withVersions(ctx, page),
+    next: rows.length > input.limit && last ? encodeCursor({ ...NAME_SORT, value: last.nameKey, id: last.id }) : null };
+}
+
+/** GET /price-lists/:id (prices:read). */
+export async function getList(ctx: Ctx, { id }: In<typeof getPriceList>): Promise<Out<typeof getPriceList>> {
+  const lists = await salesTx(ctx).select({ id: priceLists.id, name: priceLists.name, active: priceLists.active }).from(priceLists)
+    .where(eq(priceLists.id, id));
+  const [row] = await withVersions(ctx, lists);
+  if (row === undefined) throw notFound();
+  return row;
 }
 
 /** POST /price-lists (prices:write): the list and its first, empty draft. */
@@ -111,10 +123,10 @@ export async function startDraft(ctx: Ctx, { id }: In<typeof startPriceListDraft
   return { draftId: made.id };
 }
 
-type VersionRow = { id: string; priceListId: string; taxInclusive: boolean; inForceFrom: string | null; supersededFrom: string | null };
+export type VersionRow = { id: string; priceListId: string; taxInclusive: boolean; inForceFrom: string | null; supersededFrom: string | null };
 
 /** A version's row, locked with `forUpdate`, so a change to it or its rates waits for an approval being decided. */
-async function versionRow(ctx: Ctx, id: string, forUpdate: boolean): Promise<VersionRow | undefined> {
+export async function versionRow(ctx: Ctx, id: string, forUpdate: boolean): Promise<VersionRow | undefined> {
   const q = salesTx(ctx).select({ id: priceListVersions.id, priceListId: priceListVersions.priceListId,
     taxInclusive: priceListVersions.taxInclusive, inForceFrom: priceListVersions.inForceFrom,
     supersededFrom: priceListVersions.supersededFrom }).from(priceListVersions).where(eq(priceListVersions.id, id));
@@ -139,18 +151,6 @@ export async function getVersion(ctx: Ctx, { id }: In<typeof getPriceListVersion
   if (v === undefined) throw notFound();
   return { id: v.id, priceListId: v.priceListId, taxInclusive: v.taxInclusive, state: stateOf(v),
     inForceFrom: v.inForceFrom, supersededFrom: v.supersededFrom };
-}
-
-/** GET /price-lists/versions/:id/rates (prices:read): by item id, a page at a time. */
-export async function listRatesPage(ctx: Ctx, input: In<typeof listPriceListRates>): Promise<Out<typeof listPriceListRates>> {
-  if (await versionRow(ctx, input.id, false) === undefined) throw notFound();
-  const key = input.after === undefined ? undefined : decodeCursor(z.object({ itemId: z.uuid() }), input.after);
-  const rows = await salesTx(ctx).select({ itemId: priceListRates.itemId, rate: priceListRates.rate }).from(priceListRates)
-    .where(and(eq(priceListRates.versionId, input.id), after([priceListRates.itemId], key && [key.itemId], 'asc')))
-    .orderBy(asc(priceListRates.itemId)).limit(input.limit + 1);
-  const page = rows.slice(0, input.limit);
-  const last = page.at(-1);
-  return { items: page, next: rows.length > input.limit && last ? encodeCursor({ itemId: last.itemId }) : null };
 }
 
 /** PATCH /price-lists/versions/:id (prices:write). */

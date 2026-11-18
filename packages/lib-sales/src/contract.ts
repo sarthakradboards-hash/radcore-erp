@@ -15,15 +15,24 @@ const listName = () => z.string().trim().min(1, 'Name the price list').max(80);
 const status = z.enum(['active', 'inactive']);
 const versionState = z.enum(['draft', 'in_force', 'superseded']);
 
-/** Price lists a page at a time, by name: each with the version in force (if one was ever approved) and its draft. */
+/** A list as screens show it: the version in force now (if one was ever approved) and its draft. */
+const priceListRow = z.object({
+  id: idString(), name: z.string(), active: z.boolean(),
+  inForce: z.object({ versionId: idString(), taxInclusive: z.boolean(), inForceFrom: dateString() }).nullable(),
+  draftId: idString().nullable(),
+});
+
+/** Price lists a page at a time, by name. */
 export const listPriceLists = defineContract({
   method: 'GET', path: '/price-lists', auth: 'session', perm: 'prices:read', tx: read,
   input: listInput(z.object({ search: searchText().optional(), status: status.optional() })),
-  output: listOf(z.object({
-    id: idString(), name: z.string(), active: z.boolean(),
-    inForce: z.object({ versionId: idString(), taxInclusive: z.boolean(), inForceFrom: dateString() }).nullable(),
-    draftId: idString().nullable(),
-  })),
+  output: listOf(priceListRow),
+});
+
+/** One price list, as listPriceLists answers it. */
+export const getPriceList = defineContract({
+  method: 'GET', path: '/price-lists/:id', auth: 'session', perm: 'prices:read', tx: read,
+  input: z.object({ id: idString() }), output: priceListRow,
 });
 
 /** A new list, with an empty draft to fill. name_taken: another list has this name, whatever its case or spacing. */
@@ -56,11 +65,30 @@ export const getPriceListVersion = defineContract({
   }),
 });
 
-/** A version's rates a page at a time, by item id. */
+/** An item as a rate shows it: its SKU, name and unit. */
+const itemLabel = { itemId: idString(), sku: z.string(), name: z.string(), unit: z.string() };
+
+/** A version's rates a page at a time, by item id, each with its item's SKU, name and unit. */
 export const listPriceListRates = defineContract({
   method: 'GET', path: '/price-lists/versions/:id/rates', auth: 'session', perm: 'prices:read', tx: read,
   input: listInput(z.object({})).extend({ id: idString() }),
-  output: listOf(z.object({ itemId: idString(), rate: unitPriceString() })),
+  output: listOf(z.object({ ...itemLabel, rate: unitPriceString() })),
+});
+
+/**
+ * What a version changes against the version in force now: what an approver sees beside the approval's hash, so no
+ * one approves blind (RC-037). The list's name; whether the rates include GST, in this version and in force; and each
+ * item whose rate differs, with its rate in force and proposed (null: not priced there). A version in force changes
+ * nothing.
+ */
+export const getPriceListChanges = defineContract({
+  method: 'GET', path: '/price-lists/versions/:id/changes', auth: 'session', perm: 'prices:read', tx: read,
+  input: z.object({ id: idString() }),
+  output: z.object({
+    versionId: idString(), priceListId: idString(), name: z.string(), taxInclusive: z.boolean(),
+    inForce: z.object({ versionId: idString(), taxInclusive: z.boolean() }).nullable(),
+    changes: z.array(z.object({ ...itemLabel, inForce: unitPriceString().nullable(), proposed: unitPriceString().nullable() })),
+  }),
 });
 
 /** A draft's rates made tax-inclusive or exclusive. not_a_draft: the version was approved, so it can't change. */

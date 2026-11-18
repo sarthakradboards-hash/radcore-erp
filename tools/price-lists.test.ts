@@ -6,8 +6,8 @@ import { percentString, unitPriceString } from '@radcore/lib-common';
 import { AppError, decideApproval, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addList, askApproval, changeList, discountAllowed, discountLimitFor, getVersion, listLimits, listListsPage, priceFor,
-  priceListApproval, putRates, setLimit, setTax, startDraft,
+  addList, askApproval, changeList, discountAllowed, discountLimitFor, getChanges, getList, getVersion, listLimits, listListsPage,
+  listRatesPage, priceFor, priceListApproval, putRates, setLimit, setTax, startDraft,
 } from '@radcore/lib-sales';
 import { addCategory, addItem } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
@@ -162,17 +162,44 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
 
   it('sets a discount limit only with prices:approve, since raising one lets a role discount without approval', async () => {
     const config = loadConfig(testSettings(), 'api');
-    const principal: Principal = { kind: 'user', userId: people.maker, role: 'admin', permissions: ['prices:read', 'prices:write'] };
-    const app = createApp(config, { info: () => undefined, error: () => undefined }, { db, authenticate: async () => principal, routes: salesRoutes });
-    const server = await listen(app, 0, '127.0.0.1');
+    // The same request from two people: only the key differs, so a 403 is the permission's, not the origin guard's.
+    const put = async (permissions: string[]) => {
+      const principal: Principal = { kind: 'user', userId: people.maker, role: 'admin', permissions };
+      const app = createApp(config, { info: () => undefined, error: () => undefined }, { db, authenticate: async () => principal, routes: salesRoutes });
+      const server = await listen(app, 0, '127.0.0.1');
+      try {
+        const res = await fetch(`http://127.0.0.1:${server.port}/sales/discount-limits`, { method: 'PUT',
+          body: JSON.stringify({ role: 'operations', maxPercent: '50', reason: 'Test' }),
+          headers: { 'content-type': 'application/json', origin: config.publicOrigin, 'idempotency-key': randomUUID() } });
+        return [res.status, (await res.json() as { code?: string }).code ?? 'ok'];
+      } finally {
+        await server.stop();
+      }
+    };
     try {
-      const res = await fetch(`http://127.0.0.1:${server.port}/sales/discount-limits`, { method: 'PUT',
-        body: JSON.stringify({ role: 'technician', maxPercent: '50', reason: 'Test' }),
-        headers: { 'content-type': 'application/json', origin: config.publicOrigin, 'idempotency-key': randomUUID() } });
-      expect(res.status).toBe(403);
+      expect(await put(['prices:read', 'prices:write'])).toEqual([403, 'forbidden']);
+      expect(await put(['prices:approve'])).toEqual([200, 'ok']);
     } finally {
-      await server.stop();
+      await run((ctx) => setLimit(ctx, { role: 'operations', maxPercent: null, reason: 'Test' }));
     }
+  });
+
+  it('reads one list, its rates with each item, and what a draft changes against the version in force', async () => {
+    const { id, draftId: first, requestId, versionHash } = await sent({ [items.a]: '100', [items.b]: '7' });
+    await approve(requestId, versionHash);
+    expect(await run((ctx) => getList(ctx, { id }))).toMatchObject({ id, active: true, inForce: { versionId: first }, draftId: null });
+    const rates = await run((ctx) => listRatesPage(ctx, { id: first, filter: {}, limit: 10 }));
+    expect(rates.items.find((r) => r.itemId === items.a)).toMatchObject({ name: 'Test scooter', unit: 'NOS', rate: '100.000000' });
+    const { draftId } = await run((ctx) => startDraft(ctx, { id }), as(people.maker));
+    // An unchanged copy changes nothing; then one rate up, one item out, and GST now outside the rate.
+    expect((await run((ctx) => getChanges(ctx, { id: draftId }))).changes).toEqual([]);
+    await run((ctx) => putRates(ctx, { id: draftId, rates: [{ itemId: items.a, rate: rate('110') }, { itemId: items.b, rate: null }] }), as(people.maker));
+    await run((ctx) => setTax(ctx, { id: draftId, taxInclusive: false }), as(people.maker));
+    const seen = await run((ctx) => getChanges(ctx, { id: draftId }));
+    expect(seen).toMatchObject({ taxInclusive: false, inForce: { versionId: first, taxInclusive: true } });
+    expect(seen.changes.map((c) => [c.itemId, c.inForce, c.proposed]).toSorted()).toEqual([
+      [items.a, '100.000000', '110.000000'], [items.b, '7.000000', null]].toSorted());
+    expect(await code(run((ctx) => getList(ctx, { id: randomUUID() })))).toBe('not_found');
   });
 
   it('limits a discount by role, else by the default setting, and clears both back', async () => {
