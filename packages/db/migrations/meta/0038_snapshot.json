@@ -1,5 +1,5 @@
 {
-  "id": "61fed90c-f26c-48c2-96a4-5917d2fc283c",
+  "id": "f27841de-2f72-4597-a903-36df55a30be7",
   "prevId": "c12f4bfa-b4dc-4d82-a20b-39b386986308",
   "version": "7",
   "dialect": "postgresql",
@@ -3191,15 +3191,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "timestamp with time zone",
+        "in_force_from": {
+          "name": "in_force_from",
+          "type": "date",
           "primaryKey": false,
           "notNull": false
         },
-        "superseded_at": {
-          "name": "superseded_at",
-          "type": "timestamp with time zone",
+        "superseded_from": {
+          "name": "superseded_from",
+          "type": "date",
           "primaryKey": false,
           "notNull": false
         },
@@ -3259,7 +3259,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"radcore\".\"price_list_versions\".\"approved_at\" is null",
+          "where": "\"radcore\".\"price_list_versions\".\"in_force_from\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3275,7 +3275,7 @@
             }
           ],
           "isUnique": true,
-          "where": "(\"radcore\".\"price_list_versions\".\"approved_at\" is not null and \"radcore\".\"price_list_versions\".\"superseded_at\" is null)",
+          "where": "(\"radcore\".\"price_list_versions\".\"in_force_from\" is not null and \"radcore\".\"price_list_versions\".\"superseded_from\" is null)",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3303,7 +3303,7 @@
       "checkConstraints": {
         "ck_price_list_versions_superseded": {
           "name": "ck_price_list_versions_superseded",
-          "value": "\"radcore\".\"price_list_versions\".\"superseded_at\" is null or \"radcore\".\"price_list_versions\".\"approved_at\" is not null"
+          "value": "\"radcore\".\"price_list_versions\".\"superseded_from\" is null or (\"radcore\".\"price_list_versions\".\"in_force_from\" is not null and \"radcore\".\"price_list_versions\".\"superseded_from\" >= \"radcore\".\"price_list_versions\".\"in_force_from\")"
         }
       },
       "isRLSEnabled": false

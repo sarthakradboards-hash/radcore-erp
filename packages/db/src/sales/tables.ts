@@ -1,7 +1,7 @@
 // lib-sales's tables (ADR-001 §3, §5): price lists and discount limits (M2-13, RAD-98). SQL zone (ADR-002 §3): `sql`
 // only as a CHECK's argument or a generated column.
 import { and, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
-import { boolean, check, index, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, date, index, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, percent, radcoreTable, unitPrice } from '../columns.ts';
 import { roles } from '../platform/tables.ts';
 import { items } from '../stock/tables.ts';
@@ -17,22 +17,23 @@ export const priceLists = radcoreTable('price_lists', {
 
 /**
  * A version of a list's prices (RAD-98): whether its rates include GST, and the rates themselves. A draft (no
- * `approved_at`) is edited and sent for approval (maker-checker, RAD-38); approving it puts it in force and supersedes
- * the one before (`superseded_at`), which stays as history. Only the version in force prices anything. A list has at
- * most one draft and one version in force.
+ * `in_force_from`) is edited and sent for approval (maker-checker, RAD-38); approving it puts it in force from that day
+ * and supersedes the one before from the same day (`superseded_from`), which stays as history. A document is priced by
+ * the version in force on its own business date: from `in_force_from`, until the day before `superseded_from`. A list
+ * has at most one draft and one version in force now.
  */
 export const priceListVersions = radcoreTable('price_list_versions', {
   id: id(),
   priceListId: uuid().notNull().references(() => priceLists.id, { onDelete: 'restrict' }),
   taxInclusive: boolean().notNull(),
-  approvedAt: timestamp({ withTimezone: true }),
-  supersededAt: timestamp({ withTimezone: true }),
+  inForceFrom: date({ mode: 'string' }),
+  supersededFrom: date({ mode: 'string' }),
 }, (t) => [
   index('ix_price_list_versions_list').on(t.priceListId),
-  uniqueIndex('ux_price_list_versions_draft').on(t.priceListId).where(isNull(t.approvedAt)),
+  uniqueIndex('ux_price_list_versions_draft').on(t.priceListId).where(isNull(t.inForceFrom)),
   // and() of two terms is never undefined.
-  uniqueIndex('ux_price_list_versions_in_force').on(t.priceListId).where(and(isNotNull(t.approvedAt), isNull(t.supersededAt)) as SQL),
-  check('ck_price_list_versions_superseded', sql`${t.supersededAt} is null or ${t.approvedAt} is not null`),
+  uniqueIndex('ux_price_list_versions_in_force').on(t.priceListId).where(and(isNotNull(t.inForceFrom), isNull(t.supersededFrom)) as SQL),
+  check('ck_price_list_versions_superseded', sql`${t.supersededFrom} is null or (${t.inForceFrom} is not null and ${t.supersededFrom} >= ${t.inForceFrom})`),
 ]);
 
 /** One item's rate in a version: per unit, to 6 places (RC-008), with or without GST as its version says. */

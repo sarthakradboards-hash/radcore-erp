@@ -84,7 +84,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /approvals/price-list/:id/decision': 'prices:approve',
   'GET /price-lists/:id/price': 'prices:read',
   'GET /sales/discount-limits': 'prices:read',
-  'PUT /sales/discount-limits': 'prices:write',
+  'PUT /sales/discount-limits': 'prices:approve',
   // Files, by kind (RAD-43): each kind its own pair of keys.
   'POST /files/photo': 'photo_files:write',
   'POST /files/photo/:id/confirm': 'photo_files:write',

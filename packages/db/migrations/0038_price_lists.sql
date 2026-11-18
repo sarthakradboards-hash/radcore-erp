@@ -24,13 +24,13 @@ CREATE TABLE "radcore"."price_list_versions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"price_list_id" uuid NOT NULL,
 	"tax_inclusive" boolean NOT NULL,
-	"approved_at" timestamp with time zone,
-	"superseded_at" timestamp with time zone,
+	"in_force_from" date,
+	"superseded_from" date,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
-	CONSTRAINT "ck_price_list_versions_superseded" CHECK ("radcore"."price_list_versions"."superseded_at" is null or "radcore"."price_list_versions"."approved_at" is not null)
+	CONSTRAINT "ck_price_list_versions_superseded" CHECK ("radcore"."price_list_versions"."superseded_from" is null or ("radcore"."price_list_versions"."in_force_from" is not null and "radcore"."price_list_versions"."superseded_from" >= "radcore"."price_list_versions"."in_force_from"))
 );
 --> statement-breakpoint
 CREATE TABLE "radcore"."price_lists" (
@@ -52,14 +52,15 @@ ALTER TABLE "radcore"."price_list_versions" ADD CONSTRAINT "price_list_versions_
 CREATE UNIQUE INDEX "ux_price_list_rates_version_item" ON "radcore"."price_list_rates" USING btree ("version_id","item_id");--> statement-breakpoint
 CREATE INDEX "ix_price_list_rates_item" ON "radcore"."price_list_rates" USING btree ("item_id");--> statement-breakpoint
 CREATE INDEX "ix_price_list_versions_list" ON "radcore"."price_list_versions" USING btree ("price_list_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "ux_price_list_versions_draft" ON "radcore"."price_list_versions" USING btree ("price_list_id") WHERE "radcore"."price_list_versions"."approved_at" is null;--> statement-breakpoint
-CREATE UNIQUE INDEX "ux_price_list_versions_in_force" ON "radcore"."price_list_versions" USING btree ("price_list_id") WHERE ("radcore"."price_list_versions"."approved_at" is not null and "radcore"."price_list_versions"."superseded_at" is null);--> statement-breakpoint
-CREATE UNIQUE INDEX "ux_price_lists_name_key" ON "radcore"."price_lists" USING btree ("name_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "ux_price_list_versions_draft" ON "radcore"."price_list_versions" USING btree ("price_list_id") WHERE "radcore"."price_list_versions"."in_force_from" is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "ux_price_list_versions_in_force" ON "radcore"."price_list_versions" USING btree ("price_list_id") WHERE ("radcore"."price_list_versions"."in_force_from" is not null and "radcore"."price_list_versions"."superseded_from" is null);--> statement-breakpoint
+CREATE UNIQUE INDEX "ux_price_lists_name_key" ON "radcore"."price_lists" USING btree ("name_key");
+--> statement-breakpoint
 -- Audited like every table (ADR-005 §5, §7c). A version's rates are its parts (ADR-001 §8b): their audit rows carry the
 -- version's id, so maker-checker finds everyone who changed a draft since its last approval (RC-037).
 SELECT radcore.audit_attach('price_lists', keep => array['name', 'name_key', 'active']);
 --> statement-breakpoint
-SELECT radcore.audit_attach('price_list_versions', keep => array['price_list_id', 'tax_inclusive', 'approved_at', 'superseded_at']);
+SELECT radcore.audit_attach('price_list_versions', keep => array['price_list_id', 'tax_inclusive', 'in_force_from', 'superseded_from']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('price_list_rates', keep => array['version_id', 'item_id', 'rate'],
   owner => 'version_id', owner_table => 'price_list_versions');

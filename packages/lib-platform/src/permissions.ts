@@ -16,10 +16,6 @@ export type Permission = {
   readonly records?: readonly string[];
 };
 
-// Whether drafting and approving prices needs the second factor, as gst:write does (D-19). Sarthak's to decide (RAD-98):
-// until then, off.
-const PRICES_SECOND_FACTOR = false;
-
 /** In the order the matrix shows them: by module, then by key. */
 export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'session:read', module: 'My work', label: 'Their own account: profile, password and sessions' },
@@ -35,8 +31,8 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'items:read', module: 'Items', label: 'See items, their categories and units' },
   { key: 'items:write', module: 'Items', label: 'Add and change items and their categories' },
   { key: 'prices:read', module: 'Prices', label: 'See price lists and discount limits' },
-  { key: 'prices:write', module: 'Prices', label: 'Draft price lists and set discount limits', secondFactor: PRICES_SECOND_FACTOR },
-  { key: 'prices:approve', module: 'Prices', label: 'Approve or reject another person’s price list', secondFactor: PRICES_SECOND_FACTOR },
+  { key: 'prices:write', module: 'Prices', label: 'Draft price lists, which price nothing until approved' },
+  { key: 'prices:approve', module: 'Prices', label: 'Approve another person’s price list, and set discount limits', secondFactor: true },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
   { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'], secondFactor: true },
   { key: 'photo_files:read', module: 'Files', label: 'See job photos' },

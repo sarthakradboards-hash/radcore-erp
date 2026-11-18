@@ -1,7 +1,7 @@
 // lib-sales's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every contract
 // file it imports only zod, lib-common and other libraries' contract entries (D5), so the browser can load it.
 import {
-  defineContract, idString, listInput, listOf, momentString, percentString, reason, searchText, unitPriceString,
+  dateString, defineContract, idString, listInput, listOf, percentString, reason, searchText, unitPriceString,
 } from '@radcore/lib-common';
 import { approvalContracts } from '@radcore/lib-platform/contract';
 import { z } from 'zod';
@@ -21,7 +21,7 @@ export const listPriceLists = defineContract({
   input: listInput(z.object({ search: searchText().optional(), status: status.optional() })),
   output: listOf(z.object({
     id: idString(), name: z.string(), active: z.boolean(),
-    inForce: z.object({ versionId: idString(), taxInclusive: z.boolean(), approvedAt: momentString() }).nullable(),
+    inForce: z.object({ versionId: idString(), taxInclusive: z.boolean(), inForceFrom: dateString() }).nullable(),
     draftId: idString().nullable(),
   })),
 });
@@ -46,13 +46,13 @@ export const startPriceListDraft = defineContract({
   input: z.object({ id: idString() }), output: z.object({ draftId: idString() }),
 });
 
-/** One version: whether its rates include GST, and whether it's a draft, in force or superseded. */
+/** One version: whether its rates include GST, whether it's a draft, in force or superseded, and the days it priced. */
 export const getPriceListVersion = defineContract({
   method: 'GET', path: '/price-lists/versions/:id', auth: 'session', perm: 'prices:read', tx: read,
   input: z.object({ id: idString() }),
   output: z.object({
     id: idString(), priceListId: idString(), taxInclusive: z.boolean(), state: versionState,
-    approvedAt: momentString().nullable(), supersededAt: momentString().nullable(),
+    inForceFrom: dateString().nullable(), supersededFrom: dateString().nullable(),
   }),
 });
 
@@ -90,15 +90,17 @@ export const requestPriceListApproval = defineContract({
 /** The approval routes (RAD-38): another person approves the exact version sent, or rejects it with a reason. */
 export const priceListApproval = approvalContracts('price-list', 'prices:approve');
 
-/** An item's price on a list: the rate in force and whether it includes GST. no_price: the list has no version in force,
- * or it doesn't price this item; a missing price is never read as 0. */
+/** An item's price on a list on a business date: the rate of the version in force that day, and whether it includes
+ * GST. no_price: the list is switched off, had no version in force that day, or it doesn't price this item; a missing
+ * price is never read as 0. */
 export const getPrice = defineContract({
   method: 'GET', path: '/price-lists/:id/price', auth: 'session', perm: 'prices:read', tx: read,
-  input: z.object({ id: idString(), itemId: idString() }),
+  input: z.object({ id: idString(), itemId: idString(), on: dateString() }),
   output: z.object({ versionId: idString(), rate: unitPriceString(), taxInclusive: z.boolean() }), errors: ['no_price'],
 });
 
-// Discount limits (RAD-98): the most each role may take off a list price without a discount approval (M3).
+// Discount limits (RAD-98): the most each role may take off a list price without a discount approval (M3). Raising one
+// lets a role discount without approval, so setting it is a pricing decision: prices:approve, with a reason.
 const roleKey = () => z.string().regex(/^[a-z][a-z_]{1,31}$/, 'Not a role');
 
 /** The default limit and each role's own. */
@@ -109,7 +111,7 @@ export const listDiscountLimits = defineContract({
 
 /** A role's limit (`role` null: the default for roles without one); a null limit clears it. unknown_role: no such role. */
 export const setDiscountLimit = defineContract({
-  method: 'PUT', path: '/sales/discount-limits', auth: 'session', perm: 'prices:write', tx: write,
+  method: 'PUT', path: '/sales/discount-limits', auth: 'session', perm: 'prices:approve', tx: write,
   input: z.object({ role: roleKey().nullable(), maxPercent: percentString().nullable(), reason: reason() }),
   output: z.object({}), errors: ['unknown_role'],
 });

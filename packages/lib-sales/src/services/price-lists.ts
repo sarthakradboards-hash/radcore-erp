@@ -1,12 +1,13 @@
 // Price lists (M2-13, RAD-98; ADR-001 §5: lib-sales's). A list's prices are versions: the admin edits a draft and
 // sends it for approval; another person approves that exact version (maker-checker, RAD-38: priceListApproval), which
-// puts it in force and supersedes the one before. Only the version in force prices anything (priceFor), so a price
-// never changes without a second person.
+// puts it in force from that day and supersedes the one before. Only a version in force prices anything (priceFor, on
+// a document's business date), so a price never changes without a second person.
 import { after, priceListRates, priceListVersions, priceLists, salesTx, searchWords } from '@radcore/db/sales';
+import { indiaDate, type Rate } from '@radcore/lib-common';
 import {
   AppError, decodeCursor, encodeCursor, requestApproval, sortedCursor, type ApprovalSpec, type Ctx,
 } from '@radcore/lib-platform';
-import { and, asc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   createPriceList, getPrice, getPriceListVersion, listPriceListRates, listPriceLists, putPriceListRates,
@@ -18,7 +19,7 @@ type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 const NAME_SORT = { column: 'name', desc: false } as const;
 
-// ux_price_lists_name_key's refusal, as name_taken; anything else is thrown as it is.
+// ux_price_lists_name_key's refusal, as name_taken; an unknown item's, as unknown_item; anything else as it is.
 async function refused<T>(write: Promise<T>): Promise<T> {
   try {
     return await write;
@@ -33,7 +34,10 @@ async function refused<T>(write: Promise<T>): Promise<T> {
 }
 
 const notFound = () => new AppError('not_found', 'There is no such price list');
-const inForce = and(isNotNull(priceListVersions.approvedAt), isNull(priceListVersions.supersededAt));
+const inForceNow = and(isNotNull(priceListVersions.inForceFrom), isNull(priceListVersions.supersededFrom));
+/** The version in force on a business date: from its in_force_from, until the day before its superseded_from. */
+const inForceOn = (on: string) => and(lte(priceListVersions.inForceFrom, on),
+  or(isNull(priceListVersions.supersededFrom), gt(priceListVersions.supersededFrom, on)));
 
 /** GET /price-lists (prices:read): by name, a page at a time, each with its version in force and its draft. */
 export async function listListsPage(ctx: Ctx, input: In<typeof listPriceLists>): Promise<Out<typeof listPriceLists>> {
@@ -47,16 +51,17 @@ export async function listListsPage(ctx: Ctx, input: In<typeof listPriceLists>):
       after([priceLists.nameKey, priceLists.id], key && [key.value, key.id], 'asc')))
     .orderBy(asc(priceLists.nameKey), asc(priceLists.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
+  // The draft and the version in force now: the versions not superseded.
   const versions = page.length === 0 ? [] : await tx.select({ id: priceListVersions.id, listId: priceListVersions.priceListId,
-    taxInclusive: priceListVersions.taxInclusive, approvedAt: priceListVersions.approvedAt }).from(priceListVersions)
-    .where(and(inArray(priceListVersions.priceListId, page.map((r) => r.id)), isNull(priceListVersions.supersededAt)));
+    taxInclusive: priceListVersions.taxInclusive, inForceFrom: priceListVersions.inForceFrom }).from(priceListVersions)
+    .where(and(inArray(priceListVersions.priceListId, page.map((r) => r.id)), isNull(priceListVersions.supersededFrom)));
   const last = page.at(-1);
   return {
     items: page.map((r) => {
-      const live = versions.find((v) => v.listId === r.id && v.approvedAt !== null);
+      const live = versions.find((v) => v.listId === r.id && v.inForceFrom !== null);
       return { id: r.id, name: r.name, active: r.active,
-        inForce: live?.approvedAt ? { versionId: live.id, taxInclusive: live.taxInclusive, approvedAt: live.approvedAt.toISOString() } : null,
-        draftId: versions.find((v) => v.listId === r.id && v.approvedAt === null)?.id ?? null };
+        inForce: live?.inForceFrom ? { versionId: live.id, taxInclusive: live.taxInclusive, inForceFrom: live.inForceFrom } : null,
+        draftId: versions.find((v) => v.listId === r.id && v.inForceFrom === null)?.id ?? null };
     }),
     next: rows.length > input.limit && last ? encodeCursor({ ...NAME_SORT, value: last.nameKey, id: last.id }) : null,
   };
@@ -91,11 +96,11 @@ export async function startDraft(ctx: Ctx, { id }: In<typeof startPriceListDraft
   const [list] = await tx.select({ id: priceLists.id }).from(priceLists).where(eq(priceLists.id, id)).for('update');
   if (list === undefined) throw notFound();
   const versions = await tx.select({ id: priceListVersions.id, taxInclusive: priceListVersions.taxInclusive,
-    approvedAt: priceListVersions.approvedAt }).from(priceListVersions)
-    .where(and(eq(priceListVersions.priceListId, id), isNull(priceListVersions.supersededAt)));
-  const draft = versions.find((v) => v.approvedAt === null);
+    inForceFrom: priceListVersions.inForceFrom }).from(priceListVersions)
+    .where(and(eq(priceListVersions.priceListId, id), isNull(priceListVersions.supersededFrom)));
+  const draft = versions.find((v) => v.inForceFrom === null);
   if (draft !== undefined) return { draftId: draft.id };
-  const live = versions.find((v) => v.approvedAt !== null);
+  const live = versions.find((v) => v.inForceFrom !== null);
   if (live === undefined) throw new Error(`price list ${id} has neither a draft nor a version in force`);
   const [made] = await tx.insert(priceListVersions).values({ priceListId: id, taxInclusive: live.taxInclusive })
     .returning({ id: priceListVersions.id });
@@ -106,13 +111,13 @@ export async function startDraft(ctx: Ctx, { id }: In<typeof startPriceListDraft
   return { draftId: made.id };
 }
 
-type VersionRow = { id: string; priceListId: string; taxInclusive: boolean; approvedAt: Date | null; supersededAt: Date | null };
+type VersionRow = { id: string; priceListId: string; taxInclusive: boolean; inForceFrom: string | null; supersededFrom: string | null };
 
 /** A version's row, locked with `forUpdate`, so a change to it or its rates waits for an approval being decided. */
 async function versionRow(ctx: Ctx, id: string, forUpdate: boolean): Promise<VersionRow | undefined> {
   const q = salesTx(ctx).select({ id: priceListVersions.id, priceListId: priceListVersions.priceListId,
-    taxInclusive: priceListVersions.taxInclusive, approvedAt: priceListVersions.approvedAt,
-    supersededAt: priceListVersions.supersededAt }).from(priceListVersions).where(eq(priceListVersions.id, id));
+    taxInclusive: priceListVersions.taxInclusive, inForceFrom: priceListVersions.inForceFrom,
+    supersededFrom: priceListVersions.supersededFrom }).from(priceListVersions).where(eq(priceListVersions.id, id));
   const [row] = forUpdate ? await q.for('update') : await q;
   return row;
 }
@@ -122,18 +127,18 @@ async function versionRow(ctx: Ctx, id: string, forUpdate: boolean): Promise<Ver
 async function lockedDraft(ctx: Ctx, id: string): Promise<VersionRow> {
   const row = await versionRow(ctx, id, true);
   if (row === undefined) throw notFound();
-  if (row.approvedAt !== null) throw new AppError('not_a_draft', 'This version was approved, so it can’t change. Start a new draft');
+  if (row.inForceFrom !== null) throw new AppError('not_a_draft', 'This version was approved, so it can’t change. Start a new draft');
   return row;
 }
 
-const stateOf = (v: VersionRow) => (v.approvedAt === null ? 'draft' : v.supersededAt === null ? 'in_force' : 'superseded');
+const stateOf = (v: VersionRow) => (v.inForceFrom === null ? 'draft' : v.supersededFrom === null ? 'in_force' : 'superseded');
 
 /** GET /price-lists/versions/:id (prices:read). */
 export async function getVersion(ctx: Ctx, { id }: In<typeof getPriceListVersion>): Promise<Out<typeof getPriceListVersion>> {
   const v = await versionRow(ctx, id, false);
   if (v === undefined) throw notFound();
   return { id: v.id, priceListId: v.priceListId, taxInclusive: v.taxInclusive, state: stateOf(v),
-    approvedAt: v.approvedAt?.toISOString() ?? null, supersededAt: v.supersededAt?.toISOString() ?? null };
+    inForceFrom: v.inForceFrom, supersededFrom: v.supersededFrom };
 }
 
 /** GET /price-lists/versions/:id/rates (prices:read): by item id, a page at a time. */
@@ -172,13 +177,14 @@ export async function askApproval(ctx: Ctx, { id }: In<typeof requestPriceListAp
   return requestApproval(ctx, priceListApproval, id);
 }
 
-/** What the approver sees, and approves by its hash: whether the rates include GST, and every item's rate. */
-type PriceListVersion = { priceListId: string; taxInclusive: boolean; rates: { itemId: string; rate: string }[] };
+/** What the approver sees, and approves by its hash: the list, whether the rates include GST, and every item's rate. */
+type PriceListVersion = { priceListId: string; name: string; taxInclusive: boolean; rates: { itemId: string; rate: string }[] };
 
 /**
- * The price-list approval (RAD-38). The record is a version, its rates are its parts. Approving puts it in force and
- * supersedes the version before; rejecting leaves it a draft, for its maker to change and send again. Neither changes
- * what is approved (the engine checks it): only the version's approved_at and the old version's superseded_at.
+ * The price-list approval (RAD-38). The record is a version, its rates are its parts. Approving supersedes the
+ * version in force first, then puts this one in force, both from today (one in force per list is a unique index that
+ * can't be deferred, so the order matters); rejecting leaves it a draft, for its maker to change and send again.
+ * Neither changes what is approved (the engine checks it): only the two versions' dates.
  */
 export const priceListApproval: ApprovalSpec<PriceListVersion> = {
   kind: 'price-list',
@@ -187,16 +193,18 @@ export const priceListApproval: ApprovalSpec<PriceListVersion> = {
   async version(ctx, recordId, { forUpdate }) {
     const v = await versionRow(ctx, recordId, forUpdate);
     if (v === undefined) return null;
-    const rates = await salesTx(ctx).select({ itemId: priceListRates.itemId, rate: priceListRates.rate }).from(priceListRates)
+    const tx = salesTx(ctx);
+    const [list] = await tx.select({ name: priceLists.name }).from(priceLists).where(eq(priceLists.id, v.priceListId));
+    const rates = await tx.select({ itemId: priceListRates.itemId, rate: priceListRates.rate }).from(priceListRates)
       .where(eq(priceListRates.versionId, recordId)).orderBy(asc(priceListRates.itemId));
-    return { priceListId: v.priceListId, taxInclusive: v.taxInclusive, rates };
+    return { priceListId: v.priceListId, name: list?.name ?? '', taxInclusive: v.taxInclusive, rates };
   },
   async approved(ctx, recordId) {
     const v = await lockedDraft(ctx, recordId);
     const tx = salesTx(ctx);
-    const now = new Date();
-    await tx.update(priceListVersions).set({ supersededAt: now }).where(and(eq(priceListVersions.priceListId, v.priceListId), inForce));
-    await tx.update(priceListVersions).set({ approvedAt: now }).where(eq(priceListVersions.id, recordId));
+    const today = indiaDate(new Date());
+    await tx.update(priceListVersions).set({ supersededFrom: today }).where(and(eq(priceListVersions.priceListId, v.priceListId), inForceNow));
+    await tx.update(priceListVersions).set({ inForceFrom: today }).where(eq(priceListVersions.id, recordId));
   },
   async rejected() {
     // The version stays a draft; the engine records the rejection and its reason.
@@ -204,18 +212,20 @@ export const priceListApproval: ApprovalSpec<PriceListVersion> = {
 };
 
 /**
- * An item's price on a list, from the version in force (GET /price-lists/:id/price, and M3's quotes and bills). A list
- * switched off, no version in force, or no rate for the item is no_price: a missing price is never read as 0.
+ * An item's price on a list on a business date (GET /price-lists/:id/price, and M3's quotes and bills, each on its own
+ * date): the version in force that day. A list switched off, no version in force that day, or no rate for the item is
+ * no_price: a missing price is never read as 0.
  */
-export async function priceFor(ctx: Ctx, listId: string, itemId: string): Promise<Out<typeof getPrice>> {
+export async function priceFor(ctx: Ctx, listId: string, itemId: string, on: string): Promise<{ versionId: string; rate: Rate; taxInclusive: boolean }> {
   const [row] = await salesTx(ctx).select({ versionId: priceListVersions.id, taxInclusive: priceListVersions.taxInclusive,
     rate: priceListRates.rate }).from(priceListVersions)
     .innerJoin(priceLists, and(eq(priceLists.id, priceListVersions.priceListId), eq(priceLists.active, true)))
     .innerJoin(priceListRates, and(eq(priceListRates.versionId, priceListVersions.id), eq(priceListRates.itemId, itemId)))
-    .where(and(eq(priceListVersions.priceListId, listId), inForce));
-  if (row === undefined) throw new AppError('no_price', 'This price list has no approved price for this item');
-  return row;
+    .where(and(eq(priceListVersions.priceListId, listId), inForceOn(on)));
+  if (row === undefined) throw new AppError('no_price', `This price list had no approved price for this item on ${on}`);
+  // A unitPrice() column: numeric(18,6), a Rate.
+  return { ...row, rate: row.rate as Rate };
 }
 
 /** GET /price-lists/:id/price (prices:read). */
-export const priceOf = (ctx: Ctx, { id, itemId }: In<typeof getPrice>) => priceFor(ctx, id, itemId);
+export const priceOf = (ctx: Ctx, { id, itemId, on }: In<typeof getPrice>): Promise<Out<typeof getPrice>> => priceFor(ctx, id, itemId, on);

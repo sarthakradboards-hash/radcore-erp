@@ -3,15 +3,18 @@
 // supersedes the one before; an approved version never changes. Discount limits are per role, else the default setting.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { percentString, unitPriceString } from '@radcore/lib-common';
-import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addList, askApproval, changeList, discountAllowed, discountLimitFor, getVersion, listLimits, listListsPage, priceFor,
   priceListApproval, putRates, setLimit, setTax, startDraft,
 } from '@radcore/lib-sales';
 import { addCategory, addItem } from '@radcore/lib-stock';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { SECOND_FACTOR_KEYS } from '../packages/lib-platform/src/permissions.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -19,11 +22,12 @@ const ownerUrl = process.env['TEST_DATABASE_OWNER_URL'];
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const AS: Principal = { kind: 'system', name: 'test', permissions: [] };
 const tag = () => randomBytes(4).toString('hex');
+// A business date after any approval a run makes: the version in force now. Tests never read the run's own date.
+const LATER = '2099-01-01';
 
-// Whether writing and approving prices needs the second factor is Sarthak's (D-19): one switch sets both, never reading.
-it('treats drafting and approving prices alike for the second factor, and never reading them', () => {
-  const [w, a, r] = ['prices:write', 'prices:approve', 'prices:read'].map((k) => SECOND_FACTOR_KEYS.includes(k));
-  expect([w === a, r]).toEqual([true, false]);
+// D-19 widened (Sarthak, 18 Nov: "Yes, approving only"): approving puts prices in force; a draft prices nothing.
+it('makes only prices:approve a second-factor key', () => {
+  expect(['prices:approve', 'prices:write', 'prices:read'].map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([true, false, false]);
 });
 
 it.runIf(process.env['CI'] && !(url && ownerUrl))('has its test database in CI', () => {
@@ -41,7 +45,7 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
   const as = (userId: string, role = 'admin'): Principal => ({ kind: 'user', userId, role, permissions: [] });
   const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
   const rate = (r: string) => unitPriceString().parse(r);
-  const price = (listId: string, itemId: string) => run((ctx) => priceFor(ctx, listId, itemId));
+  const price = (listId: string, itemId: string, on = LATER) => run((ctx) => priceFor(ctx, listId, itemId, on));
   /** A list made, filled and sent for approval by the maker: the list, its draft, the request and the version's hash. */
   const sent = async (rates: Record<string, string>, taxInclusive = true) => {
     const { id, draftId } = await run((ctx) => addList(ctx, { name: `Test list ${tag()}`, taxInclusive }), as(people.maker));
@@ -131,6 +135,44 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
     const name = `Test list ${tag()}`;
     await run((ctx) => addList(ctx, { name, taxInclusive: true }));
     expect(await code(run((ctx) => addList(ctx, { name: `  ${name.toUpperCase()} `, taxInclusive: true })))).toBe('name_taken');
+  });
+
+  it('prices a document by the version in force on its own business date', async () => {
+    const { id, draftId: first, requestId, versionHash } = await sent({ [items.a]: '100' });
+    await approve(requestId, versionHash);
+    const { draftId: second } = await run((ctx) => startDraft(ctx, { id }), as(people.maker));
+    await run((ctx) => putRates(ctx, { id: second, rates: [{ itemId: items.a, rate: rate('120') }] }), as(people.maker));
+    const again = await run((ctx) => askApproval(ctx, { id: second }), as(people.maker));
+    await approve(again.id, again.versionHash);
+    // As if the first was approved on 1 Jan 2025 and the second on 1 Jun 2025.
+    const client = await ownerPool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('app.principal', 'system:test', true)");
+      await client.query("update radcore.price_list_versions set in_force_from = '2025-01-01', superseded_from = '2025-06-01' where id = $1", [first]);
+      await client.query("update radcore.price_list_versions set in_force_from = '2025-06-01' where id = $1", [second]);
+      await client.query('commit');
+    } finally {
+      client.release();
+    }
+    expect(await code(price(id, items.a, '2024-12-31'))).toBe('no_price');
+    expect([(await price(id, items.a, '2025-01-01')).rate, (await price(id, items.a, '2025-05-31')).rate,
+      (await price(id, items.a, '2025-06-01')).rate]).toEqual(['100.000000', '100.000000', '120.000000']);
+  });
+
+  it('sets a discount limit only with prices:approve, since raising one lets a role discount without approval', async () => {
+    const config = loadConfig(testSettings(), 'api');
+    const principal: Principal = { kind: 'user', userId: people.maker, role: 'admin', permissions: ['prices:read', 'prices:write'] };
+    const app = createApp(config, { info: () => undefined, error: () => undefined }, { db, authenticate: async () => principal, routes: salesRoutes });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/sales/discount-limits`, { method: 'PUT',
+        body: JSON.stringify({ role: 'technician', maxPercent: '50', reason: 'Test' }),
+        headers: { 'content-type': 'application/json', origin: config.publicOrigin, 'idempotency-key': randomUUID() } });
+      expect(res.status).toBe(403);
+    } finally {
+      await server.stop();
+    }
   });
 
   it('limits a discount by role, else by the default setting, and clears both back', async () => {
