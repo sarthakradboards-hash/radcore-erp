@@ -50,6 +50,19 @@ describe.skipIf(!url || !superUrl)('location kind labels', () => {
     expect((await su.query("select 1 from radcore.settings where key = 'stock.location_kind_label_demo'")).rowCount).toBe(0);
   });
 
+  // drizzle's jsonb() parsed a stored string a second time, so "2024" read back as a number and "null" as null, and
+  // every request reading the setting then failed (RAD-98 found it).
+  it('reads back a label that looks like a number, null or true as the text it is', async () => {
+    try {
+      for (const name of ['2024', 'null', 'true', '{"a":1}']) {
+        expect(await label('demo', name)).toBe('ok');
+        expect((await kinds()).kinds.find((k) => k.kind === 'demo')?.label).toBe(name);
+      }
+    } finally {
+      expect(await label('demo', null)).toBe('ok');
+    }
+  });
+
   it("refuses another kind's label, whatever its case or spacing, and a reset onto a label in use", async () => {
     expect(await label('job_work', ' rejected ')).toBe('label_in_use');
     const name = word();

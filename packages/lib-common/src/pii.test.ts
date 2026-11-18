@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { idString, isMasked, listOf, maskedInputPath, maskOf, maskOutput, pii, piiPlan, piiRecord } from './index.ts';
+import { idString, isMasked, listOf, maskedInputPath, maskOf, maskOutput, sightOf, pii, piiPlan, piiRecord } from './index.ts';
 
 const person = piiRecord('people', z.object({ id: idString(), name: pii(), phone: pii(z.string(), 'last4'),
   salary: pii(z.string(), 'pay').nullable() }));
@@ -49,20 +49,20 @@ describe('piiPlan and maskOutput', () => {
 
   it('masks personal data without pii:read, and pay without pay:read', () => {
     const plan = planOf(person);
-    expect(maskOutput(plan, asha, []).value).toEqual({ id: 'p-1', name: { masked: SIX }, phone: { masked: '••••••3210' },
+    expect(maskOutput(plan, asha, sightOf([])).value).toEqual({ id: 'p-1', name: { masked: SIX }, phone: { masked: '••••••3210' },
       salary: { masked: SIX } });
-    expect(maskOutput(plan, asha, ['pii:read']).value).toEqual({ ...asha, salary: { masked: SIX } });
-    expect(maskOutput(plan, asha, ['pay:read']).value).toEqual({ id: 'p-1', name: { masked: SIX }, phone: { masked: '••••••3210' },
+    expect(maskOutput(plan, asha, sightOf(['pii:read'])).value).toEqual({ ...asha, salary: { masked: SIX } });
+    expect(maskOutput(plan, asha, sightOf(['pay:read'])).value).toEqual({ id: 'p-1', name: { masked: SIX }, phone: { masked: '••••••3210' },
       salary: '125000.00' });
-    expect(maskOutput(plan, asha, ALL).value).toEqual(asha);
+    expect(maskOutput(plan, asha, sightOf(ALL)).value).toEqual(asha);
   });
 
   it('logs a look at each record shown with an unmasked value, once, and none when all is masked', () => {
     const plan = planOf(listOf(person));
     const page = { items: [asha, { ...asha, id: 'p-2', salary: null }, asha], next: null };
-    expect(maskOutput(plan, page, ALL).looks).toEqual([{ table: 'people', id: 'p-1' }, { table: 'people', id: 'p-2' }]);
-    expect(maskOutput(plan, page, ['pay:read']).looks).toEqual([{ table: 'people', id: 'p-1' }]);
-    expect(maskOutput(plan, page, []).looks).toEqual([]);
+    expect(maskOutput(plan, page, sightOf(ALL)).looks).toEqual([{ table: 'people', id: 'p-1' }, { table: 'people', id: 'p-2' }]);
+    expect(maskOutput(plan, page, sightOf(['pay:read'])).looks).toEqual([{ table: 'people', id: 'p-1' }]);
+    expect(maskOutput(plan, page, sightOf([])).looks).toEqual([]);
   });
 
   it('logs a value reached through a relation against its own record, and masks it the same way', () => {
@@ -72,37 +72,60 @@ describe('piiPlan and maskOutput', () => {
     const plan = planOf(order);
     const one = { id: 'o-1', note: 'Call first', customer: { id: 'c-1', phone: '+919876543210' },
       contacts: [{ phone: '+911234567890' }, {}] };
-    expect(maskOutput(plan, one, []).value).toEqual({ id: 'o-1', note: { masked: SIX },
+    expect(maskOutput(plan, one, sightOf([])).value).toEqual({ id: 'o-1', note: { masked: SIX },
       customer: { id: 'c-1', phone: { masked: '••••••3210' } }, contacts: [{ phone: { masked: '••••••7890' } }, {}] });
     // The contact sits in the order's record, with no record of its own: a look at the order.
-    expect(maskOutput(plan, { ...one, note: null }, ALL).looks).toEqual([{ table: 'customers', id: 'c-1' },
+    expect(maskOutput(plan, { ...one, note: null }, sightOf(ALL)).looks).toEqual([{ table: 'customers', id: 'c-1' },
       { table: 'sales_orders', id: 'o-1' }]);
   });
 
   it('follows a union of records of one table', () => {
     const either = z.union([piiRecord('parties', z.object({ id: idString(), kind: z.literal('a'), phone: pii() })),
       piiRecord('parties', z.object({ id: idString(), kind: z.literal('b'), email: pii() }))]);
-    expect(maskOutput(planOf(either), { id: 'x', kind: 'b', email: 'a.person@example.in' }, []).value)
+    expect(maskOutput(planOf(either), { id: 'x', kind: 'b', email: 'a.person@example.in' }, sightOf([])).value)
       .toEqual({ id: 'x', kind: 'b', email: { masked: SIX } });
   });
 
   it('leaves a mask and a null alone', () => {
     const masked = { ...asha, phone: { masked: '••••••3210' }, salary: null };
-    expect(maskOutput(planOf(person), masked, ALL)).toEqual({ value: masked, looks: [{ table: 'people', id: 'p-1' }] });
+    expect(maskOutput(planOf(person), masked, sightOf(ALL))).toEqual({ value: masked, looks: [{ table: 'people', id: 'p-1' }] });
   });
 
   it("still masks a field zod has copied: described, given meta, refined (the auditor on #156)", () => {
     for (const email of [pii().describe('Their address'), pii().meta({ title: 'Email' }), pii().refine(() => true),
       pii(z.string(), 'pay').describe('x').optional()]) {
       const plan = planOf(piiRecord('users', z.object({ id: idString(), email })));
-      expect(maskOutput(plan, { id: 'u-1', email: 'a.person@example.in' }, []).value).toEqual({ id: 'u-1', email: { masked: SIX } });
+      expect(maskOutput(plan, { id: 'u-1', email: 'a.person@example.in' }, sightOf([])).value).toEqual({ id: 'u-1', email: { masked: SIX } });
     }
     const kept = planOf(piiRecord('users', z.object({ id: idString(), phone: pii(z.string(), 'last4').describe('Phone') })));
-    expect(maskOutput(kept, { id: 'u-1', phone: '+919876543210' }, []).value).toEqual({ id: 'u-1', phone: { masked: '••••••3210' } });
+    expect(maskOutput(kept, { id: 'u-1', phone: '+919876543210' }, sightOf([])).value).toEqual({ id: 'u-1', phone: { masked: '••••••3210' } });
   });
 
   it('refuses a pii() field behind a lazy, which the walk would otherwise miss', () => {
     expect(() => piiPlan(piiRecord('users', z.object({ id: idString(), email: z.lazy(() => pii()) })))).toThrow(/lazy can't be masked/);
+  });
+
+  it("shows a record's own whole and last4 fields to its seenWith key, never pay or a record nested in it (RAD-90)", () => {
+    const party = piiRecord('parties', z.object({ id: idString(), phone: pii(z.string(), 'last4'),
+      address: z.object({ city: pii() }), bank: pii(z.string(), 'pay'),
+      contact: piiRecord('users', z.object({ id: idString(), email: pii() })) }), { seenWith: 'parties:contact' });
+    const one = { id: 'p-1', phone: '+919876543210', address: { city: 'Pune' }, bank: '1234567890', contact: { id: 'u-1', email: 'a@b.in' } };
+    const shown = maskOutput(planOf(party), one, sightOf(['parties:contact']));
+    expect(shown.value).toEqual({ ...one, bank: { masked: SIX }, contact: { id: 'u-1', email: { masked: SIX } } });
+    expect(shown.looks).toEqual([{ table: 'parties', id: 'p-1' }]);
+    // pii:read shows both records' whole fields; pay:read alone shows only pay.
+    expect(maskOutput(planOf(party), one, sightOf(['pii:read'])).value).toEqual({ ...one, bank: { masked: SIX } });
+    expect(maskOutput(planOf(party), one, sightOf(['pay:read'])).value).toEqual({ id: 'p-1', phone: { masked: '••••••3210' },
+      address: { city: { masked: SIX } }, bank: '1234567890', contact: { id: 'u-1', email: { masked: SIX } } });
+    expect(() => piiRecord('parties', z.object({ id: idString() }), { seenWith: 'Contact' })).toThrow(/permission key/);
+    expect(() => piiPlan(z.union([party, piiRecord('parties', z.object({ id: idString(), phone: pii() }))])))
+      .toThrow(/seen with different keys/);
+  });
+
+  it('shows nothing to a request that is not direct, whatever its keys (ADR-005 §7c)', () => {
+    const sight = sightOf(['pii:read', 'pay:read', 'parties:contact'], false);
+    expect([sight('whole'), sight('last4', 'parties:contact'), sight('pay')]).toEqual([false, false, false]);
+    expect(maskOutput(planOf(person), asha, sight).looks).toEqual([]);
   });
 
   it('has no plan for an output without pii()', () => {

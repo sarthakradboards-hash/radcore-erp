@@ -1,6 +1,6 @@
 // RAD-34's /me contract, declared ahead of the sessions service: its shape is what ui builds RAD-50, RAD-52 and
 // RAD-55 against, and the same schema refuses a bad answer on both sides.
-import { maskOutput, newPasswordFields, piiPlan, requestFor } from '@radcore/lib-common';
+import { maskOutput, sightOf, newPasswordFields, piiPlan, requestFor } from '@radcore/lib-common';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as contracts from './contract.ts';
@@ -64,8 +64,9 @@ describe('the sign-in and own-session contracts', () => {
     expect(KEY_EXEMPT_ROUTES).toHaveLength(4);
   });
 
+  // Not own-account: the admin, file and export routes, and a feature's export (POST /platform/masters/exports).
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
-    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
+    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\/|\/exports$/.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['POST /me/second-factor/recovery-codes', 'session:read'], ['GET /me/sessions', 'session:read'],
       ['DELETE /me/sessions/:id', 'session:read']]);
@@ -197,8 +198,8 @@ describe('the admin contracts', () => {
     if (plan === null) throw new Error('listUsers has no pii() field');
     const page = { items: [{ id, displayName: 'Asha Rao', email: 'asha@example.com', status: 'active', role: 'admin',
       lastSignInAt: null, secondFactor: 'enrolled', self: true }], next: null };
-    expect(maskOutput(plan, page, []).value).toEqual({ ...page, items: [{ ...page.items[0], email: { masked: '••••••' } }] });
-    expect(maskOutput(plan, page, ['pii:read']).looks).toEqual([{ table: 'users', id }]);
+    expect(maskOutput(plan, page, sightOf([])).value).toEqual({ ...page, items: [{ ...page.items[0], email: { masked: '••••••' } }] });
+    expect(maskOutput(plan, page, sightOf(['pii:read'])).looks).toEqual([{ table: 'users', id }]);
   });
 
   it("flag the caller's own row and drop what isn't declared, such as a password hash or an IP", () => {

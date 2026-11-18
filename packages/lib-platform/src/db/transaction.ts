@@ -2,6 +2,7 @@
 // nothing else can, because only the runtime entry exports it (L7).
 import { jobsOutbox, platformTx, settings as settingsTable } from '@radcore/db/platform';
 import { openTransaction, type Database, type TxSpec } from '@radcore/db/schema';
+import { sightOf } from '@radcore/lib-common';
 import { principalId, type Ctx, type Files, type Jobs, type Owned, type Principal } from '../ctx.ts';
 import { AppError } from '../errors.ts';
 import { mayUse } from '../scope.ts';
@@ -33,6 +34,8 @@ export function runInTransaction<R>(db: Database, spec: TxSpec, principal: Princ
     const see = (permission: string, record: Owned) => {
       if (!can(permission, record)) throw new AppError('not_found', 'Not found');
     };
-    return fn(Object.freeze({ tx, principal, requestId, settings: new Settings(rows), jobs, files, can, see }));
+    // A job or a test has no browser behind it: the principal's keys decide. The handler sets a request's own.
+    const shows = sightOf(principal.permissions);
+    return fn(Object.freeze({ tx, principal, requestId, settings: new Settings(rows), jobs, files, can, see, shows }));
   });
 }
