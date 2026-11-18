@@ -257,8 +257,29 @@
     {
       "idx": 36,
       "version": "7",
-      "when": 1794722156757,
-      "tag": "0036_posted_documents",
+      "when": 1794722235064,
+      "tag": "0036_gst_rates",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794722888340,
+      "tag": "0037_item_pictures",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794723760956,
+      "tag": "0038_number_counters",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795023776800,
+      "tag": "0039_posted_documents",
       "breakpoints": true
     }
   ]

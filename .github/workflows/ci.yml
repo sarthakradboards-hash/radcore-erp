@@ -65,6 +65,8 @@ jobs:
       - run: npm run typecheck
       - name: ESLint (ADR-001 E rules, ADR-002 L rules) and dependency-cruiser (D rules, L7)
         run: npm run lint
+      - name: Mutation testing on the money and GST functions, failing below 80% (RAD-96, RC-069)
+        run: npm run mutation
 
   test:
     name: tests on PostgreSQL 16

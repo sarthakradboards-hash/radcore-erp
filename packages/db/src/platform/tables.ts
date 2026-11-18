@@ -1,7 +1,7 @@
 // lib-platform's tables (ADR-001 §3). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { isNotNull, isNull, sql } from 'drizzle-orm';
-import { boolean, check, index, integer, jsonb, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, radcoreTable } from '../columns.ts';
+import { boolean, check, index, integer, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boundedText, id, json, radcoreTable } from '../columns.ts';
 
 /**
  * Settings, and nothing else (RC-161): one row per setting a library declares with defineSetting, keyed
@@ -10,7 +10,7 @@ import { boundedText, id, radcoreTable } from '../columns.ts';
  */
 export const settings = radcoreTable('settings', {
   key: text().primaryKey(),
-  value: jsonb().notNull(),
+  value: json().notNull(),
 }, (t) => [check('ck_settings_key', sql`${t.key} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'`)]);
 
 /**
@@ -48,7 +48,7 @@ export const savedOnce = radcoreTable('saved_once', {
   route: text().notNull(),
   key: uuid().notNull(),
   inputHash: text().notNull(),
-  answer: jsonb(),
+  answer: json(),
   kept: boolean().notNull().default(false),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
 }, (t) => [
@@ -151,7 +151,7 @@ export const passwordResets = linkToken('password_resets');
 export const jobsOutbox = radcoreTable('jobs_outbox', {
   id: id(),
   name: text().notNull(),
-  data: jsonb().notNull(),
+  data: json().notNull(),
   principal: text().notNull(),
   requestId: text().notNull(),
   attempts: integer().notNull().default(0),
@@ -252,7 +252,7 @@ export const files = radcoreTable('files', {
   status: text().notNull().default('pending'),
 }, (t) => [
   uniqueIndex('ux_files_store_key').on(t.storeKey),
-  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import')`),
+  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import', 'item_picture')`),
   check('ck_files_status', sql`${t.status} in ('pending', 'checking', 'ready', 'refused')`),
   check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
   // A ready file has its checked size.
@@ -270,7 +270,7 @@ export const files = radcoreTable('files', {
 export const dataExports = radcoreTable('exports', {
   id: id(),
   kind: text().notNull(),
-  filter: jsonb().notNull(),
+  filter: json().notNull(),
   status: text().notNull().default('queued'),
   rows: integer(),
   storeKey: text(),
@@ -286,6 +286,12 @@ export const dataExports = radcoreTable('exports', {
     and ((${t.status} = 'ready') = (${t.rows} is not null)) and (${t.rows} is null or ${t.rows} >= 0)`),
   check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
 ]);
+
+/** Number series (RAD-87, ADR-006 §3): per series and financial year, the prefix its first number took and the last
+ * number drawn. A trigger moves `last` up by exactly one and keeps the prefix. Machinery (ADR-005 §7c). */
+export const numberCounters = radcoreTable('number_counters', {
+  series: text().notNull(), financialYear: text().notNull(), prefix: text().notNull(), last: integer().notNull().default(1),
+}, (t) => [primaryKey({ name: 'pk_number_counters', columns: [t.series, t.financialYear] })]);
 
 /** When each person last signed in (RAD-36): made with the person by a trigger on users (0031), set when a session
  * starts. Machinery, not row-audited (ADR-005 §7c): a sign-in is already a `sign_in` event. The people list sorts on
@@ -331,8 +337,7 @@ export const secondFactors = radcoreTable('second_factors', {
   uniqueIndex('ux_second_factors_user_id').on(t.userId),
 ]);
 
-/** Recovery codes (M1-15, RAD-64): ten per set, each stored as its Argon2id hash. A code works once; a new set
- * replaces the old one. */
+/** Recovery codes (M1-15, RAD-64): ten per set, each its Argon2id hash. Each works once; a new set replaces them. */
 export const recoveryCodes = radcoreTable('recovery_codes', {
   id: id(),
   userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),

@@ -1,6 +1,6 @@
 // RAD-34's /me contract, declared ahead of the sessions service: its shape is what ui builds RAD-50, RAD-52 and
 // RAD-55 against, and the same schema refuses a bad answer on both sides.
-import { maskOutput, newPasswordFields, piiPlan, requestFor } from '@radcore/lib-common';
+import { maskOutput, sightOf, newPasswordFields, piiPlan, requestFor } from '@radcore/lib-common';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as contracts from './contract.ts';
@@ -9,9 +9,10 @@ import {
   endSession, endUserSessions, getMe, getPermissionMatrix, inviteUser, KEY_EXEMPT_ROUTES, listAuditedTables,
   listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
   removeSecondFactor, resetPassword, requestPasswordReset, SECURITY_EVENT_ROUTES, securityEvent, setRolePermissions, setUserRole, signIn,
-  startSecondFactorEnrolment, verifySecondFactor, importFiles, photoFiles, resumeFiles, statementFiles,
+  startSecondFactorEnrolment, verifySecondFactor, importFiles, itemPictureFiles, photoFiles, resumeFiles, statementFiles,
   createRole, deleteRole, resetRole, updateRole,
 } from './contract.ts';
+import { fileKeys, isViewKind } from './files/kinds.ts';
 
 const me = {
   user: { id: '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01', displayName: 'Asha Rao' },
@@ -196,8 +197,8 @@ describe('the admin contracts', () => {
     if (plan === null) throw new Error('listUsers has no pii() field');
     const page = { items: [{ id, displayName: 'Asha Rao', email: 'asha@example.com', status: 'active', role: 'admin',
       lastSignInAt: null, secondFactor: 'enrolled', self: true }], next: null };
-    expect(maskOutput(plan, page, []).value).toEqual({ ...page, items: [{ ...page.items[0], email: { masked: '••••••' } }] });
-    expect(maskOutput(plan, page, ['pii:read']).looks).toEqual([{ table: 'users', id }]);
+    expect(maskOutput(plan, page, sightOf([])).value).toEqual({ ...page, items: [{ ...page.items[0], email: { masked: '••••••' } }] });
+    expect(maskOutput(plan, page, sightOf(['pii:read'])).looks).toEqual([{ table: 'users', id }]);
   });
 
   it("flag the caller's own row and drop what isn't declared, such as a password hash or an IP", () => {
@@ -306,6 +307,16 @@ describe('the file contracts (RAD-43, RC-096)', () => {
         `POST /files/${kind}/:id/download ${kind}_files:read false`,
       ]);
     });
+
+  // RAD-89: item pictures upload with the items key and have no download route; they're viewed through the item.
+  it('gives item pictures the items keys, never a file key of their own, and no download route', () => {
+    expect(Object.values(itemPictureFiles).map((x) => `${x.method} ${x.path} ${x.perm}`)).toEqual([
+      'POST /files/item-picture items:write', 'POST /files/item-picture/:id/confirm items:write']);
+    expect(fileKeys('item_picture')).toEqual({ read: 'items:read', write: 'items:write' });
+    expect([isViewKind('item_picture'), isViewKind('photo')]).toEqual([true, false]);
+    expect(itemPictureFiles.startUpload.input.safeParse({ filename: 'a.heic', contentType: 'image/heic' }).success).toBe(false);
+    expect(itemPictureFiles.startUpload.input.safeParse({ filename: 'a.svg', contentType: 'image/svg+xml' }).success).toBe(false);
+  });
 
   it("takes only its kind's types, and a file name without control characters", () => {
     const ok = (c: typeof photoFiles, body: object) => c.startUpload.input.safeParse(body).success;
