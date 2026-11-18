@@ -187,7 +187,8 @@ describe.skipIf(!url || !superUrl)('negative stock and the commit checks', () =>
         values ($1, $2, 'files', $3, 'out', 2, 200, '2026-11-11') returning id`, [itemId, locationId, randomUUID()]);
       await c.query('insert into radcore.stock_movement_batches (movement_id, item_id, batch_id, qty) values ($1, $2, $3, 2)',
         [moved?.id, itemId, b]);
-      await expect(c.query('commit')).rejects.toMatchObject({ code: 'RA007' });
+      // The back-dated rule's own refusal, not the document check's (this raw document has no entry either).
+      await expect(c.query('commit')).rejects.toMatchObject({ code: 'RA007', message: expect.stringContaining('below zero on a day') });
     } finally {
       await c.query('rollback').catch(() => undefined);
       c.release();
