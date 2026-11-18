@@ -2,6 +2,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, money, qty, radcoreTable, trigramIndex, unitPrice } from '../columns.ts';
+import { files } from '../platform/tables.ts';
 
 /**
  * Units of measure (M2-10, RAD-89): GST's unit quantity codes (UQC), each with how many decimals its quantities may
@@ -53,6 +54,19 @@ export const items = radcoreTable('items', {
   check('ck_items_hsn', sql`${t.hsn} ~ '^[0-9]{4}([0-9]{2}){0,2}$'`),
   check('ck_items_barcode', sql`${t.barcode} ~ '^[!-~]{1,48}$'`),
   check('ck_items_chassis', sql`not ${t.hasChassis} or ${t.serialised}`),
+]);
+
+/**
+ * An item's pictures (RAD-89; ADR-004 §2): each an `item_picture` file in lib-platform's `files`, shown in `position`
+ * order. A file pictures one item at most, and an item has at most 8.
+ */
+export const itemPictures = radcoreTable('item_pictures', {
+  fileId: uuid().primaryKey().references(() => files.id, { onDelete: 'restrict' }),
+  itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
+  position: smallint().notNull(),
+}, (t) => [
+  uniqueIndex('ux_item_pictures_item_position').on(t.itemId, t.position),
+  check('ck_item_pictures_position', sql`${t.position} between 0 and 7`),
 ]);
 
 /**

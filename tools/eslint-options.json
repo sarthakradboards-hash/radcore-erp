@@ -365,6 +365,17 @@
       }
     ]
   },
+  "radcore/no-jsonb": {
+    "imports": [
+      {
+        "source": "^drizzle-orm/pg-core(/.*)?$",
+        "names": [
+          "jsonb"
+        ],
+        "message": "[L9c] A jsonb column is columns.ts's json(): drizzle's jsonb() parses a string value twice (ADR-002)."
+      }
+    ]
+  },
   "radcore/views-in-views": {
     "imports": [
       {

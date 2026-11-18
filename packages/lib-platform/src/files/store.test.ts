@@ -34,6 +34,16 @@ describe('createFileStore', () => {
     expect(url.searchParams.get('response-cache-control')).toBe('private, no-store');
   });
 
+  // An item picture is viewed, not downloaded (RAD-89, ADR-004 §2): inline, as its checked type, never cached.
+  it('signs a 60-second view link that shows inline as the given type and is never cached', async () => {
+    const url = new URL(await createFileStore(s3()).viewUrl('item_picture/1f0c', 'image/webp'));
+    expect(url.pathname).toBe('/radcore-files/item_picture/1f0c');
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('60');
+    expect(url.searchParams.get('response-content-disposition')).toBe('inline');
+    expect(url.searchParams.get('response-content-type')).toBe('image/webp');
+    expect(url.searchParams.get('response-cache-control')).toBe('private, no-store');
+  });
+
   it('signs a 5-minute upload policy for one server-made key under incoming/, its type and its kind\'s size', async () => {
     vi.useFakeTimers({ now: new Date('2026-11-10T06:00:00Z'), toFake: ['Date'] });
     const { key, url, fields } = await createFileStore(s3()).presignUpload('photo', 'image/png');
