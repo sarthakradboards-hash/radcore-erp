@@ -26,7 +26,9 @@ npm run e2e
   to the same database as its superuser, from `E2E_SEED_DATABASE_URL`, default
   `postgres://radcore@127.0.0.1:5432/radcore_e2e`. Nothing else uses that login.
 - `npx playwright test -c e2e --ui` opens the interactive runner. `npx playwright show-trace <trace.zip>` opens a
-  trace from `e2e/test-results/` or from a CI run's `e2e-results` artifact.
+  trace from `e2e/test-results/` or from a CI run's `e2e-results` artifact. A failed test's trace holds what the
+  browser sent, including this run's password and the session cookies. Both are made for the run only, against a
+  throwaway database, but the repository is public, so don't paste a trace anywhere else.
 
 ## Add a journey
 
@@ -36,7 +38,9 @@ npm run e2e
   test fails on a console error, an uncaught error, a Content Security Policy violation, or a request that fails or
   answers 4xx/5xx, without asking. That covers every page of the test's browser context, popups and new tabs
   included. CSP violations are caught from the browser's `securitypolicyviolation` event, since Chromium never logs
-  them to the console. A violation inside a web worker fires in the worker, not the page, so the guard doesn't see
+  them to the console. Requests the page cancels when it navigates away are not problems: Chromium's `ERR_ABORTED`,
+  Firefox's `NS_BINDING_ABORTED`, and WebKit's uncaught "…?_rsc=… due to access control checks." for this site's own
+  Next prefetch (RAD-76). A violation inside a web worker fires in the worker, not the page, so the guard doesn't see
   it: whoever adds the first worker extends the guard to it.
   Requests the browser aborts itself (Next cancels prefetches on navigation) don't count. A journey that expects
   a status says so: `test.use({ expectedStatuses: [401] })`.
