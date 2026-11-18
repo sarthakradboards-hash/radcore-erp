@@ -33,7 +33,7 @@ it('sends Admin to the first admin page the person may open, whichever key they 
 it('lists every admin page with the key its screen reads', () => {
   expect(ADMIN_PAGES.map((p) => [p.href, p.perm])).toEqual([
     ['/admin/users', 'users:read'], ['/admin/roles', 'roles:read'], ['/admin/permissions', 'roles:read'],
-    ['/admin/sessions', 'users:read'], ['/admin/audit', 'audit:read'],
+    ['/admin/sessions', 'users:read'], ['/admin/audit', 'audit:read'], ['/admin/company', 'company:read'],
   ]);
 });
 
