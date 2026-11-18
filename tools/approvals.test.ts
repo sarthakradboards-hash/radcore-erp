@@ -159,10 +159,12 @@ describe.skipIf(!url)('maker-checker', () => {
     const { orderId, id, versionHash } = await requested('2500.00');
     await serve(person(people.approver), async (call) => {
       const list = await (await call('GET', `/approvals/${KIND}?input=${encodeURIComponent(JSON.stringify({ filter: {}, limit: 100 }))}`)).json() as
-        { items: { id: string; recordId: string; requestedBy: string }[] };
-      expect(list.items).toContainEqual(expect.objectContaining({ id, recordId: orderId, requestedBy: `user:${people.maker}` }));
+        { items: { id: string; recordId: string; requestedBy: object }[] };
+      // The requester by name (ui-2 on RAD-98), never the stored "user:<id>" key.
+      const maker = { kind: 'user', id: people.maker, displayName: 'Test person' };
+      expect(list.items).toContainEqual(expect.objectContaining({ id, recordId: orderId, requestedBy: maker }));
       const shown = await call('GET', `/approvals/${KIND}/${id}`);
-      expect([shown.status, await shown.json()]).toEqual([200, expect.objectContaining({ id, status: 'pending',
+      expect([shown.status, await shown.json()]).toEqual([200, expect.objectContaining({ id, status: 'pending', requestedBy: maker, decidedBy: null,
         version: { amount: '2500.00', lines: [{ id: expect.any(String), qty: '2' }] }, versionHash, currentHash: versionHash,
         changed: false })]);
     });
@@ -367,7 +369,8 @@ describe.skipIf(!url)('maker-checker', () => {
     await serve(person(people.approver), async (call) => {
       expect((await decide(call, id, { decision: 'reject', reason: 'Check the supplier' })).status).toBe(200);
       expect(await (await call('GET', `/approvals/${KIND}/${id}`)).json())
-        .toMatchObject({ status: 'rejected', versionHash, currentHash: versionHash, changed: false });
+        .toMatchObject({ status: 'rejected', versionHash, currentHash: versionHash, changed: false,
+          decidedBy: { kind: 'user', id: people.approver, displayName: 'Test person' } });
     });
   });
 

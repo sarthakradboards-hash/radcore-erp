@@ -60,9 +60,15 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /items/:id': 'items:read',
   'POST /items': 'items:write',
   'PATCH /items/:id': 'items:write',
+  'POST /items/:id/pictures': 'items:write',
+  'DELETE /items/:id/pictures/:fileId': 'items:write',
   // The company profile (RAD-88): one company, set by whoever holds company:write.
   'GET /admin/company': 'company:read',
   'PUT /admin/company': 'company:write',
+  // GST rates by date (RAD-91).
+  'GET /gst/rates': 'gst:read',
+  'GET /gst/rates/in-force': 'gst:read',
+  'PUT /gst/rates': 'gst:write',
   // Parties (RAD-90): credit terms only with parties:manage.
   'GET /parties': 'parties:read',
   'GET /parties/:id': 'parties:read',
@@ -82,6 +88,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/import': 'import_files:write',
   'POST /files/import/:id/confirm': 'import_files:write',
   'POST /files/import/:id/download': 'import_files:read',
+  // Item pictures (RAD-89): uploaded with the items key; no download route, since they're viewed inline.
+  'POST /files/item-picture': 'items:write',
+  'POST /files/item-picture/:id/confirm': 'items:write',
   // Stock (RAD-92): locations, and their kinds' labels.
   'GET /stock/location-kinds': 'locations:read',
   'PUT /stock/location-kinds/:kind': 'locations:write',
@@ -161,9 +170,14 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /items/:id': STOCK,
   'POST /items': STOCK,
   'PATCH /items/:id': STOCK,
+  'POST /items/:id/pictures': STOCK,
+  'DELETE /items/:id/pictures/:fileId': STOCK,
   // lib-accounts' services, which run under lib-platform's.
   'GET /admin/company': ['lib-accounts', 'lib-platform'],
   'PUT /admin/company': ['lib-accounts', 'lib-platform'],
+  'GET /gst/rates': ['lib-gst', 'lib-platform'],
+  'GET /gst/rates/in-force': ['lib-gst', 'lib-platform'],
+  'PUT /gst/rates': ['lib-gst', 'lib-platform'],
   'GET /parties': ['lib-accounts', 'lib-platform'],
   'GET /parties/:id': ['lib-accounts', 'lib-platform'],
   'POST /parties': ['lib-accounts', 'lib-platform'],
@@ -183,6 +197,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/import': PLATFORM,
   'POST /files/import/:id/confirm': PLATFORM,
   'POST /files/import/:id/download': PLATFORM,
+  'POST /files/item-picture': PLATFORM,
+  'POST /files/item-picture/:id/confirm': PLATFORM,
   // Stock's routes reach lib-stock and, through it, lib-platform.
   'GET /stock/location-kinds': STOCK,
   'PUT /stock/location-kinds/:kind': STOCK,
