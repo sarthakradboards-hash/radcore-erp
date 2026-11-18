@@ -16,8 +16,8 @@ import { AppError } from '../errors.ts';
 import { defineJob, type JobDefinition } from '../jobs.ts';
 import { defineRoute, type Route } from '../route.ts';
 import { recordSecurityEvent } from '../security-events.ts';
-import { EXPORT_MAX_ROWS, type ExportContract } from './contract.ts';
-import { ExportTooLarge, queuedExport, writeExportFile, type ExportRows } from './engine.ts';
+import { EXPORT_MAX_ROWS, mastersExport, type ExportContract, type WorkbookContract } from './contract.ts';
+import { ExportTooLarge, queuedExport, writeExportFile, writeWorkbookFile, type ExportRows, type ExportSheet } from './engine.ts';
 
 /** A module's export, ready to wire: its contract with the module's row function. */
 export type ModuleExport = {
@@ -26,6 +26,8 @@ export type ModuleExport = {
   readonly start: ExportContract['start'];
   /** Its columns holding personal data (RAD-40). */
   readonly pii: Readonly<Partial<Record<string, PiiKind>>>;
+  /** Its file's format: a list's CSV, or a workbook's XLSX (RAD-92). */
+  readonly format: 'csv' | 'xlsx';
   /** Writes every row for a stored filter to `path`, the filter checked by the list's own schema first. */
   readonly write: (ctx: Ctx, filter: unknown, path: string, cap: number) => Promise<number>;
 };
@@ -34,10 +36,26 @@ export type ModuleExport = {
 export function exportOf<F extends z.ZodType>(contract: ExportContract<F>, rows: ExportRows<z.output<F>>): ModuleExport {
   const def = { kind: contract.kind, columns: contract.columns, rows, pii: contract.pii };
   return Object.freeze({
-    kind: contract.kind, perm: contract.perm, start: contract.start, pii: contract.pii,
+    kind: contract.kind, perm: contract.perm, start: contract.start, pii: contract.pii, format: contract.format,
     write: (ctx: Ctx, filter: unknown, path: string, cap: number) => writeExportFile(ctx, def, contract.filter.parse(filter), path, cap),
   });
 }
+
+/** A workbook export (RAD-92): its contract with the modules' sheets, joined in the worker's job file, the one place
+ * that may import every module. Each sheet goes in only when the starter holds its key when the job runs. */
+export function workbookOf<F extends z.ZodType>(contract: WorkbookContract<F>, sheets: readonly ExportSheet<z.output<F>>[]): ModuleExport {
+  const names = new Set(sheets.map((s) => s.name));
+  if (names.size !== sheets.length) throw new Error(`${contract.kind}: two sheets share a name`);
+  return Object.freeze({
+    kind: contract.kind, perm: contract.perm, start: contract.start, pii: {}, format: contract.format,
+    write: (ctx: Ctx, filter: unknown, path: string, cap: number) =>
+      writeWorkbookFile(ctx, sheets, contract.filter.parse(filter), path, cap),
+  });
+}
+
+/** What the API's start route needs of an export: its kind, its route and its format, never its rows. */
+type Startable = Pick<ModuleExport, 'kind' | 'start' | 'format'>;
+const CONTENT_TYPE = { csv: 'text/csv', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } as const;
 
 const EXPORT_JOB = { name: 'platform.export', input: z.object({ exportId: idString(), kind: z.string() }) } as const;
 /** Each page's query may take this long; the snapshot holds across them (ADR-002 Exports). */
@@ -50,21 +68,26 @@ const EXPORT_TIMEOUT_SECONDS = 3_600;
  * run one at a time for everyone, so a person has one queued at a time: another start is export_in_progress.
  * shortcut: two starts in the same instant can both pass the check; add a partial unique index if that ever matters.
  */
-async function startExport(ctx: Ctx, m: ModuleExport, filter: unknown): Promise<{ exportId: string }> {
+async function startExport(ctx: Ctx, m: Startable, filter: unknown): Promise<{ exportId: string }> {
   if (await queuedExport(ctx)) throw new AppError('export_in_progress', 'Your last export is still being made. Try again when it is ready.');
-  const [row] = await platformTx(ctx).insert(dataExports).values({ kind: m.kind, filter }).returning({ id: dataExports.id });
+  const [row] = await platformTx(ctx).insert(dataExports).values({ kind: m.kind, filter, format: m.format }).returning({ id: dataExports.id });
   if (row === undefined) throw new Error(`${m.kind}: the export wasn't saved`);
   await ctx.jobs.send(EXPORT_JOB, { exportId: row.id, kind: m.kind });
   return { exportId: row.id };
 }
 
-/** Each export's start route, `POST /exports/<kind>`, for the API's route file. */
-export const defineExport = (exports: readonly ModuleExport[]): Route[] =>
+/** Each export's start route, `POST /<module>/<name>/exports`, for the API's route file. */
+export const defineExport = (exports: readonly Startable[]): Route[] =>
   exports.map((m) => defineRoute(m.start, (ctx, input) => startExport(ctx, m, input.filter)));
+
+/** The masters workbook's start (RAD-92): its contract alone, since its sheets are joined in the worker. The API's route
+ * file mounts it with `defineRoute(contract.mastersExport.start, startMastersExport)`. */
+export const startMastersExport = (ctx: Ctx, input: z.output<typeof mastersExport.start.input>) =>
+  startExport(ctx, mastersExport, input.filter);
 
 type Written =
   | { exportId: string; kind: string; skip: true }
-  | { exportId: string; kind: string; skip: false; dir: string; path: string; rows: number }
+  | { exportId: string; kind: string; skip: false; dir: string; path: string; rows: number; format: 'csv' | 'xlsx' }
   | { exportId: string; kind: string; skip: false; failure: 'too_large' | 'failed'; error?: unknown };
 
 const setFailed = (failure: 'too_large' | 'failed', exportId: string) => async (ctx: Ctx) => {
@@ -104,9 +127,9 @@ export function defineExportJob(exports: readonly ModuleExport[], { cap = EXPORT
     // shortcut: the worker's temp directory is the export volume (ADR-004 §2 mounts it size-limited); give the export
     // its own setting if the two ever need to differ.
     const dir = await mkdtemp(join(tmpdir(), 'radcore-export-'));
-    const path = join(dir, `${kind}.csv`);
+    const path = join(dir, `${kind}.${m.format}`);
     try {
-      return { exportId, kind, skip: false, dir, path, rows: await m.write(ctx, row.filter, path, cap) };
+      return { exportId, kind, skip: false, dir, path, rows: await m.write(ctx, row.filter, path, cap), format: m.format };
     } catch (error) {
       await rm(dir, { recursive: true, force: true });
       return error instanceof ExportTooLarge ? { exportId, kind, skip: false, failure: 'too_large' }
@@ -123,7 +146,7 @@ export function defineExportJob(exports: readonly ModuleExport[], { cap = EXPORT
         return;
       }
       try {
-        const { key } = await files.putFile('export', done.path, 'text/csv');
+        const { key } = await files.putFile('export', done.path, CONTENT_TYPE[done.format]);
         await again(async (ctx) => {
           await platformTx(ctx).update(dataExports).set({ status: 'ready', rows: done.rows, storeKey: key })
             .where(eq(dataExports.id, done.exportId));

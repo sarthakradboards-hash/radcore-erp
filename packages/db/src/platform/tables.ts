@@ -1,7 +1,7 @@
 // lib-platform's tables (ADR-001 §3). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { isNotNull, isNull, sql } from 'drizzle-orm';
-import { boolean, check, index, integer, jsonb, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, radcoreTable } from '../columns.ts';
+import { boolean, check, index, integer, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boundedText, id, json, radcoreTable } from '../columns.ts';
 
 /**
  * Settings, and nothing else (RC-161): one row per setting a library declares with defineSetting, keyed
@@ -10,7 +10,7 @@ import { boundedText, id, radcoreTable } from '../columns.ts';
  */
 export const settings = radcoreTable('settings', {
   key: text().primaryKey(),
-  value: jsonb().notNull(),
+  value: json().notNull(),
 }, (t) => [check('ck_settings_key', sql`${t.key} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'`)]);
 
 /**
@@ -48,7 +48,7 @@ export const savedOnce = radcoreTable('saved_once', {
   route: text().notNull(),
   key: uuid().notNull(),
   inputHash: text().notNull(),
-  answer: jsonb(),
+  answer: json(),
   kept: boolean().notNull().default(false),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
 }, (t) => [
@@ -151,7 +151,7 @@ export const passwordResets = linkToken('password_resets');
 export const jobsOutbox = radcoreTable('jobs_outbox', {
   id: id(),
   name: text().notNull(),
-  data: jsonb().notNull(),
+  data: json().notNull(),
   principal: text().notNull(),
   requestId: text().notNull(),
   attempts: integer().notNull().default(0),
@@ -260,23 +260,23 @@ export const files = radcoreTable('files', {
 ]);
 
 /**
- * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts. Its owner is `created_by`, the
- * principal who started it, and only they may read its status or download it. The export job fills it after its own
- * transaction: `ready` with the row count and the file's store key, or `failed` with why. An export is complete or it
- * fails, never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or when the export volume fills.
- * - `kind` is the list, `<module>.<name>`, which names the module's row function.
- * - `filter` is the list's own filter as the person sent it, checked by that list's schema when the job runs.
+ * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts, owned by `created_by`, who alone may
+ * read its status or download it. The export job fills it after its own transaction: `ready` with the row count and the
+ * file's store key, or `failed` with why. Never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or a full volume.
+ * `kind` is the list, `<module>.<name>`, naming the module's row function; `filter` is its filter as sent, checked by
+ * that list's schema when the job runs; `format` is a list's CSV or a workbook's XLSX (RAD-92), naming the download.
  */
 export const dataExports = radcoreTable('exports', {
   id: id(),
   kind: text().notNull(),
-  filter: jsonb().notNull(),
+  filter: json().notNull(),
   status: text().notNull().default('queued'),
   rows: integer(),
   storeKey: text(),
   failure: text(),
+  format: text().notNull().default('csv'),
 }, (t) => [
-  uniqueIndex('ux_exports_store_key').on(t.storeKey),
+  uniqueIndex('ux_exports_store_key').on(t.storeKey), check('ck_exports_format', sql`${t.format} in ('csv', 'xlsx')`),
   check('ck_exports_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'`),
   check('ck_exports_status', sql`${t.status} in ('queued', 'ready', 'failed')`),
   check('ck_exports_failure', sql`(${t.status} = 'failed') = (${t.failure} is not null)

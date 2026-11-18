@@ -40,7 +40,7 @@ export const exportContract = <F extends z.ZodType>(kind: string, perm: `${strin
   columns: readonly string[], pii: Readonly<Partial<Record<string, PiiKind>>> = {}) => {
   for (const c of Object.keys(pii)) if (!columns.includes(c)) throw new TypeError(`${kind}: pii names ${c}, which isn't a column`);
   return {
-  kind, perm, filter, columns, pii,
+  kind, perm, filter, columns, pii, format: 'csv' as const,
   start: defineContract({
     method: 'POST', path: `/${kind.replace('.', '/')}/exports`, auth: 'session', perm, tx: write,
     input: z.object({ filter }), output: z.object({ exportId: idString() }), errors: ['export_in_progress'],
@@ -48,3 +48,20 @@ export const exportContract = <F extends z.ZodType>(kind: string, perm: `${strin
   };
 };
 export type ExportContract<F extends z.ZodType = z.ZodType> = ReturnType<typeof exportContract<F>>;
+
+/**
+ * A workbook export (RAD-92): several lists in one XLSX file, a sheet each, declared in lib-platform with its key and
+ * filter. Its sheets come from the modules and are joined in the worker's job file, so the API's start route needs only
+ * this. Started, polled and downloaded as a list's export is.
+ */
+export const workbookContract = <F extends z.ZodType>(kind: string, perm: `${string}:${string}`, filter: F) => ({
+  kind, perm, filter, format: 'xlsx' as const,
+  start: defineContract({
+    method: 'POST', path: `/${kind.replace('.', '/')}/exports`, auth: 'session', perm, tx: write,
+    input: z.object({ filter }), output: z.object({ exportId: idString() }), errors: ['export_in_progress'],
+  }),
+});
+export type WorkbookContract<F extends z.ZodType = z.ZodType> = ReturnType<typeof workbookContract<F>>;
+
+/** The masters workbook (M2-14, RAD-92): each master the starter may read, a sheet each (RC-164). */
+export const mastersExport = workbookContract('platform.masters', 'masters:export', z.object({}));

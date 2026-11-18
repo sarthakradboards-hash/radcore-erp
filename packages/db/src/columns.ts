@@ -2,7 +2,7 @@
 // `sql` appears only as a CHECK's, a default's or a generated column's argument.
 import { sql } from 'drizzle-orm';
 import type { BuildExtraConfigColumns } from 'drizzle-orm';
-import { boolean, check, index, numeric, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, customType, index, numeric, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { ExtraConfigColumn, PgColumnBuilderBase, PgTableExtraConfigValue } from 'drizzle-orm/pg-core';
 
 /** The one schema every table and view lives in (ADR-005 §7c); the trigger functions' search_path names it, `public` is unused. */
@@ -36,6 +36,9 @@ export const fxRate = () => withRule(numeric({ precision: 18, scale: 8 }), { op:
 export const boundedText = (o: { max?: number } = {}) => withRule(text(), { op: 'length', max: o.max ?? 200 });
 /** A document's, ledger's or master's id. */
 export const id = () => uuid().primaryKey().defaultRandom();
+/** A jsonb value that may be a bare string (a setting). drizzle's jsonb() parses what node-pg already parsed a second
+ * time, so a stored "2024" came back as 2024 and "null" as null (RAD-98); this one writes JSON and reads it once. */
+export const json = customType<{ data: unknown; driverData: unknown }>({ dataType: () => 'jsonb', toDriver: (v) => JSON.stringify(v) });
 
 // The principal from the request context (ADR-002 request-context.ts). Until the audit triggers (M1-12) overwrite it,
 // a write with no principal fails here on NOT NULL, instead of being recorded as nobody.
