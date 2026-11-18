@@ -103,7 +103,7 @@ export const roleTemplates = radcoreTable('role_templates', {
 /**
  * What a role may do (RAD-35, ADR-001 §6a): one permission key each, at a scope. `all` reaches every record of that
  * kind; `own` only the records the person owns (ctx.can), so one key can mean "my leads" for one role and "every lead"
- * for another. The admin's grants hold every key at `all`.
+ * for another. The admin's grants hold every key at `all`; an allOnly key (parties:contact, RAD-90) only at `all`.
  */
 export const roleGrants = radcoreTable('role_grants', {
   role: text().notNull().references(() => roles.key, { onDelete: 'cascade' }),
@@ -112,7 +112,6 @@ export const roleGrants = radcoreTable('role_grants', {
 }, (t) => [
   primaryKey({ name: 'pk_role_grants', columns: [t.role, t.permission] }),
   check('ck_role_grants_permission', sql`${t.permission} ~ '^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$'`),
-  // An allOnly key (permissions.ts; RAD-90's parties:contact) is granted at `all` only: it unmasks by key, not scope.
   check('ck_role_grants_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} <> 'parties:contact' or ${t.scope} = 'all')`),
 ]);
 
