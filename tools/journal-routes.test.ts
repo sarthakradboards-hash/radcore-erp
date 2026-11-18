@@ -5,7 +5,7 @@
 // need the second factor (D-19). Entries are dated in 2028-29, a year no other test file posts in.
 import { randomUUID } from 'node:crypto';
 import {
-  chartOfAccounts, journalEntryById, journalPage, openFinancialYear, postManual, reverseJournalEntry,
+  chartOfAccounts, journalEntryById, journalPage, openFinancialYear, postEntry, postManual, reverseJournalEntry,
 } from '@radcore/lib-accounts';
 import type { Money } from '@radcore/lib-common';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -103,6 +103,16 @@ describe.skipIf(!url || !superUrl)('the journal routes', { timeout: 30_000 }, ()
       .toBe('already_reversed');
     expect(await code(run((ctx) => reverseJournalEntry(ctx, { id: reversal.id, businessDate: '2028-06-02', reason: 'Undo' }))))
       .toBe('reversal_not_reversible');
+  });
+
+  it("reverses a manual journal only: a document's entry is reversed by cancelling the document (ADR-006 §3)", async () => {
+    const opening = await run((ctx) => postEntry(ctx, { kind: 'opening', businessDate: '2028-06-05', source: { table: 'files', id: randomUUID() },
+      lines: [{ account: { system: 'cash' }, debit: m('7.00') }, { account: { system: 'opening_equity' }, credit: m('7.00') }] }));
+    expect(await code(run((ctx) => reverseJournalEntry(ctx, { id: opening.id, businessDate: '2028-06-06', reason: 'Wrong' }))))
+      .toBe('reverse_through_document');
+    expect(await run((ctx) => journalEntryById(ctx, { id: opening.id }))).toMatchObject({ reversedBy: null });
+    expect(await code(run((ctx) => reverseJournalEntry(ctx, { id: randomUUID(), businessDate: '2028-06-06', reason: 'Wrong' }))))
+      .toBe('not_found');
   });
 
   it('pages the journal newest first, by business date then number, never skipping or repeating, filtered by kind', async () => {

@@ -85,7 +85,15 @@ export function postManual(ctx: Ctx, j: In<typeof postJournal>): Promise<Posted>
   })) });
 }
 
-/** POST /journal/:id/reverse: the engine's reversal, dated `businessDate`, with the reason. */
-export function reverseJournalEntry(ctx: Ctx, r: In<typeof reverseJournal>): Promise<Posted> {
+/** POST /journal/:id/reverse: the engine's reversal of a manual journal, dated `businessDate`, with the reason. A
+ * document's entry is reversed by cancelling the document (ADR-006 §3), which keeps the two in step: reversed here, the
+ * document would stay posted and its own cancel would then fail (the auditor on #207). */
+export async function reverseJournalEntry(ctx: Ctx, r: In<typeof reverseJournal>): Promise<Posted> {
+  const [entry] = await accountsTx(ctx).select({ kind: journalEntries.kind }).from(journalEntries)
+    .where(eq(journalEntries.id, r.id)).limit(1);
+  if (entry === undefined) throw new AppError('not_found', 'There’s no such entry');
+  if (entry.kind !== 'manual') {
+    throw new AppError('reverse_through_document', 'This entry belongs to a document: cancel the document to reverse it');
+  }
   return reverseEntry(ctx, { entryId: r.id, businessDate: r.businessDate, reason: r.reason });
 }

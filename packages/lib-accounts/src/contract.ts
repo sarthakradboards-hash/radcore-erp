@@ -176,10 +176,11 @@ export const postJournal = defineContract({
   errors: ['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'period_locked', 'year_not_open'],
 });
 
-/** POST /journal/:id/reverse (journal:reverse): the entry's lines swapped, dated `businessDate`, with the reason. */
+/** POST /journal/:id/reverse (journal:reverse): a manual journal's lines swapped, dated `businessDate`, with the reason.
+ * A document's entry is reversed by cancelling the document, never here (ADR-006 §3): reverse_through_document. */
 export const reverseJournal = defineContract({
   method: 'POST', path: '/journal/:id/reverse', auth: 'session', perm: 'journal:reverse', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['already_reversed', 'reversal_not_reversible', 'period_locked', 'year_not_open'],
+  errors: ['reverse_through_document', 'already_reversed', 'reversal_not_reversible', 'period_locked', 'year_not_open'],
 });

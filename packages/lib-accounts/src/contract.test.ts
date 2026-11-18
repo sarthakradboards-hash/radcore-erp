@@ -96,7 +96,8 @@ describe('the journal contracts', () => {
 
   it("name the engine's refusals, and take a reversal's date and reason", () => {
     expect(postJournal.errors).toEqual(['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'period_locked', 'year_not_open']);
-    expect(reverseJournal.errors).toEqual(['already_reversed', 'reversal_not_reversible', 'period_locked', 'year_not_open']);
+    expect(reverseJournal.errors).toEqual(['reverse_through_document', 'already_reversed', 'reversal_not_reversible', 'period_locked',
+      'year_not_open']);
     expect(reverseJournal.input.safeParse({ id: ID, businessDate: '2026-11-14', reason: 'Posted twice' }).success).toBe(true);
     expect(reverseJournal.input.safeParse({ id: ID, businessDate: '2026-11-14' }).success).toBe(false);
   });
