@@ -4,6 +4,7 @@ import type {
 } from '@radcore/lib-platform/contract';
 import type { listGstRates } from '@radcore/lib-gst/contract';
 import type { listParties } from '@radcore/lib-accounts/contract';
+import type { listPriceLists } from '@radcore/lib-sales/contract';
 import type {
   listItemCategories, listItems, listLocationKinds, listLocations, listUnitsOfMeasure,
 } from '@radcore/lib-stock/contract';
@@ -27,3 +28,4 @@ export type ItemCategory = z.output<typeof listItemCategories.output>['categorie
 export type ItemUnit = z.output<typeof listUnitsOfMeasure.output>['units'][number];
 export type GstRate = Items<typeof listGstRates>;
 export type Party = Items<typeof listParties>;
+export type PriceList = Items<typeof listPriceLists>;

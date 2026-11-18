@@ -36,6 +36,7 @@ it('lists every admin page with the key its screen reads', () => {
     ['/admin/sessions', 'users:read'], ['/admin/audit', 'audit:read'], ['/admin/company', 'company:read'],
     ['/admin/locations', 'locations:read'], ['/admin/items', 'items:read'],
     ['/admin/gst-rates', 'gst:read'], ['/admin/parties', 'parties:read'],
+    ['/admin/price-lists', 'prices:read'],
   ]);
 });
 

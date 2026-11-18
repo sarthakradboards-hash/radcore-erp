@@ -14,7 +14,7 @@ import { defineRoute } from './route.ts';
 
 /** The web app's pages as Next names them, route groups left out; `[x]` is one path segment. tools/client-errors
  * .test.ts holds this list to apps/web/app's page files, so a new page fails there until it has its line. */
-export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/admin/audit', '/admin/company', '/admin/gst-rates', '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/parties', '/admin/parties/[id]', '/admin/permissions',
+export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/admin/audit', '/admin/company', '/admin/gst-rates', '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/parties', '/admin/parties/[id]', '/admin/permissions', '/admin/price-lists',
   '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/users', '/invite', '/kit', '/password-reset', '/password-reset/new',
   '/sign-in'] as const;
 
