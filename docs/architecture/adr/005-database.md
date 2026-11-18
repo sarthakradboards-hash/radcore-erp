@@ -207,7 +207,10 @@ They are append-only with explicit reversals:
 
 - **Transitions.** Each document kind's allowed status transitions live in a `state_transitions` table seeded by
   an owner migration. A test checks it equals the lib-common constant, since a SQL trigger can't read a TypeScript
-  constant.
+  constant. `state_transitions` is made and seeded by hand-written migrations and isn't declared in Drizzle: only
+  the RA004 triggers read it (RAD-86). Each document's migration attaches the two generic guards,
+  `radcore.guard_posted_document(draft, cancel columns, write-once columns)` and
+  `radcore.guard_document_line(parent table, parent column, draft)`.
   - For a posted document the only transition is **posted → cancelled**, and cancelled is final, so a document
     can't be reopened or un-cancelled. The trigger checks `(old.status, new.status)` against the table.
   - **On insert**, a document must start in its initial state (draft), with its cancel and write-once columns
@@ -438,7 +441,7 @@ under 63 bytes (§1).
 |---|---|
 | Column CHECKs, row identities, generated keys, length and pattern CHECKs | `packages/db/src/columns.ts` helpers and `packages/db/src/*/tables.ts` |
 | State-machine values and transitions | lib-common constants, imported by contracts and tables |
-| Deferred checks, append-only, posted-document and line triggers, audit triggers, `record_access`, the partitioned logs and their partitions | hand-written migrations in `packages/db/migrations/`, run as the owner |
+| Deferred checks, append-only, posted-document and line triggers, audit triggers, `record_access`, the partitioned logs and their partitions, `state_transitions` (not declared in Drizzle: only the RA004 triggers read it) | hand-written migrations in `packages/db/migrations/`, run as the owner |
 | Report views (with their scope columns) and the `pg_catalog` views the schema tests read | `packages/db/views/*.ts` |
 | The principal and the per-contract statement timeout | `packages/db/src/request-context.ts` |
 

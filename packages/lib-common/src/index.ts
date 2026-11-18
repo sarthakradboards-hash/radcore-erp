@@ -4,4 +4,5 @@ export * from './identity.ts';
 export * from './ledger.ts';
 export * from './money.ts';
 export * from './pii.ts';
+export * from './states/documents.ts';
 export * from './states/stock.ts';

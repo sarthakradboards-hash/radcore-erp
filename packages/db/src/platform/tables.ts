@@ -260,12 +260,11 @@ export const files = radcoreTable('files', {
 ]);
 
 /**
- * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts. Its owner is `created_by`, the
- * principal who started it, and only they may read its status or download it. The export job fills it after its own
- * transaction: `ready` with the row count and the file's store key, or `failed` with why. An export is complete or it
- * fails, never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or when the export volume fills.
- * - `kind` is the list, `<module>.<name>`, which names the module's row function.
- * - `filter` is the list's own filter as the person sent it, checked by that list's schema when the job runs.
+ * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts, owned by `created_by`, who alone may
+ * read its status or download it. The export job fills it after its own transaction: `ready` with the row count and the
+ * file's store key, or `failed` with why. Never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or a full volume.
+ * `kind` is the list, `<module>.<name>`, naming the module's row function; `filter` is its filter as sent, checked by
+ * that list's schema when the job runs; `format` is a list's CSV or a workbook's XLSX (RAD-92), naming the download.
  */
 export const dataExports = radcoreTable('exports', {
   id: id(),
@@ -275,8 +274,9 @@ export const dataExports = radcoreTable('exports', {
   rows: integer(),
   storeKey: text(),
   failure: text(),
+  format: text().notNull().default('csv'),
 }, (t) => [
-  uniqueIndex('ux_exports_store_key').on(t.storeKey),
+  uniqueIndex('ux_exports_store_key').on(t.storeKey), check('ck_exports_format', sql`${t.format} in ('csv', 'xlsx')`),
   check('ck_exports_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'`),
   check('ck_exports_status', sql`${t.status} in ('queued', 'ready', 'failed')`),
   check('ck_exports_failure', sql`(${t.status} = 'failed') = (${t.failure} is not null)
