@@ -2,6 +2,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, money, qty, radcoreTable, trigramIndex, unitPrice } from '../columns.ts';
+import { parties } from '../accounts/tables.ts';
 import { files } from '../platform/tables.ts';
 
 /**
@@ -143,17 +144,17 @@ export const stockPositions = radcoreTable('stock_positions', {
 /**
  * A batch (ADR-006 §4a, D-15, RC-028): its item's, from one supplier, append-only. `batch_key` is the number in upper
  * case without spaces or hyphens, so "B-17" and "b17" are one batch; two suppliers' "B-17" are two.
- * shortcut: `supplier_id` holds no party yet: `parties` comes with RAD-90 (#180), and until it does the CHECK keeps it
- * null, so no unchecked id is stored. RAD-93's later PR drops the CHECK and adds the foreign key, in one migration.
+ * `supplier_id` is a party (RAD-90), or null while a receipt doesn't name one. That the party supplies is the receipt's
+ * check (M4), not a key's: a party's kinds can change, and its old batches stay its own.
  */
 export const batches = radcoreTable('batches', {
   id: id(),
   itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
-  supplierId: uuid(),
+  supplierId: uuid().references(() => parties.id, { onDelete: 'restrict' }),
   batchNo: boundedText({ max: 40 }).notNull(),
   batchKey: text().notNull().generatedAlwaysAs(sql`upper(regexp_replace(batch_no, '[[:space:]-]', '', 'g'))`),
 }, (t) => [
-  check('ck_batches_supplier', sql`${t.supplierId} is null`),
+  index('ix_batches_supplier').on(t.supplierId),
   unique('ux_batches_item_supplier_key').on(t.itemId, t.supplierId, t.batchKey).nullsNotDistinct(),
   // For the batch rows' composite key, so a batch row's batch is its item's.
   unique('ux_batches_id_item').on(t.id, t.itemId),

@@ -1,5 +1,6 @@
 // Every library may read these (ADR-001 §5). The schema views are what the schema test reads (ADR-005).
 export { vAuditedTables } from './audited-tables.ts';
+export { vBatchOnHand } from './batch-on-hand.ts';
 export { vAuditColumns } from './schema-audit-columns.ts';
 export { vEnums } from './schema-enums.ts';
 export { vFkWithoutIndex } from './schema-fk-without-index.ts';
