@@ -1,8 +1,8 @@
 // The partitioned logs, declared for typed reads only (ADR-005 §8): Drizzle can't declare a partitioned table, so their
 // hand-written migrations (0011, 0014) make them, and this file sits outside drizzle.config.ts's schema glob so
 // generate leaves them alone. The app can't insert, update or delete any of them (ADR-005 §7c).
-import { bigint, inet, jsonb, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { radcore } from '../columns.ts';
+import { bigint, inet, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { json, radcore } from '../columns.ts';
 
 /** Every change to an audited table (RAD-30): written only by the audit trigger, read by listAuditTrail, and by
  * maker-checker for who changed a record or its parts (RAD-38). `owner_id` is a part row's record (audit_attach's `owner =>`). */
@@ -16,7 +16,7 @@ export const auditLog = radcore.table('audit_log', {
   recordId: text().notNull(),
   ownerId: text(),
   op: text().notNull(),
-  changed: jsonb().notNull(),
+  changed: json().notNull(),
   createdBy: text().notNull(),
   // The change's reason, when it asked for one (RAD-36): change_reasons' id, from app.reason_id.
   reasonId: uuid(),
@@ -31,7 +31,7 @@ export const eventLog = radcore.table('event_log', {
   kind: text().notNull(),
   userId: uuid(),
   device: text(),
-  detail: jsonb().notNull(),
+  detail: json().notNull(),
   loginName: text().notNull(),
   clientAddr: inet(),
   createdAt: timestamp({ withTimezone: true }).notNull(),
