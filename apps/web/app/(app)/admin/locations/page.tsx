@@ -76,7 +76,7 @@ export default function LocationsPage() {
       </div>
       <ChoiceButtons<Show> label={t('admin.locations.col.status')} value={show} onChange={setShow} options={[
         { value: 'active', label: t('admin.locations.active') }, { value: 'inactive', label: t('admin.locations.inactive') },
-        { value: 'all', label: t('admin.users.status.all') },
+        { value: 'all', label: t('admin.locations.all') },
       ]} />
       <DataTable caption={t('admin.locations.title')} columns={columns} rowKey={(l) => l.id} list={list}
         empty={t('admin.locations.empty')} />

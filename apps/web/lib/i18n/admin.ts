@@ -120,6 +120,7 @@ export const admin = {
   'admin.locations.col.status': 'Status',
   'admin.locations.active': 'In use',
   'admin.locations.inactive': 'Switched off',
+  'admin.locations.all': 'All',
   'admin.locations.empty': 'No locations match.',
   'admin.locations.actionsFor': 'Actions for location {code}',
   'admin.locations.switchOff': 'Switch off',

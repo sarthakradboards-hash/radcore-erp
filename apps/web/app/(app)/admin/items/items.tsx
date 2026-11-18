@@ -77,7 +77,7 @@ export function Items({ initialView }: { initialView: ItemView }) {
       <div className="admin-toolbar">
         <ChoiceButtons<Show> label={t('admin.locations.col.status')} value={show} onChange={setShow} options={[
           { value: 'active', label: t('admin.locations.active') }, { value: 'inactive', label: t('admin.locations.inactive') },
-          { value: 'all', label: t('admin.users.status.all') },
+          { value: 'all', label: t('admin.locations.all') },
         ]} />
         <ChoiceButtons<ItemView> label={t('admin.items.view')} value={view} onChange={setView}
           options={ITEM_VIEWS.map((v) => ({ value: v, label: t(`admin.items.view.${v}`) }))} />
