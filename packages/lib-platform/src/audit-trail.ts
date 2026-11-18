@@ -1,15 +1,16 @@
 // The audit trail (RAD-30 part 2, ADR-005 §7c): the audit trigger's rows, read by an admin (audit:read) within a date
 // range of at most AUDIT_RANGE_MAX_DAYS. Values arrive as stored: secret and personal-data columns were written as
 // "[redacted]" (references, not copies, M6-16), so nothing is masked here and nothing could be unmasked.
-import { after, auditLog, changeReasons, onIndiaDays, platformTx, users } from '@radcore/db/platform';
+import { after, auditLog, changeReasons, onIndiaDays, platformTx } from '@radcore/db/platform';
 import { vAuditedTables } from '@radcore/db/views';
-import { addDays, idString } from '@radcore/lib-common';
+import { addDays } from '@radcore/lib-common';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { AUDIT_RANGE_MAX_DAYS, type listAuditedTables, type listAuditTrail } from './contract.ts';
 import type { Ctx } from './ctx.ts';
 import { AppError } from './errors.ts';
 import { decodeCursor, encodeCursor, isoMoment, momentKey } from './lists.ts';
+import { principalsOf } from './principals.ts';
 
 type Input = z.output<typeof listAuditTrail.input>;
 type Output = z.input<typeof listAuditTrail.output>;
@@ -18,7 +19,6 @@ type Row = Output['items'][number];
 // The page key: occurred_at as stored, then seq, which orders one transaction's rows (they share occurred_at).
 const pageKey = z.strictObject({ occurredAt: momentKey(), seq: z.number().int().positive() });
 const REDACTED = '[redacted]';
-const isUserId = (s: string) => idString().safeParse(s).success;
 
 /** listAuditTrail (audit:read): newest first, within a date range of at most AUDIT_RANGE_MAX_DAYS India days. */
 export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output> {
@@ -45,9 +45,7 @@ export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output
     .limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   // The names of the people on this page, in one read.
-  const ids = [...new Set(page.map((r) => r.createdBy.replace(/^user:/, '')).filter(isUserId))];
-  const names = new Map(ids.length === 0 ? [] : (await tx.select({ id: users.id, displayName: users.displayName })
-    .from(users).where(inArray(users.id, ids))).map((u) => [u.id, u.displayName]));
+  const principalOf = await principalsOf(ctx, page.map((r) => r.createdBy));
   // The reasons on this page, in one read (RAD-36): the rows hold only their ids.
   const reasonIds = [...new Set(page.map((r) => r.reasonId).filter((r): r is string => r !== null))];
   const reasons = new Map(reasonIds.length === 0 ? [] : (await tx.select({ id: changeReasons.id, reason: changeReasons.reason })
@@ -57,7 +55,7 @@ export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output
     items: page.map((r) => ({
       id: r.id,
       occurredAt: isoMoment(r.occurredAt),
-      principal: principalOf(r.createdBy, names),
+      principal: principalOf(r.createdBy),
       tableName: r.tableName,
       recordId: r.recordId,
       op: z.enum(['insert', 'update', 'delete']).parse(r.op),
@@ -77,13 +75,6 @@ export async function listAuditedTablesList(ctx: Ctx): Promise<z.input<typeof li
 
 // The filter's principal as audit rows store it: a bare id is a user's (the screen's person picker sends one).
 const principalKey = (p: string) => (p.includes(':') ? p : `user:${p}`);
-
-function principalOf(createdBy: string, names: ReadonlyMap<string, string>): Row['principal'] {
-  const [kind = '', ...rest] = createdBy.split(':');
-  const id = rest.join(':');
-  if (kind === 'user') return { kind: 'user', id, displayName: names.get(id) ?? null };
-  return { kind: kind === 'link' ? 'link' : 'system', id, displayName: null };
-}
 
 // As stored (ADR-005 §7c): an insert's columns hold the new value, a delete's the old, an update's { old, new }; a
 // redacted column holds "[redacted]" alone. The answer always says which side a value was on.
