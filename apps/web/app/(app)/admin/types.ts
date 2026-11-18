@@ -2,6 +2,7 @@
 import type {
   getPermissionMatrix, listAuditTrail, listRoles, listSecurityEvents, listSessions, listUsers,
 } from '@radcore/lib-platform/contract';
+import type { listGstRates } from '@radcore/lib-gst/contract';
 import type {
   listItemCategories, listItems, listLocationKinds, listLocations, listUnitsOfMeasure,
 } from '@radcore/lib-stock/contract';
@@ -23,3 +24,4 @@ export type LocationKindInfo = z.output<typeof listLocationKinds.output>['kinds'
 export type StockItem = Items<typeof listItems>;
 export type ItemCategory = z.output<typeof listItemCategories.output>['categories'][number];
 export type ItemUnit = z.output<typeof listUnitsOfMeasure.output>['units'][number];
+export type GstRate = Items<typeof listGstRates>;
