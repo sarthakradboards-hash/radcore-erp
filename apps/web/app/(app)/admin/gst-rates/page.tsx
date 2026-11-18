@@ -24,10 +24,12 @@ import type { GstRate } from '../types.ts';
 const rateSchema = setGstRate.input.extend({
   note: z.string().trim().transform((s) => (s === '' ? null : s)).pipe(setGstRate.input.shape.note),
 });
+// The API sends six places ("5.000000"); a rate reads as written: 5, 2.5, 18 (e2e on #199).
+const percent = (rate: string) => (rate.includes('.') ? rate.replace(/\.?0+$/, '') : rate);
 const columns: Column<GstRate>[] = [
   { id: 'hsn', header: t('admin.gst.hsn'), cell: (r) => r.hsn },
   { id: 'from', header: t('admin.gst.from'), cell: (r) => formatDate(r.effectiveFrom) },
-  { id: 'rate', header: t('admin.gst.rate'), cell: (r) => `${r.rate}%`, numeric: true },
+  { id: 'rate', header: t('admin.gst.rate'), cell: (r) => `${percent(r.rate)}%`, numeric: true },
   { id: 'source', header: t('admin.gst.source'), cell: (r) => r.source },
   { id: 'note', header: t('admin.gst.note'), cell: (r) => r.note ?? '' },
 ];
@@ -61,7 +63,7 @@ export default function GstRatesPage() {
           setFound('');
           try {
             const r = await callContract(getGstRateInForce, v);
-            setFound(t('admin.gst.inForce.found', { rate: r.rate, hsn: r.hsn, from: formatDate(r.effectiveFrom), source: r.source }));
+            setFound(t('admin.gst.inForce.found', { rate: percent(r.rate), hsn: r.hsn, from: formatDate(r.effectiveFrom), source: r.source }));
           } catch (e) {
             if (!(e instanceof ApiError && e.code === 'no_gst_rate')) throw e;
             setFound(t('admin.gst.inForce.none', { hsn: v.hsn, on: formatDate(v.on) }));
