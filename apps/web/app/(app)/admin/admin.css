@@ -41,3 +41,6 @@
 .admin-notice { border-inline-start: 4px solid var(--accent); padding: var(--space-2) var(--space-3); background-color: var(--surface); }
 .admin-notice p, .admin-notice ul { margin: 0; }
 .admin-notice p { font-weight: 600; }
+.admin-kinds { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.admin-kinds li { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); align-items: center; min-block-size: var(--tap); }
+.admin-kinds li > :first-child { font-weight: 600; min-inline-size: 12rem; }

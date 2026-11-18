@@ -2,6 +2,7 @@
 import type {
   getPermissionMatrix, listAuditTrail, listRoles, listSecurityEvents, listSessions, listUsers,
 } from '@radcore/lib-platform/contract';
+import type { listLocationKinds, listLocations } from '@radcore/lib-stock/contract';
 import type { z } from 'zod';
 
 type Items<C extends { output: z.ZodType }> = z.output<C['output']> extends { items: (infer T)[] } ? T : never;
@@ -15,3 +16,5 @@ export type AuditRow = Items<typeof listAuditTrail>;
 export type AuditOp = AuditRow['op'];
 export type SecurityEvent = Items<typeof listSecurityEvents>;
 export type SecurityEventKind = SecurityEvent['kind'];
+export type StockLocation = Items<typeof listLocations>;
+export type LocationKindInfo = z.output<typeof listLocationKinds.output>['kinds'][number];

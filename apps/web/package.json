@@ -15,6 +15,7 @@
     "@radcore/lib-accounts": "*",
     "@radcore/lib-common": "*",
     "@radcore/lib-platform": "*",
+    "@radcore/lib-stock": "*",
     "@tanstack/react-query": "5.104.5",
     "@tanstack/react-table": "9.3.1",
     "cmdk": "1.1.1",
