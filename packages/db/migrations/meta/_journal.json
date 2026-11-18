@@ -267,6 +267,13 @@
       "when": 1794724029608,
       "tag": "0037_stock_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794998245944,
+      "tag": "0038_stock_commit_checks",
+      "breakpoints": true
     }
   ]
 }
