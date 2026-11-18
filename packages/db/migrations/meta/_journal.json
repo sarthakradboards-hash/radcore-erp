@@ -288,6 +288,13 @@
       "when": 1795025014146,
       "tag": "0040_posted_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795026595223,
+      "tag": "0041_journal",
+      "breakpoints": true
     }
   ]
 }

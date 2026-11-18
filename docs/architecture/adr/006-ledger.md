@@ -166,7 +166,9 @@ delivery they belong to (M5-17), so §7's per-line check still holds.
     cancellation.
 - **Balanced at commit:** each entry's debits equal its credits (RA002, ADR-005 §2).
 - **Business date and posting time** are on the entry and on every line (ADR-005 §6). The lines' composite foreign
-  key keeps their date equal to the entry's.
+  key keeps their date equal to the entry's. The database sets `posted_at` itself (RAD-86), and records on the entry
+  the transaction that wrote it (`tx_id`), so a line is written with its entry and never added to a posted one
+  (RA001).
 - **The lock is checked under the lock** (RC-163). The engine reads the period-lock row `FOR SHARE` before writing
   any line (§1), and the line trigger refuses a business date on or before the lock date (RA003). M2-03 creates
   the financial-year and period-lock rows; M5-09 builds moving the lock and the year close.
