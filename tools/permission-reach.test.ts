@@ -32,11 +32,14 @@ function declaringFile(n: ts.Node): string | null {
   const d = s?.declarations?.[0];
   return d === undefined ? null : repoPath(d.getSourceFile().fileName);
 }
+const isParameter = (n: ts.Identifier) => checker.getSymbolAtLocation(n)?.declarations?.some(ts.isParameter) === true;
 /** Every file a call's callee and its arguments from `from` on are declared in: for a define call, its helper and
  * what follows the contract; for a builder called at start, the builder and everything handed to it. */
 function filesOf(call: ts.CallExpression, from = 1): string[] {
   const out = [declaringFile(call.expression)];
   const visit = (n: ts.Node): void => {
+    // A parameter (start-up's `start`) names a value handed in, not a file: its declaring file is the list's own.
+    if (ts.isIdentifier(n) && isParameter(n)) return;
     if (ts.isIdentifier(n) || ts.isPropertyAccessExpression(n)) out.push(declaringFile(n));
     else if (ts.isObjectLiteralExpression(n) || ts.isArrayLiteralExpression(n) || ts.isSpreadElement(n)) n.forEachChild(visit);
     else if (ts.isPropertyAssignment(n)) visit(n.initializer);

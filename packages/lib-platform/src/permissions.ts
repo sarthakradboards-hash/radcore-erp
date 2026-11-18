@@ -60,6 +60,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // Cost prices (RC-164): a field marked cost() is masked whole without it, on screens and in exports. Any role may be
   // granted it; admin, owner, accounts and stores start with it (the architect on RAD-92; Sarthak, 15 Nov).
   { key: 'cost:read', module: 'Costs', label: 'See cost prices' },
+  // The masters workbook (M2-14, RAD-92): one file of every master the person may read, a sheet each. Any role may be
+  // granted it; admin and owner start with it.
+  { key: 'masters:export', module: 'Masters', label: 'Export the masters workbook' },
 ].map((p) => Object.freeze(p)));
 
 /**

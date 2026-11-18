@@ -60,5 +60,7 @@ export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
   type WebhookVerifier,
 } from './webhooks.ts';
-export { EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows } from './export/engine.ts';
-export { defineExport, defineExportJob, exportOf, type ModuleExport } from './export/job.ts';
+export {
+  EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows, type ExportSheet,
+} from './export/engine.ts';
+export { defineExport, defineExportJob, exportOf, startMastersExport, workbookOf, type ModuleExport } from './export/job.ts';
