@@ -1,9 +1,8 @@
 'use client';
 // One item (RAD-99 on RAD-89's contracts): its details and pictures, and for items:write its edit form and switching
 // it off or back on (never deleted: ADR-005 §3). The SKU never changes: documents print and search by it. Pictures are
-// short-lived links the item's own answer carries, shown inline; one still being checked has no link yet.
+// short-lived links the item's own answer carries, shown inline (pictures.tsx adds and takes them off).
 import { getItem, listItemCategories, listItems, listUnitsOfMeasure, updateItem } from '@radcore/lib-stock/contract';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
@@ -12,6 +11,7 @@ import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog, MESSAGES } from '../../shared.tsx';
 import { editItemSchema, ItemFields } from '../item-fields.tsx';
+import { Pictures } from './pictures.tsx';
 import { useState } from 'react';
 
 export default function ItemPage() {
@@ -53,17 +53,7 @@ export default function ItemPage() {
         <dt>{t('admin.locations.col.status')}</dt><dd>{t(item.active ? 'admin.locations.active' : 'admin.locations.inactive')}</dd>
       </dl>
 
-      <h2 id="pictures-title">{t('admin.items.pictures')}</h2>
-      {item.pictures.length === 0 ? <p>{t('admin.items.pictures.none')}</p> : (
-        <ul aria-labelledby="pictures-title" className="admin-cards">
-          {item.pictures.map((p, n) => (
-            <li key={p.fileId}>
-              {p.url === null ? <span className="admin-card-blank">{t('admin.items.pictures.checking')}</span>
-                : <Image src={p.url} alt={t('admin.items.pictures.alt', { name: item.name, n: String(n + 1) })} width={240} height={160} unoptimized />}
-            </li>
-          ))}
-        </ul>
-      )}
+      <Pictures item={item} mayWrite={mayWrite} changed={() => void q.refetch()} />
 
       {mayWrite ? (
         <>
