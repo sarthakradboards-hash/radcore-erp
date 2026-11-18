@@ -62,13 +62,17 @@ describe.skipIf(!url)('items and units of measure', { timeout: 30_000 }, () => {
     expect(await code(run((ctx) => renameCategory(ctx, { id: randomUUID(), name: `Other ${tag()}` })))).toBe('not_found');
   });
 
-  it('keeps an SKU unique whatever its case, and a barcode unique where set', async () => {
-    const barcode = `89${tag()}`;
+  it('keeps an SKU and a barcode unique whatever their case, the barcode where set', async () => {
+    const barcode = `pb${tag()}`;
     const first = await newItem({ barcode });
     const categoryId = await category();
     expect(await code(run((ctx) => addItem(ctx, { sku: first.sku.toLowerCase(), name: 'Dup', categoryId, hsn: '8711', unit: 'NOS',
       barcode: null, serialised: false, hasChassis: false })))).toBe('sku_taken');
     expect(await code(newItem({ barcode }))).toBe('barcode_taken');
+    // e2e-playwright found pbXXXX and PBXXXX both saved (RAD-89): the contract says a barcode is unique whatever its case.
+    expect(await code(newItem({ barcode: barcode.toUpperCase() }))).toBe('barcode_taken');
+    const other = await newItem();
+    expect(await code(run((ctx) => changeItem(ctx, { id: other.id, barcode: barcode.toUpperCase() })))).toBe('barcode_taken');
     expect(await code(newItem({ categoryId: randomUUID() }))).toBe('unknown_category');
     expect(await code(newItem({ unit: 'XYZ' }))).toBe('unknown_unit');
     // Many items without a barcode are fine.
@@ -111,6 +115,8 @@ describe.skipIf(!url)('items and units of measure', { timeout: 30_000 }, () => {
     expect(await find(`${word.toLowerCase()} BRAVO`)).toEqual([made[1]?.id]);
     expect(await find(made[2]?.sku ?? '')).toEqual([made[2]?.id]);
     expect(await find(`${word}-0`)).toEqual([made[0]?.id]);
+    // A barcode is found whatever its case, as it's unique whatever its case (RAD-89).
+    expect(await find(`${word.toUpperCase()}-1`)).toEqual([made[1]?.id]);
   });
 
   it('switches an item off rather than deleting it, and the app can delete no item or category (ADR-005 §3)', async () => {
