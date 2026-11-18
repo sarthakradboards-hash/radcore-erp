@@ -42,4 +42,6 @@
 .admin-notice p, .admin-notice ul { margin: 0; }
 .admin-notice p { font-weight: 600; }
 .admin-reason { display: block; max-inline-size: 24rem; overflow-wrap: anywhere; white-space: pre-line; }
-.admin-reason summary { cursor: pointer; }
+.admin-reason summary { display: inline; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 0.2em; }
+.admin-reason[open] summary { text-decoration: none; }
+.admin-reason[open] .admin-reason-more { display: none; }

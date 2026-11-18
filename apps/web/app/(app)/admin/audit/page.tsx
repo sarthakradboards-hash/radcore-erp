@@ -48,15 +48,17 @@ function Pairs({ pairs }: { pairs: readonly (readonly [string, string])[] }) {
 }
 
 // A reason is up to 500 characters (lib-common's reason()). A long one starts folded, so the table stays readable;
-// the native <details> opens it in place, by keyboard too, and nothing of it is ever hidden for good.
+// the native <details> opens it in place, by keyboard too, and nothing of it is ever hidden for good. Its summary is
+// the first part and the body the rest, so the open reason reads once, in order (e2e on #196: it read the start twice);
+// the "…" shows only while it's folded.
 const SHORT_REASON = 140;
 function Reason({ text }: { text: string | null }) {
   if (text === null) return <span className="kit-field-hint">{t('admin.audit.reason.none')}</span>;
   if (text.length <= SHORT_REASON) return <span className="admin-reason">{text}</span>;
   return (
     <details className="admin-reason">
-      <summary>{`${text.slice(0, SHORT_REASON).trimEnd()}…`}</summary>
-      {text}
+      <summary>{text.slice(0, SHORT_REASON)}<span className="admin-reason-more" aria-hidden="true">…</span></summary>
+      {text.slice(SHORT_REASON)}
     </details>
   );
 }
