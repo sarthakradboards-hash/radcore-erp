@@ -561,6 +561,7 @@ export default {
     'outbound-only': restrict('ADR-002 L8: outside calls go through the guarded client'),
     'tables-in-schema': restrict('ADR-002 L9a: tables are declared only in the schema'),
     'views-in-views': restrict('ADR-002 L9b: views are declared only in views'),
+    'no-jsonb': restrict("ADR-002 L9c: a jsonb column is columns.ts's json()"),
     // Guards for the rules above: a `#` alias or a `declare` would hide an import or a global from them.
     'no-subpath-imports': restrict('No package.json "imports" aliases, which hide the real specifier'),
     'no-declare': restrict('No ambient declarations outside .d.ts, which hide globals'),
