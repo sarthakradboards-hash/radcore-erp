@@ -28,6 +28,9 @@ const INCOMING = 'incoming/';
 export type FileStore = {
   /** A short-lived link that downloads the file as an attachment named `filename`, never cached. */
   downloadUrl(key: string, filename: string): Promise<string>;
+  /** A view kind's link (item pictures, RAD-89): the same short-lived GET, shown inline as its checked type, never as
+   * an attachment. Only files.viewLinks hands one out, for a ready file of a view kind. */
+  viewUrl(key: string, contentType: string): Promise<string>;
   /** After an upload, before the file is used: copies the upload from `incoming/<key>` to `key`, then checks the copy:
    * it exists, its size and type fit its kind, and it begins the way its type must (magic bytes). The upload is then
    * removed. Only a ready file's `key`, holding exactly the checked bytes, is ever downloaded; a refused copy stays,
@@ -135,6 +138,10 @@ export function createFileStore(s3: Config['s3'], client: S3Client = s3Client(s3
   return {
     downloadUrl: (key, filename) => getSignedUrl(client, new GetObjectCommand({ Bucket, Key: key,
       ResponseContentDisposition: attachment(filename), ResponseCacheControl: 'private, no-store' }),
+    { expiresIn: DOWNLOAD_SECONDS }),
+
+    viewUrl: (key, contentType) => getSignedUrl(client, new GetObjectCommand({ Bucket, Key: key,
+      ResponseContentDisposition: 'inline', ResponseContentType: contentType, ResponseCacheControl: 'private, no-store' }),
     { expiresIn: DOWNLOAD_SECONDS }),
 
     async verifyUpload(key, kind) {

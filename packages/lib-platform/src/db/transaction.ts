@@ -14,13 +14,13 @@ import { Settings } from '../settings.ts';
  */
 // A process built without a file store (a test, the relay) gets a ctx.files that says so, rather than no member.
 const noStore = (): Promise<never> => Promise.reject(new Error('this process has no file store (RAD-43)'));
-const NO_FILES: Files = Object.freeze({ presignUpload: noStore, downloadUrl: noStore });
+const NO_FILES: Files = Object.freeze({ presignUpload: noStore, downloadUrl: noStore, viewUrl: noStore });
 
 export function runInTransaction<R>(db: Database, spec: TxSpec, principal: Principal, requestId: string,
   fn: (ctx: Ctx) => Promise<R>, store?: Files): Promise<R> {
   // Each process builds its store once from config.s3 (the api and worker mains) and passes it here (ADR-001 §8).
   const files: Files = store === undefined ? NO_FILES
-    : Object.freeze({ presignUpload: store.presignUpload, downloadUrl: store.downloadUrl });
+    : Object.freeze({ presignUpload: store.presignUpload, downloadUrl: store.downloadUrl, viewUrl: store.viewUrl });
   return openTransaction(db, spec, { principal: principalId(principal), requestId }, async (tx) => {
     const rows = await platformTx({ tx }).select({ key: settingsTable.key, value: settingsTable.value }).from(settingsTable);
     // The outbox row is written with the request's own transaction: it commits or rolls back with the save.
