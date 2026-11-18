@@ -15,7 +15,7 @@ const LINT_TIMEOUT = 180_000;
 // A cruise reads the whole fixture folder; under a full parallel run it has taken over vitest's 5 s default (RAD-59).
 const CRUISE_TIMEOUT = 60_000;
 const RULES = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7',
-  'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b', 'T1'];
+  'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9a', 'L9b', 'L9c', 'T1'];
 const CONTROLS = { depcruise: 'ok-allowed-imports', eslint: 'ok-lint-zones', tsc: 'ok-opaque-tx' };
 
 // The dependency-cruiser fixtures, each with the one rule it must fail. Every other fixture runs through ESLint.
@@ -82,6 +82,7 @@ const ESLINT_IDS: Record<string, string[]> = {
   L8: ['radcore/outbound-only'],
   L9a: ['radcore/tables-in-schema'],
   L9b: ['radcore/views-in-views'],
+  L9c: ['radcore/no-jsonb'],
 };
 // Clauses that must fire one exact rule other than their tag's.
 const CLAUSE_IDS: Record<string, string[]> = {
