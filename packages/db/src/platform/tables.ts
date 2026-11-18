@@ -1,7 +1,7 @@
 // lib-platform's tables (ADR-001 §3). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { isNotNull, isNull, sql } from 'drizzle-orm';
 import { boolean, check, index, integer, jsonb, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, radcoreTable } from '../columns.ts';
+import { boundedText, id, json, radcoreTable } from '../columns.ts';
 
 /**
  * Settings, and nothing else (RC-161): one row per setting a library declares with defineSetting, keyed
@@ -10,7 +10,7 @@ import { boundedText, id, radcoreTable } from '../columns.ts';
  */
 export const settings = radcoreTable('settings', {
   key: text().primaryKey(),
-  value: jsonb().notNull(),
+  value: json().notNull(),
 }, (t) => [check('ck_settings_key', sql`${t.key} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'`)]);
 
 /**
