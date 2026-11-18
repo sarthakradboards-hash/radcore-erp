@@ -8,12 +8,18 @@ import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { SECOND_FACTOR_KEYS } from '../packages/lib-platform/src/permissions.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const AS: Principal = { kind: 'system', name: 'test', permissions: [] };
 /** An 8-digit code of the test's own, under chapter 97. */
 const code8 = () => `97${String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, '0')}`;
+
+// D-19 widened (Sarthak, 15 Nov): GST rates decide what every invoice charges, so gst:write needs the second factor.
+it('makes gst:write a second-factor key, and gst:read not', () => {
+  expect([SECOND_FACTOR_KEYS.includes('gst:write'), SECOND_FACTOR_KEYS.includes('gst:read')]).toEqual([true, false]);
+});
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
   expect.fail('TEST_DATABASE_URL is not set: in CI the GST rate tests must run, not skip');

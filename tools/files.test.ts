@@ -28,6 +28,7 @@ const LINK = 'https://files.example.test/bucket';
 const store = (verifyUpload: FileStore['verifyUpload'] = async () => ({ size: 2048, contentType: 'image/png' })): FileStore => ({
   presignUpload: async (kind) => ({ key: `${kind}/${randomUUID()}`, url: LINK, fields: { policy: 'signed' } }),
   downloadUrl: async (key, filename) => `${LINK}/${key}?name=${encodeURIComponent(filename)}`,
+  viewUrl: async (key, contentType) => `${LINK}/${key}?view=${encodeURIComponent(contentType)}`,
   verifyUpload,
   putFile: async () => { throw new Error('not used here'); },
 });

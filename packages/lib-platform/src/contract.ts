@@ -9,7 +9,7 @@ export {
   downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, mastersExport, workbookContract, type ExportContract,
   type WorkbookContract,
 } from './export/contract.ts';
-import { FILE_KINDS, type FileKind } from './files/kinds.ts';
+import { FILE_KINDS, fileKeys, type FileKind } from './files/kinds.ts';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */
 const permissionKeys = z.array(z.string().regex(/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/, 'Not a permission key')).max(500).refine((keys) => keys.every((k, i) => i === 0 || (keys[i - 1] ?? '') < k),
@@ -321,9 +321,12 @@ export { approvalContracts } from './approval-contracts.ts';
 const fileContracts = <K extends FileKind>(kind: K) => {
   const types = [...FILE_KINDS[kind].types] as [string, ...string[]];
   const params = z.object({ id: idString() });
+  const keys = fileKeys(kind);
+  // A path is lower-case words and hyphens: item_picture's routes are under /files/item-picture.
+  const at = `/files/${kind.replaceAll('_', '-')}`;
   return Object.freeze({
     startUpload: defineContract({
-      method: 'POST', path: `/files/${kind}`, auth: 'session', perm: `${kind}_files:write`, tx: write,
+      method: 'POST', path: at, auth: 'session', perm: keys.write, tx: write,
       input: z.object({
         // The name it's shown and downloaded under; never a path or a key.
         filename: z.string().trim().min(1, 'Name the file').max(255).regex(/^[^\p{Cc}]+$/u, 'Not a file name'),
@@ -332,13 +335,13 @@ const fileContracts = <K extends FileKind>(kind: K) => {
       output: z.object({ id: idString(), url: z.url(), fields: z.record(z.string(), z.string()) }),
     }),
     confirmUpload: defineContract({
-      method: 'POST', path: `/files/${kind}/:id/confirm`, auth: 'session', perm: `${kind}_files:write`, tx: write,
+      method: 'POST', path: `${at}/:id/confirm`, auth: 'session', perm: keys.write, tx: write,
       input: params, output: z.object({ status: z.literal('checking') }), errors: ['not_pending'],
     }),
     // A POST in a write transaction: each link records a `download` security event (RC-031), which a read-only
     // transaction can't write. The browser sends a new Idempotency-Key per click.
     downloadLink: defineContract({
-      method: 'POST', path: `/files/${kind}/:id/download`, auth: 'session', perm: `${kind}_files:read`, tx: write,
+      method: 'POST', path: `${at}/:id/download`, auth: 'session', perm: keys.read, tx: write,
       // The answer is a live presigned link: saved-once keeps the key but never the link (RC-132), so a repeated key
       // answers answer_not_kept and the browser asks again with a new one.
       storesAnswer: false,
@@ -350,6 +353,10 @@ export const photoFiles = fileContracts('photo');
 export const resumeFiles = fileContracts('resume');
 export const statementFiles = fileContracts('statement');
 export const importFiles = fileContracts('import');
+/** Item pictures (RAD-89) upload and confirm with items:write; they have no download route, since they're seen through
+ * the item's own answer, as inline view links (ADR-004 §2). */
+const pictureRoutes = fileContracts('item_picture');
+export const itemPictureFiles = Object.freeze({ startUpload: pictureRoutes.startUpload, confirmUpload: pictureRoutes.confirmUpload });
 
 /** ADR-001 §7a's fixed lists, as "METHOD /path". The generic handler accepts `idempotency: 'exempt'` and
  * `storesAnswer: false` only from these routes, and the permission manifest test (M1-19) fails on any other. */

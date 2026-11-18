@@ -9,9 +9,10 @@ import {
   endSession, endUserSessions, getMe, getPermissionMatrix, inviteUser, KEY_EXEMPT_ROUTES, listAuditedTables,
   listAuditTrail, listMySessions, listRoles, listSecurityEvents, listSessions, listUsers, reactivateUser,
   removeSecondFactor, resetPassword, requestPasswordReset, SECURITY_EVENT_ROUTES, securityEvent, setRolePermissions, setUserRole, signIn,
-  startSecondFactorEnrolment, verifySecondFactor, importFiles, photoFiles, resumeFiles, statementFiles,
+  startSecondFactorEnrolment, verifySecondFactor, importFiles, itemPictureFiles, photoFiles, resumeFiles, statementFiles,
   createRole, deleteRole, resetRole, updateRole,
 } from './contract.ts';
+import { fileKeys, isViewKind } from './files/kinds.ts';
 
 const me = {
   user: { id: '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01', displayName: 'Asha Rao' },
@@ -63,8 +64,9 @@ describe('the sign-in and own-session contracts', () => {
     expect(KEY_EXEMPT_ROUTES).toHaveLength(4);
   });
 
+  // Not own-account: the admin, file and export routes, and a feature's export (POST /platform/masters/exports).
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
-    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\//.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
+    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\/|\/exports$/.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['POST /me/second-factor/recovery-codes', 'session:read'], ['GET /me/sessions', 'session:read'],
       ['DELETE /me/sessions/:id', 'session:read']]);
@@ -306,6 +308,16 @@ describe('the file contracts (RAD-43, RC-096)', () => {
         `POST /files/${kind}/:id/download ${kind}_files:read false`,
       ]);
     });
+
+  // RAD-89: item pictures upload with the items key and have no download route; they're viewed through the item.
+  it('gives item pictures the items keys, never a file key of their own, and no download route', () => {
+    expect(Object.values(itemPictureFiles).map((x) => `${x.method} ${x.path} ${x.perm}`)).toEqual([
+      'POST /files/item-picture items:write', 'POST /files/item-picture/:id/confirm items:write']);
+    expect(fileKeys('item_picture')).toEqual({ read: 'items:read', write: 'items:write' });
+    expect([isViewKind('item_picture'), isViewKind('photo')]).toEqual([true, false]);
+    expect(itemPictureFiles.startUpload.input.safeParse({ filename: 'a.heic', contentType: 'image/heic' }).success).toBe(false);
+    expect(itemPictureFiles.startUpload.input.safeParse({ filename: 'a.svg', contentType: 'image/svg+xml' }).success).toBe(false);
+  });
 
   it("takes only its kind's types, and a file name without control characters", () => {
     const ok = (c: typeof photoFiles, body: object) => c.startUpload.input.safeParse(body).success;

@@ -33,7 +33,7 @@ export type Jobs = {
  * The file store's two signing calls (RAD-43, ADR-001 §8): they sign locally and send nothing, so they're safe inside a
  * transaction. Checking an upload and the server's own put reach S3, so they run outside one (a job, or after commit).
  */
-export type Files = Pick<FileStore, 'presignUpload' | 'downloadUrl'>;
+export type Files = Pick<FileStore, 'presignUpload' | 'downloadUrl' | 'viewUrl'>;
 
 /** A record as record scope reads it (RAD-35): who owns it, named as audit rows name a principal (`user:<id>`), which
  * is usually its `created_by`. */

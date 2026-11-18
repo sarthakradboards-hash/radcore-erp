@@ -1,5 +1,5 @@
 {
-  "id": "8e11a01b-a441-4a79-bba5-c3261966f931",
+  "id": "c12f4bfa-b4dc-4d82-a20b-39b386986308",
   "prevId": "ff9f2995-d165-4031-a6e0-3a587e577bad",
   "version": "7",
   "dialect": "postgresql",
@@ -746,13 +746,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "format": {
-          "name": "format",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'csv'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -804,10 +797,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_exports_format": {
-          "name": "ck_exports_format",
-          "value": "\"radcore\".\"exports\".\"format\" in ('csv', 'xlsx')"
-        },
         "ck_exports_kind": {
           "name": "ck_exports_kind",
           "value": "\"radcore\".\"exports\".\"kind\" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'"
@@ -936,7 +925,7 @@
         },
         "ck_files_kind": {
           "name": "ck_files_kind",
-          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import')"
+          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import', 'item_picture')"
         },
         "ck_files_status": {
           "name": "ck_files_status",
@@ -3050,6 +3039,121 @@
         "ck_item_categories_name": {
           "name": "ck_item_categories_name",
           "value": "char_length(\"radcore\".\"item_categories\".\"name\") <= 80"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.item_pictures": {
+      "name": "item_pictures",
+      "schema": "radcore",
+      "columns": {
+        "file_id": {
+          "name": "file_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_item_pictures_item_position": {
+          "name": "ux_item_pictures_item_position",
+          "columns": [
+            {
+              "expression": "item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "item_pictures_file_id_files_id_fk": {
+          "name": "item_pictures_file_id_files_id_fk",
+          "tableFrom": "item_pictures",
+          "tableTo": "files",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "item_pictures_item_id_items_id_fk": {
+          "name": "item_pictures_item_id_items_id_fk",
+          "tableFrom": "item_pictures",
+          "tableTo": "items",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_item_pictures_position": {
+          "name": "ck_item_pictures_position",
+          "value": "\"radcore\".\"item_pictures\".\"position\" between 0 and 7"
         }
       },
       "isRLSEnabled": false

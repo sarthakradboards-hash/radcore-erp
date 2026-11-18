@@ -28,7 +28,9 @@ const SYSTEM: Principal = { kind: 'system', name: 'test', permissions: [] };
 const letters = () => [...randomBytes(8)].map((b) => String.fromCharCode(97 + (b % 26))).join('');
 const reason = 'Moving duties between teams';
 
-describe.skipIf(!url)('roles and the permission matrix', () => {
+// Each test makes its roles and people through fresh admin connections, and locks the admin rows a matrix change
+// takes; on a loaded machine running every file at once that passed 5 s (seen twice locally).
+describe.skipIf(!url)('roles and the permission matrix', { timeout: 30_000 }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 3 });
   const db = createDatabase(pool);
   afterAll(() => pool.end());

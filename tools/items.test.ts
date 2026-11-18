@@ -2,10 +2,11 @@
 // quantity follows its item's unit, so 1.5 Nos is refused; an SKU and a barcode are unique; only a serialised item can
 // have a chassis number, in the contract, the service and the database. Every SKU and name here is the test's own.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, viewLinks, type Ctx, type Files, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addCategory, addItem, changeItem, checkQuantity, getItemById, listItemsPage, listUnits, renameCategory,
+  addCategory, addItem, addItemPicture, changeItem, checkQuantity, dropItemPicture, getItemById, listItemsPage, listUnits,
+  renameCategory,
 } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -26,7 +27,13 @@ describe.skipIf(!url)('items and units of measure', { timeout: 30_000 }, () => {
   const superPool = new pg.Pool({ connectionString: superUrl, max: 1 });
   afterAll(async () => { await Promise.all([pool.end(), superPool.end()]); });
 
-  const run = <R>(fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, write, AS, randomUUID(), fn);
+  // The store's signing calls, as ctx.files sees them: a view link names its key and its checked type.
+  const files: Files = {
+    presignUpload: async () => { throw new Error('not used here'); },
+    downloadUrl: async () => { throw new Error('a picture is never downloaded'); },
+    viewUrl: async (key, contentType) => `https://files.example.test/${key}?view=${encodeURIComponent(contentType)}`,
+  };
+  const run = <R>(fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, write, AS, randomUUID(), fn, files);
   const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
   const category = async () => (await run((ctx) => addCategory(ctx, { name: `Test ${tag()}` }))).id;
   const newItem = async (o: Partial<Parameters<typeof addItem>[1]> = {}) => {
@@ -118,5 +125,50 @@ describe.skipIf(!url)('items and units of measure', { timeout: 30_000 }, () => {
     expect(await Promise.all([refused('delete from radcore.items where id = $1', [id]),
       refused('delete from radcore.item_categories where id = $1', [categoryId]),
       refused("update radcore.units_of_measure set decimals = 1 where code = 'NOS'")])).toEqual(['42501', '42501', '42501']);
+  });
+
+  it('pictures an item with ready item pictures only, shown inline with no download event (RAD-89, ADR-004 §2)', async () => {
+    const file = async (kind: string, status: string) => {
+      const id = randomUUID();
+      // Every write names its principal, or the stamp trigger refuses it (RA005), whoever writes.
+      const c = await superPool.connect();
+      try {
+        await c.query('begin');
+        await c.query("set local app.principal = 'system:test'");
+        await c.query(`insert into radcore.files (id, kind, store_key, filename, content_type, size, status)
+          values ($1, $2, $3, 'p.webp', 'image/webp', 2048, $4)`, [id, kind, `${kind}/${id}`, status]);
+        await c.query('commit');
+      } finally {
+        c.release();
+      }
+      return id;
+    };
+    const { id } = await newItem();
+    const [ready, checking, photo] = [await file('item_picture', 'ready'), await file('item_picture', 'checking'), await file('photo', 'ready')];
+    const attach = (fileId: string) => code(run((ctx) => addItemPicture(ctx, { id, fileId })));
+    expect([await attach(ready), await attach(checking), await attach(photo), await attach(ready)])
+      .toEqual(['ok', 'not_ready', 'not_found', 'picture_attached']);
+    const answer = await run((ctx) => getItemById(ctx, { id }));
+    expect(answer.pictures).toEqual([{ fileId: ready, url: `https://files.example.test/item_picture/${ready}?view=image%2Fwebp` }]);
+    // Viewing writes no download event: only a download kind's link does (RC-031).
+    expect((await superPool.query("select 1 from radcore.event_log where kind = 'download' and detail->>'fileId' = $1", [ready])).rows).toEqual([]);
+    await expect(run((ctx) => viewLinks(ctx, 'photo', [photo]))).rejects.toThrow(/downloaded/);
+    // At most 8 pictures, each in its own place.
+    for (let i = 0; i < 7; i += 1) expect(await attach(await file('item_picture', 'ready'))).toBe('ok');
+    expect(await attach(await file('item_picture', 'ready'))).toBe('too_many_pictures');
+    expect([await code(run((ctx) => dropItemPicture(ctx, { id, fileId: ready }))), await code(run((ctx) => dropItemPicture(ctx, { id, fileId: ready })))])
+      .toEqual(['ok', 'not_found']);
+    expect((await run((ctx) => getItemById(ctx, { id }))).pictures).toHaveLength(7);
+    // The gap a removed picture leaves is filled, never a place past the last (the auditor on #178).
+    // First fill the place the removal above freed, so all 8 are taken, then free one in the middle (the 4th, place 3).
+    expect(await attach(await file('item_picture', 'ready'))).toBe('ok');
+    const full = await run((ctx) => getItemById(ctx, { id }));
+    expect(full.pictures).toHaveLength(8);
+    const middle = full.pictures[3]?.fileId ?? '';
+    expect(await code(run((ctx) => dropItemPicture(ctx, { id, fileId: middle })))).toBe('ok');
+    const refill = await file('item_picture', 'ready');
+    expect(await attach(refill)).toBe('ok');
+    const order = (await run((ctx) => getItemById(ctx, { id }))).pictures.map((p) => p.fileId);
+    expect([order.length, order[3]]).toEqual([8, refill]);
   });
 });

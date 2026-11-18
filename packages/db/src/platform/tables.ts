@@ -252,7 +252,7 @@ export const files = radcoreTable('files', {
   status: text().notNull().default('pending'),
 }, (t) => [
   uniqueIndex('ux_files_store_key').on(t.storeKey),
-  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import')`),
+  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import', 'item_picture')`),
   check('ck_files_status', sql`${t.status} in ('pending', 'checking', 'ready', 'refused')`),
   check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
   // A ready file has its checked size.
@@ -260,12 +260,11 @@ export const files = radcoreTable('files', {
 ]);
 
 /**
- * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts. Its owner is `created_by`, the
- * principal who started it, and only they may read its status or download it. The export job fills it after its own
- * transaction: `ready` with the row count and the file's store key, or `failed` with why. An export is complete or it
- * fails, never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or when the export volume fills.
- * - `kind` is the list, `<module>.<name>`, which names the module's row function.
- * - `filter` is the list's own filter as the person sent it, checked by that list's schema when the job runs.
+ * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts, owned by `created_by`, who alone may
+ * read its status or download it. The export job fills it after its own transaction: `ready` with the row count and the
+ * file's store key, or `failed` with why. Never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or a full volume.
+ * `kind` is the list, `<module>.<name>`, naming the module's row function; `filter` is its filter as sent, checked by
+ * that list's schema when the job runs; `format` is a list's CSV or a workbook's XLSX (RAD-92), naming the download.
  */
 export const dataExports = radcoreTable('exports', {
   id: id(),
@@ -275,11 +274,9 @@ export const dataExports = radcoreTable('exports', {
   rows: integer(),
   storeKey: text(),
   failure: text(),
-  // The file's format (RAD-92): a list's CSV, or a workbook's XLSX. It names the download.
   format: text().notNull().default('csv'),
 }, (t) => [
-  uniqueIndex('ux_exports_store_key').on(t.storeKey),
-  check('ck_exports_format', sql`${t.format} in ('csv', 'xlsx')`),
+  uniqueIndex('ux_exports_store_key').on(t.storeKey), check('ck_exports_format', sql`${t.format} in ('csv', 'xlsx')`),
   check('ck_exports_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'`),
   check('ck_exports_status', sql`${t.status} in ('queued', 'ready', 'failed')`),
   check('ck_exports_failure', sql`(${t.status} = 'failed') = (${t.failure} is not null)
@@ -289,6 +286,12 @@ export const dataExports = radcoreTable('exports', {
     and ((${t.status} = 'ready') = (${t.rows} is not null)) and (${t.rows} is null or ${t.rows} >= 0)`),
   check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
 ]);
+
+/** Number series (RAD-87, ADR-006 §3): per series and financial year, the prefix its first number took and the last
+ * number drawn. A trigger moves `last` up by exactly one and keeps the prefix. Machinery (ADR-005 §7c). */
+export const numberCounters = radcoreTable('number_counters', {
+  series: text().notNull(), financialYear: text().notNull(), prefix: text().notNull(), last: integer().notNull().default(1),
+}, (t) => [primaryKey({ name: 'pk_number_counters', columns: [t.series, t.financialYear] })]);
 
 /** When each person last signed in (RAD-36): made with the person by a trigger on users (0031), set when a session
  * starts. Machinery, not row-audited (ADR-005 §7c): a sign-in is already a `sign_in` event. The people list sorts on
@@ -334,8 +337,7 @@ export const secondFactors = radcoreTable('second_factors', {
   uniqueIndex('ux_second_factors_user_id').on(t.userId),
 ]);
 
-/** Recovery codes (M1-15, RAD-64): ten per set, each stored as its Argon2id hash. A code works once; a new set
- * replaces the old one. */
+/** Recovery codes (M1-15, RAD-64): ten per set, each its Argon2id hash. Each works once; a new set replaces them. */
 export const recoveryCodes = radcoreTable('recovery_codes', {
   id: id(),
   userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
