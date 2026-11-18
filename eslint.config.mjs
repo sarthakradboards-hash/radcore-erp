@@ -147,6 +147,10 @@ export const OPTIONS = {
       names: ['pgTable', 'pgTableCreator', 'pgTableWithSchema', 'pgSchema', 'pgEnum', 'pgEnumWithSchema'],
       message: msg('L9a', 'ADR-002', 'Tables are declared only in packages/db/src/<module>/tables.ts') }],
   },
+  'radcore/no-jsonb': {
+    imports: [{ source: '^drizzle-orm/pg-core(/.*)?$', names: ['jsonb'],
+      message: msg('L9c', 'ADR-002', "A jsonb column is columns.ts's json(): drizzle's jsonb() parses a string value twice") }],
+  },
   'radcore/views-in-views': {
     imports: [{ source: '^drizzle-orm/pg-core(/.*)?$',
       names: ['pgView', 'pgViewWithSchema', 'pgMaterializedView', 'pgMaterializedViewWithSchema'],
@@ -298,6 +302,7 @@ export default tseslint.config(
     rules: on('radcore/e6-branded-money') },
   { files: ALL, ignores: ZONES['radcore/tables-in-schema'], rules: on('radcore/tables-in-schema') },
   { files: ALL, ignores: ZONES['radcore/views-in-views'], rules: on('radcore/views-in-views') },
+  { files: ALL, rules: on('radcore/no-jsonb') },
 
   // E1, E3, and D7's re-export guard (lib-platform's runtime entry and its own db/ hand on the pool by design).
   { files: ['apps/api/src/routes/**', 'apps/worker/src/jobs/**'], rules: on('radcore/e1-route-files') },

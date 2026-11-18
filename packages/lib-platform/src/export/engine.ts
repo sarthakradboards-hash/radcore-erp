@@ -6,7 +6,7 @@ import { createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { dataExports, platformTx } from '@radcore/db/platform';
-import { maskOf, maySee, type PiiKind } from '@radcore/lib-common';
+import { maskOf, type PiiKind, type Sight } from '@radcore/lib-common';
 import { and, eq, gt } from 'drizzle-orm';
 import type { z } from 'zod';
 import { EXPORT_MAX_ROWS, type downloadExport, type getExport } from './contract.ts';
@@ -34,10 +34,10 @@ export type ExportDefinition<F> = {
   readonly pii?: Readonly<Partial<Record<string, PiiKind>>>;
 };
 
-/** A row as this principal may see it: each pii column they lack the key for written as its mask's text. Exports
- * unmask with the column's own key only (pii:read, pay:read), never a record's seenWith key (the architect). */
-function masker(pii: ExportDefinition<unknown>['pii'], permissions: readonly string[]): (row: ExportRow) => ExportRow {
-  const hidden = Object.entries(pii ?? {}).filter((e): e is [string, PiiKind] => e[1] !== undefined && !maySee(e[1], permissions));
+/** A row as this principal may see it: each pii column they lack the key for written as its mask's text. A file asks
+ * with no record's own key, so contacts unmask only with pii:read (the architect on RAD-90). */
+function masker(pii: ExportDefinition<unknown>['pii'], shows: Sight): (row: ExportRow) => ExportRow {
+  const hidden = Object.entries(pii ?? {}).filter((e): e is [string, PiiKind] => e[1] !== undefined && !shows(e[1]));
   if (hidden.length === 0) return (row) => row;
   return (row) => {
     const out: Record<string, string | number | null> = { ...row };
@@ -73,7 +73,7 @@ const PAGE = 1_000;
 export async function writeExportFile<F>(ctx: Ctx, def: ExportDefinition<F>, filter: F, path: string,
   cap: number = EXPORT_MAX_ROWS): Promise<number> {
   const csv = csvWriter(def.columns);
-  const shown = masker(def.pii, ctx.principal.permissions);
+  const shown = masker(def.pii, ctx.shows);
   // pipeline closes the file on success and destroys both streams on any error, so nothing is left open.
   const done = pipeline(csv, createWriteStream(path));
   let rows = 0;
@@ -122,7 +122,7 @@ export async function writeWorkbookFile<F>(ctx: Ctx, sheets: readonly ExportShee
   try {
     const written: WorkbookSheet[] = [];
     for (const sheet of sheets.filter((s) => ctx.can(s.perm))) {
-      const shown = masker(sheet.pii, ctx.principal.permissions);
+      const shown = masker(sheet.pii, ctx.shows);
       const items: ExportRow[] = [];
       let after: string | undefined;
       do {

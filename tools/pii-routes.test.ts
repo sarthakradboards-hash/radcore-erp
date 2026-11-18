@@ -34,6 +34,10 @@ const savePerson = defineContract({ method: 'POST', path: '/t/people/save', auth
   input: z.object({ id: idString(), name: z.string(), phone: z.string().optional(),
     notes: z.array(z.object({ text: z.string() })).optional() }), output: person });
 
+// What the service is told it may show: the same answer the handler masks with (the auditor on #166).
+const sight = defineContract({ method: 'POST', path: '/t/people/sight', auth: 'session', perm: 'people:read', tx: read,
+  input: z.object({}), output: z.object({ whole: z.boolean(), pay: z.boolean() }) });
+
 const someone = (id: string): Person => ({ id, name: 'Asha', phone: '+919876543210', salary: '125000.00', manager: null });
 const as = (permissions: string[]): Principal => ({ kind: 'user', userId: randomUUID(), permissions: ['people:read', ...permissions] });
 const MASKED_PHONE = { masked: '••••••3210' };
@@ -57,6 +61,7 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
       saved(input);
       return someone(input.id);
     }),
+    defineRoute(sight, async (ctx) => ({ whole: ctx.shows('whole'), pay: ctx.shows('pay') })),
   ];
   async function serve(principal: Principal, fn: (post: (path: string, body: object, key?: string) => Promise<Response>) => Promise<void>,
     site: string | null = 'same-origin') {
@@ -94,6 +99,18 @@ describe.skipIf(!url || !superUrl)('pii() routes', () => {
       expect((await looksAt([id, manager])).map((r) => [r.record_id, r.record_table, r.created_by]).sort())
         .toEqual([[id, 'users', by], [manager, 'files', by]].sort());
     });
+  });
+
+  it("tells the service what it may show by the same rule as the mask, Sec-Fetch-Site included (the auditor on #166)", async () => {
+    const asked = async (who: Principal, site: string | null) => {
+      const answers: unknown[] = [];
+      await serve(who, async (post) => { answers.push(await (await post('/t/people/sight', {})).json()); }, site);
+      return answers[0];
+    };
+    expect(await asked(as(['pii:read']), 'same-origin')).toEqual({ whole: true, pay: false });
+    expect(await asked(as(['pii:read', 'pay:read']), 'none')).toEqual({ whole: true, pay: true });
+    expect(await asked(as(['pii:read', 'pay:read']), 'cross-site')).toEqual({ whole: false, pay: false });
+    expect(await asked(as(['pii:read']), null)).toEqual({ whole: false, pay: false });
   });
 
   it('masks everything, and logs nothing, for a request that is not same-origin or typed (ADR-005 §7c)', async () => {
