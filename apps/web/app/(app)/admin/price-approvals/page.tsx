@@ -15,6 +15,8 @@ import { ConfirmDialog, MESSAGES } from '../shared.tsx';
 import type { PendingApproval as Pending } from '../types.ts';
 
 const { listPending, getApproval, decide } = priceListApproval;
+/** Who sent it, by name; never the raw id. */
+const who = (p: Pending['requestedBy']) => p.displayName ?? t('admin.audit.unknown');
 const CODES = ['own_request', 'approver_too_new', 'version_changed', 'not_pending'] as const;
 const APPROVAL_MESSAGES = { ...MESSAGES, ...Object.fromEntries(CODES.map((c) => [c, t(`admin.approvals.err.${c}`)])) };
 
@@ -28,7 +30,7 @@ function Review({ request }: { request: Pending }) {
   if (a === undefined) return <p>{t('loading')}</p>;
   return (
     <section aria-labelledby="review">
-      <h2 id="review">{t('admin.approvals.review', { who: a.requestedBy, when: formatMoment(a.requestedAt) })}</h2>
+      <h2 id="review">{t('admin.approvals.review', { who: who(a.requestedBy), when: formatMoment(a.requestedAt) })}</h2>
       {a.changed ? <p role="alert" className="kit-form-alert">{t('admin.approvals.changed')}</p> : null}
       <PriceChanges versionId={a.recordId} />
       {a.status !== 'pending' ? <p>{t(`admin.approvals.status.${a.status}`)}</p> : (
@@ -60,7 +62,7 @@ function ReviewButton({ request, pressed, onPress }: { request: Pending; pressed
   const name = useApiQuery(getPriceListChanges, { id: request.recordId }).data?.name ?? '';
   return (
     <button type="button" className="kit-button" aria-pressed={pressed} onClick={onPress}
-      aria-label={t('admin.approvals.openFor', { name, who: request.requestedBy })}>{t('admin.approvals.open')}</button>
+      aria-label={t('admin.approvals.openFor', { name, who: who(request.requestedBy) })}>{t('admin.approvals.open')}</button>
   );
 }
 
@@ -70,7 +72,7 @@ export default function PriceApprovalsPage() {
   const columns: Column<Pending>[] = [
     { id: 'list', header: t('admin.approvals.col.list'), cell: (r) => <ListName versionId={r.recordId} /> },
     { id: 'when', header: t('admin.approvals.col.when'), cell: (r) => formatMoment(r.requestedAt) },
-    { id: 'who', header: t('admin.approvals.col.who'), cell: (r) => r.requestedBy },
+    { id: 'who', header: t('admin.approvals.col.who'), cell: (r) => who(r.requestedBy) },
     { id: 'open', header: t('admin.users.col.actions'),
       cell: (r) => <ReviewButton request={r} pressed={open?.id === r.id} onPress={() => setOpen(r)} /> },
   ];

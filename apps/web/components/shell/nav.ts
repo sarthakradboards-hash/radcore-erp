@@ -25,6 +25,7 @@ export const ADMIN_PAGES = [
   { href: '/admin/parties', label: 'admin.nav.parties', perm: 'parties:read' },
   { href: '/admin/price-lists', label: 'admin.nav.prices', perm: 'prices:read' },
   { href: '/admin/price-approvals', label: 'admin.nav.priceApprovals', perm: 'prices:approve' },
+  { href: '/admin/discount-limits', label: 'admin.nav.discounts', perm: 'prices:read' },
 ] as const satisfies readonly NavPage[];
 
 export const NAV: readonly NavItem[] = [
