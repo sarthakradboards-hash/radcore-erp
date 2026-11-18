@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import { piiPlan } from '@radcore/lib-common';
 import {
-  createParty, getCompany, getJournal, getParty, listAccounts, listJournal, listParties, postJournal, reverseJournal, setCompany,
-  setPartyCredit, updateParty,
+  createParty, getCompany, getJournal, getParty, listAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
+  setCompany, setPartyCredit, updateParty,
 } from './contract.ts';
 
 const profile = {
@@ -106,5 +106,32 @@ describe('the journal contracts', () => {
     const list = (filter: unknown) => listJournal.input.safeParse({ filter, limit: 50 }).success;
     expect([list({ from: '2026-04-01', to: '2027-03-31', kind: 'manual' }), list({ from: '2026-05-01', to: '2026-04-01' }),
       list({ kind: 'gift' })]).toEqual([true, false, false]);
+  });
+});
+
+// RAD-86's chart follow-up (the architect's ruling): an account's code, and switching an account off or on, with
+// accounts:write and a reason. A code is optional, upper case, at most 12 characters.
+describe('the chart contracts', () => {
+  const ID = '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01';
+  const ok = (input: unknown) => setAccount.input.safeParse(input).success;
+
+  it('change an account with accounts:write, as a write, and name the refusals', () => {
+    expect(`${setAccount.method} ${setAccount.path} ${setAccount.perm} ${setAccount.tx.readOnly}`).toBe('PATCH /accounts/:id accounts:write false');
+    expect(setAccount.errors).toEqual(['code_taken', 'system_account', 'account_not_empty']);
+  });
+
+  it('take a code or null, a switch, or both, always with a reason', () => {
+    expect([ok({ id: ID, code: '1001', reason: 'CA scheme' }), ok({ id: ID, code: 'EXP.TRAVEL-1', reason: 'r' }),
+      ok({ id: ID, code: null, reason: 'r' }), ok({ id: ID, active: false, reason: 'r' }), ok({ id: ID, code: 'A1', active: true, reason: 'r' })])
+      .toEqual([true, true, true, true, true]);
+    expect([ok({ id: ID, code: 'exp1', reason: 'r' }), ok({ id: ID, code: '-1', reason: 'r' }), ok({ id: ID, code: 'ABCDEFGHIJKLM', reason: 'r' }),
+      ok({ id: ID, code: '', reason: 'r' }), ok({ id: ID, active: false }), ok({ id: ID, reason: 'nothing to change' })])
+      .toEqual([false, false, false, false, false, false]);
+  });
+
+  it('list each account with its code and whether it is switched on', () => {
+    const shape = { id: ID, code: null, name: 'Cash', systemKey: 'cash', type: 'asset', controlKind: 'none', control: false, parentId: null, active: true };
+    expect(listAccounts.output.safeParse({ items: [shape] }).success).toBe(true);
+    expect(listAccounts.output.safeParse({ items: [{ ...shape, active: undefined }] }).success).toBe(false);
   });
 });
