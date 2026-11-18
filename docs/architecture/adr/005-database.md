@@ -278,11 +278,13 @@ They are append-only with explicit reversals:
   `redact` (written as `[redacted]`). Secrets, hashes and all personal data are redacted, and the schema test fails on
   an unlisted column. An update that changes nothing kept or redacted writes no row. Machinery tables (`saved_once`,
   `jobs_outbox`, `webhook_deliveries`, `sessions`, `change_reasons`, `user_sign_ins`, `number_counters`,
-  `pending_document_checks`) get the who-and-when trigger only. Each is a queue, an intake record or working state: its own rows already say what
-  happened and when, and copying them would copy personal data into the append-only log (M6-16). A session's
-  `last_seen_at` changes on every request, and its start and end are security events (RAD-34). A person's last
-  sign-in (`user_sign_ins`, RAD-36) is already a `sign_in` event, a number drawn (`number_counters`, RAD-87) is its
-  document's, and a pending check (§2) lives only until its commit.
+  `pending_document_checks`, `stock_positions`) get the who-and-when trigger only. Each is a queue, an intake record or
+  working state: its own rows already say what happened and when, and copying them would copy personal data into the
+  append-only log (M6-16). A session's `last_seen_at` changes on every request, and its start and end are security
+  events (RAD-34). A person's last sign-in (`user_sign_ins`, RAD-36) is already a `sign_in` event, a number drawn
+  (`number_counters`, RAD-87) is its document's, a pending check (§2) lives only until its commit, and a stock position
+  (`stock_positions`, ADR-006 §1) holds only the key it's locked by. Append-only ledgers are audited in full, every
+  column kept: their own rows don't record the login or client address that wrote them, and the audit row does.
 - **Why a change was made** (RAD-36). When a write's contract asks for a reason (lib-common's `reason()`), the handler
   stores it in `change_reasons` and sets `app.reason_id`, and each audit row of that change carries `reason_id`, a
   reference, never the text. The reason's own table isn't copied into the audit log (`capture => false`), so the text

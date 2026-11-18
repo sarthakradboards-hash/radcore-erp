@@ -21,8 +21,8 @@ const withPassword = (u: string) => {
 };
 
 // ADR-005 §7's append-only tables, exactly.
-const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'unit_events', 'payment_allocations',
-  'credit_applications', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
+const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'unit_events', 'batches',
+  'stock_movement_batches', 'payment_allocations', 'credit_applications', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
 // Written only by triggers and record_access, never by an INSERT from the app.
 const NO_INSERT = ['audit_log', 'access_log', 'event_log'];
 const EVERY = 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
@@ -193,9 +193,10 @@ describe.skipIf(!url)('the three logins', () => {
       expect(await exposed()).toEqual([]);
       // The check finds each of them made without its revokes, the way the owner's default privileges leave them.
       await c.query('set local role radcore_owner');
-      // stock_movements is append-only and not made yet (M2-05): made here without its revokes.
-      await c.query('create table radcore.stock_movements (id int)');
-      await c.query('create view radcore.journal_view as select * from radcore.stock_movements');
+      // A real ledger (RAD-93) given back an UPDATE, and a view over another (RAD-86) left writable. Real tables, so no
+      // later ledger's migration collides with a stand-in.
+      await c.query('grant update on radcore.stock_movements to radcore_app');
+      await c.query('create view radcore.journal_view as select * from radcore.journal_entries');
       // The real audit_log (RAD-30) given back an INSERT, and a month added without its revokes.
       await c.query('grant insert on radcore.audit_log to radcore_app');
       await c.query("create table radcore.audit_log_2099_01 partition of radcore.audit_log for values from ('2099-01-01') to ('2099-02-01')");
