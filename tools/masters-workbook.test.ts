@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { startMastersExport, type Ctx, type Principal } from '@radcore/lib-platform';
+import { startMastersExport, type Ctx, type Files, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { addPerson } from '@radcore/lib-hr';
 import { addPlace } from '@radcore/lib-stock';
@@ -41,12 +41,19 @@ describe.skipIf(!url || !superUrl)('the masters workbook', () => {
     });
     return code;
   };
+  // The worker's file store, as ctx.files sees it. The Items sheet reads the items list, which links each picture, and
+  // the shared database holds other files' items with pictures, so this test needs a store of its own.
+  const files: Files = {
+    presignUpload: async () => { throw new Error('not used here'); },
+    downloadUrl: async () => { throw new Error('not used here'); },
+    viewUrl: async (key) => `https://files.example.test/${key}?view`,
+  };
   // The workbook as the job writes it for this starter, read back as { sheet name: rows }.
   async function workbook(starter: Principal): Promise<Record<string, unknown[][]>> {
     const dir = await mkdtemp(join(tmpdir(), 'radcore-workbook-'));
     try {
       const path = join(dir, 'masters.xlsx');
-      await runInTransaction(db, SNAPSHOT, starter, randomUUID(), (ctx: Ctx) => masters.write(ctx, {}, path, 1_000_000));
+      await runInTransaction(db, SNAPSHOT, starter, randomUUID(), (ctx: Ctx) => masters.write(ctx, {}, path, 1_000_000), files);
       return Object.fromEntries((await readXlsxFile<string>(path)).map((s) => [s.sheet, s.data]));
     } finally {
       await rm(dir, { recursive: true, force: true });
