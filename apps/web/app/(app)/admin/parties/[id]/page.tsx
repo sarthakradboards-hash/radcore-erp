@@ -68,7 +68,7 @@ export default function PartyPage() {
         <dt>{t('admin.parties.address')}</dt>
         <dd>{address.length === 0 ? t('admin.items.none') : address.map((v, n) => <span key={n}>{n > 0 ? ', ' : null}<Pii value={v} /></span>)}</dd>
         <dt>{t('admin.parties.creditDays')}</dt><dd>{p.creditDays === null ? t('admin.parties.noCredit') : t('admin.parties.days', { n: String(p.creditDays) })}</dd>
-        <dt>{t('admin.parties.creditLimit')}</dt><dd>{p.creditLimit === null ? t('admin.parties.noCredit') : `₹${formatMoney(p.creditLimit)}`}</dd>
+        <dt>{t('admin.parties.creditLimit')}</dt><dd>{p.creditLimit === null ? t('admin.parties.noCredit') : formatMoney(p.creditLimit)}</dd>
         <dt>{t('admin.locations.col.status')}</dt><dd>{t(p.active ? 'admin.locations.active' : 'admin.locations.inactive')}</dd>
       </dl>
 
