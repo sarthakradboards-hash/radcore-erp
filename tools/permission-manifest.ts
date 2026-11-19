@@ -25,6 +25,10 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /me/second-factor/recovery-codes': 'session:read',
   'GET /me/sessions': 'session:read',
   'DELETE /me/sessions/:id': 'session:read',
+  // Your own notifications (RAD-121).
+  'GET /me/notifications/unread': 'session:read',
+  'GET /me/notifications': 'session:read',
+  'POST /me/notifications/read': 'session:read',
   'GET /exports/:id': 'session:read',
   'POST /exports/:id/download': 'session:read',
   // Admin: people and sessions (RAD-33, RAD-34, RAD-36).
@@ -170,6 +174,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /me/second-factor/recovery-codes': PLATFORM,
   'GET /me/sessions': PLATFORM,
   'DELETE /me/sessions/:id': PLATFORM,
+  'GET /me/notifications/unread': PLATFORM,
+  'GET /me/notifications': PLATFORM,
+  'POST /me/notifications/read': PLATFORM,
   'GET /exports/:id': PLATFORM,
   'POST /exports/:id/download': PLATFORM,
   'GET /admin/users': PLATFORM,
