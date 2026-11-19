@@ -8,6 +8,7 @@ import {
   addCategory, addItem, addItemPicture, changeItem, checkQuantity, dropItemPicture, getItemById, listItemsPage, listUnits,
   renameCategory,
 } from '@radcore/lib-stock';
+import { unitPriceString } from '@radcore/lib-common';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -117,6 +118,21 @@ describe.skipIf(!url)('items and units of measure', { timeout: 30_000 }, () => {
     expect(await find(`${word}-0`)).toEqual([made[0]?.id]);
     // A barcode is found whatever its case, as it's unique whatever its case (RAD-89).
     expect(await find(`${word.toUpperCase()}-1`)).toEqual([made[1]?.id]);
+  });
+
+  // ADR-001 §7a (RAD-89): setting a cost needs cost:read as well as items:write, and a change that leaves it out leaves
+  // it alone, so a person who can't see costs still edits the rest.
+  it('sets a purchase price only with cost:read, and keeps it through a change that leaves it out', async () => {
+    const costs: Principal = { kind: 'system', name: 'test', permissions: ['cost:read'] };
+    const categoryId = await category();
+    const sku = `T-${tag()}`;
+    const fields = { sku, name: 'Priced', categoryId, hsn: '87116020', unit: 'NOS', barcode: null, serialised: false, hasChassis: false };
+    const price = unitPriceString().parse('64000.5');
+    expect(await code(run((ctx) => addItem(ctx, { ...fields, purchasePrice: price })))).toBe('forbidden');
+    const { id } = await runInTransaction(db, write, costs, randomUUID(), (ctx) => addItem(ctx, { ...fields, purchasePrice: price }), files);
+    expect(await code(run((ctx) => changeItem(ctx, { id, purchasePrice: null })))).toBe('forbidden');
+    expect(await code(run((ctx) => changeItem(ctx, { id, name: 'Priced, renamed' })))).toBe('ok');
+    expect(await run((ctx) => getItemById(ctx, { id }))).toMatchObject({ name: 'Priced, renamed', purchasePrice: '64000.500000' });
   });
 
   it('switches an item off rather than deleting it, and the app can delete no item or category (ADR-005 §3)', async () => {
