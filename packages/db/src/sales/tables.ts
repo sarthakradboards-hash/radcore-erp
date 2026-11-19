@@ -28,12 +28,18 @@ export const priceListVersions = radcoreTable('price_list_versions', {
   taxInclusive: boolean().notNull(),
   inForceFrom: date({ mode: 'string' }),
   supersededFrom: date({ mode: 'string' }),
+  // The dates, as the status #185's guards read (ADR-005 §7b): an approved version changes only by being superseded.
+  status: text().notNull().default('draft'),
 }, (t) => [
   index('ix_price_list_versions_list').on(t.priceListId),
+  // One draft and one approved version per list. Keyed on the dates, which ck_price_list_versions_status holds equal
+  // to the status: an index's where can't name a value without `sql`, which L1 keeps out of indexes.
   uniqueIndex('ux_price_list_versions_draft').on(t.priceListId).where(isNull(t.inForceFrom)),
   // and() of two terms is never undefined.
   uniqueIndex('ux_price_list_versions_in_force').on(t.priceListId).where(and(isNotNull(t.inForceFrom), isNull(t.supersededFrom)) as SQL),
   check('ck_price_list_versions_superseded', sql`${t.supersededFrom} is null or (${t.inForceFrom} is not null and ${t.supersededFrom} >= ${t.inForceFrom})`),
+  check('ck_price_list_versions_status', sql`${t.status} in ('draft', 'approved', 'superseded')
+    and (${t.status} = 'draft') = (${t.inForceFrom} is null) and (${t.status} = 'superseded') = (${t.supersededFrom} is not null)`),
 ]);
 
 /** One item's rate in a version: per unit, to 6 places (RC-008), with or without GST as its version says. */

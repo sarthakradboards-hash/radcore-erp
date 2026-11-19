@@ -19,6 +19,7 @@ import { SECOND_FACTOR_KEYS } from '../packages/lib-platform/src/permissions.ts'
 
 const url = process.env['TEST_DATABASE_URL'];
 const ownerUrl = process.env['TEST_DATABASE_OWNER_URL'];
+const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const AS: Principal = { kind: 'system', name: 'test', permissions: [] };
 const tag = () => randomBytes(4).toString('hex');
@@ -30,13 +31,14 @@ it('makes only prices:approve a second-factor key', () => {
   expect(['prices:approve', 'prices:write', 'prices:read'].map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([true, false, false]);
 });
 
-it.runIf(process.env['CI'] && !(url && ownerUrl))('has its test database in CI', () => {
+it.runIf(process.env['CI'] && !(url && ownerUrl && superUrl))('has its test database in CI', () => {
   expect.fail('TEST_DATABASE_URL is not set: in CI the price list tests must run, not skip');
 });
 
-describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_000 }, () => {
+describe.skipIf(!(url && ownerUrl && superUrl))('price lists with approval', { timeout: 30_000 }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   const ownerPool = new pg.Pool({ connectionString: ownerUrl, max: 1 });
+  const superPool = new pg.Pool({ connectionString: superUrl, max: 1 });
   const db = createDatabase(pool);
   const people = { maker: '', approver: '' };
   const items = { a: '', b: '' };
@@ -77,7 +79,7 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
     items.a = await item();
     items.b = await item();
   });
-  afterAll(async () => { await Promise.all([pool.end(), ownerPool.end()]); });
+  afterAll(async () => { await Promise.all([pool.end(), ownerPool.end(), superPool.end()]); });
 
   it('prices nothing from a draft, and never lets its maker approve it (RC-037)', async () => {
     const { id, requestId, versionHash } = await sent({ [items.a]: '84999.50' });
@@ -144,11 +146,12 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
     await run((ctx) => putRates(ctx, { id: second, rates: [{ itemId: items.a, rate: rate('120') }] }), as(people.maker));
     const again = await run((ctx) => askApproval(ctx, { id: second }), as(people.maker));
     await approve(again.id, again.versionHash);
-    // As if the first was approved on 1 Jan 2025 and the second on 1 Jun 2025.
-    const client = await ownerPool.connect();
+    // As if the first was approved on 1 Jan 2025 and the second on 1 Jun 2025. An approved version's dates don't
+    // change (the guards, below), so the superuser back-dates them with the triggers off, in this one transaction.
+    const client = await superPool.connect();
     try {
       await client.query('begin');
-      await client.query("select set_config('app.principal', 'system:test', true)");
+      await client.query('set local session_replication_role = replica');
       await client.query("update radcore.price_list_versions set in_force_from = '2025-01-01', superseded_from = '2025-06-01' where id = $1", [first]);
       await client.query("update radcore.price_list_versions set in_force_from = '2025-06-01' where id = $1", [second]);
       await client.query('commit');
@@ -200,6 +203,66 @@ describe.skipIf(!(url && ownerUrl))('price lists with approval', { timeout: 30_0
     expect(seen.changes.map((c) => [c.itemId, c.inForce, c.proposed]).toSorted()).toEqual([
       [items.a, '100.000000', '110.000000'], [items.b, '7.000000', null]].toSorted());
     expect(await code(run((ctx) => getList(ctx, { id: randomUUID() })))).toBe('not_found');
+  });
+
+  it('holds an approved version and its rates in the database too, as posted documents are (#185)', async () => {
+    const { id, draftId: first, requestId, versionHash } = await sent({ [items.a]: '100' });
+    await approve(requestId, versionHash);
+    // Raw SQL as the owner login, past the service: only the database's guards stand in the way.
+    const raw = async (text: string, params: unknown[] = []) => {
+      const c = await ownerPool.connect();
+      try {
+        await c.query('begin');
+        await c.query("select set_config('app.principal', 'system:test', true)");
+        return await c.query(text, params).then(() => 'ok', (e: { code?: string }) => e.code ?? String(e));
+      } finally {
+        await c.query('rollback');
+        c.release();
+      }
+    };
+    expect([
+      await raw('update radcore.price_list_versions set tax_inclusive = not tax_inclusive where id = $1', [first]),
+      await raw("update radcore.price_list_versions set status = 'draft', in_force_from = null where id = $1", [first]),
+      await raw('delete from radcore.price_list_versions where id = $1', [first]),
+      await raw("update radcore.price_list_rates set rate = '1' where version_id = $1", [first]),
+      await raw('delete from radcore.price_list_rates where version_id = $1', [first]),
+      await raw("insert into radcore.price_list_rates (version_id, item_id, rate) values ($1, $2, '1')", [first, items.b]),
+    ]).toEqual(['RA004', 'RA004', 'RA004', 'RA004', 'RA004', 'RA004']);
+    // Superseded: its date is written once, and it never comes back.
+    const { draftId } = await run((ctx) => startDraft(ctx, { id }), as(people.maker));
+    const again = await run((ctx) => askApproval(ctx, { id: draftId }), as(people.maker));
+    await approve(again.id, again.versionHash);
+    expect((await run((ctx) => getVersion(ctx, { id: first }))).state).toBe('superseded');
+    expect([
+      await raw("update radcore.price_list_versions set superseded_from = '2099-12-31' where id = $1", [first]),
+      await raw("update radcore.price_list_versions set status = 'approved', superseded_from = null where id = $1", [first]),
+    ]).toEqual(['RA004', 'RA004']);
+  });
+
+  it('keeps one draft and one approved version per list, whatever writes them (the indexes on the dates)', async () => {
+    const { id, requestId, versionHash } = await sent({ [items.a]: '100' });
+    await approve(requestId, versionHash);
+    await run((ctx) => startDraft(ctx, { id }), as(people.maker));
+    // As the superuser with the triggers off, so only the indexes and CHECKs stand: each insert is rolled back.
+    const insert = async (status: string, inForceFrom: string | null, supersededFrom: string | null) => {
+      const c = await superPool.connect();
+      try {
+        await c.query('begin');
+        await c.query('set local session_replication_role = replica');
+        await c.query("select set_config('app.principal', 'system:test', true)");
+        return await c.query(`insert into radcore.price_list_versions (price_list_id, tax_inclusive, status, in_force_from, superseded_from)
+          values ($1, true, $2, $3, $4)`, [id, status, inForceFrom, supersededFrom])
+          .then(() => 'ok', (e: { constraint?: string }) => e.constraint ?? String(e));
+      } finally {
+        await c.query('rollback');
+        c.release();
+      }
+    };
+    expect([
+      await insert('approved', '2025-01-01', null),
+      await insert('draft', null, null),
+      await insert('superseded', '2025-01-01', '2025-02-01'),
+    ]).toEqual(['ux_price_list_versions_in_force', 'ux_price_list_versions_draft', 'ok']);
   });
 
   it('limits a discount by role, else by the default setting, and clears both back', async () => {

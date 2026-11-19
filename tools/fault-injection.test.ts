@@ -4,13 +4,15 @@
 // the save left no journal entry and drew no number, nor kept the dead connection from the pool, and the next whole
 // save takes the very next number. The journal
 // works in 2029-30, a year no other test file posts in, so its counter is this file's alone.
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { openFinancialYear, postEntry } from '@radcore/lib-accounts';
-import type { Money } from '@radcore/lib-common';
+import { quantityString, unitPriceString, type Money } from '@radcore/lib-common';
 import { defineSeries, nextNumber, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
+import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -114,5 +116,51 @@ describe.skipIf(!url || !superUrl)('a save that fails halfway (RC-157)', { timeo
       .then(() => 'saved', (e: unknown) => String((e as { cause?: { code?: string } }).cause?.code ?? (e as { code?: string }).code));
     expect([failed, fault.refuse]).toEqual(['22012', undefined]);
     await vi.waitFor(() => expect(pool.totalCount - pool.idleCount).toBe(0));
+  });
+
+  it('leaves no movement, batch, position or Stock in Hand line behind, wherever the connection dies', async () => {
+    const q = (x: string) => quantityString().parse(x);
+    const tag = () => randomBytes(3).toString('hex').toUpperCase();
+    const setter: Principal = { kind: 'system', name: 'test', permissions: ['items:write', 'locations:write'] };
+    // A Demo location for every run, killed or whole, made beforehand: each run then opens a position the item hasn't
+    // held, and making one inside the loop would add statements the fault counts (the auditor on #212).
+    const { itemId, stores, demos } = await runInTransaction(db, write, setter, randomUUID(), async (ctx) => {
+      const { id: categoryId } = await addCategory(ctx, { name: `Fault ${tag()}` });
+      const { id } = await addItem(ctx, { sku: `F-${tag()}`, name: 'Brake-pad set', categoryId, hsn: '8708', unit: 'NOS', barcode: null,
+        serialised: false, hasChassis: false });
+      const places: string[] = [];
+      for (let i = 0; i < 40; i += 1) places.push((await addPlace(ctx, { code: `D${tag()}`, name: `Demo ${tag()}`, kind: 'demo' })).id);
+      return { itemId: id, stores: (await addPlace(ctx, { code: `S${tag()}`, name: `Stores ${tag()}`, kind: 'stores' })).id, demos: places };
+    });
+    const doc = (p: Parameters<typeof postDocument>[1]) => run((ctx) => postDocument(ctx, p));
+    const base = { sourceTable: SOURCE_TABLE, businessDate: DAY };
+    await doc({ ...base, sourceId: randomUUID(),
+      ins: [{ itemId, locationId: stores, qty: q('4'), rate: unitPriceString().parse('100'), batches: [{ batchNo: `S${tag()}`, qty: q('4') }] }] });
+    const [{ batch = '' } = {}] = (await admin.query<{ batch: string }>('select id as batch from radcore.batches where item_id = $1', [itemId])).rows;
+    // One save: a new lot into Stores, and a unit of the old one to the next Demo location, a position the item
+    // hasn't held yet.
+    const unused = [...demos];
+    const save = () => doc({ ...base, sourceId: randomUUID(),
+      ins: [{ itemId, locationId: stores, qty: q('2'), rate: unitPriceString().parse('120'), batches: [{ batchNo: `N${tag()}`, qty: q('2') }] }],
+      transfers: [{ itemId, from: stores, to: unused.shift() ?? '', qty: q('1'), batches: [{ batchId: batch, qty: q('1') }] }] });
+    // The item's rows, and each location's quantity and value as its movements add up.
+    const ledger = async () => ({
+      ...(await admin.query(`select
+        (select count(*) from radcore.stock_movements where item_id = $1)::int as movements,
+        (select count(*) from radcore.stock_movement_batches where item_id = $1)::int as picks,
+        (select count(*) from radcore.batches where item_id = $1)::int as batches,
+        (select count(*) from radcore.stock_positions where item_id = $1)::int as positions,
+        (select count(*) from radcore.journal_lines where item_id = $1)::int as lines`, [itemId])).rows[0],
+      places: (await admin.query<{ location: string; qty: string; value: string }>(`select location_id as location,
+        sum(case direction when 'in' then qty when 'out' then -qty else 0 end)::text as qty,
+        sum(case direction when 'out' then -value else value end)::text as value
+        from radcore.stock_movements where item_id = $1 group by location_id order by location_id`, [itemId])).rows,
+    });
+    const { steps, after } = await killEachStep(save, ledger);
+    expect(steps).toBeGreaterThanOrEqual(10);
+    expect(steps).toBeLessThan(demos.length);
+    expect(after).toMatchObject({ positions: 2, batches: 2 });
+    await save();
+    expect(await ledger()).toMatchObject({ positions: 3, batches: 3 });
   });
 });

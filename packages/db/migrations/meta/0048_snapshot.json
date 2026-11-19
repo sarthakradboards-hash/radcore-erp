@@ -1,5 +1,5 @@
 {
-  "id": "aba3b63a-0c51-4de9-981a-98307295cb1d",
+  "id": "a0971740-1b70-4480-a171-4f058a7047b0",
   "prevId": "1edaef68-bf02-413b-80f9-80b3e67e2e02",
   "version": "7",
   "dialect": "postgresql",
@@ -55,19 +55,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         },
         "created_at": {
           "name": "created_at",
@@ -140,13 +127,6 @@
             "system_key"
           ]
         },
-        "ux_accounts_code": {
-          "name": "ux_accounts_code",
-          "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
-        },
         "ux_accounts_name_key": {
           "name": "ux_accounts_name_key",
           "nullsNotDistinct": false,
@@ -184,14 +164,6 @@
         "ck_accounts_control_system": {
           "name": "ck_accounts_control_system",
           "value": "\"radcore\".\"accounts\".\"control_kind\" = 'none' or \"radcore\".\"accounts\".\"system_key\" is not null"
-        },
-        "ck_accounts_code": {
-          "name": "ck_accounts_code",
-          "value": "\"radcore\".\"accounts\".\"code\" ~ '^[0-9A-Z][0-9A-Z.-]{0,11}$'"
-        },
-        "ck_accounts_system_active": {
-          "name": "ck_accounts_system_active",
-          "value": "\"radcore\".\"accounts\".\"system_key\" is null or \"radcore\".\"accounts\".\"active\""
         }
       },
       "isRLSEnabled": false
@@ -4566,6 +4538,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4667,6 +4646,10 @@
         "ck_price_list_versions_superseded": {
           "name": "ck_price_list_versions_superseded",
           "value": "\"radcore\".\"price_list_versions\".\"superseded_from\" is null or (\"radcore\".\"price_list_versions\".\"in_force_from\" is not null and \"radcore\".\"price_list_versions\".\"superseded_from\" >= \"radcore\".\"price_list_versions\".\"in_force_from\")"
+        },
+        "ck_price_list_versions_status": {
+          "name": "ck_price_list_versions_status",
+          "value": "\"radcore\".\"price_list_versions\".\"status\" in ('draft', 'approved', 'superseded')\n    and (\"radcore\".\"price_list_versions\".\"status\" = 'draft') = (\"radcore\".\"price_list_versions\".\"in_force_from\" is null) and (\"radcore\".\"price_list_versions\".\"status\" = 'superseded') = (\"radcore\".\"price_list_versions\".\"superseded_from\" is not null)"
         }
       },
       "isRLSEnabled": false
