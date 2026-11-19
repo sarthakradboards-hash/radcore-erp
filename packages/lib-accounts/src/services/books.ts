@@ -1,7 +1,7 @@
 // The chart of accounts and the journal as RAD-86's routes answer them (M2-16's screens; ADR-006 §2, §3). Reads, and
 // the engine's own manual journal and reversal: nothing here writes the books except through journal.ts.
 import { accounts, accountsTx, after, journalEntries, journalLines } from '@radcore/db/accounts';
-import { ACCOUNT_TYPES, CONTROL_KINDS, ENTRY_KINDS, roundMoney } from '@radcore/lib-common';
+import { ACCOUNT_TYPES, CONTROL_KINDS, dec, ENTRY_KINDS, roundMoney } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, lte, sum } from 'drizzle-orm';
 import { z } from 'zod';
@@ -17,6 +17,25 @@ export async function chartOfAccounts(ctx: Ctx): Promise<Out<typeof listAccounts
     controlKind: accounts.controlKind, parentId: accounts.parentId }).from(accounts).orderBy(asc(accounts.nameKey), asc(accounts.id));
   return { items: rows.map((a) => ({ ...a, type: z.enum(ACCOUNT_TYPES).parse(a.type),
     controlKind: z.enum(CONTROL_KINDS).parse(a.controlKind), control: a.controlKind !== 'none' })) };
+}
+
+/** For the books check (RAD-95, ADR-006 §7): every journal line's debits and credits, as at `asAt` (every line when
+ * it's left out). They're equal when the books balance. */
+export async function trialBalance(ctx: Ctx, asAt?: string): Promise<{ debit: string; credit: string }> {
+  const [row] = await accountsTx(ctx).select({ debit: sum(journalLines.debit), credit: sum(journalLines.credit) }).from(journalLines)
+    .where(asAt === undefined ? undefined : lte(journalLines.businessDate, asAt));
+  return { debit: row?.debit ?? '0', credit: row?.credit ?? '0' };
+}
+
+/** For the books check: Stock in Hand per item and place, debits less credits, as at `asAt` (every line when it's left
+ * out). A Stock in Hand line always names both (ck_journal_lines_stock_dims). */
+export async function stockInHand(ctx: Ctx, asAt?: string): Promise<{ itemId: string; locationId: string; value: string }[]> {
+  const rows = await accountsTx(ctx).select({ itemId: journalLines.itemId, locationId: journalLines.locationId,
+    debit: sum(journalLines.debit), credit: sum(journalLines.credit) }).from(journalLines)
+    .where(and(eq(journalLines.accountControlKind, 'stock'), asAt === undefined ? undefined : lte(journalLines.businessDate, asAt)))
+    .groupBy(journalLines.itemId, journalLines.locationId);
+  return rows.map((r) => ({ itemId: r.itemId ?? '', locationId: r.locationId ?? '',
+    value: dec(r.debit ?? '0').minus(dec(r.credit ?? '0')).toString() }));
 }
 
 const entryColumns = {
