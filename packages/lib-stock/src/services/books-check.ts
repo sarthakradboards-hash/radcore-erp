@@ -15,7 +15,9 @@ type In = z.output<(typeof checkBooksContract)['input']>;
 type Out = z.input<(typeof checkBooksContract)['output']>;
 type Net = { itemId: string; locationId: string; qty: Decimal; value: Decimal };
 
-/** Each item and place's rows, summed by direction, netted: an `out` takes its quantity and value away. */
+/** Each item and place's rows, summed by direction, netted: an `out` takes its quantity and value away. A `revalue`
+ * row is added as it is: its quantity is 0 and its value carries its own sign (ck_stock_movements_value_sign), the
+ * only direction whose value may be below zero. */
 function netted(rows: readonly { itemId: string; locationId: string; direction: string; qty: string | null; value?: string | null }[]) {
   const at = new Map<string, Net>();
   for (const r of rows) {
