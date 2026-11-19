@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { admin } from './admin.ts';
+import { books } from './books.ts';
 import { core, t } from './index.ts';
 import { kit } from './kit.ts';
 
@@ -12,7 +13,7 @@ it('fills placeholders and leaves an unknown one visible', () => {
 });
 
 it('keeps each catalogue under its own prefix, so no key replaces another', () => {
-  const catalogues = { core, admin, kit };
+  const catalogues = { core, admin, books, kit };
   const seen = new Map<string, string>();
   for (const [name, catalogue] of Object.entries(catalogues)) {
     for (const key of Object.keys(catalogue)) {
@@ -22,5 +23,6 @@ it('keeps each catalogue under its own prefix, so no key replaces another', () =
   }
   expect(Object.keys(admin).every((k) => k.startsWith('admin.'))).toBe(true);
   expect(Object.keys(kit).every((k) => k.startsWith('kit.'))).toBe(true);
-  expect(Object.keys(core).some((k) => k.startsWith('admin.') || k.startsWith('kit.'))).toBe(false);
+  expect(Object.keys(books).every((k) => k.startsWith('books.'))).toBe(true);
+  expect(Object.keys(core).some((k) => k.startsWith('admin.') || k.startsWith('books.') || k.startsWith('kit.'))).toBe(false);
 });

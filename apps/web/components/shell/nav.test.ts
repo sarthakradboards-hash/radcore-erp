@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ADMIN_PAGES, isCurrent, menuFor, NAV, type NavItem } from './nav.ts';
+import { ACCOUNTS_PAGES, ADMIN_PAGES, isCurrent, menuFor, NAV, type NavItem } from './nav.ts';
 
 const items: NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
@@ -46,4 +46,13 @@ it('marks Admin current on any admin page, and Home only on /', () => {
   expect(['/', '/admin/users', '/admin/audit', '/administer'].map((p) =>
     [home !== undefined && isCurrent(home, p), admin !== undefined && isCurrent(admin, p)]))
     .toEqual([[true, false], [false, true], [false, true], [false, false]]);
+});
+
+it('shows Accounts on journal:read, opening the journal, and marks it current on its pages only (RAD-100)', () => {
+  expect(ACCOUNTS_PAGES.map((p) => [p.href, p.perm])).toEqual([['/accounts/journal', 'journal:read'], ['/accounts/chart', 'journal:read']]);
+  const accounts = menuFor(NAV, ['journal:read']).find((e) => e.label === 'nav.accounts');
+  expect(accounts?.href).toBe('/accounts/journal');
+  expect(menuFor(NAV, ['users:read']).some((e) => e.label === 'nav.accounts')).toBe(false);
+  expect(['/accounts/chart', '/accounts/journal/new', '/account/sessions'].map((p) => accounts !== undefined && isCurrent(accounts, p)))
+    .toEqual([true, true, false]);
 });

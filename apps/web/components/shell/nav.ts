@@ -24,9 +24,16 @@ export const ADMIN_PAGES = [
   { href: '/admin/gst-rates', label: 'admin.nav.gst', perm: 'gst:read' },
 ] as const satisfies readonly NavPage[];
 
+/** The accounts area's pages (RAD-100): the journal first, as accounts staff read it most. */
+export const ACCOUNTS_PAGES = [
+  { href: '/accounts/journal', label: 'books.nav.journal', perm: 'journal:read' },
+  { href: '/accounts/chart', label: 'books.nav.chart', perm: 'journal:read' },
+] as const satisfies readonly NavPage[];
+
 export const NAV: readonly NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
   // The owner holds audit:read alone (RAD-35), so Admin opens on the audit trail for them.
+  { label: 'nav.accounts', pages: ACCOUNTS_PAGES, section: '/accounts' },
   { label: 'nav.admin', pages: ADMIN_PAGES, section: '/admin' },
 ];
 
