@@ -4,7 +4,7 @@
 // and its column here, masked without cost:read.
 import type { ExportRow, ExportSheet } from '@radcore/lib-platform';
 import { KIND_LABELS } from './location-kinds.ts';
-import { listCategories, listItemsPage } from './services/items.ts';
+import { listCategories, listItemRows } from './services/items.ts';
 import { listPlaces } from './services/locations.ts';
 
 const yesNo = (b: boolean) => (b ? 'Yes' : 'No');
@@ -23,7 +23,7 @@ const items: ExportSheet = {
   name: 'Items', perm: 'items:read',
   columns: ['sku', 'name', 'category', 'hsn', 'unit', 'barcode', 'serialised', 'hasChassis', 'active'],
   rows: async (ctx, _filter, page) => {
-    const [{ items: rows, next }, { categories }] = await Promise.all([listItemsPage(ctx, { filter: {}, ...page }), listCategories(ctx)]);
+    const [{ items: rows, next }, { categories }] = await Promise.all([listItemRows(ctx, { filter: {}, ...page }), listCategories(ctx)]);
     const category = new Map(categories.map((c) => [c.id, c.name]));
     return {
       items: rows.map((i): ExportRow => ({ sku: i.sku, name: i.name, category: category.get(i.categoryId) ?? null, hsn: i.hsn,

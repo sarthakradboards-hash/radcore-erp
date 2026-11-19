@@ -2,7 +2,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, money, qty, radcoreTable, trigramIndex, unitPrice } from '../columns.ts';
-import { parties } from '../accounts/tables.ts';
+import { financialYears, parties } from '../accounts/tables.ts';
 import { files } from '../platform/tables.ts';
 
 /**
@@ -111,8 +111,13 @@ export const stockMovements = radcoreTable('stock_movements', {
   rate: unitPrice(),
   businessDate: date({ mode: 'string' }).notNull(),
   postedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  // ADR-005 §6 (RC-111): the business date's financial year, which must be one the company opened.
+  fyStart: date({ mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)`),
   reversesMovementId: uuid(),
 }, (t) => [
+  foreignKey({ name: 'fk_stock_movements_fy_start', columns: [t.fyStart], foreignColumns: [financialYears.start] }),
+  index('ix_stock_movements_fy_start').on(t.fyStart),
   check('ck_stock_movements_direction', sql`${t.direction} in ('in', 'out', 'revalue')`),
   check('ck_stock_movements_revalue_qty', sql`(${t.direction} = 'revalue') = (${t.qty} = 0)`),
   check('ck_stock_movements_value_sign', sql`${t.direction} = 'revalue' or ${t.value} >= 0`),

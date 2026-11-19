@@ -7,8 +7,9 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { quantityString, unitPriceString } from '@radcore/lib-common';
 import { AppError, saveSetting, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { NEGATIVE_STOCK, addCategory, addItem, addPlace, postStock, type StockPosting } from '@radcore/lib-stock';
+import { NEGATIVE_STOCK, addCategory, addItem, addPlace, type StockPosting } from '@radcore/lib-stock';
 import pg from 'pg';
+import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 import { afterAll, describe, expect, it } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -32,7 +33,7 @@ describe.skipIf(!url || !superUrl)('negative stock and the commit checks', () =>
   const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(db, WRITE, staff, randomUUID(), fn);
   const negative = (on: boolean) => run((ctx) => saveSetting(ctx, NEGATIVE_STOCK, on));
   const post = (p: Omit<StockPosting, 'sourceTable' | 'sourceId' | 'businessDate'>, businessDate = '2026-11-18') =>
-    run((ctx) => postStock(ctx, { sourceTable: 'test_documents', sourceId: randomUUID(), businessDate, ...p }));
+    run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate, ...p }));
   const failure = (p: Parameters<typeof post>[0], date?: string) => post(p, date).then(() => 'ok', (e: unknown) => {
     if (e instanceof AppError) return e.code;
     const err = e as { code?: string; cause?: { code?: string } };
@@ -81,6 +82,14 @@ describe.skipIf(!url || !superUrl)('negative stock and the commit checks', () =>
     expect(moved.map((m) => [m.direction, m.value])).toEqual([['in', '1200.00'], ['revalue', '-120.00']]);
     expect(await onHand(at.itemId, at.locationId)).toEqual(['2', '480.00']);
     expect(await batchesOf(at.itemId, at.locationId)).toEqual([['P1', 0], ['P2', 5], ['unknown', -3]]);
+    // The engine's own entry for it (§1): Dr Cost of Goods Sold 120.00, Cr Stock in Hand 120.00 by item and location.
+    const { rows } = await su.query<{ key: string; debit: string; credit: string; location: string | null }>(`select a.system_key as key,
+        l.debit::text, l.credit::text, l.location_id as location from radcore.journal_lines l
+        join radcore.journal_entries e on e.id = l.entry_id join radcore.accounts a on a.id = l.account_id
+      where e.kind = 'revaluation' and e.id in (select entry_id from radcore.journal_lines where item_id = $1)
+      order by l.line_no`, [at.itemId]);
+    expect(rows.map((l) => [l.key, l.debit, l.credit, l.location])).toEqual([['cogs', '120.00', '0.00', null],
+      ['stock', '0.00', '120.00', at.locationId]]);
   });
 
   it('leaves zero value at zero units, and keeps the estimate on units still missing (F15 variants)', async () => {
@@ -175,10 +184,11 @@ describe.skipIf(!url || !superUrl)('negative stock and the commit checks', () =>
       await c.query("set local app.principal = 'system:test'");
       const { rows: [moved] } = await c.query<{ id: string }>(`insert into radcore.stock_movements
         (item_id, location_id, source_table, source_id, direction, qty, value, business_date)
-        values ($1, $2, 'test_documents', $3, 'out', 2, 200, '2026-11-11') returning id`, [itemId, locationId, randomUUID()]);
+        values ($1, $2, 'files', $3, 'out', 2, 200, '2026-11-11') returning id`, [itemId, locationId, randomUUID()]);
       await c.query('insert into radcore.stock_movement_batches (movement_id, item_id, batch_id, qty) values ($1, $2, $3, 2)',
         [moved?.id, itemId, b]);
-      await expect(c.query('commit')).rejects.toMatchObject({ code: 'RA007' });
+      // The back-dated rule's own refusal, not the document check's (this raw document has no entry either).
+      await expect(c.query('commit')).rejects.toMatchObject({ code: 'RA007', message: expect.stringContaining('below zero on a day') });
     } finally {
       await c.query('rollback').catch(() => undefined);
       c.release();
