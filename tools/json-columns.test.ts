@@ -62,4 +62,20 @@ describe.skipIf(!url)('json columns read a bare string as that string', () => {
     });
     expect(read).toEqual(BARE);
   });
+  // A null-able json() column given null stores SQL NULL, not the jsonb value null: drizzle skips the encoder for a null
+  // parameter (auditor-2 on #197). Read back through drizzle the two look alike, so SQL tells them apart.
+  it('stores a null answer as SQL NULL (saved_once)', async () => {
+    const key = randomUUID();
+    await runInTransaction(db, write, AS, randomUUID(), async (ctx) => {
+      await platformTx(ctx).insert(savedOnce).values({ principal: 'system:test', route: 'POST /test', key, inputHash: '0'.repeat(64),
+        answer: null, expiresAt: new Date('2099-01-01T00:00:00Z') });
+    });
+    try {
+      const { rows } = await pool.query<{ n: boolean; t: string | null }>(
+        'select answer is null as n, jsonb_typeof(answer) as t from radcore.saved_once where key = $1', [key]);
+      expect(rows).toEqual([{ n: true, t: null }]);
+    } finally {
+      await runInTransaction(db, write, AS, randomUUID(), async (ctx) => { await platformTx(ctx).delete(savedOnce).where(eq(savedOnce.key, key)); });
+    }
+  });
 });
