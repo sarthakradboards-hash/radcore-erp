@@ -1,6 +1,7 @@
 // Items, their categories and units of measure (M2-10, RAD-89; ADR-001 §5: lib-stock's). Every write is audited by
 // the tables' triggers. A quantity follows its item's unit (RC-162): checkQuantity is what every stock document calls.
 import { after, itemCategories, itemPictures, items, searchWords, stockMovements, stockTx, units, unitsOfMeasure } from '@radcore/db/stock';
+import type { Rate } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, readyFile, viewLinks, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -134,6 +135,16 @@ export async function itemLabels(ctx: Ctx, ids: readonly string[]): Promise<Map<
   const rows = await stockTx(ctx).select({ id: items.id, sku: items.sku, name: items.name, unit: items.unit }).from(items)
     .where(inArray(items.id, [...ids]));
   return new Map(rows.map((r) => [r.id, { sku: r.sku, name: r.name, unit: r.unit }]));
+}
+
+/** Each item's purchase price, by id, for a sale's below-cost check when nothing is on hand (RAD-111; lib-sales'
+ * checkSale). One read, no pictures; an id that names no item is left out. A cost (ADR-001 §7a): for services only,
+ * so a route of its own would need cost:read. */
+export async function purchasePrices(ctx: Ctx, ids: readonly string[]): Promise<ReadonlyMap<string, Rate | null>> {
+  if (ids.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ id: items.id, price: items.purchasePrice }).from(items).where(inArray(items.id, [...ids]));
+  // A unitPrice() column: numeric(18,6), a Rate.
+  return new Map(rows.map((r) => [r.id, r.price as Rate | null]));
 }
 
 /** POST /items/:id/pictures: the file must be a ready item picture; it takes the lowest free place, so a gap left by

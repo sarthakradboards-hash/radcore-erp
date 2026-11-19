@@ -162,6 +162,8 @@ export const admin = {
   'admin.items.unit': 'Unit',
   'admin.items.unit.choose': 'Choose a unit',
   'admin.items.barcode': 'Barcode',
+  'admin.items.purchasePrice': 'Purchase price (₹)',
+  'admin.items.purchasePrice.hint': 'What one unit costs to buy. Leave it empty if there isn’t one yet.',
   'admin.items.barcode.hint': 'Optional. Up to 48 letters, digits or symbols, without spaces.',
   'admin.items.serialised': 'Serialised',
   'admin.items.serialised.hint': 'Each unit has its own serial number.',
