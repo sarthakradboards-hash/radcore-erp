@@ -1,7 +1,7 @@
 // lib-platform's tables (ADR-001 §3). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { isNotNull, isNull, sql } from 'drizzle-orm';
-import { boolean, check, index, integer, jsonb, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, radcoreTable } from '../columns.ts';
+import { boolean, check, index, integer, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boundedText, id, json, radcoreTable } from '../columns.ts';
 
 /**
  * Settings, and nothing else (RC-161): one row per setting a library declares with defineSetting, keyed
@@ -10,7 +10,7 @@ import { boundedText, id, radcoreTable } from '../columns.ts';
  */
 export const settings = radcoreTable('settings', {
   key: text().primaryKey(),
-  value: jsonb().notNull(),
+  value: json().notNull(),
 }, (t) => [check('ck_settings_key', sql`${t.key} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'`)]);
 
 /**
@@ -48,7 +48,7 @@ export const savedOnce = radcoreTable('saved_once', {
   route: text().notNull(),
   key: uuid().notNull(),
   inputHash: text().notNull(),
-  answer: jsonb(),
+  answer: json(),
   kept: boolean().notNull().default(false),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
 }, (t) => [
@@ -98,12 +98,12 @@ export const roleTemplates = radcoreTable('role_templates', {
   role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
   permission: text().notNull(), scope: text().notNull(),
 }, (t) => [primaryKey({ name: 'pk_role_templates', columns: [t.role, t.permission] }),
-  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own')`)]);
+  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} <> 'parties:contact' or ${t.scope} = 'all')`)]);
 
 /**
  * What a role may do (RAD-35, ADR-001 §6a): one permission key each, at a scope. `all` reaches every record of that
  * kind; `own` only the records the person owns (ctx.can), so one key can mean "my leads" for one role and "every lead"
- * for another. The admin's grants hold every key at `all`.
+ * for another. The admin's grants hold every key at `all`; an allOnly key (parties:contact, RAD-90) only at `all`.
  */
 export const roleGrants = radcoreTable('role_grants', {
   role: text().notNull().references(() => roles.key, { onDelete: 'cascade' }),
@@ -112,7 +112,7 @@ export const roleGrants = radcoreTable('role_grants', {
 }, (t) => [
   primaryKey({ name: 'pk_role_grants', columns: [t.role, t.permission] }),
   check('ck_role_grants_permission', sql`${t.permission} ~ '^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$'`),
-  check('ck_role_grants_scope', sql`${t.scope} in ('all', 'own')`),
+  check('ck_role_grants_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} <> 'parties:contact' or ${t.scope} = 'all')`),
 ]);
 
 /**
@@ -151,7 +151,7 @@ export const passwordResets = linkToken('password_resets');
 export const jobsOutbox = radcoreTable('jobs_outbox', {
   id: id(),
   name: text().notNull(),
-  data: jsonb().notNull(),
+  data: json().notNull(),
   principal: text().notNull(),
   requestId: text().notNull(),
   attempts: integer().notNull().default(0),
@@ -260,23 +260,23 @@ export const files = radcoreTable('files', {
 ]);
 
 /**
- * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts. Its owner is `created_by`, the
- * principal who started it, and only they may read its status or download it. The export job fills it after its own
- * transaction: `ready` with the row count and the file's store key, or `failed` with why. An export is complete or it
- * fails, never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or when the export volume fills.
- * - `kind` is the list, `<module>.<name>`, which names the module's row function.
- * - `filter` is the list's own filter as the person sent it, checked by that list's schema when the job runs.
+ * Exports (RAD-47 part 2, ADR-002 Exports): one row per export a person starts, owned by `created_by`, who alone may
+ * read its status or download it. The export job fills it after its own transaction: `ready` with the row count and the
+ * file's store key, or `failed` with why. Never cut short (RC-086): `too_large` past EXPORT_MAX_ROWS or a full volume.
+ * `kind` is the list, `<module>.<name>`, naming the module's row function; `filter` is its filter as sent, checked by
+ * that list's schema when the job runs; `format` is a list's CSV or a workbook's XLSX (RAD-92), naming the download.
  */
 export const dataExports = radcoreTable('exports', {
   id: id(),
   kind: text().notNull(),
-  filter: jsonb().notNull(),
+  filter: json().notNull(),
   status: text().notNull().default('queued'),
   rows: integer(),
   storeKey: text(),
   failure: text(),
+  format: text().notNull().default('csv'),
 }, (t) => [
-  uniqueIndex('ux_exports_store_key').on(t.storeKey),
+  uniqueIndex('ux_exports_store_key').on(t.storeKey), check('ck_exports_format', sql`${t.format} in ('csv', 'xlsx')`),
   check('ck_exports_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_-]*$'`),
   check('ck_exports_status', sql`${t.status} in ('queued', 'ready', 'failed')`),
   check('ck_exports_failure', sql`(${t.status} = 'failed') = (${t.failure} is not null)
@@ -286,6 +286,12 @@ export const dataExports = radcoreTable('exports', {
     and ((${t.status} = 'ready') = (${t.rows} is not null)) and (${t.rows} is null or ${t.rows} >= 0)`),
   check('ck_exports_store_key', sql`${t.storeKey} is null or ${t.storeKey} ~ '^export/[0-9a-f-]{36}$'`),
 ]);
+
+/** Number series (RAD-87, ADR-006 §3): per series and financial year, the prefix its first number took and the last
+ * number drawn. A trigger moves `last` up by exactly one and keeps the prefix. Machinery (ADR-005 §7c). */
+export const numberCounters = radcoreTable('number_counters', {
+  series: text().notNull(), financialYear: text().notNull(), prefix: text().notNull(), last: integer().notNull().default(1),
+}, (t) => [primaryKey({ name: 'pk_number_counters', columns: [t.series, t.financialYear] })]);
 
 /** When each person last signed in (RAD-36): made with the person by a trigger on users (0031), set when a session
  * starts. Machinery, not row-audited (ADR-005 §7c): a sign-in is already a `sign_in` event. The people list sorts on
@@ -331,8 +337,7 @@ export const secondFactors = radcoreTable('second_factors', {
   uniqueIndex('ux_second_factors_user_id').on(t.userId),
 ]);
 
-/** Recovery codes (M1-15, RAD-64): ten per set, each stored as its Argon2id hash. A code works once; a new set
- * replaces the old one. */
+/** Recovery codes (M1-15, RAD-64): ten per set, each its Argon2id hash. Each works once; a new set replaces them. */
 export const recoveryCodes = radcoreTable('recovery_codes', {
   id: id(),
   userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),

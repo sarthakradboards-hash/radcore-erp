@@ -1,11 +1,14 @@
 // lib-platform's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every
 // contract file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  dateString, defineContract, emailString, idString, listInput, listOf, momentString, pii, piiRecord, reason, searchText,
-  sortInput,
+  dateString, defineContract, emailString, idString, listInput, listOf, momentString, pii, piiRecord, principalOut, reason,
+  searchText, sortInput,
 } from '@radcore/lib-common';
 import { z } from 'zod';
-export { downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, type ExportContract } from './export/contract.ts';
+export {
+  downloadExport, EXPORT_MAX_ROWS, exportContract, getExport, mastersExport, workbookContract, type ExportContract,
+  type WorkbookContract,
+} from './export/contract.ts';
 import { FILE_KINDS, fileKeys, type FileKind } from './files/kinds.ts';
 
 /** Permission keys, sorted and without duplicates, so the client can compare two answers as they are. */
@@ -47,7 +50,6 @@ const read = { readOnly: true, isolation: 'read committed' } as const;
 // screens only show them. Every change that removes access or power takes a typed reason, kept in its audit row.
 const roleKey = () => z.string().regex(/^[a-z][a-z_]{1,31}$/, 'Not a role');
 const userStatus = z.enum(['invited', 'active', 'disabled']); // the users table's own check
-const principalOut = z.object({ kind: z.enum(['user', 'system', 'link']), id: z.string(), displayName: z.string().nullable() });
 
 /** People, any status. `self` marks the caller's own row: no role change or deactivate there. The address is masked
  * without pii:read, and each one shown is logged as a look at the person (RAD-103); without it, search matches names

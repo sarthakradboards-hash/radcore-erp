@@ -54,8 +54,9 @@ applies to the documents that post to the ledgers, and a ledger report is gated 
 half covers every sum and comparison in them, and they round half up, as lib-common does.
 
 **One lock order (RC-053, M2-05).** Every posting takes its locks in this order, and no other:
-1. the company's period-lock row, and the filed-month lock row (M5-08), `FOR SHARE`. Moving a lock takes
-   `FOR UPDATE`, so it waits for the postings in flight (RC-163, M5-09);
+1. the company profile row, the company's period-lock row and the filed-month lock row (M5-08), `FOR SHARE`. Moving
+   a lock takes `FOR UPDATE`, so it waits for the postings in flight (RC-163, M5-09), and so does a change to the
+   profile, so the GSTIN and state an invoice prints can't change under it (RAD-88);
 2. the documents being posted, `ORDER BY id FOR UPDATE` (ADR-005 §7a);
 3. the stock positions, `ORDER BY item_id, location_id FOR UPDATE` (§4), then any new batch rows, created in
    `(item_id, supplier_id, batch_key)` order (§4a);
@@ -75,6 +76,11 @@ finish.
 The system accounts are seeded by an owner migration. Code refers to them by `system_key`, never by name or id.
 People add their own accounts (expense heads, each bank account) under the account groups. A system account can be
 renamed, but not removed or re-keyed.
+
+An account may have a `code` (unique where set; the chart lists by it). System accounts have none until the CA settles a
+scheme (CA-46). An account other than a system one can be switched off (`active = false`), only while its balance is
+zero. A switched-off account takes no new postings, except a reversal of an entry already on it and the year-end close
+(RA009); it stays in the reports for the periods it has lines in.
 
 An ordinary account has control kind `none` (shown as "-" below).
 
@@ -165,13 +171,19 @@ delivery they belong to (M5-17), so §7's per-line check still holds.
     cancellation.
 - **Balanced at commit:** each entry's debits equal its credits (RA002, ADR-005 §2).
 - **Business date and posting time** are on the entry and on every line (ADR-005 §6). The lines' composite foreign
-  key keeps their date equal to the entry's.
+  key keeps their date equal to the entry's. The database sets `posted_at` itself (RAD-86), and records on the entry
+  the transaction that wrote it (`tx_id`), so a line is written with its entry and never added to a posted one
+  (RA001).
 - **The lock is checked under the lock** (RC-163). The engine reads the period-lock row `FOR SHARE` before writing
   any line (§1), and the line trigger refuses a business date on or before the lock date (RA003). M2-03 creates
   the financial-year and period-lock rows; M5-09 builds moving the lock and the year close.
 - **Gap-free numbers** (RC-206, M2-04). The entry's number comes from its financial year's series, under the series
   row lock, as the last step (§1). There's no database sequence. A save that fails rolls the number back with
-  everything else.
+  everything else. lib-platform's `nextNumber` draws it in one upsert on `number_counters (series, financial_year)`,
+  whose trigger sets the count to exactly one more than the last, whatever the app sends, and refuses a delete
+  (RAD-87). A series' prefix is a setting, read with the request's others (RC-200). A year's counter keeps the
+  prefix its first number took, so a change applies from the next financial year, until the CA settles the format
+  (CA-44). A series has 5 digits by default, for Rule 46's 16 characters; the journal's has 7.
 - **A manual journal** carries a reason (bounded text, ADR-005 §1) and only ordinary accounts (§2).
 - **A closed year's profit and loss** is read without its `year_close` entry, which would otherwise show every
   income and expense account at zero (M5-09, M5-14).
@@ -201,7 +213,8 @@ sums.
     `franchisee` (a franchisee's store is a location of ours, CA-30);
   - **not sellable:** `rejected`, `demo`, `job_work` (one per job worker, F16) and `in_transit`.
 
-  "Sellable" decides where a bill's price difference goes (below).
+  "Sellable" decides where a bill's price difference goes (below). Each kind's display label is a setting an admin
+  can rename (`stock.location_kind_label_<kind>`, RAD-92); the code is what every rule uses.
 - A transfer takes value out of the source at the source's average, and puts the same value into the destination.
 - Each location's value is the sum of its own movements. Stock by place and books by place therefore agree (§7).
 

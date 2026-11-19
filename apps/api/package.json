@@ -17,6 +17,7 @@
     "@radcore/lib-gst": "*",
     "@radcore/lib-hr": "*",
     "@radcore/lib-platform": "*",
+    "@radcore/lib-sales": "*",
     "@radcore/lib-stock": "*",
     "express": "5.3.0"
   },

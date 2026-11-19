@@ -21,6 +21,7 @@
     "db:migrate": "node --env-file-if-exists=.env packages/db/scripts/migrate.ts",
     "deps:check": "node tools/deps/cli.ts",
     "knip": "knip",
+    "mutation": "stryker run",
     "e2e": "npm run dev:env && playwright test -c e2e"
   },
   "devDependencies": {
@@ -29,6 +30,8 @@
     "@axe-core/playwright": "4.14.0",
     "@node-rs/argon2": "2.2.2",
     "@playwright/test": "1.64.1",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/node": "26.6.5",
     "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "5.0.5",
@@ -42,9 +45,24 @@
     "otpauth": "9.5.2",
     "pg": "8.23.1",
     "pg-boss": "12.38.0",
+    "read-excel-file": "9.3.12",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.0",
     "vitest": "5.0.5",
     "zod": "4.6.7"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    },
+    "@stryker-mutator/core": {
+      "minimatch": "11.0.4"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.4"
+    },
+    "typed-rest-client": {
+      "qs": "6.16.1"
+    }
   }
 }

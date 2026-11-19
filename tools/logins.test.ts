@@ -21,8 +21,8 @@ const withPassword = (u: string) => {
 };
 
 // ADR-005 §7's append-only tables, exactly.
-const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'unit_events', 'payment_allocations',
-  'credit_applications', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
+const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'unit_events', 'batches',
+  'stock_movement_batches', 'payment_allocations', 'credit_applications', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
 // Written only by triggers and record_access, never by an INSERT from the app.
 const NO_INSERT = ['audit_log', 'access_log', 'event_log'];
 const EVERY = 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
@@ -125,23 +125,19 @@ describe.skipIf(!url)('the three logins', () => {
     });
   });
 
-  // The ticket's proof. journal_lines doesn't exist yet (M2-03), so this makes it the way its migration will: as the
-  // owner, then the append-only revoke. ADR-005 §7's triggers (M1-12) refuse the owner's own UPDATE and DELETE too.
+  // The ticket's proof, on the real journal_lines (RAD-86, migration 0034). ADR-005 §7's triggers refuse the owner's
+  // own UPDATE and DELETE too (tools/journal.test.ts); a line's insert goes with its entry, there.
   it("the app login can't drop, alter or delete a journal line (RC-003)", async () => {
     await inRollback(async (c) => {
-      await c.query('set local role radcore_owner');
-      await c.query('create table radcore.journal_lines (id int primary key, debit numeric not null)');
-      await c.query('revoke update, delete, truncate on radcore.journal_lines from radcore_app');
       await c.query('set local role radcore_app');
       expect(await outcomes(c, {
-        insert: 'insert into radcore.journal_lines values (1, 10)',
         select: 'select * from radcore.journal_lines',
         update: 'update radcore.journal_lines set debit = 0',
         delete: 'delete from radcore.journal_lines',
         truncate: 'truncate radcore.journal_lines',
         alter: 'alter table radcore.journal_lines add column note text',
         drop: 'drop table radcore.journal_lines',
-      })).toEqual({ insert: 'ok', select: 'ok', update: DENIED, delete: DENIED, truncate: DENIED, alter: DENIED, drop: DENIED });
+      })).toEqual({ select: 'ok', update: DENIED, delete: DENIED, truncate: DENIED, alter: DENIED, drop: DENIED });
     });
   });
 
@@ -197,14 +193,16 @@ describe.skipIf(!url)('the three logins', () => {
       expect(await exposed()).toEqual([]);
       // The check finds each of them made without its revokes, the way the owner's default privileges leave them.
       await c.query('set local role radcore_owner');
-      await c.query('create table radcore.journal_lines (id int)');
-      await c.query('create view radcore.journal_view as select * from radcore.journal_lines');
+      // A real ledger (RAD-93) given back an UPDATE, and a view over another (RAD-86) left writable. Real tables, so no
+      // later ledger's migration collides with a stand-in.
+      await c.query('grant update on radcore.stock_movements to radcore_app');
+      await c.query('create view radcore.journal_view as select * from radcore.journal_entries');
       // The real audit_log (RAD-30) given back an INSERT, and a month added without its revokes.
       await c.query('grant insert on radcore.audit_log to radcore_app');
       await c.query("create table radcore.audit_log_2099_01 partition of radcore.audit_log for values from ('2099-01-01') to ('2099-02-01')");
       await c.query("create table radcore.audit_log_2099_02 partition of radcore.audit_log for values from ('2099-02-01') to ('2099-03-01')");
       await c.query('revoke all on radcore.audit_log_2099_02 from radcore_app, radcore_read');
-      expect(await exposed()).toEqual(['audit_log', 'audit_log_2099_01', 'journal_lines', 'journal_view']);
+      expect(await exposed()).toEqual(['audit_log', 'audit_log_2099_01', 'journal_view', 'stock_movements']);
     });
   });
 

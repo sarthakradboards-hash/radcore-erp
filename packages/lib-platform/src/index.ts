@@ -27,6 +27,7 @@ export {
 } from './approvals.ts';
 export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
+export { principalsOf } from './principals.ts';
 export { defineRoute, type BeforeDeps, type Route } from './route.ts';
 export { csvWriter } from './export/csv.ts';
 export { amountCell, checkRows, dateCell, parseAmountCell, parseDateCell, type ImportResult, type RowError } from './import/cells.ts';
@@ -41,6 +42,7 @@ export { createLog, type Fields, type Log, type LogOptions } from './log/logger.
 export { describeError, type ErrorDescription } from './log/safe-error.ts';
 export { routeOf, scrubText } from './log/scrub.ts';
 export { createSecrets, expiringBefore, SecretPlaceMismatch, type SecretPlace, type Secrets } from './secrets.ts';
+export { defineSeries, nextNumber, type Series } from './numbering.ts';
 export { defineSetting, settingRow, Settings, type SettingDef, type SettingRow } from './settings.ts';
 export { saveSetting } from './settings-store.ts';
 export { claimSavedOnce, cleanSavedOnce, SAVED_ONCE_KEEP_MS, savedOnceCleanup, type SavedOnce, type SavedOnceClaim, type SavedOnceClass } from './saved-once.ts';
@@ -59,5 +61,7 @@ export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
   type WebhookVerifier,
 } from './webhooks.ts';
-export { EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows } from './export/engine.ts';
-export { defineExport, defineExportJob, exportOf, type ModuleExport } from './export/job.ts';
+export {
+  EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows, type ExportSheet,
+} from './export/engine.ts';
+export { defineExport, defineExportJob, exportOf, startMastersExport, workbookOf, type ModuleExport } from './export/job.ts';

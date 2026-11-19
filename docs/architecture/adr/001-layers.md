@@ -326,9 +326,9 @@ under these rules, each refused by name:
 - **Who changes them.** Changing a role's grants needs `roles:write`, and changing someone's role needs `users:write`.
   Admin and owner hold both, and both are bound by the rules below: nobody gives a key they don't hold.
 - **Keys that need the second factor.** The permission catalogue marks the keys that move money, reach payroll, HR
-  or user administration, or set the company's tax identity or the GST rates every invoice charges (`company:write`,
-  `gst:write`, D-19). A role holding any of them
-  requires the second factor, whatever its own setting (D-19).
+  or user administration, or set the company's tax identity, a customer's credit terms, the GST rates every invoice
+  charges or the prices in force (`company:write`, `parties:manage`, `gst:write`, `prices:approve`, D-19). A role
+  holding any of them requires the second factor, whatever its own setting (D-19).
 - **Screens follow permissions.** The web shows what the person's keys allow, with no separate view setting.
 
 ### 7. The web client
@@ -565,8 +565,17 @@ always six bullets, so it doesn't give away the length.
   characters (`"••••••3210"`) when the value has at least 8.
 - Salaries and bank details carry `pii(schema, 'pay')`, masked whole. It needs `pay:read`, which only admin and owner
   hold (D-20, Sarthak, 6 Nov 2026), so a role with `pii:read` still gets them masked (M1-22).
+- A `piiRecord` may name one more key that shows its own `whole` and `last4` fields:
+  `piiRecord('parties', schema, { seenWith: 'parties:contact' })` (RAD-90). It reaches that record's fields only,
+  never a record nested in it or pay, and every look is logged as usual. Exports don't take it: a file unmasks
+  `pii()` columns only with `pii:read`, so contacts can be seen on a screen without being downloaded as a list. Such a
+  key is granted at `all` scope only, and the catalogue marks it `unmasks`, so the matrix warns of it. The manifest
+  test refuses a record seen with a key not so marked, and a mark no record uses.
 - The generic handler masks after the output check and before saved-once keeps the answer, so a stored answer never
   holds what its principal couldn't see.
+- A service asks `ctx.shows(kind, seenWith?)` before it searches or sorts by a personal field. It's the same answer
+  the handler masks with, keys and Sec-Fetch-Site included, so a service can't find people by an address it then
+  hides (RAD-103).
 - Edit forms show it read-only and never send it back. Edit contracts change only the fields they receive (patch
   semantics), so a field left out is left alone.
 - The server refuses an input string that starts with six `•` (U+2022), with `invalid_input`. A masked value can
@@ -658,6 +667,9 @@ defineImport(stock.contracts.importItems, stock.importItemRow),          // engi
 
 The module function runs under `ctx` like any service. Scope, rules and `pii()` masking apply to an export exactly
 as they do on a screen (M1-22, M1-28, M1-29, M1-20).
+
+A workbook of several modules' sheets (`workbookOf`, RAD-92) is joined in the worker's start-up job list
+(`worker-jobs.ts`), since no library may import two modules. Its start route takes only the contract.
 
 **Approvals (maker-checker, M1-20, RAD-38).** A module's `contract.ts` declares
 `approvalContracts('purchase-order', 'purchasing:approve')`. That gives three contracts under one static

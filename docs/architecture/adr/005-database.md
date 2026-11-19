@@ -89,7 +89,10 @@ The database checks the identities that hold whatever rounding rule is used. The
     tables, so:
     - per-event statement triggers (with transition tables) on the lines and the header insert each touched
       document's id into `pending_document_checks`, a small table unique per document;
-    - a deferred constraint trigger on that table checks each document once at commit, then removes its row.
+    - a deferred constraint trigger on that table checks each document once at commit, then removes its row. A
+      journal entry is checked as an entry (RA002); any other row is a document by its own table and id, and
+      `check_document` runs every rule that compares its ledgers: first that its stock movements and its Stock in
+      Hand lines agree (ADR-006 §4, RA007), then batch sums and unit counts as they land (RAD-93).
   - These raise at `COMMIT`. The generic handler maps codes raised at commit like any other (§9).
 
 ### 3. Keys and indexes (M1-05)
@@ -207,7 +210,10 @@ They are append-only with explicit reversals:
 
 - **Transitions.** Each document kind's allowed status transitions live in a `state_transitions` table seeded by
   an owner migration. A test checks it equals the lib-common constant, since a SQL trigger can't read a TypeScript
-  constant.
+  constant. `state_transitions` is made and seeded by hand-written migrations and isn't declared in Drizzle: only
+  the RA004 triggers read it (RAD-86). Each document's migration attaches the two generic guards,
+  `radcore.guard_posted_document(draft, cancel columns, write-once columns)` and
+  `radcore.guard_document_line(parent table, parent column, draft)`.
   - For a posted document the only transition is **posted → cancelled**, and cancelled is final, so a document
     can't be reopened or un-cancelled. The trigger checks `(old.status, new.status)` against the table.
   - **On insert**, a document must start in its initial state (draft), with its cancel and write-once columns
@@ -274,11 +280,14 @@ They are append-only with explicit reversals:
   the four who-and-when columns. Each column of an audited table is listed at `audit_attach` as `keep` (recorded) or
   `redact` (written as `[redacted]`). Secrets, hashes and all personal data are redacted, and the schema test fails on
   an unlisted column. An update that changes nothing kept or redacted writes no row. Machinery tables (`saved_once`,
-  `jobs_outbox`, `webhook_deliveries`, `sessions`, `change_reasons`, `user_sign_ins`) get the who-and-when trigger
-  only. Each is a queue, an intake record or working state: its own rows already say what happened and when, and
-  copying them would copy personal data into the append-only log (M6-16). A session's `last_seen_at` changes on every
-  request, and its start and end are security events (RAD-34). A person's last sign-in (`user_sign_ins`, RAD-36) is
-  already a `sign_in` event.
+  `jobs_outbox`, `webhook_deliveries`, `sessions`, `change_reasons`, `user_sign_ins`, `number_counters`,
+  `pending_document_checks`, `stock_positions`) get the who-and-when trigger only. Each is a queue, an intake record or
+  working state: its own rows already say what happened and when, and copying them would copy personal data into the
+  append-only log (M6-16). A session's `last_seen_at` changes on every request, and its start and end are security
+  events (RAD-34). A person's last sign-in (`user_sign_ins`, RAD-36) is already a `sign_in` event, a number drawn
+  (`number_counters`, RAD-87) is its document's, a pending check (§2) lives only until its commit, and a stock position
+  (`stock_positions`, ADR-006 §1) holds only the key it's locked by. Append-only ledgers are audited in full, every
+  column kept: their own rows don't record the login or client address that wrote them, and the audit row does.
 - **Why a change was made** (RAD-36). When a write's contract asks for a reason (lib-common's `reason()`), the handler
   stores it in `change_reasons` and sets `app.reason_id`, and each audit row of that change carries `reason_id`, a
   reference, never the text. The reason's own table isn't copied into the audit log (`capture => false`), so the text
@@ -419,6 +428,7 @@ under 63 bytes (§1).
 | RA006 | a document's header and lines disagree (total, round-off), or allocations exceed it |
 | RA007 | stock: a document's movements and its Stock in Hand lines disagree, an empty location holds value, a movement's units don't match its quantity, an issue would take stock below zero (ADR-006 §4), or a movement's batches don't add up to its quantity or take a batch below zero (ADR-006 §4a) |
 | RA008 | a unit event isn't allowed from the unit's current state, a vehicle whose item has a chassis number is received or delivered without one, or an item's chassis flag is turned off while a unit of it has a number (ADR-006 §5) |
+| RA009 | a posting to a switched-off account, other than a reversal or the year-end close (ADR-006 §2) |
 
 (The `RA` prefix keeps them apart from the register's RC-numbers, which name v1 defects.)
 
@@ -437,7 +447,7 @@ under 63 bytes (§1).
 |---|---|
 | Column CHECKs, row identities, generated keys, length and pattern CHECKs | `packages/db/src/columns.ts` helpers and `packages/db/src/*/tables.ts` |
 | State-machine values and transitions | lib-common constants, imported by contracts and tables |
-| Deferred checks, append-only, posted-document and line triggers, audit triggers, `record_access`, the partitioned logs and their partitions | hand-written migrations in `packages/db/migrations/`, run as the owner |
+| Deferred checks, append-only, posted-document and line triggers, audit triggers, `record_access`, the partitioned logs and their partitions, `state_transitions` (not declared in Drizzle: only the RA004 triggers read it) | hand-written migrations in `packages/db/migrations/`, run as the owner |
 | Report views (with their scope columns) and the `pg_catalog` views the schema tests read | `packages/db/views/*.ts` |
 | The principal and the per-contract statement timeout | `packages/db/src/request-context.ts` |
 
