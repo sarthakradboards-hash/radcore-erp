@@ -5,16 +5,17 @@ import { ACCOUNT_TYPES, CONTROL_KINDS, dec, ENTRY_KINDS, roundMoney } from '@rad
 import { AppError, decodeCursor, encodeCursor, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, lte, sum } from 'drizzle-orm';
 import { z } from 'zod';
-import type { getJournal, listAccounts, listJournal, postJournal, reverseJournal } from '../contract.ts';
-import { postManualJournal, reverseEntry, type Posted } from './journal.ts';
+import type { getJournal, listAccounts, listJournal, postJournal, reverseJournal, setAccount } from '../contract.ts';
+import { periodLockRow, postManualJournal, reverseEntry, type Posted } from './journal.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
-/** GET /accounts: every account, by name. */
+/** GET /accounts: every account, by code where it has one, then by name. */
 export async function chartOfAccounts(ctx: Ctx): Promise<Out<typeof listAccounts>> {
-  const rows = await accountsTx(ctx).select({ id: accounts.id, name: accounts.name, systemKey: accounts.systemKey, type: accounts.type,
-    controlKind: accounts.controlKind, parentId: accounts.parentId }).from(accounts).orderBy(asc(accounts.nameKey), asc(accounts.id));
+  const rows = await accountsTx(ctx).select({ id: accounts.id, code: accounts.code, name: accounts.name, systemKey: accounts.systemKey,
+    type: accounts.type, controlKind: accounts.controlKind, parentId: accounts.parentId, active: accounts.active }).from(accounts)
+    .orderBy(asc(accounts.code), asc(accounts.nameKey), asc(accounts.id));
   return { items: rows.map((a) => ({ ...a, type: z.enum(ACCOUNT_TYPES).parse(a.type),
     controlKind: z.enum(CONTROL_KINDS).parse(a.controlKind), control: a.controlKind !== 'none' })) };
 }
@@ -36,6 +37,36 @@ export async function stockInHand(ctx: Ctx, asAt?: string): Promise<{ itemId: st
     .groupBy(journalLines.itemId, journalLines.locationId);
   return rows.map((r) => ({ itemId: r.itemId ?? '', locationId: r.locationId ?? '',
     value: dec(r.debit ?? '0').minus(dec(r.credit ?? '0')).toString() }));
+}
+
+/**
+ * PATCH /accounts/:id: an account's code, and switching it off or on (the architect on RAD-86). Switching off reads
+ * the balance with the period lock's row held FOR UPDATE, ADR-006 §1's step 1: postings hold it FOR SHARE, so the
+ * switch waits for those in flight and none lands between the read and the switch.
+ */
+export async function changeAccount(ctx: Ctx, { id, code, active }: In<typeof setAccount>): Promise<Out<typeof setAccount>> {
+  const tx = accountsTx(ctx);
+  if (active === false) await periodLockRow(ctx).for('update');
+  const [row] = await tx.select({ systemKey: accounts.systemKey }).from(accounts).where(eq(accounts.id, id)).limit(1);
+  if (row === undefined) throw new AppError('not_found', 'There’s no such account');
+  if (active === false) {
+    if (row.systemKey !== null) throw new AppError('system_account', 'A system account is never switched off');
+    const [held] = await tx.select({ debit: sum(journalLines.debit), credit: sum(journalLines.credit) }).from(journalLines)
+      .where(eq(journalLines.accountId, id));
+    if (!dec(held?.debit ?? '0').eq(dec(held?.credit ?? '0'))) {
+      throw new AppError('account_not_empty', 'The account still holds a balance: move it to another account first');
+    }
+  }
+  try {
+    await tx.update(accounts).set({ ...(code === undefined ? {} : { code }), ...(active === undefined ? {} : { active }) })
+      .where(eq(accounts.id, id));
+  } catch (e) {
+    if ((e as { cause?: { constraint?: string } }).cause?.constraint === 'ux_accounts_code') {
+      throw new AppError('code_taken', 'Another account has this code', [{ path: ['code'], code: 'taken', message: 'Choose another code' }]);
+    }
+    throw e;
+  }
+  return {};
 }
 
 const entryColumns = {

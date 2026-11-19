@@ -77,6 +77,11 @@ The system accounts are seeded by an owner migration. Code refers to them by `sy
 People add their own accounts (expense heads, each bank account) under the account groups. A system account can be
 renamed, but not removed or re-keyed.
 
+An account may have a `code` (unique where set; the chart lists by it). System accounts have none until the CA settles a
+scheme (CA-46). An account other than a system one can be switched off (`active = false`), only while its balance is
+zero. A switched-off account takes no new postings, except a reversal of an entry already on it and the year-end close
+(RA009); it stays in the reports for the periods it has lines in.
+
 An ordinary account has control kind `none` (shown as "-" below).
 
 | Key | Name | Type | Control |
