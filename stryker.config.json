@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "RAD-96 (M2-08, RC-069): mutation testing on the money, GST and (with M2-03) posting functions. A surviving mutant is a change to the maths no test noticed. The score must stay at or above 80%.",
+  "_comment": "RAD-96 (M2-08, RC-069): mutation testing on the money, GST and (with M2-03) posting functions, and the stock engine's valuation (M2-05). A surviving mutant is a change to the maths no test noticed. The score must stay at or above 80%.",
   "packageManager": "npm",
   "testRunner": "vitest",
   "plugins": [
@@ -13,7 +13,8 @@
   "mutate": [
     "packages/lib-common/src/money.ts",
     "packages/lib-gst/src/rules/rates.ts",
-    "packages/lib-accounts/src/services/posting.ts"
+    "packages/lib-accounts/src/services/posting.ts",
+    "packages/lib-stock/src/engine/valuation.ts"
   ],
   "coverageAnalysis": "perTest",
   "reporters": [
