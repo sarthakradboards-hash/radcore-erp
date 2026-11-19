@@ -5,11 +5,15 @@
 // back on is always allowed. Each test adds accounts of its own; entries are dated in 2027-28, which no other file uses.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { changeAccount, chartOfAccounts, openFinancialYear, postManual, reverseJournalEntry } from '@radcore/lib-accounts';
-import type { Money } from '@radcore/lib-common';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { postJournal } from '@radcore/lib-accounts/contract';
+import { requestFor, type Money } from '@radcore/lib-common';
+import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import accountRoutes from '../apps/api/src/routes/accounts.ts';
 import { SECOND_FACTOR_KEYS } from '../packages/lib-platform/src/permissions.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -103,6 +107,19 @@ describe.skipIf(!url || !superUrl)('the chart of accounts', { timeout: 30_000 },
     expect(await shown(travel)).toMatchObject({ active: false });
     // No new posting, in the engine and in the database, however it's written.
     expect(await code(post(travel, bank, '5.00'))).toBe('account_inactive');
+    // Over the real route it's a named refusal (422), never a server error (the auditor on #215).
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => AS, routes: accountRoutes }),
+      0, '127.0.0.1');
+    try {
+      const sent = requestFor(postJournal, { businessDate: DAY, reason: 'Test',
+        lines: [{ accountId: travel, debit: '5.00' }, { accountId: bank, credit: '5.00' }] });
+      const res = await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { method: sent.method, body: sent.body ?? null,
+        headers: { 'content-type': 'application/json', origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin', 'idempotency-key': randomUUID() } });
+      expect([res.status, ((await res.json()) as { code?: string }).code]).toEqual([422, 'account_inactive']);
+    } finally {
+      await server.stop();
+    }
     const c = await pool.connect();
     try {
       await c.query('begin');

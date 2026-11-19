@@ -188,7 +188,8 @@ export const postJournal = defineContract({
   method: 'POST', path: '/journal', auth: 'session', perm: 'journal:post', tx: write,
   input: z.object({ businessDate: dateString(), reason: reason(), lines: z.array(manualLine).min(2, 'Enter two lines or more').max(200) }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'period_locked', 'year_not_open'],
+  errors: ['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'account_inactive', 'period_locked',
+    'year_not_open'],
 });
 
 /** POST /journal/:id/reverse (journal:reverse): a manual journal's lines swapped, dated `businessDate`, with the reason.
