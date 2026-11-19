@@ -7,4 +7,6 @@ export {
   holdPeriod, JOURNAL_SERIES, openFinancialYear, postEntry, postManualJournal, reverseEntry,
   type AccountRef, type JournalLine, type NewEntry, type Posted,
 } from './services/journal.ts';
+export { partyReceivable } from './services/receivables.ts';
+export type { Receivable } from './rules/receivable.ts';
 export { addParty, changeParty, getPartyById, listPartiesPage, setCreditTerms } from './services/parties.ts';

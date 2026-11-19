@@ -5,7 +5,9 @@ import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({
   dialect: 'postgresql',
-  schema: ['packages/db/src/columns.ts', 'packages/db/src/*/tables.ts', 'packages/db/views/index.ts'],
+  // Every file eslint.config.mjs's TABLE_FILES names, by name (tools/eslint-config.test.ts holds the two equal), and the views.
+  schema: ['packages/db/src/columns.ts', 'packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
+    'packages/db/views/index.ts'],
   out: 'packages/db/migrations',
   casing: 'snake_case',
   migrations: { schema: 'drizzle', table: '__drizzle_migrations' },

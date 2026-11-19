@@ -17,8 +17,17 @@ type Tx = ReturnType<typeof stockTx>;
 const itemColumns = {
   id: items.id, sku: items.sku, name: items.name, categoryId: items.categoryId, hsn: items.hsn, unit: items.unit,
   barcode: items.barcode, serialised: items.serialised, hasChassis: items.hasChassis, active: items.active,
+  purchasePrice: items.purchasePrice,
 };
 const field = (path: string, code: string, message: string) => [{ path: [path], code, message }];
+
+/** Setting a cost needs cost:read as well as items:write, so nobody sets what they can't see (ADR-001 §7a). A form
+ * shown to someone without it has the field masked and never sends it, so their other edits still save. */
+function mayWriteCost(ctx: Ctx, input: { purchasePrice?: string | null | undefined }): void {
+  if (input.purchasePrice !== undefined && !ctx.can('cost:read')) {
+    throw new AppError('forbidden', 'Setting a purchase price needs cost:read', field('purchasePrice', 'forbidden', 'You can’t see costs'));
+  }
+}
 
 /** A unique key's refusal, by its index, as the contract's error: a race the checks before it couldn't see. */
 async function uniquely<T>(write: Promise<T>, refusals: Readonly<Record<string, AppError>>): Promise<T> {
@@ -154,6 +163,7 @@ export async function dropItemPicture(ctx: Ctx, { id, fileId }: In<typeof remove
 
 /** POST /items. */
 export async function addItem(ctx: Ctx, input: In<typeof createItem>): Promise<Out<typeof createItem>> {
+  mayWriteCost(ctx, input);
   const tx = stockTx(ctx);
   await checkRefs(tx, input);
   const [row] = await uniquely(tx.insert(items).values(input).returning({ id: items.id }),
@@ -164,6 +174,7 @@ export async function addItem(ctx: Ctx, input: In<typeof createItem>): Promise<O
 
 /** PATCH /items/:id. The item's row is locked, so two changes take turns and the chassis rule sees the latest. */
 export async function changeItem(ctx: Ctx, { id, ...change }: In<typeof updateItem>): Promise<Out<typeof updateItem>> {
+  mayWriteCost(ctx, change);
   const tx = stockTx(ctx);
   const [now] = await tx.select({ serialised: items.serialised, hasChassis: items.hasChassis, unit: items.unit }).from(items)
     .where(eq(items.id, id)).limit(1).for('update');

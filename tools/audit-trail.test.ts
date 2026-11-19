@@ -79,6 +79,22 @@ describe.skipIf(!url)('listAuditTrail and listAuditedTables', () => {
     expect(items[0]?.principal).toEqual({ kind: 'system', id: 'test', displayName: null });
   });
 
+  // ADR-001 §7a (RAD-89): a cost column is kept as it is, so the trail masks its values for a viewer without cost:read,
+  // even one holding audit:read (roles are data, RAD-83), and shows them to one with it.
+  it('masks a purchase price on both sides without cost:read, and shows it with cost:read (COST_COLUMNS)', async () => {
+    const name = `Audit cost ${randomBytes(4).toString('hex')}`;
+    const [[category]] = await as('system:test', [['insert into radcore.item_categories (name) values ($1) returning id', [name]]]) as [[{ id: string }]];
+    const [[item]] = await as('system:test', [[`insert into radcore.items (sku, name, category_id, hsn, unit, purchase_price)
+      values ($1, 'Audit scooter', $2, '87116020', 'NOS', '64000.5') returning id`, [`AC-${randomBytes(4).toString('hex')}`, category?.id]]]) as [[{ id: string }]];
+    await as('system:test', [["update radcore.items set purchase_price = '65000' where id = $1", [item?.id]]]);
+    const priceAs = async (permissions: string[]) => (await runInTransaction(db, read, { ...admin, permissions }, randomUUID(), (ctx) =>
+      listAuditTrailPage(ctx, { filter: { occurred: range, tableName: 'items', recordId: item?.id ?? '' }, limit: 10 })))
+      .items.map((r) => r.changed['purchase_price']);
+    expect(await priceAs(['audit:read'])).toEqual([{ old: { masked: '••••••' }, new: { masked: '••••••' } }, { new: { masked: '••••••' } }]);
+    // The trigger keeps a numeric as to_jsonb writes it, a JSON number, as for every numeric column.
+    expect(await priceAs(['audit:read', 'cost:read'])).toEqual([{ old: 64000.5, new: 65000 }, { new: 64000.5 }]);
+  });
+
   it("pages one transaction's changes one at a time, in the order written, skipping none", async () => {
     const keys = [settingKey(), settingKey(), settingKey()];
     const principal = `system:paging-${randomBytes(4).toString('hex')}`;

@@ -18,7 +18,8 @@ const VIEW_FILES = 'packages/db/views/!(index|*.test|*.d).ts';
 const REQUEST_CONTEXT = 'packages/db/src/request-context.ts';
 /** The calls to the database's log functions, record_event (RAD-31): `sql` only in its exported functions. */
 const LOG_WRITERS = 'packages/db/src/log-writers.ts';
-const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/columns.ts'];
+// A module's second table file is named here exactly, never by a wider glob (the architect on RAD-92).
+const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/columns.ts'];
 // The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.
 export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${TS}`, `apps/api/src/**/*.${TS}`,
   `apps/worker/src/**/*.${TS}`, `apps/web/**/*.${TS}`];
@@ -328,8 +329,10 @@ export default tseslint.config(
       ...on('radcore/e4-no-escape'),
     } },
 
-  // D7's export guard on every library entry, with the same type information.
-  { files: ['packages/lib-*/src/index.ts', 'packages/lib-*/src/contract.ts', 'packages/lib-*/src/contract/**'],
+  // D7's export guard on the module libraries' server entries, with the same type information. Not lib-common's entry
+  // or any contract file: dependency-cruiser already keeps the database out of those (lib-common MAY_IMPORT [],
+  // D5-contract-server-code, tables-in-schema), and walking their zod types took lint past V8's default heap (RAD-89).
+  { files: ['packages/lib-*/src/index.ts'], ignores: ['packages/lib-common/src/index.ts'],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: on('radcore/d7-no-table-exports') },
 

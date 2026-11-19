@@ -205,7 +205,7 @@ zone list differs from the table below. Widening a zone means amending this ADR 
 | L4 (no driver) | `packages/lib-platform/src/db/client.ts` (pool, transactions, pg-boss), `packages/db/src/migrate.ts` (the migrator) |
 | L8 (outside calls only through the guarded client) | `packages/lib-platform/src/http/outbound.ts` |
 | L8's import list: one module lifted in exactly this file, with the rest of L8 still on | `packages/lib-platform/src/import/isolate.ts` (the file-import worker, ADR-003 §7, which is both the worker's starter and its entry): `node:worker_threads`. The worker gets `env: {}`, `resourceLimits` and a wall-clock timeout that calls `terminate()`. |
-| L9a (tables declared only in the schema) | `packages/db/src/*/tables.ts`, `packages/db/src/columns.ts` |
+| L9a (tables declared only in the schema) | `packages/db/src/*/tables.ts`, `packages/db/src/platform/tables-sign-in.ts`, `packages/db/src/columns.ts` |
 | L9b (views declared only in views) | `packages/db/views/<name>.ts` |
 
 (`packages/db/migrations/**` holds `.sql` files, which ESLint doesn't read.)
@@ -226,6 +226,9 @@ zone list differs from the table below. Widening a zone means amending this ADR 
 
 A schema test (M1-05) also fails when a table name is declared more than once, or outside its owning module's
 `tables.ts`.
+
+A module whose tables outgrow E2's 400 lines moves a group of them into a second file, named exactly in L9a's zone,
+`TABLE_FILES` and drizzle.config, never by a wider glob. So no other file, such as a test, joins L9a's or L1's zone.
 
 Every rule has one violating fixture per clause in `tools/boundary-fixtures/` (as for ADR-001's rules), checked on
 every CI run. L1's fixtures include `ops['sql']`, `const s = ops.sql`, `new SQL([...])` and `notInArray(t.id, keep)`.

@@ -28,6 +28,9 @@ export {
 export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
 export { principalsOf } from './principals.ts';
+export {
+  defineNotification, markNotificationsRead, myNotificationsPage, notify, unreadNotifications, type NotificationKind,
+} from './notifications.ts';
 export { defineRoute, type BeforeDeps, type Route } from './route.ts';
 export { csvWriter } from './export/csv.ts';
 export { amountCell, checkRows, dateCell, parseAmountCell, parseDateCell, type ImportResult, type RowError } from './import/cells.ts';

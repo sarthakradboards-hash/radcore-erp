@@ -24,6 +24,7 @@ import {
   type UnitEventRow, type UnitOnLine,
 } from './units.ts';
 import { and, asc, desc, eq, isNull, or, sum } from 'drizzle-orm';
+import { averageIssue, estimatedIssue, lowestFrom, position, revaluation } from './valuation.ts';
 import { z } from 'zod';
 
 /** Whether a delivery may take a location below zero (RC-062, ADR-006 §4). The database's commit check reads the same
@@ -116,32 +117,6 @@ async function byDate(ctx: Ctx, itemId: string, locationId: string) {
     .where(and(eq(stockMovements.itemId, itemId), eq(stockMovements.locationId, locationId)))
     .groupBy(stockMovements.businessDate, stockMovements.direction).orderBy(asc(stockMovements.businessDate));
 }
-type DateRow = Awaited<ReturnType<typeof byDate>>[number];
-const signedQty = (r: DateRow) => (r.direction === 'in' ? dec(r.qty ?? '0') : r.direction === 'out' ? dec(r.qty ?? '0').neg() : dec('0'));
-const signedValue = (r: DateRow) => (r.direction === 'out' ? dec(r.value ?? '0').neg() : dec(r.value ?? '0'));
-
-/** The position now: quantity and value, the sums of every movement, in posting order (§4). */
-function position(rows: readonly DateRow[]) {
-  return {
-    qty: rows.reduce((s, r) => s.plus(signedQty(r)), dec('0')),
-    value: rows.reduce((s, r) => s.plus(signedValue(r)), dec('0')),
-  };
-}
-
-/** The lowest running quantity from `from` onward, in business-date order (§4): a back-dated issue may take no more,
- * so it can't make a later day negative. */
-function lowestFrom(rows: readonly DateRow[], from: string) {
-  const nets = new Map<string, ReturnType<typeof dec>>();
-  for (const r of rows) nets.set(r.date, (nets.get(r.date) ?? dec('0')).plus(signedQty(r)));
-  let run = dec('0');
-  let low: ReturnType<typeof dec> | undefined;
-  for (const [date, net] of nets) {
-    if (date > from && low === undefined) low = run; // the level on `from` itself, with nothing dated that day
-    run = run.plus(net);
-    if (date >= from) low = low === undefined || run.lt(low) ? run : low;
-  }
-  return low ?? run;
-}
 
 /** The location's last `in` rate for the item: negative stock's estimate (§4). A transfer in carries no rate, so its
  * value over its quantity stands for one, and a location stocked only by transfers still has an estimate.
@@ -157,35 +132,13 @@ async function estimate(ctx: Ctx, itemId: string, locationId: string): Promise<s
 
 /** An issue's value (§4): all of what's on hand when it empties the location, else round(V × q / Q, 2). A delivery in
  * negative-stock mode may go further: what's there at its value, the rest at the estimate. Any other issue is held to
- * the lowest running quantity from its date onward, so a back-dated one can't make a later day negative. */
+ * the lowest running quantity from its date onward, so a back-dated one can't make a later day negative. The arithmetic
+ * is valuation.ts's; this reads the position and, only when it's needed, the estimate. */
 async function issueValue(ctx: Ctx, itemId: string, locationId: string, qty: Quantity, date: string, negative: boolean): Promise<Money> {
   const rows = await byDate(ctx, itemId, locationId);
   const on = position(rows);
-  const q = dec(qty);
-  if (negative && q.gt(on.qty)) {
-    const rate = await estimate(ctx, itemId, locationId);
-    if (rate === undefined) {
-      throw new AppError('no_estimate', 'There’s no rate to estimate the stock not yet received',
-        [{ path: ['qty'], code: 'no_estimate', message: `Only ${on.qty.toFixed()} on hand, and no earlier receipt here` }]);
-    }
-    const held = on.qty.gt(0) ? on.qty : dec('0');
-    return roundMoney((on.qty.gt(0) ? on.value : dec('0')).plus(q.minus(held).times(dec(rate))));
-  }
-  const low = negative ? on.qty : lowestFrom(rows, date); // a delivery that may go below zero needs no later day's cover
-  if (q.gt(low)) {
-    throw new AppError('not_enough_stock', 'There isn’t that much of this item here',
-      [{ path: ['qty'], code: 'short', message: `Only ${low.toFixed()} on hand from ${date} on` }]);
-  }
-  return q.eq(on.qty) ? roundMoney(on.value) : roundMoney(on.value.times(q).div(on.qty));
-}
-
-/** A receipt into negative stock (§4, F15): the revaluation that leaves the units still missing at their estimate, or
- * the units now on hand at the receipt's rate. Zero when the location wasn't below zero. */
-function revaluation(before: ReturnType<typeof position>, qty: Quantity, rate: Rate, value: Money): Money {
-  if (!before.qty.lt(0)) return roundMoney('0');
-  const after = before.qty.plus(dec(qty));
-  const target = after.lte(0) ? roundMoney(before.value.times(after).div(before.qty)) : roundMoney(after.times(dec(rate)));
-  return roundMoney(dec(target).minus(before.value.plus(dec(value))));
+  if (negative && dec(qty).gt(on.qty)) return estimatedIssue(on, qty, await estimate(ctx, itemId, locationId));
+  return averageIssue(on, qty, negative ? on.qty : lowestFrom(rows, date), date); // a delivery that may go below zero needs no later day's cover
 }
 
 function checkLines(lines: readonly (StockIn | StockOut | StockTransfer)[]) {

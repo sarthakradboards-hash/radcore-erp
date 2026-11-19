@@ -370,11 +370,18 @@ const noTableExports = {
         const file = services.esTreeNodeToTSNodeMap.get(program);
         const moduleSymbol = checker.getSymbolAtLocation(file);
         if (!moduleSymbol) return;
+        // One memory of the types walked, for all this file's exports, so the zod types every service shares are walked
+        // once, not once per export (RAD-89). A walk that ends clean leaves only true "carries nothing" answers, cycles
+        // included. One that hits can leave a type marked clean only because its walk was cut short by a cycle back into
+        // the type being walked, so after a hit the memory is cleared (the architect on #231). Hits are lint failures,
+        // so a clean run keeps the whole saving.
+        const walked = new Map();
         for (const exported of checker.getExportsOfModule(moduleSymbol)) {
           let s = exported;
           try { s = checker.getAliasedSymbol(exported); } catch { /* not an alias */ }
           const types = [s.valueDeclaration ? checker.getTypeOfSymbol(s) : null, checker.getDeclaredTypeOfSymbol(s)];
-          if (types.some((t) => carries(t, new Map(), 0))) {
+          if (types.some((t) => carries(t, walked, 0))) {
+            walked.clear();
             context.report({ node: program, messageId: 'm', data: { message, name: exported.getName() } });
           }
         }
