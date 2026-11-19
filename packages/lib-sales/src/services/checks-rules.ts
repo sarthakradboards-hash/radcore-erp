@@ -16,8 +16,10 @@ export type CheckIssue =
 export type CreditFigures = Readonly<{
   /** The most it may owe; null: no limit is set, so no amount is too much. */
   limit: DecimalInput | null;
-  /** What it owes now, before this sale. */
+  /** What it owes now, before this sale: its net Debtors balance. */
   outstanding: DecimalInput;
+  /** Goods delivered to it and not yet invoiced: owed all the same (the architect on RAD-111). */
+  notInvoiced: DecimalInput;
   /** What this sale adds to what it owes: its unpaid part. */
   adds: DecimalInput;
   /** Days a bill may stay unpaid; null: none, so a bill is due the day it's made. */
@@ -28,9 +30,10 @@ export type CreditFigures = Readonly<{
   on: string;
 }>;
 
-/** Whether the party ends over its limit after this sale, and whether a bill of its is already past its days. */
+/** Whether the party ends over its limit after this sale (what it owes, what it has been delivered and not billed, and
+ * this sale), and whether a bill of its is already past its days. */
 export function creditResult(f: CreditFigures): { after: string; overLimit: boolean; overdue: boolean } {
-  const after = dec(f.outstanding).plus(dec(f.adds));
+  const after = dec(f.outstanding).plus(dec(f.notInvoiced)).plus(dec(f.adds));
   return {
     after: after.toFixed(2),
     overLimit: f.limit !== null && after.gt(dec(f.limit)),
@@ -45,10 +48,18 @@ export function costResult(rate: DecimalInput, cost: DecimalInput | null): 'ok' 
   return dec(rate).lt(dec(cost)) ? 'below_cost' : 'ok';
 }
 
-/** A line's discount off its list rate, in percent to 6 places: 0 when there's no list rate or it isn't below it. */
+/** A line's discount off its list rate, in percent to 6 places, for display: 0 when there's no list rate or it isn't
+ * below it. Whether it's too much is overDiscount's, on the exact figures. */
 export function discountPercent(listRate: DecimalInput | null, rate: DecimalInput): string {
   if (listRate === null || dec(listRate).lte(0) || dec(rate).gte(dec(listRate))) return '0.000000';
   return dec(listRate).minus(dec(rate)).div(dec(listRate)).times(100).toDecimalPlaces(6).toFixed(6);
+}
+
+/** Whether a line's rate is further below its list rate than the person's limit allows: below list × (1 − limit/100),
+ * worked exactly, never through the rounded percent (the architect on RAD-111). No list rate, no discount to judge. */
+export function overDiscount(listRate: DecimalInput | null, rate: DecimalInput, allowedPercent: DecimalInput): boolean {
+  if (listRate === null) return false;
+  return dec(rate).lt(dec(listRate).times(dec('100').minus(dec(allowedPercent))).div('100'));
 }
 
 /** Every issue of a sale, in order: the credit ones first, then each line's. */

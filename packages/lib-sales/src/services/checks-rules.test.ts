@@ -1,15 +1,18 @@
 // RAD-111's checks arithmetic (RC-061, RC-131), pinned at each boundary so a mutant has nowhere to hide.
 import { describe, expect, it } from 'vitest';
-import { costResult, creditResult, discountPercent, issuesOf, type CreditFigures } from './checks-rules.ts';
+import { costResult, creditResult, discountPercent, issuesOf, overDiscount, type CreditFigures } from './checks-rules.ts';
 
-const base: CreditFigures = { limit: '100000', outstanding: '40000', adds: '60000', creditDays: 30, oldestUnpaid: null, on: '2026-04-30' };
+const base: CreditFigures = { limit: '100000', outstanding: '30000', notInvoiced: '10000', adds: '60000', creditDays: 30, oldestUnpaid: null,
+  on: '2026-04-30' };
 
 describe('creditResult', () => {
   it('adds the sale to what the party owes, and is over only past the limit, not at it', () => {
     expect(creditResult(base)).toEqual({ after: '100000.00', overLimit: false, overdue: false });
     expect(creditResult({ ...base, adds: '60000.01' })).toMatchObject({ after: '100000.01', overLimit: true });
     expect(creditResult({ ...base, limit: null, adds: '999999' }).overLimit).toBe(false);
-    expect(creditResult({ ...base, limit: '0', outstanding: '0', adds: '0.01' }).overLimit).toBe(true);
+    expect(creditResult({ ...base, limit: '0', outstanding: '0', notInvoiced: '0', adds: '0.01' }).overLimit).toBe(true);
+    // Delivered and not yet invoiced counts as owed, alone too.
+    expect(creditResult({ ...base, outstanding: '0', notInvoiced: '40000.01' })).toMatchObject({ after: '100000.01', overLimit: true });
   });
 
   it('is overdue once the oldest unpaid bill is past its days, not on its last day', () => {
@@ -34,6 +37,16 @@ describe('discountPercent', () => {
     expect([discountPercent('1000', '900'), discountPercent('3', '2'), discountPercent('1000', '1000'),
       discountPercent('1000', '1100'), discountPercent(null, '5'), discountPercent('0', '0')])
       .toEqual(['10.000000', '33.333333', '0.000000', '0.000000', '0.000000', '0.000000']);
+  });
+});
+
+describe('overDiscount', () => {
+  it('is over only below list × (1 − limit), exactly, where the rounded percent would say otherwise', () => {
+    expect([overDiscount('1000', '900', '10'), overDiscount('1000', '899.99', '10'), overDiscount('1000', '1000', '0'),
+      overDiscount('1000', '999.99', '0'), overDiscount(null, '1', '0'), overDiscount('1000', '1100', '0')])
+      .toEqual([false, true, false, true, false, false]);
+    // 1/3 off a list of 3 is 33.3333333…%: a limit of 33.333333 (the rounded percent) is just short, so it's over.
+    expect([overDiscount('3', '2', '33.333333'), discountPercent('3', '2')]).toEqual([true, '33.333333']);
   });
 });
 
