@@ -13,8 +13,8 @@ const ok = (c: { input: { safeParse(v: unknown): { success: boolean } } }, v: un
 describe('the item contracts', () => {
   it('read with items:read and change with items:write', () => {
     // The item contracts: the entry also holds locations' and their kinds' (RAD-92, under /stock/), checked by their own
-    // keys in tools/locations.test.ts and tools/location-kind-labels.test.ts.
-    const all = Object.values(contracts).filter((c) => !c.path.startsWith('/stock/'));
+    // keys in tools/locations.test.ts and tools/location-kind-labels.test.ts, and the books check (RAD-95, below).
+    const all = Object.values(contracts).filter((c) => !c.path.startsWith('/stock/') && !c.path.startsWith('/books/'));
     expect(all.every((c) => c.perm === (c.method === 'GET' ? 'items:read' : 'items:write'))).toBe(true);
     expect(all.every((c) => c.tx.readOnly === (c.method === 'GET'))).toBe(true);
   });
@@ -37,5 +37,18 @@ describe('the item contracts', () => {
     expect(updateItem.input.parse({ id: item.categoryId, name: 'Scooter', sku: 'OTHER' })).toEqual({ id: item.categoryId, name: 'Scooter' });
     // Switched off, never deleted (ADR-005 §3); a new item is always active.
     expect(updateItem.input.parse({ id: item.categoryId, active: false })).toEqual({ id: item.categoryId, active: false });
+  });
+});
+
+// RAD-95: the books check reads one snapshot, as at a date or now, with journal:read.
+describe('the books check contract', () => {
+  it('reads with journal:read, in one REPEATABLE READ snapshot', () => {
+    const c = contracts.checkBooksContract;
+    expect([c.method, c.path, c.perm, c.tx.readOnly, c.tx.isolation]).toEqual(['GET', '/books/check', 'journal:read', true, 'repeatable read']);
+  });
+
+  it('takes a business date, or none for every posting', () => {
+    expect([ok(contracts.checkBooksContract, {}), ok(contracts.checkBooksContract, { asAt: '2026-11-19' }),
+      ok(contracts.checkBooksContract, { asAt: '2026-02-30' })]).toEqual([true, true, false]);
   });
 });

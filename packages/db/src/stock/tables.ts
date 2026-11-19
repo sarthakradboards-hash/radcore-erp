@@ -43,12 +43,14 @@ export const items = radcoreTable('items', {
   hsn: text().notNull(),
   unit: text().notNull().references(() => unitsOfMeasure.code, { onDelete: 'restrict' }),
   barcode: text(),
+  // A barcode is unique whatever its case, like an SKU (RAD-89: pbXXXX and PBXXXX were both saved).
+  barcodeKey: text().generatedAlwaysAs(sql`upper(barcode)`),
   serialised: boolean().notNull().default(false),
   hasChassis: boolean().notNull().default(false),
   active: boolean().notNull().default(true),
 }, (t) => [
   uniqueIndex('ux_items_sku_key').on(t.skuKey),
-  uniqueIndex('ux_items_barcode').on(t.barcode),
+  uniqueIndex('ux_items_barcode_key').on(t.barcodeKey),
   index('ix_items_category_id').on(t.categoryId),
   index('ix_items_unit').on(t.unit),
   trigramIndex('ix_items_name_trgm', t.name),

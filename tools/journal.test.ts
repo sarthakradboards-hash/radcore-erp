@@ -177,11 +177,15 @@ describe.skipIf(!url || !superUrl)('the journal', { timeout: 30_000 }, () => {
   });
 
   it('numbers entries without gaps: a save that fails gives its number back (RC-206)', async () => {
-    const post = () => run((ctx) => postEntry(ctx, { kind: 'opening', businessDate: DAY, source: source(),
+    // 2033-34, a year no other file posts in: the stock tests post journal entries in 2026-27 too, so a number between
+    // two of this test's own would be theirs, not a gap.
+    const day = '2033-05-01';
+    await run((ctx) => openFinancialYear(ctx, day));
+    const post = () => run((ctx) => postEntry(ctx, { kind: 'opening', businessDate: day, source: source(),
       lines: [dr('cash', '1.00'), cr('opening_equity', '1.00')] }));
     const first = await post();
     await expect(run(async (ctx) => {
-      await postEntry(ctx, { kind: 'opening', businessDate: DAY, source: source(), lines: [dr('cash', '2.00'), cr('opening_equity', '2.00')] });
+      await postEntry(ctx, { kind: 'opening', businessDate: day, source: source(), lines: [dr('cash', '2.00'), cr('opening_equity', '2.00')] });
       throw new Error('the document failed after its entry');
     })).rejects.toThrow('the document failed');
     const next = await post();

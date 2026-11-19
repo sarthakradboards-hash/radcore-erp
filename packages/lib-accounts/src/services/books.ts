@@ -20,6 +20,25 @@ export async function chartOfAccounts(ctx: Ctx): Promise<Out<typeof listAccounts
     controlKind: z.enum(CONTROL_KINDS).parse(a.controlKind), control: a.controlKind !== 'none' })) };
 }
 
+/** For the books check (RAD-95, ADR-006 §7): every journal line's debits and credits, as at `asAt` (every line when
+ * it's left out). They're equal when the books balance. */
+export async function trialBalance(ctx: Ctx, asAt?: string): Promise<{ debit: string; credit: string }> {
+  const [row] = await accountsTx(ctx).select({ debit: sum(journalLines.debit), credit: sum(journalLines.credit) }).from(journalLines)
+    .where(asAt === undefined ? undefined : lte(journalLines.businessDate, asAt));
+  return { debit: row?.debit ?? '0', credit: row?.credit ?? '0' };
+}
+
+/** For the books check: Stock in Hand per item and place, debits less credits, as at `asAt` (every line when it's left
+ * out). A Stock in Hand line always names both (ck_journal_lines_stock_dims). */
+export async function stockInHand(ctx: Ctx, asAt?: string): Promise<{ itemId: string; locationId: string; value: string }[]> {
+  const rows = await accountsTx(ctx).select({ itemId: journalLines.itemId, locationId: journalLines.locationId,
+    debit: sum(journalLines.debit), credit: sum(journalLines.credit) }).from(journalLines)
+    .where(and(eq(journalLines.accountControlKind, 'stock'), asAt === undefined ? undefined : lte(journalLines.businessDate, asAt)))
+    .groupBy(journalLines.itemId, journalLines.locationId);
+  return rows.map((r) => ({ itemId: r.itemId ?? '', locationId: r.locationId ?? '',
+    value: dec(r.debit ?? '0').minus(dec(r.credit ?? '0')).toString() }));
+}
+
 /**
  * PATCH /accounts/:id: an account's code, and switching it off or on (the architect on RAD-86). Switching off reads
  * the balance with the period lock's row held FOR UPDATE, ADR-006 §1's step 1: postings hold it FOR SHARE, so the

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "6.0.1",
+    "@radcore/lib-accounts": "*",
     "@radcore/lib-common": "*",
     "@radcore/lib-platform": "*",
     "@tanstack/react-query": "5.104.5",
