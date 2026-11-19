@@ -1,5 +1,5 @@
 {
-  "id": "02aff8d4-0254-4b0b-8e0c-473b899243fb",
+  "id": "81700b29-3e23-42c9-b569-60247b5859a9",
   "prevId": "6518ab9f-78b4-4c13-832d-764b2d94b73a",
   "version": "7",
   "dialect": "postgresql",
@@ -4293,6 +4293,448 @@
       },
       "isRLSEnabled": false
     },
+    "radcore.discount_limits": {
+      "name": "discount_limits",
+      "schema": "radcore",
+      "columns": {
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "max_percent": {
+          "name": "max_percent",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "discount_limits_role_roles_key_fk": {
+          "name": "discount_limits_role_roles_key_fk",
+          "tableFrom": "discount_limits",
+          "tableTo": "roles",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "role"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_discount_limits_max_percent": {
+          "name": "ck_discount_limits_max_percent",
+          "value": "\"radcore\".\"discount_limits\".\"max_percent\" between 0 and 100 and \"radcore\".\"discount_limits\".\"max_percent\" <> 'NaN'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.price_list_rates": {
+      "name": "price_list_rates",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rate": {
+          "name": "rate",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_price_list_rates_version_item": {
+          "name": "ux_price_list_rates_version_item",
+          "columns": [
+            {
+              "expression": "version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_price_list_rates_item": {
+          "name": "ix_price_list_rates_item",
+          "columns": [
+            {
+              "expression": "item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "price_list_rates_version_id_price_list_versions_id_fk": {
+          "name": "price_list_rates_version_id_price_list_versions_id_fk",
+          "tableFrom": "price_list_rates",
+          "tableTo": "price_list_versions",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "price_list_rates_item_id_items_id_fk": {
+          "name": "price_list_rates_item_id_items_id_fk",
+          "tableFrom": "price_list_rates",
+          "tableTo": "items",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_price_list_rates_rate": {
+          "name": "ck_price_list_rates_rate",
+          "value": "\"radcore\".\"price_list_rates\".\"rate\" >= 0 and \"radcore\".\"price_list_rates\".\"rate\" <> 'NaN'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.price_list_versions": {
+      "name": "price_list_versions",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "price_list_id": {
+          "name": "price_list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_inclusive": {
+          "name": "tax_inclusive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "in_force_from": {
+          "name": "in_force_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "superseded_from": {
+          "name": "superseded_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_price_list_versions_list": {
+          "name": "ix_price_list_versions_list",
+          "columns": [
+            {
+              "expression": "price_list_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ux_price_list_versions_draft": {
+          "name": "ux_price_list_versions_draft",
+          "columns": [
+            {
+              "expression": "price_list_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"radcore\".\"price_list_versions\".\"in_force_from\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ux_price_list_versions_in_force": {
+          "name": "ux_price_list_versions_in_force",
+          "columns": [
+            {
+              "expression": "price_list_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "(\"radcore\".\"price_list_versions\".\"in_force_from\" is not null and \"radcore\".\"price_list_versions\".\"superseded_from\" is null)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "price_list_versions_price_list_id_price_lists_id_fk": {
+          "name": "price_list_versions_price_list_id_price_lists_id_fk",
+          "tableFrom": "price_list_versions",
+          "tableTo": "price_lists",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "price_list_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_price_list_versions_superseded": {
+          "name": "ck_price_list_versions_superseded",
+          "value": "\"radcore\".\"price_list_versions\".\"superseded_from\" is null or (\"radcore\".\"price_list_versions\".\"in_force_from\" is not null and \"radcore\".\"price_list_versions\".\"superseded_from\" >= \"radcore\".\"price_list_versions\".\"in_force_from\")"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.price_lists": {
+      "name": "price_lists",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name_key": {
+          "name": "name_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
+          }
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_price_lists_name_key": {
+          "name": "ux_price_lists_name_key",
+          "columns": [
+            {
+              "expression": "name_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_price_lists_name": {
+          "name": "ck_price_lists_name",
+          "value": "char_length(\"radcore\".\"price_lists\".\"name\") <= 80"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "radcore.batches": {
       "name": "batches",
       "schema": "radcore",
@@ -5246,16 +5688,6 @@
           "notNull": true,
           "default": "now()"
         },
-        "fy_start": {
-          "name": "fy_start",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
-            "type": "stored"
-          }
-        },
         "reverses_movement_id": {
           "name": "reverses_movement_id",
           "type": "uuid",
@@ -5292,21 +5724,6 @@
         }
       },
       "indexes": {
-        "ix_stock_movements_fy_start": {
-          "name": "ix_stock_movements_fy_start",
-          "columns": [
-            {
-              "expression": "fy_start",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "ux_stock_movements_reverses": {
           "name": "ux_stock_movements_reverses",
           "columns": [
@@ -5407,20 +5824,6 @@
             "id"
           ],
           "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "fk_stock_movements_fy_start": {
-          "name": "fk_stock_movements_fy_start",
-          "tableFrom": "stock_movements",
-          "tableTo": "financial_years",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "fy_start"
-          ],
-          "columnsTo": [
-            "start"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "fk_stock_movements_reverses": {

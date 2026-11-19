@@ -327,8 +327,15 @@
     {
       "idx": 46,
       "version": "7",
-      "when": 1795031904437,
-      "tag": "0046_stock_journal",
+      "when": 1795031853048,
+      "tag": "0046_price_lists",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795065305600,
+      "tag": "0047_stock_journal",
       "breakpoints": true
     }
   ]
