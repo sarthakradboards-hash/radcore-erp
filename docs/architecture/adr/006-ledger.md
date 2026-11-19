@@ -107,6 +107,7 @@ An ordinary account has control kind `none` (shown as "-" below).
 | `cogs` | Cost of Goods Sold | expense | - |
 | `stock_adjustment` | Stock Adjustment | expense | - |
 | `round_off` | Round Off | expense | - |
+| `late_cn_gst` | GST Borne on Late Credit Notes (ADR-007 §6) | expense | - |
 | `salaries`, `employer_pf`, `employer_esic` | Salaries, Employer PF, Employer ESIC | expense | - |
 
 Reverse charge (M5-03) and the monthly GST settlement (M5-07) add their own accounts (control `gst`) and entry
@@ -462,6 +463,9 @@ profile (M2-02), and the place of supply decides (CA-08). A line's rate is the o
 | Credit note with goods back | in, at the value they went out at (§4) | the invoice lines in reverse; Dr Stock in Hand, Cr Cost of Goods Sold | M3-10 |
 | Payment received | - | Dr Bank or Cash, Dr TDS Receivable (if the customer held some back), Cr Debtors; allocations (ADR-005 §7a) | M3-12 |
 | Payment made | - | Dr Creditors, Cr Bank or Cash, Cr TDS Payable (only on an advance paid before any bill) | M3-12 |
+| Advance received for goods, before the invoice (ADR-007 §5) | - | Dr Bank or Cash, Cr Debtors (the party's balance turns credit; no GST on a goods advance, CA-09); at the invoice an allocation applies it, with no entry | M3-12 |
+| Refund to a customer: an unused advance, or a credit note paid out (ADR-007 §5, §6) | - | Dr Debtors, Cr Bank or Cash (kind `payment_out`); it names the receipt or credit note it settles | M3-10, M3-12 |
+| Credit note after the section 34 time limit (ADR-007 §6) | as the credit note it is | the credit note's lines, with its tax to Dr GST Borne on Late Credit Notes instead of Dr Output GST | M3-10 |
 | Foreign bill paid at another rate | - | the difference, to Foreign Exchange Gain / Loss | M4-09 |
 | Stock transfer | out of one location at its average, into another at the same value | Dr Stock in Hand (to), Cr Stock in Hand (from), by item and location | M4-06 |
 | Stock count or adjustment | in or out, at the location's average | Dr or Cr Stock in Hand, against Stock Adjustment | M4-06 |
@@ -727,6 +731,37 @@ of basic, 1,800.00, and employer PF is the same. Professional tax is 200.00 and 
 - S-0002 came in before the flag was set and has none. Its `delivered` event is refused (RA008) until a
   `chassis_recorded` event, with a reason, gives it one.
 - Turning SCOOTER's flag off now is refused (`chassis_numbers_recorded`, RA008): S-0006 has a number.
+
+**F23. An advance, then the invoice** (M3-12, ADR-007 §5). Start: customer C owes nothing. On 1 June 2026, C pays
+a booking advance of 10,000.00 by UPI.
+- Entry `payment_in`, receipt voucher RV/26-27/00001: Dr Bank 10,000.00; Cr Debtors (C) 10,000.00. No GST line: a
+  goods advance (CA-09). C's balance is 10,000.00 in credit.
+- On 5 June, F5's delivery and F6's invoice (84,000.00) are posted, both dated 5 June. An allocation applies
+  10,000.00 of the receipt to the invoice, with no entry. C owes 74,000.00.
+- Variant: an invoice dated 6 June for the delivery of 5 June is refused (`invoice_too_late`) while
+  `sales.invoice_lag_days` is 0.
+
+**F24. An advance refunded** (M3-12, ADR-007 §5). Start: F23's advance. On 3 June, before any invoice, the booking
+is cancelled and the advance refunded in full.
+- Entry `payment_out`: Dr Debtors (C) 10,000.00; Cr Bank 10,000.00. The refund names RV/26-27/00001, so neither
+  shows as open. C's balance is 0.00.
+
+**F25. A credit note after the time limit** (M3-10, ADR-007 §6). Start: F6's invoice of 5 June 2026 (FY 2026-27),
+taxable 80,000.00 at 5%. Its deadline is 30 November 2027.
+- A discount credit note of 1,000.00 taxable, dated 25 November 2027: Dr Sales 1,000.00; Dr Output CGST 25.00; Dr
+  Output SGST 25.00; Cr Debtors 1,050.00 (F9's variant).
+- The same note dated 2 December 2027: Dr Sales 1,000.00; Dr GST Borne on Late Credit Notes 50.00; Cr Debtors
+  1,050.00. Output GST isn't touched.
+
+**F26. A counter return with a cash refund** (M3-10, ADR-007 §6). Start: F7's counter sale to the Counter customer:
+3 PAD at 345.00 plus 18% GST, out at 600.00 (200.00 each), paid 1,221.00 in cash. Showroom is at 7 for 1,400.00.
+The same day, one pad comes back unused, and is refunded in cash.
+- Movement: Showroom in 1 at 200.00, the value it went out at.
+- Entry `credit_note` (goods back, approved): Dr Sales 345.00; Dr Output CGST 31.05; Dr Output SGST 31.05; Dr Stock
+  in Hand (Showroom) 200.00; Cr Cost of Goods Sold 200.00; Cr Debtors (Counter customer) 407.00; Cr Round Off 0.10.
+  Debits and credits are both 607.10. The note's lines come to 407.10, and its total is rounded to 407.00.
+- Entry `payment_out`, in the same save: Dr Debtors (Counter customer) 407.00; Cr Cash 407.00.
+- After: Showroom 8 at 1,600.00. The Counter customer's balance is 0.00.
 
 ## Consequences
 
