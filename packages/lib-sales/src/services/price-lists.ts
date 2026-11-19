@@ -203,8 +203,9 @@ export const priceListApproval: ApprovalSpec<PriceListVersion> = {
     const v = await lockedDraft(ctx, recordId);
     const tx = salesTx(ctx);
     const today = indiaDate(new Date());
-    await tx.update(priceListVersions).set({ supersededFrom: today }).where(and(eq(priceListVersions.priceListId, v.priceListId), inForceNow));
-    await tx.update(priceListVersions).set({ inForceFrom: today }).where(eq(priceListVersions.id, recordId));
+    await tx.update(priceListVersions).set({ status: 'superseded', supersededFrom: today })
+      .where(and(eq(priceListVersions.priceListId, v.priceListId), inForceNow));
+    await tx.update(priceListVersions).set({ status: 'approved', inForceFrom: today }).where(eq(priceListVersions.id, recordId));
   },
   async rejected() {
     // The version stays a draft; the engine records the rejection and its reason.
