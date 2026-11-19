@@ -156,14 +156,15 @@ describe('cost()', () => {
   });
 
   it('logs no look when shown, in a record or not, and leaves a null alone', () => {
-    const inRecord = piiRecord('stock_items', z.object({ id: idString(), name: pii(), purchasePrice: cost() }));
+    const inRecord = piiRecord('stock_items', z.object({ id: idString(), name: pii(), purchasePrice: cost(z.string()) }));
     const shown = maskOutput(planOf(inRecord), { id: row.id, name: 'Scooter', purchasePrice: '1.5' }, sightOf(['cost:read']));
     expect([shown.value, shown.looks]).toEqual([{ id: row.id, name: { masked: SIX }, purchasePrice: '1.5' }, []]);
     expect(maskOutput(planOf(item), { ...row, purchasePrice: null }, sightOf([])).value).toEqual({ ...row, purchasePrice: null });
   });
 
   it('lets a value or a mask through, and masks a cost whole, never keeping its last 4', () => {
-    expect([cost().parse('12.50'), cost().parse({ masked: SIX }), cost().safeParse(12.5).success]).toEqual(['12.50', { masked: SIX }, false]);
+    const price = cost(z.string());
+    expect([price.parse('12.50'), price.parse({ masked: SIX }), price.safeParse(12.5).success]).toEqual(['12.50', { masked: SIX }, false]);
     expect(maskOf('123456789.000000', 'cost')).toEqual({ masked: SIX });
   });
 });

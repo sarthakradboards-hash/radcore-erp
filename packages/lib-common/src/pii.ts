@@ -43,8 +43,10 @@ export function pii<T extends z.ZodType = z.ZodString>(schema?: T, kind: PiiKind
 }
 /** An output field holding a cost (RAD-89): its value, or `{ masked }` without cost:read. Unlike pii() it may sit
  * anywhere in an answer, and showing it logs no look: a cost isn't anyone's personal data. */
-export function cost<T extends z.ZodType = z.ZodString>(schema?: T) {
-  return z.union([(schema ?? z.string()) as T, MASKS.cost as typeof masked]);
+// A cost is a decimal string (or null): money or a unit price. Typed by its value, not its schema: a schema-typed
+// signature sent lint's D7 type walk over lib-common's entry into zod's types, and the full run out of memory.
+export function cost<O extends string | null, I extends string | null = O>(schema: z.ZodType<O, I>): z.ZodType<O | Masked, I | Masked> {
+  return z.union([schema, MASKS.cost as typeof masked]);
 }
 /** An object schema holding pii() fields, and the table its records are in, so a customer reached through an order
  * is logged against `customers`. It has an `id`, the record's. `seenWith` names one more key that shows this record's
