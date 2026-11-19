@@ -5,10 +5,11 @@
 // checks (balance at commit RA002, the period lock RA003, control accounts by their posting rules), so a service
 // that skipped the engine couldn't post a wrong entry either.
 import { accounts, accountsTx, financialYears, journalEntries, journalLines, periodLock } from '@radcore/db/accounts';
-import { dec, financialYear, roundMoney, sum, type EntryKind, type Money } from '@radcore/lib-common';
+import { financialYear, type EntryKind, type Money } from '@radcore/lib-common';
 import { AppError, defineSeries, nextNumber, type Ctx } from '@radcore/lib-platform';
 import { randomUUID } from 'node:crypto';
 import { asc, eq, inArray, or } from 'drizzle-orm';
+import { balancedAmounts, swapSides } from './posting.ts';
 
 /** The journal's numbering series (RAD-87): "JV/26-27/0000042". Nearly every document posts an entry, so it has 7 digits,
  * where a document series under Rule 46 has 5 (the architect on #171). */
@@ -27,13 +28,6 @@ export type NewEntry = Readonly<{
 export type Posted = { id: string; number: string };
 
 const refuse = (code: string, message: string): never => { throw new AppError(code, message); };
-const amountOf = (l: JournalLine): { debit: Money; credit: Money } => {
-  const debit = roundMoney(l.debit ?? '0');
-  const credit = roundMoney(l.credit ?? '0');
-  if (dec(debit).gt(0) === dec(credit).gt(0)) refuse('invalid_line', 'Each line is a debit or a credit above zero, not both');
-  if (dec(debit).lt(0) || dec(credit).lt(0)) refuse('invalid_line', 'A debit or credit is never below zero');
-  return { debit, credit };
-};
 
 // The company's one period-lock row, for a posting's FOR SHARE (holdPeriod) or a lock move's FOR UPDATE (switching an
 // account off, books.ts).
@@ -67,11 +61,8 @@ export async function openFinancialYear(ctx: Ctx, date: string): Promise<void> {
 async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; source: { table: string; id: string };
   lines: readonly JournalLine[]; reason?: string; reverses?: string; id?: string }): Promise<Posted> {
   const tx = accountsTx(ctx);
-  if (e.lines.length < 2) refuse('unbalanced', 'An entry has two lines or more');
-  const amounts = e.lines.map(amountOf);
-  if (!sum(amounts.map((a) => a.debit)).eq(sum(amounts.map((a) => a.credit)))) {
-    refuse('unbalanced', 'The debits and credits differ');
-  }
+  // The arithmetic first, before anything is read (posting.ts): each line one side above zero, and the entry balanced.
+  const amounts = balancedAmounts(e.lines);
   // 1. The period lock (holdPeriod), again if the document's service already took it: a second FOR SHARE is free.
   await holdPeriod(ctx, e.businessDate);
   // Every line's account and control kind in one read.
@@ -136,7 +127,7 @@ export async function reverseEntry(ctx: Ctx, r: Readonly<{ entryId: string; busi
   return write(ctx, {
     kind: original.kind as EntryKind, businessDate: r.businessDate, reverses: original.id,
     source: { table: original.sourceTable, id: original.sourceId }, ...(r.reason === undefined ? {} : { reason: r.reason }),
-    lines: lines.map((l) => ({ account: { id: l.accountId }, debit: roundMoney(l.credit), credit: roundMoney(l.debit),
+    lines: lines.map((l) => ({ account: { id: l.accountId }, ...swapSides(l),
       ...(l.partyId === null ? {} : { partyId: l.partyId }), ...(l.itemId === null ? {} : { itemId: l.itemId }),
       ...(l.locationId === null ? {} : { locationId: l.locationId }) })),
   });
