@@ -220,8 +220,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'PATCH /price-lists/:id': ['lib-platform', 'lib-sales'],
   'POST /price-lists/:id/draft': ['lib-platform', 'lib-sales'],
   'GET /price-lists/versions/:id': ['lib-platform', 'lib-sales'],
-  'GET /price-lists/versions/:id/rates': ['lib-platform', 'lib-sales', 'lib-stock'],
-  'GET /price-lists/versions/:id/changes': ['lib-platform', 'lib-sales', 'lib-stock'],
+  // A version's rates read items through lib-stock's entry, which holds the stock engine and so reaches lib-accounts.
+  'GET /price-lists/versions/:id/rates': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /price-lists/versions/:id/changes': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'PATCH /price-lists/versions/:id': ['lib-platform', 'lib-sales'],
   'PUT /price-lists/versions/:id/rates': ['lib-platform', 'lib-sales'],
   'POST /price-lists/versions/:id/approval': ['lib-platform', 'lib-sales'],
@@ -268,5 +269,6 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'platform.password-reset-email': PLATFORM,
   'platform.invite-email': PLATFORM,
   // The export job runs every export, the masters workbook's sheets from lib-stock and lib-hr among them (RAD-92).
-  'platform.export': ['lib-hr', 'lib-platform', 'lib-stock'],
+  // lib-stock's entry holds its stock engine too, which posts revaluations through lib-accounts (RAD-93).
+  'platform.export': ['lib-accounts', 'lib-hr', 'lib-platform', 'lib-stock'],
 };
