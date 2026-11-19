@@ -1,3 +1,6 @@
+-- Moved by hand from drizzle's place for it, below: the unit events' composite keys reference this key, so it
+-- comes first (RAD-94). Regenerating keeps this move.
+ALTER TABLE "radcore"."stock_movements" ADD CONSTRAINT "ux_stock_movements_id_direction" UNIQUE("id","direction");--> statement-breakpoint
 CREATE TABLE "radcore"."unit_event_rules" (
 	"kind" text NOT NULL,
 	"from_ownership" text NOT NULL,
@@ -100,7 +103,6 @@ CREATE INDEX "ix_unit_events_source" ON "radcore"."unit_events" USING btree ("so
 CREATE UNIQUE INDEX "ux_units_chassis" ON "radcore"."units" USING btree ("chassis_key");--> statement-breakpoint
 CREATE INDEX "ix_units_batch" ON "radcore"."units" USING btree ("batch_id","item_id");--> statement-breakpoint
 CREATE INDEX "ix_units_location" ON "radcore"."units" USING btree ("location_id");--> statement-breakpoint
-ALTER TABLE "radcore"."stock_movements" ADD CONSTRAINT "ux_stock_movements_id_direction" UNIQUE("id","direction");--> statement-breakpoint
 -- RAD-94 (ADR-006 §5, RC-026): only the units engine changes a unit, through unit_events and its trigger. The runtime
 -- login reads units, and writes none of them.
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.units FROM radcore_app;
