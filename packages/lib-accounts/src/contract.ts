@@ -127,16 +127,31 @@ export const setPartyCredit = defineContract({
 // reversed: there's no route to edit or delete an entry. Posting and reversing move money, so their keys need the
 // second factor (D-19).
 
-/** An account as the chart lists it. `control` is true for a control account, which no manual journal touches. */
+/** An account as the chart lists it. `control` is true for a control account, which no manual journal touches; a
+ * switched-off account (`active: false`) takes no new postings but a reversal or the year-end close. */
 const account = z.object({
-  id: idString(), name: z.string(), systemKey: z.string().nullable(), type: z.enum(ACCOUNT_TYPES),
-  controlKind: z.enum(CONTROL_KINDS), control: z.boolean(), parentId: idString().nullable(),
+  id: idString(), code: z.string().nullable(), name: z.string(), systemKey: z.string().nullable(), type: z.enum(ACCOUNT_TYPES),
+  controlKind: z.enum(CONTROL_KINDS), control: z.boolean(), parentId: idString().nullable(), active: z.boolean(),
 });
 
-/** GET /accounts (journal:read): every account, by name. The chart is small, so it's one answer, not pages. */
+/** GET /accounts (journal:read): every account, by code where it has one, then by name. The chart is small, so it's
+ * one answer, not pages. */
 export const listAccounts = defineContract({
   method: 'GET', path: '/accounts', auth: 'session', perm: 'journal:read', tx: read,
   input: z.object({}), output: z.object({ items: z.array(account) }),
+});
+
+/** An account's code: upper-case letters and digits, with dots and hyphens after the first, at most 12. */
+const accountCode = () => z.string().regex(/^[0-9A-Z][0-9A-Z.-]{0,11}$/, 'Use up to 12 capital letters, digits, dots or hyphens');
+
+/** PATCH /accounts/:id (accounts:write): an account's code (null clears it), switched off or on, with the reason.
+ * A system account is never switched off, and another only while its balance is zero (the architect on RAD-86). */
+export const setAccount = defineContract({
+  method: 'PATCH', path: '/accounts/:id', auth: 'session', perm: 'accounts:write', tx: write,
+  input: z.object({ id: idString(), code: accountCode().nullable().optional(), active: z.boolean().optional(), reason: reason() })
+    .refine((a) => a.code !== undefined || a.active !== undefined, 'Change the code, switch the account, or both'),
+  output: z.object({}),
+  errors: ['code_taken', 'system_account', 'account_not_empty'],
 });
 
 /** An entry as the journal lists it: `total` is its debits' sum; `reversedBy` the entry reversing it, if any. */
@@ -173,7 +188,8 @@ export const postJournal = defineContract({
   method: 'POST', path: '/journal', auth: 'session', perm: 'journal:post', tx: write,
   input: z.object({ businessDate: dateString(), reason: reason(), lines: z.array(manualLine).min(2, 'Enter two lines or more').max(200) }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'period_locked', 'year_not_open'],
+  errors: ['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'account_inactive', 'period_locked',
+    'year_not_open'],
 });
 
 /** POST /journal/:id/reverse (journal:reverse): a manual journal's lines swapped, dated `businessDate`, with the reason.

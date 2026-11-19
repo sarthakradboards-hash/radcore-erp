@@ -363,6 +363,13 @@ CA-45. E-invoice unit-price decimals.
 - RC: RC-008 (Wave 1, 3 days); source DAT-01.
 - Effect on the fix: Sets how many decimals the price and cost columns are widened to.
 - When needed: Week 1.
+CA-46. Account codes.
+- Ask: Should the chart of accounts carry account codes (such as 1001 for Cash), and if so in which numbering scheme?
+- Why it matters: RadCore lets each account have an optional unique code and lists the chart by it, but seeds none, so the CA's scheme can be applied to the system accounts in one step.
+- Code today: v2's `accounts.code`, optional and unique (ADR-006 §2, RAD-86).
+- RC: none.
+- Effect on the fix: A migration seeds the system accounts' codes in the chosen scheme; nothing else changes.
+- When needed: Before go-live (M5).
 # Group B. Questions for data-protection counsel (Digital Personal Data Protection Act 2023 and Rules)
 Legal caution from the reviewers. The security reviewer is not a lawyer and did not fetch the Act's text. Section numbers below are the reviewer's reading. The Rules were reported as notified in November 2025 (the AI reviewer cites 13 November 2025 and the notification G.S.R. 846(E) as the item to check), with notice and consent duties reported to begin about 13 May 2027 and the consent-manager rule about 13 November 2026, from law-firm summaries (SCC Online, Mondaq) that are commentary, not the Gazette. All of this needs counsel's confirmation. The point for go-live is that building the safeguards now is cheaper than retrofitting once real records exist.
 Roles assumed by the reviewers. Radboards is the Data Fiduciary for its customers, leads, applicants and employees. Hosting, Meta (WhatsApp and lead forms), Cloudflare (captcha), Shopify, the alert channel and the file store are Data Processors or independent fiduciaries. See DP-02.

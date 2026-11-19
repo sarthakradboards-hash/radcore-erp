@@ -43,6 +43,9 @@ export const periodLock = radcoreTable('period_lock', {
  * never by name or id; a trigger lets them be renamed but never removed or re-keyed. People add their own under a
  * group (`parent_id`: each bank account under Bank). `control_kind` says which entry kinds may post to the account
  * (`posting_rules`); an ordinary account is `none`. (id, control_kind) is unique, for journal_lines' foreign key.
+ * An account may have a `code`, unique where set, with no scheme imposed until the CA's. One other than a system account
+ * can be switched off (`active`) while its balance is zero; it then takes no new postings but a reversal or the
+ * year-end close (RA009), and stays in the reports for the periods it has lines in.
  */
 export const accounts = radcoreTable('accounts', {
   id: id(),
@@ -52,12 +55,16 @@ export const accounts = radcoreTable('accounts', {
   type: text().notNull(),
   controlKind: text().notNull().default('none'),
   parentId: uuid().references((): AnyPgColumn => accounts.id, { onDelete: 'restrict' }),
+  code: text().unique('ux_accounts_code'),
+  active: boolean().notNull().default(true),
 }, (t) => [
   check('ck_accounts_system_key', sql`${t.systemKey} ~ '^[a-z][a-z0-9_]*$'`),
   check('ck_accounts_type', sql`${t.type} in ('asset', 'liability', 'equity', 'income', 'expense')`),
   check('ck_accounts_control_kind', sql`${t.controlKind} in ('none', 'party', 'stock', 'gdni', 'grni', 'gst', 'tds', 'payroll', 'opening', 'year_close')`),
   // Only a system account is a control account: the ones people add are ordinary.
   check('ck_accounts_control_system', sql`${t.controlKind} = 'none' or ${t.systemKey} is not null`),
+  check('ck_accounts_code', sql`${t.code} ~ '^[0-9A-Z][0-9A-Z.-]{0,11}$'`),
+  check('ck_accounts_system_active', sql`${t.systemKey} is null or ${t.active}`),
   unique('ux_accounts_name_key').on(t.nameKey),
   unique('ux_accounts_id_control_kind').on(t.id, t.controlKind),
   index('ix_accounts_parent_id').on(t.parentId),

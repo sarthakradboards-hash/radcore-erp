@@ -35,8 +35,9 @@ const amountOf = (l: JournalLine): { debit: Money; credit: Money } => {
   return { debit, credit };
 };
 
-// The company's one period-lock row, for a posting's FOR SHARE (holdPeriod) or a lock move's FOR UPDATE.
-const periodLockRow = (ctx: Ctx) => accountsTx(ctx).select({ through: periodLock.lockedThrough }).from(periodLock)
+// The company's one period-lock row, for a posting's FOR SHARE (holdPeriod) or a lock move's FOR UPDATE (switching an
+// account off, books.ts).
+export const periodLockRow = (ctx: Ctx) => accountsTx(ctx).select({ through: periodLock.lockedThrough }).from(periodLock)
   .where(eq(periodLock.id, 1));
 
 /**
@@ -76,7 +77,8 @@ async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; sourc
   // Every line's account and control kind in one read.
   const ids = e.lines.flatMap((l) => ('id' in l.account ? [l.account.id] : []));
   const keys = e.lines.flatMap((l) => ('system' in l.account ? [l.account.system] : []));
-  const found = await tx.select({ id: accounts.id, systemKey: accounts.systemKey, control: accounts.controlKind }).from(accounts)
+  const found = await tx.select({ id: accounts.id, systemKey: accounts.systemKey, control: accounts.controlKind, active: accounts.active })
+    .from(accounts)
     .where(or(ids.length > 0 ? inArray(accounts.id, ids) : undefined, keys.length > 0 ? inArray(accounts.systemKey, keys) : undefined));
   const of = (ref: AccountRef) => found.find((a) => ('id' in ref ? a.id === ref.id : a.systemKey === ref.system))
     ?? refuse('unknown_account', `There's no account ${'id' in ref ? ref.id : ref.system}`);
@@ -84,6 +86,11 @@ async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; sourc
   // A manual journal touches ordinary accounts only (RC-093); the database's posting rules hold every other kind.
   if (e.kind === 'manual' && resolved.some((a) => a.control !== 'none')) {
     refuse('control_account', 'A manual journal can’t post to GST, TDS, GRNI, payroll or another control account');
+  }
+  // A switched-off account takes no new postings, but a reversal of an entry already on it and the year-end close
+  // (ADR-006 §2); the line trigger refuses the same (RA009).
+  if (e.reverses === undefined && e.kind !== 'year_close' && resolved.some((a) => !a.active)) {
+    refuse('account_inactive', 'An account here is switched off: switch it on, or post to another');
   }
   // 2. The number, last (ADR-006 §1), so the series' row is held for the shortest time.
   const number = await nextNumber(ctx, JOURNAL_SERIES, e.businessDate);

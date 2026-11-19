@@ -1,5 +1,5 @@
 // lib-accounts' entry (ADR-001 §2): its services, for the api's route file and for other libraries.
-export { chartOfAccounts, journalEntryById, journalPage, postManual, reverseJournalEntry } from './services/books.ts';
+export { changeAccount, chartOfAccounts, journalEntryById, journalPage, postManual, reverseJournalEntry } from './services/books.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
 export {
   holdPeriod, JOURNAL_SERIES, openFinancialYear, postEntry, postManualJournal, reverseEntry,
