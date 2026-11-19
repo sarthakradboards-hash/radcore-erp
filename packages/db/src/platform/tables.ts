@@ -330,3 +330,24 @@ export const publicLinks = radcoreTable('public_links', {
   uniqueIndex('ux_public_links_token_hash').on(t.tokenHash),
   index('ix_public_links_action_record_id').on(t.action, t.recordId),
 ]);
+
+/**
+ * In-app notifications (M3-17, RAD-121, RC-142): who it's for, its kind (`<module>.<name>`) and the record it's about,
+ * by table and id. References, never copies: its text is built when it's read, for the viewer and masked for them
+ * (M6-16). `at` is read as text so a page key keeps its microseconds (lists.ts). Machinery (ADR-005 §7c): the app may
+ * only add one and mark it read.
+ */
+export const notifications = radcoreTable('notifications', {
+  id: id(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'restrict' }),
+  kind: text().notNull(),
+  recordTable: text().notNull(),
+  recordId: uuid().notNull(),
+  at: timestamp({ withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  readAt: timestamp({ withTimezone: true }),
+}, (t) => [
+  check('ck_notifications_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$'`),
+  check('ck_notifications_record_table', sql`${t.recordTable} ~ '^[a-z][a-z0-9_]*$'`),
+  index('ix_notifications_user_at').on(t.userId, t.at, t.id),
+  index('ix_notifications_unread').on(t.userId).where(isNull(t.readAt)),
+]);
