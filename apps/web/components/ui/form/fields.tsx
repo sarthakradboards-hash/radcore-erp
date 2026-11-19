@@ -51,6 +51,40 @@ export function TextAreaField({ name, label, hint, ...native }: Common & Native<
   );
 }
 
+/** One choice from a list too long for radio buttons (a category, a unit), as the browser's own select: keyboard,
+ * screen reader and phone pickers all work as people expect. Picking one only fills the form (RC-148). A list to
+ * search across the server uses the Picker instead. */
+export function SelectField({ name, label, hint, options, placeholder }: Common & {
+  options: readonly { value: string; label: string }[];
+  /** Shown first while nothing is chosen, as an option with the empty value. */
+  placeholder?: string;
+}) {
+  const { id, error, control } = useField(name);
+  return (
+    <Frame id={id} label={label} hint={hint} error={error}>
+      <select id={id} {...control} aria-invalid={error !== undefined} aria-describedby={described(id, hint, error)}>
+        {placeholder === undefined ? null : <option value="">{placeholder}</option>}
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </Frame>
+  );
+}
+
+/** A yes-or-no, as one checkbox with its label beside it. Its value is a boolean. */
+export function CheckboxField({ name, label, hint }: Common) {
+  const { id, error, control } = useField(name);
+  return (
+    <div className="kit-field kit-check">
+      <span className="kit-check-row">
+        <input id={id} type="checkbox" {...control} aria-invalid={error !== undefined} aria-describedby={described(id, hint, error)} />
+        <label htmlFor={id}>{label}</label>
+      </span>
+      {hint !== undefined && <p id={`${id}-hint`} className="kit-field-hint">{hint}</p>}
+      {error?.message !== undefined && <p id={`${id}-error`} className="kit-field-error">{error.message}</p>}
+    </div>
+  );
+}
+
 /** One choice from a short, fixed list, as radio buttons: picking one only fills the form, which acts on Submit
  * (RC-148). A long or searched list uses the Picker instead. `disabled` options are the server's (a role you may
  * not grant), shown so the person sees why. */
