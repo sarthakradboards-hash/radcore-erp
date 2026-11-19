@@ -12,7 +12,8 @@
   },
   "mutate": [
     "packages/lib-common/src/money.ts",
-    "packages/lib-gst/src/rules/rates.ts"
+    "packages/lib-gst/src/rules/rates.ts",
+    "packages/lib-accounts/src/services/posting.ts"
   ],
   "coverageAnalysis": "perTest",
   "reporters": [
