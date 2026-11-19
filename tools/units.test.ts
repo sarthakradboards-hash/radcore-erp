@@ -4,6 +4,7 @@
 // as many units as its quantity, batch by batch (RA007). The SCOOTER figures are ADR-006 §8's (F1, F2, F4, F5, F12).
 // Each test makes its own items, locations and serials, so the shuffled order doesn't matter.
 import { randomBytes, randomUUID } from 'node:crypto';
+import { openFinancialYear } from '@radcore/lib-accounts';
 import { quantityString, unitPriceString, UNIT_EVENTS } from '@radcore/lib-common';
 import { AppError, recordChangeReason, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -35,7 +36,9 @@ describe.skipIf(!url || !superUrl)('units by serial', () => {
   const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(db, WRITE, staff, randomUUID(), fn);
   const post = (p: Omit<StockPosting, 'sourceTable' | 'sourceId' | 'businessDate'>) =>
     run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ...p }));
+  // As postDocument does: the year is opened here, so a stock-free event never depends on another test having opened it.
   const change = (changes: UnitChange[], reason?: string) => run(async (ctx) => {
+    await openFinancialYear(ctx, DATE);
     if (reason !== undefined) await recordChangeReason(ctx, reason);
     await postUnitEvents(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, changes });
   });
