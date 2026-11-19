@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { idString, isMasked, listOf, maskedInputPath, maskOf, maskOutput, sightOf, pii, piiPlan, piiRecord } from './index.ts';
+import { cost, idString, isMasked, listOf, maskedInputPath, maskOf, maskOutput, sightOf, pii, piiPlan, piiRecord } from './index.ts';
 
 const person = piiRecord('people', z.object({ id: idString(), name: pii(), phone: pii(z.string(), 'last4'),
   salary: pii(z.string(), 'pay').nullable() }));
@@ -138,6 +138,34 @@ describe('piiPlan and maskOutput', () => {
     expect(() => piiPlan(piiRecord('people', z.object({ id: idString(), more: z.record(z.string(), pii()) })))).toThrow(/can't be masked/);
     expect(() => piiPlan(piiRecord('people', z.object({ id: idString(), more: z.tuple([pii()]) })))).toThrow(/can't be masked/);
     expect(() => piiRecord('People', z.object({ id: idString() }))).toThrow(/table/);
+  });
+});
+
+// RAD-89: a cost (a purchase price) is masked whole without cost:read, and is nobody's personal data.
+describe('cost()', () => {
+  const item = z.object({ id: idString(), sku: z.string(), purchasePrice: cost(z.string().nullable()) });
+  const row = { id: '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01', sku: 'P-1', purchasePrice: '64000.000000' };
+
+  it('may sit outside any piiRecord, and is masked whole without cost:read, whatever else is held', () => {
+    const plan = planOf(listOf(item));
+    const shown = (keys: string[], direct = true) => maskOutput(plan, { items: [row], next: null }, sightOf(keys, direct));
+    expect(shown(['pii:read', 'pay:read']).value).toEqual({ items: [{ ...row, purchasePrice: { masked: SIX } }], next: null });
+    expect(shown(['cost:read']).value).toEqual({ items: [row], next: null });
+    // Not direct: masked whatever the keys, as personal data is.
+    expect(shown(['cost:read'], false).value).toEqual({ items: [{ ...row, purchasePrice: { masked: SIX } }], next: null });
+  });
+
+  it('logs no look when shown, in a record or not, and leaves a null alone', () => {
+    const inRecord = piiRecord('stock_items', z.object({ id: idString(), name: pii(), purchasePrice: cost(z.string()) }));
+    const shown = maskOutput(planOf(inRecord), { id: row.id, name: 'Scooter', purchasePrice: '1.5' }, sightOf(['cost:read']));
+    expect([shown.value, shown.looks]).toEqual([{ id: row.id, name: { masked: SIX }, purchasePrice: '1.5' }, []]);
+    expect(maskOutput(planOf(item), { ...row, purchasePrice: null }, sightOf([])).value).toEqual({ ...row, purchasePrice: null });
+  });
+
+  it('lets a value or a mask through, and masks a cost whole, never keeping its last 4', () => {
+    const price = cost(z.string());
+    expect([price.parse('12.50'), price.parse({ masked: SIX }), price.safeParse(12.5).success]).toEqual(['12.50', { masked: SIX }, false]);
+    expect(maskOf('123456789.000000', 'cost')).toEqual({ masked: SIX });
   });
 });
 
