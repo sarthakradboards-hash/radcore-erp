@@ -91,8 +91,9 @@ The database checks the identities that hold whatever rounding rule is used. The
       document's id into `pending_document_checks`, a small table unique per document;
     - a deferred constraint trigger on that table checks each document once at commit, then removes its row. A
       journal entry is checked as an entry (RA002); any other row is a document by its own table and id, and
-      `check_document` runs every rule that compares its ledgers: first that its stock movements and its Stock in
-      Hand lines agree (ADR-006 §4, RA007), then batch sums and unit counts as they land (RAD-93).
+      `check_document` runs every rule that compares its ledgers: its stock movements and its Stock in Hand lines
+      agree (ADR-006 §4, RA007), and each movement of a serialised item has as many unit events as its quantity,
+      batch by batch (§5, RAD-94).
   - These raise at `COMMIT`. The generic handler maps codes raised at commit like any other (§9).
 
 ### 3. Keys and indexes (M1-05)

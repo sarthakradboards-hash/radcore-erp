@@ -1,8 +1,8 @@
 // Items, their categories and units of measure (M2-10, RAD-89; ADR-001 §5: lib-stock's). Every write is audited by
 // the tables' triggers. A quantity follows its item's unit (RC-162): checkQuantity is what every stock document calls.
-import { after, itemCategories, itemPictures, items, searchWords, stockTx, unitsOfMeasure } from '@radcore/db/stock';
+import { after, itemCategories, itemPictures, items, searchWords, stockMovements, stockTx, units, unitsOfMeasure } from '@radcore/db/stock';
 import { AppError, decodeCursor, encodeCursor, readyFile, viewLinks, type Ctx } from '@radcore/lib-platform';
-import { and, asc, eq, inArray, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   attachItemPicture, createItem, createItemCategory, getItem, listItemCategories, listItems, listUnitsOfMeasure, removeItemPicture,
@@ -165,17 +165,29 @@ export async function addItem(ctx: Ctx, input: In<typeof createItem>): Promise<O
 /** PATCH /items/:id. The item's row is locked, so two changes take turns and the chassis rule sees the latest. */
 export async function changeItem(ctx: Ctx, { id, ...change }: In<typeof updateItem>): Promise<Out<typeof updateItem>> {
   const tx = stockTx(ctx);
-  const [now] = await tx.select({ serialised: items.serialised, hasChassis: items.hasChassis }).from(items)
+  const [now] = await tx.select({ serialised: items.serialised, hasChassis: items.hasChassis, unit: items.unit }).from(items)
     .where(eq(items.id, id)).limit(1).for('update');
   if (now === undefined) throw new AppError('not_found', 'There is no such item');
   const next = { serialised: change.serialised ?? now.serialised, hasChassis: change.hasChassis ?? now.hasChassis };
   if (next.hasChassis && !next.serialised) {
     throw new AppError('chassis_needs_serial', 'Only a serialised item can have a chassis number', field('hasChassis', 'needs_serial', 'Make the item serialised first'));
   }
-  // shortcut: turning has_chassis off is refused while a unit of the item has a chassis number (ADR-006 §5,
-  // `chassis_numbers_recorded`, RA008); units arrive with M2-06, whose migration adds this check and its trigger.
-  // shortcut: a unit change (its decimals) and a serialised change are free while there is no stock; once stock
-  // exists (M2-05, M2-06) each must be refused while the item has movements or units, and those tickets add it.
+  // ADR-006 §5: the flag stays on once a unit of the item has a chassis number (a trigger refuses it too, RA008).
+  if (now.hasChassis && !next.hasChassis && (await tx.select({ id: units.id }).from(units)
+    .where(and(eq(units.itemId, id), isNotNull(units.chassisNo))).limit(1)).length > 0) {
+    throw new AppError('chassis_numbers_recorded', 'Units of this item already have chassis numbers, so it keeps them',
+      field('hasChassis', 'recorded', 'Its vehicles are registered with their chassis numbers'));
+  }
+  // Once the item has stock, its unit (the decimals its quantities have) and whether it's serialised are what that stock
+  // was counted in: changing either would leave movements and units that no longer fit (M2-05, M2-06).
+  const unitChanges = change.unit !== undefined && change.unit !== now.unit;
+  if ((change.serialised !== undefined && change.serialised !== now.serialised) || unitChanges) {
+    const [moved] = await tx.select({ id: stockMovements.id }).from(stockMovements).where(eq(stockMovements.itemId, id)).limit(1);
+    if (moved !== undefined) {
+      throw new AppError('item_has_stock', 'This item has stock, so its unit and serial numbers stay as they are',
+        field(unitChanges ? 'unit' : 'serialised', 'has_stock', 'It has stock movements already'));
+    }
+  }
   await checkRefs(tx, change);
   const fields = Object.fromEntries(Object.entries(change).filter(([, v]) => v !== undefined));
   if (Object.keys(fields).length > 0) {

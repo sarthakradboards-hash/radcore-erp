@@ -344,6 +344,13 @@
       "when": 1795066392948,
       "tag": "0048_price_list_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795067797831,
+      "tag": "0049_units",
+      "breakpoints": true
     }
   ]
 }

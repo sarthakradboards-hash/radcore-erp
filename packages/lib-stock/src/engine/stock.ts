@@ -19,6 +19,10 @@ import {
 import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
+import {
+  checkUnits, lockUnits, serialisedItems, writeUnitEvents, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent,
+  type UnitEventRow, type UnitOnLine,
+} from './units.ts';
 import { and, asc, desc, eq, isNull, or, sum } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -32,16 +36,23 @@ export type BatchIn = { readonly batchNo: string | null; readonly qty: Quantity 
 /** A batch named on goods going out or moving: the batch's id, or null for "batch unknown", and how many units. */
 export type BatchOut = { readonly batchId: string | null; readonly qty: Quantity };
 
-/** Goods coming into a location at a rate, split by batch. */
+/** Goods coming into a location at a rate, split by batch. A serialised item's line names its units (§5): `received`
+ * by default, or `returned` (a credit note) or `delivery_returned`. */
 export type StockIn = { readonly itemId: string; readonly locationId: string; readonly sourceLineId?: string | null;
-  readonly qty: Quantity; readonly rate: Rate; readonly batches: readonly BatchIn[] };
+  readonly qty: Quantity; readonly rate: Rate; readonly batches: readonly BatchIn[];
+  readonly units?: readonly UnitOnLine[]; readonly unitEvent?: InUnitEvent };
 /** Goods going out of a location, split by the batches picked. Only a delivery may go below zero, in negative-stock
- * mode, naming the part beyond what's on hand as "batch unknown". */
+ * mode, naming the part beyond what's on hand as "batch unknown". A serialised item's line names its units: `delivered`
+ * by default (on its line, `sourceLineId`, and to the order line it may be promised to), `returned_to_supplier` or
+ * `scrapped`. */
 export type StockOut = { readonly itemId: string; readonly locationId: string; readonly sourceLineId?: string | null;
-  readonly qty: Quantity; readonly batches: readonly BatchOut[]; readonly delivery?: boolean };
-/** Goods moving from one location to another, split by the batches picked; they arrive in the same batches. */
+  readonly qty: Quantity; readonly batches: readonly BatchOut[]; readonly delivery?: boolean;
+  readonly units?: readonly UnitOnLine[]; readonly unitEvent?: OutUnitEvent; readonly orderLineId?: string };
+/** Goods moving from one location to another, split by the batches picked; they arrive in the same batches. A
+ * serialised item's line names its units: `moved` by default, or `sent_to_job_work` and `received_from_job_work`. */
 export type StockTransfer = { readonly itemId: string; readonly from: string; readonly to: string;
-  readonly sourceLineId?: string | null; readonly qty: Quantity; readonly batches: readonly BatchOut[] };
+  readonly sourceLineId?: string | null; readonly qty: Quantity; readonly batches: readonly BatchOut[];
+  readonly units?: readonly UnitOnLine[]; readonly unitEvent?: MoveUnitEvent };
 
 /** One document's stock: the document it comes from, its business date, and its lines in the order they post. */
 export type StockPosting = {
@@ -204,12 +215,17 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const outs = p.outs ?? [];
   const transfers = p.transfers ?? [];
   checkLines([...ins, ...outs, ...transfers]);
+  checkUnits([...ins, ...outs, ...transfers], await serialisedItems(ctx, [...ins, ...outs, ...transfers].map((l) => l.itemId)));
   // §1's step 1, before the positions: the period lock FOR SHARE, and the date's year open and unlocked.
   await holdPeriod(ctx, p.businessDate);
   const negativeMode = ctx.settings.get(NEGATIVE_STOCK);
   await lockPositions(ctx, [...ins.map((l) => [l.itemId, l.locationId] as const), ...outs.map((l) => [l.itemId, l.locationId] as const),
     ...transfers.flatMap((t) => [[t.itemId, t.from] as const, [t.itemId, t.to] as const])]);
   const ids = await batchIds(ctx, ins);
+  // §1's step 4: the units the lines name, after the positions and batches.
+  await lockUnits(ctx, [...ins, ...outs, ...transfers].flatMap((l) => (l.units ?? []).map((u) => ({ itemId: l.itemId, serialNo: u.serialNo }))));
+  const events: UnitEventRow[] = [];
+  const lastId = () => posted.at(-1)?.id ?? '';
   const tx = stockTx(ctx);
   const base = { sourceTable: p.sourceTable, sourceId: p.sourceId, businessDate: p.businessDate };
   const posted: PostedMovement[] = [];
@@ -228,11 +244,20 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   for (const t of transfers) {
     const value = await issueValue(ctx, t.itemId, t.from, t.qty, p.businessDate, false);
     await write({ itemId: t.itemId, locationId: t.from, sourceLineId: t.sourceLineId, direction: 'out', qty: t.qty, value }, t.batches);
+    const outMovementId = lastId();
     await write({ itemId: t.itemId, locationId: t.to, sourceLineId: t.sourceLineId, direction: 'in', qty: t.qty, value }, t.batches);
+    for (const u of t.units ?? []) {
+      events.push({ itemId: t.itemId, serialNo: u.serialNo, kind: t.unitEvent ?? 'moved', outMovementId, inMovementId: lastId(),
+        ...(u.condition === undefined ? {} : { condition: u.condition }) });
+    }
   }
   for (const o of outs) {
     const value = await issueValue(ctx, o.itemId, o.locationId, o.qty, p.businessDate, negativeMode && o.delivery === true);
     await write({ itemId: o.itemId, locationId: o.locationId, sourceLineId: o.sourceLineId, direction: 'out', qty: o.qty, value }, o.batches);
+    for (const u of o.units ?? []) {
+      events.push({ itemId: o.itemId, serialNo: u.serialNo, kind: o.unitEvent ?? 'delivered', outMovementId: lastId(),
+        ...(o.sourceLineId == null ? {} : { saleLineId: o.sourceLineId }), ...(o.orderLineId === undefined ? {} : { promisedTo: o.orderLineId }) });
+    }
   }
   for (const i of ins) {
     const before = position(await byDate(ctx, i.itemId, i.locationId));
@@ -240,17 +265,36 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
     const value = roundMoney(dec(i.qty).times(dec(i.rate)));
     await write({ itemId: i.itemId, locationId: i.locationId, sourceLineId: i.sourceLineId, direction: 'in', qty: i.qty,
       value, rate: roundRate(i.rate) }, rows);
+    for (const u of i.units ?? []) events.push(unitIn(i, u, lastId(), rows));
     const change = revaluation(before, i.qty, i.rate, value);
     if (!dec(change).isZero()) {
       await write({ itemId: i.itemId, locationId: i.locationId, sourceLineId: i.sourceLineId, direction: 'revalue', qty: NO_UNITS, value: change }, []);
     }
   }
+  await writeUnitEvents(ctx, base, events);
   const revalued = posted.filter((m) => m.direction === 'revalue');
   if (revalued.length > 0) {
     await postEntry(ctx, { kind: 'revaluation', businessDate: p.businessDate, source: { table: p.sourceTable, id: p.sourceId },
       lines: revalued.flatMap(revaluationLines) });
   }
   return posted;
+}
+
+// A unit coming in (§5): `received` names the batch it came in, one of its line's (the only one, unless it says which)
+// with its chassis number and QC condition; a unit coming back keeps the batch it first came in.
+function unitIn(line: StockIn, u: UnitOnLine, inMovementId: string, rows: readonly { batchId: string | null }[]): UnitEventRow {
+  const kind = line.unitEvent ?? 'received';
+  const event: UnitEventRow = { itemId: line.itemId, serialNo: u.serialNo, kind, inMovementId,
+    ...(u.condition === undefined ? {} : { condition: u.condition }), ...(u.chassisNo == null ? {} : { chassisNo: u.chassisNo }) };
+  if (kind !== 'received') return event;
+  const named = u.batchNo;
+  const at = named === undefined ? (line.batches.length === 1 ? 0 : -1)
+    : line.batches.findIndex((b) => (b.batchNo === null || named === null ? b.batchNo === named : batchKey(b.batchNo) === batchKey(named)));
+  if (at < 0) {
+    throw new AppError('unit_batch', 'Say which of the line’s batches each unit came in',
+      [{ path: ['units'], code: 'batch', message: `${u.serialNo}: name one of the line’s batches` }]);
+  }
+  return { ...event, batchId: rows[at]?.batchId ?? null };
 }
 
 // A revaluation down is Dr Cost of Goods Sold, Cr Stock in Hand; up, the other way round (ADR-006 §4, F15).

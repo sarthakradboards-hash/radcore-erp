@@ -104,7 +104,8 @@ export const removeItemPicture = defineContract({
 export const updateItem = defineContract({
   method: 'PATCH', path: '/items/:id', auth: 'session', perm: 'items:write', tx: write,
   input: z.object(itemFields).partial().extend({ id: idString(), active: z.boolean().optional() }),
-  output: z.object({}), errors: ['barcode_taken', 'unknown_category', 'unknown_unit', 'chassis_needs_serial'],
+  output: z.object({}), errors: ['barcode_taken', 'unknown_category', 'unknown_unit', 'chassis_needs_serial', 'chassis_numbers_recorded',
+    'item_has_stock'],
 });
 
 // Locations (RAD-92, M2-14): the places stock can be. A location is switched off, never deleted (ADR-005 §3, D-12).
