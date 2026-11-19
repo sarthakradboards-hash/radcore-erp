@@ -155,19 +155,24 @@ describe.skipIf(!url || !superUrl)('units by serial', () => {
     expect(await unitOf(at.itemId, theirs)).toMatchObject({ ownership: 'customer', location: null });
   });
 
-  // auditor-2 on #216: an event that moves no stock is still held to the period lock (RA003), and a serial is printable
-  // ASCII, so the engine's serial key, which it locks by, is the database's.
-  it('holds unit events to the period lock, and serials to printable ASCII', async () => {
+  // The architect on RAD-94: every unit event respects the period lock, one that moves no stock included (RA003); and a
+  // serial is printable ASCII, so the engine's serial key, which it locks units by, is the database's (auditor-2 on #216).
+  it('refuses a stock-free unit event in a locked period, passes one after it, and holds serials to printable ASCII', async () => {
     const at = await setup();
+    const [unit = ''] = serials(1);
+    await receive(at.itemId, at.stores, [{ serialNo: unit }]);
     expect(await failure(change([{ kind: 'taken_in', itemId: at.itemId, serialNo: 'S-É1', locationId: at.bay }]))).toBe('23514');
+    const damaged = (date: string) => c.query(`insert into radcore.unit_events (item_id, serial_no, kind, source_table, source_id,
+      business_date, condition) values ($1, $2, 'condition_changed', 'files', $3, $4, 'damaged')`, [at.itemId, unit, randomUUID(), date]);
     const c = await su.connect();
     try {
       await c.query('begin');
       await c.query("select set_config('app.principal', 'system:test', true)");
-      await c.query("update radcore.period_lock set locked_through = $1 where id = 1", [DATE]);
-      await expect(c.query(`insert into radcore.unit_events (item_id, serial_no, kind, source_table, source_id, business_date, location_id)
-        values ($1, $2, 'taken_in', 'files', $3, $4, $5)`, [at.itemId, `S-${tag()}`, randomUUID(), DATE, at.bay]))
-        .rejects.toMatchObject({ code: 'RA003' });
+      await c.query('update radcore.period_lock set locked_through = $1 where id = 1', [DATE]);
+      await c.query('savepoint s');
+      await expect(damaged(DATE)).rejects.toMatchObject({ code: 'RA003' });
+      await c.query('rollback to savepoint s');
+      await damaged('2026-11-16');
     } finally {
       await c.query('rollback');
       c.release();

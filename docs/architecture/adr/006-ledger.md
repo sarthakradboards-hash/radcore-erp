@@ -410,6 +410,8 @@ be sold. A returned unit's sale is cleared (RC-128), which ends the customer war
     quantity, and each `in` movement as many naming it as `in_movement_id` (RA007). So a transfer of one unit is one
     event, counted once on each of its two movements.
   - The books check (§7) also compares, per item and location, the units we own there with the quantity on hand.
+- Every unit event is dated, and the period lock applies to it as to a movement (RA003): the events trigger refuses one
+  dated on or before the lock date, including events that move no stock.
 - **A unit's batch** is named by its `received` event, which must be one of the batches on its `in` movement, and
   it never changes (§4a). A composite foreign key to `batches (id, item_id)` keeps it the unit's own item's. A unit
   taken in for service (`taken_in`) isn't our stock and has none.
