@@ -21,6 +21,7 @@ import { useApiList, useApiMutation, useApiQuery } from '../../../../lib/api/que
 import { t } from '../../../../lib/i18n/index.ts';
 import { ChoiceButtons, MESSAGES } from '../shared.tsx';
 import type { ItemCategory, StockItem } from '../types.ts';
+import { costField } from './cost-field.ts';
 import { ItemFields, newItemSchema } from './item-fields.tsx';
 import { ITEM_VIEWS, type ItemView } from './views.ts';
 
@@ -34,6 +35,7 @@ const CATEGORY_MESSAGES = { ...MESSAGES, name_taken: t('admin.items.category.tak
 export function Items({ initialView }: { initialView: ItemView }) {
   const { permissions } = useMe();
   const mayWrite = permissions.includes('items:write');
+  const newCost = costField(permissions.includes('cost:read'), undefined);
   const [view, setView] = useSavedView<ItemView>('items', initialView);
   const [search, setSearch] = useState('');
   const [show, setShow] = useState<Show>('active');
@@ -133,14 +135,14 @@ export function Items({ initialView }: { initialView: ItemView }) {
 
       <Dialog open={acting?.kind === 'add'} onOpenChange={close} title={t('admin.items.add')}>
         <Form schema={newItemSchema} saved={false} messages={MESSAGES}
-          defaultValues={{ sku: '', name: '', categoryId: '', hsn: '', unit: '', barcode: '', serialised: false, hasChassis: false, purchasePrice: '' }}
+          defaultValues={{ sku: '', name: '', categoryId: '', hsn: '', unit: '', barcode: '', serialised: false, hasChassis: false, ...newCost.defaults }}
           onSubmit={async (v) => {
             const { id } = await add.submit(v);
             setActing(null);
             later(t('admin.items.added', { sku: v.sku }));
             router.push(`/admin/items/${id}`);
           }}>
-          <ItemFields categories={categories} units={units} withSku cost={permissions.includes('cost:read') ? 'edit' : 'none'} />
+          <ItemFields categories={categories} units={units} withSku cost={newCost.cost} />
           <div className="kit-actions">
             <CloseButton>{t('admin.cancel')}</CloseButton>
             <SubmitButton>{t('admin.items.add')}</SubmitButton>

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { CheckboxField, MaskedField, SelectField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { t } from '../../../../lib/i18n/index.ts';
 import type { ItemCategory, ItemUnit } from '../types.ts';
+import type { CostField } from './cost-field.ts';
 
 const shape = createItem.input.shape;
 const barcode = z.string().trim().transform((s) => (s === '' ? null : s)).pipe(shape.barcode);
@@ -14,10 +15,6 @@ const barcode = z.string().trim().transform((s) => (s === '' ? null : s)).pipe(s
 const purchasePrice = z.string().trim().transform((s) => (s === '' ? null : s)).pipe(shape.purchasePrice.unwrap()).optional();
 export const newItemSchema = z.object({ ...shape, barcode, purchasePrice });
 export const editItemSchema = z.object(shape).omit({ sku: true }).extend({ barcode, purchasePrice });
-
-/** How the purchase price shows: a box to edit (cost:read), masked and read-only, or not at all (a new item without
- * cost:read). The server decides who sees it (RAD-89's cost()); the form only follows what it answered. */
-export type CostField = 'edit' | 'masked' | 'none';
 
 export function ItemFields({ categories, units, withSku, cost }: {
   categories: readonly ItemCategory[]; units: readonly ItemUnit[]; withSku: boolean; cost: CostField;
