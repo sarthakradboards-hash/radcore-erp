@@ -3,7 +3,7 @@
 // payment or refund. Cash past a day's limit (RC-114, CA-24) stays a draft and asks an owner, through defineApproval;
 // the approval posts it. A posted one is cancelled only by a mirror entry dated the cancellation's day (ADR-007 §6).
 // shortcut: allocations to invoices and bills, and the rule that a cancel needs them at zero, are RAD-116's part 2.
-import { accounts, accountsTx, payments } from '@radcore/db/accounts';
+import { accounts, accountsTx, parties, payments } from '@radcore/db/accounts';
 import { dec, indiaDate, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
   from '@radcore/lib-platform';
@@ -28,8 +28,11 @@ const today = () => indiaDate(new Date());
 /** The money account a payment moves: Cash, Bank, or a bank account under Bank. */
 async function moneyAccount(ctx: Ctx, id: string): Promise<{ cash: boolean }> {
   const tx = accountsTx(ctx);
-  const [a] = await tx.select({ key: accounts.systemKey, parentId: accounts.parentId }).from(accounts).where(eq(accounts.id, id)).limit(1);
+  const [a] = await tx.select({ key: accounts.systemKey, parentId: accounts.parentId, active: accounts.active }).from(accounts)
+    .where(eq(accounts.id, id)).limit(1);
   if (a === undefined) return refuse('unknown_account', 'There’s no such account');
+  // The engine would refuse it too (RA009); said here by name, before anything is written (the auditor on #234).
+  if (!a.active) refuse('account_inactive', 'This account is switched off: switch it on, or use another');
   if (a.key === 'cash' || a.key === 'bank') return { cash: a.key === 'cash' };
   const [parent] = a.parentId === null ? [] : await tx.select({ key: accounts.systemKey }).from(accounts).where(eq(accounts.id, a.parentId)).limit(1);
   return parent?.key === 'bank' ? { cash: false } : refuse('not_money_account', 'Take or pay money through Cash or a bank account');
@@ -53,6 +56,10 @@ function linesOf(p: { kind: string; partyId: string; amount: Money; tds: Money; 
 /** Posts a draft: its entry through the journal engine, then its number, last. */
 async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
   const tx = accountsTx(ctx);
+  // The period lock first, then the payment's row (ADR-006 §1). An approval's version() has already locked the row,
+  // as the engine reads it before deciding; that path takes the period lock second (the auditor on #234).
+  const [dated] = await tx.select({ businessDate: payments.businessDate }).from(payments).where(eq(payments.id, id)).limit(1);
+  if (dated !== undefined) await holdPeriod(ctx, dated.businessDate);
   const [p] = await tx.select().from(payments).where(and(eq(payments.id, id), eq(payments.status, 'draft'))).limit(1).for('update');
   if (p === undefined) return refuse('not_draft', 'This is already posted or cancelled');
   const entry = await postEntry(ctx, { kind: p.kind === 'receipt' ? 'payment_in' : 'payment_out', businessDate: p.businessDate,
@@ -65,6 +72,8 @@ async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
 /** Whether this cash, with the party's other posted cash that day, passes the day's limit (ADR-007 §8). */
 async function pastCashLimit(ctx: Ctx, p: { id: string; kind: string; partyId: string; businessDate: string; amount: Money }) {
   const out = p.kind !== 'receipt';
+  // The party's row, locked, so two cash saves for one party take turns and neither sums without the other.
+  await accountsTx(ctx).select({ id: parties.id }).from(parties).where(eq(parties.id, p.partyId)).limit(1).for('update');
   const cash = accountsTx(ctx).select({ id: accounts.id }).from(accounts).where(eq(accounts.systemKey, 'cash'));
   const earlier = await accountsTx(ctx).select({ amount: payments.amount }).from(payments).where(and(eq(payments.partyId, p.partyId),
     eq(payments.businessDate, p.businessDate), eq(payments.status, 'posted'), inArray(payments.accountId, cash), ne(payments.id, p.id),
@@ -128,11 +137,13 @@ export async function recordPayment(ctx: Ctx, input: In<typeof recordPaymentCont
 /** POST /payments/:id/cancel: a mirror entry dated the cancellation's day, and the payment cancelled with its reason. */
 export async function cancelPayment(ctx: Ctx, c: In<typeof cancelPaymentContract>): Promise<Out<typeof cancelPaymentContract>> {
   const tx = accountsTx(ctx);
+  if (c.businessDate > today()) refuse('date_in_future', 'The date is after today');
+  // The period lock first, then the payment's row (ADR-006 §1, the auditor on #234).
+  await holdPeriod(ctx, c.businessDate);
   const [p] = await tx.select().from(payments).where(eq(payments.id, c.id)).limit(1).for('update');
   if (p === undefined) return refuse('not_found', 'There’s no such payment');
   if (p.status !== 'posted' || p.postedEntryId === null) return refuse('not_posted', 'Only a posted payment is cancelled');
   if (c.businessDate < p.businessDate) refuse('date_before_source', 'A cancellation is dated on or after what it cancels');
-  if (c.businessDate > today()) refuse('date_in_future', 'The date is after today');
   const [refund] = await tx.select({ id: payments.id }).from(payments).where(and(eq(payments.refundOfId, p.id), eq(payments.status, 'posted'))).limit(1);
   if (refund !== undefined) refuse('has_refunds', 'Cancel the refunds of this receipt first');
   const mirror = await reverseEntry(ctx, { entryId: p.postedEntryId, businessDate: c.businessDate, reason: c.reason });

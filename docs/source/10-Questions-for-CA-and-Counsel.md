@@ -377,6 +377,20 @@ CA-47. A forfeited booking advance.
 - RC: RC-127 (context).
 - Effect on the fix: Adds the forfeiture posting (income, with or without output GST, and the document it's issued on) to ADR-006 §6.
 - When needed: Before vehicle bookings go live (M3-13).
+CA-48. A refund's cap when TDS was held back.
+- Ask: When a customer held back TDS on a receipt, can a refund of that receipt go up to its gross amount, or only up to the cash actually received?
+- Why it matters: RadCore caps a receipt's refunds at its amount, which is gross of the TDS held back (F8), so a refund could pay out cash the customer never paid in.
+- Code today: v2's `recordPayment` refuses a refund past the receipt's gross amount less earlier refunds (`exceeds_receipt`, RAD-116).
+- RC: RC-114 (area).
+- Effect on the fix: Either the cap stays gross, or it becomes the net cash received, a one-line change.
+- When needed: Before go-live (M5).
+CA-49. Cash refunds under section 40A(3).
+- Ask: Does a cash refund to a customer count towards the Rs 10,000 a day limit on cash payments to one person under section 40A(3)?
+- Why it matters: RadCore counts cash refunds with cash payments when it checks the day's limit, so a refund over the limit waits for an owner's approval.
+- Code today: v2's cash check sums a party's cash payments and refunds for the day (ADR-007 §8, RAD-116).
+- RC: RC-114.
+- Effect on the fix: Refunds either stay in the sum or leave it.
+- When needed: Before go-live (M5).
 # Group B. Questions for data-protection counsel (Digital Personal Data Protection Act 2023 and Rules)
 Legal caution from the reviewers. The security reviewer is not a lawyer and did not fetch the Act's text. Section numbers below are the reviewer's reading. The Rules were reported as notified in November 2025 (the AI reviewer cites 13 November 2025 and the notification G.S.R. 846(E) as the item to check), with notice and consent duties reported to begin about 13 May 2027 and the consent-manager rule about 13 November 2026, from law-firm summaries (SCC Online, Mondaq) that are commentary, not the Gazette. All of this needs counsel's confirmation. The point for go-live is that building the safeguards now is cheaper than retrofitting once real records exist.
 Roles assumed by the reviewers. Radboards is the Data Fiduciary for its customers, leads, applicants and employees. Hosting, Meta (WhatsApp and lead forms), Cloudflare (captcha), Shopify, the alert channel and the file store are Data Processors or independent fiduciaries. See DP-02.
