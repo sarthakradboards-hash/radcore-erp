@@ -155,6 +155,25 @@ describe.skipIf(!url || !superUrl)('units by serial', () => {
     expect(await unitOf(at.itemId, theirs)).toMatchObject({ ownership: 'customer', location: null });
   });
 
+  // auditor-2 on #216: an event that moves no stock is still held to the period lock (RA003), and a serial is printable
+  // ASCII, so the engine's serial key, which it locks by, is the database's.
+  it('holds unit events to the period lock, and serials to printable ASCII', async () => {
+    const at = await setup();
+    expect(await failure(change([{ kind: 'taken_in', itemId: at.itemId, serialNo: 'S-É1', locationId: at.bay }]))).toBe('23514');
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      await c.query("update radcore.period_lock set locked_through = $1 where id = 1", [DATE]);
+      await expect(c.query(`insert into radcore.unit_events (item_id, serial_no, kind, source_table, source_id, business_date, location_id)
+        values ($1, $2, 'taken_in', 'files', $3, $4, $5)`, [at.itemId, `S-${tag()}`, randomUUID(), DATE, at.bay]))
+        .rejects.toMatchObject({ code: 'RA003' });
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+  });
+
   // RA007 at commit: a serialised item's movement with fewer units than its quantity, and a move whose units aren't in
   // the batch its batch row names. Written raw where the engine would answer first.
   it('refuses at commit a movement whose units miss its quantity or its batch (RA007)', async () => {

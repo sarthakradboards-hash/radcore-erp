@@ -6,6 +6,7 @@
 // database refuses an event its unit's state doesn't allow (RA008), and checks at commit that each movement has as
 // many units as its quantity, batch by batch (RA007); this engine answers the plain mistakes first, by name.
 import { items, stockTx, unitEvents, units } from '@radcore/db/stock';
+import { holdPeriod } from '@radcore/lib-accounts';
 import { dec, type UnitCondition, type UnitEventKind } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, or } from 'drizzle-orm';
@@ -43,7 +44,8 @@ export type UnitEventRow = {
   chassisNo?: string;
 };
 
-/** A serial as the database keys it (`serial_key`): upper case, without spaces (§5). */
+/** A serial as the database keys it (`serial_key`): upper case, without spaces (§5). A serial is printable ASCII
+ * (`ck_units_serial`), so this and the database's expression always agree. */
 export const serialKey = (serialNo: string): string => serialNo.toUpperCase().replace(/\s/g, '');
 
 /** The serialised items among `itemIds`. */
@@ -102,10 +104,11 @@ export async function writeUnitEvents(ctx: Ctx, doc: { sourceTable: string; sour
 
 /**
  * A document's changes to units that move no stock (§5): promises, conditions, chassis numbers, and a customer's
- * vehicle taken in for service or handed back. The units are locked in id order first.
+ * vehicle taken in for service or handed back. The period lock is held first, then the units in id order.
  */
 export async function postUnitEvents(ctx: Ctx, p: { sourceTable: string; sourceId: string; businessDate: string;
   changes: readonly UnitChange[] }): Promise<void> {
+  await holdPeriod(ctx, p.businessDate); // §1's step 1, as every posting (auditor-2 on #216)
   await lockUnits(ctx, p.changes);
   await writeUnitEvents(ctx, p, p.changes.map((c) => ({ ...c })));
 }

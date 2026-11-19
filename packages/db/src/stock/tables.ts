@@ -209,6 +209,8 @@ export const units = radcoreTable('units', {
   chassisKey: text().generatedAlwaysAs(sql`upper(regexp_replace(chassis_no, '[[:space:]-]', '', 'g'))`),
 }, (t) => [
   unique('ux_units_item_serial').on(t.itemId, t.serialKey),
+  // Printable ASCII with inner spaces, so the engine's serialKey and the database's agree, and its locks find every unit.
+  check('ck_units_serial', sql`${t.serialNo} ~ '^[ -~]*[!-~][ -~]*$'`),
   uniqueIndex('ux_units_chassis').on(t.chassisKey),
   // For the events' composite key, so an event's unit is its item's.
   unique('ux_units_id_item').on(t.id, t.itemId),
@@ -287,6 +289,7 @@ export const unitEvents = radcoreTable('unit_events', {
     'condition_changed', 'chassis_recorded', 'taken_in', 'handed_back', 'scrapped')`),
   check('ck_unit_events_condition', sql`${t.condition} is null or ${t.condition} in ('new', 'demo', 'used', 'damaged')`),
   check('ck_unit_events_source_table', sql`${t.sourceTable} ~ '^[a-z][a-z0-9_]*$'`),
+  check('ck_unit_events_serial', sql`${t.serialNo} ~ '^[ -~]*[!-~][ -~]*$'`),
   // The movements each kind rides on (§5): both, in only, out only, or neither.
   check('ck_unit_events_movements', sql`case
     when ${t.kind} in ('moved', 'sent_to_job_work', 'received_from_job_work') then ${t.outMovementId} is not null and ${t.inMovementId} is not null
