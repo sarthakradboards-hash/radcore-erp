@@ -1,6 +1,6 @@
 // Proof that the guards in fixtures.ts still catch what they promise to, each for its own reason. Each test checks
 // what the guard recorded, then clears it so the test itself passes.
-import { expect, seriousA11yIssues, test } from './fixtures.ts';
+import { expect, isCancelledRscPrefetch, seriousA11yIssues, test } from './fixtures.ts';
 
 test('a page answering 404 is recorded', async ({ page, pageProblems }) => {
   await page.goto('/no-such-page');
@@ -27,6 +27,35 @@ test('an uncaught error is recorded', async ({ page, pageProblems }) => {
   await page.goto('/');
   await page.evaluate('setTimeout(() => { throw new Error("planted") })');
   await expect.poll(() => pageProblems).toEqual([expect.stringContaining('uncaught: planted')]);
+  pageProblems.length = 0;
+});
+
+// RAD-76: WebKit reports a Next RSC prefetch cut off by navigation as an uncaught error, not an aborted request. Only
+// that exact text, for this site and with `_rsc`, is ignored; each `false` here fails if the filter is made wider.
+test('only WebKit\'s cancelled same-origin ?_rsc= prefetch is ignored as an uncaught error', ({ baseURL }) => {
+  const origin = baseURL!;
+  const host = new URL(origin).host;
+  const ignored = (m: string) => isCancelledRscPrefetch(m, origin);
+  // As WebKit says it, and as CI's log showed it (the scheme cut off), with _rsc first or later in the query.
+  expect(ignored(`Fetch API cannot load ${origin}/admin/locations?_rsc=5CB68i4pnAekjehf due to access control checks.`)).toBe(true);
+  expect(ignored(`/${host}/admin/locations?_rsc=5CB68i4pnAekjehf due to access control checks.`)).toBe(true);
+  expect(ignored(`Fetch API cannot load ${origin}/admin/items?status=inactive&_rsc=1a2b due to access control checks.`)).toBe(true);
+  // Still problems: another origin, a request that isn't a prefetch, other text, and another site dressed as this one.
+  expect(ignored('Fetch API cannot load https://evil.example/admin?_rsc=1a2b due to access control checks.')).toBe(false);
+  expect(ignored(`Fetch API cannot load ${origin}/api/me due to access control checks.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load ${origin}/api/me?x_rsc=1 due to access control checks.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load ${origin}/admin?_rsc=1a2b due to access control checks. And then something else.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load https://evil.example/${host}/admin?_rsc=1a2b due to access control checks.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load http://${host}.evil.example/admin?_rsc=1a2b due to access control checks.`)).toBe(false);
+});
+
+test('a cancelled-prefetch error from this site is not recorded; the same from another site is', async ({ page, pageProblems, baseURL }) => {
+  await page.goto('/');
+  const throwLater = (m: string) => page.evaluate(`setTimeout(() => { throw new Error(${JSON.stringify(m)}) })`);
+  await throwLater(`Fetch API cannot load ${baseURL}/admin/locations?_rsc=abc due to access control checks.`);
+  await throwLater('Fetch API cannot load https://evil.example/admin/locations?_rsc=abc due to access control checks.');
+  // Only the second is a problem; waiting for it also proves the first had its turn and was let through.
+  await expect.poll(() => pageProblems).toEqual(['uncaught: Fetch API cannot load https://evil.example/admin/locations?_rsc=abc due to access control checks.']);
   pageProblems.length = 0;
 });
 

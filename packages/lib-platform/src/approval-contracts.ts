@@ -1,11 +1,7 @@
 // The approval contracts (maker-checker, RAD-38, ADR-001 §8b), re-exported by ./contract. Like every contract file it
 // imports only zod and lib-common (D5), so the browser can load it.
-import { defineContract, idString, listInput, listOf, momentString } from '@radcore/lib-common';
+import { defineContract, idString, listInput, listOf, momentString, principalOut } from '@radcore/lib-common';
 import { z } from 'zod';
-
-/** Who did something, as the screens show it (principals.ts): a person's name, or null for a link or the system. A
- * display name isn't pii(). The audit trail and security events answer the same. */
-export const principalOut = z.object({ kind: z.enum(['user', 'system', 'link']), id: z.string(), displayName: z.string().nullable() });
 
 const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;

@@ -77,6 +77,9 @@ export const searchText = () => z.string().max(100, 'Search for at most 100 char
 export const dateRange = () => z.object({ from: dateString().optional(), to: dateString().optional() })
   .refine((r) => r.from === undefined || r.to === undefined || r.from <= r.to,
     { error: 'The start date is after the end date', path: ['to'] });
+/** Who did something, as the screens show it (lib-platform's principalsOf): a person's name, or null for a link or the
+ * system. A display name isn't pii(). The audit trail, security events, approvals and the journal answer the same. */
+export const principalOut = z.object({ kind: z.enum(['user', 'system', 'link']), id: z.string(), displayName: z.string().nullable() });
 /** A list's output: `{ items, next }`, `next` null on the last page. There is no total count (RC-176). */
 export const listOf = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), next: z.string().nullable() });
 

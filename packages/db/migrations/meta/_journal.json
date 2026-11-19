@@ -295,6 +295,62 @@
       "when": 1795026595223,
       "tag": "0041_journal",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795027642904,
+      "tag": "0042_parties",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795028373815,
+      "tag": "0043_stock_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795029599792,
+      "tag": "0044_stock_commit_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795030992582,
+      "tag": "0045_journal_routes",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795031853048,
+      "tag": "0046_price_lists",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795065305600,
+      "tag": "0047_stock_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795066392948,
+      "tag": "0048_price_list_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795067697697,
+      "tag": "0049_chart_code_active",
+      "breakpoints": true
     }
   ]
 }

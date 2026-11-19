@@ -53,8 +53,11 @@ const defaultArray = (file: string): ts.ArrayLiteralExpression => {
   if (e === undefined || !ts.isArrayLiteralExpression(e)) throw new Error(`${file}: its default export isn't an array of define calls`);
   return e;
 };
+// defineApproval mounts one approval kind's three routes (ADR-001 §8b): list, show and decide.
+const APPROVAL_ROUTES = 3;
+
 /** For one list (apiRoutes' or workerJobs' array), each entry's files, in order. A spread of a route or job file opens
- * to its calls; a call made at start (`passwordResetEmailJob(start)`) is its builder's files; a spread of what start-up
+ * to its calls, a spread `...defineApproval(contracts, spec)` in it to its three routes; a call made at start (`passwordResetEmailJob(start)`) is its builder's files; a spread of what start-up
  * built (`...auth.routes`) is the file declaring it, once for each entry of its runtime list, whose size `built` names
  * by the spread's own text. */
 function entriesOf(list: string, built: Readonly<Record<string, number>>): string[][] {
@@ -67,9 +70,12 @@ function entriesOf(list: string, built: Readonly<Record<string, number>>): strin
     const target = ts.isSpreadElement(el) ? el.expression : el;
     const file = declaringFile(target);
     if (ts.isSpreadElement(el) && file !== null && file.startsWith('apps/')) {
-      for (const call of defaultArray(file).elements) {
+      for (const entry of defaultArray(file).elements) {
+        const call = ts.isSpreadElement(entry) ? entry.expression : entry;
         if (!ts.isCallExpression(call)) throw new Error(`${file}: an entry isn't a define call`);
-        out.push(filesOf(call));
+        if (!ts.isSpreadElement(entry)) out.push(filesOf(call));
+        else if (call.expression.getText() === 'defineApproval') for (let n = 0; n < APPROVAL_ROUTES; n += 1) out.push(filesOf(call));
+        else throw new Error(`${file}: a spread entry isn't defineApproval's`);
       }
     } else if (ts.isCallExpression(target)) {
       out.push(filesOf(target, 0));
@@ -147,11 +153,12 @@ describe('the manifest’s reach', () => {
     expect(() => entriesOf(LISTS.api, {})).toThrow('no runtime size given for auth.routes');
     expect(first?.some((f) => f.startsWith('packages/lib-platform/src/files/'))).toBe(true);
     expect(readdirSync(join('apps', 'api', 'src', 'routes')).every((f) => f.endsWith('.ts'))).toBe(true);
-  });
+    // The type checker resolves the route files' symbols on first use: past vitest's 5 s under a full parallel run.
+  }, 30_000);
 
   it('counts a module library a file reaches, and never lib-common', async () => {
     expect(await reachOf([['packages/lib-sales/src/index.ts'], ['packages/lib-common/src/index.ts'], ['packages/lib-platform/src/route.ts']]))
-      .toEqual([['lib-sales'], [], ['lib-platform']]);
+      .toEqual([['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'], [], ['lib-platform']]);
   }, 120_000);
 
   // RC-153: the sweep must notice a reach that's new or gone. Each case tampers with a copy of what was found.

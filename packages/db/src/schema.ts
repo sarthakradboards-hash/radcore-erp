@@ -6,6 +6,7 @@ import * as accounts from './accounts/tables.ts';
 import * as gst from './gst/tables.ts';
 import * as hr from './hr/tables.ts';
 import * as platform from './platform/tables.ts';
+import * as sales from './sales/tables.ts';
 import * as stock from './stock/tables.ts';
 import { applyRequestContext, type RequestContext } from './request-context.ts';
 import { bind, unbind, type RawTx, type Tx } from './tx.ts';
@@ -16,10 +17,11 @@ export * from './accounts/tables.ts';
 export * from './gst/tables.ts';
 export * from './hr/tables.ts';
 export * from './platform/tables.ts';
+export * from './sales/tables.ts';
 export * from './stock/tables.ts';
 
 /** Every module's tables and relations, as they land: the same files drizzle.config.ts lists. */
-export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...accounts, ...gst, ...hr, ...stock });
+export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...accounts, ...gst, ...hr, ...sales, ...stock });
 
 /** The Drizzle client lib-platform builds on its pool. */
 export type Database = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -52,12 +54,12 @@ export async function openTransaction<R>(db: Database, spec: TxSpec, who: Omit<R
   fn: (tx: Tx) => Promise<R>): Promise<R> {
   check(spec);
   return db.transaction(async (raw) => {
-    await applyRequestContext(raw as unknown as RawTx, { ...who, statementTimeoutMs: spec.statementTimeoutMs });
+    await applyRequestContext(raw as unknown as RawTx, spec, { ...who, statementTimeoutMs: spec.statementTimeoutMs });
     const handle = bind(raw as unknown as RawTx);
     try {
       return await fn(handle);
     } finally {
       unbind(handle);
     }
-  }, { isolationLevel: spec.isolation, accessMode: spec.readOnly ? 'read only' : 'read write' });
+  });
 }

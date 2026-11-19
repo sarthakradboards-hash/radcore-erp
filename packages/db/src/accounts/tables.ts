@@ -1,7 +1,8 @@
 // lib-accounts' tables (ADR-001 §3, §5). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
 import { sql } from 'drizzle-orm';
-import { bigint, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import { boundedText, id, money, radcoreTable } from '../columns.ts';
+import { bigint, boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid,
+  type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { boundedText, id, money, radcoreTable, trigramIndex } from '../columns.ts';
 
 /**
  * The company (M2-02, RAD-88; D-02 option A): RadCore keeps the books of one legal entity. The table holds one row at
@@ -42,6 +43,9 @@ export const periodLock = radcoreTable('period_lock', {
  * never by name or id; a trigger lets them be renamed but never removed or re-keyed. People add their own under a
  * group (`parent_id`: each bank account under Bank). `control_kind` says which entry kinds may post to the account
  * (`posting_rules`); an ordinary account is `none`. (id, control_kind) is unique, for journal_lines' foreign key.
+ * An account may have a `code`, unique where set, with no scheme imposed until the CA's. One other than a system account
+ * can be switched off (`active`) while its balance is zero; it then takes no new postings but a reversal or the
+ * year-end close (RA009), and stays in the reports for the periods it has lines in.
  */
 export const accounts = radcoreTable('accounts', {
   id: id(),
@@ -51,12 +55,16 @@ export const accounts = radcoreTable('accounts', {
   type: text().notNull(),
   controlKind: text().notNull().default('none'),
   parentId: uuid().references((): AnyPgColumn => accounts.id, { onDelete: 'restrict' }),
+  code: text().unique('ux_accounts_code'),
+  active: boolean().notNull().default(true),
 }, (t) => [
   check('ck_accounts_system_key', sql`${t.systemKey} ~ '^[a-z][a-z0-9_]*$'`),
   check('ck_accounts_type', sql`${t.type} in ('asset', 'liability', 'equity', 'income', 'expense')`),
   check('ck_accounts_control_kind', sql`${t.controlKind} in ('none', 'party', 'stock', 'gdni', 'grni', 'gst', 'tds', 'payroll', 'opening', 'year_close')`),
   // Only a system account is a control account: the ones people add are ordinary.
   check('ck_accounts_control_system', sql`${t.controlKind} = 'none' or ${t.systemKey} is not null`),
+  check('ck_accounts_code', sql`${t.code} ~ '^[0-9A-Z][0-9A-Z.-]{0,11}$'`),
+  check('ck_accounts_system_active', sql`${t.systemKey} is null or ${t.active}`),
   unique('ux_accounts_name_key').on(t.nameKey),
   unique('ux_accounts_id_control_kind').on(t.id, t.controlKind),
   index('ix_accounts_parent_id').on(t.parentId),
@@ -94,7 +102,9 @@ export const journalEntries = radcoreTable('journal_entries', {
   check('ck_journal_entries_kind', sql`${t.kind} in ('opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice', 'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work', 'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer', 'manual', 'year_close')`),
   check('ck_journal_entries_source_table', sql`${t.sourceTable} ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || ${t.sourceTable}) is not null`),
   // A manual journal is its own document, and says why.
-  check('ck_journal_entries_manual', sql`${t.kind} <> 'manual' or (${t.sourceTable} = 'journal_entries' and ${t.sourceId} = ${t.id} and ${t.reason} is not null)`),
+  // A manual journal is its own document; its reversal belongs to the same document, the original (RAD-86's routes).
+  check('ck_journal_entries_manual', sql`${t.kind} <> 'manual' or (${t.sourceTable} = 'journal_entries' and ${t.reason} is not null
+    and (${t.sourceId} = ${t.id} or ${t.sourceId} = ${t.reversesEntryId}))`),
   unique('ux_journal_entries_source').on(t.sourceTable, t.sourceId, t.kind, t.reversesEntryId).nullsNotDistinct(),
   unique('ux_journal_entries_id_kind').on(t.id, t.kind),
   unique('ux_journal_entries_id_kind_date').on(t.id, t.kind, t.businessDate),
@@ -157,3 +167,45 @@ export const pendingDocumentChecks = radcoreTable('pending_document_checks', {
   tableName: text().notNull(),
   documentId: uuid().notNull(),
 }, (t) => [primaryKey({ name: 'pk_pending_document_checks', columns: [t.tableName, t.documentId] })]);
+
+/**
+ * Parties (M2-11, RAD-90): everyone RadCore sells to or buys from, as one or more kinds (a dealer who also supplies is
+ * one party). A registered party's GSTIN is unique, its PAN is the GSTIN's own, and its state is the GSTIN's; an
+ * unregistered party still has a state, for the place of supply (ADR-006 §6). A composition dealer is registered.
+ * Phone, email and address are personal data: answered as pii(), and redacted in the audit trail (RAD-40). Credit
+ * terms are set only through their own route, with parties:manage. A party is switched off, never deleted (ADR-005 §3).
+ */
+export const parties = radcoreTable('parties', {
+  id: id(),
+  name: boundedText({ max: 200 }).notNull(),
+  // Its kinds, one or more: a dealer who also supplies is one party.
+  customer: boolean().notNull().default(false),
+  dealer: boolean().notNull().default(false),
+  franchisee: boolean().notNull().default(false),
+  supplier: boolean().notNull().default(false),
+  gstin: text(),
+  pan: text(),
+  composition: boolean().notNull().default(false),
+  stateCode: text().notNull(),
+  phone: text(),
+  email: boundedText({ max: 254 }),
+  addressLine1: boundedText({ max: 200 }),
+  addressLine2: boundedText({ max: 200 }),
+  city: boundedText({ max: 100 }),
+  pincode: text(),
+  creditDays: smallint(),
+  creditLimit: money(),
+  active: boolean().notNull().default(true),
+}, (t) => [
+  uniqueIndex('ux_parties_gstin').on(t.gstin),
+  trigramIndex('ix_parties_name_trgm', t.name),
+  check('ck_parties_kinds', sql`${t.customer} or ${t.dealer} or ${t.franchisee} or ${t.supplier}`),
+  check('ck_parties_gstin', sql`${t.gstin} ~ '^[0-9]{2}[A-Z]{3}[PCHFATBLJG][A-Z][0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$'`),
+  check('ck_parties_pan', sql`${t.pan} ~ '^[A-Z]{3}[PCHFATBLJG][A-Z][0-9]{4}[A-Z]$'`),
+  check('ck_parties_pan_in_gstin', sql`${t.gstin} is null or ${t.pan} is null or substr(${t.gstin}, 3, 10) = ${t.pan}`),
+  check('ck_parties_state', sql`${t.stateCode} ~ '^[0-9]{2}$' and (${t.gstin} is null or left(${t.gstin}, 2) = ${t.stateCode})`),
+  check('ck_parties_composition', sql`not ${t.composition} or ${t.gstin} is not null`),
+  check('ck_parties_phone', sql`${t.phone} ~ '^[+][1-9][0-9]{6,14}$'`),
+  check('ck_parties_pincode', sql`${t.pincode} ~ '^[1-9][0-9]{5}$'`),
+  check('ck_parties_credit_days', sql`${t.creditDays} between 0 and 365`),
+]);

@@ -15,10 +15,22 @@ type Fixtures = {
   pageProblems: string[];
 };
 
+/**
+ * WebKit's uncaught error for a Next RSC prefetch (`?_rsc=`) that navigation cut off, on this site's own `origin`:
+ * "Fetch API cannot load http://127.0.0.1:3100/admin/locations?_rsc=… due to access control checks." (RAD-76). Chromium
+ * and Firefox report the same cancel as an aborted request, which `requestfailed` below already ignores. Only that
+ * exact text, same-origin and with `_rsc`: a refusal from another origin, or of any other request, is still a problem.
+ */
+export function isCancelledRscPrefetch(message: string, origin: string): boolean {
+  const host = new URL(origin).host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|\\s|:)/{0,2}${host}/[^\\s?#]*\\?(?:[^\\s#]*&)?_rsc=[^\\s&#]+[^\\s#]* due to access control checks\\.$`)
+    .test(message);
+}
+
 export const test = base.extend<Options & Fixtures>({
   expectedStatuses: [[], { option: true }],
   pageProblems: [
-    async ({ context, expectedStatuses }, use) => {
+    async ({ context, expectedStatuses, baseURL }, use) => {
       const problems: string[] = [];
       const expected = (status: number) => expectedStatuses.includes(status);
       // Watched on the whole browser context, so a popup or new tab a journey opens is checked like its first page.
@@ -26,7 +38,10 @@ export const test = base.extend<Options & Fixtures>({
         // The browser logs every 4xx/5xx as a console error too; those are judged by status below.
         if (m.type() === 'error' && !m.text().startsWith('Failed to load resource:')) problems.push(`console error: ${m.text()}`);
       });
-      context.on('weberror', (e) => problems.push(`uncaught: ${e.error().message}`));
+      context.on('weberror', (e) => {
+        const message = e.error().message;
+        if (baseURL === undefined || !isCancelledRscPrefetch(message, baseURL)) problems.push(`uncaught: ${message}`);
+      });
       // Chromium doesn't reliably log a CSP violation to the console, so listen for the event itself (RAD-72); Firefox
       // then reports one violation twice, which fails the test all the same. On the window, not the document: a popup
       // opened at about:blank keeps its window when it loads the real page, and the init script doesn't run again.
