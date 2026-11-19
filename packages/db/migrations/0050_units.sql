@@ -44,6 +44,7 @@ CREATE TABLE "radcore"."unit_events" (
     'condition_changed', 'chassis_recorded', 'taken_in', 'handed_back', 'scrapped')),
 	CONSTRAINT "ck_unit_events_condition" CHECK ("radcore"."unit_events"."condition" is null or "radcore"."unit_events"."condition" in ('new', 'demo', 'used', 'damaged')),
 	CONSTRAINT "ck_unit_events_source_table" CHECK ("radcore"."unit_events"."source_table" ~ '^[a-z][a-z0-9_]*$'),
+	CONSTRAINT "ck_unit_events_serial" CHECK ("radcore"."unit_events"."serial_no" ~ '^[ -~]*[!-~][ -~]*$'),
 	CONSTRAINT "ck_unit_events_movements" CHECK (case
     when "radcore"."unit_events"."kind" in ('moved', 'sent_to_job_work', 'received_from_job_work') then "radcore"."unit_events"."out_movement_id" is not null and "radcore"."unit_events"."in_movement_id" is not null
     when "radcore"."unit_events"."kind" in ('received', 'delivery_returned', 'returned') then "radcore"."unit_events"."out_movement_id" is null and "radcore"."unit_events"."in_movement_id" is not null
@@ -74,6 +75,7 @@ CREATE TABLE "radcore"."units" (
 	CONSTRAINT "ux_units_id_item" UNIQUE("id","item_id"),
 	CONSTRAINT "ck_units_serial_no" CHECK (char_length("radcore"."units"."serial_no") <= 60),
 	CONSTRAINT "ck_units_chassis_no" CHECK (char_length("radcore"."units"."chassis_no") <= 40),
+	CONSTRAINT "ck_units_serial" CHECK ("radcore"."units"."serial_no" ~ '^[ -~]*[!-~][ -~]*$'),
 	CONSTRAINT "ck_units_ownership" CHECK ("radcore"."units"."ownership" in ('ours', 'customer', 'gone')),
 	CONSTRAINT "ck_units_condition" CHECK ("radcore"."units"."condition" in ('new', 'demo', 'used', 'damaged')),
 	CONSTRAINT "ck_units_where" CHECK (("radcore"."units"."ownership" <> 'ours' or "radcore"."units"."location_id" is not null)
@@ -103,6 +105,7 @@ CREATE INDEX "ix_unit_events_source" ON "radcore"."unit_events" USING btree ("so
 CREATE UNIQUE INDEX "ux_units_chassis" ON "radcore"."units" USING btree ("chassis_key");--> statement-breakpoint
 CREATE INDEX "ix_units_batch" ON "radcore"."units" USING btree ("batch_id","item_id");--> statement-breakpoint
 CREATE INDEX "ix_units_location" ON "radcore"."units" USING btree ("location_id");--> statement-breakpoint
+--> statement-breakpoint
 -- RAD-94 (ADR-006 §5, RC-026): only the units engine changes a unit, through unit_events and its trigger. The runtime
 -- login reads units, and writes none of them.
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.units FROM radcore_app;
@@ -131,10 +134,10 @@ CREATE TRIGGER refuse_truncate BEFORE TRUNCATE ON radcore.unit_events FOR EACH S
 --> statement-breakpoint
 REVOKE UPDATE, DELETE, TRUNCATE ON radcore.unit_events FROM radcore_app;
 --> statement-breakpoint
--- Applies each event to its unit (ADR-006 §5): allowed from the unit's ownership (unit_event_rules), its out movement
--- at the unit's old location and its in movement taking it to the new one, and the chassis number a flagged item needs
--- on receipt and on delivery. Anything else raises RA008. The unit row is found by item and serial, locked, and
--- written here; the event takes its id and the location the unit ends at.
+-- Applies each event to its unit (ADR-006 §5): dated after the period lock (RA003), allowed from the unit's ownership
+-- (unit_event_rules), its out movement at the unit's old location and its in movement taking it to the new one, and
+-- the chassis number a flagged item needs on receipt and on delivery. Anything else raises RA008. The unit row is found
+-- by item and serial, locked, and written here; the event takes its id and the location the unit ends at.
 CREATE FUNCTION radcore.apply_unit_event() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, radcore, pg_temp AS $$
 DECLARE
@@ -146,9 +149,15 @@ DECLARE
   m_location uuid;
   m_kind text;
   dest uuid;
+  locked date;
 BEGIN
   NEW.posted_at := now();
   NEW.reason_id := nullif(current_setting('app.reason_id', true), '')::uuid;
+  -- Nothing posts on or before the period lock (RA003), an event that moves no stock included (auditor-2 on #216).
+  SELECT locked_through INTO locked FROM radcore.period_lock WHERE id = 1;
+  IF locked IS NOT NULL AND NEW.business_date <= locked THEN
+    RAISE EXCEPTION 'the books are locked through %, so no unit changes on %', locked, NEW.business_date USING ERRCODE = 'RA003';
+  END IF;
   SELECT i.serialised, i.has_chassis INTO serialised, flagged FROM radcore.items i WHERE i.id = NEW.item_id;
   IF serialised IS NOT TRUE THEN
     RAISE EXCEPTION 'unit %: its item isn''t serialised', NEW.serial_no USING ERRCODE = 'RA008';
