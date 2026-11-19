@@ -347,7 +347,7 @@ export const notifications = radcoreTable('notifications', {
   readAt: timestamp({ withTimezone: true }),
 }, (t) => [
   check('ck_notifications_kind', sql`${t.kind} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$'`),
-  check('ck_notifications_record_table', sql`${t.recordTable} ~ '^[a-z][a-z0-9_]*$'`),
+  check('ck_notifications_record_table', sql`${t.recordTable} ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || ${t.recordTable}) is not null`),
   index('ix_notifications_user_at').on(t.userId, t.at, t.id),
   index('ix_notifications_unread').on(t.userId).where(isNull(t.readAt)),
 ]);

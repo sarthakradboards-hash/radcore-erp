@@ -26,6 +26,8 @@ const PERSON = defineNotification('platform.t_person', { table: 'users', label: 
     .from(users).where(inArray(users.id, [...ids]))).map((u) => [u.id,
     `${u.name} (${ctx.shows('whole') ? u.email : maskOf(u.email, 'whole').masked})`])) });
 const PLAIN = defineNotification('platform.t_plain', { table: 'users', label: 'Something changed' });
+const BROKEN = defineNotification('platform.t_broken', { table: 'users', label: 'A broken kind',
+  describe: () => Promise.reject(new Error('this kind cannot describe its records')) });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
   expect.fail('TEST_DATABASE_URL is not set: in CI the notification tests must run, not skip');
@@ -96,6 +98,14 @@ describe.skipIf(!url || !superUrl)('notifications', { timeout: 30_000 }, () => {
     await as(SYSTEM)((ctx) => notify(ctx, PERSON, { to, recordId: gone }));
     await owner("insert into radcore.notifications (user_id, kind, record_table, record_id) values ($1, 'crm.t_unknown', 'users', $2)", [to, about]);
     expect((await page(viewer(to))).items.map((n) => n.text)).toEqual(['Something needs your attention', 'Someone needs you', 'Something changed']);
+  });
+
+  it('shows a kind’s label when it fails to describe its records, and still describes the others (the auditor on #227)', async () => {
+    const to = await person();
+    const about = await person('Meera Shah');
+    await as(SYSTEM)((ctx) => notify(ctx, PERSON, { to, recordId: about }));
+    await as(SYSTEM)((ctx) => notify(ctx, BROKEN, { to, recordId: about }));
+    expect((await page(viewer(to))).items.map((n) => n.text)).toEqual(['A broken kind', 'Meera Shah (••••••)']);
   });
 
   it('lists a person’s own newest first, a page at a time, never skipping one raised in the same moment', async () => {

@@ -75,7 +75,9 @@ export async function myNotificationsPage(ctx: Ctx, input: In<typeof listMyNotif
     const def = kinds.get(kind);
     if (def?.describe === undefined) continue;
     const ofKind = page.filter((r) => r.kind === kind);
-    const described = await def.describe(ctx, [...new Set(ofKind.map((r) => r.recordId))]);
+    // One kind that fails to describe its records shows its label, never fails everyone's list (the auditor on #227).
+    const described = await def.describe(ctx, [...new Set(ofKind.map((r) => r.recordId))])
+      .catch((): ReadonlyMap<string, string> => new Map());
     for (const r of ofKind) {
       const text = described.get(r.recordId);
       if (text !== undefined) texts.set(r.id, text);
