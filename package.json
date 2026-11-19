@@ -50,5 +50,19 @@
     "typescript-eslint": "8.72.0",
     "vitest": "5.0.5",
     "zod": "4.6.7"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    },
+    "@stryker-mutator/core": {
+      "minimatch": "11.0.4"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.4"
+    },
+    "typed-rest-client": {
+      "qs": "6.16.1"
+    }
   }
 }
