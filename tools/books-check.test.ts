@@ -16,7 +16,8 @@ const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const SNAPSHOT = { readOnly: true, isolation: 'repeatable read' } as const;
-const DAY = '2026-11-16';
+// 2032-33, a year no other file posts in.
+const DAY = '2032-11-16';
 const staff: Principal = { kind: 'system', name: 'test', permissions: ['items:write', 'locations:write', 'journal:read'] };
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
@@ -58,7 +59,7 @@ describe.skipIf(!url || !superUrl)('the books check', { timeout: 30_000 }, () =>
   it('finds a movement written behind the engines’ backs, and as at an earlier date only what is current', async () => {
     const { itemId, demo } = await setup();
     const c = await su.connect();
-    const later = '2026-12-01';
+    const later = '2032-12-01';
     const bad = randomUUID();
     try {
       await c.query('begin');
