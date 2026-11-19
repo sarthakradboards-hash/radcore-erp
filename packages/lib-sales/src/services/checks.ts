@@ -37,7 +37,9 @@ export type SaleCheck = Readonly<{
   partyId: string;
   /** The document's business date. */
   on: string;
-  /** What this document adds to what the party owes: its unpaid part. */
+  /** What this document adds to what the party owes, counted once with notInvoiced: at confirm, the order's total; at
+   * deliver, this delivery's value (not yet posted, so not in notInvoiced); at invoice, only what the invoice adds beyond
+   * its deliveries, which notInvoiced already holds; at handback, the job card's unpaid total. */
   adds: DecimalInput;
   /** Delivered to the party and not yet billed. shortcut: 0 until M3-08's deliveredNotInvoiced lands; the stage passes it. */
   notInvoiced?: DecimalInput;
