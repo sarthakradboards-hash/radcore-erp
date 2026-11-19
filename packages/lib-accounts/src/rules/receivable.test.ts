@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { receivable } from './receivable.ts';
 
-const entry = () => randomUUID();
+const entry = (): string => randomUUID();
 const dr = (businessDate: string, amount: string, entryId = entry()) => ({ businessDate, debit: amount, credit: '0.00', entryId, reversesEntryId: null });
 const cr = (businessDate: string, amount: string, entryId = entry()) => ({ businessDate, debit: '0.00', credit: amount, entryId, reversesEntryId: null });
 const reversal = (businessDate: string, amount: string, of: string) =>
