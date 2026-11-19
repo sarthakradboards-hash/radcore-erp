@@ -94,11 +94,11 @@ export async function listItemsPage(ctx: Ctx, input: In<typeof listItems>): Prom
 export async function listItemRows(ctx: Ctx, input: In<typeof listItems>): Promise<{ items: ItemRow[]; next: string | null }> {
   const key = input.after === undefined ? undefined : decodeCursor(z.object({ name: z.string().max(200), id: z.uuid() }), input.after);
   const { search, categoryId, active } = input.filter;
-  // Words in the name or SKU, or the whole text as a scanned barcode.
+  // Words in the name or SKU, or the whole text as a scanned barcode, whatever its case.
   const words = searchWords([items.name, items.sku], search);
   const rows = await stockTx(ctx).select(itemColumns).from(items)
     .where(and(
-      words === undefined ? undefined : or(words, eq(items.barcode, (search ?? '').trim())),
+      words === undefined ? undefined : or(words, eq(items.barcodeKey, (search ?? '').trim().toUpperCase())),
       categoryId === undefined ? undefined : eq(items.categoryId, categoryId),
       active === undefined ? undefined : eq(items.active, active),
       after([items.name, items.id], key && [key.name, key.id], 'asc'),
@@ -157,7 +157,7 @@ export async function addItem(ctx: Ctx, input: In<typeof createItem>): Promise<O
   const tx = stockTx(ctx);
   await checkRefs(tx, input);
   const [row] = await uniquely(tx.insert(items).values(input).returning({ id: items.id }),
-    { ux_items_sku_key: skuTaken(), ux_items_barcode: barcodeTaken() });
+    { ux_items_sku_key: skuTaken(), ux_items_barcode_key: barcodeTaken() });
   if (row === undefined) throw new Error('The item was not saved');
   return row;
 }
@@ -179,7 +179,7 @@ export async function changeItem(ctx: Ctx, { id, ...change }: In<typeof updateIt
   await checkRefs(tx, change);
   const fields = Object.fromEntries(Object.entries(change).filter(([, v]) => v !== undefined));
   if (Object.keys(fields).length > 0) {
-    await uniquely(tx.update(items).set(fields).where(eq(items.id, id)), { ux_items_barcode: barcodeTaken() });
+    await uniquely(tx.update(items).set(fields).where(eq(items.id, id)), { ux_items_barcode_key: barcodeTaken() });
   }
   return {};
 }
