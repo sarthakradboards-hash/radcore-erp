@@ -7,4 +7,7 @@ export {
   holdPeriod, JOURNAL_SERIES, openFinancialYear, postEntry, postManualJournal, reverseEntry,
   type AccountRef, type JournalLine, type NewEntry, type Posted,
 } from './services/journal.ts';
+export {
+  cancelPayment, CASH_PAYMENT_LIMIT, CASH_RECEIPT_LIMIT, cashLimitSpec, PAYMENT_SERIES, RECEIPT_SERIES, recordPayment,
+} from './services/payments.ts';
 export { addParty, changeParty, getPartyById, listPartiesPage, setCreditTerms } from './services/parties.ts';
