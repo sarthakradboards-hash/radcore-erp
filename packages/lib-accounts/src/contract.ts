@@ -228,5 +228,7 @@ export const cancelPaymentContract = defineContract({
   errors: ['not_posted', 'date_before_source', 'date_in_future', 'has_refunds', 'period_locked', 'year_not_open', 'already_reversed'],
 });
 
-/** An owner's override for cash past the day's limit (ADR-007 §8, RC-114): its approval posts the payment. */
-export const cashLimitApproval = approvalContracts('cash-limit', 'payments:approve');
+/** An owner's override for cash past the day's limit (ADR-007 §8, RC-114): its approval posts the payment, so the
+ * decision can meet the engine's refusals. */
+export const cashLimitApproval = approvalContracts('cash-limit', 'payments:approve',
+  ['account_inactive', 'period_locked', 'year_not_open', 'not_draft']);
