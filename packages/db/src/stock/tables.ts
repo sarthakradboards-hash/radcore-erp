@@ -1,4 +1,5 @@
-// lib-stock's tables (ADR-001 §3, §5): items (RAD-89), locations (RAD-92) and the stock ledger (RAD-93, ADR-006 §4, §4a). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
+// lib-stock's tables (ADR-001 §3, §5): items (RAD-89), locations (RAD-92), the stock ledger (RAD-93, ADR-006 §4, §4a)
+// and units by serial (RAD-94, §5). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
 import { sql } from 'drizzle-orm';
 import { boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, money, qty, radcoreTable, trigramIndex, unitPrice } from '../columns.ts';
@@ -95,8 +96,6 @@ export const locations = radcoreTable('locations', {
  * carry a quantity and its value; `revalue` carries a value only, signed. Quantity and value on hand are sums of these
  * rows, never stored. Each row names the document line it came from, its business date and when it was posted
  * (ADR-005 §6). A cancellation's mirror names the movement it undoes, once.
- * shortcut: no `fy_start` and no period-lock check yet: `financial_years` and the lock rows come with RAD-86 part 1,
- * and RAD-93's posting PR adds both.
  */
 export const stockMovements = radcoreTable('stock_movements', {
   id: id(),
@@ -127,6 +126,8 @@ export const stockMovements = radcoreTable('stock_movements', {
   uniqueIndex('ux_stock_movements_reverses').on(t.reversesMovementId),
   // For the batch rows' composite key, so a batch row's item is its movement's.
   unique('ux_stock_movements_id_item').on(t.id, t.itemId),
+  // For the unit events' composite keys, so an event's out movement is an `out` and its in movement an `in` (§5).
+  unique('ux_stock_movements_id_direction').on(t.id, t.direction),
   // The sums on hand: an item at a location.
   index('ix_stock_movements_item_location').on(t.itemId, t.locationId),
   index('ix_stock_movements_location').on(t.locationId),
@@ -183,4 +184,115 @@ export const stockMovementBatches = radcoreTable('stock_movement_batches', {
   unique('ux_stock_movement_batches_movement_batch').on(t.movementId, t.batchId).nullsNotDistinct(),
   index('ix_stock_movement_batches_movement_item').on(t.movementId, t.itemId),
   index('ix_stock_movement_batches_batch').on(t.batchId, t.itemId),
+]);
+
+/**
+ * A serialised unit as it stands now (ADR-006 §5, RC-026, RC-027): whose it is, what condition it's in, who it's
+ * promised to and where it is, each in its own column. One row per serial (`serial_key`, upper case without spaces),
+ * and one `location_id`, so a unit can't be on two shelves. Only `unit_events`' trigger writes it: the runtime login has
+ * no INSERT, UPDATE or DELETE here, so every path goes through the units engine. A chassis number names one vehicle
+ * across every item (`chassis_key`, upper case without spaces or hyphens).
+ * shortcut: `promised_to` and `sale_line_id` name order and delivery lines, which M3 adds; until then they're plain ids.
+ */
+export const units = radcoreTable('units', {
+  id: id(),
+  itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
+  serialNo: boundedText({ max: 60 }).notNull(),
+  serialKey: text().notNull().generatedAlwaysAs(sql`upper(regexp_replace(serial_no, '[[:space:]]', '', 'g'))`),
+  ownership: text().notNull(),
+  condition: text().notNull(),
+  promisedTo: uuid(),
+  locationId: uuid().references(() => locations.id, { onDelete: 'restrict' }),
+  saleLineId: uuid(),
+  batchId: uuid(),
+  chassisNo: boundedText({ max: 40 }),
+  chassisKey: text().generatedAlwaysAs(sql`upper(regexp_replace(chassis_no, '[[:space:]-]', '', 'g'))`),
+}, (t) => [
+  unique('ux_units_item_serial').on(t.itemId, t.serialKey),
+  uniqueIndex('ux_units_chassis').on(t.chassisKey),
+  // For the events' composite key, so an event's unit is its item's.
+  unique('ux_units_id_item').on(t.id, t.itemId),
+  foreignKey({ name: 'fk_units_batch', columns: [t.batchId, t.itemId], foreignColumns: [batches.id, batches.itemId] }),
+  index('ix_units_batch').on(t.batchId, t.itemId),
+  index('ix_units_location').on(t.locationId),
+  // lib-common's lists, written out because L1 allows only a plain `sql` here; tools/units-lists.test.ts holds them equal.
+  check('ck_units_ownership', sql`${t.ownership} in ('ours', 'customer', 'gone')`),
+  check('ck_units_condition', sql`${t.condition} in ('new', 'demo', 'used', 'damaged')`),
+  // Ours is somewhere and gone is nowhere; only a customer's unit is on a sale, and only ours is promised.
+  check('ck_units_where', sql`(${t.ownership} <> 'ours' or ${t.locationId} is not null)
+    and (${t.ownership} <> 'gone' or ${t.locationId} is null)`),
+  check('ck_units_sale', sql`${t.saleLineId} is null or ${t.ownership} = 'customer'`),
+  check('ck_units_promise', sql`${t.promisedTo} is null or ${t.ownership} = 'ours'`),
+]);
+
+/** Which unit events may start from which ownership (ADR-006 §5), `none` for a unit with no row yet: lib-common's
+ * UNIT_EVENTS, seeded by the owner migration and read-only to the runtime login. */
+export const unitEventRules = radcoreTable('unit_event_rules', {
+  kind: text().notNull(),
+  fromOwnership: text().notNull(),
+}, (t) => [primaryKey({ name: 'pk_unit_event_rules', columns: [t.kind, t.fromOwnership] })]);
+
+/**
+ * Every change to a unit (ADR-006 §5), append-only (ADR-005 §7). A trigger checks it against the unit's state and
+ * `unit_event_rules`, and applies it to `units` (RA008). It rides on the stock movements its kind needs: an out
+ * movement at the unit's old location and an in movement at its new one, each held to its direction by a composite key
+ * through a constant generated column. At commit, each movement of a serialised item has as many events as its
+ * quantity, and as many per batch as its batch row (RA007).
+ */
+export const unitEvents = radcoreTable('unit_events', {
+  id: id(),
+  // The trigger's, once it has found or made the unit; the CHECK holds it set.
+  unitId: uuid(),
+  itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
+  serialNo: boundedText({ max: 60 }).notNull(),
+  kind: text().notNull(),
+  sourceTable: text().notNull(),
+  sourceId: uuid().notNull(),
+  businessDate: date({ mode: 'string' }).notNull(),
+  postedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  fyStart: date({ mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)`),
+  outMovementId: uuid(),
+  outDirection: text().notNull().generatedAlwaysAs(sql`'out'`),
+  inMovementId: uuid(),
+  inDirection: text().notNull().generatedAlwaysAs(sql`'in'`),
+  // Where the unit is after it: the in movement's location, a service bay for `taken_in`, else unchanged.
+  locationId: uuid().references(() => locations.id, { onDelete: 'restrict' }),
+  condition: text(),
+  promisedTo: uuid(),
+  saleLineId: uuid(),
+  batchId: uuid(),
+  chassisNo: boundedText({ max: 40 }),
+  // RAD-36: the change's reason, which `chassis_recorded` must have (lib-platform's recordChangeReason).
+  reasonId: uuid(),
+}, (t) => [
+  foreignKey({ name: 'fk_unit_events_unit', columns: [t.unitId, t.itemId], foreignColumns: [units.id, units.itemId] }),
+  foreignKey({ name: 'fk_unit_events_out', columns: [t.outMovementId, t.outDirection],
+    foreignColumns: [stockMovements.id, stockMovements.direction] }),
+  foreignKey({ name: 'fk_unit_events_in', columns: [t.inMovementId, t.inDirection],
+    foreignColumns: [stockMovements.id, stockMovements.direction] }),
+  foreignKey({ name: 'fk_unit_events_batch', columns: [t.batchId, t.itemId], foreignColumns: [batches.id, batches.itemId] }),
+  foreignKey({ name: 'fk_unit_events_fy_start', columns: [t.fyStart], foreignColumns: [financialYears.start] }),
+  index('ix_unit_events_unit').on(t.unitId, t.itemId),
+  index('ix_unit_events_out').on(t.outMovementId, t.outDirection),
+  index('ix_unit_events_in').on(t.inMovementId, t.inDirection),
+  index('ix_unit_events_batch').on(t.batchId, t.itemId),
+  index('ix_unit_events_location').on(t.locationId),
+  index('ix_unit_events_fy_start').on(t.fyStart),
+  index('ix_unit_events_item').on(t.itemId),
+  index('ix_unit_events_source').on(t.sourceTable, t.sourceId),
+  // lib-common's UNIT_EVENTS, written out (L1); tools/units-lists.test.ts holds the kinds and their movements equal.
+  check('ck_unit_events_kind', sql`${t.kind} in ('received', 'moved', 'reserved', 'released', 'delivered',
+    'delivery_returned', 'returned', 'returned_to_supplier', 'sent_to_job_work', 'received_from_job_work',
+    'condition_changed', 'chassis_recorded', 'taken_in', 'handed_back', 'scrapped')`),
+  check('ck_unit_events_condition', sql`${t.condition} is null or ${t.condition} in ('new', 'demo', 'used', 'damaged')`),
+  check('ck_unit_events_source_table', sql`${t.sourceTable} ~ '^[a-z][a-z0-9_]*$'`),
+  // The movements each kind rides on (§5): both, in only, out only, or neither.
+  check('ck_unit_events_movements', sql`case
+    when ${t.kind} in ('moved', 'sent_to_job_work', 'received_from_job_work') then ${t.outMovementId} is not null and ${t.inMovementId} is not null
+    when ${t.kind} in ('received', 'delivery_returned', 'returned') then ${t.outMovementId} is null and ${t.inMovementId} is not null
+    when ${t.kind} in ('delivered', 'returned_to_supplier', 'scrapped') then ${t.outMovementId} is not null and ${t.inMovementId} is null
+    else ${t.outMovementId} is null and ${t.inMovementId} is null end`),
+  check('ck_unit_events_reason', sql`${t.kind} <> 'chassis_recorded' or ${t.reasonId} is not null`),
+  check('ck_unit_events_unit', sql`${t.unitId} is not null`),
 ]);
