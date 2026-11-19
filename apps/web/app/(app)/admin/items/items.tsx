@@ -32,7 +32,8 @@ const categorySchema = createItemCategory.input;
 const CATEGORY_MESSAGES = { ...MESSAGES, name_taken: t('admin.items.category.taken') };
 
 export function Items({ initialView }: { initialView: ItemView }) {
-  const mayWrite = useMe().permissions.includes('items:write');
+  const { permissions } = useMe();
+  const mayWrite = permissions.includes('items:write');
   const [view, setView] = useSavedView<ItemView>('items', initialView);
   const [search, setSearch] = useState('');
   const [show, setShow] = useState<Show>('active');
@@ -132,14 +133,14 @@ export function Items({ initialView }: { initialView: ItemView }) {
 
       <Dialog open={acting?.kind === 'add'} onOpenChange={close} title={t('admin.items.add')}>
         <Form schema={newItemSchema} saved={false} messages={MESSAGES}
-          defaultValues={{ sku: '', name: '', categoryId: '', hsn: '', unit: '', barcode: '', serialised: false, hasChassis: false }}
+          defaultValues={{ sku: '', name: '', categoryId: '', hsn: '', unit: '', barcode: '', serialised: false, hasChassis: false, purchasePrice: '' }}
           onSubmit={async (v) => {
             const { id } = await add.submit(v);
             setActing(null);
             later(t('admin.items.added', { sku: v.sku }));
             router.push(`/admin/items/${id}`);
           }}>
-          <ItemFields categories={categories} units={units} withSku />
+          <ItemFields categories={categories} units={units} withSku cost={permissions.includes('cost:read') ? 'edit' : 'none'} />
           <div className="kit-actions">
             <CloseButton>{t('admin.cancel')}</CloseButton>
             <SubmitButton>{t('admin.items.add')}</SubmitButton>
