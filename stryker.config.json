@@ -14,7 +14,8 @@
     "packages/lib-common/src/money.ts",
     "packages/lib-gst/src/rules/rates.ts",
     "packages/lib-accounts/src/services/posting.ts",
-    "packages/lib-stock/src/engine/valuation.ts"
+    "packages/lib-stock/src/engine/valuation.ts",
+    "packages/lib-sales/src/services/checks-rules.ts"
   ],
   "coverageAnalysis": "perTest",
   "reporters": [
