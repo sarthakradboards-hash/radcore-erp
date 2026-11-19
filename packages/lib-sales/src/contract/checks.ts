@@ -1,5 +1,6 @@
-// The sale checks' answer (M3-07, RAD-111), for each document that asks checkSale to put in its own answers. Like every
-// contract file it imports only zod and lib-common (D5). contract.ts re-exports it (M3-08 adds the line).
+// The sale checks' answer (M3-07, RAD-111), for each document that asks checkSale to put in its own answers,
+// re-exported by ../contract.ts (#233). backend-2 writes this file and contract.ts only re-exports it, so the two never
+// collide. Like every contract file it imports only zod and lib-common (D5).
 import { cost, dateString, idString, moneyString, percentString, unitPriceString } from '@radcore/lib-common';
 import { z } from 'zod';
 
