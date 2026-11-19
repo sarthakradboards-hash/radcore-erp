@@ -344,14 +344,16 @@ const noTableExports = {
       const seen = best.get(type);
       if (seen !== undefined && seen <= depth) return false;
       best.set(type, depth);
+      // Found: forget this type, so another of the file's exports reaching it is walked again and reported too.
+      const found = () => { best.delete(type); return true; };
       for (const sym of [type.getSymbol(), type.aliasSymbol]) {
         const name = sym?.getName();
-        if (name && (names.includes(name) || tx.test(name))) return true;
+        if (name && (names.includes(name) || tx.test(name))) return found();
       }
       // Into another package's type, only through what we passed it: AsyncLocalStorage<SalesTx> holds a transaction.
       if (foreign(type.aliasSymbol ?? type.getSymbol())) {
         const args = [...(type.aliasTypeArguments ?? []), ...(type.target ? checker.getTypeArguments(type) : [])];
-        return args.some((t) => carries(t, best, depth + 1));
+        return args.some((t) => carries(t, best, depth + 1)) ? found() : false;
       }
       const awaited = checker.getAwaitedType(type);
       const next = [
@@ -363,18 +365,21 @@ const noTableExports = {
         ...checker.getIndexInfosOfType(type).map((i) => i.type),
         ...(depth < PROPERTY_DEPTH ? type.getProperties().map((p) => checker.getTypeOfSymbol(p)) : []),
       ];
-      return next.some((t) => carries(t, best, depth + 1));
+      return next.some((t) => carries(t, best, depth + 1)) ? found() : false;
     };
     return {
       'Program:exit'(program) {
         const file = services.esTreeNodeToTSNodeMap.get(program);
         const moduleSymbol = checker.getSymbolAtLocation(file);
         if (!moduleSymbol) return;
+        // One memory of the types walked, for all this file's exports: what carried nothing for one export carries
+        // nothing for the next, so the zod types every service shares are walked once, not once per export (RAD-89).
+        const walked = new Map();
         for (const exported of checker.getExportsOfModule(moduleSymbol)) {
           let s = exported;
           try { s = checker.getAliasedSymbol(exported); } catch { /* not an alias */ }
           const types = [s.valueDeclaration ? checker.getTypeOfSymbol(s) : null, checker.getDeclaredTypeOfSymbol(s)];
-          if (types.some((t) => carries(t, new Map(), 0))) {
+          if (types.some((t) => carries(t, walked, 0))) {
             context.report({ node: program, messageId: 'm', data: { message, name: exported.getName() } });
           }
         }
