@@ -1,6 +1,7 @@
 // RAD-91 (M2-12, RC-115) on a real PostgreSQL as the runtime login: GST rates by HSN and date. The newest rate in force
 // wins over an older, longer code; no rate is an error, never 0%; a rate is corrected in place and never deleted. Each
-// test uses HSN codes of its own, under chapter 97, which no seeded row uses.
+// test uses HSN codes of its own, under chapter 97, which no seeded row uses; the no-rate test's is under chapter 98,
+// which nothing rates at all.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { percentString } from '@radcore/lib-common';
 import { gstRateFor, listRatesPage, putGstRate } from '@radcore/lib-gst';
@@ -13,8 +14,8 @@ import { SECOND_FACTOR_KEYS } from '../packages/lib-platform/src/permissions.ts'
 const url = process.env['TEST_DATABASE_URL'];
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const AS: Principal = { kind: 'system', name: 'test', permissions: [] };
-/** An 8-digit code of the test's own, under chapter 97. */
-const code8 = () => `97${String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, '0')}`;
+/** An 8-digit code of the test's own, under `chapter` (97 by default). */
+const code8 = (chapter = '97') => `${chapter}${String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, '0')}`;
 
 // D-19 widened (Sarthak, 15 Nov): GST rates decide what every invoice charges, so gst:write needs the second factor.
 it('makes gst:write a second-factor key, and gst:read not', () => {
@@ -37,7 +38,9 @@ describe.skipIf(!url)('GST rates by date', { timeout: 30_000 }, () => {
   const rateOn = async (hsn: string, on: string) => (await run((ctx) => gstRateFor(ctx, hsn, on))).rate;
 
   it('answers no_gst_rate when no row covers the code, never 0%', async () => {
-    expect(await code(run((ctx) => gstRateFor(ctx, code8(), '2025-10-01')))).toBe('no_gst_rate');
+    // Chapter 98, which nothing rates: the other tests rate random chapter-97 headings, and in some shuffle orders one
+    // covered this code's heading, so it found a rate (RC-222, the auditor on #215's run).
+    expect(await code(run((ctx) => gstRateFor(ctx, code8('98'), '2025-10-01')))).toBe('no_gst_rate');
   });
 
   it('lets a newer heading rate beat an older tariff-item rate, and a longer code win on the same start (RC-115)', async () => {
