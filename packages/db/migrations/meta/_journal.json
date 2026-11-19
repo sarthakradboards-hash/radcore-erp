@@ -365,6 +365,13 @@
       "when": 1795070401331,
       "tag": "0051_units",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1795071483591,
+      "tag": "0052_item_purchase_price",
+      "breakpoints": true
     }
   ]
 }

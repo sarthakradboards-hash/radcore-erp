@@ -1,9 +1,10 @@
 // The audit trail (RAD-30 part 2, ADR-005 §7c): the audit trigger's rows, read by an admin (audit:read) within a date
 // range of at most AUDIT_RANGE_MAX_DAYS. Values arrive as stored: secret and personal-data columns were written as
-// "[redacted]" (references, not copies, M6-16), so nothing is masked here and nothing could be unmasked.
+// "[redacted]" (references, not copies, M6-16), so nothing of theirs could be unmasked. A cost column is kept as it is,
+// so its values are masked here for a viewer without cost:read (COST_COLUMNS, ADR-001 §7a).
 import { after, auditLog, changeReasons, onIndiaDays, platformTx } from '@radcore/db/platform';
 import { vAuditedTables } from '@radcore/db/views';
-import { addDays } from '@radcore/lib-common';
+import { addDays, maskOf } from '@radcore/lib-common';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { AUDIT_RANGE_MAX_DAYS, type listAuditedTables, type listAuditTrail } from './contract.ts';
@@ -19,6 +20,10 @@ type Row = Output['items'][number];
 // The page key: occurred_at as stored, then seq, which orders one transaction's rows (they share occurred_at).
 const pageKey = z.strictObject({ occurredAt: momentKey(), seq: z.number().int().positive() });
 const REDACTED = '[redacted]';
+
+/** The audited columns that hold a cost, by table (ADR-001 §7a): the audit trail masks their values for a viewer
+ * without cost:read. Each cost column joins here in the PR that adds it. */
+const COST_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({ items: Object.freeze(['purchase_price']) });
 
 /** listAuditTrail (audit:read): newest first, within a date range of at most AUDIT_RANGE_MAX_DAYS India days. */
 export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output> {
@@ -51,6 +56,7 @@ export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output
   const reasons = new Map(reasonIds.length === 0 ? [] : (await tx.select({ id: changeReasons.id, reason: changeReasons.reason })
     .from(changeReasons).where(inArray(changeReasons.id, reasonIds))).map((c) => [c.id, c.reason]));
   const last = page.at(-1);
+  const seesCost = ctx.shows('cost');
   return {
     items: page.map((r) => ({
       id: r.id,
@@ -59,7 +65,7 @@ export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output
       tableName: r.tableName,
       recordId: r.recordId,
       op: z.enum(['insert', 'update', 'delete']).parse(r.op),
-      changed: changedOf(r.op, r.changed),
+      changed: changedOf(r.op, r.changed, seesCost ? [] : COST_COLUMNS[r.tableName] ?? []),
       reason: r.reasonId === null ? null : reasons.get(r.reasonId) ?? null,
     })),
     next: rows.length > input.limit && last ? encodeCursor({ occurredAt: last.occurredAt, seq: last.seq }) : null,
@@ -77,14 +83,16 @@ export async function listAuditedTablesList(ctx: Ctx): Promise<z.input<typeof li
 const principalKey = (p: string) => (p.includes(':') ? p : `user:${p}`);
 
 // As stored (ADR-005 §7c): an insert's columns hold the new value, a delete's the old, an update's { old, new }; a
-// redacted column holds "[redacted]" alone. The answer always says which side a value was on.
+// redacted column holds "[redacted]" alone. The answer always says which side a value was on. A `hidden` column's
+// values (a cost, for a viewer without cost:read) come back as the mask; a null stays null, as it gives nothing away.
 const stored = z.record(z.string(), z.json());
-function changedOf(op: string, changed: unknown): Row['changed'] {
+function changedOf(op: string, changed: unknown, hidden: readonly string[]): Row['changed'] {
   return Object.fromEntries(Object.entries(stored.parse(changed)).map(([column, v]): [string, Row['changed'][string]] => {
-    if (op === 'insert') return [column, { new: v }];
-    if (op === 'delete') return [column, { old: v }];
+    const shown = (x: z.output<ReturnType<typeof z.json>>) => (hidden.includes(column) && x !== null ? maskOf(x, 'cost') : x);
+    if (op === 'insert') return [column, { new: shown(v) }];
+    if (op === 'delete') return [column, { old: shown(v) }];
     if (v === REDACTED) return [column, { old: REDACTED, new: REDACTED }];
     const pair = z.object({ old: z.json(), new: z.json() }).parse(v);
-    return [column, { old: pair.old, new: pair.new }];
+    return [column, { old: shown(pair.old), new: shown(pair.new) }];
   }));
 }

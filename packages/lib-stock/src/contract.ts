@@ -1,7 +1,8 @@
 // lib-stock's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every contract
 // file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  dateString, defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, searchText, skuString,
+  cost, dateString, defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, searchText,
+  skuString, unitPriceString,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 
@@ -43,6 +44,8 @@ export const renameItemCategory = defineContract({
 const item = z.object({
   id: idString(), sku: z.string(), name: z.string(), categoryId: idString(), hsn: z.string(), unit: unitCode(),
   barcode: z.string().nullable(), serialised: z.boolean(), hasChassis: z.boolean(), active: z.boolean(),
+  // What it costs to buy, per unit: masked without cost:read (RAD-89, ADR-001 §7a).
+  purchasePrice: cost(unitPriceString().nullable()),
   pictures: z.array(z.object({ fileId: idString(), url: z.url().nullable() })).max(8),
 });
 
@@ -69,6 +72,8 @@ const itemFields = {
   serialised: z.boolean(),
   // D-15 (ADR-006 §5): this item's units carry a chassis number. Only a serialised item can.
   hasChassis: z.boolean(),
+  // Setting it needs cost:read as well as items:write (ADR-001 §7a); left out, it isn't changed.
+  purchasePrice: unitPriceString().nullable().optional(),
 };
 const chassisNeedsSerial = { error: 'Only a serialised item can have a chassis number', path: ['hasChassis'] };
 
