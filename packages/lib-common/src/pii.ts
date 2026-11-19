@@ -5,8 +5,9 @@ import { z } from 'zod';
 
 /** How a field is masked: whole (names, addresses, emails), keeping the last 4 of an identifier like a phone, PAN or
  * account number, or whole as pay. Pay (salaries, bank details) needs pay:read, which only admin and owner hold (D-20):
- * pii:read alone still sees it masked. */
-export type PiiKind = 'whole' | 'last4' | 'pay';
+ * pii:read alone still sees it masked. A cost (a purchase price, a valuation) is masked whole without cost:read
+ * (RAD-89): it isn't personal data, so it needs no record and logs no look. */
+export type PiiKind = 'whole' | 'last4' | 'pay' | 'cost';
 /** A value the server hid from this principal, as the wire sends it. */
 export type Masked = { masked: string };
 
@@ -14,7 +15,7 @@ const maskShape = () => z.object({ masked: z.string() }).strict();
 const masked = maskShape();
 // One mask schema per kind, as a pii() field's second option. zod's copies (.describe(), .meta(), .refine(), and the
 // wrappers) keep a union's options, so a field is known by its mask wherever a copy of it goes (the auditor on #156).
-const MASKS: Readonly<Record<PiiKind, z.ZodType>> = { whole: maskShape(), last4: maskShape(), pay: maskShape() };
+const MASKS: Readonly<Record<PiiKind, z.ZodType>> = { whole: maskShape(), last4: maskShape(), pay: maskShape(), cost: maskShape() };
 const MASK_KINDS = new Map<z.ZodType, PiiKind>(Object.entries(MASKS).map(([k, s]) => [s, k as PiiKind]));
 /** The mask is always six bullets, so it gives no length away. */
 const BULLETS = '••••••';
@@ -22,12 +23,12 @@ const BULLETS = '••••••';
  * Whether this request may be shown a kind of personal data, given the key, if any, the record names for its own
  * fields (`seenWith`, RAD-90). The one answer the handler's mask and every service ask (`ctx.shows`), so the two can't
  * disagree (the auditor on #166). A request that isn't direct (Sec-Fetch-Site not same-origin or none, ADR-005 §7c) is
- * shown nothing; pay needs pay:read and nothing else (D-20).
+ * shown nothing; pay needs pay:read and nothing else (D-20), and a cost cost:read and nothing else (RAD-89).
  */
 export type Sight = (kind: PiiKind, seenWith?: string) => boolean;
 /** The Sight of a principal holding these keys; `direct` is false for a request the browser says came from elsewhere. */
 export const sightOf = (permissions: readonly string[], direct = true): Sight => (kind, seenWith) =>
-  direct && (kind === 'pay' ? permissions.includes('pay:read')
+  direct && (kind === 'pay' ? permissions.includes('pay:read') : kind === 'cost' ? permissions.includes('cost:read')
     : permissions.includes('pii:read') || (seenWith !== undefined && permissions.includes(seenWith)));
 
 /** The object schemas that are records: a look at one is logged against its table, and `seenWith` names one more key
@@ -39,6 +40,11 @@ export const piiRecords = z.registry<{ table: string; seenWith?: string }>();
  * see (patch semantics). */
 export function pii<T extends z.ZodType = z.ZodString>(schema?: T, kind: PiiKind = 'whole') {
   return z.union([(schema ?? z.string()) as T, MASKS[kind] as typeof masked]);
+}
+/** An output field holding a cost (RAD-89): its value, or `{ masked }` without cost:read. Unlike pii() it may sit
+ * anywhere in an answer, and showing it logs no look: a cost isn't anyone's personal data. */
+export function cost<T extends z.ZodType = z.ZodString>(schema?: T) {
+  return z.union([(schema ?? z.string()) as T, MASKS.cost as typeof masked]);
 }
 /** An object schema holding pii() fields, and the table its records are in, so a customer reached through an order
  * is logged against `customers`. It has an `id`, the record's. `seenWith` names one more key that shows this record's
@@ -103,7 +109,7 @@ function merge(a: PiiPlan, b: PiiPlan): PiiPlan {
 function planOf(schema: z.ZodType, inRecord: boolean): PiiPlan | null {
   const kind = kindOf(schema);
   if (kind !== undefined) {
-    if (!inRecord) throw new TypeError('a pii() field sits outside any piiRecord, so its look has no table to log under');
+    if (!inRecord && kind !== 'cost') throw new TypeError('a pii() field sits outside any piiRecord, so its look has no table to log under');
     return { kind };
   }
   if (!holdsPii(schema)) return null;
@@ -141,6 +147,7 @@ function walk(plan: PiiPlan, value: unknown, may: Sight, record: Record_, looks:
   if ('kind' in plan) {
     if (isMasked(value)) return value;
     if (!may(plan.kind, record?.seenWith)) return maskOf(value, plan.kind);
+    if (plan.kind === 'cost') return value;
     // The output check has run, so a piiRecord's id is there; a non-string one can't be logged.
     if (record === undefined || typeof record.id !== 'string') throw new TypeError('an unmasked pii() value has no record id to log');
     looks.set(`${record.table}\u0000${record.id}`, { table: record.table, id: record.id });
