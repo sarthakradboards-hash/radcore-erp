@@ -22,8 +22,13 @@ const pageKey = z.strictObject({ occurredAt: momentKey(), seq: z.number().int().
 const REDACTED = '[redacted]';
 
 /** The audited columns that hold a cost, by table (ADR-001 §7a): the audit trail masks their values for a viewer
- * without cost:read. Each cost column joins here in the PR that adds it. */
-const COST_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({ items: Object.freeze(['purchase_price']) });
+ * without cost:read. Each cost column joins here in the PR that adds it; tools/cost-columns.test.ts fails on an audited
+ * money column that's neither here nor on its list of columns that aren't costs. */
+export const COST_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  items: Object.freeze(['purchase_price']),
+  // Stock at cost: a movement's value and its per-unit rate (ADR-006 §4).
+  stock_movements: Object.freeze(['value', 'rate']),
+});
 
 /** listAuditTrail (audit:read): newest first, within a date range of at most AUDIT_RANGE_MAX_DAYS India days. */
 export async function listAuditTrailPage(ctx: Ctx, input: Input): Promise<Output> {
