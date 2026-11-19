@@ -5,6 +5,7 @@ export {
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
 export { checkBooks } from './services/books-check.ts';
+export { averageCost } from './services/cost.ts';
 export { listKinds, setKindLabel } from './services/location-kinds.ts';
 export { addPlace, listPlaces, updatePlace } from './services/locations.ts';
 export { stockSheets } from './sheets.ts';

@@ -4,7 +4,7 @@
 import { AppError } from '@radcore/lib-platform';
 import { dec, moneyString, quantityString, unitPriceString, type Money } from '@radcore/lib-common';
 import { describe, expect, it } from 'vitest';
-import { averageIssue, estimatedIssue, lowestFrom, position, revaluation, type DateRow } from './valuation.ts';
+import { averageIssue, averageOf, estimatedIssue, lowestFrom, position, revaluation, type DateRow } from './valuation.ts';
 
 const q = (s: string) => quantityString().parse(s);
 const r = (s: string) => unitPriceString().parse(s);
@@ -100,5 +100,22 @@ describe('revaluation', () => {
     expect(revaluation(at('0', '0'), q('5'), r('240'), m('1200'))).toBe('0.00');
     expect(revaluation(at('2', '480'), q('5'), r('240'), m('1200'))).toBe('0.00');
     expect(revaluation(at('2', '400'), q('5'), r('240'), m('1200'))).toBe('0.00');
+  });
+});
+
+describe('averageOf', () => {
+  it("is one place's V / Q, to a rate's 6 places (F13: Stores 3 at 183,750.00)", () => {
+    expect(averageOf([at('3', '183750')])).toBe('61250.000000');
+    expect(averageOf([at('3', '100')])).toBe('33.333333');
+    expect(averageOf([at('3', '200')])).toBe('66.666667');
+  });
+  it('is ΣV / ΣQ over the places holding stock, leaving out any at zero or below', () => {
+    expect(averageOf([at('2', '200'), at('1', '130')])).toBe('110.000000');
+    expect(averageOf([at('2', '200'), at('0', '0'), at('-1', '-130'), at('0', '50')])).toBe('100.000000');
+  });
+  it('is null when nothing is on hand', () => {
+    expect(averageOf([])).toBeNull();
+    expect(averageOf([at('0', '0')])).toBeNull();
+    expect(averageOf([at('-3', '-600')])).toBeNull();
   });
 });
