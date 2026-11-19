@@ -1,7 +1,8 @@
 // lib-stock's sheets of the masters workbook (RAD-92, RC-164): locations and items, read as their screens' lists read
 // them, a page at a time. The worker's job file joins them with the other modules' sheets (ADR-001 §8b). A sheet goes
-// in only for a starter holding its key when the job runs. Items carry no cost field yet: RAD-89 part 3 adds cost()
-// and its column here, masked without cost:read.
+// in only for a starter holding its key when the job runs. An item's purchase price is a cost column, masked in the
+// file without cost:read (RAD-89, ADR-001 §7a).
+import { isMasked } from '@radcore/lib-common';
 import type { ExportRow, ExportSheet } from '@radcore/lib-platform';
 import { KIND_LABELS } from './location-kinds.ts';
 import { listCategories, listItemRows } from './services/items.ts';
@@ -21,13 +22,16 @@ const locations: ExportSheet = {
 
 const items: ExportSheet = {
   name: 'Items', perm: 'items:read',
-  columns: ['sku', 'name', 'category', 'hsn', 'unit', 'barcode', 'serialised', 'hasChassis', 'active'],
+  columns: ['sku', 'name', 'category', 'hsn', 'unit', 'barcode', 'serialised', 'hasChassis', 'active', 'purchasePrice'],
+  pii: { purchasePrice: 'cost' },
   rows: async (ctx, _filter, page) => {
     const [{ items: rows, next }, { categories }] = await Promise.all([listItemRows(ctx, { filter: {}, ...page }), listCategories(ctx)]);
     const category = new Map(categories.map((c) => [c.id, c.name]));
     return {
       items: rows.map((i): ExportRow => ({ sku: i.sku, name: i.name, category: category.get(i.categoryId) ?? null, hsn: i.hsn,
-        unit: i.unit, barcode: i.barcode, serialised: yesNo(i.serialised), hasChassis: yesNo(i.hasChassis), active: yesNo(i.active) })),
+        unit: i.unit, barcode: i.barcode, serialised: yesNo(i.serialised), hasChassis: yesNo(i.hasChassis), active: yesNo(i.active),
+        // A service's row is never masked (the engine masks the column without cost:read); the type allows it.
+        purchasePrice: isMasked(i.purchasePrice) ? null : i.purchasePrice })),
       next,
     };
   },

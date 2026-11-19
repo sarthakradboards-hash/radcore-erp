@@ -10,7 +10,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { startMastersExport, type Ctx, type Files, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { addPerson } from '@radcore/lib-hr';
-import { addPlace } from '@radcore/lib-stock';
+import { unitPriceString } from '@radcore/lib-common';
+import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import readXlsxFile from 'read-excel-file/node';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -67,8 +68,25 @@ describe.skipIf(!url || !superUrl)('the masters workbook', () => {
     expect(Object.keys(book)).toEqual(['Locations', 'Items', 'Employees']);
     expect(book['Locations']?.[0]).toEqual(['code', 'name', 'kind', 'active']);
     expect(rowOf(book['Locations'], code)).toEqual([code, 'Workbook stock room', 'Stores (stock room)', 'Yes']);
-    expect(book['Items']?.[0]).toEqual(['sku', 'name', 'category', 'hsn', 'unit', 'barcode', 'serialised', 'hasChassis', 'active']);
+    expect(book['Items']?.[0]).toEqual(['sku', 'name', 'category', 'hsn', 'unit', 'barcode', 'serialised', 'hasChassis', 'active',
+      'purchasePrice']);
     expect(rowOf(book['Employees'], code)).toEqual([code, 'Ravi Kumar', '+919123456789', 'ravi.workbook@example.in', null, null, 'Yes']);
+  });
+
+  // ADR-001 §7a (RAD-89): an item's purchase price is a cost column, masked in the file without cost:read.
+  it("masks an item's purchase price in the Items sheet without cost:read, and shows it with it", async () => {
+    const sku = `W-${tag()}`;
+    await runInTransaction(db, WRITE, as(['cost:read']), randomUUID(), async (ctx: Ctx) => {
+      const { id: categoryId } = await addCategory(ctx, { name: `Workbook ${tag()}` });
+      await addItem(ctx, { sku, name: 'Workbook scooter', categoryId, hsn: '87116020', unit: 'NOS', barcode: null, serialised: false,
+        hasChassis: false, purchasePrice: unitPriceString().parse('64000.5') });
+    });
+    const priceIn = async (keys: string[]) => {
+      const book = await workbook(as(keys));
+      const header = book['Items']?.[0] ?? [];
+      return rowOf(book['Items'], sku)?.[header.indexOf('purchasePrice')];
+    };
+    expect([await priceIn(EVERYTHING), await priceIn([...EVERYTHING, 'cost:read'])]).toEqual(['••••••', '64000.500000']);
   });
 
   // The coordinator's call: the export never shows more than the screens would.

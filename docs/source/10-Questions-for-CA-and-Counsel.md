@@ -370,6 +370,13 @@ CA-46. Account codes.
 - RC: none.
 - Effect on the fix: A migration seeds the system accounts' codes in the chosen scheme; nothing else changes.
 - When needed: Before go-live (M5).
+CA-47. A forfeited booking advance.
+- Ask: When a customer cancels a vehicle booking and Radboards keeps all or part of the advance, is GST due on the amount kept (as consideration for tolerating the cancellation), and at what rate and on which document?
+- Why it matters: A goods advance carries no GST when received (ADR-007 §5), so keeping it turns it into income whose tax treatment the software must know.
+- Code today: v2 posts a goods advance as Dr Bank, Cr Debtors with no GST (ADR-007 §5, ADR-006 §6). A forfeiture has no posting yet.
+- RC: RC-127 (context).
+- Effect on the fix: Adds the forfeiture posting (income, with or without output GST, and the document it's issued on) to ADR-006 §6.
+- When needed: Before vehicle bookings go live (M3-13).
 # Group B. Questions for data-protection counsel (Digital Personal Data Protection Act 2023 and Rules)
 Legal caution from the reviewers. The security reviewer is not a lawyer and did not fetch the Act's text. Section numbers below are the reviewer's reading. The Rules were reported as notified in November 2025 (the AI reviewer cites 13 November 2025 and the notification G.S.R. 846(E) as the item to check), with notice and consent duties reported to begin about 13 May 2027 and the consent-manager rule about 13 November 2026, from law-firm summaries (SCC Online, Mondaq) that are commentary, not the Gazette. All of this needs counsel's confirmation. The point for go-live is that building the safeguards now is cheaper than retrofitting once real records exist.
 Roles assumed by the reviewers. Radboards is the Data Fiduciary for its customers, leads, applicants and employees. Hosting, Meta (WhatsApp and lead forms), Cloudflare (captcha), Shopify, the alert channel and the file store are Data Processors or independent fiduciaries. See DP-02.

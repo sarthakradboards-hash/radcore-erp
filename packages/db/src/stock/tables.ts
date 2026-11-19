@@ -48,6 +48,8 @@ export const items = radcoreTable('items', {
   serialised: boolean().notNull().default(false),
   hasChassis: boolean().notNull().default(false),
   active: boolean().notNull().default(true),
+  // What the item costs to buy, per unit: a cost (RAD-89, ADR-001 §7a), and stock valuation's fallback (ADR-006 §4).
+  purchasePrice: unitPrice(),
 }, (t) => [
   uniqueIndex('ux_items_sku_key').on(t.skuKey),
   uniqueIndex('ux_items_barcode_key').on(t.barcodeKey),

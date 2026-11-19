@@ -11,7 +11,7 @@ CREATE TABLE "radcore"."notifications" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
 	CONSTRAINT "ck_notifications_kind" CHECK ("radcore"."notifications"."kind" ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service).[a-z][a-z0-9_]*$'),
-	CONSTRAINT "ck_notifications_record_table" CHECK ("radcore"."notifications"."record_table" ~ '^[a-z][a-z0-9_]*$')
+	CONSTRAINT "ck_notifications_record_table" CHECK ("radcore"."notifications"."record_table" ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || "radcore"."notifications"."record_table") is not null)
 );
 --> statement-breakpoint
 DROP VIEW "radcore"."v_schema_missing_triggers";--> statement-breakpoint

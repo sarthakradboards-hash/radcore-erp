@@ -52,6 +52,24 @@ export const builtInRoles = (): Promise<{ key: string; name: string }[]> => with
   (await db.query<{ key: string; name: string }>(
     'select key, name from radcore.roles where key in (select role from radcore.role_templates) order by key')).rows);
 
+/** The role the books check signs in as (RAD-95): `journal:read` only, so no authenticator and no other power. */
+export const BOOKS_ROLE = 'books_check'; // a role key is letters and _ only (ck_roles_key)
+
+/**
+ * Seeds the books check's own role and person (RAD-95), as the superuser like the rest. Not a built-in role (no
+ * template), so global setup's loop leaves it alone; its grants are set afresh each run, so a rerun starts clean.
+ */
+export async function seedBooksChecker(): Promise<Person> {
+  await withDb(async (db) => {
+    await db.query(`insert into radcore.roles (key, name, description) values ($1, 'E2E books check', $2)
+      on conflict (key) do update set name = excluded.name, description = excluded.description`,
+      [BOOKS_ROLE, 'Reads the books after each e2e test (RAD-95). Journal read only.']);
+    await db.query('delete from radcore.role_grants where role = $1', [BOOKS_ROLE]);
+    await db.query(`insert into radcore.role_grants (role, permission, scope) values ($1, 'journal:read', 'all')`, [BOOKS_ROLE]);
+  });
+  return seedPerson(BOOKS_ROLE, { email: roleEmail(BOOKS_ROLE), name: 'E2E books check' });
+}
+
 /**
  * An active person with `role` and this run's password, and no authenticator yet. An existing address is reset to
  * that state, so a rerun starts clean. Without `email`, a new address unique to this call.
