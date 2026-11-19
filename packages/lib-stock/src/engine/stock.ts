@@ -3,17 +3,20 @@
 // - one moving average per item and location, so rejected, job-work and demo stock, each in its own kind of location,
 //   never enter the average of the stock that is sold (RC-205);
 // - a business date on every movement (RC-025), and costs fixed at posting, in posting order (§4);
-// - one lock order (RC-053, §1): the touched positions, created if new and locked `ORDER BY item_id, location_id FOR
-//   UPDATE`, then any new batches, created in `(item_id, supplier_id, batch_key)` order, null supplier first. Never
-//   the item row, whose lock would block every insert that references the item;
+// - one lock order (RC-053, §1): the period lock FOR SHARE (lib-accounts' holdPeriod), then the touched positions,
+//   created if new and locked `ORDER BY item_id, location_id FOR UPDATE`, then any new batches, created in
+//   `(item_id, supplier_id, batch_key)` order, null supplier first. Never the item row, whose lock would block every
+//   insert that references the item;
 // - batches on every `in` and `out` (D-15, §4a): the person picking names them; the engine never chooses;
 // - negative stock (RC-062) when the company allows it: only a delivery may go below zero, the part beyond what's on
 //   hand at an estimate, and the receipt that follows revalues, so no value is left without units (F15).
 // The database checks the batches and positions again at commit (RA007, `stock_commit_check`), whatever path wrote.
-// shortcut: the Stock in Hand lines it hands the journal engine are RAD-93's third PR, after RAD-86 part 1.
+// The document posts its own entry from the movements answered here; the engine posts only the revaluations it makes,
+// as the document's one `revaluation` entry (§1, F15).
 import {
   batches, stockMovementBatches, stockMovements, stockPositions, stockTx,
 } from '@radcore/db/stock';
+import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq, isNull, or, sum } from 'drizzle-orm';
@@ -201,6 +204,8 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const outs = p.outs ?? [];
   const transfers = p.transfers ?? [];
   checkLines([...ins, ...outs, ...transfers]);
+  // §1's step 1, before the positions: the period lock FOR SHARE, and the date's year open and unlocked.
+  await holdPeriod(ctx, p.businessDate);
   const negativeMode = ctx.settings.get(NEGATIVE_STOCK);
   await lockPositions(ctx, [...ins.map((l) => [l.itemId, l.locationId] as const), ...outs.map((l) => [l.itemId, l.locationId] as const),
     ...transfers.flatMap((t) => [[t.itemId, t.from] as const, [t.itemId, t.to] as const])]);
@@ -240,5 +245,19 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
       await write({ itemId: i.itemId, locationId: i.locationId, sourceLineId: i.sourceLineId, direction: 'revalue', qty: NO_UNITS, value: change }, []);
     }
   }
+  const revalued = posted.filter((m) => m.direction === 'revalue');
+  if (revalued.length > 0) {
+    await postEntry(ctx, { kind: 'revaluation', businessDate: p.businessDate, source: { table: p.sourceTable, id: p.sourceId },
+      lines: revalued.flatMap(revaluationLines) });
+  }
   return posted;
+}
+
+// A revaluation down is Dr Cost of Goods Sold, Cr Stock in Hand; up, the other way round (ADR-006 §4, F15).
+function revaluationLines(m: PostedMovement): JournalLine[] {
+  const amount = roundMoney(dec(m.value).abs());
+  const stock = { account: { system: 'stock' }, itemId: m.itemId, locationId: m.locationId };
+  const cogs = { account: { system: 'cogs' } };
+  return dec(m.value).isNegative() ? [{ ...cogs, debit: amount }, { ...stock, credit: amount }]
+    : [{ ...stock, debit: amount }, { ...cogs, credit: amount }];
 }

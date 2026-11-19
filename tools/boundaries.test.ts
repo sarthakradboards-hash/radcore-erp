@@ -169,10 +169,11 @@ describe('boundary fixtures', () => {
     expect(typeErrors(CONTROLS.tsc)).toEqual([]);
   }, LINT_TIMEOUT);
 
-  // A member that doesn't exist (2339), or a foreign table refused by type (2345); not, say, an unresolved import.
+  // A member that doesn't exist (2339), or a foreign table refused by type (2345, or 2379 under exactOptionalPropertyTypes);
+  // not, say, an unresolved import.
   it.each(tscFixtures)('%s fails tsc', (d) => {
     const errors = typeErrors(d);
-    expect(errors.filter((e) => /^TS(2339|2345) /.test(e)), errors.join('\n')).not.toHaveLength(0);
+    expect(errors.filter((e) => /^TS(2339|2345|2379) /.test(e)), errors.join('\n')).not.toHaveLength(0);
   }, LINT_TIMEOUT);
 
   it.each(eslintFixtures)('%s fails ESLint', async (d) => {

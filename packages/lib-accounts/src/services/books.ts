@@ -1,12 +1,12 @@
 // The chart of accounts and the journal as RAD-86's routes answer them (M2-16's screens; ADR-006 §2, §3). Reads, and
 // the engine's own manual journal and reversal: nothing here writes the books except through journal.ts.
-import { accounts, accountsTx, after, journalEntries, journalLines, periodLock } from '@radcore/db/accounts';
+import { accounts, accountsTx, after, journalEntries, journalLines } from '@radcore/db/accounts';
 import { ACCOUNT_TYPES, CONTROL_KINDS, dec, ENTRY_KINDS, roundMoney } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, lte, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import type { getJournal, listAccounts, listJournal, postJournal, reverseJournal, setAccount } from '../contract.ts';
-import { postManualJournal, reverseEntry, type Posted } from './journal.ts';
+import { periodLockRow, postManualJournal, reverseEntry, type Posted } from './journal.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -27,7 +27,7 @@ export async function chartOfAccounts(ctx: Ctx): Promise<Out<typeof listAccounts
  */
 export async function changeAccount(ctx: Ctx, { id, code, active }: In<typeof setAccount>): Promise<Out<typeof setAccount>> {
   const tx = accountsTx(ctx);
-  if (active === false) await tx.select({ id: periodLock.id }).from(periodLock).where(eq(periodLock.id, 1)).for('update');
+  if (active === false) await periodLockRow(ctx).for('update');
   const [row] = await tx.select({ systemKey: accounts.systemKey }).from(accounts).where(eq(accounts.id, id)).limit(1);
   if (row === undefined) throw new AppError('not_found', 'There’s no such account');
   if (active === false) {

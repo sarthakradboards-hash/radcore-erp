@@ -7,9 +7,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { quantityString, unitPriceString } from '@radcore/lib-common';
+import { moneyString, quantityString, unitPriceString } from '@radcore/lib-common';
+import { openFinancialYear, postEntry } from '@radcore/lib-accounts';
 import { addCategory, addItem, addPlace, postStock, type StockPosting } from '@radcore/lib-stock';
 import pg from 'pg';
+import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 import { afterAll, describe, expect, it } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -21,6 +23,7 @@ const staff: Principal = { kind: 'user', userId: '00000000-0000-4000-8000-000000
 // The engine takes branded quantities and rates (ADR-006 §1 Types), as a contract's schema hands them over.
 const q = (s: string) => quantityString().parse(s);
 const r = (s: string) => unitPriceString().parse(s);
+const m = (s: string) => moneyString().parse(s);
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 
 describe.skipIf(!url || !superUrl)('the stock engine', () => {
@@ -33,7 +36,7 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
   });
   const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(db, WRITE, staff, randomUUID(), fn);
   const post = (p: Omit<StockPosting, 'sourceTable' | 'sourceId' | 'businessDate'>) =>
-    run((ctx) => postStock(ctx, { sourceTable: 'test_documents', sourceId: randomUUID(), businessDate: DATE, ...p }));
+    run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ...p }));
   const failure = (p: Parameters<typeof post>[0]) => post(p).then(() => 'ok',
     (e: unknown) => (e instanceof AppError ? e.code : String((e as { cause?: { code?: string } }).cause?.code ?? e)));
 
@@ -131,6 +134,59 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
       await c.query('rollback');
       c.release();
     }
+  });
+
+  // ADR-005 §6 and ADR-006 §4: a movement needs its year opened (RC-111), and none posts on or before the period lock
+  // (RA003), checked by the movements' own trigger, since a movement of value 0 has no journal line. Written raw, in a
+  // rolled-back transaction, so the shared period lock is moved only there.
+  it('refuses a movement in a year not opened, or on or before the period lock', async () => {
+    const { itemId, places: [stores = ''] } = await setup(['stores']);
+    const c = await su.connect();
+    const movement = (date: string) => c.query(`insert into radcore.stock_movements (item_id, location_id, source_table, source_id,
+      direction, qty, value, rate, business_date) values ($1, $2, 'files', $3, 'in', 1, 0, 0, $4)`, [itemId, stores, randomUUID(), date]);
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      await c.query("insert into radcore.financial_years (start) values ('2026-04-01') on conflict do nothing");
+      await c.query('savepoint s');
+      await expect(movement('2041-05-01')).rejects.toMatchObject({ code: '23503', constraint: 'fk_stock_movements_fy_start' });
+      await c.query('rollback to savepoint s');
+      await c.query("update radcore.period_lock set locked_through = '2026-11-15' where id = 1");
+      await expect(movement(DATE)).rejects.toMatchObject({ code: 'RA003' });
+      await c.query('rollback to savepoint s');
+      await c.query("update radcore.period_lock set locked_through = '2026-11-14' where id = 1");
+      await movement(DATE);
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+  });
+
+  // §4, checked at commit (RA007): a document's stock and books agree per item and location. Its movements with no
+  // entry are refused, and so is a Stock in Hand line with no movement; postDocument's documents, matched, all pass.
+  it("refuses at commit a document whose stock and books don't agree, either way", async () => {
+    const { itemId, places: [stores = ''] } = await setup(['stores']);
+    const atCommit = (fn: (ctx: Ctx) => Promise<unknown>) => run(async (ctx) => {
+      await openFinancialYear(ctx, DATE);
+      await fn(ctx);
+    }).then(() => 'ok', (e: unknown) => {
+      const err = (e as { cause?: { code?: string; message?: string } }).cause ?? (e as { code?: string; message?: string });
+      return `${err.code ?? ''} ${/books show/.test(err.message ?? '') ? 'books' : String(err.message)}`;
+    });
+    const source = { table: SOURCE_TABLE, id: randomUUID() };
+    expect(await atCommit((ctx) => postStock(ctx, { sourceTable: source.table, sourceId: source.id, businessDate: DATE,
+      ins: [{ itemId, locationId: stores, qty: q('2'), rate: r('50'), batches: [lot('D', '2')] }] }))).toBe('RA007 books');
+    expect(await atCommit((ctx) => postEntry(ctx, { kind: 'opening', businessDate: DATE, source: { table: SOURCE_TABLE, id: randomUUID() },
+      lines: [{ account: { system: 'stock' }, itemId, locationId: stores, debit: m('100') }, { account: { system: 'opening_equity' }, credit: m('100') }] })))
+      .toBe('RA007 books');
+    // The same receipt with its entry, at a value that differs by a paisa, is refused too.
+    expect(await atCommit(async (ctx) => {
+      const id = randomUUID();
+      await postStock(ctx, { sourceTable: SOURCE_TABLE, sourceId: id, businessDate: DATE,
+        ins: [{ itemId, locationId: stores, qty: q('2'), rate: r('50'), batches: [lot('D', '2')] }] });
+      await postEntry(ctx, { kind: 'opening', businessDate: DATE, source: { table: SOURCE_TABLE, id },
+        lines: [{ account: { system: 'stock' }, itemId, locationId: stores, debit: m('100.01') }, { account: { system: 'opening_equity' }, credit: m('100.01') }] });
+    })).toBe('RA007 books');
   });
 
   // ADR-005 §7: a correction is a new row, never an edit; even the owner is refused by the trigger.

@@ -327,8 +327,22 @@
     {
       "idx": 46,
       "version": "7",
-      "when": 1795031957745,
-      "tag": "0046_chart_code_active",
+      "when": 1795031853048,
+      "tag": "0046_price_lists",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795065305600,
+      "tag": "0047_stock_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795066831367,
+      "tag": "0048_chart_code_active",
       "breakpoints": true
     }
   ]

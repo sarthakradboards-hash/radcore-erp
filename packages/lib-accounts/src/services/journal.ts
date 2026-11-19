@@ -35,6 +35,30 @@ const amountOf = (l: JournalLine): { debit: Money; credit: Money } => {
   return { debit, credit };
 };
 
+// The company's one period-lock row, for a posting's FOR SHARE (holdPeriod) or a lock move's FOR UPDATE (switching an
+// account off, books.ts).
+export const periodLockRow = (ctx: Ctx) => accountsTx(ctx).select({ through: periodLock.lockedThrough }).from(periodLock)
+  .where(eq(periodLock.id, 1));
+
+/**
+ * ADR-006 §1's step 1, for every posting: the period lock read FOR SHARE, so moving it waits for this posting and this
+ * one sees where it stands (RC-163), then `period_locked` on or before it and `year_not_open` for a year nobody opened
+ * (the database's foreign key holds that too, RC-111). A document's service calls it first, before locking its
+ * documents; postEntry and lib-stock's postStock call it again on entry, which costs nothing and keeps every check
+ * under the lock (the architect on RAD-93).
+ * shortcut: the filed-month lock row (M5-08) joins this read when its table lands.
+ */
+export async function holdPeriod(ctx: Ctx, businessDate: string): Promise<void> {
+  const [lock] = await periodLockRow(ctx).for('share');
+  if (lock?.through !== null && lock?.through !== undefined && businessDate <= lock.through) {
+    refuse('period_locked', `The books are locked through ${lock.through}`);
+  }
+  const year = financialYear(businessDate);
+  const [open] = await accountsTx(ctx).select({ start: financialYears.start }).from(financialYears)
+    .where(eq(financialYears.start, year.start)).limit(1);
+  if (open === undefined) refuse('year_not_open', `The financial year ${year.label} isn't open`);
+}
+
 /** Opens a financial year by its 1 April, so entries can be dated in it (ADR-005 §6). Opening one twice is a no-op. */
 export async function openFinancialYear(ctx: Ctx, date: string): Promise<void> {
   await accountsTx(ctx).insert(financialYears).values({ start: financialYear(date).start }).onConflictDoNothing();
@@ -48,15 +72,8 @@ async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; sourc
   if (!sum(amounts.map((a) => a.debit)).eq(sum(amounts.map((a) => a.credit)))) {
     refuse('unbalanced', 'The debits and credits differ');
   }
-  // 1. The period lock, FOR SHARE: moving it waits for this posting, and this one sees where it stands (RC-163).
-  const [lock] = await tx.select({ through: periodLock.lockedThrough }).from(periodLock).where(eq(periodLock.id, 1)).for('share');
-  if (lock?.through !== null && lock?.through !== undefined && e.businessDate <= lock.through) {
-    refuse('period_locked', `The books are locked through ${lock.through}`);
-  }
-  // A named answer for a year nobody opened; the database's foreign key holds it too (RC-111).
-  const year = financialYear(e.businessDate);
-  const [open] = await tx.select({ start: financialYears.start }).from(financialYears).where(eq(financialYears.start, year.start)).limit(1);
-  if (open === undefined) refuse('year_not_open', `The financial year ${year.label} isn't open`);
+  // 1. The period lock (holdPeriod), again if the document's service already took it: a second FOR SHARE is free.
+  await holdPeriod(ctx, e.businessDate);
   // Every line's account and control kind in one read.
   const ids = e.lines.flatMap((l) => ('id' in l.account ? [l.account.id] : []));
   const keys = e.lines.flatMap((l) => ('system' in l.account ? [l.account.system] : []));

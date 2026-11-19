@@ -244,8 +244,10 @@ describe.skipIf(!url || !superUrl)('the journal', { timeout: 30_000 }, () => {
       lines: [dr('debtors', '5.00', { partyId: randomUUID() }), cr('opening_equity', '5.00')] })))).toBe('ok');
     expect(await code(run((ctx) => postEntry(ctx, { kind: 'opening', businessDate: DAY, source: source(),
       lines: [dr('stock', '5.00', { itemId: randomUUID() }), cr('opening_equity', '5.00')] })))).toBe('23514');
+    // Item and place named, the line's CHECK passes; with no movement behind it, the document's stock check refuses it at
+    // commit (ADR-006 §4, RA007, RAD-93), where a failed CHECK would have answered 23514 at the insert.
     expect(await code(run((ctx) => postEntry(ctx, { kind: 'opening', businessDate: DAY, source: source(),
-      lines: [dr('stock', '5.00', { itemId: randomUUID(), locationId: randomUUID() }), cr('opening_equity', '5.00')] })))).toBe('ok');
+      lines: [dr('stock', '5.00', { itemId: randomUUID(), locationId: randomUUID() }), cr('opening_equity', '5.00')] })))).toBe('RA007');
   });
 
   it('reverses an entry once, its lines swapped line for line, dated the day of the reversal', async () => {
