@@ -41,8 +41,8 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
   with lines still undelivered. The undelivered quantities are released, and a reason is kept (RC-125).
 - **A credit note is approved before it posts**, through `defineApproval` (RAD-38). It stays a draft while its
   request is pending. The approval's version hash means the approver approves exactly what was sent, and the
-  approval's `approved` step posts it (ADR-001 §8b). Whether every credit note needs approval, or only those above
-  an amount, is Sarthak's to confirm. Until then, every one does.
+  approval's `approved` step posts it (ADR-001 §8b). Every credit note is approved, whatever its amount (Sarthak,
+  19 Nov).
 - **A refund** is a payment out to the customer (lib-accounts, §6), not a document of its own.
 - **A vehicle booking** (M3-13) posts nothing itself. Its advance is a receipt (§5).
 
