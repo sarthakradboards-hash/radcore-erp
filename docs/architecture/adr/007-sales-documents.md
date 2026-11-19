@@ -105,8 +105,9 @@ A receipt has no source: an advance comes before the invoice.
 
 **Goods leave with their invoice (CA-09).** Under section 31, a tax invoice for goods is issued at or before their
 removal, so a delivery for a sale is invoiced the same day by default:
-- an invoice's date may be at most `sales.invoice_lag_days` after the latest delivery it bills. The setting is 0
-  until CA-09 says otherwise (`invoice_too_late`);
+- an invoice's date may be at most `sales.invoice_lag_days` after the **earliest** delivery it bills, so every
+  delivery on it is within the lag. An old challan can't slip through by being billed with today's. The setting is
+  0 until CA-09 says otherwise (`invoice_too_late`);
 - the To-invoice list shows every posted delivery not yet fully invoiced, oldest first;
 - Goods Delivered Not Invoiced (ADR-006 §6) still carries a delivery's cost from its posting to its invoice, so the
   books stay right whatever CA-09 allows;
@@ -133,10 +134,11 @@ removal, so a delivery for a sale is invoiced the same day by default:
   value they went out at, §4; a serial's sale is cleared, RC-128).
 - **A credit note can't exceed what's left of its invoice,** line by line: the invoice line, less earlier credit
   notes on it (`exceeds_invoice`).
-- **The time limit for cutting output tax (section 34(2), CA-10).** A credit note dated after 30 November following
-  the end of its invoice's financial year doesn't reduce output tax. The setting
-  `sales.credit_note_tax_deadline` (month and day) moves the date if CA-10 says so, for example to an earlier annual
-  return. Such a note posts its tax to **GST Borne on Late Credit Notes** (system account `late_cn_gst`, an
+- **The time limit for cutting output tax (section 34(2), CA-10).** A credit note can't reduce output tax once it's
+  dated after the earlier of two dates: 30 November following the end of its invoice's financial year (the setting
+  `sales.credit_note_tax_deadline`, month and day), and the date that year's annual return was filed. M5-08's filing
+  record gives the second date. Until it exists, or when the return isn't filed yet, the 30 November date alone
+  applies. Such a note posts its tax to **GST Borne on Late Credit Notes** (system account `late_cn_gst`, an
   expense), not to Output GST (F25). It still needs approval like any credit note.
 - **Cancelling an invoice** is refused while:
   - any allocation is still applied to it (net allocations aren't zero, ADR-005 §7a);
@@ -175,7 +177,7 @@ removal, so a delivery for a sale is invoiced the same day by default:
 
 The receipt and payment services warn, with an owner override recorded through `defineApproval`, when:
 - a party's cash receipts reach Rs 2,00,000 in a day (section 269ST);
-- a cash payment exceeds Rs 10,000 (section 40A(3)).
+- a party's cash payments exceed Rs 10,000 in a day, counted together (section 40A(3)).
 
 The amounts are settings until CA-24 confirms them.
 
