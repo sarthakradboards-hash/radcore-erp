@@ -96,6 +96,7 @@ const CLAUSE_IDS: Record<string, string[]> = {
   'L4-subpath-import': ['radcore/no-subpath-imports'],
   ...Object.fromEntries(['wrapper', 'alias', 'object', 'cast', 'async', 'callback', 'foreign-generic', 'maybe'].map((k) => [`D7-${k}-export`, ['radcore/d7-no-table-exports']])),
   'D7-two-exports': ['radcore/d7-no-table-exports'],
+  'D7-cycle-after-hit': ['radcore/d7-no-table-exports'],
   // E6 by type (RAD-67): each fixture's names miss the word list, so only the typed rule can fire.
   ...Object.fromEntries(['renamed', 'compare', 'concat', 'decimal', 'sign', 'map-number', 'math-spread', 'equals-literal', 'compound', 'update', 'math'].map((k) => [`E6-branded-${k}`, ['radcore/e6-branded-money']])),
   'L5-update': ['drizzle/enforce-update-with-where'],
@@ -177,11 +178,14 @@ describe('boundary fixtures', () => {
     expect(errors.filter((e) => /^TS(2339|2345|2379) /.test(e)), errors.join('\n')).not.toHaveLength(0);
   }, LINT_TIMEOUT);
 
-  // RAD-89: D7's walk remembers, per file, the types that carried nothing; one that carried a table is forgotten again,
-  // so a second export reaching the same transaction is reported too.
+  // RAD-89: D7's walk remembers, per file, the types that carried nothing, and forgets all of them once an export is
+  // reported, so a type that only looked clean (cut short by a cycle) can't hide a later export.
+  const reported = async (d: string) => (await lint(d)).flatMap((r) => r.messages)
+    .filter((m) => m.ruleId === 'radcore/d7-no-table-exports').map((m) => /\((\w+)\)$/.exec(m.message)?.[1]).toSorted();
   it('reports every export of an entry that hands on a transaction, not only the first', async () => {
-    const messages = (await lint('D7-two-exports')).flatMap((r) => r.messages).filter((m) => m.ruleId === 'radcore/d7-no-table-exports');
-    expect(messages.map((m) => /\((\w+)\)$/.exec(m.message)?.[1]).toSorted()).toEqual(['again', 'tx']);
+    expect(await reported('D7-two-exports')).toEqual(['again', 'tx']);
+    // The architect's counterexample: box reaches SalesTx only through a type Svc's walk left unfinished.
+    expect(await reported('D7-cycle-after-hit')).toEqual(['Svc', 'box']);
   }, LINT_TIMEOUT);
 
   it.each(eslintFixtures)('%s fails ESLint', async (d) => {
