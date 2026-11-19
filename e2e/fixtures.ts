@@ -58,6 +58,19 @@ export function isCancelledRscPrefetch(message: string, origin: string): boolean
     .test(message);
 }
 
+/**
+ * The same WebKit text for a GET to this site's own `/api/` that a full-page navigation cut off: the shell's queries,
+ * like the bell's unread count (#232), are torn down by the browser when sign-in sends the page home, and WebKit alone
+ * reports that as uncaught. Only when the page really sent a GET to exactly that URL (`gets`, every URL it requested by
+ * GET): a URL it never asked for, any other method, another origin, a path outside /api/ or other text is still a problem.
+ */
+export function isCancelledApiGet(message: string, origin: string, gets: ReadonlySet<string>): boolean {
+  const site = new URL(origin);
+  const host = site.host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`(?:^|\\s|:)/{0,2}${host}(/api/[^\\s#]*) due to access control checks\\.$`).exec(message);
+  return m !== null && gets.has(new URL(m[1]!, site.origin).href);
+}
+
 export const test = base.extend<Options & Fixtures>({
   expectedStatuses: [[], { option: true }],
   pageProblems: [
@@ -69,9 +82,12 @@ export const test = base.extend<Options & Fixtures>({
         // The browser logs every 4xx/5xx as a console error too; those are judged by status below.
         if (m.type() === 'error' && !m.text().startsWith('Failed to load resource:')) problems.push(`console error: ${m.text()}`);
       });
+      const gets = new Set<string>(); // what the pages asked for by GET, for isCancelledApiGet
+      context.on('request', (r) => { if (r.method() === 'GET') gets.add(r.url()); });
       context.on('weberror', (e) => {
         const message = e.error().message;
-        if (baseURL === undefined || !isCancelledRscPrefetch(message, baseURL)) problems.push(`uncaught: ${message}`);
+        const cancelled = baseURL !== undefined && (isCancelledRscPrefetch(message, baseURL) || isCancelledApiGet(message, baseURL, gets));
+        if (!cancelled) problems.push(`uncaught: ${message}`);
       });
       // Chromium doesn't reliably log a CSP violation to the console, so listen for the event itself (RAD-72); Firefox
       // then reports one violation twice, which fails the test all the same. On the window, not the document: a popup
