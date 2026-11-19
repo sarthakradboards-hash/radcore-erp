@@ -87,11 +87,11 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   'apps/web/app/page.tsx': { rules: EVERYWHERE, l1: L1.base, typed: false, server: false },
   // E3's three scopes, and D7's export guard on library entries.
   'packages/lib-common/src/money.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
-  'packages/lib-sales/src/contract.ts': {
-    rules: [...LIB, 'radcore/e3-no-io', 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
-  // A contract entry's part kept in src/contract/ gets the entry's rules (RAD-33).
-  'packages/lib-platform/src/contract/sign-in.ts': {
-    rules: [...LIB, 'radcore/e3-no-io', 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
+  // A contract and its parts in src/contract/: E3, with D7's typed guard left to dependency-cruiser's D5 (RAD-89).
+  'packages/lib-sales/src/contract.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
+  'packages/lib-platform/src/contract/sign-in.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
+  // lib-common's entry: no D7 guard (it may import nothing, MAY_IMPORT []).
+  'packages/lib-common/src/index.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/rules/tax.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/index.ts': { rules: [...LIB, 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
   'packages/lib-platform/src/import/isolate.ts': {
