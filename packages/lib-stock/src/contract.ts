@@ -1,7 +1,7 @@
 // lib-stock's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every contract
 // file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, searchText, skuString,
+  dateString, defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, searchText, skuString,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 
@@ -153,4 +153,21 @@ export const updateLocation = defineContract({
   input: z.object({ id: idString(), code: locationCode().optional(), name: locationName().optional(),
     kind: locationKind.optional(), active: z.boolean().optional() }),
   output: z.object({}), errors: ['code_taken'],
+});
+
+/** What the books check compares (ADR-006 §7). */
+const BOOKS_CHECKS = ['trial_balance', 'stock_value', 'empty_place_value', 'batches'] as const;
+export type BooksCheck = (typeof BOOKS_CHECKS)[number];
+
+/** GET /books/check (journal:read): the books check (M2-07, RC-063), in one REPEATABLE READ snapshot. As at `asAt`
+ * (every posting when it's left out): the trial balance, and Stock in Hand against the stock ledger by item and
+ * place; on the current position, empty places and batches. No problems means the books are healthy. Every journey
+ * test ends with it. */
+export const checkBooksContract = defineContract({
+  method: 'GET', path: '/books/check', auth: 'session', perm: 'journal:read',
+  tx: { readOnly: true, isolation: 'repeatable read' },
+  input: z.object({ asAt: dateString().optional() }),
+  output: z.object({ problems: z.array(z.object({
+    check: z.enum(BOOKS_CHECKS), itemId: idString().nullable(), locationId: idString().nullable(), message: z.string(),
+  })) }),
 });
