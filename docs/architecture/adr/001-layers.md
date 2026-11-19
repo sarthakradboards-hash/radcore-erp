@@ -588,7 +588,9 @@ always six bullets, so it doesn't give away the length.
   direct, a service that searches or sorts by it asks `ctx.shows('cost')`, and a masked value sent back is refused.
   Setting a cost needs `cost:read` as well as the write's own key, so nobody sets what they can't see. The audit
   trail masks a cost column's values for a viewer without `cost:read` (`COST_COLUMNS`). An answer that is itself a
-  cost, such as stock valuation, puts `cost:read` in its contract's `perm`.
+  cost, such as stock valuation, puts `cost:read` in its contract's `perm`. The books' own figures (the journal, the
+  trial balance, the books check) stay under `journal:read` alone: a stock posting's amount is a cost, so whoever
+  reads the journal already sees costs, and `cost:read` there would hide nothing.
 
 **Same origin, no CORS.**
 - Caddy serves `web` at `/` and `api` at `/api` on one origin (ADR-004).
