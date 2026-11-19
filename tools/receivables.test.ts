@@ -2,7 +2,7 @@
 // lines as at a date. Bills and payments of the party's own count, another party's don't, and nothing dated after the
 // date does. The party is the test's own; entries are dated in 2034-35, which no other file posts in.
 import { randomUUID } from 'node:crypto';
-import { openFinancialYear, partyReceivable, postEntry } from '@radcore/lib-accounts';
+import { openFinancialYear, partyReceivable, postEntry, reverseEntry } from '@radcore/lib-accounts';
 import type { Money } from '@radcore/lib-common';
 import type { Ctx, Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -55,6 +55,22 @@ describe.skipIf(!url)('what a party owes', { timeout: 30_000 }, () => {
     expect(await owes(party, '2034-06-30')).toEqual({ outstanding: '100.00', oldestUnpaid: '2034-04-10' });
     expect(await owes(party, '2034-07-01')).toEqual({ outstanding: '0.00', oldestUnpaid: null });
     expect(await owes(randomUUID(), '2034-07-01')).toEqual({ outstanding: '0.00', oldestUnpaid: null });
+  });
+
+  it('never pays an older bill with a cancelled bill’s reversal, and counts the bill until its reversal’s date (the auditor on #229)', async () => {
+    const party = randomUUID();
+    await post(party, '2034-04-01', 'bill', '100.00');
+    const b = await post(party, '2034-05-01', 'bill', '50.00');
+    await run((ctx) => reverseEntry(ctx, { entryId: b.id, businessDate: '2034-05-10', reason: 'Billed in error' }));
+    expect(await owes(party, '2034-06-01')).toEqual({ outstanding: '100.00', oldestUnpaid: '2034-04-01' });
+    // A bill cancelled after the date still counts as at the date.
+    const later = randomUUID();
+    await post(later, '2034-04-01', 'bill', '100.00');
+    await post(later, '2034-04-10', 'paid', '100.00');
+    const c = await post(later, '2034-05-01', 'bill', '50.00');
+    await run((ctx) => reverseEntry(ctx, { entryId: c.id, businessDate: '2034-06-15', reason: 'Billed in error' }));
+    expect(await owes(later, '2034-06-01')).toEqual({ outstanding: '50.00', oldestUnpaid: '2034-05-01' });
+    expect(await owes(later, '2034-06-30')).toEqual({ outstanding: '0.00', oldestUnpaid: null });
   });
 
   it('shows an advance as the party in credit', async () => {
