@@ -225,6 +225,9 @@ describe.skipIf(!url || !superUrl)('units by serial', () => {
       await expect(su.query(statement, [e?.id])).rejects.toMatchObject({ code: 'RA001' });
     }
     await expect(pool.query("update radcore.units set condition = 'used' where item_id = $1", [at.itemId])).rejects.toMatchObject({ code: '42501' });
+    // UPDATE (id) is granted only so the engine can lock units; a new id breaks the events' key.
+    await expect(pool.query('update radcore.units set id = gen_random_uuid() where item_id = $1', [at.itemId]))
+      .rejects.toMatchObject({ code: '23503' });
     await expect(pool.query("insert into radcore.units (item_id, serial_no, ownership, condition, location_id) values ($1, 'X', 'ours', 'new', $2)",
       [at.itemId, at.stores])).rejects.toMatchObject({ code: '42501' });
     expect(await failure(run((ctx) => changeItem(ctx, { id: at.itemId, serialised: false })))).toBe('item_has_stock');

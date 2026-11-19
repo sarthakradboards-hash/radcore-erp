@@ -107,6 +107,11 @@ CREATE INDEX "ix_units_location" ON "radcore"."units" USING btree ("location_id"
 -- login reads units, and writes none of them.
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.units FROM radcore_app;
 --> statement-breakpoint
+-- UPDATE on `id` alone, as period_lock has it: the engine locks the units it names FOR UPDATE, in id order (ADR-006 §1),
+-- and that needs an UPDATE grant. It can't change a unit: every unit is made by an event, whose key on (unit_id,
+-- item_id) refuses a new id.
+GRANT UPDATE (id) ON radcore.units TO radcore_app;
+--> statement-breakpoint
 -- Which unit events may start from which ownership ('none': no row yet), equal to lib-common's UNIT_EVENTS
 -- (tools/units.test.ts checks). Read-only to the app.
 INSERT INTO radcore.unit_event_rules (kind, from_ownership) VALUES
