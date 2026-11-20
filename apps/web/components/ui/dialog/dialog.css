@@ -45,6 +45,9 @@
   outline: none;
 }
 .kit-menu-item[data-highlighted] { background: var(--surface-selected); }
+/* A link item reads like the others; the page the person is on is marked by more than colour. */
+a.kit-menu-item { color: inherit; text-decoration: none; }
+a.kit-menu-item[aria-current="page"] { font-weight: 600; text-decoration: underline; text-underline-offset: 0.2em; }
 .kit-menu-item[data-disabled] { color: var(--text-muted); cursor: not-allowed; }
 /* Radix moves focus onto the item, so the ring has to be drawn here. */
 .kit-menu-item:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }

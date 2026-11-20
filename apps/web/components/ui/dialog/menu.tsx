@@ -1,12 +1,16 @@
 'use client';
-// A row's or a page's actions (M1-43): Radix, so arrow keys, Home, End, type-ahead and Escape work.
+// A row's or a page's actions (M1-43), or a set of pages to go to (the shell's menu at phone width, RAD-50): Radix,
+// so arrow keys, Home, End, type-ahead and Escape work.
+import Link from 'next/link';
 import { DropdownMenu } from 'radix-ui';
 import { useRef } from 'react';
 import '../form/form.css'; // .kit-button
 import './dialog.css';
 import './style-nonce.ts';
 
-export type MenuItem = { label: string; onSelect: () => void; disabled?: boolean };
+/** An action, or a link to a page: a link stays a link (its href, opening in a new tab), with `current` for the page
+ * the person is on. */
+export type MenuItem = { label: string; onSelect: () => void; disabled?: boolean } | { label: string; href: string; current?: boolean };
 
 /** `label` names the button, for example "Actions for INV-0042"; give it the row's name so each one differs. */
 export function Menu({ label, items }: { label: string; items: readonly MenuItem[] }) {
@@ -20,12 +24,16 @@ export function Menu({ label, items }: { label: string; items: readonly MenuItem
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="kit-menu" align="end" sideOffset={4}
           onCloseAutoFocus={() => { const run = chosen.current; chosen.current = null; run?.(); }}>
-          {items.map((item) => (
+          {items.map((item) => ('href' in item ? (
+            <DropdownMenu.Item key={item.label} className="kit-menu-item" asChild>
+              <Link href={item.href} aria-current={item.current === true ? 'page' : undefined}>{item.label}</Link>
+            </DropdownMenu.Item>
+          ) : (
             <DropdownMenu.Item key={item.label} className="kit-menu-item" disabled={item.disabled ?? false}
               onSelect={() => { chosen.current = item.onSelect; }}>
               {item.label}
             </DropdownMenu.Item>
-          ))}
+          )))}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

@@ -57,18 +57,22 @@ export function Gallery({ children }: { children: ReactNode }) {
       </Form>
       <p>Last sent: <output aria-label="Last sent">{sent}</output></p>
 
-      <h2>Masked values</h2>
+      <h2 id="masked">Masked values</h2>
       <dl aria-label="Masked values">
         <dt>Email</dt><dd><Pii value={{ masked: '••••••' }} /></dd>
         <dt>PAN</dt><dd><Pii value={{ masked: '••••••234F' }} /></dd>
         <dt>City</dt><dd><Pii value="Pune" /></dd>
       </dl>
 
-      <h2>Actions</h2>
+      <h2 id="actions">Actions</h2>
       <Menu label="Actions for INV-0042" items={[
         { label: 'Cancel invoice', onSelect: () => setCancelling(true) },
         { label: 'Archive', onSelect: () => undefined, disabled: true },
         { label: 'Sign out (test)', onSelect: () => setSignedOut(true) },
+      ]} />
+      <Menu label="Go to" items={[
+        { label: 'Actions', href: '#actions', current: true },
+        { label: 'Masked values', href: '#masked' },
       ]} />
       <ReasonDialog open={cancelling} onOpenChange={setCancelling} title="Cancel invoice INV-0042"
         action="Cancel invoice" done="Invoice cancelled"
