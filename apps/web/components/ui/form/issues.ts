@@ -23,7 +23,9 @@ export function placeIssues(issues: readonly Issue[], mounted: ReadonlySet<strin
 export function formAlert(code: string, own: string | undefined, said: string, rest: readonly string[]): string | null {
   if (code === 'signed_out') return null;
   if (own !== undefined) return own;
-  return rest.length === 0 ? said : `${said}: ${rest.join('; ')}`;
+  // An issue that only repeats what the server said adds nothing (a refusal whose one issue sits on a field no form shows).
+  const more = rest.filter((r) => r !== said);
+  return more.length === 0 ? said : `${said}: ${more.join('; ')}`;
 }
 
 /** The check's errors that no mounted field shows (a schema that requires a masked or missing field), as

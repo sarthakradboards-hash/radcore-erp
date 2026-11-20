@@ -12,7 +12,8 @@ import type { Setting } from './types.ts';
 function Reference({ record, id }: { record: string; id: string }) {
   const list = useApiQuery(getPriceList, { id }, { enabled: record === 'price_list' });
   if (record !== 'price_list') return t('admin.settings.record', { id });
-  return list.data?.name ?? t('loading');
+  // A role with settings:read but not prices:read can't open the list: say so, not "Loading…" for good.
+  return list.isError ? t('admin.settings.listHidden') : list.data?.name ?? t('loading');
 }
 
 export function SettingValue({ input, value }: { input: Setting['input']; value: unknown }) {

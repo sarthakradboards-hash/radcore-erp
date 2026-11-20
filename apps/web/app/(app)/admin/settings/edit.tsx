@@ -17,6 +17,7 @@ import { useApiMutation, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asPrice, asWritten } from '../decimal.ts';
 import { MESSAGES } from '../shared.tsx';
+import { sent } from './sent.ts';
 import type { PriceList, Setting } from './types.ts';
 
 const reason = setSetting.input.shape.reason;
@@ -33,9 +34,6 @@ function startValue(s: Setting): string | boolean {
   if (s.input.kind === 'percent') return asWritten(String(v));
   return String(v);
 }
-
-/** What the server is sent for what the box holds: an integer setting takes a number. */
-const sent = (s: Setting, v: string | boolean): string | number | boolean => (s.input.kind === 'integer' && typeof v === 'string' ? Number(v) : v);
 
 /** A reference setting's record, chosen with the kit's Picker (only the default price list is one so far). */
 function ReferenceForm({ setting, onSave }: { setting: Setting; onSave: (id: string | null, why: string) => Promise<unknown> }) {

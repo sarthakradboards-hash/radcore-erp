@@ -235,6 +235,7 @@ export const admin = {
   'admin.settings.yes': 'Yes',
   'admin.settings.no': 'No',
   'admin.settings.record': 'Record {id}',
+  'admin.settings.listHidden': 'A price list (not shown to you)',
   'admin.settings.actionsFor': 'Actions for {name}',
   'admin.settings.change': 'Change',
   'admin.settings.change.title': 'Change {name}',
