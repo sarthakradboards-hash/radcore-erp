@@ -27,6 +27,9 @@ export type NewEntry = Readonly<{
 }>;
 export type Posted = { id: string; number: string };
 
+// A refusal any caller can meet (a switched-off account, the period lock, an unopened year) must be in every posting
+// route's errors: a new one goes into tools/permission-reach.test.ts's ENGINE_ERRORS too, which checks those routes
+// (the auditor on #234).
 const refuse = (code: string, message: string): never => { throw new AppError(code, message); };
 
 // The company's one period-lock row, for a posting's FOR SHARE (holdPeriod) or a lock move's FOR UPDATE (switching an

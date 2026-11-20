@@ -2,7 +2,6 @@
 // posted in the same save, through the journal engine, then numbered last (ADR-006 §1): RV for a receipt, PV for a
 // payment or refund. Cash past a day's limit (RC-114, CA-24) stays a draft and asks an owner, through defineApproval;
 // the approval posts it. A posted one is cancelled only by a mirror entry dated the cancellation's day (ADR-007 §6).
-// shortcut: allocations to invoices and bills, and the rule that a cancel needs them at zero, are RAD-116's part 2.
 import { accounts, accountsTx, parties, payments } from '@radcore/db/accounts';
 import { dec, indiaDate, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
@@ -10,6 +9,7 @@ import { AppError, defineSeries, defineSetting, nextNumber, principalId, request
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelPaymentContract, recordPaymentContract } from '../contract.ts';
+import { paymentUsed } from './allocations.ts';
 import { holdPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -63,9 +63,9 @@ async function checkRefund(ctx: Ctx, r: Readonly<{ receiptId: string; partyId: s
   if (receipt?.status !== 'posted') return refuse('receipt_not_posted', 'The receipt isn’t posted');
   if (receipt.partyId !== r.partyId) refuse('refund_other_party', 'A refund goes back to the party who paid');
   if (r.businessDate < receipt.businessDate) refuse('date_before_source', 'A refund is dated on or after its receipt');
-  const refunded = await tx.select({ amount: payments.amount }).from(payments)
-    .where(and(eq(payments.refundOfId, receipt.id), eq(payments.status, 'posted')));
-  if (sum([...refunded.map((x) => x.amount), r.amount]).gt(receipt.amount)) refuse('exceeds_receipt', 'That’s more than is left of the receipt');
+  // What's left of a receipt is its amount less its posted refunds and its net allocations (the architect on #234).
+  const { allocated, refunded } = await paymentUsed(ctx, receipt.id);
+  if (allocated.plus(refunded).plus(r.amount).gt(receipt.amount)) refuse('exceeds_receipt', 'That’s more than is left of the receipt');
 }
 
 /** Posts a draft: its entry through the journal engine, then its number, last. A refund is checked against its receipt
@@ -159,6 +159,8 @@ export async function cancelPayment(ctx: Ctx, c: In<typeof cancelPaymentContract
   if (c.businessDate < p.businessDate) refuse('date_before_source', 'A cancellation is dated on or after what it cancels');
   const [refund] = await tx.select({ id: payments.id }).from(payments).where(and(eq(payments.refundOfId, p.id), eq(payments.status, 'posted'))).limit(1);
   if (refund !== undefined) refuse('has_refunds', 'Cancel the refunds of this receipt first');
+  // The database refuses it too (payment_still_allocated); said here by name first.
+  if (!(await paymentUsed(ctx, p.id)).allocated.eq(0)) refuse('has_allocations', 'Reverse what this is applied to first');
   const mirror = await reverseEntry(ctx, { entryId: p.postedEntryId, businessDate: c.businessDate, reason: c.reason });
   await tx.update(payments).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal), cancelReason: c.reason,
     cancelEntryId: mirror.id }).where(eq(payments.id, p.id));

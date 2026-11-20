@@ -236,6 +236,10 @@ describe('the manifest’s reach', () => {
       .flatMap((fn) => (ENGINE_ERRORS[fn] ?? []).filter((code) => !r.contract.errors.includes(code))
         .map((code) => `${r.contract.method} ${r.contract.path}: reaches ${fn}, but doesn't declare ${code}`))));
     expect([...new Set(missing)]).toEqual([]);
+    // A database refusal a contract maps by name (ADR-005 §9) answers one of its declared codes, so none is a 500.
+    expect(routes.flatMap((r) => Object.entries(r.contract.dbErrors).filter(([, v]) => !r.contract.errors.includes(v.code))
+      .map(([k]) => `${r.contract.method} ${r.contract.path}: ${k} maps to an undeclared code`))).toEqual([]);
+    expect(routes.some((r) => 'RA006:allocation_exceeds_document' in r.contract.dbErrors)).toBe(true);
     // It finds them: the manual journal posts, a payment's cancel reverses, a cash approval posts through its spec.
     const at = (key: string) => [...(posting[routes.findIndex((r) => `${r.contract.method} ${r.contract.path}` === key)] ?? [])].toSorted();
     expect([at('POST /journal'), at('POST /payments/:id/cancel'), at('POST /approvals/cash-limit/:id/decision'), at('POST /parties')])

@@ -251,3 +251,22 @@ describe('list sort', () => {
     expect(MAX_CURSOR_LENGTH).toBe(512);
   });
 });
+
+// RAD-116 (the architect's ruling, ADR-005 §9): a contract maps a database refusal, by SQLSTATE and constraint, to one
+// of its own codes, with its own message; defineContract refuses a map that names an undeclared code or a bad key.
+describe('a contract’s dbErrors', () => {
+  const base = { method: 'POST', path: '/t/db-errors', auth: 'session', perm: 't:write', tx: { readOnly: false, isolation: 'read committed' },
+    input: z.object({}), output: z.object({}), errors: ['exceeds_document'] } as const;
+  it('maps a SQLSTATE and a constraint to a declared code, frozen', () => {
+    const c = defineContract({ ...base, dbErrors: { 'RA006:allocation_exceeds_document': { code: 'exceeds_document', message: 'Too much' } } });
+    expect(c.dbErrors['RA006:allocation_exceeds_document']).toEqual({ code: 'exceeds_document', message: 'Too much' });
+    expect(Object.isFrozen(c.dbErrors)).toBe(true);
+    expect(defineContract(base).dbErrors).toEqual({});
+  });
+  it('refuses a code its errors don’t list, a key that isn’t SQLSTATE:constraint, or an empty message', () => {
+    expect(() => defineContract({ ...base, dbErrors: { 'RA006:x_y': { code: 'other' as 'exceeds_document', message: 'm' } } }))
+      .toThrow(/which its errors don't list/);
+    expect(() => defineContract({ ...base, dbErrors: { 'RA6:x': { code: 'exceeds_document', message: 'm' } } })).toThrow(/SQLSTATE/);
+    expect(() => defineContract({ ...base, dbErrors: { 'RA006:x': { code: 'exceeds_document', message: ' ' } } })).toThrow(/message/);
+  });
+});

@@ -120,7 +120,8 @@ BEGIN
   EXECUTE format('SELECT party_id, status, total FROM radcore.%I WHERE id = $1 FOR UPDATE', lock_allocatable.document_table)
     INTO party_id, status, total USING document_id;
   IF party_id IS NULL THEN
-    RAISE EXCEPTION 'there''s no % %', lock_allocatable.document_table, document_id USING ERRCODE = 'RA006';
+    RAISE EXCEPTION 'there''s no % %', lock_allocatable.document_table, document_id
+      USING ERRCODE = 'RA006', CONSTRAINT = 'allocatable_document_missing';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -161,22 +162,27 @@ BEGIN
   -- Worked out first: an IF's condition ends at its first THEN, a CASE's included.
   wanted := CASE pay.kind WHEN 'receipt' THEN 'receivable' ELSE 'payable' END;
   IF pay.kind = 'refund' OR reg.kind <> 'charge' OR reg.side <> wanted THEN
-    RAISE EXCEPTION 'a receipt applies to a receivable charge and a payment to a payable charge' USING ERRCODE = 'RA006';
+    RAISE EXCEPTION 'a receipt applies to a receivable charge and a payment to a payable charge'
+      USING ERRCODE = 'RA006', CONSTRAINT = 'allocation_side_mismatch';
   END IF;
   IF doc.party_id <> pay.party_id THEN
-    RAISE EXCEPTION 'a payment applies to its own party''s document' USING ERRCODE = 'RA006';
+    RAISE EXCEPTION 'a payment applies to its own party''s document' USING ERRCODE = 'RA006', CONSTRAINT = 'allocation_party_mismatch';
   END IF;
-  IF NEW.direction = 'apply' AND (pay.status <> 'posted' OR doc.status <> 'posted') THEN
-    RAISE EXCEPTION 'a payment applies, posted, to a posted document' USING ERRCODE = 'RA006';
+  IF NEW.direction = 'apply' AND pay.status <> 'posted' THEN
+    RAISE EXCEPTION 'only a posted payment applies' USING ERRCODE = 'RA006', CONSTRAINT = 'allocation_payment_not_posted';
+  END IF;
+  IF NEW.direction = 'apply' AND doc.status <> 'posted' THEN
+    RAISE EXCEPTION 'a payment applies to a posted document' USING ERRCODE = 'RA006', CONSTRAINT = 'allocation_document_not_posted';
   END IF;
   IF radcore.document_applied(NEW.document_table, NEW.document_id) > doc.total THEN
-    RAISE EXCEPTION '% % would be paid past its total', NEW.document_table, NEW.document_id USING ERRCODE = 'RA006';
+    RAISE EXCEPTION '% % would be paid past its total', NEW.document_table, NEW.document_id
+      USING ERRCODE = 'RA006', CONSTRAINT = 'allocation_exceeds_document';
   END IF;
   SELECT coalesce(sum(CASE direction WHEN 'apply' THEN amount ELSE -amount END), 0) INTO used
     FROM radcore.payment_allocations WHERE payment_id = NEW.payment_id;
   used := used + coalesce((SELECT sum(amount) FROM radcore.payments WHERE refund_of_id = NEW.payment_id AND status = 'posted'), 0);
   IF used > pay.amount THEN
-    RAISE EXCEPTION 'payment % would apply past its amount', pay.number USING ERRCODE = 'RA006';
+    RAISE EXCEPTION 'payment % would apply past its amount', pay.number USING ERRCODE = 'RA006', CONSTRAINT = 'allocation_exceeds_payment';
   END IF;
   RETURN NULL;
 END $$;
@@ -207,21 +213,24 @@ BEGIN
   SELECT * INTO credit_reg FROM radcore.allocatable_documents WHERE document_table = NEW.credit_table;
   SELECT * INTO doc_reg FROM radcore.allocatable_documents WHERE document_table = NEW.document_table;
   IF credit_reg.kind <> 'credit' OR doc_reg.kind <> 'charge' OR credit_reg.side <> doc_reg.side THEN
-    RAISE EXCEPTION 'a credit applies to a charge on the same side' USING ERRCODE = 'RA006';
+    RAISE EXCEPTION 'a credit applies to a charge on the same side' USING ERRCODE = 'RA006', CONSTRAINT = 'credit_application_side_mismatch';
   END IF;
   IF credit.party_id <> doc.party_id THEN
-    RAISE EXCEPTION 'a credit applies to its own party''s document' USING ERRCODE = 'RA006';
+    RAISE EXCEPTION 'a credit applies to its own party''s document' USING ERRCODE = 'RA006', CONSTRAINT = 'credit_application_party_mismatch';
   END IF;
   IF NEW.direction = 'apply' AND (credit.status <> 'posted' OR doc.status <> 'posted') THEN
-    RAISE EXCEPTION 'a credit applies, posted, to a posted document' USING ERRCODE = 'RA006';
+    RAISE EXCEPTION 'a credit applies, posted, to a posted document'
+      USING ERRCODE = 'RA006', CONSTRAINT = 'credit_application_document_not_posted';
   END IF;
   IF radcore.document_applied(NEW.document_table, NEW.document_id) > doc.total THEN
-    RAISE EXCEPTION '% % would be paid past its total', NEW.document_table, NEW.document_id USING ERRCODE = 'RA006';
+    RAISE EXCEPTION '% % would be paid past its total', NEW.document_table, NEW.document_id
+      USING ERRCODE = 'RA006', CONSTRAINT = 'credit_application_exceeds_document';
   END IF;
   SELECT coalesce(sum(CASE direction WHEN 'apply' THEN amount ELSE -amount END), 0) INTO used
     FROM radcore.credit_applications WHERE credit_table = NEW.credit_table AND credit_id = NEW.credit_id;
   IF used > credit.total THEN
-    RAISE EXCEPTION '% % would apply past its total', NEW.credit_table, NEW.credit_id USING ERRCODE = 'RA006';
+    RAISE EXCEPTION '% % would apply past its total', NEW.credit_table, NEW.credit_id
+      USING ERRCODE = 'RA006', CONSTRAINT = 'credit_application_exceeds_credit';
   END IF;
   RETURN NULL;
 END $$;
@@ -237,7 +246,8 @@ SET search_path = pg_catalog, radcore, pg_temp AS $$
 BEGIN
   IF NEW.status = 'cancelled' AND OLD.status <> 'cancelled' AND coalesce((SELECT sum(CASE direction WHEN 'apply' THEN amount ELSE -amount END)
       FROM radcore.payment_allocations WHERE payment_id = NEW.id), 0) <> 0 THEN
-    RAISE EXCEPTION 'payment % is still applied to documents: reverse its allocations first', OLD.number USING ERRCODE = 'RA006';
+    RAISE EXCEPTION 'payment % is still applied to documents: reverse its allocations first', OLD.number
+      USING ERRCODE = 'RA006', CONSTRAINT = 'payment_still_allocated';
   END IF;
   RETURN NEW;
 END $$;

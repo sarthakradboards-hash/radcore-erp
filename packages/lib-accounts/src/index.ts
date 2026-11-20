@@ -11,5 +11,8 @@ export {
   cancelPayment, CASH_PAYMENT_LIMIT, CASH_RECEIPT_LIMIT, cashLimitSpec, PAYMENT_SERIES, RECEIPT_SERIES, recordPayment,
 } from './services/payments.ts';
 export { partyReceivable } from './services/receivables.ts';
+export {
+  allocatePayment, applyCredit, paidOf, reverseAllocation, reverseCreditApplication,
+} from './services/allocations.ts';
 export type { Receivable } from './rules/receivable.ts';
 export { addParty, changeParty, getPartyById, listPartiesPage, setCreditTerms } from './services/parties.ts';

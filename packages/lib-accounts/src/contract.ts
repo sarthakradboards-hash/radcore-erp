@@ -225,10 +225,73 @@ export const cancelPaymentContract = defineContract({
   method: 'POST', path: '/payments/:id/cancel', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({}),
-  errors: ['not_posted', 'date_before_source', 'date_in_future', 'has_refunds', 'period_locked', 'year_not_open', 'already_reversed'],
+  errors: ['not_posted', 'date_before_source', 'date_in_future', 'has_refunds', 'has_allocations', 'period_locked', 'year_not_open',
+    'already_reversed'],
+  dbErrors: { 'RA006:payment_still_allocated': { code: 'has_allocations', message: 'Reverse what this is applied to first' } },
 });
 
 /** An owner's override for cash past the day's limit (ADR-007 §8, RC-114): its approval posts the payment, so the
  * decision can meet the engine's refusals. */
 export const cashLimitApproval = approvalContracts('cash-limit', 'payments:approve',
   ['account_inactive', 'period_locked', 'year_not_open', 'not_draft', 'receipt_not_posted', 'exceeds_receipt']);
+
+// Allocations and credit applications (M3-12, RAD-116 part 2; ADR-005 §7a). A document is named by its table, one
+// `allocatable_documents` lists, and its id. The rules the database checks at commit answer by name (dbErrors, §9).
+const documentTable = () => z.string().regex(/^[a-z][a-z0-9_]*$/, 'Not a document table');
+const ALLOCATION_DB_ERRORS = {
+  'RA006:allocation_exceeds_document': { code: 'exceeds_document', message: 'That’s more than is left to pay on it' },
+  'RA006:allocation_exceeds_payment': { code: 'exceeds_payment', message: 'That’s more than is left of the payment' },
+  'RA006:allocation_party_mismatch': { code: 'party_mismatch', message: 'A payment applies to its own party’s documents' },
+  'RA006:allocation_side_mismatch': { code: 'side_mismatch', message: 'A receipt pays a customer’s bill, and a payment a supplier’s' },
+  'RA006:allocation_document_not_posted': { code: 'document_not_posted', message: 'A payment applies only to a posted document' },
+  'RA006:allocatable_document_missing': { code: 'document_missing', message: 'There’s no such document' },
+  '23503:fk_payment_allocations_document_table': { code: 'not_allocatable', message: 'Payments aren’t applied to that kind of document' },
+} as const;
+const CREDIT_DB_ERRORS = {
+  'RA006:credit_application_exceeds_document': { code: 'exceeds_document', message: 'That’s more than is left to pay on it' },
+  'RA006:credit_application_exceeds_credit': { code: 'exceeds_credit', message: 'That’s more than is left of the credit' },
+  'RA006:credit_application_party_mismatch': { code: 'party_mismatch', message: 'A credit applies to its own party’s documents' },
+  'RA006:credit_application_side_mismatch': { code: 'side_mismatch', message: 'A credit applies to a charge on its own side' },
+  'RA006:credit_application_document_not_posted': { code: 'document_not_posted', message: 'Both the credit and the charge must be posted' },
+  'RA006:allocatable_document_missing': { code: 'document_missing', message: 'There’s no such document' },
+  '23503:fk_credit_applications_credit_table': { code: 'not_allocatable', message: 'That kind of document isn’t a credit' },
+  '23503:fk_credit_applications_document_table': { code: 'not_allocatable', message: 'Credits aren’t applied to that kind of document' },
+} as const;
+
+/** POST /payments/:id/allocations: applies a posted receipt (to customers' charges) or payment (to suppliers') to
+ * documents, within what's left of each, gross of TDS held back (F8). */
+export const allocatePaymentContract = defineContract({
+  method: 'POST', path: '/payments/:id/allocations', auth: 'session', perm: 'payments:write', tx: write,
+  input: z.object({ id: idString(), lines: z.array(z.object({ documentTable: documentTable(), documentId: idString(), amount: moneyString() }))
+    .min(1, 'Apply it to one document or more').max(50) }),
+  output: z.object({ ids: z.array(idString()) }),
+  errors: ['not_allocatable', 'not_posted', 'exceeds_payment', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted',
+    'document_missing'],
+  dbErrors: ALLOCATION_DB_ERRORS,
+});
+
+/** POST /allocations/:id/reverse: undoes one allocation, whole, once. */
+export const reverseAllocationContract = defineContract({
+  method: 'POST', path: '/allocations/:id/reverse', auth: 'session', perm: 'payments:write', tx: write,
+  input: z.object({ id: idString() }), output: z.object({ id: idString() }),
+  errors: ['already_reversed'],
+  dbErrors: { '23505:ux_payment_allocations_reverses': { code: 'already_reversed', message: 'That allocation is already reversed' } },
+});
+
+/** POST /credit-applications: applies a posted credit (a credit note) to a posted charge on its side, of its party. */
+export const applyCreditContract = defineContract({
+  method: 'POST', path: '/credit-applications', auth: 'session', perm: 'payments:write', tx: write,
+  input: z.object({ creditTable: documentTable(), creditId: idString(), documentTable: documentTable(), documentId: idString(),
+    amount: moneyString() }),
+  output: z.object({ id: idString() }),
+  errors: ['not_allocatable', 'exceeds_credit', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted', 'document_missing'],
+  dbErrors: CREDIT_DB_ERRORS,
+});
+
+/** POST /credit-applications/:id/reverse: undoes one credit application, whole, once. */
+export const reverseCreditApplicationContract = defineContract({
+  method: 'POST', path: '/credit-applications/:id/reverse', auth: 'session', perm: 'payments:write', tx: write,
+  input: z.object({ id: idString() }), output: z.object({ id: idString() }),
+  errors: ['already_reversed'],
+  dbErrors: { '23505:ux_credit_applications_reverses': { code: 'already_reversed', message: 'That credit application is already reversed' } },
+});
