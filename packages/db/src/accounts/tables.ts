@@ -209,3 +209,42 @@ export const parties = radcoreTable('parties', {
   check('ck_parties_pincode', sql`${t.pincode} ~ '^[1-9][0-9]{5}$'`),
   check('ck_parties_credit_days', sql`${t.creditDays} between 0 and 365`),
 ]);
+
+/**
+ * Receipts, payments and refunds (M3-12, RAD-116; ADR-007 §1–§5, §8; ADR-006 §6, F8). A receipt takes money from a
+ * party (Cr Debtors), a payment pays one (Dr Creditors), a refund pays a customer back against the receipt it names
+ * (Dr Debtors). `amount` is what the party's line carries, gross of any TDS held back (`tds`, never the whole); the
+ * money account (cash or a bank) gets the rest. Draft → posted → cancelled (#185's guards): posting sets the number
+ * (RV or PV) and the entry, and only cancelling changes a posted one, by a mirror entry dated the cancellation's day.
+ */
+export const payments = radcoreTable('payments', {
+  id: id(),
+  kind: text().notNull(),
+  status: text().notNull().default('draft'),
+  number: text().unique(),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  businessDate: date({ mode: 'string' }).notNull(),
+  amount: money().notNull(),
+  tds: money().notNull().default('0'),
+  accountId: uuid().notNull().references(() => accounts.id, { onDelete: 'restrict' }),
+  refundOfId: uuid().references((): AnyPgColumn => payments.id, { onDelete: 'restrict' }),
+  narration: boundedText({ max: 500 }),
+  postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+  cancelledAt: timestamp({ withTimezone: true }),
+  cancelledBy: text(),
+  cancelReason: boundedText({ max: 500 }),
+  cancelEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_payments_kind', sql`${t.kind} in ('receipt', 'payment', 'refund')`),
+  check('ck_payments_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
+  // money() already holds each at or above zero (ck_payments_amount, ck_payments_tds).
+  check('ck_payments_figures', sql`${t.amount} > 0 and ${t.tds} < ${t.amount}`),
+  check('ck_payments_refund', sql`(${t.kind} = 'refund') = (${t.refundOfId} is not null) and (${t.kind} <> 'refund' or ${t.tds} = 0)`),
+  check('ck_payments_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
+  check('ck_payments_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
+  index('ix_payments_party_date').on(t.partyId, t.businessDate),
+  index('ix_payments_refund_of').on(t.refundOfId),
+  index('ix_payments_account').on(t.accountId),
+  index('ix_payments_posted_entry').on(t.postedEntryId),
+  index('ix_payments_cancel_entry').on(t.cancelEntryId),
+]);

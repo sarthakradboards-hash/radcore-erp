@@ -88,6 +88,69 @@ function entriesOf(list: string, built: Readonly<Record<string, number>>): strin
   return out;
 }
 
+// RAD-116 (the auditor on #215 and #234): a write route whose service can post a journal entry declares the engine's
+// refusals any caller can meet, so they answer 422 by name, never 500. Found by following calls, through the type
+// checker, from the route's service into the repo's own functions, to the engine's posting functions.
+const ENGINE = 'packages/lib-accounts/src/services/journal.ts';
+/** What each of the engine's posting functions may refuse any caller: a reversal takes a switched-off account. */
+const ENGINE_ERRORS: Readonly<Record<string, readonly string[]>> = {
+  postEntry: ['account_inactive', 'period_locked', 'year_not_open'],
+  postManualJournal: ['account_inactive', 'period_locked', 'year_not_open'],
+  reverseEntry: ['period_locked', 'year_not_open'],
+};
+/** The engine functions code reaches, following each call into a function, method or arrow declared in the repo. */
+function engineCalls(start: ts.Node, out = new Set<string>(), seen = new Set<ts.Node>()): Set<string> {
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n)) {
+      const callee = ts.isPropertyAccessExpression(n.expression) ? n.expression.name : n.expression;
+      let s = checker.getSymbolAtLocation(callee);
+      if (s !== undefined && s.flags & ts.SymbolFlags.Alias) s = checker.getAliasedSymbol(s);
+      const d = s?.declarations?.[0];
+      const file = d === undefined ? '' : repoPath(d.getSourceFile().fileName);
+      const name = s?.getName() ?? '';
+      if (file === ENGINE && name in ENGINE_ERRORS) out.add(name);
+      else if (d !== undefined && /^(packages|apps)\//.test(file) && !seen.has(d)) {
+        seen.add(d);
+        const body = ts.isVariableDeclaration(d) ? d.initializer : d;
+        if (body !== undefined) visit(body);
+      }
+    }
+    n.forEachChild(visit);
+  };
+  visit(start);
+  return out;
+}
+/** Each api route's define call (a defineApproval spread is its three routes), in mounting order; null where start-up built it. */
+function routeCalls(built: Readonly<Record<string, number>>): (ts.CallExpression | null)[] {
+  const fn = program.getSourceFile(LISTS.api)?.statements.find(ts.isVariableStatement)?.declarationList.declarations[0]?.initializer;
+  let body: ts.Node | undefined = fn !== undefined && ts.isArrowFunction(fn) ? fn.body : undefined;
+  while (body !== undefined && ts.isParenthesizedExpression(body)) body = body.expression;
+  if (body === undefined || !ts.isArrayLiteralExpression(body)) throw new Error("the api list isn't an array");
+  return body.elements.flatMap((el) => {
+    const target = ts.isSpreadElement(el) ? el.expression : el;
+    const file = declaringFile(target);
+    if (ts.isSpreadElement(el) && file !== null && file.startsWith('apps/')) {
+      return defaultArray(file).elements.flatMap((entry) => {
+        const call = ts.isSpreadElement(entry) ? entry.expression : entry;
+        if (!ts.isCallExpression(call)) return [null];
+        return ts.isSpreadElement(entry) ? Array.from({ length: APPROVAL_ROUTES }, () => call) : [call];
+      });
+    }
+    if (ts.isCallExpression(target)) return [target];
+    return Array.from({ length: built[target.getText()] ?? 0 }, () => null);
+  });
+}
+/** What a route's service and the rest of its define call reach: its handler, its `before`, an approval's spec. */
+const postingOf = (call: ts.CallExpression | null) => {
+  const out = new Set<string>();
+  for (const arg of call?.arguments.slice(1) ?? []) {
+    const s = ts.isIdentifier(arg) ? checker.getSymbolAtLocation(arg) : undefined;
+    const d = s !== undefined && s.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(s).declarations?.[0] : s?.declarations?.[0];
+    engineCalls(d ?? arg, out);
+  }
+  return out;
+};
+
 // One cruise from every file named; each entry's reach is what its files lead to.
 async function reachOf(entries: string[][]): Promise<string[][]> {
   const config = createRequire(import.meta.url)('../.dependency-cruiser.cjs');
@@ -155,6 +218,29 @@ describe('the manifest’s reach', () => {
     expect(readdirSync(join('apps', 'api', 'src', 'routes')).every((f) => f.endsWith('.ts'))).toBe(true);
     // The type checker resolves the route files' symbols on first use: past vitest's 5 s under a full parallel run.
   }, 30_000);
+
+  it('has every write route that can post a journal entry declare the engine’s refusals (the auditor on #215 and #234)', async () => {
+    const log = { info: () => undefined, error: () => undefined };
+    const auth = await createAuth(cfg, log);
+    const clientErrors = createClientErrors(log);
+    let routes: readonly Route[];
+    try {
+      routes = apiRoutes(auth, clientErrors);
+    } finally {
+      await auth.store.stop();
+    }
+    const calls = routeCalls({ 'auth.routes': auth.routes.length, 'clientErrors.routes': clientErrors.routes.length });
+    expect(calls).toHaveLength(routes.length);
+    const posting = calls.map(postingOf);
+    const missing = routes.flatMap((r, i) => (r.contract.tx.readOnly ? [] : [...(posting[i] ?? [])]
+      .flatMap((fn) => (ENGINE_ERRORS[fn] ?? []).filter((code) => !r.contract.errors.includes(code))
+        .map((code) => `${r.contract.method} ${r.contract.path}: reaches ${fn}, but doesn't declare ${code}`))));
+    expect([...new Set(missing)]).toEqual([]);
+    // It finds them: the manual journal posts, a payment's cancel reverses, a cash approval posts through its spec.
+    const at = (key: string) => [...(posting[routes.findIndex((r) => `${r.contract.method} ${r.contract.path}` === key)] ?? [])].toSorted();
+    expect([at('POST /journal'), at('POST /payments/:id/cancel'), at('POST /approvals/cash-limit/:id/decision'), at('POST /parties')])
+      .toEqual([['postManualJournal'], ['reverseEntry'], ['postEntry'], []]);
+  }, 120_000);
 
   it('counts a module library a file reaches, and never lib-common', async () => {
     expect(await reachOf([['packages/lib-sales/src/index.ts'], ['packages/lib-common/src/index.ts'], ['packages/lib-platform/src/route.ts']]))
