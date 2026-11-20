@@ -23,11 +23,11 @@ export const getPartyStatement = defineContract({
   output: z.object({
     party: z.object({ id: idString(), name: z.string(), creditDays: z.number().int() }),
     opening: moneyString({ signed: true }),
-    // The entry's number and its document. The document's own number (an invoice's) joins through a sales view later.
-    lines: z.array(z.object({ businessDate: dateString(), entryNumber: z.string(), kind: z.enum(ENTRY_KINDS), sourceTable: z.string(),
+    // The entry's number, its document, and the document's own number (an invoice's), from v_sales_document_refs.
+    lines: z.array(z.object({ businessDate: dateString(), entryNumber: z.string(), documentNumber: z.string().nullable(), kind: z.enum(ENTRY_KINDS), sourceTable: z.string(),
       sourceId: idString(), debit: moneyString(), credit: moneyString(), balance: moneyString({ signed: true }) })),
     closing: moneyString({ signed: true }),
-    openBills: z.array(z.object({ table: z.string(), id: idString(), entryNumber: z.string(), date: dateString(), due: dateString(),
+    openBills: z.array(z.object({ table: z.string(), id: idString(), entryNumber: z.string(), documentNumber: z.string().nullable(), date: dateString(), due: dateString(),
       amount: moneyString(), paid: moneyString(), open: moneyString(), overdue: z.boolean() })),
     toCollect: owed,
   }),
@@ -53,6 +53,7 @@ export const recordReminder = defineContract({
   method: 'POST', path: '/parties/:id/reminders', auth: 'session', perm: 'receivables:remind', tx: write,
   input: z.object({ id: idString(), channel: z.enum(REMINDER_CHANNELS), note: z.string().trim().min(1).max(500).optional() }),
   output: reminder.extend({ text: z.string() }),
+  errors: ['nothing_owed'],
 });
 
 /** GET /parties/:id/reminders (receivables:read): the party's reminders, the latest first, each with who made it. */

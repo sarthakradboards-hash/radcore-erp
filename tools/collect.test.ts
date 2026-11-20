@@ -136,6 +136,16 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
     }
   });
 
+  it('names each numbered invoice, and no draft, through v_sales_document_refs (backend-3’s OK on RAD-119)', async () => {
+    // One statement, one snapshot: other files' invoices come and go, but never between these three counts.
+    const [counts] = (await su.query<{ numbered: number; shown: number; rows: number }>(`select
+      (select count(*)::int from radcore.invoices where status <> 'draft') as numbered,
+      (select count(*)::int from radcore.v_sales_document_refs v join radcore.invoices i on i.id = v.document_id
+        and i.status <> 'draft' and i.number = v.number and i.business_date = v.business_date) as shown,
+      (select count(*)::int from radcore.v_sales_document_refs where document_table = 'invoices') as rows`)).rows;
+    expect([counts?.shown, counts?.rows]).toEqual([counts?.numbered, counts?.numbered]);
+  });
+
   it('shows a statement only to receivables:read, never to parties:read alone (RC-042)', async () => {
     const [p] = await owner<{ id: string }>("insert into radcore.parties (name, customer, state_code) values ($1, true, '27') returning id",
       [`Quiet party ${randomUUID()}`]);
@@ -167,7 +177,8 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
       }
     };
     expect(await reminded(['receivables:remind'])).toBe(403);
-    expect(await reminded(['receivables:remind', 'receivables:read'])).toBe(200);
+    // This party owes nothing, so there's nothing to remind them of (the auditor on #276).
+    expect(await reminded(['receivables:remind', 'receivables:read'])).toBe(422);
   });
 });
 

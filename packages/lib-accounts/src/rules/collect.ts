@@ -9,10 +9,10 @@ import { addDays, dec, roundMoney, sum, type Money } from '@radcore/lib-common';
 
 /** One of a party's Debtors lines, with its entry, the entry's document, and for a reversal, the entry it reverses. */
 export type PartyLine = Readonly<{
-  entryId: string; reversesEntryId: string | null; entryNumber: string; kind: string; businessDate: string;
+  entryId: string; reversesEntryId: string | null; entryNumber: string; documentNumber: string | null; kind: string; businessDate: string;
   sourceTable: string; sourceId: string; debit: string; credit: string;
 }>;
-export type OpenBill = { table: string; id: string; entryNumber: string; date: string; due: string; amount: Money; paid: Money; open: Money;
+export type OpenBill = { table: string; id: string; entryNumber: string; documentNumber: string | null; date: string; due: string; amount: Money; paid: Money; open: Money;
   overdue: boolean };
 export type ToCollect = { outstanding: Money; overdue: Money; oldestDue: string | null; notOnABill: Money };
 
@@ -33,7 +33,7 @@ export function openBills(lines: readonly PartyLine[], o: Readonly<{ isBill: (ta
     const amount = roundMoney(dec(was?.amount ?? '0').plus(l.debit));
     const paid = roundMoney(o.paid(l.sourceTable, l.sourceId));
     const dueOn = addDays(l.businessDate, o.creditDays);
-    bills.set(key, { table: l.sourceTable, id: l.sourceId, entryNumber: l.entryNumber, date: l.businessDate, due: dueOn, amount, paid,
+    bills.set(key, { table: l.sourceTable, id: l.sourceId, entryNumber: l.entryNumber, documentNumber: l.documentNumber, date: l.businessDate, due: dueOn, amount, paid,
       open: roundMoney(dec(amount).minus(paid)), overdue: dueOn.localeCompare(o.today) < 0 });
   }
   return [...bills.values()].filter((b) => dec(b.open).gt(0)).toSorted((a, b) => a.date.localeCompare(b.date));

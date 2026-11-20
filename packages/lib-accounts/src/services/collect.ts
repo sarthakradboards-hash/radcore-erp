@@ -2,6 +2,7 @@
 // been paid on each bill (allocations and credits, v_document_paid), with rules/collect.ts doing the sums. A bill is an
 // invoice's entry; it's due the party's credit days after its date, else accounts.default_credit_days.
 import { accounts, accountsTx, journalEntries, journalLines, parties, paymentReminders } from '@radcore/db/accounts';
+import { vSalesDocumentRefs } from '@radcore/db/views';
 import { dec, ENTRY_KINDS, indiaDate } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, isNotNull, lte, max } from 'drizzle-orm';
@@ -22,9 +23,12 @@ const entryKind = z.enum(ENTRY_KINDS);
 /** Debtors lines up to `on`, oldest first, each with its entry's number, kind and document; for these parties, or all. */
 async function debtorsLines(ctx: Ctx, on: string, partyIds?: readonly string[]) {
   return accountsTx(ctx).select({ partyId: journalLines.partyId, entryId: journalLines.entryId, reversesEntryId: journalEntries.reversesEntryId,
-    entryNumber: journalEntries.number, kind: journalEntries.kind, businessDate: journalLines.businessDate, sourceTable: journalEntries.sourceTable,
+    entryNumber: journalEntries.number, documentNumber: vSalesDocumentRefs.number, kind: journalEntries.kind, businessDate: journalLines.businessDate, sourceTable: journalEntries.sourceTable,
     sourceId: journalEntries.sourceId, debit: journalLines.debit, credit: journalLines.credit }).from(journalLines)
     .innerJoin(accounts, eq(accounts.id, journalLines.accountId)).innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
+    // A sales document's own number, through its view (ADR-001 §5): lib-accounts reads no sales table.
+    .leftJoin(vSalesDocumentRefs, and(eq(vSalesDocumentRefs.documentTable, journalEntries.sourceTable),
+      eq(vSalesDocumentRefs.documentId, journalEntries.sourceId)))
     .where(and(eq(accounts.systemKey, 'debtors'), lte(journalLines.businessDate, on), isNotNull(journalLines.partyId),
       partyIds === undefined ? undefined : inArray(journalLines.partyId, [...partyIds])))
     .orderBy(asc(journalLines.businessDate), asc(journalLines.postedAt), asc(journalLines.id));
@@ -64,7 +68,7 @@ export async function partyStatement(ctx: Ctx, { id, from, to }: In<typeof getPa
   const { party, lines, bills, owed } = await partyOwed(ctx, id);
   const s = statement(lines, from, to);
   return { party, opening: s.opening, closing: s.closing,
-    lines: s.lines.map((l) => ({ businessDate: l.businessDate, entryNumber: l.entryNumber, kind: entryKind.parse(l.kind), sourceTable: l.sourceTable,
+    lines: s.lines.map((l) => ({ businessDate: l.businessDate, entryNumber: l.entryNumber, documentNumber: l.documentNumber, kind: entryKind.parse(l.kind), sourceTable: l.sourceTable,
       sourceId: l.sourceId, debit: l.debit, credit: l.credit, balance: l.balance })),
     openBills: bills, toCollect: owed };
 }

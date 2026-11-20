@@ -2,7 +2,7 @@
 // amounts as at when it was made; its text carries the party's name and the amounts, and nothing of how to reach them
 // (ADR-001 §7a). Sending it by WhatsApp waits for M7; a link to the oldest overdue bill joins with RAD-118.
 import { accountsTx, paymentReminders } from '@radcore/db/accounts';
-import { formatDate, formatMoney } from '@radcore/lib-common';
+import { dec, formatDate, formatMoney } from '@radcore/lib-common';
 import { AppError, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -17,6 +17,7 @@ const channelOf = z.enum(REMINDER_CHANNELS);
 export async function remind(ctx: Ctx, { id, channel, note }: In<typeof recordReminder>): Promise<Out<typeof recordReminder>> {
   if (!ctx.can('receivables:read')) throw new AppError('forbidden', 'A reminder shows what the party owes: it needs receivables:read');
   const { party, owed } = await partyOwed(ctx, id);
+  if (!dec(owed.outstanding).gt(0)) throw new AppError('nothing_owed', 'This party owes nothing to remind them of');
   const [row] = await accountsTx(ctx).insert(paymentReminders).values({ partyId: party.id, outstanding: owed.outstanding, overdue: owed.overdue,
     oldestDue: owed.oldestDue, channel, note: note ?? null }).returning({ id: paymentReminders.id, asAt: paymentReminders.asAt });
   if (row === undefined) throw new Error('The reminder was not stored');

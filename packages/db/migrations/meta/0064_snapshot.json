@@ -1,5 +1,5 @@
 {
-  "id": "10adaecd-0e2d-4d7c-b480-3dcec2369291",
+  "id": "ea1f29f2-68d7-4bc9-a488-5a3686431251",
   "prevId": "6bbd00fe-43ca-487d-8eb5-c37c8e5aca86",
   "version": "7",
   "dialect": "postgresql",
@@ -12478,6 +12478,39 @@
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p', 'v', 'm') and n.nspname = 'public'",
       "name": "v_schema_public_relations",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
+    "radcore.v_sales_document_refs": {
+      "columns": {
+        "documentTable": {
+          "name": "documentTable",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentId": {
+          "name": "documentId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "number": {
+          "name": "number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "businessDate": {
+          "name": "businessDate",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select 'invoices'::text as document_table, i.id as document_id, i.number, i.business_date\n  from radcore.invoices i where i.status <> 'draft'",
+      "name": "v_sales_document_refs",
       "schema": "radcore",
       "isExisting": false,
       "materialized": false

@@ -20,6 +20,8 @@ CREATE TABLE "radcore"."payment_reminders" (
 --> statement-breakpoint
 ALTER TABLE "radcore"."payment_reminders" ADD CONSTRAINT "payment_reminders_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "radcore"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "ix_payment_reminders_party" ON "radcore"."payment_reminders" USING btree ("party_id","as_at");--> statement-breakpoint
+CREATE VIEW "radcore"."v_sales_document_refs" AS (select 'invoices'::text as document_table, i.id as document_id, i.number, i.business_date
+  from radcore.invoices i where i.status <> 'draft');--> statement-breakpoint
 -- RAD-119 (M3-15): reminders are append-only (ADR-005 §7, the architect's ruling), audited in full.
 SELECT radcore.audit_attach('payment_reminders', keep => array['party_id', 'as_at', 'outstanding', 'overdue', 'oldest_due', 'channel',
   'note', 'link_id']);
@@ -43,3 +45,6 @@ INSERT INTO radcore.role_templates (role, permission, scope) VALUES
   ('owner', 'receivables:read', 'all'), ('owner', 'receivables:remind', 'all'),
   ('accounts', 'receivables:read', 'all'), ('accounts', 'receivables:remind', 'all')
 ON CONFLICT DO NOTHING;
+--> statement-breakpoint
+-- RAD-24's rule for a view's migration: no writing through a view, since a simple view writes as its owner.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.v_sales_document_refs FROM radcore_app;
