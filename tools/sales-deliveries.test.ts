@@ -9,13 +9,13 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, saveSetting, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addDelivery, addDeliveryReturn, addOrder, cancelDeliveryNow, cancelDeliveryReturnNow, askDeliveryOverride, cancelOrderNow, changeOrder, closeOrderNow, confirmOrderNow, deliveryOverride,
   getDeliveryById, getOrderById, listDeliveriesPage, listToInvoicePage, postDeliveryNow, postDeliveryReturnNow,
 } from '@radcore/lib-sales';
-import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
+import { NEGATIVE_STOCK, addCategory, addItem, addPlace, checkBooks } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { priceListFrom } from './price-list-fixture.ts';
@@ -329,5 +329,27 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
     const { rows: [unit] } = await su.query<{ ownership: string; sale: string | null }>(`select ownership, sale_line_id as sale
       from radcore.units where item_id = $1`, [at.itemId]);
     expect(unit).toEqual({ ownership: 'ours', sale: null });
+  });
+
+  // The architect on RAD-114 (ADR-006 §4's accepted approximation, F15): a delivery that went below zero, its shortfall
+  // revalued by a later receipt, is cancelled at the value it went out at; the revaluation stays, and the books still
+  // agree with stock. Negative stock is the company's one setting, so it's on only for this delivery.
+  it('cancels a delivery that went below zero and was revalued since, and the books check stays clean', async () => {
+    const at = await setup({ stock: '1', rate: '30', ordered: '2' });
+    const { id } = await run((ctx) => addDelivery(ctx, { orderId: at.orderId, locationId: at.placeId, businessDate: DATE, notes: null,
+      lines: [{ orderLineId: at.orderLineId, qty: q('2'), batches: [{ batchId: at.batchId, qty: q('1') }, { batchId: null, qty: q('1') }],
+        serials: [] }] }));
+    await run((ctx) => saveSetting(ctx, NEGATIVE_STOCK, true));
+    try {
+      await run((ctx) => postDeliveryNow(ctx, { id }));
+    } finally {
+      await run((ctx) => saveSetting(ctx, NEGATIVE_STOCK, null));
+    }
+    // One out at 30.00 and one at the estimate, 30.00; the receipt of one at 40.00 revalues the shortfall by -10.00 (F15).
+    await run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId: at.itemId,
+      locationId: at.placeId, qty: q('1'), rate: unitPriceString().parse('40'), batches: [{ batchNo: 'B2', qty: q('1') }] }] }));
+    await run((ctx) => cancelDeliveryNow(ctx, { id, businessDate: DATE, reason: 'Wrong customer' }));
+    expect(await onHand(at.itemId, at.placeId)).toEqual({ qty: '2', value: '60.00' });
+    expect((await run((ctx) => checkBooks(ctx, {}))).problems).toEqual([]);
   });
 });
