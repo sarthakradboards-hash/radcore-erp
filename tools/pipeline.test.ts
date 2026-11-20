@@ -261,10 +261,11 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
     await tookIt;
     const ravi = as(taker(raviId), (ctx) => followUpDone(ctx, { id }));
     // Ravi saw it unowned and now waits on Asha's row lock.
-    for (let i = 0; i < 1000; i += 1) {
+    // Bounded by time, not tries: under a full parallel run, Ravi's transaction can take a while to reach the lock.
+    await vi.waitFor(async () => {
       const [w] = await owner<{ n: string }>("select count(*) as n from pg_stat_activity where wait_event_type = 'Lock'", []);
-      if (Number(w?.n) > 0) break;
-    }
+      expect(Number(w?.n)).toBeGreaterThan(0);
+    }, { timeout: 10_000, interval: 20 });
     release();
     await asha;
     await expect(ravi).rejects.toMatchObject({ code: 'lead_taken' });
