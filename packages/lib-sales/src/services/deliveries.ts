@@ -217,9 +217,9 @@ export async function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>)
 }
 
 /** GET /sales/deliveries/to-invoice (sales:read): posted deliveries with something still to invoice, oldest first
- * (ADR-007 §4), each with what's left at selling value with GST.
- * shortcut: nothing is invoiced until M3-09 (RAD-113), so what's left is the lines less what came back; a page skips a
- * delivery taken back whole, so it may hold fewer than its limit. */
+ * (ADR-007 §4), each with what's left at selling value with GST: its lines less what came back and what's invoiced.
+ * shortcut: a page skips a delivery with nothing left, so it may hold fewer than its limit; a filter on what's left
+ * joins the query if pages grow sparse. */
 export async function listToInvoicePage(ctx: Ctx, input: In<typeof listToInvoice>): Promise<Out<typeof listToInvoice>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
   const rows = await salesTx(ctx).select({ id: deliveries.id, number: deliveries.number, partyId: deliveries.partyId,

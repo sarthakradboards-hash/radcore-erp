@@ -149,7 +149,21 @@ export const setDiscountLimit = defineContract({
   output: z.object({}), errors: ['unknown_role'],
 });
 
+/** The price list a party is sold from: its own, or the default it takes (`own` false). Null: no list at all. */
+export const getPartyPriceList = defineContract({
+  method: 'GET', path: '/sales/party-price-lists/:partyId', auth: 'session', perm: 'prices:read', tx: read,
+  input: z.object({ partyId: idString() }), output: z.object({ priceListId: idString().nullable(), own: z.boolean() }),
+});
+/** Sets a party's own price list, or clears it (null) to take the default (the architect on RAD-113). */
+export const setPartyPriceList = defineContract({
+  method: 'PUT', path: '/sales/party-price-lists/:partyId', auth: 'session', perm: 'prices:approve', tx: write,
+  input: z.object({ partyId: idString(), priceListId: idString().nullable(), reason: reason() }), output: z.object({}),
+  errors: ['unknown_party', 'unknown_price_list'],
+});
+
 // Quotes and orders (M3-08, RAD-112), in a file of their own.
 export * from './contract/documents.ts';
 // Deliveries and delivery returns (M3-08, RAD-112), in a file of their own.
 export * from './contract/deliveries.ts';
+// Invoices (M3-09, RAD-113), in a file of their own.
+export * from './contract/invoices.ts';

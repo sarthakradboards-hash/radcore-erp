@@ -10,6 +10,7 @@ export const checkIssue = z.discriminatedUnion('code', [
   z.object({ code: z.literal('overdue') }),
   z.object({ code: z.literal('below_cost'), line: z.number().int().min(0) }),
   z.object({ code: z.literal('cost_unknown'), line: z.number().int().min(0) }),
+  z.object({ code: z.literal('no_list_rate'), line: z.number().int().min(0) }),
   z.object({ code: z.literal('over_discount'), line: z.number().int().min(0) }),
 ]);
 

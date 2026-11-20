@@ -10,6 +10,7 @@ export type CheckIssue =
   | { code: 'overdue' }
   | { code: 'below_cost'; line: number }
   | { code: 'cost_unknown'; line: number }
+  | { code: 'no_list_rate'; line: number }
   | { code: 'over_discount'; line: number };
 
 /** A party's credit position for one sale: what it owes, its terms, and what this sale adds. */
@@ -62,14 +63,20 @@ export function overDiscount(listRate: DecimalInput | null, rate: DecimalInput, 
   return dec(rate).lt(dec(listRate).times(dec('100').minus(dec(allowedPercent))).div('100'));
 }
 
+/** Whether a priced line has no list rate to judge its discount by (the architect's #256): an item off its list, or no
+ * list at all. Strict but still sellable: it needs approval, as cost_unknown does. A line with no price set isn't
+ * judged at all. */
+export const noListRate = (rate: DecimalInput | null, listRate: DecimalInput | null): boolean => rate !== null && listRate === null;
+
 /** Every issue of a sale, in order: the credit ones first, then each line's. */
 export function issuesOf(credit: { overLimit: boolean; overdue: boolean },
-  lines: readonly { cost: 'ok' | 'below_cost' | 'cost_unknown'; overDiscount: boolean }[]): CheckIssue[] {
+  lines: readonly { cost: 'ok' | 'below_cost' | 'cost_unknown'; noListRate: boolean; overDiscount: boolean }[]): CheckIssue[] {
   return [
     ...(credit.overLimit ? [{ code: 'over_limit' } as const] : []),
     ...(credit.overdue ? [{ code: 'overdue' } as const] : []),
     ...lines.flatMap((l, line): CheckIssue[] => [
       ...(l.cost === 'ok' ? [] : [{ code: l.cost, line }]),
+      ...(l.noListRate ? [{ code: 'no_list_rate' as const, line }] : []),
       ...(l.overDiscount ? [{ code: 'over_discount' as const, line }] : []),
     ]),
   ];

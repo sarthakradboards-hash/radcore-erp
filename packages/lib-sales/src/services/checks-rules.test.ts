@@ -1,6 +1,6 @@
 // RAD-111's checks arithmetic (RC-061, RC-131), pinned at each boundary so a mutant has nowhere to hide.
 import { describe, expect, it } from 'vitest';
-import { costResult, creditResult, discountPercent, issuesOf, overDiscount, type CreditFigures } from './checks-rules.ts';
+import { costResult, creditResult, discountPercent, issuesOf, noListRate, overDiscount, type CreditFigures } from './checks-rules.ts';
 
 const base: CreditFigures = { limit: '100000', outstanding: '30000', notInvoiced: '10000', adds: '60000', creditDays: 30, oldestUnpaid: null,
   on: '2026-04-30' };
@@ -52,12 +52,20 @@ describe('overDiscount', () => {
   });
 });
 
+describe('noListRate', () => {
+  // The architect's #256: a priced line with no list rate needs approval; a line with no price set isn't judged.
+  it('is a priced line with no list rate, and nothing else', () => {
+    expect([noListRate('10', null), noListRate('10', '12'), noListRate(null, null), noListRate(null, '12')]).toEqual([true, false, false, false]);
+  });
+});
+
 describe('issuesOf', () => {
   it('names the credit issues first, then each line’s, by its index', () => {
     expect(issuesOf({ overLimit: true, overdue: true }, [
-      { cost: 'ok', overDiscount: false }, { cost: 'below_cost', overDiscount: true }, { cost: 'cost_unknown', overDiscount: false }]))
+      { cost: 'ok', noListRate: false, overDiscount: false }, { cost: 'below_cost', noListRate: false, overDiscount: true },
+      { cost: 'cost_unknown', noListRate: true, overDiscount: false }]))
       .toEqual([{ code: 'over_limit' }, { code: 'overdue' }, { code: 'below_cost', line: 1 }, { code: 'over_discount', line: 1 },
-        { code: 'cost_unknown', line: 2 }]);
-    expect(issuesOf({ overLimit: false, overdue: false }, [{ cost: 'ok', overDiscount: false }])).toEqual([]);
+        { code: 'cost_unknown', line: 2 }, { code: 'no_list_rate', line: 2 }]);
+    expect(issuesOf({ overLimit: false, overdue: false }, [{ cost: 'ok', noListRate: false, overDiscount: false }])).toEqual([]);
   });
 });

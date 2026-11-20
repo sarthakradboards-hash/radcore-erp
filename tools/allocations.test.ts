@@ -152,7 +152,8 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
         .toBe('RA006');
       expect(await f.attempt(apply, [await f.payment({ kind: 'refund', party: p, amount: '5.00', refundOf: r }), 't_invoices', inv, 'apply', '1.00']))
         .toBe('RA006');
-      expect(await f.attempt(apply, [r, 'invoices', randomUUID(), 'apply', '1.00'])).toBe('23503');
+      // A table no migration registers (invoices is, from 0059): the registry's foreign key refuses it.
+      expect(await f.attempt(apply, [r, 't_never_registered', randomUUID(), 'apply', '1.00'])).toBe('23503');
       expect(await f.attempt(apply, [r, 't_credits', await f.doc('t_credits', { party: p, total: '5.00' }), 'apply', '1.00'])).toBe('RA006');
     });
   });

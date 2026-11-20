@@ -88,10 +88,11 @@ describe.skipIf(!url)('the sale checks', { timeout: 30_000 }, () => {
   it('prices against the average cost at the place, else the purchase price, and a stock item with no cost needs approval (RC-131)', async () => {
     const id = await party();
     const at = await items();
-    const line = (itemId: string, rate: string | null, listRate: string | null = null, locationId: string | null = at.place): SaleLine =>
+    // Each priced line at its own list rate, so only cost is judged here (no_list_rate and discounts are tested apart).
+    const line = (itemId: string, rate: string | null, listRate: string | null = rate, locationId: string | null = at.place): SaleLine =>
       ({ itemId, locationId, rate, listRate });
-    const result = await check(id, '2033-03-20', '0', [line(at.stocked, '99.99'), line(at.stocked, '100'), line(at.priced, '49', null, null),
-      line(at.unknown, '10', null, null), line(at.stocked, null)]);
+    const result = await check(id, '2033-03-20', '0', [line(at.stocked, '99.99'), line(at.stocked, '100'), line(at.priced, '49', '49', null),
+      line(at.unknown, '10', '10', null), line(at.stocked, null)]);
     expect(result.lines.map((l) => [l.cost, l.check])).toEqual([['100.000000', 'below_cost'], ['100.000000', 'ok'],
       ['50.000000', 'below_cost'], [null, 'cost_unknown'], [null, 'not_priced']]);
     expect(result.issues).toEqual([{ code: 'below_cost', line: 0 }, { code: 'below_cost', line: 2 }, { code: 'cost_unknown', line: 3 }]);

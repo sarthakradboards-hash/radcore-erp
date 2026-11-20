@@ -16,6 +16,7 @@ import { putGstRate } from '@radcore/lib-gst';
 import { addCategory, addItem } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { priceListFrom } from './price-list-fixture.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -41,8 +42,10 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
   const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
 
   // A party we sell to (or, with `kinds`, another), and an item counted whole.
-  async function setup(kinds: string[] = ['customer']) {
-    return run(async (ctx) => {
+  // With a price list on the party pricing the item at `listRate` (the lines' 61,250.00 by default; null leaves it off
+  // the list): a priced line with no list rate needs approval (the architect's #256).
+  async function setup(kinds: string[] = ['customer'], list: { listRate?: string | null; taxInclusive?: boolean } = {}) {
+    const at = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: kinds as never, gstin: null, pan: null, composition: false,
         stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
@@ -57,9 +60,13 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
         barcode: null, serialised: false, hasChassis: false, purchasePrice: unitPriceString().parse('50000') });
       return { partyId, itemId };
     });
+    const listRate = list.listRate === undefined ? '61250' : list.listRate;
+    await priceListFrom(su, DATE, listRate === null ? {} : { [at.itemId]: listRate },
+      { partyId: at.partyId, ...(list.taxInclusive === undefined ? {} : { taxInclusive: list.taxInclusive }) });
+    return at;
   }
 
-  it('sends a quote with its number, then accepts it into a draft order with its lines', async () => {
+  it('sends a quote with its number, then accepts it into a draft order priced from the party’s list', async () => {
     const at = await setup();
     const { id } = await run((ctx) => addQuote(ctx, { partyId: at.partyId, businessDate: DATE, validUntil: null, notes: 'Two scooters',
       lines: [line(at.itemId)] }));
@@ -74,6 +81,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     expect([quote.status, order.status, order.number, order.quoteId, order.notes]).toEqual(['accepted', 'draft', null, id, 'Two scooters']);
     expect(order.lines.map((l) => [l.lineNo, l.itemId, l.qty, l.rate])).toEqual([[1, at.itemId, '2.000', '61250.000000']]);
     expect(await code(run((ctx) => acceptQuoteNow(ctx, { id, businessDate: DATE })))).toBe('wrong_status');
+    // Priced from the party's list like any order (auditor-2 on #254): it confirms with no override needed.
+    expect((await run((ctx) => confirmOrderNow(ctx, { id: orderId }))).number).toMatch(/^SO\//);
   });
 
   // A person, made now in a transaction of its own, as the approval engine reads their account's age (RAD-38).
@@ -119,7 +128,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
 
   // RC-131: below the item's cost (its purchase price, with nothing on hand) stops a line, whatever the party's credit.
   it('stops a confirmation with a line priced below the item’s cost', async () => {
-    const at = await setup();
+    // Listed at the line's own rate, so cost is the only thing it fails.
+    const at = await setup(['customer'], { listRate: '40000' });
     const cheap = { ...line(at.itemId), rate: unitPriceString().parse('40000') };
     const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [cheap] }));
     const refused = await run((ctx) => confirmOrderNow(ctx, { id })).then(() => null, (e: unknown) => e as AppError);
@@ -129,6 +139,7 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
   // The architect on RAD-112: an order's discounts are judged by its maker's limit, whoever reads it, so what the
   // approver approves is what the maker's confirmation finds. A maker on 5% gives 8%; an approver on 10% approves it.
   it("judges an order's discount by its maker's limit, so an approver with a higher one approves what the maker confirms", async () => {
+    // The party's list prices the item at the line's rate, so the 8% is all the discount there is (the architect on RAD-113).
     const at = await setup();
     const maker = await newUser(KEYS, await roleWithLimit('5'));
     const approver = await newUser(['sales:override'], await roleWithLimit('10'));
@@ -139,6 +150,21 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     const request = await run((ctx) => askOrderOverride(ctx, { id }), maker);
     await run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), approver);
     expect((await run((ctx) => confirmOrderNow(ctx, { id }), maker)).number).toMatch(/^SO\//);
+  });
+
+  // Refs RAD-112 (the architect on RAD-113 and #256): a line's discount is measured from its party's list, never from a
+  // rate typed on it, so a typed rate below the list with 0% discount is over a 0% limit; an item the list doesn't price
+  // needs approval (no_list_rate); a tax-inclusive list is compared before its GST (64,312.50 at 5% is 61,250.00).
+  it('measures a typed rate against the party’s list, and needs approval for an item off the list', async () => {
+    const listed = await setup(['customer'], { listRate: '65000' });
+    const unlisted = await setup(['customer'], { listRate: null });
+    const inclusive = await setup(['customer'], { listRate: '64312.50', taxInclusive: true });
+    const maker = await newUser(KEYS, await roleWithLimit('0'));
+    const confirm = async (at: { partyId: string; itemId: string }) => {
+      const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), maker);
+      return run((ctx) => confirmOrderNow(ctx, { id }), maker).then(() => 'ok', (e: unknown) => (e as AppError).issues.map((i) => i.code).join());
+    };
+    expect([await confirm(listed), await confirm(unlisted), await confirm(inclusive)]).toEqual(['over_discount', 'no_list_rate', 'ok']);
   });
 
   it('makes an approved override stale when the order changes after it', async () => {
