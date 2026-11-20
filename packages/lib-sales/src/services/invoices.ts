@@ -44,7 +44,7 @@ export type CheckedLine = {
   lineNo: number; deliveryLineId: string; itemId: string; qty: string; rate: string; discountPercent: string; priceChanged: boolean;
   /** What its discount is measured from (the architect on RAD-113): its order line's list rate when its price is
    * unchanged, else the invoice's list's rate on the invoice's date; null when the list has none. */
-  listRate: string | null; listVersionId: string | null;
+  listRate: string | null; listVersionId: string | null; listTaxInclusive: boolean;
   delivery: { id: string; businessDate: string; locationId: string; owner: string };
   sent: { qty: string; value: string | null; taxable: string | null; gst: string | null }; gone: Returned;
 };
@@ -103,7 +103,7 @@ export async function checkedLines(ctx: Ctx, partyId: string, lines: readonly Li
     const discountPercent = l.discountPercent ?? line.discountPercent;
     rows.push({ lineNo: n + 1, deliveryLineId: line.id, itemId: line.itemId, qty: l.qty, rate, discountPercent,
       priceChanged: !dec(rate).eq(dec(line.rate)) || !dec(discountPercent).eq(dec(line.discountPercent)),
-      listRate: line.listRate, listVersionId: line.listVersionId,
+      listRate: line.listRate, listVersionId: line.listVersionId, listTaxInclusive: false,
       delivery: { id: delivery.id, businessDate: delivery.businessDate, locationId: delivery.locationId, owner: delivery.owner },
       sent: { qty: line.qty, value: line.value, taxable: line.taxable, gst: line.gst }, gone: was });
   }

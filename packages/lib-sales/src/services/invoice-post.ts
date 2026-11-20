@@ -15,7 +15,7 @@ import { z } from 'zod';
 import type { postInvoice, requestInvoiceOverride } from '../contract.ts';
 import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { deliveredNotInvoiced } from './delivered.ts';
-import { checkDate, netRate, shareOf } from './document-rules.ts';
+import { checkDate, listRateBeforeTax, netRate, shareOf } from './document-rules.ts';
 import { sellingTo, today } from './document-lines.ts';
 import { checkInvoiceDate, lineTax, needsBuyerDetails, placeOfSupply, totalsOf, type LineTax } from './invoice-rules.ts';
 import { checkedLines, invoiceOf, ownerOf, wrongStatus, type CheckedLine } from './invoices.ts';
@@ -74,7 +74,7 @@ function saleOf(inv: Invoice, lines: readonly Priced[], total: Money, notInvoice
     stage: 'invoice', partyId: inv.partyId, on: inv.businessDate, pricedBy: inv.createdBy, notInvoiced,
     adds: roundMoney(dec(total).minus(replaced)),
     lines: lines.map((l) => ({ itemId: l.itemId, locationId: l.delivery.locationId, rate: l.priceChanged ? netRate(l.rate, l.discountPercent) : null,
-      listRate: l.priceChanged ? l.listRate : null })),
+      listRate: !l.priceChanged || l.listRate === null ? null : listRateBeforeTax(l.listRate, l.listTaxInclusive, l.gstRate) })),
   };
 }
 

@@ -3,20 +3,23 @@
 // needs someone else to approve an override first (sales:override, through defineApproval, RAD-38). The approval
 // records the version it approved on the order; confirming takes it while the order and its issues still hash to it,
 // so a changed line, a payment or a new cost in between makes it stale.
-import { salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
+import { priceListVersions, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
 import { itemLabels } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { deliveredNotInvoiced } from './delivered.ts';
-import { netRate, totalWithGst } from './document-rules.ts';
+import { listRateBeforeTax, netRate, totalWithGst } from './document-rules.ts';
 
 type Order = { partyId: string; businessDate: string; createdBy: string };
-type Line = { itemId: string; qty: string; rate: string; discountPercent: string; listRate: string | null };
+type Line = { itemId: string; qty: string; rate: string; discountPercent: string; listRate: string | null; listTaxInclusive: boolean | null };
 
+// Each line with its list rate as priced and whether its version includes GST.
 const linesOf = (ctx: Ctx, orderId: string) => salesTx(ctx).select({ itemId: salesOrderLines.itemId, qty: salesOrderLines.qty,
-  rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent, listRate: salesOrderLines.listRate }).from(salesOrderLines)
+  rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent, listRate: salesOrderLines.listRate,
+  listTaxInclusive: priceListVersions.taxInclusive }).from(salesOrderLines)
+  .leftJoin(priceListVersions, eq(priceListVersions.id, salesOrderLines.listVersionId))
   .where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo));
 
 /** What an override approves of the order: its party, date and lines, as plain JSON (RAD-38). */
@@ -34,7 +37,8 @@ async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[]): Promise<SaleC
   return {
     stage: 'confirm', partyId: o.partyId, on: o.businessDate, pricedBy: o.createdBy,
     adds: totalWithGst(lines.map((l, i) => ({ ...l, gstPercent: gst[i] ?? '0' }))), notInvoiced: await deliveredNotInvoiced(ctx, o.partyId),
-    lines: lines.map((l) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent), listRate: l.listRate })),
+    lines: lines.map((l, i) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent),
+      listRate: l.listRate === null ? null : listRateBeforeTax(l.listRate, l.listTaxInclusive === true, gst[i] ?? '0') })),
   };
 }
 

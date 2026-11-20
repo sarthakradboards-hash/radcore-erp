@@ -53,7 +53,7 @@ const fromQuote = (o: { quoteDate: string | null }) => (o.quoteDate === null ? u
 async function priced(ctx: Ctx, partyId: string, on: string, lines: Awaited<ReturnType<typeof checkedLines>>) {
   const priceListId = await priceListOf(ctx, partyId);
   const rates = await listRatesOf(ctx, priceListId, on, lines.map((l) => l.itemId));
-  return { priceListId, lines: lines.map((l, i) => ({ ...l, ...(rates[i] ?? { listRate: null, listVersionId: null }) })) };
+  return { priceListId, lines: lines.map((l, i) => ({ ...l, listRate: rates[i]?.listRate ?? null, listVersionId: rates[i]?.listVersionId ?? null })) };
 }
 
 /** GET /sales/orders (sales:read): newest first, a page at a time, the principal's own when that's their scope. */

@@ -2,12 +2,10 @@
 // prices:approve, else the company's `sales.default_price_list`. A document copies its list when it's made, and each
 // priced line stores the list's rate for its item on the document's date, filled here and never from input, so a typed
 // rate below the list counts against the maker's discount limit like a discount does. An item the list doesn't price
-// stores no list rate: no discount is judged, and below cost still guards the floor.
+// stores no list rate, and its line needs approval (no_list_rate, the architect's #256).
 import { partyPriceLists, priceLists, salesTx } from '@radcore/db/sales';
-import { dec, roundRate, type Rate } from '@radcore/lib-common';
-import { gstRateFor } from '@radcore/lib-gst';
+import type { Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
-import { itemLabels } from '@radcore/lib-stock';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { getPartyPriceList, setPartyPriceList } from '../contract.ts';
@@ -52,35 +50,21 @@ export async function priceListOf(ctx: Ctx, partyId: string): Promise<string | n
   return (await getPartyList(ctx, { partyId })).priceListId;
 }
 
-/** A line's list rate and the version it came from. */
-export type ListRate = { listRate: Rate | null; listVersionId: string | null };
-const NONE: ListRate = { listRate: null, listVersionId: null };
+/** A line's list rate, as its version prices it, the version, and whether that version's rates include GST. */
+export type ListRate = { listRate: Rate | null; listVersionId: string | null; listTaxInclusive: boolean };
+const NONE: ListRate = { listRate: null, listVersionId: null, listTaxInclusive: false };
 
-/**
- * Each item's list rate on `on`, before GST, as checkSale compares rates (the architect on RAD-111): a tax-inclusive
- * list's rate less the GST in force that day for the item, rate × 100 / (100 + GST %), to 6 places. No list, or no rate
- * in it for an item that day (`no_price`), is none.
- */
+/** Each item's list rate on `on`, as its version prices it: the checks take GST out of a tax-inclusive one exactly, at
+ * the line's own GST rate (listRateBeforeTax). No list, or no rate in it for an item that day (`no_price`), is none. */
 export async function listRatesOf(ctx: Ctx, listId: string | null, on: string, itemIds: readonly string[]): Promise<ListRate[]> {
   if (listId === null) return itemIds.map(() => NONE);
   const out: ListRate[] = [];
-  let labels: Map<string, { hsn: string }> | undefined;
   for (const itemId of itemIds) {
     const price = await priceFor(ctx, listId, itemId, on).catch((e: unknown) => {
       if (e instanceof AppError && e.code === 'no_price') return null;
       throw e;
     });
-    if (price === null) {
-      out.push(NONE);
-      continue;
-    }
-    if (!price.taxInclusive) {
-      out.push({ listRate: price.rate, listVersionId: price.versionId });
-      continue;
-    }
-    labels ??= await itemLabels(ctx, itemIds);
-    const gst = (await gstRateFor(ctx, labels.get(itemId)?.hsn ?? '', on)).rate;
-    out.push({ listRate: roundRate(dec(price.rate).times('100').div(dec('100').plus(dec(gst)))), listVersionId: price.versionId });
+    out.push(price === null ? NONE : { listRate: price.rate, listVersionId: price.versionId, listTaxInclusive: price.taxInclusive });
   }
   return out;
 }

@@ -146,8 +146,8 @@ export const salesOrderLines = radcoreTable('sales_order_lines', {
   qty: qty({ line: true }).notNull(),
   rate: unitPrice().notNull(),
   discountPercent: percent().notNull().default('0'),
-  // The list's rate for the item on the order's date, before GST, and its version: filled by the service, never from
-  // input; what its discount is measured from, and null when the list has none (the architect on RAD-113, #256).
+  // The list's rate for the item on the order's date as its version prices it, and the version: filled by the service,
+  // never from input; null when the list has none (the architect on RAD-113, #256). The check takes GST out exactly.
   listRate: unitPrice(),
   listVersionId: uuid().references(() => priceListVersions.id, { onDelete: 'restrict' }),
 }, (t) => [
