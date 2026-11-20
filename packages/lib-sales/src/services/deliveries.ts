@@ -5,7 +5,7 @@
 // `delivery`: Dr GDNI, Cr Stock in Hand by item and place), and draws its number (DC) last. An order every line of
 // which has gone is closed. Only cancelling (M3-10, RAD-114) changes a posted one.
 import { after, deliveries, deliveryLines, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
-import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
+import { holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney } from '@radcore/lib-common';
 import {
   AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
@@ -38,11 +38,12 @@ const wrongStatus = (status: string) => new AppError('wrong_status', `This deliv
 
 /** The delivery, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
 export async function deliveryOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  const sel = salesTx(ctx).select({ ...header, createdBy: deliveries.createdBy, overrideVersion: deliveries.overrideVersion })
-    .from(deliveries).where(eq(deliveries.id, id));
+  const sel = salesTx(ctx).select({ ...header, owner: deliveries.owner, createdBy: deliveries.createdBy,
+    overrideVersion: deliveries.overrideVersion }).from(deliveries).where(eq(deliveries.id, id));
   const [row] = forUpdate ? await sel.for('update') : await sel;
   if (row === undefined) throw new AppError('not_found', 'There is no such delivery');
-  ctx.see(permission, { owner: row.createdBy });
+  // Its order's owner's, whoever made it (ADR-007 §1).
+  ctx.see(permission, { owner: row.owner });
   return row;
 }
 
@@ -97,7 +98,7 @@ export async function listDeliveriesPage(ctx: Ctx, input: In<typeof listDeliveri
     input.filter.status === undefined ? undefined : eq(deliveries.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(deliveries.partyId, input.filter.partyId),
     input.filter.orderId === undefined ? undefined : eq(deliveries.orderId, input.filter.orderId),
-    listScope(ctx, 'sales:read', deliveries.createdBy),
+    listScope(ctx, 'sales:read', deliveries.owner),
     after([deliveries.businessDate, deliveries.id], key && [key.date, key.id], 'desc'),
   )).orderBy(desc(deliveries.businessDate), desc(deliveries.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
@@ -125,10 +126,10 @@ export async function getDeliveryById(ctx: Ctx, { id }: In<typeof getDelivery>):
 export async function addDelivery(ctx: Ctx, input: In<typeof createDelivery>): Promise<Out<typeof createDelivery>> {
   const order = await orderFor(ctx, input.orderId);
   checkDate(input.businessDate, today(), { date: order.businessDate, what: 'order' });
-  await checkPlace(ctx, input.locationId);
+  await checkPlace(ctx, input.locationId, { sellable: true });
   const lines = await checkedLines(ctx, order.id, input.lines);
   const tx = salesTx(ctx);
-  const [row] = await tx.insert(deliveries).values({ orderId: order.id, partyId: order.partyId, locationId: input.locationId,
+  const [row] = await tx.insert(deliveries).values({ orderId: order.id, partyId: order.partyId, owner: order.owner, locationId: input.locationId,
     businessDate: input.businessDate, notes: input.notes }).returning({ id: deliveries.id });
   if (row === undefined) throw new Error('the insert returned no row');
   await tx.insert(deliveryLines).values(lines.map((l) => ({ ...l, deliveryId: row.id })));
@@ -142,10 +143,10 @@ export async function changeDelivery(ctx: Ctx, { id, ...input }: In<typeof updat
   if (now.status !== 'draft') throw wrongStatus(now.status);
   const order = await orderFor(ctx, input.orderId);
   checkDate(input.businessDate, today(), { date: order.businessDate, what: 'order' });
-  await checkPlace(ctx, input.locationId);
+  await checkPlace(ctx, input.locationId, { sellable: true });
   const lines = await checkedLines(ctx, order.id, input.lines);
   const tx = salesTx(ctx);
-  await tx.update(deliveries).set({ orderId: order.id, partyId: order.partyId, locationId: input.locationId, businessDate: input.businessDate,
+  await tx.update(deliveries).set({ orderId: order.id, partyId: order.partyId, owner: order.owner, locationId: input.locationId, businessDate: input.businessDate,
     notes: input.notes, overrideVersion: null }).where(eq(deliveries.id, id));
   await tx.delete(deliveryLines).where(eq(deliveryLines.deliveryId, id));
   await tx.insert(deliveryLines).values(lines.map((l) => ({ ...l, deliveryId: id })));
@@ -174,16 +175,21 @@ export async function askDeliveryOverride(ctx: Ctx, { id }: In<typeof requestDel
  */
 export async function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>): Promise<Out<typeof postDelivery>> {
   const tx = salesTx(ctx);
-  // Its date first, unlocked, for the period lock; then the delivery, locked.
-  await holdPeriod(ctx, (await deliveryOf(ctx, id, 'deliveries:write')).businessDate);
+  // Its date first, unlocked, for the period lock; then the delivery, locked, still on that date: a change committed in
+  // between could have moved it to a period not held (auditor-2 on #247).
+  const held = (await deliveryOf(ctx, id, 'deliveries:write')).businessDate;
+  await holdPeriod(ctx, held);
   const d = await deliveryOf(ctx, id, 'deliveries:write', true);
   if (d.status !== 'draft') throw new AppError('wrong_status', `This delivery is ${d.status}, so it can’t be posted`);
+  if (d.businessDate !== held) throw new AppError('version_changed', 'This delivery changed while it was being posted: post it again');
   const order = await orderFor(ctx, d.orderId, true);
   checkDate(d.businessDate, today(), { date: order.businessDate, what: 'order' });
-  await checkPlace(ctx, d.locationId);
+  await checkPlace(ctx, d.locationId, { sellable: true });
   const lines = await deliveryLinesOf(ctx, id);
   // What's left of the order is read again under its lock: another delivery may have posted since this was drafted.
   await checkedLines(ctx, d.orderId, lines.map((l) => ({ orderLineId: l.orderLineId, qty: q(l.qty), ...picksOf(l.picks) })));
+  // ADR-006 §1's step 3: the party, after the documents, so two sales to it take turns at the credit check (ADR-007 §9).
+  await holdParty(ctx, d.partyId);
   await checkDelivery(ctx, d, lines);
   const priced = await pricedLines(ctx, d.businessDate, lines);
   const moved = await postStock(ctx, { sourceTable: 'deliveries', sourceId: id, businessDate: d.businessDate,
@@ -220,7 +226,7 @@ export async function listToInvoicePage(ctx: Ctx, input: In<typeof listToInvoice
     businessDate: deliveries.businessDate }).from(deliveries).where(and(
     eq(deliveries.status, 'posted'),
     input.filter.partyId === undefined ? undefined : eq(deliveries.partyId, input.filter.partyId),
-    listScope(ctx, 'sales:read', deliveries.createdBy),
+    listScope(ctx, 'sales:read', deliveries.owner),
     after([deliveries.businessDate, deliveries.id], key && [key.date, key.id], 'asc'),
   )).orderBy(asc(deliveries.businessDate), asc(deliveries.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);

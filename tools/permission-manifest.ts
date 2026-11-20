@@ -86,6 +86,10 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Receipts, payments and refunds (RAD-116); cash past the day's limit waits for payments:approve.
   'POST /payments': 'payments:write',
   'POST /payments/:id/cancel': 'payments:write',
+  'POST /payments/:id/allocations': 'payments:write',
+  'POST /allocations/:id/reverse': 'payments:write',
+  'POST /credit-applications': 'payments:write',
+  'POST /credit-applications/:id/reverse': 'payments:write',
   'GET /approvals/cash-limit': 'payments:approve',
   'GET /approvals/cash-limit/:id': 'payments:approve',
   'POST /approvals/cash-limit/:id/decision': 'payments:approve',
@@ -178,6 +182,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /hr/employees': 'employees:read',
   'POST /hr/employees': 'employees:write',
   'PATCH /hr/employees/:id': 'employees:write',
+  // Leads (RAD-106): capture by hand or at the counter, and one lead.
+  'POST /leads': 'leads:write',
+  'GET /leads/:id': 'leads:read',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -202,6 +209,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
 const PLATFORM = ['lib-platform'];
 const STOCK = ['lib-platform', 'lib-stock'];
 const HR = ['lib-hr', 'lib-platform'];
+const CRM = ['lib-crm', 'lib-platform'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -268,6 +276,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /accounts': ['lib-accounts', 'lib-platform'],
   'POST /payments': ['lib-accounts', 'lib-platform'],
   'POST /payments/:id/cancel': ['lib-accounts', 'lib-platform'],
+  'POST /payments/:id/allocations': ['lib-accounts', 'lib-platform'],
+  'POST /allocations/:id/reverse': ['lib-accounts', 'lib-platform'],
+  'POST /credit-applications': ['lib-accounts', 'lib-platform'],
+  'POST /credit-applications/:id/reverse': ['lib-accounts', 'lib-platform'],
   'GET /approvals/cash-limit': ['lib-accounts', 'lib-platform'],
   'GET /approvals/cash-limit/:id': ['lib-accounts', 'lib-platform'],
   'POST /approvals/cash-limit/:id/decision': ['lib-accounts', 'lib-platform'],
@@ -361,6 +373,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /hr/employees': HR,
   'POST /hr/employees': HR,
   'PATCH /hr/employees/:id': HR,
+  // Leads' routes reach lib-crm and, through it, lib-platform (notifications).
+  'POST /leads': CRM,
+  'GET /leads/:id': CRM,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,

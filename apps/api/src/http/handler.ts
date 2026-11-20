@@ -14,7 +14,8 @@
 // Still to come, each with its ticket: rate guards (M1-21) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, maskedInputPath, maskOutput, newPasswordFields, piiPlan, reasonFields, PASSWORD_MIN_LENGTH,
-  PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, sightOf, type Issue, type Look, type PlatformErrorCode } from '@radcore/lib-common';
+  PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, sightOf, type Contract, type Issue, type Look, type PlatformErrorCode }
+  from '@radcore/lib-common';
 import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, isRateLimitClass, linkPrincipal, originAllowed,
   recordChangeReason, RecordedRefusal, recordLinkAccess, recordLooks, useLink, type Files, type Principal, type RequestGuards,
   type Route, type Secrets, type SessionCookie, type SignInCookie,
@@ -105,7 +106,7 @@ const platform = (code: PlatformErrorCode, issues: readonly Issue[] = []): Failu
   ({ status: PLATFORM_ERRORS[code], code, message: MESSAGES[code], issues });
 
 /** What a thrown error answers with: by its code only. */
-function failureOf(err: unknown, declared: readonly string[]): Failure {
+function failureOf(err: unknown, declared: readonly string[], dbErrors: Contract['dbErrors'] = {}): Failure {
   if (err instanceof AppError) {
     // A server error's own text is for the log, never the caller.
     if (err.code === 'server_error') return platform('server_error');
@@ -120,7 +121,11 @@ function failureOf(err: unknown, declared: readonly string[]): Failure {
     if (declared.includes(err.code)) return { status: BUSINESS_RULE_STATUS, code: err.code, message: err.message, issues: err.issues };
     return platform('server_error');
   }
-  const sqlstate = describeError(err).code;
+  const { code: sqlstate, constraint } = describeError(err);
+  // A refusal a person can cause, by its SQLSTATE and constraint, mapped by the contract wherever it was raised, at the
+  // statement or at commit, with the contract's message, never the database's (ADR-005 §9). Unmapped, it's a bug.
+  const named = sqlstate === undefined || constraint === undefined ? undefined : dbErrors[`${sqlstate}:${constraint}`];
+  if (named !== undefined) return { status: BUSINESS_RULE_STATUS, code: named.code, message: named.message, issues: [] };
   const mapped = sqlstate === undefined ? undefined : SQLSTATE[sqlstate];
   return platform(mapped ?? 'server_error');
 }
@@ -349,7 +354,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           else if (change !== null) res.cookie(name, change.token, { ...COOKIE, expires: change.expires });
         }
         if (refused !== null) {
-          send(res, failureOf(refused, contract.errors), requestId);
+          send(res, failureOf(refused, contract.errors, contract.dbErrors), requestId);
           return;
         }
         // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c). A read-only
@@ -367,7 +372,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         }
         res.status(200).json(output);
       } catch (err) {
-        const failure = failureOf(err, contract.errors);
+        const failure = failureOf(err, contract.errors, contract.dbErrors);
         // Ids only: never the input, the output or a value from the database (RAD-29).
         if (failure.status >= 500) deps.log.error(`${route} failed (request ${requestId})`, err);
         send(res, failure, requestId);

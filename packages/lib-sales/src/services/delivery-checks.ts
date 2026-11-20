@@ -60,12 +60,12 @@ export const deliveryOverride = overrideApproval({
   parts: ['delivery_lines'],
   async read(ctx, id, { forUpdate }) {
     const q = salesTx(ctx).select({ orderId: deliveries.orderId, partyId: deliveries.partyId, locationId: deliveries.locationId,
-      businessDate: deliveries.businessDate, status: deliveries.status, createdBy: deliveries.createdBy }).from(deliveries)
+      businessDate: deliveries.businessDate, status: deliveries.status, owner: deliveries.owner, createdBy: deliveries.createdBy }).from(deliveries)
       .where(eq(deliveries.id, id));
     const [d] = forUpdate ? await q.for('update') : await q;
     // Its maker asks (deliveries:write) and someone else decides (sales:override); outside both, there's no such delivery.
     if (d === undefined || d.status !== 'draft') return null;
-    if (!ctx.can('deliveries:write', { owner: d.createdBy }) && !ctx.can('sales:override', { owner: d.createdBy })) return null;
+    if (!ctx.can('deliveries:write', { owner: d.owner }) && !ctx.can('sales:override', { owner: d.owner })) return null;
     const lines = await deliveryLinesOf(ctx, id);
     return { figures: figuresOf(d, lines), sale: await saleOf(ctx, d, lines) };
   },

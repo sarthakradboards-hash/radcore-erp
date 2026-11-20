@@ -30,6 +30,8 @@
 .admin-tabs [role="tabpanel"][hidden] { display: none; }
 /* A link that looks like the kit's button (a role's Change, on the matrix). */
 .admin a.kit-button { display: inline-flex; align-items: center; justify-content: center; border: 1px solid currentColor; color: inherit; text-decoration: none; }
+/* A primary one keeps the kit's text on the accent: `color: inherit` above would win and fail contrast (e2e on #226). */
+.admin a.kit-button-primary { color: var(--on-accent); border-color: var(--accent); }
 .admin-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
 .admin-facts dt { font-weight: 600; }
 .admin-facts dd { margin: 0; overflow-wrap: anywhere; } /* a long email or reason wraps, never widening the page past 320 px (e2e on #225) */

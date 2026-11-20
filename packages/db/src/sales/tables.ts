@@ -155,6 +155,9 @@ export const deliveries = radcoreTable('deliveries', {
   locationId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
   businessDate: date({ mode: 'string' }).notNull(),
   notes: boundedText({ max: 500 }),
+  // Whose it is for record scope (ADR-001 §6a, ADR-007 §1): its order's owner, copied when it's made, so a salesperson
+  // sees the delivery of their own order, whoever made it. A principal key ("user:<id>"), as created_by is.
+  owner: text().notNull(),
   // The version an override of its credit check was approved for (sales:override, M3-07), as an order's.
   overrideVersion: text(),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
@@ -173,6 +176,7 @@ export const deliveries = radcoreTable('deliveries', {
   index('ix_deliveries_posted_entry').on(t.postedEntryId),
   index('ix_deliveries_cancel_entry').on(t.cancelEntryId),
   index('ix_deliveries_date').on(t.businessDate, t.id),
+  index('ix_deliveries_owner').on(t.owner),
 ]);
 
 /**
@@ -215,6 +219,8 @@ export const deliveryReturns = radcoreTable('delivery_returns', {
   locationId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
   businessDate: date({ mode: 'string' }).notNull(),
   notes: boundedText({ max: 500 }),
+  // Whose it is for record scope: its delivery's owner, copied when it's made (ADR-007 §1).
+  owner: text().notNull(),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
   cancelledAt: timestamp({ withTimezone: true }),
   cancelledBy: text(),
@@ -231,6 +237,7 @@ export const deliveryReturns = radcoreTable('delivery_returns', {
   index('ix_delivery_returns_posted_entry').on(t.postedEntryId),
   index('ix_delivery_returns_cancel_entry').on(t.cancelEntryId),
   index('ix_delivery_returns_date').on(t.businessDate, t.id),
+  index('ix_delivery_returns_owner').on(t.owner),
 ]);
 
 /** A return's line: how many of a delivery line come back, into which of the batches it left with, and which serials.

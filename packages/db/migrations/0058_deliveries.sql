@@ -7,6 +7,7 @@ CREATE TABLE "radcore"."deliveries" (
 	"location_id" uuid NOT NULL,
 	"business_date" date NOT NULL,
 	"notes" text,
+	"owner" text NOT NULL,
 	"override_version" text,
 	"posted_entry_id" uuid,
 	"cancelled_at" timestamp with time zone,
@@ -78,6 +79,7 @@ CREATE TABLE "radcore"."delivery_returns" (
 	"location_id" uuid NOT NULL,
 	"business_date" date NOT NULL,
 	"notes" text,
+	"owner" text NOT NULL,
 	"posted_entry_id" uuid,
 	"cancelled_at" timestamp with time zone,
 	"cancelled_by" text,
@@ -117,6 +119,7 @@ CREATE INDEX "ix_deliveries_location" ON "radcore"."deliveries" USING btree ("lo
 CREATE INDEX "ix_deliveries_posted_entry" ON "radcore"."deliveries" USING btree ("posted_entry_id");--> statement-breakpoint
 CREATE INDEX "ix_deliveries_cancel_entry" ON "radcore"."deliveries" USING btree ("cancel_entry_id");--> statement-breakpoint
 CREATE INDEX "ix_deliveries_date" ON "radcore"."deliveries" USING btree ("business_date","id");--> statement-breakpoint
+CREATE INDEX "ix_deliveries_owner" ON "radcore"."deliveries" USING btree ("owner");--> statement-breakpoint
 CREATE UNIQUE INDEX "ux_delivery_lines_line" ON "radcore"."delivery_lines" USING btree ("delivery_id","line_no");--> statement-breakpoint
 CREATE INDEX "ix_delivery_lines_order_line" ON "radcore"."delivery_lines" USING btree ("order_line_id");--> statement-breakpoint
 CREATE INDEX "ix_delivery_lines_item" ON "radcore"."delivery_lines" USING btree ("item_id");--> statement-breakpoint
@@ -129,6 +132,7 @@ CREATE INDEX "ix_delivery_returns_location" ON "radcore"."delivery_returns" USIN
 CREATE INDEX "ix_delivery_returns_posted_entry" ON "radcore"."delivery_returns" USING btree ("posted_entry_id");--> statement-breakpoint
 CREATE INDEX "ix_delivery_returns_cancel_entry" ON "radcore"."delivery_returns" USING btree ("cancel_entry_id");--> statement-breakpoint
 CREATE INDEX "ix_delivery_returns_date" ON "radcore"."delivery_returns" USING btree ("business_date","id");--> statement-breakpoint
+CREATE INDEX "ix_delivery_returns_owner" ON "radcore"."delivery_returns" USING btree ("owner");--> statement-breakpoint
 -- Deliveries and delivery returns are posted documents (ADR-007 §1, §2; ADR-005 §7b): draft -> posted -> cancelled,
 -- cancelled final. While a draft, anything changes; after posting, only the move to cancelled and its cancel columns
 -- (M3-10, RAD-114), and the lines not at all.
@@ -150,13 +154,13 @@ CREATE TRIGGER guard_document_line BEFORE INSERT OR UPDATE OR DELETE ON radcore.
 --> statement-breakpoint
 -- Stock documents are audited in full: every column kept. A document's lines are its parts (ADR-001 §8b), so
 -- maker-checker finds everyone who changed a delivery since its override was asked for (RC-037).
-SELECT radcore.audit_attach('deliveries', keep => array['status', 'number', 'order_id', 'party_id', 'location_id', 'business_date',
+SELECT radcore.audit_attach('deliveries', keep => array['status', 'number', 'order_id', 'party_id', 'owner', 'location_id', 'business_date',
   'notes', 'override_version', 'posted_entry_id', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'cancel_entry_id']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('delivery_lines', keep => array['delivery_id', 'line_no', 'order_line_id', 'item_id', 'qty', 'picks',
   'value', 'taxable', 'gst'], owner => 'delivery_id', owner_table => 'deliveries');
 --> statement-breakpoint
-SELECT radcore.audit_attach('delivery_returns', keep => array['status', 'number', 'delivery_id', 'party_id', 'location_id',
+SELECT radcore.audit_attach('delivery_returns', keep => array['status', 'number', 'delivery_id', 'party_id', 'owner', 'location_id',
   'business_date', 'notes', 'posted_entry_id', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'cancel_entry_id']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('delivery_return_lines', keep => array['return_id', 'line_no', 'delivery_line_id', 'item_id', 'qty', 'picks',

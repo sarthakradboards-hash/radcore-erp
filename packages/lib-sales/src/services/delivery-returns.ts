@@ -4,7 +4,7 @@
 // of a line clearing what's left of it exactly, each unit with its `delivery_returned` event; it releases the same from
 // Goods Delivered Not Invoiced (entry `delivery_return`: Dr Stock in Hand by item and place, Cr GDNI), and draws its
 // number (DR) last. Its share of the line's selling value leaves the party's delivered-not-invoiced with it.
-import { after, deliveries, deliveryLines, deliveryReturnLines, deliveryReturns, salesTx } from '@radcore/db/sales';
+import { after, deliveries, deliveryLines, deliveryReturnLines, deliveryReturns, salesOrders, salesTx } from '@radcore/db/sales';
 import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundRate } from '@radcore/lib-common';
 import { AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, type Ctx } from '@radcore/lib-platform';
@@ -14,7 +14,7 @@ import { z } from 'zod';
 import type {
   createDeliveryReturn, deleteDeliveryReturn, getDeliveryReturn, listDeliveryReturns, postDeliveryReturn, updateDeliveryReturn,
 } from '../contract.ts';
-import { pickedBatchKey, picksOf, returnedOf } from './delivered.ts';
+import { orderDelivered, pickedBatchKey, picksOf, returnedOf } from './delivered.ts';
 import { checkDate, shareOf } from './document-rules.ts';
 import { today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
@@ -38,18 +38,20 @@ const notOnSource = (path: (string | number)[], message: string) =>
 
 /** The return, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
 async function returnOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  const sel = salesTx(ctx).select({ ...header, createdBy: deliveryReturns.createdBy }).from(deliveryReturns).where(eq(deliveryReturns.id, id));
+  const sel = salesTx(ctx).select({ ...header, owner: deliveryReturns.owner }).from(deliveryReturns).where(eq(deliveryReturns.id, id));
   const [row] = forUpdate ? await sel.for('update') : await sel;
   if (row === undefined) throw new AppError('not_found', 'There is no such return');
-  ctx.see(permission, { owner: row.createdBy });
+  // Its delivery's owner's, whoever made it (ADR-007 §1).
+  ctx.see(permission, { owner: row.owner });
   return row;
 }
 
 /** The delivery goods come back from: one the principal may see (sales:read), and posted. Locked as a return posts, so
  * two returns of one delivery take turns over what's left of it. */
 async function deliveryFor(ctx: Ctx, deliveryId: string, forUpdate = false) {
-  const sel = salesTx(ctx).select({ id: deliveries.id, partyId: deliveries.partyId, businessDate: deliveries.businessDate,
-    status: deliveries.status, owner: deliveries.createdBy }).from(deliveries).where(eq(deliveries.id, deliveryId));
+  const sel = salesTx(ctx).select({ id: deliveries.id, orderId: deliveries.orderId, partyId: deliveries.partyId,
+    businessDate: deliveries.businessDate, status: deliveries.status, owner: deliveries.owner }).from(deliveries)
+    .where(eq(deliveries.id, deliveryId));
   const [d] = forUpdate ? await sel.for('update') : await sel;
   if (d === undefined) {
     throw new AppError('not_found', 'There is no such delivery', [{ path: ['deliveryId'], code: 'unknown', message: 'Choose a delivery' }]);
@@ -115,7 +117,7 @@ export async function listDeliveryReturnsPage(ctx: Ctx, input: In<typeof listDel
   const rows = await salesTx(ctx).select(header).from(deliveryReturns).where(and(
     input.filter.status === undefined ? undefined : eq(deliveryReturns.status, input.filter.status),
     input.filter.deliveryId === undefined ? undefined : eq(deliveryReturns.deliveryId, input.filter.deliveryId),
-    listScope(ctx, 'sales:read', deliveryReturns.createdBy),
+    listScope(ctx, 'sales:read', deliveryReturns.owner),
     after([deliveryReturns.businessDate, deliveryReturns.id], key && [key.date, key.id], 'desc'),
   )).orderBy(desc(deliveryReturns.businessDate), desc(deliveryReturns.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
@@ -150,7 +152,7 @@ export async function addDeliveryReturn(ctx: Ctx, input: In<typeof createDeliver
   await checkPlace(ctx, input.locationId);
   const lines = await checkedLines(ctx, d.id, input.lines);
   const tx = salesTx(ctx);
-  const [row] = await tx.insert(deliveryReturns).values({ deliveryId: d.id, partyId: d.partyId, locationId: input.locationId,
+  const [row] = await tx.insert(deliveryReturns).values({ deliveryId: d.id, partyId: d.partyId, owner: d.owner, locationId: input.locationId,
     businessDate: input.businessDate, notes: input.notes }).returning({ id: deliveryReturns.id });
   if (row === undefined) throw new Error('the insert returned no row');
   await tx.insert(deliveryReturnLines).values(stored(lines).map((l) => ({ ...l, returnId: row.id })));
@@ -166,7 +168,7 @@ export async function changeDeliveryReturn(ctx: Ctx, { id, ...input }: In<typeof
   await checkPlace(ctx, input.locationId);
   const lines = await checkedLines(ctx, d.id, input.lines);
   const tx = salesTx(ctx);
-  await tx.update(deliveryReturns).set({ deliveryId: d.id, partyId: d.partyId, locationId: input.locationId, businessDate: input.businessDate,
+  await tx.update(deliveryReturns).set({ deliveryId: d.id, partyId: d.partyId, owner: d.owner, locationId: input.locationId, businessDate: input.businessDate,
     notes: input.notes }).where(eq(deliveryReturns.id, id));
   await tx.delete(deliveryReturnLines).where(eq(deliveryReturnLines.returnId, id));
   await tx.insert(deliveryReturnLines).values(stored(lines).map((l) => ({ ...l, returnId: id })));
@@ -187,11 +189,17 @@ export async function dropDeliveryReturn(ctx: Ctx, { id }: In<typeof deleteDeliv
  */
 export async function postDeliveryReturnNow(ctx: Ctx, { id }: In<typeof postDeliveryReturn>): Promise<Out<typeof postDeliveryReturn>> {
   const tx = salesTx(ctx);
-  // Its date first, unlocked, for the period lock; then the return, locked.
-  await holdPeriod(ctx, (await returnOf(ctx, id, 'deliveries:write')).businessDate);
+  // Its date first, unlocked, for the period lock; then the return, locked, still on that date (auditor-2 on #247).
+  const held = (await returnOf(ctx, id, 'deliveries:write')).businessDate;
+  await holdPeriod(ctx, held);
   const r = await returnOf(ctx, id, 'deliveries:write', true);
   if (r.status !== 'draft') throw wrongStatus(r.status, 'posted');
+  if (r.businessDate !== held) throw new AppError('version_changed', 'This return changed while it was being posted: post it again');
   const d = await deliveryFor(ctx, r.deliveryId, true);
+  // Its order, locked after the delivery as a delivery's posting locks them, for reopening below.
+  const [order] = await tx.select({ status: salesOrders.status, closeReason: salesOrders.closeReason, owner: salesOrders.createdBy })
+    .from(salesOrders).where(eq(salesOrders.id, d.orderId)).for('update');
+  if (order !== undefined) ctx.see('sales:read', { owner: order.owner });
   checkDate(r.businessDate, today(), { date: d.businessDate, what: 'delivery' });
   await checkPlace(ctx, r.locationId);
   const drafted = await tx.select({ id: deliveryReturnLines.id, deliveryLineId: deliveryReturnLines.deliveryLineId, qty: deliveryReturnLines.qty,
@@ -223,5 +231,10 @@ export async function postDeliveryReturnNow(ctx: Ctx, { id }: In<typeof postDeli
     source: { table: 'delivery_returns', id }, lines: [...stock, { account: { system: 'gdni' }, credit: value }] });
   const number = await nextNumber(ctx, DELIVERY_RETURN_SERIES, r.businessDate);
   await tx.update(deliveryReturns).set({ status: 'posted', number, postedEntryId: entry?.id ?? null }).where(eq(deliveryReturns.id, id));
+  // A line back below what was ordered reopens an order its deliveries closed, so the goods can go again; one a person
+  // closed short (with its reason) stays closed (ADR-007 §1).
+  if (order?.status === 'closed' && order.closeReason === null && !(await orderDelivered(ctx, d.orderId)).all) {
+    await tx.update(salesOrders).set({ status: 'confirmed' }).where(eq(salesOrders.id, d.orderId));
+  }
   return { number };
 }

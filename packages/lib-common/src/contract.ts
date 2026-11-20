@@ -111,6 +111,10 @@ export type ContractSpec<M extends Method, I extends z.ZodType, O extends z.ZodT
   output: O;
   /** The business-rule codes this route may answer with (422), beyond the platform's. */
   errors?: readonly E[];
+  /** A database refusal a person can cause that no service can say first, by `<SQLSTATE>:<constraint>`, mapped to one
+   * of `errors` with the contract's own message (ADR-005 §9): an allocation past what's left on another module's
+   * document, for one. The handler applies it whether the error comes at the statement or at commit. */
+  dbErrors?: Readonly<Record<string, { readonly code: E; readonly message: string }>>;
   /** A write that needs no Idempotency-Key, because a stored answer can't set a cookie. Only the routes on
    * lib-platform's fixed list may declare it (ADR-001 §7a); the web client then sends no key. */
   idempotency?: X;
@@ -120,11 +124,14 @@ export type ContractSpec<M extends Method, I extends z.ZodType, O extends z.ZodT
 };
 export type Contract<M extends Method = Method, I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType,
   E extends string = string, X extends Idempotency = Idempotency> =
-  Readonly<ContractSpec<M, I, O, E, X> & { errors: readonly E[]; params: readonly string[] }>;
+  Readonly<ContractSpec<M, I, O, E, X> & { errors: readonly E[]; params: readonly string[];
+    dbErrors: Readonly<Record<string, { readonly code: E; readonly message: string }>> }>;
 
 const PATH = /^(\/([a-z0-9]+(-[a-z0-9]+)*|:[a-z][A-Za-z0-9]*))+$/;
 const LINK_ACTION = /^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$/;
 const CODE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
+// A SQLSTATE (five digits or capitals) and a constraint name, which stays under 63 bytes (ADR-005 §1).
+const DB_ERROR = /^[0-9A-Z]{5}:[a-z][a-z0-9_]{0,62}$/;
 
 // shortcut: input and output JSON Schemas must match and be representable, which refuses .transform(), a pipe to
 // another type, .default(), z.date() and z.bigint(); z.coerce and .trim() pass, so review still watches for them.
@@ -177,9 +184,15 @@ export function defineContract<const M extends Method, I extends z.ZodType, O ex
     if (!CODE.test(c) || Object.hasOwn(PLATFORM_ERRORS, c)) throw new TypeError(`${at}: "${c}" can't be a contract's error code`);
   }
   if (new Set(errors).size !== errors.length) throw new TypeError(`${at}: an error code is listed twice`);
+  const dbErrors = spec.dbErrors ?? {};
+  for (const [key, { code, message }] of Object.entries(dbErrors)) {
+    if (!DB_ERROR.test(key)) throw new TypeError(`${at}: "${key}" isn't <SQLSTATE>:<constraint>`);
+    if (!errors.includes(code)) throw new TypeError(`${at}: ${key} maps to ${code}, which its errors don't list`);
+    if (message.trim() === '') throw new TypeError(`${at}: ${key} needs the message a person sees`);
+  }
   wireExact(`${at} input`, spec.input);
   wireExact(`${at} output`, spec.output);
-  return Object.freeze({ ...spec, errors, params });
+  return Object.freeze({ ...spec, errors, params, dbErrors: Object.freeze({ ...dbErrors }) });
 }
 
 type Sent = { method: Method; path: string; body: string | undefined };

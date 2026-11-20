@@ -1,5 +1,5 @@
 {
-  "id": "a6f42919-b2b9-4ece-9f1e-c06068aeb3c3",
+  "id": "b433abf5-bc6c-4101-9755-9ffd54aa68f6",
   "prevId": "0f2dfb91-7fa3-442c-a1a0-f29cb74250d6",
   "version": "7",
   "dialect": "postgresql",
@@ -1747,6 +1747,272 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "radcore.lead_enquiries": {
+      "name": "lead_enquiries",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_lead_enquiries_lead": {
+          "name": "ix_lead_enquiries_lead",
+          "columns": [
+            {
+              "expression": "lead_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "received_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lead_enquiries_lead_id_leads_id_fk": {
+          "name": "lead_enquiries_lead_id_leads_id_fk",
+          "tableFrom": "lead_enquiries",
+          "tableTo": "leads",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "lead_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_lead_enquiries_message": {
+          "name": "ck_lead_enquiries_message",
+          "value": "char_length(\"radcore\".\"lead_enquiries\".\"message\") <= 2000"
+        },
+        "ck_lead_enquiries_source": {
+          "name": "ck_lead_enquiries_source",
+          "value": "\"radcore\".\"lead_enquiries\".\"source\" in ('manual', 'walk_in', 'form', 'meta', 'google', 'whatsapp', 'qr')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.leads": {
+      "name": "leads",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "follow_up_on": {
+          "name": "follow_up_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_enquiry_at": {
+          "name": "last_enquiry_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_leads_phone": {
+          "name": "ux_leads_phone",
+          "columns": [
+            {
+              "expression": "phone",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_leads_owner_follow_up": {
+          "name": "ix_leads_owner_follow_up",
+          "columns": [
+            {
+              "expression": "owner",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "follow_up_on",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_leads_name": {
+          "name": "ck_leads_name",
+          "value": "char_length(\"radcore\".\"leads\".\"name\") <= 120"
+        },
+        "ck_leads_email": {
+          "name": "ck_leads_email",
+          "value": "char_length(\"radcore\".\"leads\".\"email\") <= 254"
+        },
+        "ck_leads_notes": {
+          "name": "ck_leads_notes",
+          "value": "char_length(\"radcore\".\"leads\".\"notes\") <= 2000"
+        },
+        "ck_leads_phone": {
+          "name": "ck_leads_phone",
+          "value": "\"radcore\".\"leads\".\"phone\" ~ '^[+][1-9][0-9]{6,14}$'"
+        },
+        "ck_leads_owner": {
+          "name": "ck_leads_owner",
+          "value": "\"radcore\".\"leads\".\"owner\" ~ '^user:[0-9a-f-]{36}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "radcore.gst_rates": {
       "name": "gst_rates",
       "schema": "radcore",
@@ -3458,7 +3724,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" <> 'parties:contact' or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -3545,7 +3811,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" <> 'parties:contact' or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -4223,1096 +4489,6 @@
         "ck_webhook_deliveries_body_sha256": {
           "name": "ck_webhook_deliveries_body_sha256",
           "value": "\"radcore\".\"webhook_deliveries\".\"body_sha256\" ~ '^[0-9a-f]{64}$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.deliveries": {
-      "name": "deliveries",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "number": {
-          "name": "number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "order_id": {
-          "name": "order_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location_id": {
-          "name": "location_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "override_version": {
-          "name": "override_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "posted_entry_id": {
-          "name": "posted_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_at": {
-          "name": "cancelled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_by": {
-          "name": "cancelled_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancel_reason": {
-          "name": "cancel_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancel_entry_id": {
-          "name": "cancel_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ix_deliveries_order": {
-          "name": "ix_deliveries_order",
-          "columns": [
-            {
-              "expression": "order_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_deliveries_party_date": {
-          "name": "ix_deliveries_party_date",
-          "columns": [
-            {
-              "expression": "party_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_deliveries_location": {
-          "name": "ix_deliveries_location",
-          "columns": [
-            {
-              "expression": "location_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_deliveries_posted_entry": {
-          "name": "ix_deliveries_posted_entry",
-          "columns": [
-            {
-              "expression": "posted_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_deliveries_cancel_entry": {
-          "name": "ix_deliveries_cancel_entry",
-          "columns": [
-            {
-              "expression": "cancel_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_deliveries_date": {
-          "name": "ix_deliveries_date",
-          "columns": [
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "deliveries_order_id_sales_orders_id_fk": {
-          "name": "deliveries_order_id_sales_orders_id_fk",
-          "tableFrom": "deliveries",
-          "tableTo": "sales_orders",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "deliveries_party_id_parties_id_fk": {
-          "name": "deliveries_party_id_parties_id_fk",
-          "tableFrom": "deliveries",
-          "tableTo": "parties",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "deliveries_location_id_locations_id_fk": {
-          "name": "deliveries_location_id_locations_id_fk",
-          "tableFrom": "deliveries",
-          "tableTo": "locations",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "location_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "deliveries_posted_entry_id_journal_entries_id_fk": {
-          "name": "deliveries_posted_entry_id_journal_entries_id_fk",
-          "tableFrom": "deliveries",
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "posted_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "deliveries_cancel_entry_id_journal_entries_id_fk": {
-          "name": "deliveries_cancel_entry_id_journal_entries_id_fk",
-          "tableFrom": "deliveries",
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "cancel_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "deliveries_number_unique": {
-          "name": "deliveries_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "number"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_deliveries_notes": {
-          "name": "ck_deliveries_notes",
-          "value": "char_length(\"radcore\".\"deliveries\".\"notes\") <= 500"
-        },
-        "ck_deliveries_cancel_reason": {
-          "name": "ck_deliveries_cancel_reason",
-          "value": "char_length(\"radcore\".\"deliveries\".\"cancel_reason\") <= 500"
-        },
-        "ck_deliveries_status": {
-          "name": "ck_deliveries_status",
-          "value": "\"radcore\".\"deliveries\".\"status\" in ('draft', 'posted', 'cancelled')"
-        },
-        "ck_deliveries_posted": {
-          "name": "ck_deliveries_posted",
-          "value": "(\"radcore\".\"deliveries\".\"status\" = 'draft') = (\"radcore\".\"deliveries\".\"number\" is null) and (\"radcore\".\"deliveries\".\"status\" <> 'draft' or \"radcore\".\"deliveries\".\"posted_entry_id\" is null)"
-        },
-        "ck_deliveries_cancelled": {
-          "name": "ck_deliveries_cancelled",
-          "value": "(\"radcore\".\"deliveries\".\"status\" = 'cancelled') = (\"radcore\".\"deliveries\".\"cancel_entry_id\" is not null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.delivery_lines": {
-      "name": "delivery_lines",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "delivery_id": {
-          "name": "delivery_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "line_no": {
-          "name": "line_no",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "order_line_id": {
-          "name": "order_line_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "qty": {
-          "name": "qty",
-          "type": "numeric(18, 3)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "picks": {
-          "name": "picks",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "taxable": {
-          "name": "taxable",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gst": {
-          "name": "gst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_delivery_lines_line": {
-          "name": "ux_delivery_lines_line",
-          "columns": [
-            {
-              "expression": "delivery_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "line_no",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_lines_order_line": {
-          "name": "ix_delivery_lines_order_line",
-          "columns": [
-            {
-              "expression": "order_line_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_lines_item": {
-          "name": "ix_delivery_lines_item",
-          "columns": [
-            {
-              "expression": "item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "delivery_lines_delivery_id_deliveries_id_fk": {
-          "name": "delivery_lines_delivery_id_deliveries_id_fk",
-          "tableFrom": "delivery_lines",
-          "tableTo": "deliveries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "delivery_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "delivery_lines_order_line_id_sales_order_lines_id_fk": {
-          "name": "delivery_lines_order_line_id_sales_order_lines_id_fk",
-          "tableFrom": "delivery_lines",
-          "tableTo": "sales_order_lines",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "order_line_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "delivery_lines_item_id_items_id_fk": {
-          "name": "delivery_lines_item_id_items_id_fk",
-          "tableFrom": "delivery_lines",
-          "tableTo": "items",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_delivery_lines_qty": {
-          "name": "ck_delivery_lines_qty",
-          "value": "\"radcore\".\"delivery_lines\".\"qty\" > 0 and \"radcore\".\"delivery_lines\".\"qty\" <> 'NaN'"
-        },
-        "ck_delivery_lines_value": {
-          "name": "ck_delivery_lines_value",
-          "value": "\"radcore\".\"delivery_lines\".\"value\" >= 0 and \"radcore\".\"delivery_lines\".\"value\" <> 'NaN'"
-        },
-        "ck_delivery_lines_taxable": {
-          "name": "ck_delivery_lines_taxable",
-          "value": "\"radcore\".\"delivery_lines\".\"taxable\" >= 0 and \"radcore\".\"delivery_lines\".\"taxable\" <> 'NaN'"
-        },
-        "ck_delivery_lines_gst": {
-          "name": "ck_delivery_lines_gst",
-          "value": "\"radcore\".\"delivery_lines\".\"gst\" >= 0 and \"radcore\".\"delivery_lines\".\"gst\" <> 'NaN'"
-        },
-        "ck_delivery_lines_posted": {
-          "name": "ck_delivery_lines_posted",
-          "value": "(\"radcore\".\"delivery_lines\".\"value\" is null) = (\"radcore\".\"delivery_lines\".\"taxable\" is null) and (\"radcore\".\"delivery_lines\".\"taxable\" is null) = (\"radcore\".\"delivery_lines\".\"gst\" is null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.delivery_return_lines": {
-      "name": "delivery_return_lines",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "return_id": {
-          "name": "return_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "line_no": {
-          "name": "line_no",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delivery_line_id": {
-          "name": "delivery_line_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "qty": {
-          "name": "qty",
-          "type": "numeric(18, 3)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "picks": {
-          "name": "picks",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "taxable": {
-          "name": "taxable",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gst": {
-          "name": "gst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_delivery_return_lines_line": {
-          "name": "ux_delivery_return_lines_line",
-          "columns": [
-            {
-              "expression": "return_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "line_no",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_return_lines_delivery_line": {
-          "name": "ix_delivery_return_lines_delivery_line",
-          "columns": [
-            {
-              "expression": "delivery_line_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_return_lines_item": {
-          "name": "ix_delivery_return_lines_item",
-          "columns": [
-            {
-              "expression": "item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "delivery_return_lines_return_id_delivery_returns_id_fk": {
-          "name": "delivery_return_lines_return_id_delivery_returns_id_fk",
-          "tableFrom": "delivery_return_lines",
-          "tableTo": "delivery_returns",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "return_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "delivery_return_lines_delivery_line_id_delivery_lines_id_fk": {
-          "name": "delivery_return_lines_delivery_line_id_delivery_lines_id_fk",
-          "tableFrom": "delivery_return_lines",
-          "tableTo": "delivery_lines",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "delivery_line_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "delivery_return_lines_item_id_items_id_fk": {
-          "name": "delivery_return_lines_item_id_items_id_fk",
-          "tableFrom": "delivery_return_lines",
-          "tableTo": "items",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_delivery_return_lines_qty": {
-          "name": "ck_delivery_return_lines_qty",
-          "value": "\"radcore\".\"delivery_return_lines\".\"qty\" > 0 and \"radcore\".\"delivery_return_lines\".\"qty\" <> 'NaN'"
-        },
-        "ck_delivery_return_lines_value": {
-          "name": "ck_delivery_return_lines_value",
-          "value": "\"radcore\".\"delivery_return_lines\".\"value\" >= 0 and \"radcore\".\"delivery_return_lines\".\"value\" <> 'NaN'"
-        },
-        "ck_delivery_return_lines_taxable": {
-          "name": "ck_delivery_return_lines_taxable",
-          "value": "\"radcore\".\"delivery_return_lines\".\"taxable\" >= 0 and \"radcore\".\"delivery_return_lines\".\"taxable\" <> 'NaN'"
-        },
-        "ck_delivery_return_lines_gst": {
-          "name": "ck_delivery_return_lines_gst",
-          "value": "\"radcore\".\"delivery_return_lines\".\"gst\" >= 0 and \"radcore\".\"delivery_return_lines\".\"gst\" <> 'NaN'"
-        },
-        "ck_delivery_return_lines_posted": {
-          "name": "ck_delivery_return_lines_posted",
-          "value": "(\"radcore\".\"delivery_return_lines\".\"value\" is null) = (\"radcore\".\"delivery_return_lines\".\"taxable\" is null) and (\"radcore\".\"delivery_return_lines\".\"taxable\" is null) = (\"radcore\".\"delivery_return_lines\".\"gst\" is null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.delivery_returns": {
-      "name": "delivery_returns",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "number": {
-          "name": "number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delivery_id": {
-          "name": "delivery_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location_id": {
-          "name": "location_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "posted_entry_id": {
-          "name": "posted_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_at": {
-          "name": "cancelled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_by": {
-          "name": "cancelled_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancel_reason": {
-          "name": "cancel_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancel_entry_id": {
-          "name": "cancel_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ix_delivery_returns_delivery": {
-          "name": "ix_delivery_returns_delivery",
-          "columns": [
-            {
-              "expression": "delivery_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_returns_party_date": {
-          "name": "ix_delivery_returns_party_date",
-          "columns": [
-            {
-              "expression": "party_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_returns_location": {
-          "name": "ix_delivery_returns_location",
-          "columns": [
-            {
-              "expression": "location_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_returns_posted_entry": {
-          "name": "ix_delivery_returns_posted_entry",
-          "columns": [
-            {
-              "expression": "posted_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_returns_cancel_entry": {
-          "name": "ix_delivery_returns_cancel_entry",
-          "columns": [
-            {
-              "expression": "cancel_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_delivery_returns_date": {
-          "name": "ix_delivery_returns_date",
-          "columns": [
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "delivery_returns_delivery_id_deliveries_id_fk": {
-          "name": "delivery_returns_delivery_id_deliveries_id_fk",
-          "tableFrom": "delivery_returns",
-          "tableTo": "deliveries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "delivery_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "delivery_returns_party_id_parties_id_fk": {
-          "name": "delivery_returns_party_id_parties_id_fk",
-          "tableFrom": "delivery_returns",
-          "tableTo": "parties",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "delivery_returns_location_id_locations_id_fk": {
-          "name": "delivery_returns_location_id_locations_id_fk",
-          "tableFrom": "delivery_returns",
-          "tableTo": "locations",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "location_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "delivery_returns_posted_entry_id_journal_entries_id_fk": {
-          "name": "delivery_returns_posted_entry_id_journal_entries_id_fk",
-          "tableFrom": "delivery_returns",
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "posted_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "delivery_returns_cancel_entry_id_journal_entries_id_fk": {
-          "name": "delivery_returns_cancel_entry_id_journal_entries_id_fk",
-          "tableFrom": "delivery_returns",
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "cancel_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "delivery_returns_number_unique": {
-          "name": "delivery_returns_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "number"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_delivery_returns_notes": {
-          "name": "ck_delivery_returns_notes",
-          "value": "char_length(\"radcore\".\"delivery_returns\".\"notes\") <= 500"
-        },
-        "ck_delivery_returns_cancel_reason": {
-          "name": "ck_delivery_returns_cancel_reason",
-          "value": "char_length(\"radcore\".\"delivery_returns\".\"cancel_reason\") <= 500"
-        },
-        "ck_delivery_returns_status": {
-          "name": "ck_delivery_returns_status",
-          "value": "\"radcore\".\"delivery_returns\".\"status\" in ('draft', 'posted', 'cancelled')"
-        },
-        "ck_delivery_returns_posted": {
-          "name": "ck_delivery_returns_posted",
-          "value": "(\"radcore\".\"delivery_returns\".\"status\" = 'draft') = (\"radcore\".\"delivery_returns\".\"number\" is null) and (\"radcore\".\"delivery_returns\".\"status\" <> 'draft' or \"radcore\".\"delivery_returns\".\"posted_entry_id\" is null)"
-        },
-        "ck_delivery_returns_cancelled": {
-          "name": "ck_delivery_returns_cancelled",
-          "value": "(\"radcore\".\"delivery_returns\".\"status\" = 'cancelled') = (\"radcore\".\"delivery_returns\".\"cancel_entry_id\" is not null)"
         }
       },
       "isRLSEnabled": false

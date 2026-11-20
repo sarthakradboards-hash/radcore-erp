@@ -3,7 +3,7 @@
 // then closed (every line delivered, or short with a reason, RC-125) or cancelled (nothing delivered, with a reason).
 // A confirmed order's lines still change, only through here, and the checks run again (§1).
 import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radcore/db/sales';
-import { holdPeriod } from '@radcore/lib-accounts';
+import { holdParty, holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
   AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
@@ -109,7 +109,10 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: id })));
   // A draft's lines changing makes any override approved for the old ones stale; it's asked for again.
   await tx.update(salesOrders).set({ overrideVersion: null }).where(eq(salesOrders.id, id));
-  if (now.status === 'confirmed') await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy });
+  if (now.status === 'confirmed') {
+    await holdParty(ctx, now.partyId); // ADR-006 §1's step 3, after the order and before the check
+    await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy });
+  }
   return {};
 }
 
@@ -129,6 +132,8 @@ export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>)
   checkDate(now.businessDate, today(), fromQuote(now));
   await sellingTo(ctx, now.partyId);
   await holdPeriod(ctx, now.businessDate);
+  // ADR-006 §1's step 3: the party, after the order, so two sales to it take turns at the credit check (ADR-007 §9).
+  await holdParty(ctx, now.partyId);
   await checkOrder(ctx, id, now);
   const number = await nextNumber(ctx, ORDER_SERIES, now.businessDate);
   await salesTx(ctx).update(salesOrders).set({ status: 'confirmed', number }).where(eq(salesOrders.id, id));

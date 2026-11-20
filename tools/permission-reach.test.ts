@@ -4,7 +4,7 @@
 // is the i-th route it mounts, and its service, its `before` and the define helper resolve, through TypeScript, to the
 // files that declare them. A route built at start (createAuth's) or a job built there (the email jobs) resolves to
 // what builds it. dependency-cruiser then follows each of those files' imports, through every file, to the libraries.
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative, resolve } from 'node:path';
 import { createClientErrors, loadConfig, type JobDefinition, type Route } from '@radcore/lib-platform';
@@ -97,6 +97,7 @@ const ENGINE_ERRORS: Readonly<Record<string, readonly string[]>> = {
   postEntry: ['account_inactive', 'period_locked', 'year_not_open'],
   postManualJournal: ['account_inactive', 'period_locked', 'year_not_open'],
   reverseEntry: ['period_locked', 'year_not_open'],
+  holdPeriod: ['period_locked', 'year_not_open'],
 };
 /** The engine functions code reaches, following each call into a function, method or arrow declared in the repo. */
 function engineCalls(start: ts.Node, out = new Set<string>(), seen = new Set<ts.Node>()): Set<string> {
@@ -184,6 +185,13 @@ function disagreements(found: Readonly<Record<string, readonly string[]>>, table
   ];
 }
 
+/** Named database refusals no contract maps, each with why it can't reach a user as a 500 (ADR-005 §9). */
+const DB_BACKSTOPS: Record<string, string> = {
+  'RA006:allocation_payment_not_posted': 'allocatePayment says not_posted first, under the payment’s lock',
+  'RA006:allocatable_document_shape': 'raised only by a migration registering a table',
+  'RA006:document_still_applied': 'no document has a cancel route yet; the first one maps it',
+};
+
 describe('the manifest’s reach', () => {
   const cfg = loadConfig(testSettings(), 'api');
   async function derived(): Promise<Record<string, readonly string[]>> {
@@ -236,10 +244,21 @@ describe('the manifest’s reach', () => {
       .flatMap((fn) => (ENGINE_ERRORS[fn] ?? []).filter((code) => !r.contract.errors.includes(code))
         .map((code) => `${r.contract.method} ${r.contract.path}: reaches ${fn}, but doesn't declare ${code}`))));
     expect([...new Set(missing)]).toEqual([]);
-    // It finds them: the manual journal posts, a payment's cancel reverses, a cash approval posts through its spec.
+    // A database refusal a contract maps by name (ADR-005 §9) answers one of its declared codes, so none is a 500.
+    expect(routes.flatMap((r) => Object.entries(r.contract.dbErrors).filter(([, v]) => !r.contract.errors.includes(v.code))
+      .map(([k]) => `${r.contract.method} ${r.contract.path}: ${k} maps to an undeclared code`))).toEqual([]);
+    // And each refusal a migration raises by name is mapped by some contract, or is a backstop listed here with why.
+    const mapped = new Set(routes.flatMap((r) => Object.keys(r.contract.dbErrors)));
+    const migrations = join('packages', 'db', 'migrations');
+    const raised = new Set(readdirSync(migrations).filter((f) => f.endsWith('.sql'))
+      .flatMap((f) => [...readFileSync(join(migrations, f), 'utf8').matchAll(/ERRCODE = '(\w+)', CONSTRAINT = '(\w+)'/g)].map(([, c, n]) => `${c}:${n}`)));
+    expect([...raised].filter((k) => !mapped.has(k) && !(k in DB_BACKSTOPS)).toSorted()).toEqual([]);
+    expect(Object.keys(DB_BACKSTOPS).filter((k) => !raised.has(k) || mapped.has(k))).toEqual([]);
+    // It finds them: the journal posts, a cancel reverses, a cash approval posts through its spec; each holds the period.
     const at = (key: string) => [...(posting[routes.findIndex((r) => `${r.contract.method} ${r.contract.path}` === key)] ?? [])].toSorted();
-    expect([at('POST /journal'), at('POST /payments/:id/cancel'), at('POST /approvals/cash-limit/:id/decision'), at('POST /parties')])
-      .toEqual([['postManualJournal'], ['reverseEntry'], ['postEntry'], []]);
+    expect([at('POST /journal'), at('POST /payments/:id/cancel'), at('POST /approvals/cash-limit/:id/decision'), at('POST /parties'),
+      at('POST /allocations/:id/reverse')])
+      .toEqual([['postManualJournal'], ['holdPeriod', 'reverseEntry'], ['holdPeriod', 'postEntry'], [], ['holdPeriod']]);
   }, 120_000);
 
   it('counts a module library a file reaches, and never lib-common', async () => {

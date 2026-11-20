@@ -2,6 +2,7 @@
 // case or spacing are one code: the database's unique `code_key` decides, and its refusal is answered as code_taken,
 // so no check here can race another request.
 import { after, locations, searchWords, stockTx } from '@radcore/db/stock';
+import { LOCATION_KINDS, type LocationKind } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, sortedCursor, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -69,14 +70,19 @@ export async function updatePlace(ctx: Ctx, input: In<typeof updateLocation>): P
   return {};
 }
 
-/** Refuses a place a document can't move stock at: one that doesn't exist (`unknown_location`), or is switched off
- * (`location_inactive`). A stock document calls it for its place before it posts (M3-08 onward). */
-export async function checkPlace(ctx: Ctx, id: string): Promise<void> {
-  const [row] = await stockTx(ctx).select({ active: locations.active }).from(locations).where(eq(locations.id, id)).limit(1);
+/** Refuses a place a document can't move stock at: one that doesn't exist (`unknown_location`), is switched off
+ * (`location_inactive`), or, for a document that sells, isn't of a sellable kind (`place_not_sellable`: a demo or
+ * rejected unit is moved to a sellable place first, ADR-007 §1). A stock document calls it before it posts (M3-08 on). */
+export async function checkPlace(ctx: Ctx, id: string, o: { sellable?: boolean } = {}): Promise<void> {
+  const [row] = await stockTx(ctx).select({ active: locations.active, kind: locations.kind }).from(locations).where(eq(locations.id, id)).limit(1);
   if (row === undefined) {
     throw new AppError('unknown_location', 'There is no such location', [{ path: ['locationId'], code: 'unknown', message: 'Choose a location' }]);
   }
   if (!row.active) {
     throw new AppError('location_inactive', 'This location is switched off', [{ path: ['locationId'], code: 'inactive', message: 'Choose another location' }]);
+  }
+  if (o.sellable === true && LOCATION_KINDS[row.kind as LocationKind]?.sellable !== true) {
+    throw new AppError('place_not_sellable', 'Goods are sold only from a sellable place',
+      [{ path: ['locationId'], code: 'not_sellable', message: 'Move the goods to a sellable place first' }]);
   }
 }

@@ -12,7 +12,7 @@ import { putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addDelivery, addDeliveryReturn, addOrder, askDeliveryOverride, cancelOrderNow, changeOrder, confirmOrderNow, deliveryOverride,
+  addDelivery, addDeliveryReturn, addOrder, askDeliveryOverride, cancelOrderNow, changeOrder, closeOrderNow, confirmOrderNow, deliveryOverride,
   getDeliveryById, getOrderById, listDeliveriesPage, listToInvoicePage, postDeliveryNow, postDeliveryReturnNow,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
@@ -71,6 +71,13 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
     return { ...at, batchId: batch?.id ?? '' };
   }
   type At = Awaited<ReturnType<typeof setup>>;
+  /** Another confirmed order for the same party and item, for `ordered`, made by `maker`. */
+  const another = (at: At, ordered: string, maker: Principal = staff): Promise<At> => run(async (ctx) => {
+    const { id: orderId } = await addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [{ itemId: at.itemId,
+      qty: q(ordered), rate: unitPriceString().parse('50'), discountPercent: percentString({ max: '100' }).parse('0') }] });
+    await confirmOrderNow(ctx, { id: orderId });
+    return { ...at, orderId, orderLineId: (await getOrderById(ctx, { id: orderId })).lines[0]?.id ?? '' };
+  }, maker);
   const draft = (at: At, qty: string, serials: string[] = [], as: Principal = staff) => run((ctx) => addDelivery(ctx, { orderId: at.orderId,
     locationId: at.placeId, businessDate: DATE, notes: null,
     lines: [{ orderLineId: at.orderLineId, qty: q(qty), batches: [{ batchId: at.batchId, qty: q(qty) }], serials }] }), as);
@@ -193,30 +200,66 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
     expect((await unit())?.ownership).toBe('ours');
   });
 
-  // ADR-001 §6a: a person holding sales:read over their own documents lists only the deliveries they made.
-  it('lists only a person’s own deliveries when sales:read is theirs over their own', async () => {
-    // Their own order, as a delivery is made only against an order its maker may see.
+  // ADR-007 §1, ADR-001 §6a: a delivery is its order's owner's, whoever made it. A salesperson holding sales:read over
+  // their own sees the delivery stores made of their order, and not one of a colleague's order.
+  it('shows a salesperson at own scope the deliveries of their own orders, whoever made them, and no others', async () => {
     const mine = person(['sales:read']);
-    const at = await setup({ stock: '2', rate: '30', ordered: '2', maker: mine });
-    const { id } = await draft(at, '1', [], mine);
-    await draft(at, '1');
-    const listed = await run((ctx) => listDeliveriesPage(ctx, { limit: 50, filter: { orderId: at.orderId } }), mine);
+    const at = await setup({ stock: '2', rate: '30', ordered: '1', maker: mine });
+    const theirs = await another(at, '1');
+    const { id } = await draft(at, '1');
+    await draft(theirs, '1');
+    const listed = await run((ctx) => listDeliveriesPage(ctx, { limit: 50, filter: { partyId: at.partyId } }), mine);
     expect(listed.items.map((d) => d.id)).toEqual([id]);
+    expect((await run((ctx) => getDeliveryById(ctx, { id }), mine)).id).toBe(id);
   });
 
-  // E7's exemption (the architect on RAD-112): what's left of their own order counts a colleague's posted delivery, yet
-  // nothing of that delivery reaches them: not in the refusal, not in their list, not by its id.
-  it('counts a colleague’s delivery in what’s left of an own-scope person’s order, without showing it', async () => {
+  // E7's exemption (the architect on RAD-112): the party's credit at delivery counts a colleague's posted delivery to the
+  // same party, yet nothing of that delivery reaches the person: not in the refusal, not in their list, not by its id.
+  it('counts a colleague’s delivery in an own-scope person’s credit check, without showing it', async () => {
     const mine = person(['sales:read']);
-    const at = await setup({ stock: '2', rate: '30', ordered: '2', maker: mine });
-    const theirs = await deliver(at, '1');
-    const refused = await draft(at, '2', [], mine).then(() => null, (e: unknown) => e as AppError);
-    expect([refused?.code, refused?.issues.map((i) => i.message)]).toEqual(['over_quantity', ['1 left to deliver']]);
-    expect(JSON.stringify(refused?.issues)).not.toContain(theirs.id);
-    expect(JSON.stringify(refused?.issues)).not.toContain(theirs.number);
-    const listed = await run((ctx) => listDeliveriesPage(ctx, { limit: 50, filter: { orderId: at.orderId } }), mine);
-    expect(listed.items).toEqual([]);
+    const at = await setup({ stock: '2', rate: '30', ordered: '1', maker: mine });
+    const theirs = await deliver(await another(at, '1'), '1');
+    // 52.50 is out on the colleague's delivery; this one's 52.50 takes the party past 100.00 only with it.
+    await run((ctx) => setCreditTerms(ctx, { id: at.partyId, creditDays: 30, creditLimit: moneyString().parse('100'), reason: 'Lower' }));
+    const { id } = await draft(at, '1', [], mine);
+    const refused = await run((ctx) => postDeliveryNow(ctx, { id }), mine).then(() => null, (e: unknown) => e as AppError);
+    expect([refused?.code, refused?.issues.map((i) => i.code)]).toEqual(['needs_override', ['over_limit']]);
+    expect(JSON.stringify([refused?.message, refused?.issues])).not.toContain(theirs.id);
+    expect(JSON.stringify([refused?.message, refused?.issues])).not.toContain(theirs.number);
+    const listed = await run((ctx) => listDeliveriesPage(ctx, { limit: 50, filter: { partyId: at.partyId } }), mine);
+    expect(listed.items.map((d) => d.id)).toEqual([id]);
     expect(await failure(run((ctx) => getDeliveryById(ctx, { id: theirs.id }), mine))).toBe('not_found');
-    expect(await failure(draft(at, '1', [], mine))).toBe('ok');
+  });
+
+  // ADR-006 §1's step 3 (auditor-2 on #247): two deliveries to one party, posted at once, take turns at its credit check,
+  // so the second sees the first and two that pass alone can't together take the party past its limit.
+  it('holds the party while a delivery checks its credit, so two at once can’t both pass on the same balance', async () => {
+    const at = await setup({ stock: '2', rate: '30', ordered: '1' });
+    const other = await another(at, '1');
+    await run((ctx) => setCreditTerms(ctx, { id: at.partyId, creditDays: 30, creditLimit: moneyString().parse('100'), reason: 'Lower' }));
+    const [a, b] = [await draft(at, '1'), await draft(other, '1')];
+    const both = await Promise.all([a, b].map(({ id }) => failure(run((ctx) => postDeliveryNow(ctx, { id })))));
+    expect(both.toSorted()).toEqual(['needs_override', 'ok']);
+  });
+
+  // ADR-007 §1: deliveries come from a sellable place only; a demo unit is moved to one first.
+  it('refuses a delivery from a place that isn’t sellable', async () => {
+    const at = await setup({ stock: '1', rate: '30', ordered: '1' });
+    const demo = await run(async (ctx) => (await addPlace(ctx, { code: `L${tag()}`, name: `Demo ${tag()}`, kind: 'demo' })).id);
+    expect(await failure(draft({ ...at, placeId: demo }, '1'))).toBe('place_not_sellable');
+  });
+
+  // ADR-007 §1 (the architect on RAD-112): a return reopens an order its deliveries closed, and not one closed short.
+  it('reopens an order its deliveries closed when goods come back, but not one a person closed short', async () => {
+    const at = await setup({ stock: '3', rate: '30', ordered: '1' });
+    const sent = await deliver(at, '1');
+    expect((await run((ctx) => getOrderById(ctx, { id: at.orderId }))).status).toBe('closed');
+    await takeBack(at, sent.id, '1');
+    expect((await run((ctx) => getOrderById(ctx, { id: at.orderId }))).status).toBe('confirmed');
+    const short = await another(at, '2');
+    const part = await deliver(short, '1');
+    await run((ctx) => closeOrderNow(ctx, { id: short.orderId, reason: 'The customer took one' }));
+    await takeBack(short, part.id, '1');
+    expect((await run((ctx) => getOrderById(ctx, { id: short.orderId }))).status).toBe('closed');
   });
 });
