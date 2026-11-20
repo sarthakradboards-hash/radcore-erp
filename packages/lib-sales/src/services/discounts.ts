@@ -16,9 +16,14 @@ type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 const defaultDiscountLimit = defineSetting<string>('sales.discount_limit_default', percentString(), '0');
 
 /** The most this person may take off a list price, in percent: their role's limit, else the default. A job, a link
- * or a person with no role has the default. */
+ * or a person with no role has the default. The screen's hint to the person typing; a document is judged by its
+ * maker's (discountLimitOf). */
 export async function discountLimitFor(ctx: Ctx): Promise<Percent> {
-  const role = ctx.principal.kind === 'user' ? ctx.principal.role : undefined;
+  return discountLimitOf(ctx, ctx.principal.kind === 'user' ? ctx.principal.role : undefined);
+}
+
+/** A role's limit, else the default; no role, the default. */
+export async function discountLimitOf(ctx: Ctx, role: string | undefined): Promise<Percent> {
   const [own] = role === undefined ? [] : await salesTx(ctx).select({ maxPercent: discountLimits.maxPercent })
     .from(discountLimits).where(eq(discountLimits.role, role));
   // A percent() column (numeric(9,6)) or a percentString() setting: a Percent either way.
