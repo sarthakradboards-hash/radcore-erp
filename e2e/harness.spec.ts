@@ -87,6 +87,19 @@ test('a cancelled /api/ GET error is not recorded; the same for a POST, or a URL
   pageProblems.length = 0;
 });
 
+test('a GET cancelled before any request is seen still counts as sent: its cancel isn\'t recorded, a POST\'s is', async ({ page, pageProblems, baseURL }) => {
+  await page.goto('/');
+  // An already-aborted signal: the fetch rejects at once and no request reaches Playwright, as WebKit's teardown does.
+  await page.evaluate(`(() => { const c = new AbortController(); c.abort();
+    fetch('/api/e2e-harness/early-get', { signal: c.signal }).catch(() => {});
+    fetch('/api/e2e-harness/early-post', { method: 'POST', signal: c.signal }).catch(() => {}); })()`);
+  const throwLater = (m: string) => page.evaluate(`setTimeout(() => { throw new Error(${JSON.stringify(m)}) })`);
+  const text = (path: string) => `/${new URL(baseURL!).host}/api/e2e-harness/${path} due to access control checks.`;
+  for (const path of ['early-get', 'early-post']) await throwLater(text(path));
+  await expect.poll(() => pageProblems).toEqual([`uncaught: ${text('early-post')}`]);
+  pageProblems.length = 0;
+});
+
 test('a cancelled-prefetch error from this site is not recorded; the same from another site is', async ({ page, pageProblems, baseURL }) => {
   await page.goto('/');
   const throwLater = (m: string) => page.evaluate(`setTimeout(() => { throw new Error(${JSON.stringify(m)}) })`);
