@@ -151,3 +151,5 @@ export const setDiscountLimit = defineContract({
 
 // Quotes and orders (M3-08, RAD-112), in a file of their own.
 export * from './contract/documents.ts';
+// Deliveries and delivery returns (M3-08, RAD-112), in a file of their own.
+export * from './contract/deliveries.ts';

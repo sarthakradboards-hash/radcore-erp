@@ -164,7 +164,8 @@ export const deliveries = radcoreTable('deliveries', {
   cancelEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
 }, (t) => [
   check('ck_deliveries_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
-  check('ck_deliveries_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
+  // Posted, it has its number, and its entry unless every movement was of value 0 (an entry has two lines or more).
+  check('ck_deliveries_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} <> 'draft' or ${t.postedEntryId} is null)`),
   check('ck_deliveries_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
   index('ix_deliveries_order').on(t.orderId),
   index('ix_deliveries_party_date').on(t.partyId, t.businessDate),
@@ -221,7 +222,8 @@ export const deliveryReturns = radcoreTable('delivery_returns', {
   cancelEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
 }, (t) => [
   check('ck_delivery_returns_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
-  check('ck_delivery_returns_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
+  // Posted, it has its number, and its entry unless every movement was of value 0 (an entry has two lines or more).
+  check('ck_delivery_returns_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} <> 'draft' or ${t.postedEntryId} is null)`),
   check('ck_delivery_returns_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
   index('ix_delivery_returns_delivery').on(t.deliveryId),
   index('ix_delivery_returns_party_date').on(t.partyId, t.businessDate),
