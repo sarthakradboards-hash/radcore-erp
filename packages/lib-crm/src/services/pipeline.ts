@@ -10,7 +10,7 @@ import {
 } from '@radcore/db/crm';
 import { addDays, indiaDate, maskOf, normaliseEmail } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineNotification, encodeCursor, listScope, momentKey, notify, principalId, roleOf,
+  AppError, decodeCursor, defineNotification, encodeCursor, listScope, momentKey, notify, principalFor, principalId,
   type Ctx, type JobContract,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, type SQL } from 'drizzle-orm';
@@ -148,16 +148,21 @@ export async function quickReplyText(ctx: Ctx, { id, replyId }: In<typeof quickR
   return { text: reply.body };
 }
 
-/** POST /leads/:id/owner (leads:write at `all`): hands a lead to a person, or back to no one. Its new owner is told of
- * a follow-up already due. */
+/** POST /leads/:id/owner (leads:write at `all`): hands a lead to an active person whose role sees leads, or back to no
+ * one. Its new owner is told of a follow-up already due. */
 export async function assignLeadOwner(ctx: Ctx, { id, owner }: In<typeof assignLead>): Promise<Out<typeof assignLead>> {
   if (!ctx.can('leads:write', { owner: '' })) throw new AppError('forbidden', 'Only someone who works every lead may hand one on');
   const tx = crmTx(ctx);
   const [lead] = await tx.select({ id: leads.id }).from(leads).where(eq(leads.id, id)).for('update');
   if (lead === undefined) throw new AppError('not_found', 'There is no such lead');
   const to = owner === null ? null : `user:${owner}`;
-  if (to !== null && await roleOf(ctx, to) === undefined) {
-    throw new AppError('unknown_person', 'There is no such person', [{ path: ['owner'], code: 'unknown', message: 'Choose a person' }]);
+  if (owner !== null) {
+    const person = await principalFor(ctx, owner);
+    if (person === null) throw new AppError('unknown_person', 'There is no such person', [{ path: ['owner'], code: 'unknown', message: 'Choose a person' }]);
+    // A lead handed to someone who can't see leads would be lost to them and to their bell (auditor-2 on #262).
+    if (!person.permissions.includes('leads:read')) {
+      throw new AppError('not_a_seller', 'That person’s role can’t see leads', [{ path: ['owner'], code: 'not_a_seller', message: 'Choose someone who works leads' }]);
+    }
   }
   await tx.update(leads).set({ owner: to, followUpToldOn: null }).where(eq(leads.id, id));
   return {};
@@ -174,7 +179,8 @@ export const followUpDue = defineNotification('crm.follow_up_due', {
   },
 });
 
-/** Each morning, every owned lead still in the pipeline whose follow-up has come, told once per follow-up date. */
+/** Each morning, every owned lead still in the pipeline whose follow-up has come, told once per follow-up date. A
+ * follow-up moved to a day already past is told on the next morning's run, so up to a day late. */
 export const followUpsDueWatch: JobContract<object | null> = {
   name: 'crm.follow-ups-due',
   principal: { kind: 'system', name: 'follow-ups-due', permissions: ['leads:read'] },

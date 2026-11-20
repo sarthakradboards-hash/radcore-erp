@@ -280,9 +280,15 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
   it('hands a lead on only at all scope, to a person who exists, or back to no one', async () => {
     const [ashaId, raviId, bossId] = [await person(), await person(), await person()];
     const id = await newLead(sales(ashaId));
+    // Only an active person can be handed a lead: Ravi signs in (a stand-in hash), Boss stays as invited.
+    await owner("update radcore.users set status = 'active', password_hash = 'test' where id = $1", [raviId]);
     await expect(as(taker(ashaId), (ctx) => assignLeadOwner(ctx, { id, owner: raviId }))).rejects.toMatchObject({ code: 'forbidden' });
     await expect(as(taker(ashaId), (ctx) => assignLeadOwner(ctx, { id, owner: null }))).rejects.toMatchObject({ code: 'forbidden' });
     await expect(as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: randomUUID() }))).rejects.toMatchObject({ code: 'unknown_person' });
+    // Someone whose role doesn't see leads can't be handed one.
+    const [clerk] = await owner<{ id: string }>("insert into radcore.users (email, display_name, role, status, password_hash) values ($1, 'Clerk', 'accounts', 'active', 'test') returning id",
+      [`${letters()}@example.test`]);
+    await expect(as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: clerk?.id ?? '' }))).rejects.toMatchObject({ code: 'not_a_seller' });
     await as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: raviId }));
     expect(await owner('select owner from radcore.leads where id = $1', [id])).toEqual([{ owner: `user:${raviId}` }]);
     await as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: null }));

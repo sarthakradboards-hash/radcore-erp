@@ -55,7 +55,8 @@ export const getLead = defineContract({
  * Leads, latest enquiry first, a page of at most 200 (RC-041). A person who holds leads:read at `own` gets only their
  * own, and the unowned ones too with leads:unassigned (D-11). The phone keeps its last 4 and the email is masked,
  * without pii:read, so a list never hands out the numbers: the lead's own page shows them to a leads:contact holder,
- * and logs the look. `owner: 'none'` is the unowned ones, `followUpBy` those whose follow-up falls on or before that day.
+ * and logs the look. leads:contact unmasks a lead's page, never the list, so this record has no `seenWith` on purpose
+ * (RC-041). `owner: 'none'` is the unowned ones, `followUpBy` those whose follow-up falls on or before that day.
  */
 export const listLeads = defineContract({
   method: 'GET', path: '/leads', auth: 'session', perm: 'leads:read', tx: read,
@@ -159,5 +160,5 @@ export const quickReply = defineContract({
 export const assignLead = defineContract({
   method: 'POST', path: '/leads/:id/owner', auth: 'session', perm: 'leads:write', tx: write,
   input: z.object({ id: idString(), owner: idString().nullable() }),
-  output: z.object({}), errors: ['unknown_person'],
+  output: z.object({}), errors: ['unknown_person', 'not_a_seller'],
 });
