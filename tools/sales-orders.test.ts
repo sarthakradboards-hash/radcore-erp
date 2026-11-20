@@ -15,7 +15,7 @@ import {
 import { putGstRate } from '@radcore/lib-gst';
 import { addCategory, addItem } from '@radcore/lib-stock';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -171,16 +171,21 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
   it('holds the period before it locks the order it confirms', async () => {
     const at = await setup();
     const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }));
+    // The confirmation on a pool of its own, named, so the wait below is for it and not another file's posting.
+    const own = new pg.Pool({ connectionString: url, max: 1, application_name: 'sales-orders-confirm-lock' });
     const mover = await su.connect();
     try {
       await mover.query('begin');
+      // A safety net: a failed run never holds the period lock for long over other files' tests.
+      await mover.query("set local idle_in_transaction_session_timeout = '20s'");
       await mover.query('select id from radcore.period_lock where id = 1 for update');
-      const confirming = run((ctx) => confirmOrderNow(ctx, { id }));
-      // Until the confirmation is waiting on the period lock, as a move would make it.
-      for (let waiting = 0; waiting === 0;) {
-        waiting = Number((await mover.query<{ n: string }>(`select count(*) as n from pg_stat_activity
-          where wait_event_type = 'Lock' and query ilike '%period_lock%' and pid <> pg_backend_pid()`)).rows[0]?.n);
-      }
+      const moverPid = (await mover.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
+      const confirming = runInTransaction(createDatabase(own), WRITE, staff, randomUUID(), (ctx) => confirmOrderNow(ctx, { id }))
+        .then((r) => r.number, (e: unknown) => String(e));
+      // Until that confirmation is waiting on the move, as its own backend reports, for at most 15 s.
+      await vi.waitFor(async () => expect((await mover.query<{ n: number }>(`select count(*)::int as n from pg_stat_activity
+        where application_name = 'sales-orders-confirm-lock' and $1 = any(pg_blocking_pids(pid))`, [moverPid])).rows[0]?.n).toBe(1),
+      { timeout: 15_000, interval: 50 });
       const other = await pool.connect();
       try {
         await other.query('begin');
@@ -190,9 +195,10 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
         other.release();
       }
       await mover.query('rollback');
-      expect((await confirming).number).toMatch(/^SO\//);
+      expect(await confirming).toMatch(/^SO\//);
     } finally {
       mover.release();
+      await own.end();
     }
   });
 
