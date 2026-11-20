@@ -246,6 +246,7 @@ const ALLOCATION_DB_ERRORS = {
   'RA006:allocation_document_not_posted': { code: 'document_not_posted', message: 'A payment applies only to a posted document' },
   'RA006:allocatable_document_missing': { code: 'document_missing', message: 'There’s no such document' },
   '23503:fk_payment_allocations_document_table': { code: 'not_allocatable', message: 'Payments aren’t applied to that kind of document' },
+  'RA006:allocation_before_source': { code: 'date_before_source', message: 'An allocation is dated on or after its document' },
 } as const;
 const CREDIT_DB_ERRORS = {
   'RA006:credit_application_exceeds_document': { code: 'exceeds_document', message: 'That’s more than is left to pay on it' },
@@ -256,25 +257,26 @@ const CREDIT_DB_ERRORS = {
   'RA006:allocatable_document_missing': { code: 'document_missing', message: 'There’s no such document' },
   '23503:fk_credit_applications_credit_table': { code: 'not_allocatable', message: 'That kind of document isn’t a credit' },
   '23503:fk_credit_applications_document_table': { code: 'not_allocatable', message: 'Credits aren’t applied to that kind of document' },
+  'RA006:credit_application_before_source': { code: 'date_before_source', message: 'A credit is applied on or after both documents’ dates' },
 } as const;
 
 /** POST /payments/:id/allocations: applies a posted receipt (to customers' charges) or payment (to suppliers') to
  * documents, within what's left of each, gross of TDS held back (F8). */
 export const allocatePaymentContract = defineContract({
   method: 'POST', path: '/payments/:id/allocations', auth: 'session', perm: 'payments:write', tx: write,
-  input: z.object({ id: idString(), lines: z.array(z.object({ documentTable: documentTable(), documentId: idString(), amount: moneyString() }))
+  input: z.object({ id: idString(), businessDate: dateString(), lines: z.array(z.object({ documentTable: documentTable(), documentId: idString(), amount: moneyString() }))
     .min(1, 'Apply it to one document or more').max(50) }),
   output: z.object({ ids: z.array(idString()) }),
   errors: ['not_allocatable', 'not_posted', 'exceeds_payment', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted',
-    'document_missing'],
+    'document_missing', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
   dbErrors: ALLOCATION_DB_ERRORS,
 });
 
-/** POST /allocations/:id/reverse: undoes one allocation, whole, once. */
+/** POST /allocations/:id/reverse: undoes one allocation, whole, once, dated and with a reason (the architect on RAD-116). */
 export const reverseAllocationContract = defineContract({
   method: 'POST', path: '/allocations/:id/reverse', auth: 'session', perm: 'payments:write', tx: write,
-  input: z.object({ id: idString() }), output: z.object({ id: idString() }),
-  errors: ['already_reversed'],
+  input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({ id: idString() }),
+  errors: ['already_reversed', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
   dbErrors: { '23505:ux_payment_allocations_reverses': { code: 'already_reversed', message: 'That allocation is already reversed' } },
 });
 
@@ -282,16 +284,17 @@ export const reverseAllocationContract = defineContract({
 export const applyCreditContract = defineContract({
   method: 'POST', path: '/credit-applications', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({ creditTable: documentTable(), creditId: idString(), documentTable: documentTable(), documentId: idString(),
-    amount: moneyString() }),
+    amount: moneyString(), businessDate: dateString() }),
   output: z.object({ id: idString() }),
-  errors: ['not_allocatable', 'exceeds_credit', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted', 'document_missing'],
+  errors: ['not_allocatable', 'exceeds_credit', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted', 'document_missing',
+    'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
   dbErrors: CREDIT_DB_ERRORS,
 });
 
-/** POST /credit-applications/:id/reverse: undoes one credit application, whole, once. */
+/** POST /credit-applications/:id/reverse: undoes one credit application, whole, once, dated and with a reason. */
 export const reverseCreditApplicationContract = defineContract({
   method: 'POST', path: '/credit-applications/:id/reverse', auth: 'session', perm: 'payments:write', tx: write,
-  input: z.object({ id: idString() }), output: z.object({ id: idString() }),
-  errors: ['already_reversed'],
+  input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({ id: idString() }),
+  errors: ['already_reversed', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
   dbErrors: { '23505:ux_credit_applications_reverses': { code: 'already_reversed', message: 'That credit application is already reversed' } },
 });

@@ -15,6 +15,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
+/** What a document's migration does before it registers its table (ADR-005 §7a). */
+const guard = (t: string) => `create trigger guard_applied_cancel before update of status on radcore.${t}
+  for each row execute function radcore.guard_applied_cancel()`;
 const AS: Principal = { kind: 'system', name: 'test', permissions: [] };
 const DAY = '2026-11-12';
 
@@ -48,8 +51,9 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
   async function inFixture(fn: (f: {
     party: () => Promise<string>;
     payment: (o: { kind: 'receipt' | 'payment' | 'refund'; party: string; amount: string; refundOf?: string; status?: 'draft' | 'posted' }) => Promise<string>;
-    doc: (table: 't_invoices' | 't_credits' | 't_bills', o: { party: string; total: string; status?: string }) => Promise<string>;
+    doc: (table: 't_invoices' | 't_credits' | 't_bills', o: { party: string; total: string; status?: string; date?: string }) => Promise<string>;
     attempt: (text: string, values?: unknown[]) => Promise<string>;
+    named: (text: string, values?: unknown[]) => Promise<string>;
     query: <T extends pg.QueryResultRow>(text: string, values?: unknown[]) => Promise<T[]>;
   }) => Promise<void>) {
     const postedEntry = await entry();
@@ -59,15 +63,30 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
       await c.query("set local app.principal = 'system:test'");
       for (const t of ['t_invoices', 't_credits', 't_bills']) {
         await c.query(`create table radcore.${t} (id uuid primary key default gen_random_uuid(), party_id uuid not null, status text not null,
-          total numeric(18,2) not null)`);
+          total numeric(18,2) not null, business_date date not null)`);
       }
-      await c.query(`insert into radcore.allocatable_documents (document_table, side, kind) values
-        ('t_invoices', 'receivable', 'charge'), ('t_credits', 'receivable', 'credit'), ('t_bills', 'payable', 'charge')`);
       // The app writes them; the checks, which run as the owner (SECURITY DEFINER), lock and read them, as a migration's own tables.
       await c.query('grant select, insert, update on radcore.t_invoices, radcore.t_credits, radcore.t_bills to radcore_app, radcore_owner');
+      for (const t of ['t_invoices', 't_credits', 't_bills']) await c.query(guard(t));
+      await c.query(`insert into radcore.allocatable_documents (document_table, side, kind) values
+        ('t_invoices', 'receivable', 'charge'), ('t_credits', 'receivable', 'credit'), ('t_bills', 'payable', 'charge')`);
       await c.query('set local role radcore_app');
       const query = async <T extends pg.QueryResultRow>(text: string, values: unknown[] = []) => (await c.query<T>(text, values)).rows;
       const bank = (await query<{ id: string }>("select id from radcore.accounts where system_key = 'bank'"))[0]?.id ?? '';
+      const settle = async (text: string, values: unknown[], named: boolean) => {
+        await c.query('savepoint attempt');
+        try {
+          await c.query(text, values);
+          await c.query('set constraints all immediate');
+          await c.query('set constraints all deferred');
+          await c.query('release savepoint attempt');
+          return 'ok';
+        } catch (e) {
+          await c.query('rollback to savepoint attempt');
+          const { code = 'error', constraint } = e as { code?: string; constraint?: string };
+          return named && constraint ? `${code}:${constraint}` : code;
+        }
+      };
       await fn({
         party: async () => (await query<{ id: string }>("insert into radcore.parties (name, customer, supplier, state_code) values ($1, true, true, '27') returning id",
           [`Fixture party ${randomUUID()}`]))[0]?.id ?? '',
@@ -80,21 +99,10 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
           }
           return row?.id ?? '';
         },
-        doc: async (table, o) => (await query<{ id: string }>(`insert into radcore.${table} (party_id, status, total) values ($1, $2, $3) returning id`,
-          [o.party, o.status ?? 'posted', o.total]))[0]?.id ?? '',
-        attempt: async (text, values = []) => {
-          await c.query('savepoint attempt');
-          try {
-            await c.query(text, values);
-            await c.query('set constraints all immediate');
-            await c.query('set constraints all deferred');
-            await c.query('release savepoint attempt');
-            return 'ok';
-          } catch (e) {
-            await c.query('rollback to savepoint attempt');
-            return (e as { code?: string }).code ?? 'error';
-          }
-        },
+        doc: async (table, o) => (await query<{ id: string }>(`insert into radcore.${table} (party_id, status, total, business_date)
+          values ($1, $2, $3, $4) returning id`, [o.party, o.status ?? 'posted', o.total, o.date ?? DAY]))[0]?.id ?? '',
+        attempt: (text, values = []) => settle(text, values, false),
+        named: (text, values = []) => settle(text, values, true),
         query,
       });
     } finally {
@@ -102,7 +110,8 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
       c.release();
     }
   }
-  const apply = 'insert into radcore.payment_allocations (payment_id, document_table, document_id, direction, amount) values ($1, $2, $3, $4, $5) returning id';
+  const apply = `insert into radcore.payment_allocations (payment_id, document_table, document_id, direction, amount, business_date)
+    values ($1, $2, $3, $4, $5, '${DAY}') returning id`;
 
   it('applies a receipt to its party’s posted invoice, and never past the invoice’s total, whoever pays', async () => {
     await inFixture(async (f) => {
@@ -154,7 +163,7 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
       const [inv, other] = [await f.doc('t_invoices', { party: p, total: '100.00' }), await f.doc('t_invoices', { party: p, total: '100.00' })];
       const r = await f.payment({ kind: 'receipt', party: p, amount: '100.00' });
       const [row] = await f.query<{ id: string }>(apply, [r, 't_invoices', inv, 'apply', '60.00']);
-      const reverse = 'insert into radcore.payment_allocations (payment_id, document_table, document_id, direction, amount, reverses_id) values ($1, $2, $3, $4, $5, $6)';
+      const reverse = `insert into radcore.payment_allocations (payment_id, document_table, document_id, direction, amount, reverses_id, business_date) values ($1, $2, $3, $4, $5, $6, '2026-11-12')`;
       expect(await f.attempt(reverse, [r, 't_invoices', inv, 'reverse', '10.00', row?.id])).toBe('23503');
       expect(await f.attempt(reverse, [r, 't_invoices', other, 'reverse', '60.00', row?.id])).toBe('23503');
       expect(await f.attempt(reverse, [r, 't_invoices', inv, 'reverse', '60.00', row?.id])).toBe('ok');
@@ -170,7 +179,8 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
       const p = await f.party();
       const inv = await f.doc('t_invoices', { party: p, total: '100.00' });
       const cn = await f.doc('t_credits', { party: p, total: '30.00' });
-      const credit = 'insert into radcore.credit_applications (credit_table, credit_id, document_table, document_id, direction, amount) values ($1, $2, $3, $4, $5, $6)';
+      const credit = `insert into radcore.credit_applications (credit_table, credit_id, document_table, document_id, direction, amount, business_date)
+        values ($1, $2, $3, $4, $5, $6, '2026-11-12')`;
       expect(await f.attempt(credit, ['t_credits', cn, 't_invoices', inv, 'apply', '30.01'])).toBe('RA006');
       expect(await f.attempt(credit, ['t_credits', cn, 't_invoices', inv, 'apply', '30.00'])).toBe('ok');
       expect(await f.attempt(credit, ['t_credits', cn, 't_bills', await f.doc('t_bills', { party: p, total: '9.00' }), 'apply', '1.00'])).toBe('RA006');
@@ -194,10 +204,83 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
       const cancel = `update radcore.payments set status = 'cancelled', cancelled_at = now(), cancelled_by = 'system:test', cancel_reason = 'x',
         cancel_entry_id = posted_entry_id where id = $1`;
       expect(await f.attempt(cancel, [r])).toBe('RA006');
-      await f.query('insert into radcore.payment_allocations (payment_id, document_table, document_id, direction, amount, reverses_id) values ($1, $2, $3, $4, $5, $6)',
+      await f.query(`insert into radcore.payment_allocations (payment_id, document_table, document_id, direction, amount, reverses_id, business_date) values ($1, $2, $3, $4, $5, $6, '2026-11-12')`,
         [r, 't_invoices', inv, 'reverse', '40.00', row?.id]);
       expect(await f.attempt('select 1')).toBe('ok');
       expect(await f.attempt(cancel, [r])).toBe('ok');
     });
+  });
+
+  it('dates a row on or after its document, and a credit’s on or after both, by name; a ledger row in a year nobody opened is refused', async () => {
+    await inFixture(async (f) => {
+      const p = await f.party();
+      const later = await f.doc('t_invoices', { party: p, total: '100.00', date: '2026-11-13' });
+      const r = await f.payment({ kind: 'receipt', party: p, amount: '100.00' });
+      expect(await f.named(apply, [r, 't_invoices', later, 'apply', '1.00'])).toBe('RA006:allocation_before_source');
+      const credit = `insert into radcore.credit_applications (credit_table, credit_id, document_table, document_id, direction, amount, business_date)
+        values ('t_credits', $1, 't_invoices', $2, 'apply', '1.00', $3)`;
+      const inv = await f.doc('t_invoices', { party: p, total: '100.00' });
+      const cn = await f.doc('t_credits', { party: p, total: '9.00', date: '2026-11-13' });
+      expect(await f.named(credit, [cn, inv, DAY])).toBe('RA006:credit_application_before_source');
+      expect(await f.named(credit, [cn, inv, '2026-11-13'])).toBe('ok');
+      expect(await f.named(`insert into radcore.payment_allocations (payment_id, document_table, document_id, direction, amount, business_date)
+        values ($1, 't_invoices', $2, 'apply', '1.00', '2031-04-01')`, [r, inv])).toBe('23503:fk_payment_allocations_fy_start');
+    });
+  });
+
+  it('cancels a registered document only once nothing is applied to it, and a credit only once it applies to nothing', async () => {
+    await inFixture(async (f) => {
+      const p = await f.party();
+      const inv = await f.doc('t_invoices', { party: p, total: '100.00' });
+      const cn = await f.doc('t_credits', { party: p, total: '30.00' });
+      const r = await f.payment({ kind: 'receipt', party: p, amount: '100.00' });
+      const [row] = await f.query<{ id: string }>(apply, [r, 't_invoices', inv, 'apply', '40.00']);
+      const [cr] = await f.query<{ id: string }>(`insert into radcore.credit_applications (credit_table, credit_id, document_table, document_id, direction,
+        amount, business_date) values ('t_credits', $1, 't_invoices', $2, 'apply', '30.00', '2026-11-12') returning id`, [cn, inv]);
+      expect(await f.attempt('select 1')).toBe('ok');
+      const cancel = (t: string) => `update radcore.${t} set status = 'cancelled' where id = $1`;
+      expect(await f.named(cancel('t_invoices'), [inv])).toBe('RA006:document_still_applied');
+      expect(await f.named(cancel('t_credits'), [cn])).toBe('RA006:document_still_applied');
+      await f.query(`insert into radcore.payment_allocations (payment_id, document_table, document_id, direction, amount, reverses_id,
+        business_date) values ($1, 't_invoices', $2, 'reverse', '40.00', $3, '2026-11-12')`, [r, inv, row?.id]);
+      expect(await f.named(cancel('t_invoices'), [inv])).toBe('RA006:document_still_applied');
+      await f.query(`insert into radcore.credit_applications (credit_table, credit_id, document_table, document_id, direction, amount, reverses_id,
+        business_date) values ('t_credits', $1, 't_invoices', $2, 'reverse', '30.00', $3, '2026-11-12')`, [cn, inv, cr?.id]);
+      expect(await f.attempt('select 1')).toBe('ok');
+      expect(await f.named(cancel('t_credits'), [cn])).toBe('ok');
+      expect(await f.named(cancel('t_invoices'), [inv])).toBe('ok');
+    });
+  });
+
+  it('registers only a table with an id, a party, a status, a total and a date, of their types, and its cancel guard attached', async () => {
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      const shapes = {
+        t_shapeless: 'party_id uuid, status text, business_date date',
+        t_text_total: 'party_id uuid, status text, total text, business_date date',
+        t_undated: 'party_id uuid, status text, total numeric(18,2)',
+        t_unguarded: 'party_id uuid, status text, total numeric(18,2), business_date date',
+        t_ready: 'party_id uuid, status text, total numeric(18,2), business_date date',
+      };
+      for (const [t, cols] of Object.entries(shapes)) {
+        await c.query(`create table radcore.${t} (id uuid primary key, ${cols})`);
+        if (t !== 't_unguarded') await c.query(guard(t));
+      }
+      const register = async (t: string) => {
+        await c.query('savepoint s');
+        return c.query("insert into radcore.allocatable_documents (document_table, side, kind) values ($1, 'receivable', 'charge')", [t])
+          .then(() => 'ok', async (e: { code?: string; constraint?: string }) => {
+            await c.query('rollback to savepoint s');
+            return `${e.code}:${e.constraint}`;
+          });
+      };
+      for (const t of ['t_shapeless', 't_text_total', 't_undated', 't_unguarded', 't_nowhere']) expect(await register(t)).toBe('RA006:allocatable_document_shape');
+      expect(await register('t_ready')).toBe('ok');
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
   });
 });

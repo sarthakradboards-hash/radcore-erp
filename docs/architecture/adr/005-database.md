@@ -198,24 +198,28 @@ They are append-only with explicit reversals:
 
   So a reversal must point at an `apply` row on the same document and payment, for the same amount. A reversal
   of 1,000 against an apply of 10, or one filed against another document, is refused.
-- **When rows may be written.** An apply needs its document to be posted. A posted document moves to cancelled
-  only when its net allocations are zero.
+- **When rows may be written.** An apply needs its document to be posted. A posted document moves to cancelled only
+  when nothing is applied to it or from it: its net allocations, and its net credit applications as a charge or as a
+  credit, are zero (`guard_applied_cancel`, attached before the table is registered).
 - **What a row names.** A row names its document as `(document_table, document_id)`, as a journal entry names its
   source. The table must be in `allocatable_documents`, which each document's own migration seeds with its side
   (`receivable` or `payable`) and kind (`charge`, an invoice or bill; `credit`, a credit or debit note). A receipt
   applies to a receivable charge and a payment to a payable charge; a credit application takes a credit to a charge
   on the same side; each pair is of one party. A credit application names its credit the same way, `(credit_table,
   credit_id)`.
-- **What a registered document carries.** `id`, `party_id`, `status` and `total`: the amount it posts to the party's
-  Debtors or Creditors line, gross of GST, cess and TCS, after round-off. A posted document's guard (§7b) freezes
-  it.
+- **What a registered document carries.** `id`, `party_id`, `status`, `business_date` and `total`: the amount it
+  posts to the party's Debtors or Creditors line, gross of GST, cess and TCS, after round-off. A posted document's
+  guard (§7b) freezes it.
 - **Paid** is `v_document_paid`: per document, its net allocations and net credit applications, from these two
   tables alone. The document's owner subtracts it from its own `total`, so lib-accounts writes and reads no other
   module's table.
 - **The cap.** A deferred check holds net allocations plus net credit applications at or below the document's
   total.
-  - It **first locks the rows it sums against, the document's and the payment's or credit's, in id order**
-    (`SELECT ... ORDER BY id FOR UPDATE`, so locks are always taken in one order) and only then sums.
+  - It **takes its locks in one order**: the payments and credits it sums against, by id, then the documents, by
+    table and id (a row is only ever one side). A service that writes these rows takes the same locks before its
+    first insert: its payments and credits by id, then its rows inserted in document order, so the checks lock the
+    documents in order too. A multi-line allocation, or a reversal, can't hold a document while it waits for a
+    payment. Only then does the check sum.
   - A payment's net allocations stay at or below its amount to the party (gross of TDS held back, F8), and a
     credit's net applications at or below its total.
   - So two transactions allocating 60 each against an invoice of 100 can't both pass: the second waits for the

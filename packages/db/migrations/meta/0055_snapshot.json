@@ -1,5 +1,5 @@
 {
-  "id": "bcb61a60-e73e-4d53-8726-7182ba5a54d9",
+  "id": "77e40485-222b-44fd-b0d8-52fa56e78a2d",
   "prevId": "827de9a3-1402-4215-9157-1a087f0ad180",
   "version": "7",
   "dialect": "postgresql",
@@ -366,6 +366,29 @@
           "primaryKey": false,
           "notNull": true
         },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "posted_at": {
+          "name": "posted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "fy_start": {
+          "name": "fy_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
+            "type": "stored"
+          }
+        },
         "reverses_id": {
           "name": "reverses_id",
           "type": "uuid",
@@ -454,6 +477,21 @@
           "method": "btree",
           "with": {}
         },
+        "ix_credit_applications_fy_start": {
+          "name": "ix_credit_applications_fy_start",
+          "columns": [
+            {
+              "expression": "fy_start",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "ix_credit_applications_reverses": {
           "name": "ix_credit_applications_reverses",
           "columns": [
@@ -529,6 +567,20 @@
             "document_id",
             "amount",
             "direction"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_credit_applications_fy_start": {
+          "name": "fk_credit_applications_fy_start",
+          "tableFrom": "credit_applications",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "fy_start"
+          ],
+          "columnsTo": [
+            "start"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -1524,6 +1576,29 @@
           "primaryKey": false,
           "notNull": true
         },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "posted_at": {
+          "name": "posted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "fy_start": {
+          "name": "fy_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
+            "type": "stored"
+          }
+        },
         "reverses_id": {
           "name": "reverses_id",
           "type": "uuid",
@@ -1596,6 +1671,21 @@
             },
             {
               "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_payment_allocations_fy_start": {
+          "name": "ix_payment_allocations_fy_start",
+          "columns": [
+            {
+              "expression": "fy_start",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1687,6 +1777,20 @@
             "payment_id",
             "amount",
             "direction"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_payment_allocations_fy_start": {
+          "name": "fk_payment_allocations_fy_start",
+          "tableFrom": "payment_allocations",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "fy_start"
+          ],
+          "columnsTo": [
+            "start"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"

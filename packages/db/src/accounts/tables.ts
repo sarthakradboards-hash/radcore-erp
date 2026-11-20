@@ -254,7 +254,7 @@ export const payments = radcoreTable('payments', {
  * charge, a payment to a payable charge, of one party. The document is named as `(document_table, document_id)`, its
  * table one `allocatable_documents` lists (hand-written in this migration, with its foreign keys). Append-only: a
  * reversal undoes exactly one apply of the same document, payment and amount, through the composite foreign key. The
- * caps are checked at commit (RA006), the rows locked in id order.
+ * caps are checked at commit (RA006), the payment's row locked before the document's.
  */
 export const paymentAllocations = radcoreTable('payment_allocations', {
   id: id(),
@@ -263,6 +263,10 @@ export const paymentAllocations = radcoreTable('payment_allocations', {
   documentId: uuid().notNull(),
   direction: text().notNull(),
   amount: money().notNull(),
+  businessDate: date({ mode: 'string' }).notNull(),
+  postedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  fyStart: date({ mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)`),
   reversesId: uuid().unique('ux_payment_allocations_reverses'),
   reversesDirection: text().generatedAlwaysAs(sql`case when reverses_id is not null then 'apply' end`),
 }, (t) => [
@@ -275,6 +279,8 @@ export const paymentAllocations = radcoreTable('payment_allocations', {
     foreignColumns: [t.id, t.documentTable, t.documentId, t.paymentId, t.amount, t.direction] }),
   index('ix_payment_allocations_payment').on(t.paymentId),
   index('ix_payment_allocations_document').on(t.documentTable, t.documentId),
+  foreignKey({ name: 'fk_payment_allocations_fy_start', columns: [t.fyStart], foreignColumns: [financialYears.start] }),
+  index('ix_payment_allocations_fy_start').on(t.fyStart),
   index('ix_payment_allocations_reverses').on(t.reversesId, t.documentTable, t.documentId, t.paymentId, t.amount, t.reversesDirection),
 ]);
 
@@ -290,6 +296,10 @@ export const creditApplications = radcoreTable('credit_applications', {
   documentId: uuid().notNull(),
   direction: text().notNull(),
   amount: money().notNull(),
+  businessDate: date({ mode: 'string' }).notNull(),
+  postedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  fyStart: date({ mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)`),
   reversesId: uuid().unique('ux_credit_applications_reverses'),
   reversesDirection: text().generatedAlwaysAs(sql`case when reverses_id is not null then 'apply' end`),
 }, (t) => [
@@ -302,6 +312,8 @@ export const creditApplications = radcoreTable('credit_applications', {
     foreignColumns: [t.id, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount, t.direction] }),
   index('ix_credit_applications_credit').on(t.creditTable, t.creditId),
   index('ix_credit_applications_document').on(t.documentTable, t.documentId),
+  foreignKey({ name: 'fk_credit_applications_fy_start', columns: [t.fyStart], foreignColumns: [financialYears.start] }),
+  index('ix_credit_applications_fy_start').on(t.fyStart),
   index('ix_credit_applications_reverses').on(t.reversesId, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount,
     t.reversesDirection),
 ]);

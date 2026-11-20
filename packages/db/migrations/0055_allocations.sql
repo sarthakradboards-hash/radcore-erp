@@ -6,6 +6,9 @@ CREATE TABLE "radcore"."credit_applications" (
 	"document_id" uuid NOT NULL,
 	"direction" text NOT NULL,
 	"amount" numeric(18, 2) NOT NULL,
+	"business_date" date NOT NULL,
+	"posted_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"fy_start" date GENERATED ALWAYS AS (make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)) STORED NOT NULL,
 	"reverses_id" uuid,
 	"reverses_direction" text GENERATED ALWAYS AS (case when reverses_id is not null then 'apply' end) STORED,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -27,6 +30,9 @@ CREATE TABLE "radcore"."payment_allocations" (
 	"document_id" uuid NOT NULL,
 	"direction" text NOT NULL,
 	"amount" numeric(18, 2) NOT NULL,
+	"business_date" date NOT NULL,
+	"posted_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"fy_start" date GENERATED ALWAYS AS (make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)) STORED NOT NULL,
 	"reverses_id" uuid,
 	"reverses_direction" text GENERATED ALWAYS AS (case when reverses_id is not null then 'apply' end) STORED,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -42,13 +48,17 @@ CREATE TABLE "radcore"."payment_allocations" (
 );
 --> statement-breakpoint
 ALTER TABLE "radcore"."credit_applications" ADD CONSTRAINT "fk_credit_applications_reverses" FOREIGN KEY ("reverses_id","credit_table","credit_id","document_table","document_id","amount","reverses_direction") REFERENCES "radcore"."credit_applications"("id","credit_table","credit_id","document_table","document_id","amount","direction") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."credit_applications" ADD CONSTRAINT "fk_credit_applications_fy_start" FOREIGN KEY ("fy_start") REFERENCES "radcore"."financial_years"("start") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."payment_allocations" ADD CONSTRAINT "payment_allocations_payment_id_payments_id_fk" FOREIGN KEY ("payment_id") REFERENCES "radcore"."payments"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."payment_allocations" ADD CONSTRAINT "fk_payment_allocations_reverses" FOREIGN KEY ("reverses_id","document_table","document_id","payment_id","amount","reverses_direction") REFERENCES "radcore"."payment_allocations"("id","document_table","document_id","payment_id","amount","direction") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."payment_allocations" ADD CONSTRAINT "fk_payment_allocations_fy_start" FOREIGN KEY ("fy_start") REFERENCES "radcore"."financial_years"("start") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "ix_credit_applications_credit" ON "radcore"."credit_applications" USING btree ("credit_table","credit_id");--> statement-breakpoint
 CREATE INDEX "ix_credit_applications_document" ON "radcore"."credit_applications" USING btree ("document_table","document_id");--> statement-breakpoint
+CREATE INDEX "ix_credit_applications_fy_start" ON "radcore"."credit_applications" USING btree ("fy_start");--> statement-breakpoint
 CREATE INDEX "ix_credit_applications_reverses" ON "radcore"."credit_applications" USING btree ("reverses_id","credit_table","credit_id","document_table","document_id","amount","reverses_direction");--> statement-breakpoint
 CREATE INDEX "ix_payment_allocations_payment" ON "radcore"."payment_allocations" USING btree ("payment_id");--> statement-breakpoint
 CREATE INDEX "ix_payment_allocations_document" ON "radcore"."payment_allocations" USING btree ("document_table","document_id");--> statement-breakpoint
+CREATE INDEX "ix_payment_allocations_fy_start" ON "radcore"."payment_allocations" USING btree ("fy_start");--> statement-breakpoint
 CREATE INDEX "ix_payment_allocations_reverses" ON "radcore"."payment_allocations" USING btree ("reverses_id","document_table","document_id","payment_id","amount","reverses_direction");--> statement-breakpoint
 CREATE VIEW "radcore"."v_document_paid" AS (select document_table, document_id, sum(allocated) as allocated, sum(credited) as credited,
     sum(allocated + credited) as paid
@@ -92,10 +102,10 @@ ALTER TABLE radcore.credit_applications ADD CONSTRAINT fk_credit_applications_do
 --> statement-breakpoint
 -- Ledgers: append-only, a mistake undone by a reverse row, never an edit (ADR-005 §7a). Audited in full.
 SELECT radcore.audit_attach('payment_allocations', keep => array['payment_id', 'document_table', 'document_id', 'direction', 'amount',
-  'reverses_id', 'reverses_direction']);
+  'business_date', 'posted_at', 'fy_start', 'reverses_id', 'reverses_direction']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('credit_applications', keep => array['credit_table', 'credit_id', 'document_table', 'document_id', 'direction',
-  'amount', 'reverses_id', 'reverses_direction']);
+  'amount', 'business_date', 'posted_at', 'fy_start', 'reverses_id', 'reverses_direction']);
 --> statement-breakpoint
 REVOKE UPDATE, DELETE, TRUNCATE ON radcore.payment_allocations FROM radcore_app;
 --> statement-breakpoint
@@ -111,14 +121,15 @@ CREATE TRIGGER refuse_truncate BEFORE TRUNCATE ON radcore.credit_applications FO
 --> statement-breakpoint
 -- A registered document's party, status and total, its row locked. The table name comes from the registry, so the
 -- format() is safe.
-CREATE FUNCTION radcore.lock_allocatable(document_table text, document_id uuid, OUT party_id uuid, OUT status text, OUT total numeric)
+CREATE FUNCTION radcore.lock_allocatable(document_table text, document_id uuid, OUT party_id uuid, OUT status text, OUT total numeric,
+  OUT business_date date)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, radcore, pg_temp AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM radcore.allocatable_documents d WHERE d.document_table = lock_allocatable.document_table) THEN
     RAISE EXCEPTION '% isn''t a document payments apply to', lock_allocatable.document_table USING ERRCODE = 'RA006';
   END IF;
-  EXECUTE format('SELECT party_id, status, total FROM radcore.%I WHERE id = $1 FOR UPDATE', lock_allocatable.document_table)
-    INTO party_id, status, total USING document_id;
+  EXECUTE format('SELECT party_id, status, total, business_date FROM radcore.%I WHERE id = $1 FOR UPDATE', lock_allocatable.document_table)
+    INTO party_id, status, total, business_date USING document_id;
   IF party_id IS NULL THEN
     RAISE EXCEPTION 'there''s no % %', lock_allocatable.document_table, document_id
       USING ERRCODE = 'RA006', CONSTRAINT = 'allocatable_document_missing';
@@ -138,7 +149,7 @@ $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION radcore.document_applied(text, uuid) FROM PUBLIC;
 --> statement-breakpoint
--- The caps, at commit (RA006): the payment's row and the document's, locked in id order, then summed. A receipt applies
+-- The caps, at commit (RA006): the payment's row, then the document's (the paying side first, ADR-005 §7a), then summed. A receipt applies
 -- to a receivable charge, a payment to a payable charge, one party's; an apply needs both posted. The document's net
 -- applied stays within its total; the payment's net allocations and its posted refunds within its amount, gross of
 -- TDS held back (F8).
@@ -151,13 +162,8 @@ DECLARE
   used numeric;
   wanted text;
 BEGIN
-  IF NEW.payment_id < NEW.document_id THEN
-    SELECT * INTO pay FROM radcore.payments WHERE id = NEW.payment_id FOR UPDATE;
-    SELECT * INTO doc FROM radcore.lock_allocatable(NEW.document_table, NEW.document_id);
-  ELSE
-    SELECT * INTO doc FROM radcore.lock_allocatable(NEW.document_table, NEW.document_id);
-    SELECT * INTO pay FROM radcore.payments WHERE id = NEW.payment_id FOR UPDATE;
-  END IF;
+  SELECT * INTO pay FROM radcore.payments WHERE id = NEW.payment_id FOR UPDATE;
+  SELECT * INTO doc FROM radcore.lock_allocatable(NEW.document_table, NEW.document_id);
   SELECT * INTO reg FROM radcore.allocatable_documents WHERE document_table = NEW.document_table;
   -- Worked out first: an IF's condition ends at its first THEN, a CASE's included.
   wanted := CASE pay.kind WHEN 'receipt' THEN 'receivable' ELSE 'payable' END;
@@ -173,6 +179,10 @@ BEGIN
   END IF;
   IF NEW.direction = 'apply' AND doc.status <> 'posted' THEN
     RAISE EXCEPTION 'a payment applies to a posted document' USING ERRCODE = 'RA006', CONSTRAINT = 'allocation_document_not_posted';
+  END IF;
+  -- The payment's date and the apply's are lib-accounts' own, checked by its service first; the document's is here.
+  IF NEW.business_date < doc.business_date THEN
+    RAISE EXCEPTION 'an allocation is dated on or after its document' USING ERRCODE = 'RA006', CONSTRAINT = 'allocation_before_source';
   END IF;
   IF radcore.document_applied(NEW.document_table, NEW.document_id) > doc.total THEN
     RAISE EXCEPTION '% % would be paid past its total', NEW.document_table, NEW.document_id
@@ -192,7 +202,7 @@ REVOKE EXECUTE ON FUNCTION radcore.check_allocation() FROM PUBLIC;
 CREATE CONSTRAINT TRIGGER check_allocation AFTER INSERT ON radcore.payment_allocations
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION radcore.check_allocation();
 --> statement-breakpoint
--- A credit taken to a charge on the same side, one party's (RA006): both rows locked in id order, then summed. An
+-- A credit taken to a charge on the same side, one party's (RA006): the credit's row, then the charge's, then summed. An
 -- apply needs both posted; the charge's net applied stays within its total, the credit's net applications within its.
 CREATE FUNCTION radcore.check_credit_application() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, radcore, pg_temp AS $$
@@ -203,13 +213,8 @@ DECLARE
   doc_reg radcore.allocatable_documents%ROWTYPE;
   used numeric;
 BEGIN
-  IF NEW.credit_id < NEW.document_id THEN
-    SELECT * INTO credit FROM radcore.lock_allocatable(NEW.credit_table, NEW.credit_id);
-    SELECT * INTO doc FROM radcore.lock_allocatable(NEW.document_table, NEW.document_id);
-  ELSE
-    SELECT * INTO doc FROM radcore.lock_allocatable(NEW.document_table, NEW.document_id);
-    SELECT * INTO credit FROM radcore.lock_allocatable(NEW.credit_table, NEW.credit_id);
-  END IF;
+  SELECT * INTO credit FROM radcore.lock_allocatable(NEW.credit_table, NEW.credit_id);
+  SELECT * INTO doc FROM radcore.lock_allocatable(NEW.document_table, NEW.document_id);
   SELECT * INTO credit_reg FROM radcore.allocatable_documents WHERE document_table = NEW.credit_table;
   SELECT * INTO doc_reg FROM radcore.allocatable_documents WHERE document_table = NEW.document_table;
   IF credit_reg.kind <> 'credit' OR doc_reg.kind <> 'charge' OR credit_reg.side <> doc_reg.side THEN
@@ -221,6 +226,10 @@ BEGIN
   IF NEW.direction = 'apply' AND (credit.status <> 'posted' OR doc.status <> 'posted') THEN
     RAISE EXCEPTION 'a credit applies, posted, to a posted document'
       USING ERRCODE = 'RA006', CONSTRAINT = 'credit_application_document_not_posted';
+  END IF;
+  IF NEW.business_date < greatest(credit.business_date, doc.business_date) THEN
+    RAISE EXCEPTION 'a credit application is dated on or after both its credit and its charge'
+      USING ERRCODE = 'RA006', CONSTRAINT = 'credit_application_before_source';
   END IF;
   IF radcore.document_applied(NEW.document_table, NEW.document_id) > doc.total THEN
     RAISE EXCEPTION '% % would be paid past its total', NEW.document_table, NEW.document_id
@@ -255,6 +264,58 @@ END $$;
 REVOKE EXECUTE ON FUNCTION radcore.guard_payment_cancel() FROM PUBLIC;
 --> statement-breakpoint
 CREATE TRIGGER guard_payment_cancel BEFORE UPDATE OF status ON radcore.payments FOR EACH ROW EXECUTE FUNCTION radcore.guard_payment_cancel();
+--> statement-breakpoint
+-- A registered document is cancelled only once nothing is applied to it, payment or credit, and nothing it credits
+-- stays applied (ADR-005 §7a, the architect on #242). A document's migration attaches it before registering the table:
+--   CREATE TRIGGER guard_applied_cancel BEFORE UPDATE OF status ON radcore.<table>
+--     FOR EACH ROW EXECUTE FUNCTION radcore.guard_applied_cancel();
+CREATE FUNCTION radcore.guard_applied_cancel() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, radcore, pg_temp AS $$
+BEGIN
+  IF NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled'
+     AND (radcore.document_applied(TG_TABLE_NAME, NEW.id) <> 0
+       OR coalesce((SELECT sum(CASE c.direction WHEN 'apply' THEN c.amount ELSE -c.amount END) FROM radcore.credit_applications c
+                    WHERE c.credit_table = TG_TABLE_NAME AND c.credit_id = NEW.id), 0) <> 0) THEN
+    RAISE EXCEPTION '% % still has payments or credits applied: reverse them first', TG_TABLE_NAME, NEW.id
+      USING ERRCODE = 'RA006', CONSTRAINT = 'document_still_applied';
+  END IF;
+  RETURN NEW;
+END $$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION radcore.guard_applied_cancel() FROM PUBLIC;
+--> statement-breakpoint
+-- Registering a table checks it carries what the checks read (id and party_id uuid, status text, total numeric,
+-- business_date date) and has the cancel guard above attached, so a migration that forgets either fails as it runs,
+-- not at its first allocation.
+CREATE FUNCTION radcore.register_allocatable() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, radcore, pg_temp AS $$
+DECLARE
+  rel regclass := to_regclass('radcore.' || quote_ident(NEW.document_table));
+  missing text;
+  want constant text[][] := array[['id', 'uuid'], ['party_id', 'uuid'], ['status', 'text'], ['total', 'numeric'],
+    ['business_date', 'date']];
+BEGIN
+  IF rel IS NULL THEN
+    RAISE EXCEPTION 'there''s no table radcore.%', NEW.document_table USING ERRCODE = 'RA006', CONSTRAINT = 'allocatable_document_shape';
+  END IF;
+  SELECT string_agg(want[i][1] || ' ' || want[i][2], ', ') INTO missing FROM generate_subscripts(want, 1) AS i
+    WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a WHERE a.attrelid = rel AND a.attname = want[i][1] AND a.attnum > 0
+                        AND NOT a.attisdropped AND a.atttypid = want[i][2]::regtype);
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION '% can''t be registered: it has no %', NEW.document_table, missing
+      USING ERRCODE = 'RA006', CONSTRAINT = 'allocatable_document_shape';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t WHERE t.tgrelid = rel AND t.tgfoid = 'radcore.guard_applied_cancel()'::regprocedure
+                   AND t.tgenabled <> 'D') THEN
+    RAISE EXCEPTION '% can''t be registered: attach radcore.guard_applied_cancel() to it first', NEW.document_table
+      USING ERRCODE = 'RA006', CONSTRAINT = 'allocatable_document_shape';
+  END IF;
+  RETURN NEW;
+END $$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION radcore.register_allocatable() FROM PUBLIC;
+--> statement-breakpoint
+CREATE TRIGGER register_allocatable BEFORE INSERT ON radcore.allocatable_documents FOR EACH ROW EXECUTE FUNCTION radcore.register_allocatable();
 --> statement-breakpoint
 -- RAD-24's rule for a view's migration: no writing through a view, since a simple view writes as its owner.
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.v_document_paid FROM radcore_app;
