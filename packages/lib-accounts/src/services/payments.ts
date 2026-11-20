@@ -10,7 +10,7 @@ import { and, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelPaymentContract, recordPaymentContract } from '../contract.ts';
 import { paymentUsed } from './allocations.ts';
-import { holdPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
+import { holdPeriod, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { holdParty } from './parties.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -100,8 +100,8 @@ async function checkRefund(ctx: Ctx, r: Readonly<{ receiptId: string; partyId: s
  * again here, under the receipt's lock, whatever path posts it. */
 async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
   const tx = accountsTx(ctx);
-  // The period lock first, then the payment's row (ADR-006 §1). An approval's version() has already locked the row,
-  // as the engine reads it before deciding; that path takes the period lock second (the auditor on #234).
+  // The period lock first, then the payment's row (ADR-006 §1). An approval holds the period already, through
+  // cashLimitSpec's lockFirst, before the engine locks the row (the architect on RAD-114); holding it again is free.
   const [dated] = await tx.select({ businessDate: payments.businessDate }).from(payments).where(eq(payments.id, id)).limit(1);
   if (dated !== undefined) await holdPeriod(ctx, dated.businessDate);
   const [p] = await tx.select().from(payments).where(and(eq(payments.id, id), eq(payments.status, 'draft'))).limit(1).for('update');
@@ -141,6 +141,11 @@ export const cashLimitSpec: ApprovalSpec<{ kind: string; partyId: string; busine
       amount: payments.amount, accountId: payments.accountId }).from(payments).where(eq(payments.id, id)).limit(1);
     const [row] = forUpdate ? await q.for('update') : await q;
     return row === undefined ? null : { ...row, amount: roundMoney(row.amount) };
+  },
+  // The period's locks first, before the engine locks the payment (the architect on RAD-114), refusing nothing: a
+  // reject must go through whatever the period says, and an approval's post() checks the date under the same locks.
+  async lockFirst(ctx) {
+    await lockPeriod(ctx);
   },
   async approved(ctx, id) {
     await post(ctx, id);
