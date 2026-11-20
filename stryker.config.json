@@ -16,7 +16,8 @@
     "packages/lib-accounts/src/services/posting.ts",
     "packages/lib-stock/src/engine/valuation.ts",
     "packages/lib-sales/src/services/checks-rules.ts",
-    "packages/lib-sales/src/services/document-rules.ts"
+    "packages/lib-sales/src/services/document-rules.ts",
+    "packages/lib-sales/src/services/invoice-rules.ts"
   ],
   "coverageAnalysis": "perTest",
   "reporters": [

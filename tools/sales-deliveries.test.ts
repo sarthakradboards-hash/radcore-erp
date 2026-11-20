@@ -18,6 +18,7 @@ import {
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -46,7 +47,7 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
   /** A customer with credit, an item (serialised or not) rated 5%, a store holding `stock` of it in batch B1 at `rate`,
    * and a confirmed order for `ordered` at 50.00 each, made by `maker`. */
   async function setup(o: { stock: string; rate: string; ordered: string; serials?: string[]; maker?: Principal }) {
-    const at = await run(async (ctx) => {
+    const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: ['customer'], gstin: null, pan: null, composition: false,
         stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
@@ -61,6 +62,12 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: placeId,
         qty: q(o.stock), rate: unitPriceString().parse(o.rate), batches: [{ batchNo: 'B1', qty: q(o.stock) }],
         ...(o.serials === undefined ? {} : { units: o.serials.map((serialNo) => ({ serialNo })) }) }] });
+      return { partyId, itemId, placeId };
+    }, o.maker);
+    // The party's list prices the item at the orders' 50.00: a priced line with no list rate needs approval (#256).
+    await priceListFrom(su, DATE, { [made.itemId]: '50' }, { partyId: made.partyId });
+    const at = await run(async (ctx) => {
+      const { partyId, itemId, placeId } = made;
       const { id: orderId } = await addOrder(ctx, { partyId, businessDate: DATE, notes: null, lines: [{ itemId, qty: q(o.ordered),
         rate: unitPriceString().parse('50'), discountPercent: percentString({ max: '100' }).parse('0') }] });
       await confirmOrderNow(ctx, { id: orderId });

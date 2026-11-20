@@ -5,6 +5,7 @@
       "@radcore/db/crm#leads",
       "@radcore/db/sales#deliveries",
       "@radcore/db/sales#deliveryReturns",
+      "@radcore/db/sales#invoices",
       "@radcore/db/sales#salesOrders",
       "@radcore/db/sales#salesQuotes"
     ],

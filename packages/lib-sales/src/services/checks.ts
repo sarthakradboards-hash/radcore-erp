@@ -15,7 +15,7 @@ import { roleOf, type ApprovalSpec, type ApprovalVersion, type Ctx } from '@radc
 import { averageCost, purchasePrices } from '@radcore/lib-stock';
 import type { z } from 'zod';
 import type { saleCheck } from '../contract/checks.ts';
-import { costResult, creditResult, discountPercent, issuesOf, overDiscount, type CheckIssue } from './checks-rules.ts';
+import { costResult, creditResult, discountPercent, issuesOf, noListRate, overDiscount, type CheckIssue } from './checks-rules.ts';
 import { discountLimitOf } from './discounts.ts';
 
 /** The stages a sale is checked at (RC-061). */
@@ -79,7 +79,9 @@ export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult
     credit: { limit: party.creditLimit, outstanding: owed.outstanding, notInvoiced, adds: dec(s.adds).toFixed(2) as Money,
       after: credit.after, overLimit: credit.overLimit, overdue: credit.overdue, oldestUnpaid: owed.oldestUnpaid },
     lines,
-    issues: issuesOf(credit, lines.map((l) => ({ cost: l.check === 'not_priced' ? 'ok' : l.check, overDiscount: l.overDiscount }))),
+    // A priced line with no list rate needs approval too (the architect's #256), as one with no cost does.
+    issues: issuesOf(credit, lines.map((l, i) => ({ cost: l.check === 'not_priced' ? 'ok' : l.check,
+      noListRate: noListRate(s.lines[i]?.rate ?? null, s.lines[i]?.listRate ?? null), overDiscount: l.overDiscount }))),
   };
 }
 

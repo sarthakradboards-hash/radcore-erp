@@ -17,6 +17,7 @@ import { checkDate, mayEdit, mayMove } from './document-rules.ts';
 import { checkedLines, sellingTo, today } from './document-lines.ts';
 import { hasDeliveries, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
+import { listRatesOf, priceListOf } from './party-price-lists.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -46,6 +47,14 @@ async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = fal
 
 // The bound an order's date keeps from its quote (§4), if it came from one.
 const fromQuote = (o: { quoteDate: string | null }) => (o.quoteDate === null ? undefined : { date: o.quoteDate, what: 'quote' });
+
+/** The order's list (its party's, else the default) and each line with that list's rate for its item on the order's
+ * date, filled here and never from input (the architect on RAD-113). */
+async function priced(ctx: Ctx, partyId: string, on: string, lines: Awaited<ReturnType<typeof checkedLines>>) {
+  const priceListId = await priceListOf(ctx, partyId);
+  const rates = await listRatesOf(ctx, priceListId, on, lines.map((l) => l.itemId));
+  return { priceListId, lines: lines.map((l, i) => ({ ...l, listRate: rates[i]?.listRate ?? null, listVersionId: rates[i]?.listVersionId ?? null })) };
+}
 
 /** GET /sales/orders (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Promise<Out<typeof listOrders>> {
@@ -79,10 +88,10 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promi
 export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
   checkDate(input.businessDate, today());
   await sellingTo(ctx, input.partyId);
-  const lines = await checkedLines(ctx, input.lines);
+  const { priceListId, lines } = await priced(ctx, input.partyId, input.businessDate, await checkedLines(ctx, input.lines));
   const tx = salesTx(ctx);
-  const [row] = await tx.insert(salesOrders).values({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes })
-    .returning({ id: salesOrders.id });
+  const [row] = await tx.insert(salesOrders).values({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes,
+    priceListId }).returning({ id: salesOrders.id });
   if (row === undefined) throw new Error('the insert returned no row');
   await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: row.id })));
   return row;
@@ -101,9 +110,9 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   // A delivery, even a draft, names the order's lines, so they're fixed once one exists: close the order short instead.
   if (await hasDeliveries(ctx, id)) throw new AppError('order_delivered', 'This order has deliveries, so its lines are fixed');
   await sellingTo(ctx, input.partyId);
-  const lines = await checkedLines(ctx, input.lines);
+  const { priceListId, lines } = await priced(ctx, input.partyId, input.businessDate, await checkedLines(ctx, input.lines));
   const tx = salesTx(ctx);
-  await tx.update(salesOrders).set({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes })
+  await tx.update(salesOrders).set({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes, priceListId })
     .where(eq(salesOrders.id, id));
   await tx.delete(salesOrderLines).where(eq(salesOrderLines.orderId, id));
   await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: id })));
