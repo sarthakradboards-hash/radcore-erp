@@ -47,6 +47,8 @@ CREATE TABLE "radcore"."payment_allocations" (
 	CONSTRAINT "ck_payment_allocations_reverse" CHECK (("radcore"."payment_allocations"."direction" = 'reverse') = ("radcore"."payment_allocations"."reverses_id" is not null))
 );
 --> statement-breakpoint
+ALTER TABLE "radcore"."payments" ADD COLUMN "held_for_table" text;--> statement-breakpoint
+ALTER TABLE "radcore"."payments" ADD COLUMN "held_for_id" uuid;--> statement-breakpoint
 ALTER TABLE "radcore"."credit_applications" ADD CONSTRAINT "fk_credit_applications_reverses" FOREIGN KEY ("reverses_id","credit_table","credit_id","document_table","document_id","amount","reverses_direction") REFERENCES "radcore"."credit_applications"("id","credit_table","credit_id","document_table","document_id","amount","direction") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."credit_applications" ADD CONSTRAINT "fk_credit_applications_fy_start" FOREIGN KEY ("fy_start") REFERENCES "radcore"."financial_years"("start") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."payment_allocations" ADD CONSTRAINT "payment_allocations_payment_id_payments_id_fk" FOREIGN KEY ("payment_id") REFERENCES "radcore"."payments"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -60,6 +62,9 @@ CREATE INDEX "ix_payment_allocations_payment" ON "radcore"."payment_allocations"
 CREATE INDEX "ix_payment_allocations_document" ON "radcore"."payment_allocations" USING btree ("document_table","document_id");--> statement-breakpoint
 CREATE INDEX "ix_payment_allocations_fy_start" ON "radcore"."payment_allocations" USING btree ("fy_start");--> statement-breakpoint
 CREATE INDEX "ix_payment_allocations_reverses" ON "radcore"."payment_allocations" USING btree ("reverses_id","document_table","document_id","payment_id","amount","reverses_direction");--> statement-breakpoint
+CREATE INDEX "ix_payments_held_for" ON "radcore"."payments" USING btree ("held_for_table","held_for_id");--> statement-breakpoint
+ALTER TABLE "radcore"."payments" ADD CONSTRAINT "ck_payments_held_for" CHECK (("radcore"."payments"."held_for_table" is null) = ("radcore"."payments"."held_for_id" is null) and ("radcore"."payments"."held_for_table" is null or ("radcore"."payments"."kind" = 'receipt'
+    and "radcore"."payments"."held_for_table" ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || "radcore"."payments"."held_for_table") is not null)));--> statement-breakpoint
 CREATE VIEW "radcore"."v_document_paid" AS (select document_table, document_id, sum(allocated) as allocated, sum(credited) as credited,
     sum(allocated + credited) as paid
   from (select a.document_table, a.document_id, case a.direction when 'apply' then a.amount else -a.amount end as allocated,
@@ -317,6 +322,11 @@ END $$;
 REVOKE EXECUTE ON FUNCTION radcore.register_allocatable() FROM PUBLIC;
 --> statement-breakpoint
 CREATE TRIGGER register_allocatable BEFORE INSERT ON radcore.allocatable_documents FOR EACH ROW EXECUTE FUNCTION radcore.register_allocatable();
+--> statement-breakpoint
+-- A receipt's earmark (RAD-117) is audited with the rest of the row: attached again, with the new columns kept.
+SELECT radcore.audit_attach('payments', keep => array['kind', 'status', 'number', 'party_id', 'business_date', 'amount', 'tds',
+  'account_id', 'refund_of_id', 'narration', 'held_for_table', 'held_for_id', 'posted_entry_id', 'cancelled_at', 'cancelled_by',
+  'cancel_reason', 'cancel_entry_id']);
 --> statement-breakpoint
 -- RAD-24's rule for a view's migration: no writing through a view, since a simple view writes as its owner.
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.v_document_paid FROM radcore_app;

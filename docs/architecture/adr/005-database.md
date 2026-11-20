@@ -216,10 +216,10 @@ They are append-only with explicit reversals:
 - **The cap.** A deferred check holds net allocations plus net credit applications at or below the document's
   total.
   - It **takes its locks in one order**: the payments and credits it sums against, by id, then the documents, by
-    table and id (a row is only ever one side). A service that writes these rows takes the same locks before its
-    first insert: its payments and credits by id, then its rows inserted in document order, so the checks lock the
-    documents in order too. A multi-line allocation, or a reversal, can't hold a document while it waits for a
-    payment. Only then does the check sum.
+    table and id (a row is only ever one side). A service that writes these rows locks its payments by id before its
+    first insert, then inserts its rows in document order, so the checks lock the documents in order too. A credit is
+    another module's row, so its check locks it, before the charge. A multi-line allocation, or a reversal, can't
+    hold a document while it waits for a payment. Only then does the check sum.
   - A payment's net allocations stay at or below its amount to the party (gross of TDS held back, F8), and a
     credit's net applications at or below its total.
   - So two transactions allocating 60 each against an invoice of 100 can't both pass: the second waits for the

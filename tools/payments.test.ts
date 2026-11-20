@@ -5,7 +5,7 @@
 // the limits waits as a draft for an owner's approval (RC-114). A posted payment is frozen, and cancelled only by a
 // mirror entry dated the cancellation's day. Each test uses parties of its own.
 import { randomUUID } from 'node:crypto';
-import { cancelPayment, cashLimitSpec, openFinancialYear, recordPayment } from '@radcore/lib-accounts';
+import { cancelPayment, cashLimitSpec, heldLeft, openFinancialYear, recordHeldReceipt, recordPayment, refundHeld } from '@radcore/lib-accounts';
 import { recordPaymentContract } from '@radcore/lib-accounts/contract';
 import { moneyString, requestFor } from '@radcore/lib-common';
 import { AppError, decideApproval, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -127,6 +127,63 @@ describe.skipIf(!url || !superUrl)('receipts, payments and refunds', { timeout: 
     } finally {
       await server.stop();
     }
+  });
+
+  it('refunds an advance held for a document only through that document, never over the route (RAD-117)', async () => {
+    const p = await party();
+    const bank = await systemId('bank');
+    // Any table stands in for bookings here: lib-accounts never reads the document it names.
+    const booking = { table: 'parties', id: randomUUID() };
+    const advance = await run((ctx) => recordHeldReceipt(ctx, { partyId: p, businessDate: DAY, amount: m('500.00'), accountId: bank }, booking));
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => CLERK, routes: accountRoutes }),
+      0, '127.0.0.1');
+    try {
+      const sent = requestFor(recordPaymentContract, { kind: 'refund', partyId: p, businessDate: DAY, amount: '100.00', accountId: bank,
+        refundOf: advance.id });
+      const res = await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { method: sent.method, body: sent.body ?? null,
+        headers: { 'content-type': 'application/json', origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin', 'idempotency-key': randomUUID() } });
+      expect([res.status, ((await res.json()) as { code?: string }).code]).toEqual([422, 'refund_through_owner']);
+    } finally {
+      await server.stop();
+    }
+    const through = (receiptId: string, owner: { table: string; id: string }, amount = '100.00') => code(run((ctx) => refundHeld(ctx,
+      { receiptId, owner, partyId: p, businessDate: DAY, amount: m(amount), accountId: bank })));
+    expect(await through(advance.id, { ...booking, id: randomUUID() })).toBe('refund_through_owner');
+    expect(await through(advance.id, booking, '500.01')).toBe('exceeds_receipt');
+    expect(await through(advance.id, booking)).toBe('ok');
+    const plain = await run((ctx) => recordPayment(ctx, { kind: 'receipt', partyId: p, businessDate: DAY, amount: m('50.00'), accountId: bank }));
+    expect(await through(plain.id, booking)).toBe('refund_through_owner');
+  });
+
+  it('counts a held receipt’s refunds waiting for approval as gone from what’s left, until refused (the architect on RAD-117)', async () => {
+    const c = await su.connect();
+    let ownerId = '';
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      ownerId = (await c.query<{ id: string }>("insert into radcore.users (email, display_name, role) values ($1, 'Owner', 'owner') returning id",
+        [`${randomUUID()}@example.test`])).rows[0]?.id ?? '';
+      await c.query('commit');
+    } finally {
+      c.release();
+    }
+    const p = await party();
+    const booking = { table: 'parties', id: randomUUID() };
+    const advance = await run(async (ctx) => recordHeldReceipt(ctx, { partyId: p, businessDate: DAY, amount: m('20000.00'),
+      accountId: await systemId('bank') }, booking));
+    const left = () => run((ctx) => heldLeft(ctx, booking)).then((h) => h.left);
+    expect(await left()).toBe('20000.00');
+    // In cash past the day's limit, it waits as a draft for an owner.
+    const waiting = await run(async (ctx) => refundHeld(ctx, { receiptId: advance.id, owner: booking, partyId: p, businessDate: DAY,
+      amount: m('12000.00'), accountId: await systemId('cash') }));
+    expect(waiting).toMatchObject({ status: 'pending_approval' });
+    expect(await left()).toBe('8000.00');
+    const [request] = (await su.query<{ id: string }>("select id from radcore.approvals where kind = 'cash-limit' and record_id = $1",
+      [waiting.id])).rows;
+    const owner: Principal = { kind: 'user', userId: ownerId, permissions: ['payments:approve'] };
+    await as(owner)((ctx) => decideApproval(ctx, cashLimitSpec, request?.id ?? '', { decision: 'reject', reason: 'Pay it by bank' }));
+    expect(await left()).toBe('20000.00');
   });
 
   it('refuses TDS on a refund, TDS of the whole amount, a date after today, and a year never opened', async () => {

@@ -229,6 +229,10 @@ export const payments = radcoreTable('payments', {
   accountId: uuid().notNull().references(() => accounts.id, { onDelete: 'restrict' }),
   refundOfId: uuid().references((): AnyPgColumn => payments.id, { onDelete: 'restrict' }),
   narration: boundedText({ max: 500 }),
+  // A receipt held for a document (a booking's advance, RAD-117), named as an allocation names one: refunded only
+  // through that document's service (refundHeld). lib-accounts never reads the document.
+  heldForTable: text(),
+  heldForId: uuid(),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
   cancelledAt: timestamp({ withTimezone: true }),
   cancelledBy: text(),
@@ -242,11 +246,14 @@ export const payments = radcoreTable('payments', {
   check('ck_payments_refund', sql`(${t.kind} = 'refund') = (${t.refundOfId} is not null) and (${t.kind} <> 'refund' or ${t.tds} = 0)`),
   check('ck_payments_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
   check('ck_payments_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
+  check('ck_payments_held_for', sql`(${t.heldForTable} is null) = (${t.heldForId} is null) and (${t.heldForTable} is null or (${t.kind} = 'receipt'
+    and ${t.heldForTable} ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || ${t.heldForTable}) is not null))`),
   index('ix_payments_party_date').on(t.partyId, t.businessDate),
   index('ix_payments_refund_of').on(t.refundOfId),
   index('ix_payments_account').on(t.accountId),
   index('ix_payments_posted_entry').on(t.postedEntryId),
   index('ix_payments_cancel_entry').on(t.cancelEntryId),
+  index('ix_payments_held_for').on(t.heldForTable, t.heldForId),
 ]);
 
 /**

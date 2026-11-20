@@ -1,5 +1,5 @@
 {
-  "id": "77e40485-222b-44fd-b0d8-52fa56e78a2d",
+  "id": "76229499-dd72-4549-ba48-e4466ddf941a",
   "prevId": "827de9a3-1402-4215-9157-1a087f0ad180",
   "version": "7",
   "dialect": "postgresql",
@@ -1912,6 +1912,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "held_for_table": {
+          "name": "held_for_table",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "held_for_id": {
+          "name": "held_for_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "posted_entry_id": {
           "name": "posted_entry_id",
           "type": "uuid",
@@ -2052,6 +2064,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "ix_payments_held_for": {
+          "name": "ix_payments_held_for",
+          "columns": [
+            {
+              "expression": "held_for_table",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "held_for_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2177,6 +2210,10 @@
         "ck_payments_cancelled": {
           "name": "ck_payments_cancelled",
           "value": "(\"radcore\".\"payments\".\"status\" = 'cancelled') = (\"radcore\".\"payments\".\"cancel_entry_id\" is not null)"
+        },
+        "ck_payments_held_for": {
+          "name": "ck_payments_held_for",
+          "value": "(\"radcore\".\"payments\".\"held_for_table\" is null) = (\"radcore\".\"payments\".\"held_for_id\" is null) and (\"radcore\".\"payments\".\"held_for_table\" is null or (\"radcore\".\"payments\".\"kind\" = 'receipt'\n    and \"radcore\".\"payments\".\"held_for_table\" ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || \"radcore\".\"payments\".\"held_for_table\") is not null))"
         }
       },
       "isRLSEnabled": false

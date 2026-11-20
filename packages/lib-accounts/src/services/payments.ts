@@ -4,7 +4,7 @@
 // the approval posts it. A posted one is cancelled only by a mirror entry dated the cancellation's day (ADR-007 §6).
 import { accounts, accountsTx, parties, payments } from '@radcore/db/accounts';
 import { dec, indiaDate, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
-import { AppError, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
+import { AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
   from '@radcore/lib-platform';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
@@ -53,14 +53,25 @@ function linesOf(p: { kind: string; partyId: string; amount: Money; tds: Money; 
   return [{ account: { system: 'debtors' }, partyId: p.partyId, debit: p.amount }, { account: { id: p.accountId }, credit: p.amount }];
 }
 
+/** The document a receipt is held for (a booking's advance, RAD-117), named as an allocation names one. */
+export type HeldFor = Readonly<{ table: string; id: string }>;
+const heldKey = (h: HeldFor | null) => (h === null ? null : `${h.table}:${h.id.toLowerCase()}`);
+
 /** A refund's checks, against its receipt's row, locked: the receipt still posted, the same party, not dated before it,
  * and its posted refunds with this one within its amount. Run when it's recorded and again when it posts, so a refund
- * that waited for approval can't post past the cap, or after its receipt was cancelled (the architect on #234). */
-async function checkRefund(ctx: Ctx, r: Readonly<{ receiptId: string; partyId: string; businessDate: string; amount: Money }>) {
+ * that waited for approval can't post past the cap, or after its receipt was cancelled (the architect on #234). When
+ * recorded, `owner` is who asks: the route (null) refunds only a receipt held for nothing, and a document's service
+ * only one held for it. At posting it's left out: a posted receipt's earmark never changes (#185's guard). */
+async function checkRefund(ctx: Ctx, r: Readonly<{ receiptId: string; partyId: string; businessDate: string; amount: Money }>,
+  owner?: HeldFor | null) {
   const tx = accountsTx(ctx);
   const [receipt] = await tx.select().from(payments).where(and(eq(payments.id, r.receiptId), eq(payments.kind, 'receipt'))).limit(1)
     .for('update');
   if (receipt?.status !== 'posted') return refuse('receipt_not_posted', 'The receipt isn’t posted');
+  const held = receipt.heldForTable === null || receipt.heldForId === null ? null : { table: receipt.heldForTable, id: receipt.heldForId };
+  if (owner !== undefined && heldKey(held) !== heldKey(owner)) {
+    refuse('refund_through_owner', held === null ? 'This receipt isn’t held for that document' : 'This is an advance: refund it through what it’s held for');
+  }
   if (receipt.partyId !== r.partyId) refuse('refund_other_party', 'A refund goes back to the party who paid');
   if (r.businessDate < receipt.businessDate) refuse('date_before_source', 'A refund is dated on or after its receipt');
   // What's left of a receipt is its amount less its posted refunds and its net allocations (the architect on #234).
@@ -120,8 +131,49 @@ export const cashLimitSpec: ApprovalSpec<{ kind: string; partyId: string; busine
   async rejected() {},
 };
 
+/** For a document's own service (bookings' key rule, RAD-117; the architect's ruling): what's left of each posted
+ * receipt held for `owner`, its amount less its net allocations, its posted refunds and its refunds still waiting for
+ * an owner's cash-limit approval. Not a receipt's cap, which checkRefund holds: the booking judges which key a refund
+ * needs against this, under its own row's lock, before it calls refundHeld. */
+export async function heldLeft(ctx: Ctx, owner: HeldFor): Promise<{ left: Money; receipts: readonly { id: string; left: Money }[] }> {
+  const tx = accountsTx(ctx);
+  const held = await tx.select({ id: payments.id, amount: payments.amount }).from(payments).where(and(eq(payments.kind, 'receipt'),
+    eq(payments.status, 'posted'), eq(payments.heldForTable, owner.table), eq(payments.heldForId, owner.id)));
+  const drafts = held.length === 0 ? [] : await tx.select({ id: payments.id, of: payments.refundOfId, amount: payments.amount }).from(payments)
+    .where(and(inArray(payments.refundOfId, held.map((h) => h.id)), eq(payments.status, 'draft')));
+  const waiting = await awaitingApproval(ctx, cashLimitSpec, drafts.map((d) => d.id));
+  const receipts = [];
+  for (const h of held) {
+    const { allocated, refunded } = await paymentUsed(ctx, h.id);
+    const pending = sum(drafts.filter((d) => d.of === h.id && waiting.has(d.id)).map((d) => d.amount));
+    receipts.push({ id: h.id, left: roundMoney(dec(h.amount).minus(allocated).minus(refunded).minus(pending)) });
+  }
+  return { left: roundMoney(sum(receipts.map((r) => r.left))), receipts };
+}
+
 /** POST /payments: a receipt, payment or refund, posted now, or held as a draft for an owner past the cash limit. */
-export async function recordPayment(ctx: Ctx, input: In<typeof recordPaymentContract>): Promise<Out<typeof recordPaymentContract>> {
+export function recordPayment(ctx: Ctx, input: In<typeof recordPaymentContract>): Promise<Out<typeof recordPaymentContract>> {
+  return record(ctx, input, null, null);
+}
+
+/** For a document's own service (bookings, M3-13), reached by no route: a receipt held for `heldFor` (a booking's
+ * advance), refunded then only through refundHeld. Its own function, not an option on recordPayment, since a route
+ * passes its service a third argument. */
+export function recordHeldReceipt(ctx: Ctx, input: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf'>>, heldFor: HeldFor):
+  Promise<Out<typeof recordPaymentContract>> {
+  return record(ctx, { ...input, kind: 'receipt' }, heldFor, null);
+}
+
+/** For a document's own service (bookings, M3-13), reached by no route: refunds a receipt held for `owner`, with the
+ * same checks as any refund (its cap, its date, the cash limit). */
+export function refundHeld(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'tds'> & {
+  receiptId: string; owner: HeldFor }>): Promise<Out<typeof recordPaymentContract>> {
+  const { receiptId, owner, ...rest } = r;
+  return record(ctx, { ...rest, kind: 'refund', refundOf: receiptId }, null, owner);
+}
+
+async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor: HeldFor | null, owner: HeldFor | null):
+  Promise<Out<typeof recordPaymentContract>> {
   const tx = accountsTx(ctx);
   // TDS held back is optional: none when it's left out.
   const p = { ...input, tds: input.tds ?? roundMoney('0') };
@@ -132,13 +184,14 @@ export async function recordPayment(ctx: Ctx, input: In<typeof recordPaymentCont
   await holdPeriod(ctx, p.businessDate);
   if (p.kind === 'refund') {
     if (p.refundOf === undefined) return refuse('refund_needs_receipt', 'Say which receipt this refund pays back');
-    await checkRefund(ctx, { receiptId: p.refundOf, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount });
+    await checkRefund(ctx, { receiptId: p.refundOf, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount }, owner);
   } else if (p.refundOf !== undefined) {
     refuse('refund_needs_receipt', 'Only a refund names a receipt');
   }
   const { cash } = await moneyAccount(ctx, p.accountId);
   const [row] = await tx.insert(payments).values({ kind: p.kind, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount, tds: p.tds,
-    accountId: p.accountId, refundOfId: p.refundOf ?? null, narration: p.narration ?? null }).returning({ id: payments.id });
+    accountId: p.accountId, refundOfId: p.refundOf ?? null, narration: p.narration ?? null, heldForTable: heldFor?.table ?? null,
+    heldForId: heldFor?.id ?? null }).returning({ id: payments.id });
   const id = row?.id ?? refuse('server_error', 'The payment was not stored');
   if (cash && await pastCashLimit(ctx, { id, ...p })) {
     await requestApproval(ctx, cashLimitSpec, id);

@@ -217,7 +217,8 @@ export const recordPaymentContract = defineContract({
   }),
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
   errors: ['invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',
-    'refund_other_party', 'date_before_source', 'exceeds_receipt', 'unknown_account', 'not_money_account', 'account_inactive', 'not_draft'],
+    'refund_other_party', 'date_before_source', 'exceeds_receipt', 'unknown_account', 'not_money_account', 'account_inactive', 'not_draft',
+    'refund_through_owner'],
 });
 
 /** POST /payments/:id/cancel: cancels a posted payment by a mirror entry dated `businessDate`, with the reason. */
