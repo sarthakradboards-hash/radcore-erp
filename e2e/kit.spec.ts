@@ -100,7 +100,7 @@ test.describe('the form', () => {
     await expect(announced(page, 'Saved')).toHaveCount(1);
     await expect(alert(page)).toHaveText('');
     expect(JSON.parse((await lastSent(page).textContent()) ?? '{}')).toEqual(
-      { name: 'Asha Traders & Sons', limit: '75000.50', city: 'Pune', gstRegistered: false, note: 'Prefers morning delivery' });
+      { name: 'Asha Traders & Sons', limit: '75000.50', city: 'Pune', gstRegistered: false, deals: ['Retail'], note: 'Prefers morning delivery' });
     // The masked phone is text, not an input whose value would be voiced: a screen reader hears the words, not
     // "bullet bullet…" (RAD-103, the architect on RAD-40; the auditor on #164).
     const phone = form(page).getByRole('group', { name: 'Phone' });
@@ -131,6 +131,21 @@ test('a select and a checkbox are labelled, work by keyboard, and send what was 
   await city.selectOption('');
   await save(page).click();
   await expect(city).toHaveAccessibleDescription('Choose a city');
+});
+
+test('a group of checkboxes is one labelled group, sends what is ticked, and says when none is (RAD-99)', async ({ page }) => {
+  await open(page);
+  const deals = form(page).getByRole('group', { name: 'Deals in' });
+  await expect(deals.getByRole('checkbox', { name: 'Retail' })).toBeChecked();
+  await deals.getByRole('checkbox', { name: 'Wholesale' }).check();
+  await deals.getByRole('checkbox', { name: 'Retail' }).uncheck();
+  await field(page, 'Name').fill('Asha Traders');
+  await save(page).click();
+  await expect(announced(page, 'Saved')).toHaveCount(1);
+  expect(JSON.parse((await lastSent(page).textContent()) ?? '{}')).toMatchObject({ deals: ['Wholesale'] });
+  await deals.getByRole('checkbox', { name: 'Wholesale' }).uncheck();
+  await save(page).click();
+  await expect(deals).toHaveAccessibleDescription('Choose at least one');
 });
 
 test('a masked value reads "Hidden", or "Hidden, ends …" for a last-4 field; the bullets are hidden from screen readers', async ({ page }) => {
