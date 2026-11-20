@@ -111,3 +111,14 @@ export async function setCreditTerms(ctx: Ctx, { id, creditDays, creditLimit }: 
   if (done.length === 0) throw new AppError('not_found', 'There is no such party');
   return {};
 }
+
+/**
+ * ADR-006 §1's step 3: the party whose credit a sale checks, held `FOR NO KEY UPDATE` after the stage has locked its own
+ * documents and before checkSale, so two sales to one party take turns at the credit check (ADR-007 §9) instead of
+ * both passing on the same balance. `NO KEY`, so inserts that reference the party by foreign key (`KEY SHARE`) don't
+ * wait on it. A party that isn't there answers not_found.
+ */
+export async function holdParty(ctx: Ctx, partyId: string): Promise<void> {
+  const [row] = await accountsTx(ctx).select({ id: parties.id }).from(parties).where(eq(parties.id, partyId)).limit(1).for('no key update');
+  if (row === undefined) throw new AppError('not_found', 'There is no such party');
+}

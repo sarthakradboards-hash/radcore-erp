@@ -1,17 +1,22 @@
-// lib-sales's routes (ADR-001 §6): declarations only. Price lists, their approval and discount limits (RAD-98); quotes and
-// orders (RAD-112).
+// lib-sales's routes (ADR-001 §6): declarations only. Price lists, their approval and discount limits (RAD-98); quotes,
+// orders, deliveries and delivery returns (RAD-112).
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
   addList, askApproval, changeList, getChanges, getList, getVersion, listLimits, listListsPage, listRatesPage, priceListApproval,
   priceOf, putRates, setLimit, setTax, startDraft, acceptQuoteNow, addOrder, addQuote, cancelOrderNow, changeOrder, changeQuote,
   closeOrderNow, closeQuoteNow, confirmOrderNow, dropOrder, dropQuote, getOrderById, getQuoteById, listOrdersPage, listQuotesPage,
-  sendQuoteNow, askOrderOverride, orderOverride,
+  sendQuoteNow, askOrderOverride, orderOverride, addDelivery, askDeliveryOverride, changeDelivery, deliveryOverride, dropDelivery,
+  getDeliveryById, listDeliveriesPage, listToInvoicePage, postDeliveryNow, addDeliveryReturn, changeDeliveryReturn, dropDeliveryReturn,
+  getDeliveryReturnById, listDeliveryReturnsPage, postDeliveryReturnNow,
 } from '@radcore/lib-sales';
 import {
   createPriceList, getPrice, getPriceList, getPriceListChanges, getPriceListVersion, listDiscountLimits, listPriceListRates, listPriceLists, priceListApproval as
   priceListApprovalContracts, putPriceListRates, requestPriceListApproval, setDiscountLimit, setPriceListTax, startPriceListDraft,
   updatePriceList, acceptQuote, cancelOrder, closeOrder, closeQuote, confirmOrder, createOrder, createQuote, deleteOrder, deleteQuote,
   getOrder, getQuote, listOrders, listQuotes, sendQuote, updateOrder, updateQuote, orderOverrideApproval, requestOrderOverride,
+  createDelivery, createDeliveryReturn, deleteDelivery, deleteDeliveryReturn, deliveryOverrideApproval, getDelivery, getDeliveryReturn,
+  listDeliveries, listDeliveryReturns, listToInvoice, postDelivery, postDeliveryReturn, requestDeliveryOverride, updateDelivery,
+  updateDeliveryReturn,
 } from '@radcore/lib-sales/contract';
 
 export default [
@@ -48,4 +53,19 @@ export default [
   defineRoute(cancelOrder, cancelOrderNow),
   defineRoute(requestOrderOverride, askOrderOverride),
   ...defineApproval(orderOverrideApproval, orderOverride),
+  defineRoute(listToInvoice, listToInvoicePage),
+  defineRoute(listDeliveries, listDeliveriesPage),
+  defineRoute(getDelivery, getDeliveryById),
+  defineRoute(createDelivery, addDelivery),
+  defineRoute(updateDelivery, changeDelivery),
+  defineRoute(deleteDelivery, dropDelivery),
+  defineRoute(postDelivery, postDeliveryNow),
+  defineRoute(requestDeliveryOverride, askDeliveryOverride),
+  ...defineApproval(deliveryOverrideApproval, deliveryOverride),
+  defineRoute(listDeliveryReturns, listDeliveryReturnsPage),
+  defineRoute(getDeliveryReturn, getDeliveryReturnById),
+  defineRoute(createDeliveryReturn, addDeliveryReturn),
+  defineRoute(updateDeliveryReturn, changeDeliveryReturn),
+  defineRoute(deleteDeliveryReturn, dropDeliveryReturn),
+  defineRoute(postDeliveryReturn, postDeliveryReturnNow),
 ];

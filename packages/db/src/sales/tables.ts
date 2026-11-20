@@ -1,11 +1,11 @@
-// lib-sales's tables (ADR-001 §3, §5): price lists and discount limits (M2-13, RAD-98); quotes and orders (M3-08,
-// RAD-112). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
+// lib-sales's tables (ADR-001 §3, §5): price lists and discount limits (M2-13, RAD-98); quotes, orders, deliveries and
+// delivery returns (M3-08, RAD-112). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
 import { and, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
-import { boolean, check, date, index, smallint, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { parties } from '../accounts/tables.ts';
-import { boundedText, id, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
+import { boolean, check, date, index, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { journalEntries, parties } from '../accounts/tables.ts';
+import { boundedText, id, json, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
 import { roles } from '../platform/tables.ts';
-import { items } from '../stock/tables.ts';
+import { items, locations } from '../stock/tables.ts';
 
 /** A price list (the retail list, the dealer list): its name, unique whatever its case or spacing. Its prices are its
  * versions'. Switched off, never deleted (ADR-005 §3, D-12). */
@@ -138,4 +138,124 @@ export const salesOrderLines = radcoreTable('sales_order_lines', {
 }, (t) => [
   uniqueIndex('ux_sales_order_lines_line').on(t.orderId, t.lineNo),
   index('ix_sales_order_lines_item').on(t.itemId),
+]);
+
+/**
+ * A delivery (challan, ADR-007 §1, ADR-006 §6, F5): goods out to a party against its order's lines, from one place.
+ * Draft → posted → cancelled (#185's guards). Posting takes the goods out at the place's average, through Goods
+ * Delivered Not Invoiced (entry `delivery`), with the batches the person picked and each serialised unit's `delivered`
+ * event; it sets the number (DC), drawn last, and the entry. Only cancelling (M3-10) changes a posted one.
+ */
+export const deliveries = radcoreTable('deliveries', {
+  id: id(),
+  status: text().notNull().default('draft'),
+  number: text().unique(),
+  orderId: uuid().notNull().references(() => salesOrders.id, { onDelete: 'restrict' }),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  locationId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
+  businessDate: date({ mode: 'string' }).notNull(),
+  notes: boundedText({ max: 500 }),
+  // Whose it is for record scope (ADR-001 §6a, ADR-007 §1): its order's owner, copied when it's made, so a salesperson
+  // sees the delivery of their own order, whoever made it. A principal key ("user:<id>"), as created_by is.
+  owner: text().notNull(),
+  // The version an override of its credit check was approved for (sales:override, M3-07), as an order's.
+  overrideVersion: text(),
+  postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+  cancelledAt: timestamp({ withTimezone: true }),
+  cancelledBy: text(),
+  cancelReason: boundedText({ max: 500 }),
+  cancelEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_deliveries_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
+  // Posted, it has its number, and its entry unless every movement was of value 0 (an entry has two lines or more).
+  check('ck_deliveries_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} <> 'draft' or ${t.postedEntryId} is null)`),
+  check('ck_deliveries_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
+  index('ix_deliveries_order').on(t.orderId),
+  index('ix_deliveries_party_date').on(t.partyId, t.businessDate),
+  index('ix_deliveries_location').on(t.locationId),
+  index('ix_deliveries_posted_entry').on(t.postedEntryId),
+  index('ix_deliveries_cancel_entry').on(t.cancelEntryId),
+  index('ix_deliveries_date').on(t.businessDate, t.id),
+  index('ix_deliveries_owner').on(t.owner),
+]);
+
+/**
+ * A delivery's line: an order line's item, how many went, and what the person picked: the batches (by id, null for
+ * "batch unknown" in negative-stock mode) and, for a serialised item, the serials. Posting writes what the line went
+ * out at (`value`, the stock's cost) and what it sold for (`taxable` and `gst`, at the order line's rate on the
+ * delivery's date), which a return takes its share of and Goods Delivered Not Invoiced holds until it's invoiced.
+ */
+export const deliveryLines = radcoreTable('delivery_lines', {
+  id: id(),
+  deliveryId: uuid().notNull().references(() => deliveries.id, { onDelete: 'cascade' }),
+  lineNo: smallint().notNull(),
+  orderLineId: uuid().notNull().references(() => salesOrderLines.id, { onDelete: 'restrict' }),
+  itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
+  qty: qty({ line: true }).notNull(),
+  picks: json().notNull(),
+  value: money(),
+  taxable: money(),
+  gst: money(),
+}, (t) => [
+  uniqueIndex('ux_delivery_lines_line').on(t.deliveryId, t.lineNo),
+  index('ix_delivery_lines_order_line').on(t.orderLineId),
+  index('ix_delivery_lines_item').on(t.itemId),
+  check('ck_delivery_lines_posted', sql`(${t.value} is null) = (${t.taxable} is null) and (${t.taxable} is null) = (${t.gst} is null)`),
+]);
+
+/**
+ * A delivery return (ADR-006 §4, F5's variant): goods taken back before they're invoiced, all or part of a delivery's
+ * lines, into a place. Draft → posted → cancelled (#185's guards). Posting puts each line back at its share of the
+ * value it went out at, the last return of a line clearing what's left of it exactly, into the batches it left with,
+ * each unit with its `delivery_returned` event, and releases the same from Goods Delivered Not Invoiced (entry
+ * `delivery_return`); it sets the number (DR), drawn last.
+ */
+export const deliveryReturns = radcoreTable('delivery_returns', {
+  id: id(),
+  status: text().notNull().default('draft'),
+  number: text().unique(),
+  deliveryId: uuid().notNull().references(() => deliveries.id, { onDelete: 'restrict' }),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  locationId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
+  businessDate: date({ mode: 'string' }).notNull(),
+  notes: boundedText({ max: 500 }),
+  // Whose it is for record scope: its delivery's owner, copied when it's made (ADR-007 §1).
+  owner: text().notNull(),
+  postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+  cancelledAt: timestamp({ withTimezone: true }),
+  cancelledBy: text(),
+  cancelReason: boundedText({ max: 500 }),
+  cancelEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_delivery_returns_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
+  // Posted, it has its number, and its entry unless every movement was of value 0 (an entry has two lines or more).
+  check('ck_delivery_returns_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} <> 'draft' or ${t.postedEntryId} is null)`),
+  check('ck_delivery_returns_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
+  index('ix_delivery_returns_delivery').on(t.deliveryId),
+  index('ix_delivery_returns_party_date').on(t.partyId, t.businessDate),
+  index('ix_delivery_returns_location').on(t.locationId),
+  index('ix_delivery_returns_posted_entry').on(t.postedEntryId),
+  index('ix_delivery_returns_cancel_entry').on(t.cancelEntryId),
+  index('ix_delivery_returns_date').on(t.businessDate, t.id),
+  index('ix_delivery_returns_owner').on(t.owner),
+]);
+
+/** A return's line: how many of a delivery line come back, into which of the batches it left with, and which serials.
+ * Posting writes its share of the line's value, taxable and GST. */
+export const deliveryReturnLines = radcoreTable('delivery_return_lines', {
+  id: id(),
+  returnId: uuid().notNull().references(() => deliveryReturns.id, { onDelete: 'cascade' }),
+  lineNo: smallint().notNull(),
+  deliveryLineId: uuid().notNull().references(() => deliveryLines.id, { onDelete: 'restrict' }),
+  itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
+  qty: qty({ line: true }).notNull(),
+  picks: json().notNull(),
+  value: money(),
+  taxable: money(),
+  gst: money(),
+}, (t) => [
+  uniqueIndex('ux_delivery_return_lines_line').on(t.returnId, t.lineNo),
+  index('ix_delivery_return_lines_delivery_line').on(t.deliveryLineId),
+  index('ix_delivery_return_lines_item').on(t.itemId),
+  check('ck_delivery_return_lines_posted', sql`(${t.value} is null) = (${t.taxable} is null) and (${t.taxable} is null) = (${t.gst} is null)`),
 ]);

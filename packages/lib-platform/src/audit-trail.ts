@@ -28,6 +28,9 @@ export const COST_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.
   items: Object.freeze(['purchase_price']),
   // Stock at cost: a movement's value and its per-unit rate (ADR-006 §4).
   stock_movements: Object.freeze(['value', 'rate']),
+  // What a delivery line went out at, and a return line's share of it (RAD-112, ADR-006 §4).
+  delivery_lines: Object.freeze(['value']),
+  delivery_return_lines: Object.freeze(['value']),
 });
 
 /** listAuditTrail (audit:read): newest first, within a date range of at most AUDIT_RANGE_MAX_DAYS India days. */

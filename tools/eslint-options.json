@@ -3,9 +3,14 @@
     "tables": [
       "@radcore/db/crm#leadEnquiries",
       "@radcore/db/crm#leads",
+      "@radcore/db/sales#deliveries",
+      "@radcore/db/sales#deliveryReturns",
       "@radcore/db/sales#salesOrders",
       "@radcore/db/sales#salesQuotes"
-    ]
+    ],
+    "exempt": {
+      "packages/lib-sales/src/services/delivered.ts": "sums every posted delivery and return for a party’s credit exposure and an order’s remaining quantities, as aggregates keyed by ids the caller had in scope (the architect on RAD-112)"
+    }
   },
   "radcore/no-sql": {
     "allowNames": [

@@ -300,8 +300,10 @@ must apply the scope in the outermost function around the read: `ctx.see`, `ctx.
 backstop to the list engine's filter and each module's own-scope tests. It can't follow a read or a check into another
 function, a table passed around as a value, a table reached through a relation (`with:`) or a view, or whether the
 check names the right owner. A service that rightly reads past the scope can't say so in a comment, since no comment
-switches a rule off (`noInlineConfig`): it is named, with its reason, in E7's options, which the config test pins. That
-exemption is built with the first real case; E7's tables are empty today.
+switches a rule off (`noInlineConfig`): it is named, with its reason, in E7's options, which the config test pins. Each
+exemption names one file and its reason (`exempt`), and that file's functions return only aggregates keyed by ids their
+caller already had in scope, never another's rows. The first is lib-sales' `services/delivered.ts`, which sums every
+posted delivery and return for a party's credit exposure and an order's remaining quantities (RAD-112).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:

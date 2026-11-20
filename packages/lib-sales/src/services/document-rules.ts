@@ -45,11 +45,28 @@ export function checkDate(date: string, today: string, source?: { date: string; 
 export const netRate = (rate: DecimalInput, discountPercent: DecimalInput): Rate =>
   roundRate(dec(rate).times(dec('100').minus(dec(discountPercent))).div('100'));
 
-/** What a document's lines come to with GST: each line's taxable value, round(qty × rate less discount, 2), plus its
- * GST, round(taxable × rate / 100, 2). The credit check adds it to what the party owes (M3-07). */
+/** One line's taxable value, round(qty × rate less discount, 2), and its GST, round(taxable × rate / 100, 2): what an
+ * order totals, and what a delivery line sells for. */
+export function lineValues(l: { qty: DecimalInput; rate: DecimalInput; discountPercent: DecimalInput; gstPercent: DecimalInput }):
+  { taxable: Money; gst: Money } {
+  const taxable = roundMoney(dec(l.qty).times(dec(l.rate)).times(dec('100').minus(dec(l.discountPercent))).div('100'));
+  return { taxable, gst: roundMoney(dec(taxable).times(dec(l.gstPercent)).div('100')) };
+}
+
+/** What a document's lines come to with GST, each line's figures rounded first. The credit check adds it to what the
+ * party owes (M3-07). */
 export function totalWithGst(lines: readonly { qty: DecimalInput; rate: DecimalInput; discountPercent: DecimalInput; gstPercent: DecimalInput }[]): Money {
   return roundMoney(lines.reduce((sum, l) => {
-    const taxable = dec(roundMoney(dec(l.qty).times(dec(l.rate)).times(dec('100').minus(dec(l.discountPercent))).div('100')));
-    return sum.plus(taxable).plus(dec(roundMoney(taxable.times(dec(l.gstPercent)).div('100'))));
+    const v = lineValues(l);
+    return sum.plus(dec(v.taxable)).plus(dec(v.gst));
   }, dec('0')));
+}
+
+/** A delivery line's share for a return of `qty` of its `lineQty` units (ADR-006 §4, RC-207): round(total × qty /
+ * lineQty, 2), except that the return taking the last of the line clears what's left of it exactly, so the shares add
+ * up to the line's figure. `back` is what earlier returns took: their quantity and their share of this figure.
+ * shortcut: no invoice bills a delivery line until M3-09 (RAD-113), whose part invoices count here as earlier shares. */
+export function shareOf(total: DecimalInput, lineQty: DecimalInput, back: { qty: DecimalInput; share: DecimalInput }, qty: DecimalInput): Money {
+  if (dec(back.qty).plus(dec(qty)).eq(dec(lineQty))) return roundMoney(dec(total).minus(dec(back.share)));
+  return roundMoney(dec(total).times(dec(qty)).div(dec(lineQty)));
 }

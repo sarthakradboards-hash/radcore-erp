@@ -37,10 +37,12 @@ export type BatchIn = { readonly batchNo: string | null; readonly qty: Quantity 
 /** A batch named on goods going out or moving: the batch's id, or null for "batch unknown", and how many units. */
 export type BatchOut = { readonly batchId: string | null; readonly qty: Quantity };
 
-/** Goods coming into a location at a rate, split by batch. A serialised item's line names its units (§5): `received`
- * by default, or `returned` (a credit note) or `delivery_returned`. */
+/** Goods coming into a location at a rate, split by batch: named by number on a receipt, or by id for goods coming
+ * back to the batches they left with (§4a). Goods coming back (a delivery return, a credit note) carry the `value` they
+ * went out at, which the movement takes instead of qty × rate (RC-207). A serialised item's line names its units (§5):
+ * `received` by default, or `returned` (a credit note) or `delivery_returned`. */
 export type StockIn = { readonly itemId: string; readonly locationId: string; readonly sourceLineId?: string | null;
-  readonly qty: Quantity; readonly rate: Rate; readonly batches: readonly BatchIn[];
+  readonly qty: Quantity; readonly rate: Rate; readonly value?: Money; readonly batches: readonly (BatchIn | BatchOut)[];
   readonly units?: readonly UnitOnLine[]; readonly unitEvent?: InUnitEvent };
 /** Goods going out of a location, split by the batches picked. Only a delivery may go below zero, in negative-stock
  * mode, naming the part beyond what's on hand as "batch unknown". A serialised item's line names its units: `delivered`
@@ -93,7 +95,7 @@ async function lockPositions(ctx: Ctx, pairs: readonly (readonly [string, string
  * (§4a; every supplier is null until parties land), and every batch's id, by item and key. */
 async function batchIds(ctx: Ctx, ins: readonly StockIn[]): Promise<Map<string, string>> {
   const wanted = [...new Map(ins.flatMap((l) => l.batches.flatMap((b) => {
-    if (b.batchNo === null) return [];
+    if (!('batchNo' in b) || b.batchNo === null) return [];
     const k = batchKey(b.batchNo);
     return [[`${l.itemId} ${k}`, { itemId: l.itemId, batchNo: b.batchNo, batchKey: k }] as const];
   }))).values()].toSorted((a, b) => byText(a.itemId, b.itemId) || byText(a.batchKey, b.batchKey));
@@ -214,8 +216,9 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   }
   for (const i of ins) {
     const before = position(await byDate(ctx, i.itemId, i.locationId));
-    const rows = i.batches.map((b) => ({ batchId: b.batchNo === null ? null : ids.get(`${i.itemId} ${batchKey(b.batchNo)}`) ?? null, qty: b.qty }));
-    const value = roundMoney(dec(i.qty).times(dec(i.rate)));
+    const rows = i.batches.map((b) => ({ qty: b.qty,
+      batchId: 'batchId' in b ? b.batchId : b.batchNo === null ? null : ids.get(`${i.itemId} ${batchKey(b.batchNo)}`) ?? null }));
+    const value = i.value ?? roundMoney(dec(i.qty).times(dec(i.rate)));
     await write({ itemId: i.itemId, locationId: i.locationId, sourceLineId: i.sourceLineId, direction: 'in', qty: i.qty,
       value, rate: roundRate(i.rate) }, rows);
     for (const u of i.units ?? []) events.push(unitIn(i, u, lastId(), rows));
@@ -242,7 +245,8 @@ function unitIn(line: StockIn, u: UnitOnLine, inMovementId: string, rows: readon
   if (kind !== 'received') return event;
   const named = u.batchNo;
   const at = named === undefined ? (line.batches.length === 1 ? 0 : -1)
-    : line.batches.findIndex((b) => (b.batchNo === null || named === null ? b.batchNo === named : batchKey(b.batchNo) === batchKey(named)));
+    : line.batches.findIndex((b) => 'batchNo' in b
+      && (b.batchNo === null || named === null ? b.batchNo === named : batchKey(b.batchNo) === batchKey(named)));
   if (at < 0) {
     throw new AppError('unit_batch', 'Say which of the line’s batches each unit came in',
       [{ path: ['units'], code: 'batch', message: `${u.serialNo}: name one of the line’s batches` }]);

@@ -395,13 +395,17 @@ const noTableExports = {
 // around the read: `x.see(...)`, `x.can(...)` or lib-platform's `listScope(...)`. A read is the table as an argument of
 // `.from` or a join, imported by name (aliased or not) or through a namespace, or `.query.<table>`. It can't follow a
 // read or a check into another function, a table passed around as a value, a table reached through a relation
-// (`with:`) or a view, or whether the check names the right owner.
+// (`with:`) or a view, or whether the check names the right owner. options.exempt names single files, by their path
+// from the repository root, each with its reason, that return only aggregates keyed by ids their callers had in scope
+// (ADR-001 §6a); each entry is an architect's ruling, and a directory or glob matches nothing.
 const READS = new Set(['from', 'innerJoin', 'leftJoin', 'rightJoin', 'fullJoin', 'crossJoin']);
 const CHECKS = new Set(['see', 'can']);
 const scopeOnOwnedReads = {
   meta: { type: 'problem', docs: { description: 'ADR-001 E7: a scoped read applies the record scope' }, schema: false,
     messages: { m: '[E7] {{table}} holds records a role may see only its own of: apply ctx.see, ctx.can or listScope in this function (ADR-001 §6a)' } },
   create(context) {
+    const exempt = context.options[0]?.exempt ?? {};
+    if (Object.hasOwn(exempt, context.filename.slice(context.cwd.length + 1).replaceAll('\\', '/'))) return {};
     const tables = new Set(context.options[0]?.tables ?? []);
     const names = new Set([...tables].map((t) => t.slice(t.lastIndexOf('#') + 1)));
     const outermost = (n) => {
