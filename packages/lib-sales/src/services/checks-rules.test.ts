@@ -9,7 +9,9 @@ describe('creditResult', () => {
   it('adds the sale to what the party owes, and is over only past the limit, not at it', () => {
     expect(creditResult(base)).toEqual({ after: '100000.00', overLimit: false, overdue: false });
     expect(creditResult({ ...base, adds: '60000.01' })).toMatchObject({ after: '100000.01', overLimit: true });
-    expect(creditResult({ ...base, limit: null, adds: '999999' }).overLimit).toBe(false);
+    // No limit set is no credit (Sarthak on RAD-111): any amount owed is over, nothing owed isn't.
+    expect(creditResult({ ...base, limit: null, outstanding: '0', notInvoiced: '0', adds: '0.01' }).overLimit).toBe(true);
+    expect(creditResult({ ...base, limit: null, outstanding: '0', notInvoiced: '0', adds: '0' }).overLimit).toBe(false);
     expect(creditResult({ ...base, limit: '0', outstanding: '0', notInvoiced: '0', adds: '0.01' }).overLimit).toBe(true);
     // Delivered and not yet invoiced counts as owed, alone too.
     expect(creditResult({ ...base, outstanding: '0', notInvoiced: '40000.01' })).toMatchObject({ after: '100000.01', overLimit: true });
@@ -18,9 +20,9 @@ describe('creditResult', () => {
   it('is overdue once the oldest unpaid bill is past its days, not on its last day', () => {
     expect(creditResult({ ...base, oldestUnpaid: '2026-03-31' }).overdue).toBe(false); // due on 30 Apr, the sale's day
     expect(creditResult({ ...base, oldestUnpaid: '2026-03-30' }).overdue).toBe(true); // due on 29 Apr
-    // No credit days: a bill is due the day it's made, so any older one is overdue, and one made today isn't.
-    expect([creditResult({ ...base, creditDays: null, oldestUnpaid: '2026-04-29' }).overdue,
-      creditResult({ ...base, creditDays: null, oldestUnpaid: '2026-04-30' }).overdue]).toEqual([true, false]);
+    // 0 days (the default setting): a bill is due the day it's made, so any older one is overdue, and one made today isn't.
+    expect([creditResult({ ...base, creditDays: 0, oldestUnpaid: '2026-04-29' }).overdue,
+      creditResult({ ...base, creditDays: 0, oldestUnpaid: '2026-04-30' }).overdue]).toEqual([true, false]);
     expect(creditResult({ ...base, oldestUnpaid: null, creditDays: 0 }).overdue).toBe(false);
   });
 });

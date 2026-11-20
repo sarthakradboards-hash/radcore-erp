@@ -8,7 +8,7 @@ export {
   type AccountRef, type JournalLine, type NewEntry, type Posted,
 } from './services/journal.ts';
 export {
-  cancelPayment, CASH_PAYMENT_LIMIT, CASH_RECEIPT_LIMIT, cashLimitSpec, PAYMENT_SERIES, RECEIPT_SERIES, recordPayment,
+  cancelPayment, CASH_PAYMENT_LIMIT, CASH_RECEIPT_LIMIT, DEFAULT_CREDIT_DAYS, cashLimitSpec, PAYMENT_SERIES, RECEIPT_SERIES, recordPayment,
 } from './services/payments.ts';
 export { partyReceivable } from './services/receivables.ts';
 export type { Receivable } from './rules/receivable.ts';

@@ -35,12 +35,12 @@ describe.skipIf(!url)('the sale checks', { timeout: 30_000 }, () => {
   afterAll(async () => { await pool.end(); });
   const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(db, WRITE, staff, randomUUID(), fn);
 
-  /** A party owing 30,000.00 on a bill of 1 March 2033, with a limit of 1,00,000.00 and 30 days. */
-  async function party(): Promise<string> {
+  /** A party owing 30,000.00 on a bill of 1 March 2033, with a limit of 1,00,000.00 and 30 days, or with no terms set. */
+  async function party(terms = true): Promise<string> {
     return run(async (ctx) => {
       const { id } = await addParty(ctx, { name: `Dealer ${tag()}`, kinds: ['dealer'], gstin: null, pan: null, composition: false,
         stateCode: '29', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
-      await setCreditTerms(ctx, { id, creditDays: 30, creditLimit: moneyString().parse('100000'), reason: 'Test' });
+      if (terms) await setCreditTerms(ctx, { id, creditDays: 30, creditLimit: moneyString().parse('100000'), reason: 'Test' });
       await openFinancialYear(ctx, '2033-03-01');
       await postEntry(ctx, { kind: 'opening', businessDate: '2033-03-01', source: { table: SOURCE_TABLE, id: randomUUID() }, lines: [
         { account: { system: 'debtors' }, partyId: id, debit: m('30000') as Money }, { account: { system: 'opening_equity' }, credit: m('30000') as Money }] });
@@ -76,6 +76,13 @@ describe.skipIf(!url)('the sale checks', { timeout: 30_000 }, () => {
     expect((await check(id, '2033-03-31', '0')).credit.overdue).toBe(false);
     const late = await run((ctx) => checkSale(ctx, { stage: 'deliver', partyId: id, on: '2033-04-01', adds: '0', lines: [], pricedBy: 'system:test' }));
     expect([late.stage, late.credit.overdue, late.credit.oldestUnpaid, late.issues]).toEqual(['deliver', true, '2033-03-01', [{ code: 'overdue' }]]);
+  });
+
+  it('gives a party with no terms set no credit, and its bills the default days, 0: due the day they are made (Sarthak on RAD-111)', async () => {
+    const id = await party(false);
+    const today = await check(id, '2033-03-01', '0');
+    expect([today.credit.limit, today.credit.overLimit, today.credit.overdue]).toEqual([null, true, false]);
+    expect((await check(id, '2033-03-02', '0')).issues).toEqual([{ code: 'over_limit' }, { code: 'overdue' }]);
   });
 
   it('prices against the average cost at the place, else the purchase price, and a stock item with no cost needs approval (RC-131)', async () => {
