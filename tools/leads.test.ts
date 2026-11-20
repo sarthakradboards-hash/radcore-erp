@@ -93,15 +93,15 @@ describe.skipIf(!url || !superUrl)('lead capture', { timeout: 30_000 }, () => {
     expect(await inbox(sales(ashaId))).toHaveLength(1);
   });
 
-  it('names the lead in the alert, or shows only the last four digits even to a viewer who may see the number', async () => {
-    const ownerId = await person();
-    const seesAll: Principal = { kind: 'user', userId: ownerId, permissions: ['leads:read', 'leads:write', 'pii:read', 'leads:contact'] };
+  it('names the lead in the alert, or shows only the last four digits, even to a leads:contact holder, and logs no look (the architect)', async () => {
+    const contact: Principal = { kind: 'user', userId: await person(), permissions: ['leads:read', 'leads:write', 'leads:contact'] };
     const [named, unnamed] = [mobile(), mobile()];
-    await as(seesAll, (ctx) => captureEnquiry(ctx, { phone: named, name: 'Meera', source: 'manual', receivedAt: at('2033-03-10') }));
-    await as(seesAll, (ctx) => captureEnquiry(ctx, { phone: unnamed, source: 'manual', receivedAt: at('2033-03-11') }));
+    await as(contact, (ctx) => captureEnquiry(ctx, { phone: named, name: 'Meera', source: 'manual', receivedAt: at('2033-03-10') }));
+    const { id } = await as(contact, (ctx) => captureEnquiry(ctx, { phone: unnamed, source: 'manual', receivedAt: at('2033-03-11') }));
     for (const phone of [named, unnamed]) await as(FORM, (ctx) => captureEnquiry(ctx, { phone, source: 'form' }));
-    // The whole number shows only on the lead, where the look is logged.
-    expect((await inbox(seesAll)).toSorted()).toEqual(['Meera enquired again', `••••••${unnamed.slice(-4)} enquired again`].toSorted());
+    // Notification text never unmasks: the whole number shows only on the lead, where the look is logged.
+    expect((await inbox(contact)).toSorted()).toEqual(['Meera enquired again', `••••••${unnamed.slice(-4)} enquired again`].toSorted());
+    expect(await owner("select id from radcore.access_log where record_table = 'leads' and record_id = $1", [id ?? ''])).toEqual([]);
   });
 
   it('makes one lead of two enquiries from a new number at the same moment', async () => {
