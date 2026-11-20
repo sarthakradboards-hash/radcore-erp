@@ -759,8 +759,8 @@ send-message service calls `whatsapp.send()` from lib-integrations.
 
 - **A setting is declared once,** in its library: `defineSetting(key, schema, fallback, { label, description,
   input, check })`.
-  - `input` tells the screen what to offer: `money`, `percent`, `integer`, `text`, `choice` (with its choices) or
-    `reference` (a kind of record, such as a price list).
+  - `input` tells the screen what to offer: `money`, `percent`, `integer`, `text`, `yes_no`, `choice` (with its
+    choices) or `reference` (a kind of record, such as a price list).
   - `check(ctx, value)`, where given, checks what a schema can't, such as a price list that exists and is active.
   - A reader of a `reference` setting treats a record that's gone or switched off since as unset, never as an
     error: a default price list switched off means no list, so `no_list_rate` (ADR-007 §9).
