@@ -23,6 +23,9 @@ export const ADMIN_PAGES = [
   { href: '/admin/items', label: 'admin.nav.items', perm: 'items:read' },
   { href: '/admin/gst-rates', label: 'admin.nav.gst', perm: 'gst:read' },
   { href: '/admin/parties', label: 'admin.nav.parties', perm: 'parties:read' },
+  { href: '/admin/price-lists', label: 'admin.nav.prices', perm: 'prices:read' },
+  { href: '/admin/price-approvals', label: 'admin.nav.priceApprovals', perm: 'prices:approve' },
+  { href: '/admin/discount-limits', label: 'admin.nav.discounts', perm: 'prices:read' },
 ] as const satisfies readonly NavPage[];
 
 /** The accounts area's pages (RAD-100): the journal first, as accounts staff read it most. */

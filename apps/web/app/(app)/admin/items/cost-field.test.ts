@@ -21,7 +21,7 @@ describe('the purchase-price field', () => {
   it('with cost:read, the price is a box: empty for a new item or no price, else the price', () => {
     expect(costField(true, undefined)).toEqual({ cost: 'edit', defaults: { purchasePrice: '' } });
     expect(costField(true, null)).toEqual({ cost: 'edit', defaults: { purchasePrice: '' } });
-    expect(costField(true, '1850.50')).toEqual({ cost: 'edit', defaults: { purchasePrice: '1850.50' } });
+    expect(costField(true, '1850.500000')).toEqual({ cost: 'edit', defaults: { purchasePrice: '1850.50' } }); // paise kept, extra zeros gone (e2e on #230)
   });
 
   it('a mask wins over the key: the server decides who sees it', () => {
