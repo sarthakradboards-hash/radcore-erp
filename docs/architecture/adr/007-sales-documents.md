@@ -255,7 +255,7 @@ locking its own documents and before the check, so two sales to one party can't 
     on the document's date (`priceFor`). A priced line with no list rate, because its item isn't on the list or the
     document has no list, is `no_list_rate` and needs approval, as `cost_unknown` does: the strict default
     (18 Nov). `sales.default_price_list` starts unset, so until an admin sets it, a party with no list of its own
-    has every priced line approved.
+    needs approval for every priced line.
 - **One version for everyone.** An override approves the document's figures and the issues found. Nothing in them
   depends on who reads them, so the maker, the approver and whoever confirms or posts see the same issues. An
   edit, or a limit changed while a request waits, makes the request stale, and the maker asks again.
