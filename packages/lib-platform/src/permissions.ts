@@ -41,6 +41,8 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'parties:contact', module: 'Parties', label: 'See customers’ and suppliers’ contact details', allOnly: true, unmasks: true },
   { key: 'parties:manage', module: 'Parties', label: 'Set a party’s credit days and credit limit', secondFactor: true },
   { key: 'accounts:write', module: 'Journal', label: 'Change the chart of accounts: codes, and switching accounts off and on' },
+  { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
+  { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
   { key: 'journal:read', module: 'Journal', label: 'See the chart of accounts and the journal' },
   { key: 'journal:post', module: 'Journal', label: 'Post a manual journal', secondFactor: true },
   { key: 'journal:reverse', module: 'Journal', label: 'Reverse a journal entry', secondFactor: true },

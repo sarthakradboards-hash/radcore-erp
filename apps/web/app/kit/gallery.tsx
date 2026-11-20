@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { Dialog } from '../../components/ui/dialog/dialog.tsx';
 import { Menu } from '../../components/ui/dialog/menu.tsx';
 import { ReasonDialog } from '../../components/ui/dialog/reason-dialog.tsx';
-import { CheckboxField, MaskedField, SelectField, TextAreaField, TextField } from '../../components/ui/form/fields.tsx';
+import { CheckboxField, CheckboxesField, MaskedField, SelectField, TextAreaField, TextField } from '../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../components/ui/form/form.tsx';
 import { Pii } from '../../components/ui/masked.tsx';
 import { ApiError } from '../../lib/api-client.ts';
@@ -14,6 +14,7 @@ import { ApiError } from '../../lib/api-client.ts';
 // The phone arrives masked, as a pii() field does for a role without pii:read (RAD-40); the form never sends it.
 const party = z.object({ name: z.string().min(1, 'Enter a name'), phone: pii(z.string(), 'last4').optional(),
   email: pii().optional(), limit: moneyString(), city: z.string().min(1, 'Choose a city'), gstRegistered: z.boolean(),
+  deals: z.array(z.string()).min(1, 'Choose at least one'),
   note: z.string() });
 
 const refuse = (issues: { path: string[]; message: string }[]) => new ApiError(400, {
@@ -34,7 +35,7 @@ export function Gallery({ children }: { children: ReactNode }) {
       <p>The name &quot;Taken&quot; is refused on the field, &quot;Elsewhere&quot; on a field not on screen, and
         &quot;Again&quot; as a save already made.</p>
       <Form aria-labelledby="party-form" schema={party}
-        defaultValues={{ name: 'Asha Traders', phone: { masked: '••••••3210' }, email: 'asha@example.com', limit: '50000.00', city: 'Pune', gstRegistered: false, note: '' }}
+        defaultValues={{ name: 'Asha Traders', phone: { masked: '••••••3210' }, email: 'asha@example.com', limit: '50000.00', city: 'Pune', gstRegistered: false, deals: ['Retail'], note: '' }}
         onSubmit={async (values) => {
           if (values.name === 'Taken') throw refuse([{ path: ['name'], message: 'Another party has this name' }]);
           if (values.name === 'Elsewhere') throw refuse([{ path: ['gstin'], message: 'The GSTIN is not valid' }]);
@@ -50,6 +51,7 @@ export function Gallery({ children }: { children: ReactNode }) {
         <SelectField name="city" label="City" placeholder="Choose a city"
           options={['Pune', 'Nagpur', 'Indore', 'Surat'].map((c) => ({ value: c, label: c }))} />
         <CheckboxField name="gstRegistered" label="GST registered" hint="Tick if the party has a GSTIN." />
+        <CheckboxesField name="deals" label="Deals in" options={['Retail', 'Wholesale', 'Online'].map((d) => ({ value: d, label: d }))} />
         <TextAreaField name="note" label="Note" />
         <SubmitButton>Save party</SubmitButton>
       </Form>

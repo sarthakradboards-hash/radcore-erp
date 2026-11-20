@@ -1,5 +1,5 @@
 {
-  "id": "9e9b835b-f7e1-4636-b9d9-6469067cdc8f",
+  "id": "827de9a3-1402-4215-9157-1a087f0ad180",
   "prevId": "a45c581f-f21b-43e9-99ae-1ae7793f6b53",
   "version": "7",
   "dialect": "postgresql",
@@ -1220,6 +1220,348 @@
         "ck_parties_credit_days": {
           "name": "ck_parties_credit_days",
           "value": "\"radcore\".\"parties\".\"credit_days\" between 0 and 365"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.payments": {
+      "name": "payments",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "number": {
+          "name": "number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "party_id": {
+          "name": "party_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tds": {
+          "name": "tds",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refund_of_id": {
+          "name": "refund_of_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "narration": {
+          "name": "narration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "posted_entry_id": {
+          "name": "posted_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_reason": {
+          "name": "cancel_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_entry_id": {
+          "name": "cancel_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_payments_party_date": {
+          "name": "ix_payments_party_date",
+          "columns": [
+            {
+              "expression": "party_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "business_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_payments_refund_of": {
+          "name": "ix_payments_refund_of",
+          "columns": [
+            {
+              "expression": "refund_of_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_payments_account": {
+          "name": "ix_payments_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_payments_posted_entry": {
+          "name": "ix_payments_posted_entry",
+          "columns": [
+            {
+              "expression": "posted_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_payments_cancel_entry": {
+          "name": "ix_payments_cancel_entry",
+          "columns": [
+            {
+              "expression": "cancel_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "payments_party_id_parties_id_fk": {
+          "name": "payments_party_id_parties_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "party_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "payments_account_id_accounts_id_fk": {
+          "name": "payments_account_id_accounts_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "payments_refund_of_id_payments_id_fk": {
+          "name": "payments_refund_of_id_payments_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "payments",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "refund_of_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "payments_posted_entry_id_journal_entries_id_fk": {
+          "name": "payments_posted_entry_id_journal_entries_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "posted_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "payments_cancel_entry_id_journal_entries_id_fk": {
+          "name": "payments_cancel_entry_id_journal_entries_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "cancel_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "payments_number_unique": {
+          "name": "payments_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ck_payments_amount": {
+          "name": "ck_payments_amount",
+          "value": "\"radcore\".\"payments\".\"amount\" >= 0 and \"radcore\".\"payments\".\"amount\" <> 'NaN'"
+        },
+        "ck_payments_tds": {
+          "name": "ck_payments_tds",
+          "value": "\"radcore\".\"payments\".\"tds\" >= 0 and \"radcore\".\"payments\".\"tds\" <> 'NaN'"
+        },
+        "ck_payments_narration": {
+          "name": "ck_payments_narration",
+          "value": "char_length(\"radcore\".\"payments\".\"narration\") <= 500"
+        },
+        "ck_payments_cancel_reason": {
+          "name": "ck_payments_cancel_reason",
+          "value": "char_length(\"radcore\".\"payments\".\"cancel_reason\") <= 500"
+        },
+        "ck_payments_kind": {
+          "name": "ck_payments_kind",
+          "value": "\"radcore\".\"payments\".\"kind\" in ('receipt', 'payment', 'refund')"
+        },
+        "ck_payments_status": {
+          "name": "ck_payments_status",
+          "value": "\"radcore\".\"payments\".\"status\" in ('draft', 'posted', 'cancelled')"
+        },
+        "ck_payments_figures": {
+          "name": "ck_payments_figures",
+          "value": "\"radcore\".\"payments\".\"amount\" > 0 and \"radcore\".\"payments\".\"tds\" < \"radcore\".\"payments\".\"amount\""
+        },
+        "ck_payments_refund": {
+          "name": "ck_payments_refund",
+          "value": "(\"radcore\".\"payments\".\"kind\" = 'refund') = (\"radcore\".\"payments\".\"refund_of_id\" is not null) and (\"radcore\".\"payments\".\"kind\" <> 'refund' or \"radcore\".\"payments\".\"tds\" = 0)"
+        },
+        "ck_payments_posted": {
+          "name": "ck_payments_posted",
+          "value": "(\"radcore\".\"payments\".\"status\" = 'draft') = (\"radcore\".\"payments\".\"number\" is null) and (\"radcore\".\"payments\".\"status\" = 'draft') = (\"radcore\".\"payments\".\"posted_entry_id\" is null)"
+        },
+        "ck_payments_cancelled": {
+          "name": "ck_payments_cancelled",
+          "value": "(\"radcore\".\"payments\".\"status\" = 'cancelled') = (\"radcore\".\"payments\".\"cancel_entry_id\" is not null)"
         }
       },
       "isRLSEnabled": false
@@ -4334,699 +4676,6 @@
         "ck_price_lists_name": {
           "name": "ck_price_lists_name",
           "value": "char_length(\"radcore\".\"price_lists\".\"name\") <= 80"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.sales_order_lines": {
-      "name": "sales_order_lines",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "order_id": {
-          "name": "order_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "line_no": {
-          "name": "line_no",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "qty": {
-          "name": "qty",
-          "type": "numeric(18, 3)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rate": {
-          "name": "rate",
-          "type": "numeric(18, 6)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "discount_percent": {
-          "name": "discount_percent",
-          "type": "numeric(9, 6)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_sales_order_lines_line": {
-          "name": "ux_sales_order_lines_line",
-          "columns": [
-            {
-              "expression": "order_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "line_no",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_sales_order_lines_item": {
-          "name": "ix_sales_order_lines_item",
-          "columns": [
-            {
-              "expression": "item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "sales_order_lines_order_id_sales_orders_id_fk": {
-          "name": "sales_order_lines_order_id_sales_orders_id_fk",
-          "tableFrom": "sales_order_lines",
-          "tableTo": "sales_orders",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "sales_order_lines_item_id_items_id_fk": {
-          "name": "sales_order_lines_item_id_items_id_fk",
-          "tableFrom": "sales_order_lines",
-          "tableTo": "items",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_sales_order_lines_qty": {
-          "name": "ck_sales_order_lines_qty",
-          "value": "\"radcore\".\"sales_order_lines\".\"qty\" > 0 and \"radcore\".\"sales_order_lines\".\"qty\" <> 'NaN'"
-        },
-        "ck_sales_order_lines_rate": {
-          "name": "ck_sales_order_lines_rate",
-          "value": "\"radcore\".\"sales_order_lines\".\"rate\" >= 0 and \"radcore\".\"sales_order_lines\".\"rate\" <> 'NaN'"
-        },
-        "ck_sales_order_lines_discount_percent": {
-          "name": "ck_sales_order_lines_discount_percent",
-          "value": "\"radcore\".\"sales_order_lines\".\"discount_percent\" between 0 and 100 and \"radcore\".\"sales_order_lines\".\"discount_percent\" <> 'NaN'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.sales_orders": {
-      "name": "sales_orders",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "number": {
-          "name": "number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "quote_id": {
-          "name": "quote_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "close_reason": {
-          "name": "close_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "override_version": {
-          "name": "override_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ix_sales_orders_party": {
-          "name": "ix_sales_orders_party",
-          "columns": [
-            {
-              "expression": "party_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_sales_orders_date": {
-          "name": "ix_sales_orders_date",
-          "columns": [
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "sales_orders_party_id_parties_id_fk": {
-          "name": "sales_orders_party_id_parties_id_fk",
-          "tableFrom": "sales_orders",
-          "tableTo": "parties",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "sales_orders_quote_id_sales_quotes_id_fk": {
-          "name": "sales_orders_quote_id_sales_quotes_id_fk",
-          "tableFrom": "sales_orders",
-          "tableTo": "sales_quotes",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "quote_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "sales_orders_number_unique": {
-          "name": "sales_orders_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "number"
-          ]
-        },
-        "sales_orders_quoteId_unique": {
-          "name": "sales_orders_quoteId_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "quote_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_sales_orders_notes": {
-          "name": "ck_sales_orders_notes",
-          "value": "char_length(\"radcore\".\"sales_orders\".\"notes\") <= 500"
-        },
-        "ck_sales_orders_close_reason": {
-          "name": "ck_sales_orders_close_reason",
-          "value": "char_length(\"radcore\".\"sales_orders\".\"close_reason\") <= 500"
-        },
-        "ck_sales_orders_status": {
-          "name": "ck_sales_orders_status",
-          "value": "\"radcore\".\"sales_orders\".\"status\" in ('draft', 'confirmed', 'closed', 'cancelled')"
-        },
-        "ck_sales_orders_number": {
-          "name": "ck_sales_orders_number",
-          "value": "(\"radcore\".\"sales_orders\".\"status\" = 'draft') = (\"radcore\".\"sales_orders\".\"number\" is null)"
-        },
-        "ck_sales_orders_reason": {
-          "name": "ck_sales_orders_reason",
-          "value": "\"radcore\".\"sales_orders\".\"close_reason\" is null or \"radcore\".\"sales_orders\".\"status\" in ('closed', 'cancelled')"
-        },
-        "ck_sales_orders_cancel_reason": {
-          "name": "ck_sales_orders_cancel_reason",
-          "value": "\"radcore\".\"sales_orders\".\"status\" <> 'cancelled' or \"radcore\".\"sales_orders\".\"close_reason\" is not null"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.sales_quote_lines": {
-      "name": "sales_quote_lines",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "quote_id": {
-          "name": "quote_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "line_no": {
-          "name": "line_no",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "qty": {
-          "name": "qty",
-          "type": "numeric(18, 3)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rate": {
-          "name": "rate",
-          "type": "numeric(18, 6)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "discount_percent": {
-          "name": "discount_percent",
-          "type": "numeric(9, 6)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_sales_quote_lines_line": {
-          "name": "ux_sales_quote_lines_line",
-          "columns": [
-            {
-              "expression": "quote_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "line_no",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_sales_quote_lines_item": {
-          "name": "ix_sales_quote_lines_item",
-          "columns": [
-            {
-              "expression": "item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "sales_quote_lines_quote_id_sales_quotes_id_fk": {
-          "name": "sales_quote_lines_quote_id_sales_quotes_id_fk",
-          "tableFrom": "sales_quote_lines",
-          "tableTo": "sales_quotes",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "quote_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "sales_quote_lines_item_id_items_id_fk": {
-          "name": "sales_quote_lines_item_id_items_id_fk",
-          "tableFrom": "sales_quote_lines",
-          "tableTo": "items",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_sales_quote_lines_qty": {
-          "name": "ck_sales_quote_lines_qty",
-          "value": "\"radcore\".\"sales_quote_lines\".\"qty\" > 0 and \"radcore\".\"sales_quote_lines\".\"qty\" <> 'NaN'"
-        },
-        "ck_sales_quote_lines_rate": {
-          "name": "ck_sales_quote_lines_rate",
-          "value": "\"radcore\".\"sales_quote_lines\".\"rate\" >= 0 and \"radcore\".\"sales_quote_lines\".\"rate\" <> 'NaN'"
-        },
-        "ck_sales_quote_lines_discount_percent": {
-          "name": "ck_sales_quote_lines_discount_percent",
-          "value": "\"radcore\".\"sales_quote_lines\".\"discount_percent\" between 0 and 100 and \"radcore\".\"sales_quote_lines\".\"discount_percent\" <> 'NaN'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.sales_quotes": {
-      "name": "sales_quotes",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "number": {
-          "name": "number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "valid_until": {
-          "name": "valid_until",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ix_sales_quotes_party": {
-          "name": "ix_sales_quotes_party",
-          "columns": [
-            {
-              "expression": "party_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_sales_quotes_date": {
-          "name": "ix_sales_quotes_date",
-          "columns": [
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "sales_quotes_party_id_parties_id_fk": {
-          "name": "sales_quotes_party_id_parties_id_fk",
-          "tableFrom": "sales_quotes",
-          "tableTo": "parties",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "sales_quotes_number_unique": {
-          "name": "sales_quotes_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "number"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_sales_quotes_notes": {
-          "name": "ck_sales_quotes_notes",
-          "value": "char_length(\"radcore\".\"sales_quotes\".\"notes\") <= 500"
-        },
-        "ck_sales_quotes_status": {
-          "name": "ck_sales_quotes_status",
-          "value": "\"radcore\".\"sales_quotes\".\"status\" in ('draft', 'sent', 'accepted', 'declined', 'expired')"
-        },
-        "ck_sales_quotes_number": {
-          "name": "ck_sales_quotes_number",
-          "value": "(\"radcore\".\"sales_quotes\".\"status\" = 'draft') = (\"radcore\".\"sales_quotes\".\"number\" is null)"
-        },
-        "ck_sales_quotes_valid_until": {
-          "name": "ck_sales_quotes_valid_until",
-          "value": "\"radcore\".\"sales_quotes\".\"valid_until\" is null or \"radcore\".\"sales_quotes\".\"valid_until\" >= \"radcore\".\"sales_quotes\".\"business_date\""
         }
       },
       "isRLSEnabled": false
