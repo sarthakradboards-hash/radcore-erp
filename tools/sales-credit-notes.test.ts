@@ -284,26 +284,42 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
     const serial = `SN-${tag()}`;
     const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1', serials: [serial] });
     const approver = await approverWith(['credit_notes:approve']);
-    const out = await inBooks(async (ctx) => {
+    const unit = async (ctx: Ctx) => (await rows<{ ownership: string; sale: string | null }>(ctx, sql`select ownership, sale_line_id as sale
+      from radcore.units where item_id = ${at.itemId}`))[0];
+    /** The invoice, and the unit back on an approved goods-back note: the note's id. */
+    const noted = async (ctx: Ctx) => {
       const inv = await invoice(ctx, at);
-      const unit = async () => (await rows<{ ownership: string; sale: string | null }>(ctx, sql`select ownership, sale_line_id as sale
-        from radcore.units where item_id = ${at.itemId}`))[0];
-      const sold = await unit();
       const { id } = await goodsBack(ctx, at, inv, '1', { serials: [serial] });
       await approve(ctx, id, approver);
-      const back = await unit();
+      return { inv, id };
+    };
+    // The deliveries are committed, so each rolled-back transaction invoices them afresh. In the first, the database
+    // refuses to cancel a note still applied to its invoice: the transaction ends there (the route answers it as
+    // still_applied, by its dbErrors).
+    const refused = await inBooks(async (ctx) => {
+      const sold = await unit(ctx);
+      const { inv, id } = await noted(ctx);
+      const back = await unit(ctx);
       // The invoice can't be cancelled while the note stands.
       const invoiceCancel = await failure(cancelInvoiceNow(ctx, { id: inv.id, businessDate: DATE, reason: 'Billed in error' }));
-      const applied = await failure(cancelCreditNoteNow(ctx, { id, businessDate: DATE, reason: 'Raised in error' }));
+      const applied = await cancelCreditNoteNow(ctx, { id, businessDate: DATE, reason: 'Raised in error' }).then(() => 'ok', (e: unknown) => {
+        const pgError = (e as { cause?: { code?: string; constraint?: string } }).cause ?? (e as { code?: string; constraint?: string });
+        return `${pgError.code}:${pgError.constraint ?? ''}`;
+      });
+      return { sold: sold?.ownership, back, invoiceCancel, applied };
+    });
+    const cancelled = await inBooks(async (ctx) => {
+      const { id } = await noted(ctx);
       const [application] = await rows<{ id: string }>(ctx, sql`select id from radcore.credit_applications
         where credit_table = 'credit_notes' and credit_id = ${id} and direction = 'apply'`);
       await reverseCreditApplication(ctx, { id: application?.id ?? '', businessDate: DATE, reason: 'Raised in error' });
       await cancelCreditNoteNow(ctx, { id, businessDate: DATE, reason: 'Raised in error' });
-      return { sold: sold?.ownership, back, invoiceCancel, applied, status: (await getCreditNoteById(ctx, { id })).status,
-        mirror: await entryOf(ctx, id, DATE, true), stock: await onHand(ctx, at), again: (await unit())?.ownership };
+      return { status: (await getCreditNoteById(ctx, { id })).status, mirror: await entryOf(ctx, id, DATE, true), stock: await onHand(ctx, at),
+        again: (await unit(ctx))?.ownership };
     });
-    expect(out).toEqual({ sold: 'customer', back: { ownership: 'ours', sale: null }, invoiceCancel: 'credit_note_stands',
-      applied: 'still_applied', status: 'cancelled',
+    expect(refused).toEqual({ sold: 'customer', back: { ownership: 'ours', sale: null }, invoiceCancel: 'credit_note_stands',
+      applied: 'RA006:document_still_applied' });
+    expect(cancelled).toEqual({ status: 'cancelled',
       mirror: ['Sales 0.00 80000.00', 'Output CGST 0.00 2000.00', 'Output SGST 0.00 2000.00', 'Debtors 84000.00 0.00',
         'Stock in Hand 0.00 61250.00', 'Cost of Goods Sold 61250.00 0.00'], stock: { qty: '0', value: '0.00' }, again: 'customer' });
   });
@@ -312,7 +328,7 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   it('refuses a posted note whose header doesn’t match its lines at commit', async () => {
     const at = await setup({ stock: '1', stockRate: '100', rate: '1000', sold: '1' });
     const c = await su.connect();
-    const attempt = async (total: string) => {
+    const attempt = async (tax: string) => {
       await c.query('begin');
       try {
         await c.query("set local app.principal = 'system:test'");
@@ -324,10 +340,9 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
           values ('value', $1, $2, 'system:test', '${DATE}', 'Test') returning id`, [inv?.id, at.partyId]);
         await c.query(`insert into radcore.credit_note_lines (credit_note_id, line_no, invoice_line_id, item_id, taxable, gst_rate, gst_rate_source,
           cgst, sgst, igst, line_total, cost) values ($1, 1, $2, $3, 1000, 5, 'Test', 25, 25, 0, 1050, 0)`, [cn?.id, il?.id, at.itemId]);
-        const { rows: [entry] } = await c.query<{ id: string }>(`insert into radcore.journal_entries (number, kind, business_date, source_table, source_id)
-          values ($1, 'credit_note', '${DATE}', 'credit_notes', $2) returning id`, [`T/${tag()}`, cn?.id]);
-        await c.query(`update radcore.credit_notes set status = 'posted', number = $2, posted_entry_id = $3, taxable = 1000, cgst = 25, sgst = 25,
-          total = $4 where id = $1`, [cn?.id, `T/${tag()}`, entry?.id, total]);
+        // The header is consistent in itself (ck_credit_notes_identity): taxable plus both halves of the tax.
+        await c.query(`update radcore.credit_notes set status = 'posted', number = $2, taxable = 1000, cgst = $3, sgst = $3,
+          total = 1000 + 2 * $3::numeric where id = $1`, [cn?.id, `T/${tag()}`, tax]);
         await c.query('set constraints all immediate');
         return 'ok';
       } catch (e) {
@@ -337,7 +352,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       }
     };
     try {
-      expect(await attempt('1060')).toBe('RA006:credit_note_lines_total');
+      expect(await attempt('25')).toBe('ok');
+      expect(await attempt('30')).toBe('RA006:credit_note_lines_total');
     } finally {
       c.release();
     }

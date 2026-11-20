@@ -1,5 +1,5 @@
 {
-  "id": "c3d841a0-ce1c-43a0-b9ca-e2ea2a7a0c43",
+  "id": "4130afef-63c6-4faf-9cee-56ed3a0a7661",
   "prevId": "6bbd00fe-43ca-487d-8eb5-c37c8e5aca86",
   "version": "7",
   "dialect": "postgresql",
@@ -12804,7 +12804,7 @@
         },
         "ck_credit_notes_posted": {
           "name": "ck_credit_notes_posted",
-          "value": "(\"radcore\".\"credit_notes\".\"status\" = 'draft') = (\"radcore\".\"credit_notes\".\"number\" is null) and (\"radcore\".\"credit_notes\".\"status\" = 'draft') = (\"radcore\".\"credit_notes\".\"posted_entry_id\" is null)"
+          "value": "(\"radcore\".\"credit_notes\".\"status\" = 'draft') = (\"radcore\".\"credit_notes\".\"number\" is null) and (\"radcore\".\"credit_notes\".\"status\" <> 'draft' or \"radcore\".\"credit_notes\".\"posted_entry_id\" is null)"
         },
         "ck_credit_notes_cancelled": {
           "name": "ck_credit_notes_cancelled",

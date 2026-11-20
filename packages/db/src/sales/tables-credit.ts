@@ -44,7 +44,8 @@ export const creditNotes = radcoreTable('credit_notes', {
 }, (t) => [
   check('ck_credit_notes_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
   check('ck_credit_notes_kind', sql`${t.kind} in ('value', 'goods') and (${t.kind} = 'goods') = (${t.locationId} is not null)`),
-  check('ck_credit_notes_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
+  // Posted, it has its number, and its entry unless nothing it posts has value (as an invoice's).
+  check('ck_credit_notes_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} <> 'draft' or ${t.postedEntryId} is null)`),
   check('ck_credit_notes_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
   check('ck_credit_notes_refund', sql`(${t.refundAmount} is null) = (${t.refundAccountId} is null) and coalesce(${t.refundAmount}, 1) > 0`),
   // The header's own identity (ADR-005 §2), as an invoice's; the lines against it are checked at commit (RA006).

@@ -75,7 +75,7 @@ CREATE TABLE "radcore"."credit_notes" (
 	CONSTRAINT "ck_credit_notes_cancel_reason" CHECK (char_length("radcore"."credit_notes"."cancel_reason") <= 500),
 	CONSTRAINT "ck_credit_notes_status" CHECK ("radcore"."credit_notes"."status" in ('draft', 'posted', 'cancelled')),
 	CONSTRAINT "ck_credit_notes_kind" CHECK ("radcore"."credit_notes"."kind" in ('value', 'goods') and ("radcore"."credit_notes"."kind" = 'goods') = ("radcore"."credit_notes"."location_id" is not null)),
-	CONSTRAINT "ck_credit_notes_posted" CHECK (("radcore"."credit_notes"."status" = 'draft') = ("radcore"."credit_notes"."number" is null) and ("radcore"."credit_notes"."status" = 'draft') = ("radcore"."credit_notes"."posted_entry_id" is null)),
+	CONSTRAINT "ck_credit_notes_posted" CHECK (("radcore"."credit_notes"."status" = 'draft') = ("radcore"."credit_notes"."number" is null) and ("radcore"."credit_notes"."status" <> 'draft' or "radcore"."credit_notes"."posted_entry_id" is null)),
 	CONSTRAINT "ck_credit_notes_cancelled" CHECK (("radcore"."credit_notes"."status" = 'cancelled') = ("radcore"."credit_notes"."cancelled_at" is not null)),
 	CONSTRAINT "ck_credit_notes_refund" CHECK (("radcore"."credit_notes"."refund_amount" is null) = ("radcore"."credit_notes"."refund_account_id" is null) and coalesce("radcore"."credit_notes"."refund_amount", 1) > 0),
 	CONSTRAINT "ck_credit_notes_identity" CHECK ("radcore"."credit_notes"."total" = "radcore"."credit_notes"."taxable" + "radcore"."credit_notes"."cgst" + "radcore"."credit_notes"."sgst" + "radcore"."credit_notes"."igst" + "radcore"."credit_notes"."round_off"
