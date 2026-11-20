@@ -254,7 +254,7 @@ export const admin = {
   'admin.series.col.nextYear': 'Prefix, {year}',
   'admin.series.col.next': 'Next number',
   'admin.series.change': 'Change prefix',
-  'admin.series.changeFor': 'Change the prefix of {name}',
+  'admin.series.changeFor': 'Change prefix of {name}',
   'admin.series.change.title': 'Change the prefix of {name}',
   'admin.series.change.body': 'A change for next year applies from {when} ({year}). Numbers already drawn keep their prefix.',
   'admin.series.prefix': 'Prefix',
