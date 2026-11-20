@@ -124,6 +124,7 @@ export const setPartyCredit = defineContract({
     accountManager: idString().nullable().optional(),
     reason: reason() }),
   output: z.object({}),
+  errors: ['unknown_user'],
 });
 
 // The chart of accounts and the journal (RAD-86, M2-16's screens; ADR-006 §2, §3). The books are only posted and

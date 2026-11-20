@@ -171,7 +171,12 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
     const assign = (p: Principal) => code(run((ctx) => setCreditTerms(ctx, { id: unassigned, creditDays: null, creditLimit: null,
       accountManager: me, reason: 'Ravi looks after this dealer' }), p));
     expect(await assign(SALES)).toBe('forbidden');
-    expect(await assign({ kind: 'user', userId: randomUUID(), permissions: ['parties:manage'] })).toBe('ok');
+    const manager: Principal = { kind: 'user', userId: randomUUID(), permissions: ['parties:manage'] };
+    // Only a person with an account, switched on, manages a party (the auditor on #276).
+    expect(await assign(manager)).toBe('unknown_user');
+    await owner(`insert into radcore.users (id, email, display_name, status, password_hash, role) values ($1, $2, 'Ravi', 'active', 'x', 'sales')`,
+      [me, `${me}@example.test`]);
+    expect(await assign(manager)).toBe('ok');
     expect(await statementOf(unassigned)).toBe('ok');
   });
 

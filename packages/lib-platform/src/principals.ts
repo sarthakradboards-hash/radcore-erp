@@ -3,7 +3,7 @@
 // name isn't pii(): the people list shows it to anyone with users:read.
 import { platformTx, users } from '@radcore/db/platform';
 import { idString, type principalOut } from '@radcore/lib-common';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Ctx } from './ctx.ts';
 
@@ -32,4 +32,12 @@ export async function roleOf(ctx: Ctx, key: string): Promise<string | undefined>
   if (!key.startsWith('user:') || !isUserId(id)) return undefined;
   const [row] = await platformTx(ctx).select({ role: users.role }).from(users).where(eq(users.id, id));
   return row?.role;
+}
+
+/** Whether this person has an account and it's switched on: for a library that names a person (a party's account
+ * manager, RAD-119), since it can't read the users table itself. */
+export async function isActiveUser(ctx: Ctx, userId: string): Promise<boolean> {
+  if (!isUserId(userId)) return false;
+  const [person] = await platformTx(ctx).select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.status, 'active'))).limit(1);
+  return person !== undefined;
 }
