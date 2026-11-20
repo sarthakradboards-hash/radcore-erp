@@ -209,7 +209,7 @@ removal, so a delivery for a sale is invoiced the same day by default:
   confirms.
 - **Who issues and cancels.** `invoices:write` issues (by default admin, owner, accounts and counter), and
   `invoices:cancel` cancels (admin, owner and accounts): two keys, so cancelling can be kept from the counter.
-  Whether `invoices:cancel` needs the second factor (D-19) is Sarthak's to decide.
+  Neither needs the second factor (Sarthak, 20 Nov).
 - **Record scope.** An invoice is owned by the owner its deliveries share. One that bills deliveries of several
   owners, or none, is owned by its maker. The owner is fixed when it posts. A salesperson whose order went on a
   mixed invoice still sees the order and its deliveries, with the number of the invoice that billed them.
@@ -249,6 +249,10 @@ locking its own documents and before the check, so two sales to one party can't 
   - **Discount:** the percent off the list rate, judged against **the document maker's limit** (the role of
     `created_by`), never the reader's, in exact decimals. A role with no limit of its own has
     `sales.discount_limit_default`, 0%.
+  - **The list rate** is the price list's, never a rate typed on the line or the order's. A party's list is set
+    under `prices:approve` (`party_price_lists`), else the company's `sales.default_price_list`. A document copies
+    its list when it's created, and the service stores each priced line's `list_rate` from that list's rate in force
+    on the document's date (`priceFor`). An item with no rate in the list stores none, so no discount is judged.
 - **One version for everyone.** An override approves the document's figures and the issues found. Nothing in them
   depends on who reads them, so the maker, the approver and whoever confirms or posts see the same issues. An
   edit, or a limit changed while a request waits, makes the request stale, and the maker asks again.
@@ -261,9 +265,9 @@ locking its own documents and before the check, so two sales to one party can't 
 - New settings: `sales.invoice_lag_days` (0), `sales.credit_note_tax_deadline` (30 November), the two cash limits,
   `sales.b2c_details_limit` (50,000.00) and `sales.b2c_details_basis` (`invoice_value`). Each is the strict default
   until its CA answer. Also `accounts.default_credit_days` (0), lib-accounts' as the owner of parties' terms, which
-  M3-15's To collect reads too.
+  M3-15's To collect reads too; and `sales.default_price_list`, the list for a party with none of its own.
 - New keys, each with the second factor (D-19): `sales:override` (M3-08), `bookings:refund_full` and
-  `bookings:refund_part` (M3-13), and `bookings:forfeit` with CA-47's posting. Without it, for now:
+  `bookings:refund_part` (M3-13), and `bookings:forfeit` with CA-47's posting. Without it (Sarthak, 20 Nov):
   `invoices:write` and `invoices:cancel` (M3-09).
 - New error codes for the services: `date_in_future`, `date_before_source`, `invoice_too_late` and `exceeds_invoice`.
   The database's own guards stay RA003 and RA004.
