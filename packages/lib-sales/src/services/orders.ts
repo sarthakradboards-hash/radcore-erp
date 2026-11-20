@@ -24,7 +24,7 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 /** Orders' numbers (§3): SO/26-27/00001, drawn when an order is confirmed. */
-export const ORDER_SERIES = defineSeries('sales.order', 'SO', { digits: 5 });
+export const ORDER_SERIES = defineSeries('sales.order', 'SO', { digits: 5, label: 'Sales orders' });
 
 const notFound = () => new AppError('not_found', 'There is no such order');
 const header = { id: salesOrders.id, number: salesOrders.number, partyId: salesOrders.partyId, quoteId: salesOrders.quoteId,

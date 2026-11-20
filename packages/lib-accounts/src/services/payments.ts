@@ -16,16 +16,28 @@ import { holdParty } from './parties.ts';
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
-export const RECEIPT_SERIES = defineSeries('accounts.receipt', 'RV');
-export const PAYMENT_SERIES = defineSeries('accounts.payment', 'PV');
+export const RECEIPT_SERIES = defineSeries('accounts.receipt', 'RV', { label: 'Receipts' });
+export const PAYMENT_SERIES = defineSeries('accounts.payment', 'PV', { label: 'Payments and refunds' });
 /** Section 269ST: a party's cash receipts in a day at or past this ask an owner (CA-24 to confirm). */
-export const CASH_RECEIPT_LIMIT = defineSetting('accounts.cash_receipt_limit', moneyString(), roundMoney('200000'));
+export const CASH_RECEIPT_LIMIT = defineSetting('accounts.cash_receipt_limit', moneyString(), roundMoney('200000'), {
+  label: 'Cash received from a party in a day',
+  description: 'A party’s cash receipts in a day at or past this wait for an owner’s approval (section 269ST).',
+  input: { kind: 'money' },
+});
 /** Section 40A(3): a party's cash payments in a day past this ask an owner (CA-24 to confirm). */
-export const CASH_PAYMENT_LIMIT = defineSetting('accounts.cash_payment_limit', moneyString(), roundMoney('10000'));
+export const CASH_PAYMENT_LIMIT = defineSetting('accounts.cash_payment_limit', moneyString(), roundMoney('10000'), {
+  label: 'Cash paid to a party in a day',
+  description: 'A party’s cash payments and refunds in a day past this wait for an owner’s approval (section 40A(3)).',
+  input: { kind: 'money' },
+});
 /** The days a bill may stay unpaid for a party with no credit days of its own (Sarthak: "keep it dynamic"; the
  * architect on RAD-111): 0 by default, so its bills are due the day they're made. The sale checks read it (M3-07), and
  * M3-15 will. */
-export const DEFAULT_CREDIT_DAYS = defineSetting('accounts.default_credit_days', z.number().int().min(0).max(365), 0);
+export const DEFAULT_CREDIT_DAYS = defineSetting('accounts.default_credit_days', z.number().int().min(0).max(365), 0, {
+  label: 'Credit days',
+  description: 'The days a party with no credit days of its own has to pay a bill. 0 means bills are due the day they’re made.',
+  input: { kind: 'integer' },
+});
 
 const refuse = (code: string, message: string): never => { throw new AppError(code, message); };
 const today = () => indiaDate(new Date());

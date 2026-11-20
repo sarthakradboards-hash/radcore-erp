@@ -13,7 +13,7 @@ const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: [] };
 const letters = () => [...randomBytes(8)].map((b) => String.fromCharCode(97 + (b % 26))).join('');
-const series = (prefix = 'TS') => defineSeries(`platform.t_${letters()}`, prefix);
+const series = (prefix = 'TS') => defineSeries(`platform.t_${letters()}`, prefix, { label: 'Test' });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
   expect.fail('TEST_DATABASE_URL is not set: in CI the numbering tests must run, not skip');
@@ -64,30 +64,34 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
     expect('ABCD/26-27/00001'.length).toBe(16);
   });
 
-  it('takes its prefix from the settings, read once with the request', async () => {
+  it('takes the latest prefix in series_prefixes on or before the year, else the declared one (RAD-132)', async () => {
     const s = series('JV');
-    await asAdmin("insert into radcore.settings (key, value) values ($1, '\"JRN\"')", [s.prefix.key]);
+    await asAdmin("insert into radcore.series_prefixes (series, from_year, prefix) values ($1, '2026-27', 'JRN'), ($1, '2028-29', 'JNL')", [s.key]);
     expect(await draw(s, '2026-11-14')).toBe('JRN/26-27/00001');
-    expect(() => defineSeries('platform.t_bad', 'jv')).toThrow();
-    expect(() => defineSeries('platform.t_bad', 'TOOLONG')).toThrow();
-    expect(() => defineSeries('Platform.bad', 'JV')).toThrow(/<module>.<name>/);
+    expect(await draw(s, '2027-04-01')).toBe('JRN/27-28/00001');
+    expect(await draw(s, '2025-04-01')).toBe('JV/25-26/00001');
+    const t = { label: 'Test' };
+    expect(() => defineSeries('platform.t_bad', 'jv', t)).toThrow();
+    expect(() => defineSeries('platform.t_bad', 'TOOLONG', t)).toThrow();
+    expect(() => defineSeries('Platform.bad', 'JV', t)).toThrow(/<module>.<name>/);
+    expect(() => defineSeries('platform.t_bad', 'JV', { label: ' ' })).toThrow(/needs a label/);
   });
 
   it('keeps a year to the prefix its first number took: a change applies from the next financial year (CA-44)', async () => {
     const s = series('JV');
     expect(await draw(s, '2026-11-14')).toBe('JV/26-27/00001');
-    await asAdmin("insert into radcore.settings (key, value) values ($1, '\"JRN\"')", [s.prefix.key]);
-    // The app sending another prefix on a later draw doesn't change the year's either.
+    await asAdmin("insert into radcore.series_prefixes (series, from_year, prefix) values ($1, '2026-27', 'JRN')", [s.key]);
+    // A history row for a year already drawn doesn't change it either.
     expect(await draw(s, '2027-01-10')).toBe('JV/26-27/00002');
     expect(await draw(s, '2027-04-01')).toBe('JRN/27-28/00001');
   });
 
   it('takes the digits its series declares: 5 by default, more for a series no rule bounds', async () => {
-    const journal = defineSeries(`platform.t_${letters()}`, 'JV', { digits: 7 });
+    const journal = defineSeries(`platform.t_${letters()}`, 'JV', { digits: 7, label: 'Test' });
     expect(await draw(journal, '2026-11-14')).toBe('JV/26-27/0000001');
     expect(journal.max).toBe(9_999_999);
-    expect(() => defineSeries('platform.t_bad', 'JV', { digits: 3 })).toThrow(/4 to 9 digits/);
-    expect(() => defineSeries('platform.t_bad', 'JV', { digits: 10 })).toThrow(/4 to 9 digits/);
+    expect(() => defineSeries('platform.t_bad', 'JV', { digits: 3, label: 'Test' })).toThrow(/4 to 9 digits/);
+    expect(() => defineSeries('platform.t_bad', 'JV', { digits: 10, label: 'Test' })).toThrow(/4 to 9 digits/);
   });
 
   it('draws a number in one query (RC-200)', async () => {
@@ -131,11 +135,18 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
       const { rows } = await c.query<{ last: number }>(
-        "update radcore.number_counters set last = 500, prefix = 'XX' where series = $1 returning last, prefix", [s.key]);
+        "update radcore.number_counters set last = 500 where series = $1 returning last, prefix", [s.key]);
       expect(rows).toEqual([{ last: 2, prefix: 'TS' }]);
-      const moved = await c.query("update radcore.number_counters set financial_year = '2030-31' where series = $1", [s.key])
-        .catch((e: unknown) => (e as { code?: string }).code);
-      expect(moved).toBe('RA001');
+      const refused = async (text: string) => {
+        await c.query('savepoint s');
+        return c.query(text, [s.key]).then(() => 'ok', async (e: unknown) => {
+          await c.query('rollback to savepoint s');
+          return (e as { code?: string }).code;
+        });
+      };
+      expect(await refused("update radcore.number_counters set financial_year = '2030-31' where series = $1")).toBe('RA001');
+      // Once a number is drawn, the year keeps its prefix (RAD-132): a change is refused, never a draw.
+      expect(await refused("update radcore.number_counters set prefix = 'XX' where series = $1")).toBe('RA001');
     } finally {
       await c.query('rollback');
       c.release();

@@ -288,10 +288,22 @@ export const dataExports = radcoreTable('exports', {
 ]);
 
 /** Number series (RAD-87, ADR-006 §3): per series and financial year, the prefix its first number took and the last
- * number drawn. A trigger moves `last` up by exactly one and keeps the prefix. Machinery (ADR-005 §7c). */
+ * number drawn. A trigger moves `last` up by exactly one and keeps the prefix. A year's row can be made ahead of its
+ * first number, with `last` 0, to hold a prefix change for that year (RAD-132). Machinery (ADR-005 §7c). */
 export const numberCounters = radcoreTable('number_counters', {
   series: text().notNull(), financialYear: text().notNull(), prefix: text().notNull(), last: integer().notNull().default(1),
 }, (t) => [primaryKey({ name: 'pk_number_counters', columns: [t.series, t.financialYear] })]);
+
+/** A series' prefix history (RAD-132, ADR-006 §3, ADR-001 §8c): the prefix from `from_year` on, one row per series and
+ * year, so a second change for one year replaces the first. A year's first number takes the latest row on or before
+ * it, else the series' declared prefix (the counter's insert trigger). Audited. */
+export const seriesPrefixes = radcoreTable('series_prefixes', {
+  series: text().notNull(), fromYear: text().notNull(), prefix: text().notNull(),
+}, (t) => [
+  primaryKey({ name: 'pk_series_prefixes', columns: [t.series, t.fromYear] }),
+  check('ck_series_prefixes_from_year', sql`${t.fromYear} ~ '^[0-9]{4}-[0-9]{2}$'`),
+  check('ck_series_prefixes_prefix', sql`${t.prefix} ~ '^[A-Z0-9]{1,4}$'`),
+]);
 
 /** Why a change was made (RAD-36, ADR-005 §7c): its audit rows carry this id, never the text. Written only through
  * radcore.record_change_reason; not copied into the audit log. */

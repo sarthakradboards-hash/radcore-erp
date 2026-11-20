@@ -19,7 +19,7 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 /** Quotes' numbers (§3): QT/26-27/00001, drawn when a quote is sent. */
-export const QUOTE_SERIES = defineSeries('sales.quote', 'QT', { digits: 5 });
+export const QUOTE_SERIES = defineSeries('sales.quote', 'QT', { digits: 5, label: 'Quotations' });
 
 const notFound = () => new AppError('not_found', 'There is no such quote');
 const header = { id: salesQuotes.id, number: salesQuotes.number, partyId: salesQuotes.partyId, businessDate: salesQuotes.businessDate,

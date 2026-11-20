@@ -13,6 +13,7 @@ import { testSettings } from '@radcore/test-helpers';
 import { cruise } from 'dependency-cruiser';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { settingsRoutes } from '../apps/api/src/catalogue.ts';
 import { apiRoutes } from '../apps/api/src/routes.ts';
 import { workerJobs } from '../apps/worker/src/worker-jobs.ts';
 import { ROUTE_REACH } from './permission-manifest.ts';
@@ -69,7 +70,8 @@ function entriesOf(list: string, built: Readonly<Record<string, number>>): strin
   for (const el of body.elements) {
     const target = ts.isSpreadElement(el) ? el.expression : el;
     const file = declaringFile(target);
-    if (ts.isSpreadElement(el) && file !== null && file.startsWith('apps/')) {
+    // A list built at start (sized from the runtime by name) may be declared in apps/ too: the settings screens' (RAD-132).
+    if (ts.isSpreadElement(el) && file !== null && file.startsWith('apps/') && !(target.getText() in built)) {
       for (const entry of defaultArray(file).elements) {
         const call = ts.isSpreadElement(entry) ? entry.expression : entry;
         if (!ts.isCallExpression(call)) throw new Error(`${file}: an entry isn't a define call`);
@@ -130,7 +132,8 @@ function routeCalls(built: Readonly<Record<string, number>>): (ts.CallExpression
   return body.elements.flatMap((el) => {
     const target = ts.isSpreadElement(el) ? el.expression : el;
     const file = declaringFile(target);
-    if (ts.isSpreadElement(el) && file !== null && file.startsWith('apps/')) {
+    // A list built at start (sized from the runtime by name) may be declared in apps/ too: the settings screens' (RAD-132).
+    if (ts.isSpreadElement(el) && file !== null && file.startsWith('apps/') && !(target.getText() in built)) {
       return defaultArray(file).elements.flatMap((entry) => {
         const call = ts.isSpreadElement(entry) ? entry.expression : entry;
         if (!ts.isCallExpression(call)) return [null];
@@ -206,7 +209,8 @@ describe('the manifest’s reach', () => {
       await auth.store.stop();
     }
     const jobs: readonly JobDefinition[] = workerJobs({ mailer: { send: async () => undefined }, publicOrigin: cfg.publicOrigin });
-    const routeFiles = entriesOf(LISTS.api, { 'auth.routes': auth.routes.length, 'clientErrors.routes': clientErrors.routes.length });
+    const routeFiles = entriesOf(LISTS.api, { 'auth.routes': auth.routes.length, 'clientErrors.routes': clientErrors.routes.length,
+      settingsRoutes: settingsRoutes.length });
     const jobFiles = entriesOf(LISTS.worker, {});
     expect([routeFiles.length, jobFiles.length]).toEqual([routes.length, jobs.length]);
     const keys = [...routes.map((r) => `${r.contract.method} ${r.contract.path}`), ...jobs.map((j) => j.name)];
@@ -220,7 +224,7 @@ describe('the manifest’s reach', () => {
 
   it('reads each route file as the api mounts it, and finds the service’s own file', () => {
     // files.ts's first route is the photo upload, served by lib-platform's files engine.
-    const [first] = entriesOf(LISTS.api, { 'auth.routes': 0, 'clientErrors.routes': 0 });
+    const [first] = entriesOf(LISTS.api, { 'auth.routes': 0, 'clientErrors.routes': 0, settingsRoutes: 0 });
     // A list built at start is sized from the runtime by name, wherever it sits; one with no size is refused.
     expect(() => entriesOf(LISTS.api, {})).toThrow('no runtime size given for auth.routes');
     expect(first?.some((f) => f.startsWith('packages/lib-platform/src/files/'))).toBe(true);
@@ -238,7 +242,8 @@ describe('the manifest’s reach', () => {
     } finally {
       await auth.store.stop();
     }
-    const calls = routeCalls({ 'auth.routes': auth.routes.length, 'clientErrors.routes': clientErrors.routes.length });
+    const calls = routeCalls({ 'auth.routes': auth.routes.length, 'clientErrors.routes': clientErrors.routes.length,
+      settingsRoutes: settingsRoutes.length });
     expect(calls).toHaveLength(routes.length);
     const posting = calls.map(postingOf);
     const missing = routes.flatMap((r, i) => (r.contract.tx.readOnly ? [] : [...(posting[i] ?? [])]

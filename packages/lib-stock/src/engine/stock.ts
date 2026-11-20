@@ -29,7 +29,11 @@ import { z } from 'zod';
 
 /** Whether a delivery may take a location below zero (RC-062, ADR-006 §4). The database's commit check reads the same
  * key, so the two can't disagree. */
-export const NEGATIVE_STOCK = defineSetting('stock.negative_stock', z.boolean(), false);
+export const NEGATIVE_STOCK = defineSetting('stock.negative_stock', z.boolean(), false, {
+  label: 'Allow negative stock',
+  description: 'Whether a delivery may take a location’s stock below zero.',
+  input: { kind: 'yes_no' },
+});
 
 /** A batch named on goods coming in: its number, or null for "batch unknown" (a count bringing it back towards zero),
  * and how many of the line's units are in it. */

@@ -16,7 +16,17 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 /** The list a party with none of its own is sold from (admin); none set: no list, so no discount is judged. */
-export const DEFAULT_PRICE_LIST = defineSetting('sales.default_price_list', z.uuid().nullable(), null);
+export const DEFAULT_PRICE_LIST = defineSetting('sales.default_price_list', z.uuid().nullable(), null, {
+  label: 'Default price list',
+  description: 'The list a party with none of its own is sold from. None: no list, so no discount is judged.',
+  input: { kind: 'reference', record: 'price_list' },
+  // An existing, active list (ADR-001 §8c). A reader treats a list switched off since as none.
+  check: async (ctx, id) => {
+    if (id === null) return null;
+    const [list] = await salesTx(ctx).select({ active: priceLists.active }).from(priceLists).where(eq(priceLists.id, id)).limit(1);
+    return list?.active === true ? null : 'Choose a price list that exists and is switched on';
+  },
+});
 
 /** GET /sales/party-price-lists/:partyId (prices:read): the party's own list, or the default it takes. */
 export async function getPartyList(ctx: Ctx, { partyId }: In<typeof getPartyPriceList>): Promise<Out<typeof getPartyPriceList>> {
