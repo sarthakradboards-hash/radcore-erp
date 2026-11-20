@@ -1,13 +1,13 @@
 // Approving, posting and cancelling a credit note (M3-10, RAD-114; ADR-007 §6; ADR-006 §1, §4, §6, F9, F25, F26). Every
 // note is approved by someone else (credit_notes:approve, with the second factor, D-19), and the approval's approved()
-// posts it. In ADR-006 §1's order: the note (locked by the approval's read), the period, then its invoice, so two notes
-// of one invoice, or a note and the invoice's cancellation, take turns; then the stock engine's, the entry, the number
-// last. The entry (F9): Dr Sales, Dr Output GST (or GST Borne on Late Credit Notes past section 34's limit, F25), Cr
+// posts it. In ADR-006 §1's order: the period (the spec's lockFirst), the note (the approval's read), then its
+// invoice, so two notes of one invoice, or a note and the invoice's cancellation, take turns; the party for a counter
+// refund; then the stock engine's, the entry, the number last. The entry (F9): Dr Sales, Dr Output GST (or GST Borne on Late Credit Notes past section 34's limit, F25), Cr
 // Debtors for the total, the round-off, and for goods back Dr Stock in Hand, Cr COGS at the value they went out at,
 // their units `returned` (RC-128). The note then applies to its invoice, as far as the invoice is unpaid, and pays the
 // counter refund drafted with it (F26).
 import { creditNoteLines, creditNotes, salesTx } from '@radcore/db/sales';
-import { applyCredit, holdParty, holdPeriod, paidOf, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
+import { applyCredit, holdParty, holdPeriod, lockPeriod, paidOf, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundRate, type Money } from '@radcore/lib-common';
 import { AppError, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
 import { checkPlace, postStock, reverseStock, type PostedMovement } from '@radcore/lib-stock';
@@ -62,7 +62,7 @@ function entryLines(partyId: string, t: ReturnType<typeof totalsOf>, late: boole
   return lines.filter((l) => dec(l.debit ?? l.credit ?? '0').gt(0));
 }
 
-/** Posts an approved draft; the approval's read has locked the note's row. */
+/** Posts an approved draft. The engine has held the period (lockFirst), then locked the note's row (version). */
 async function postNote(ctx: Ctx, id: string): Promise<void> {
   const tx = salesTx(ctx);
   const [dated] = await tx.select({ businessDate: creditNotes.businessDate }).from(creditNotes).where(eq(creditNotes.id, id));
@@ -127,6 +127,11 @@ export const creditNoteApprovalSpec: ApprovalSpec<NoteVersion> = {
   kind: 'credit-note',
   table: 'credit_notes',
   parts: ['credit_note_lines'],
+  // The period's locks first, before the engine locks the note (ADR-006 §1; the architect on RAD-114), refusing nothing:
+  // a reject goes through whatever the period says, and posting checks the note's date under the same locks.
+  async lockFirst(ctx) {
+    await lockPeriod(ctx);
+  },
   async version(ctx, id, { forUpdate }) {
     const sel = salesTx(ctx).select().from(creditNotes).where(eq(creditNotes.id, id));
     const [note] = forUpdate ? await sel.for('update') : await sel;
