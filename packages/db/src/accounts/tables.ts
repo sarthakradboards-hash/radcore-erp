@@ -231,6 +231,10 @@ export const payments = radcoreTable('payments', {
   narration: boundedText({ max: 500 }),
   // A receipt held for a document (a booking's advance, RAD-117), named as an allocation names one: refunded only
   // through that document's service (refundHeld). lib-accounts never reads the document.
+  // A refund of a credit (a credit note, RAD-114): the credit it pays back, named as a credit application names one.
+  // A refund names exactly one source, a receipt or a credit; the database checks the credit when the refund posts.
+  creditTable: text(),
+  creditId: uuid(),
   heldForTable: text(),
   heldForId: uuid(),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
@@ -243,7 +247,9 @@ export const payments = radcoreTable('payments', {
   check('ck_payments_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
   // money() already holds each at or above zero (ck_payments_amount, ck_payments_tds).
   check('ck_payments_figures', sql`${t.amount} > 0 and ${t.tds} < ${t.amount}`),
-  check('ck_payments_refund', sql`(${t.kind} = 'refund') = (${t.refundOfId} is not null) and (${t.kind} <> 'refund' or ${t.tds} = 0)`),
+  check('ck_payments_refund', sql`(${t.kind} = 'refund') = (${t.refundOfId} is not null or ${t.creditTable} is not null)
+    and (${t.refundOfId} is null or ${t.creditTable} is null) and (${t.creditTable} is null) = (${t.creditId} is null)
+    and (${t.kind} <> 'refund' or ${t.tds} = 0)`),
   check('ck_payments_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
   check('ck_payments_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
   check('ck_payments_held_for', sql`(${t.heldForTable} is null) = (${t.heldForId} is null) and (${t.heldForTable} is null or (${t.kind} = 'receipt'
@@ -254,6 +260,7 @@ export const payments = radcoreTable('payments', {
   index('ix_payments_posted_entry').on(t.postedEntryId),
   index('ix_payments_cancel_entry').on(t.cancelEntryId),
   index('ix_payments_held_for').on(t.heldForTable, t.heldForId),
+  index('ix_payments_credit').on(t.creditTable, t.creditId),
 ]);
 
 /**
