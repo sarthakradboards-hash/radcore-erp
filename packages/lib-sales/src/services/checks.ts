@@ -2,14 +2,15 @@
 // that commits a sale (confirming an order, a delivery, an invoice, handing back a repaired vehicle) asks checkSale
 // again, so a party that went over its limit or fell overdue since the order is stopped at the next step too.
 // - Credit: the party's exposure is its net Debtors balance, plus what it has been delivered and not billed, plus this
-//   document; over its limit, or with a bill past its credit days, needs someone else's approval.
+//   document; over its limit, or with a bill past its credit days, needs someone else's approval. A party with no limit
+//   set has no credit, and one with no days of its own has accounts.default_credit_days (Sarthak on RAD-111).
 // - Price, only on lines with a price set: below the item's average cost at the place (the moving average, landed
 //   cost included; the purchase price when nothing is on hand), or below the list rate by more than the person's
 //   discount limit (RAD-98, 0% by default), needs approval: the document's maker's limit, whoever reads it. A stock item
 //   with no cost at all needs it too.
 // The arithmetic is checks-rules.ts's. An override goes through defineApproval (RAD-38) with overrideApproval below.
 import { dec, type DecimalInput, type Money } from '@radcore/lib-common';
-import { getPartyById, partyReceivable } from '@radcore/lib-accounts';
+import { DEFAULT_CREDIT_DAYS, getPartyById, partyReceivable } from '@radcore/lib-accounts';
 import { roleOf, type ApprovalSpec, type ApprovalVersion, type Ctx } from '@radcore/lib-platform';
 import { averageCost, purchasePrices } from '@radcore/lib-stock';
 import type { z } from 'zod';
@@ -60,7 +61,7 @@ export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult
   const owed = await partyReceivable(ctx, s.partyId, s.on);
   const notInvoiced = dec(s.notInvoiced ?? '0').toFixed(2);
   const credit = creditResult({ limit: party.creditLimit, outstanding: owed.outstanding, notInvoiced, adds: s.adds,
-    creditDays: party.creditDays, oldestUnpaid: owed.oldestUnpaid, on: s.on });
+    creditDays: party.creditDays ?? ctx.settings.get(DEFAULT_CREDIT_DAYS), oldestUnpaid: owed.oldestUnpaid, on: s.on });
   const priced = s.lines.filter((l) => l.rate !== null);
   const limit = priced.length === 0 ? '0' : await discountLimitOf(ctx, await roleOf(ctx, s.pricedBy));
   // The average at the place, else the item's purchase price; each read once per line.

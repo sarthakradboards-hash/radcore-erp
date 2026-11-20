@@ -21,7 +21,7 @@ export const checkIssue = z.discriminatedUnion('code', [
 export const saleCheck = z.object({
   stage: z.enum(['confirm', 'deliver', 'invoice', 'handback']),
   credit: z.object({
-    /** The party's limit; null: none set. */
+    /** The party's limit; null: none set, so it has no credit (Sarthak on RAD-111). */
     limit: moneyString().nullable(),
     /** Its net Debtors balance (an advance is negative). */
     outstanding: moneyString({ signed: true }),

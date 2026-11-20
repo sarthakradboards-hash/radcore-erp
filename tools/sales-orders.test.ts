@@ -46,6 +46,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
       await openFinancialYear(ctx, DATE);
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: kinds as never, gstin: null, pan: null, composition: false,
         stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
+      // Credit enough for any order here: a party with no limit set has no credit (Sarthak on RAD-111).
+      await setCreditTerms(ctx, { id: partyId, creditDays: 30, creditLimit: moneyString().parse('10000000'), reason: 'Test terms' });
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
       // An HSN of its own, rated from the test's day, so no other file's rate is the one in force for it (RC-115).
       const hsn = `8711${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}`;

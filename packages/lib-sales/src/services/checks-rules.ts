@@ -14,7 +14,7 @@ export type CheckIssue =
 
 /** A party's credit position for one sale: what it owes, its terms, and what this sale adds. */
 export type CreditFigures = Readonly<{
-  /** The most it may owe; null: no limit is set, so no amount is too much. */
+  /** The most it may owe; null: none is set, so it has no credit and any amount owed is over, as at 0 (Sarthak). */
   limit: DecimalInput | null;
   /** What it owes now, before this sale: its net Debtors balance. */
   outstanding: DecimalInput;
@@ -22,8 +22,8 @@ export type CreditFigures = Readonly<{
   notInvoiced: DecimalInput;
   /** What this sale adds to what it owes: its unpaid part. */
   adds: DecimalInput;
-  /** Days a bill may stay unpaid; null: none, so a bill is due the day it's made. */
-  creditDays: number | null;
+  /** Days a bill may stay unpaid: the party's own, else accounts.default_credit_days (checks.ts reads it). */
+  creditDays: number;
   /** The business date of its oldest bill still unpaid, or null when it owes nothing. */
   oldestUnpaid: string | null;
   /** The sale's business date. */
@@ -36,8 +36,8 @@ export function creditResult(f: CreditFigures): { after: string; overLimit: bool
   const after = dec(f.outstanding).plus(dec(f.notInvoiced)).plus(dec(f.adds));
   return {
     after: after.toFixed(2),
-    overLimit: f.limit !== null && after.gt(dec(f.limit)),
-    overdue: f.oldestUnpaid !== null && addDays(f.oldestUnpaid, f.creditDays ?? 0) < f.on,
+    overLimit: after.gt(dec(f.limit ?? '0')),
+    overdue: f.oldestUnpaid !== null && addDays(f.oldestUnpaid, f.creditDays) < f.on,
   };
 }
 
