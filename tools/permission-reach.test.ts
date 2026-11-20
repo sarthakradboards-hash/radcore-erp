@@ -99,6 +99,7 @@ const ENGINE_ERRORS: Readonly<Record<string, readonly string[]>> = {
   postEntry: ['account_inactive', 'period_locked', 'year_not_open'],
   postManualJournal: ['account_inactive', 'period_locked', 'year_not_open'],
   reverseEntry: ['period_locked', 'year_not_open'],
+  reverseEntriesOf: ['period_locked', 'year_not_open'],
   holdPeriod: ['period_locked', 'year_not_open'],
 };
 /** The engine functions code reaches, following each call into a function, method or arrow declared in the repo. */
@@ -192,7 +193,6 @@ function disagreements(found: Readonly<Record<string, readonly string[]>>, table
 const DB_BACKSTOPS: Record<string, string> = {
   'RA006:allocation_payment_not_posted': 'allocatePayment says not_posted first, under the payment’s lock',
   'RA006:allocatable_document_shape': 'raised only by a migration registering a table',
-  'RA006:document_still_applied': 'no document has a cancel route yet; the first one maps it',
   'RA006:invoice_lines_total': 'postInvoiceNow writes the header from the same figures as its lines (invoice-rules’ totalsOf); a backstop for any other path',
 };
 

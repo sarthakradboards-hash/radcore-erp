@@ -3,7 +3,7 @@
 // return takes some back before they're invoiced, into the batches they left with. Both post (stock, units, the
 // journal) and draw their numbers (DC, DR) last. Like every contract file it imports only zod, lib-common and other
 // libraries' contract entries (D5).
-import { cost, dateString, defineContract, idString, listInput, listOf, moneyString, quantityString } from '@radcore/lib-common';
+import { cost, dateString, defineContract, idString, listInput, listOf, moneyString, quantityString, reason } from '@radcore/lib-common';
 import { approvalContracts } from '@radcore/lib-platform/contract';
 import { z } from 'zod';
 
@@ -125,4 +125,21 @@ export const deleteDeliveryReturn = defineContract({
 export const postDeliveryReturn = defineContract({
   method: 'POST', path: '/sales/delivery-returns/:id/post', auth: 'session', perm: 'deliveries:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }), errors: [...POST_ERRORS],
+});
+
+// Cancelling a posted delivery or return (RAD-114, ADR-007 §6), under its own key: the stock and entries mirrored on
+// the cancellation's day, nothing deleted.
+const CANCEL_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive',
+  'not_enough_stock', 'already_reversed', 'not_reversible'] as const;
+const cancelIn = z.object({ id: idString(), businessDate: dateString(), reason: reason() });
+/** Cancels a posted delivery while nothing on it is invoiced or taken back: its goods come back at the values they went out
+ * at, its units with them, and an order it closed opens again. */
+export const cancelDelivery = defineContract({
+  method: 'POST', path: '/sales/deliveries/:id/cancel', auth: 'session', perm: 'deliveries:cancel', tx: write,
+  input: cancelIn, output: z.object({}), errors: [...CANCEL_ERRORS, 'delivery_in_use'],
+});
+/** Cancels a posted delivery return: its goods go back out to the customer at the values they came back at (RC-207). */
+export const cancelDeliveryReturn = defineContract({
+  method: 'POST', path: '/sales/delivery-returns/:id/cancel', auth: 'session', perm: 'deliveries:cancel', tx: write,
+  input: cancelIn, output: z.object({}), errors: [...CANCEL_ERRORS, 'over_quantity'],
 });

@@ -4,7 +4,8 @@
 // and the goods' cost from GDNI to COGS, and draws its number (INV) last. Like every contract file it imports only zod,
 // lib-common and other libraries' contract entries (D5).
 import {
-  cost, dateString, defineContract, idString, listInput, listOf, moneyString, percentString, pii, piiRecord, quantityString, unitPriceString,
+  cost, dateString, defineContract, idString, listInput, listOf, moneyString, percentString, pii, piiRecord, quantityString, reason,
+  unitPriceString,
 } from '@radcore/lib-common';
 import { approvalContracts } from '@radcore/lib-platform/contract';
 import { z } from 'zod';
@@ -95,3 +96,11 @@ export const requestInvoiceOverride = defineContract({
 });
 /** The invoice overrides' approval routes (RAD-38). */
 export const invoiceOverrideApproval = approvalContracts('sales-invoice-override', 'sales:override');
+/** Cancels a posted invoice (ADR-007 §6, F10): its entry mirrored on the cancellation's day, the deliveries it billed
+ * open again. Refused while payments or credits are applied to it (RC-126: receipts are never touched). */
+export const cancelInvoice = defineContract({
+  method: 'POST', path: '/sales/invoices/:id/cancel', auth: 'session', perm: 'invoices:cancel', tx: write,
+  input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),
+  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive', 'still_applied'],
+  dbErrors: { 'RA006:document_still_applied': { code: 'still_applied', message: 'Payments or credits are still applied to this invoice: reverse them first' } },
+});

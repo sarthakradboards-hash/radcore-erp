@@ -37,7 +37,7 @@ const notOnSource = (path: (string | number)[], message: string) =>
   new AppError('not_on_source', 'That didn’t go on this delivery', [{ path, code: 'not_on_source', message }]);
 
 /** The return, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
-async function returnOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
+export async function returnOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
   const sel = salesTx(ctx).select({ ...header, owner: deliveryReturns.owner }).from(deliveryReturns).where(eq(deliveryReturns.id, id));
   const [row] = forUpdate ? await sel.for('update') : await sel;
   if (row === undefined) throw new AppError('not_found', 'There is no such return');
