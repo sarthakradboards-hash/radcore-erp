@@ -22,6 +22,11 @@ describe('formAlert', () => {
       .toBe('Check the form: Not a GSTIN; Period is locked');
   });
 
+  it('doesn’t repeat an issue that only says what the server said', () => {
+    expect(formAlert('invalid_input', undefined, 'Choose a price list', ['Choose a price list'])).toBe('Choose a price list');
+    expect(formAlert('invalid_input', undefined, 'Check the form', ['Check the form', 'Not a GSTIN'])).toBe('Check the form: Not a GSTIN');
+  });
+
   it('lets the screen’s own words for a code stand alone, without the server’s issue text (e2e on #145)', () => {
     expect(formAlert('role_in_use', 'People still hold this role.', 'role_in_use', ['1'])).toBe('People still hold this role.');
   });
