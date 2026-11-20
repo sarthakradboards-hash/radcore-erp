@@ -165,6 +165,37 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     expect([order.status, order.closeReason]).toEqual(['closed', 'The customer took one elsewhere']);
   });
 
+  // ADR-006 §1's lock order (auditor-2 on #247): a confirmation holds the period before it locks the order, as a
+  // delivery's posting does. While a period-lock move holds the period, the waiting confirmation hasn't locked the order,
+  // so another can still take it; once the move is gone, the confirmation goes through.
+  it('holds the period before it locks the order it confirms', async () => {
+    const at = await setup();
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }));
+    const mover = await su.connect();
+    try {
+      await mover.query('begin');
+      await mover.query('select id from radcore.period_lock where id = 1 for update');
+      const confirming = run((ctx) => confirmOrderNow(ctx, { id }));
+      // Until the confirmation is waiting on the period lock, as a move would make it.
+      for (let waiting = 0; waiting === 0;) {
+        waiting = Number((await mover.query<{ n: string }>(`select count(*) as n from pg_stat_activity
+          where wait_event_type = 'Lock' and query ilike '%period_lock%' and pid <> pg_backend_pid()`)).rows[0]?.n);
+      }
+      const other = await pool.connect();
+      try {
+        await other.query('begin');
+        expect((await other.query('select id from radcore.sales_orders where id = $1 for update nowait', [id])).rowCount).toBe(1);
+        await other.query('rollback');
+      } finally {
+        other.release();
+      }
+      await mover.query('rollback');
+      expect((await confirming).number).toMatch(/^SO\//);
+    } finally {
+      mover.release();
+    }
+  });
+
   it('cancels a confirmed order with a reason, never a draft', async () => {
     const at = await setup();
     const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }));
