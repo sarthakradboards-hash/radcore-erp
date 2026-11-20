@@ -37,7 +37,7 @@ const q = (s: string) => quantityString().parse(s);
 const wrongStatus = (status: string) => new AppError('wrong_status', `This delivery is ${status}, so it can’t be changed`);
 
 /** The delivery, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
-async function deliveryOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
+export async function deliveryOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
   const sel = salesTx(ctx).select({ ...header, owner: deliveries.owner, createdBy: deliveries.createdBy,
     overrideVersion: deliveries.overrideVersion }).from(deliveries).where(eq(deliveries.id, id));
   const [row] = forUpdate ? await sel.for('update') : await sel;

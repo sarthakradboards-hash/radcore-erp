@@ -56,11 +56,16 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
     records: ['@radcore/db/sales#salesQuotes', '@radcore/db/sales#salesOrders'] },
   { key: 'deliveries:write', module: 'Sales', label: 'Draft and post deliveries, and take delivered goods back before invoicing',
     records: ['@radcore/db/sales#deliveries', '@radcore/db/sales#deliveryReturns'] },
+  // Cancelling a posted delivery or return mirrors its stock and books (RAD-114, the architect's ruling): its own key.
+  { key: 'deliveries:cancel', module: 'Sales', label: 'Cancel a posted delivery or delivery return',
+    records: ['@radcore/db/sales#deliveries', '@radcore/db/sales#deliveryReturns'] },
   { key: 'invoices:write', module: 'Sales', label: 'Draft and post invoices of delivered goods',
     records: ['@radcore/db/sales#invoices'] },
-  // Its own key, so cancelling can be kept from the counter (the architect on RAD-113). Whether it needs the second
-  // factor is Sarthak's to decide (D-19); without it until then. Its route comes with cancellations (M3-10, RAD-114).
+  // Its own key, so cancelling can be kept from the counter (the architect on RAD-113), without the second factor
+  // (Sarthak, 20 Nov). Its route is RAD-114's.
   { key: 'invoices:cancel', module: 'Sales', label: 'Cancel a posted invoice', records: ['@radcore/db/sales#invoices'] },
+  // Cancelling a posted credit note (RAD-114, the architect's ruling); its records join with the credit notes (PR 2).
+  { key: 'credit_notes:cancel', module: 'Sales', label: 'Cancel a posted credit note' },
   { key: 'sales:override', module: 'Sales', label: 'Approve another person’s sale over a credit limit, below cost or over a discount limit',
     secondFactor: true },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },

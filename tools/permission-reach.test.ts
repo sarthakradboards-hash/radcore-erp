@@ -97,6 +97,7 @@ const ENGINE_ERRORS: Readonly<Record<string, readonly string[]>> = {
   postEntry: ['account_inactive', 'period_locked', 'year_not_open'],
   postManualJournal: ['account_inactive', 'period_locked', 'year_not_open'],
   reverseEntry: ['period_locked', 'year_not_open'],
+  reverseEntriesOf: ['period_locked', 'year_not_open'],
   holdPeriod: ['period_locked', 'year_not_open'],
 };
 /** The engine functions code reaches, following each call into a function, method or arrow declared in the repo. */

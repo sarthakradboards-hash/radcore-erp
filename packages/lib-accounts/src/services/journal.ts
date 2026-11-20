@@ -8,7 +8,7 @@ import { accounts, accountsTx, company, financialYears, journalEntries, journalL
 import { financialYear, type EntryKind, type Money } from '@radcore/lib-common';
 import { AppError, defineSeries, nextNumber, type Ctx } from '@radcore/lib-platform';
 import { randomUUID } from 'node:crypto';
-import { asc, eq, inArray, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, or } from 'drizzle-orm';
 import { balancedAmounts, swapSides } from './posting.ts';
 
 /** The journal's numbering series (RAD-87): "JV/26-27/0000042". Nearly every document posts an entry, so it has 7 digits,
@@ -137,4 +137,24 @@ export async function reverseEntry(ctx: Ctx, r: Readonly<{ entryId: string; busi
       ...(l.partyId === null ? {} : { partyId: l.partyId }), ...(l.itemId === null ? {} : { itemId: l.itemId }),
       ...(l.locationId === null ? {} : { locationId: l.locationId }) })),
   });
+}
+
+/**
+ * A document's cancellation in the books (ADR-006 §3, §6): reverses every entry of the document that isn't a reversal
+ * and isn't reversed yet, dated `businessDate`, through reverseEntry: its own entry and any revaluation the stock engine
+ * posted for it (F15). The period lock is taken first and the entries read under it, so a posting in flight can't slip
+ * one in between. Answers the reversals in the originals' order, the document's own entry first (RAD-114, backend's OK).
+ */
+export async function reverseEntriesOf(ctx: Ctx, r: Readonly<{ source: Readonly<{ table: string; id: string }>; businessDate: string;
+  reason?: string }>): Promise<Posted[]> {
+  await holdPeriod(ctx, r.businessDate);
+  const all = await accountsTx(ctx).select({ id: journalEntries.id, kind: journalEntries.kind, reverses: journalEntries.reversesEntryId,
+    postedAt: journalEntries.postedAt }).from(journalEntries)
+    .where(and(eq(journalEntries.sourceTable, r.source.table), eq(journalEntries.sourceId, r.source.id)));
+  const reversed = new Set(all.map((e) => e.reverses));
+  const open = all.filter((e) => e.reverses === null && !reversed.has(e.id)).toSorted((a, b) =>
+    Number(a.kind === 'revaluation') - Number(b.kind === 'revaluation') || a.postedAt.getTime() - b.postedAt.getTime() || a.id.localeCompare(b.id));
+  const out: Posted[] = [];
+  for (const e of open) out.push(await reverseEntry(ctx, { entryId: e.id, businessDate: r.businessDate, ...(r.reason === undefined ? {} : { reason: r.reason }) }));
+  return out;
 }
