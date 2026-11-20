@@ -21,6 +21,10 @@ export {
 export { deliveryOverride } from './services/delivery-checks.ts';
 export { addInvoice, changeInvoice, dropInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
 export { cancelInvoiceNow } from './services/invoice-cancel.ts';
+export { addCreditNote, dropCreditNote, getCreditNoteById, listCreditNotesPage } from './services/credit-notes.ts';
+export {
+  askCreditNoteApproval, cancelCreditNoteNow, CREDIT_NOTE_SERIES, CREDIT_NOTE_TAX_DEADLINE, creditNoteApprovalSpec,
+} from './services/credit-note-post.ts';
 export { cancelDeliveryNow, cancelDeliveryReturnNow } from './services/delivery-cancel.ts';
 export {
   askInvoiceOverride, B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, INVOICE_LAG_DAYS, INVOICE_SERIES, invoiceOverride, postInvoiceNow,
@@ -35,6 +39,7 @@ export {
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
+import { CREDIT_NOTE_SERIES, CREDIT_NOTE_TAX_DEADLINE } from './services/credit-note-post.ts';
 import { DELIVERY_RETURN_SERIES as returned } from './services/delivery-returns.ts';
 import { DELIVERY_SERIES as delivered } from './services/deliveries.ts';
 import { defaultDiscountLimit } from './services/discounts.ts';
@@ -42,5 +47,6 @@ import { B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, INVOICE_LAG_DAYS, INVOICE_SERIES 
 import { ORDER_SERIES as ordered } from './services/orders.ts';
 import { DEFAULT_PRICE_LIST } from './services/party-price-lists.ts';
 import { QUOTE_SERIES as quoted } from './services/quotes.ts';
-export const settings: readonly SettingDef<unknown>[] = [defaultDiscountLimit, DEFAULT_PRICE_LIST, INVOICE_LAG_DAYS, B2C_DETAILS_LIMIT, B2C_DETAILS_BASIS];
-export const series: readonly Series[] = [quoted, ordered, delivered, returned, INVOICE_SERIES];
+export const settings: readonly SettingDef<unknown>[] = [defaultDiscountLimit, DEFAULT_PRICE_LIST, INVOICE_LAG_DAYS, B2C_DETAILS_LIMIT, B2C_DETAILS_BASIS,
+  CREDIT_NOTE_TAX_DEADLINE];
+export const series: readonly Series[] = [quoted, ordered, delivered, returned, INVOICE_SERIES, CREDIT_NOTE_SERIES];
