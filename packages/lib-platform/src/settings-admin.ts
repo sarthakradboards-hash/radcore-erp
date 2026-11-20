@@ -78,12 +78,13 @@ export async function listSeriesOf(ctx: Ctx, catalogue: readonly Series[]): Prom
   const drawn = (s: Series, label: string) => history.filter((h) => h.series === s.key && h.fromYear <= label)
     .toSorted((a, b) => b.fromYear.localeCompare(a.fromYear))[0]?.prefix ?? s.prefix;
   const counter = (s: Series, label: string) => counters.find((c) => c.series === s.key && c.financialYear === label);
-  return { series: catalogue.map((s) => {
-    const now = counter(s, year.label);
-    const prefixThisYear = now?.prefix ?? drawn(s, year.label);
-    return { key: s.key, label: s.label, prefixThisYear, prefixNextYear: counter(s, next.label)?.prefix ?? drawn(s, next.label),
-      next: formatNumber(s, prefixThisYear, year.label, (now?.last ?? 0) + 1) };
-  }) };
+  return { thisYear: { label: year.label, start: year.start }, nextYear: { label: next.label, start: next.start },
+    series: catalogue.map((s) => {
+      const now = counter(s, year.label);
+      const prefixThisYear = now?.prefix ?? drawn(s, year.label);
+      return { key: s.key, label: s.label, prefixThisYear, prefixNextYear: counter(s, next.label)?.prefix ?? drawn(s, next.label),
+        next: formatNumber(s, prefixThisYear, year.label, (now?.last ?? 0) + 1), thisYearDrawn: (now?.last ?? 0) > 0 };
+    }) };
 }
 
 /**

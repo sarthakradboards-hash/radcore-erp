@@ -122,16 +122,18 @@ describe.skipIf(!url || !superUrl)('the settings and number-series screens', { t
 
   it('changes a prefix from this year only before its first number, and from next year always; an issued number never changes', async () => {
     const s = defineSeries(`platform.t_${letters()}`, 'AB', { label: 'Test' });
-    // This year, as the service sees it, from its own answer: a test never reads the run date (RC-156).
-    const yy = (await run((ctx) => listSeriesOf(ctx, [s]))).series[0]?.next.split('/')[1] ?? '';
-    const year = financialYear(`20${yy.slice(0, 2)}-04-01`);
-    const next = financialYear(`${Number(year.start.slice(0, 4)) + 1}-04-01`);
+    // This year and next, as the service sees them: a test never reads the run date (RC-156).
+    const { thisYear, nextYear } = await run((ctx) => listSeriesOf(ctx, [s]));
+    const year = financialYear(thisYear.start);
+    const next = financialYear(nextYear.start);
+    expect([thisYear.label, nextYear.label]).toEqual([year.label, next.label]);
     const last = financialYear(`${Number(year.start.slice(0, 4)) - 1}-04-01`);
     const change = (prefix: string, from: 'this_year' | 'next_year') => run((ctx) => changeSeriesPrefix(ctx, [s], { key: s.key, prefix, from,
       reason: 'Testing' }));
     const shown = async () => (await run((ctx) => listSeriesOf(ctx, [s]))).series[0];
     const short = (label: string) => label.slice(2);
-    expect(await shown()).toEqual({ key: s.key, label: 'Test', prefixThisYear: 'AB', prefixNextYear: 'AB', next: `AB/${short(year.label)}/00001` });
+    expect(await shown()).toEqual({ key: s.key, label: 'Test', prefixThisYear: 'AB', prefixNextYear: 'AB', next: `AB/${short(year.label)}/00001`,
+      thisYearDrawn: false });
     expect(await change('CD', 'this_year')).toEqual({ fromYear: year.label });
     expect(await run((ctx) => nextNumber(ctx, s, year.start))).toBe(`CD/${short(year.label)}/00001`);
     expect(await code(change('EF', 'this_year'))).toBe('series_in_use');
@@ -147,7 +149,7 @@ describe.skipIf(!url || !superUrl)('the settings and number-series screens', { t
       c.release();
     }
     expect(await change('EF', 'next_year')).toEqual({ fromYear: next.label });
-    expect(await shown()).toMatchObject({ prefixThisYear: 'CD', prefixNextYear: 'EF', next: `CD/${short(year.label)}/00002` });
+    expect(await shown()).toMatchObject({ prefixThisYear: 'CD', prefixNextYear: 'EF', next: `CD/${short(year.label)}/00002`, thisYearDrawn: true });
     expect(await run((ctx) => nextNumber(ctx, s, year.end))).toBe(`CD/${short(year.label)}/00002`);
     expect(await run((ctx) => nextNumber(ctx, s, next.start))).toBe(`EF/${short(next.label)}/00001`);
     // A document dated in last year keeps last year's prefix: the declared one, as nothing was changed for it.

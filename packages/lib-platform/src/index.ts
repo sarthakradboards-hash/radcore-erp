@@ -72,6 +72,8 @@ export {
 export { defineExport, defineExportJob, exportOf, startMastersExport, workbookOf, type ModuleExport } from './export/job.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
+import type { SettingDef } from './define-setting.ts';
+import type { Series } from './numbering.ts';
 import { linkMaxDays as linkDays } from './links.ts';
-export const settings = [linkDays] as const;
-export const series = [] as const;
+export const settings: readonly SettingDef<unknown>[] = [linkDays];
+export const series: readonly Series[] = [];

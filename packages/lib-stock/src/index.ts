@@ -15,7 +15,8 @@ export {
 export { NEGATIVE_STOCK, batchKey, postStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
+import type { Series, SettingDef } from '@radcore/lib-platform';
 import { NEGATIVE_STOCK as negative } from './engine/stock.ts';
 import { KIND_LABELS } from './location-kinds.ts';
-export const settings = [negative, ...Object.values(KIND_LABELS)] as const;
-export const series = [] as const;
+export const settings: readonly SettingDef<unknown>[] = [negative, ...Object.values(KIND_LABELS)];
+export const series: readonly Series[] = [];

@@ -1,7 +1,7 @@
 // The settings and number-series prefixes routes (RAD-132, ADR-001 §8c), for ui-2's screens (M3-27). Every setting a
 // library declares, with its label, description, value and default, under settings:read; a change under settings:write
 // with a reason. A series' prefix changes from the next financial year, or this one before its first number.
-import { defineContract, momentString, principalOut, reason } from '@radcore/lib-common';
+import { dateString, defineContract, momentString, principalOut, reason } from '@radcore/lib-common';
 import { z } from 'zod';
 
 const write = { readOnly: false, isolation: 'read committed' } as const;
@@ -37,12 +37,16 @@ export const setSetting = defineContract({
   errors: ['invalid_value', 'value_refused'],
 });
 
-/** GET /number-series (settings:read): each series' prefix this year (its counter's, else what it would draw), next
- * year's, and the number it would draw next (for show: nothing is locked). */
+const year = z.object({ label: z.string(), start: dateString() });
+
+/** GET /number-series (settings:read): this financial year and next, and each series' prefix this year (its
+ * counter's, else what it would draw), next year's, the number it would draw next (for show: nothing is locked), and
+ * whether this year has drawn one, after which a prefix changes only from next year. */
 export const listNumberSeries = defineContract({
   method: 'GET', path: '/number-series', auth: 'session', perm: 'settings:read', tx: read, input: z.object({}),
-  output: z.object({ series: z.array(z.object({
+  output: z.object({ thisYear: year, nextYear: year, series: z.array(z.object({
     key: seriesKey(), label: z.string(), prefixThisYear: z.string(), prefixNextYear: z.string(), next: z.string(),
+    thisYearDrawn: z.boolean(),
   })) }),
 });
 
