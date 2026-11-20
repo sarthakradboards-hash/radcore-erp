@@ -148,8 +148,8 @@ export async function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): 
   // Its date first, unlocked, for the period lock; then the invoice, locked, still on that date.
   const held = (await invoiceOf(ctx, id, 'invoices:write')).businessDate;
   await holdPeriod(ctx, held);
-  // ADR-006 §1's step 1 with the period: the company profile row FOR SHARE, so it can't change while it's frozen onto
-  // this invoice (auditor-2 on #254).
+  // The issuer's details it freezes. holdPeriod already holds the profile row FOR SHARE (ADR-006 §1 step 1, #260), so
+  // they can't change under it; read here, before the documents, refused while the profile isn't set.
   const company = await companyForInvoice(ctx);
   const inv = await invoiceOf(ctx, id, 'invoices:write', true);
   if (inv.status !== 'draft') throw wrongStatus(inv.status, 'posted');
