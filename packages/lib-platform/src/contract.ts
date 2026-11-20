@@ -42,6 +42,7 @@ export * from './contract/sign-in.ts';
 export * from './contract/notifications.ts';
 // The browser's error report (RC-158).
 export * from './contract/client-errors.ts';
+export * from './contract/settings.ts';
 
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const read = { readOnly: true, isolation: 'read committed' } as const;

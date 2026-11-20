@@ -5,17 +5,23 @@ import { z } from 'zod';
 import { defineSetting, saveSetting, settingRow, Settings, type Ctx } from '../src/index.ts';
 import { linkMaxDays } from './links.ts';
 
-const prefix = defineSetting('sales.invoice_prefix', z.string().regex(/^[A-Z]{2,5}$/), 'INV');
-const idleMinutes = defineSetting('platform.session_idle_minutes', z.number().int().min(5).max(480), 30);
+const META = { label: 'A test setting', description: 'For a test.', input: { kind: 'text' } } as const;
+const prefix = defineSetting('sales.invoice_prefix', z.string().regex(/^[A-Z]{2,5}$/), 'INV', META);
+const idleMinutes = defineSetting('platform.session_idle_minutes', z.number().int().min(5).max(480), 30, META);
 
 describe('defineSetting', () => {
   it.each(['jobs.last_run', 'period_lock', 'lock.accounts', 'Sales.prefix', 'sales.invoice-prefix'])(
     'refuses the key "%s": settings are <module>.<name>, never job state or a lock', (key) => {
-      expect(() => defineSetting(key, z.string(), 'x')).toThrow(TypeError);
+      expect(() => defineSetting(key, z.string(), 'x', META)).toThrow(TypeError);
     });
 
   it('refuses a default its own schema refuses', () => {
-    expect(() => defineSetting('sales.x', z.string().min(2), 'a')).toThrow();
+    expect(() => defineSetting('sales.x', z.string().min(2), 'a', META)).toThrow();
+  });
+
+  it('refuses a setting with no label or description: the settings screen shows both (ADR-001 §8c)', () => {
+    expect(() => defineSetting('sales.y', z.string(), 'a', { ...META, label: ' ' })).toThrow(/label and a description/);
+    expect(() => defineSetting('sales.y', z.string(), 'a', { ...META, description: '' })).toThrow(/label and a description/);
   });
 });
 

@@ -30,6 +30,8 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'roles:read', module: 'Admin', label: 'See roles and what each may do' },
   { key: 'roles:write', module: 'Admin', label: 'Change what each role may do', secondFactor: true },
   { key: 'audit:read', module: 'Admin', label: 'Read the audit trail and security events' },
+  { key: 'settings:read', module: 'Admin', label: 'See the business’s settings and its number-series prefixes' },
+  { key: 'settings:write', module: 'Admin', label: 'Change the business’s settings and its number-series prefixes', secondFactor: true },
   { key: 'company:read', module: 'Company', label: 'See the company’s name, GSTIN and address' },
   { key: 'company:write', module: 'Company', label: 'Set the company’s name, GSTIN and address, which every invoice prints', secondFactor: true },
   { key: 'gst:read', module: 'GST', label: 'See GST rates by HSN and date' },

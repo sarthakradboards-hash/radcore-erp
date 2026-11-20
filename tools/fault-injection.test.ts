@@ -102,7 +102,7 @@ describe.skipIf(!url || !superUrl)('a save that fails halfway (RC-157)', { timeo
   });
 
   it('gives the number back when the connection dies after it is drawn, so the series stays gap-free', async () => {
-    const series = defineSeries(`platform.t_fault_${randomUUID().slice(0, 8)}`, 'FI');
+    const series = defineSeries(`platform.t_fault_${randomUUID().slice(0, 8)}`, 'FI', { label: 'Test' });
     const draw = () => run((ctx) => nextNumber(ctx, series, DAY));
     const { after } = await killEachStep(draw, () => counter(series.key, YEAR));
     expect(after).toBe(1);
@@ -112,7 +112,7 @@ describe.skipIf(!url || !superUrl)('a save that fails halfway (RC-157)', { timeo
   it('releases the connection when the database refuses how a transaction starts, the connection alive (the auditor on #206)', async () => {
     // A standby refuses a read-write transaction (25006), for one: the connection lives on, and the save fails with it.
     fault.refuse = /isolation level/i;
-    const failed = await run((ctx) => nextNumber(ctx, defineSeries(`platform.t_fault_${randomUUID().slice(0, 8)}`, 'FR'), DAY))
+    const failed = await run((ctx) => nextNumber(ctx, defineSeries(`platform.t_fault_${randomUUID().slice(0, 8)}`, 'FR', { label: 'Test' }), DAY))
       .then(() => 'saved', (e: unknown) => String((e as { cause?: { code?: string } }).cause?.code ?? (e as { code?: string }).code));
     expect([failed, fault.refuse]).toEqual(['22012', undefined]);
     await vi.waitFor(() => expect(pool.totalCount - pool.idleCount).toBe(0));
