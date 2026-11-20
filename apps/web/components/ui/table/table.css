@@ -1,6 +1,8 @@
 /* Tables (M1-44). Tokens only, from styles/tokens.css. */
 .kit-table { display: grid; gap: var(--space-2); }
-.kit-table-scroll { overflow-x: auto; }
+/* Positioned, so a visually hidden label inside (Pii's "Hidden") stays within the scroller and can't widen the page
+   (e2e on #237, WCAG 1.4.10). */
+.kit-table-scroll { overflow-x: auto; position: relative; }
 .kit-table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .kit-table table { inline-size: 100%; border-collapse: collapse; }
 .kit-table caption { text-align: start; font-weight: 600; padding-block-end: var(--space-2); }
