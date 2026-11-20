@@ -127,6 +127,7 @@ export const salesOrders = radcoreTable('sales_orders', {
   // order and its issues still hash to it.
   overrideVersion: text(),
 }, (t) => [
+  index('ix_sales_orders_price_list').on(t.priceListId),
   index('ix_sales_orders_party').on(t.partyId),
   index('ix_sales_orders_date').on(t.businessDate, t.id),
   // lib-common's SALES_ORDER_STATUSES, written out (L1); tools/sales-lists.test.ts holds them equal.
@@ -145,13 +146,13 @@ export const salesOrderLines = radcoreTable('sales_order_lines', {
   qty: qty({ line: true }).notNull(),
   rate: unitPrice().notNull(),
   discountPercent: percent().notNull().default('0'),
-  // The list's rate for the item on the order's date, before GST, and the version it came from, filled by the service,
-  // never from input: what its discount is measured from (the architect on RAD-113). Null: no rate in the list, so no
-  // discount is judged.
+  // The list's rate for the item on the order's date, before GST, and its version: filled by the service, never from
+  // input; what its discount is measured from, and null when the list has none (the architect on RAD-113, #256).
   listRate: unitPrice(),
   listVersionId: uuid().references(() => priceListVersions.id, { onDelete: 'restrict' }),
 }, (t) => [
   uniqueIndex('ux_sales_order_lines_line').on(t.orderId, t.lineNo),
+  index('ix_sales_order_lines_list_version').on(t.listVersionId),
   index('ix_sales_order_lines_item').on(t.itemId),
 ]);
 
@@ -347,6 +348,7 @@ export const invoices = radcoreTable('invoices', {
   index('ix_invoices_cancel_entry').on(t.cancelEntryId),
   index('ix_invoices_date').on(t.businessDate, t.id),
   index('ix_invoices_owner').on(t.owner),
+  index('ix_invoices_price_list').on(t.priceListId),
 ]);
 
 /**
@@ -366,8 +368,7 @@ export const invoiceLines = radcoreTable('invoice_lines', {
   qty: qty({ line: true }).notNull(),
   rate: unitPrice().notNull(),
   discountPercent: percent().notNull().default('0'),
-  // What its discount is measured from: its order line's list rate when its price is unchanged, else the invoice's
-  // list's rate on its date; null when the list has none (the architect on RAD-113).
+  // Its order line's list rate when its price is unchanged, else the invoice's list's on its date (RAD-113).
   listRate: unitPrice(),
   listVersionId: uuid().references(() => priceListVersions.id, { onDelete: 'restrict' }),
   hsn: text(),
@@ -387,6 +388,7 @@ export const invoiceLines = radcoreTable('invoice_lines', {
   deliveryGst: money(),
 }, (t) => [
   uniqueIndex('ux_invoice_lines_line').on(t.invoiceId, t.lineNo),
+  index('ix_invoice_lines_list_version').on(t.listVersionId),
   index('ix_invoice_lines_delivery_line').on(t.deliveryLineId),
   index('ix_invoice_lines_item').on(t.itemId),
   // Posting writes every figure at once; a draft line has none.

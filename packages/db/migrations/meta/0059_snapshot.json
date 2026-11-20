@@ -1,5 +1,5 @@
 {
-  "id": "d8b1ef95-d299-4120-b4ff-1a595b8e8071",
+  "id": "86c2431c-f8fd-4652-b427-083ebbc791b8",
   "prevId": "abfd6209-705c-419b-9de9-3c4643279fed",
   "version": "7",
   "dialect": "postgresql",
@@ -6547,6 +6547,21 @@
           "method": "btree",
           "with": {}
         },
+        "ix_invoice_lines_list_version": {
+          "name": "ix_invoice_lines_list_version",
+          "columns": [
+            {
+              "expression": "list_version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "ix_invoice_lines_delivery_line": {
           "name": "ix_invoice_lines_delivery_line",
           "columns": [
@@ -7069,6 +7084,21 @@
           "columns": [
             {
               "expression": "owner",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_invoices_price_list": {
+          "name": "ix_invoices_price_list",
+          "columns": [
+            {
+              "expression": "price_list_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7838,6 +7868,21 @@
           "method": "btree",
           "with": {}
         },
+        "ix_sales_order_lines_list_version": {
+          "name": "ix_sales_order_lines_list_version",
+          "columns": [
+            {
+              "expression": "list_version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "ix_sales_order_lines_item": {
           "name": "ix_sales_order_lines_item",
           "columns": [
@@ -8017,6 +8062,21 @@
         }
       },
       "indexes": {
+        "ix_sales_orders_price_list": {
+          "name": "ix_sales_orders_price_list",
+          "columns": [
+            {
+              "expression": "price_list_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "ix_sales_orders_party": {
           "name": "ix_sales_orders_party",
           "columns": [

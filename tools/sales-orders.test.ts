@@ -126,7 +126,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
 
   // RC-131: below the item's cost (its purchase price, with nothing on hand) stops a line, whatever the party's credit.
   it('stops a confirmation with a line priced below the item’s cost', async () => {
-    const at = await setup();
+    // Listed at the line's own rate, so cost is the only thing it fails.
+    const at = await setup(['customer'], { listRate: '40000' });
     const cheap = { ...line(at.itemId), rate: unitPriceString().parse('40000') };
     const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [cheap] }));
     const refused = await run((ctx) => confirmOrderNow(ctx, { id })).then(() => null, (e: unknown) => e as AppError);

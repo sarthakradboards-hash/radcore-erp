@@ -145,6 +145,7 @@ ALTER TABLE "radcore"."invoices" ADD CONSTRAINT "invoices_cancel_entry_id_journa
 ALTER TABLE "radcore"."party_price_lists" ADD CONSTRAINT "party_price_lists_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "radcore"."parties"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."party_price_lists" ADD CONSTRAINT "party_price_lists_price_list_id_price_lists_id_fk" FOREIGN KEY ("price_list_id") REFERENCES "radcore"."price_lists"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "ux_invoice_lines_line" ON "radcore"."invoice_lines" USING btree ("invoice_id","line_no");--> statement-breakpoint
+CREATE INDEX "ix_invoice_lines_list_version" ON "radcore"."invoice_lines" USING btree ("list_version_id");--> statement-breakpoint
 CREATE INDEX "ix_invoice_lines_delivery_line" ON "radcore"."invoice_lines" USING btree ("delivery_line_id");--> statement-breakpoint
 CREATE INDEX "ix_invoice_lines_item" ON "radcore"."invoice_lines" USING btree ("item_id");--> statement-breakpoint
 CREATE INDEX "ix_invoices_party_date" ON "radcore"."invoices" USING btree ("party_id","business_date");--> statement-breakpoint
@@ -152,9 +153,12 @@ CREATE INDEX "ix_invoices_posted_entry" ON "radcore"."invoices" USING btree ("po
 CREATE INDEX "ix_invoices_cancel_entry" ON "radcore"."invoices" USING btree ("cancel_entry_id");--> statement-breakpoint
 CREATE INDEX "ix_invoices_date" ON "radcore"."invoices" USING btree ("business_date","id");--> statement-breakpoint
 CREATE INDEX "ix_invoices_owner" ON "radcore"."invoices" USING btree ("owner");--> statement-breakpoint
+CREATE INDEX "ix_invoices_price_list" ON "radcore"."invoices" USING btree ("price_list_id");--> statement-breakpoint
 CREATE INDEX "ix_party_price_lists_list" ON "radcore"."party_price_lists" USING btree ("price_list_id");--> statement-breakpoint
 ALTER TABLE "radcore"."sales_order_lines" ADD CONSTRAINT "sales_order_lines_list_version_id_price_list_versions_id_fk" FOREIGN KEY ("list_version_id") REFERENCES "radcore"."price_list_versions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."sales_orders" ADD CONSTRAINT "sales_orders_price_list_id_price_lists_id_fk" FOREIGN KEY ("price_list_id") REFERENCES "radcore"."price_lists"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "ix_sales_order_lines_list_version" ON "radcore"."sales_order_lines" USING btree ("list_version_id");--> statement-breakpoint
+CREATE INDEX "ix_sales_orders_price_list" ON "radcore"."sales_orders" USING btree ("price_list_id");--> statement-breakpoint
 ALTER TABLE "radcore"."sales_order_lines" ADD CONSTRAINT "ck_sales_order_lines_list_rate" CHECK ("radcore"."sales_order_lines"."list_rate" >= 0 and "radcore"."sales_order_lines"."list_rate" <> 'NaN');--> statement-breakpoint
 -- Invoices are posted documents (ADR-007 §1, §2; ADR-005 §7b): draft -> posted -> cancelled, cancelled final. While a
 -- draft, anything changes; its posting sets its number, entry, frozen issuer and buyer, and figures; after that only
