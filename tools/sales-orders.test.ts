@@ -179,12 +179,13 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
       // A safety net: a failed run never holds the period lock for long over other files' tests.
       await mover.query("set local idle_in_transaction_session_timeout = '20s'");
       await mover.query('select id from radcore.period_lock where id = 1 for update');
-      const moverPid = (await mover.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
       const confirming = runInTransaction(createDatabase(own), WRITE, staff, randomUUID(), (ctx) => confirmOrderNow(ctx, { id }))
         .then((r) => r.number, (e: unknown) => String(e));
-      // Until that confirmation is waiting on the move, as its own backend reports, for at most 15 s.
+      // Until that confirmation's own backend is waiting on a lock, for at most 15 s. Only the move holds anything it
+      // needs; it may queue behind another file's posting waiting on the same row, so it's named by its pool, not by
+      // whose pid blocks it.
       await vi.waitFor(async () => expect((await mover.query<{ n: number }>(`select count(*)::int as n from pg_stat_activity
-        where application_name = 'sales-orders-confirm-lock' and $1 = any(pg_blocking_pids(pid))`, [moverPid])).rows[0]?.n).toBe(1),
+        where application_name = 'sales-orders-confirm-lock' and wait_event_type = 'Lock'`)).rows[0]?.n).toBe(1),
       { timeout: 15_000, interval: 50 });
       const other = await pool.connect();
       try {
@@ -200,7 +201,7 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
       mover.release();
       await own.end();
     }
-  });
+  }, 30_000);
 
   it('cancels a confirmed order with a reason, never a draft', async () => {
     const at = await setup();
