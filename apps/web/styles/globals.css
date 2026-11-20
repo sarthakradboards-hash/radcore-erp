@@ -55,9 +55,13 @@ html { scroll-padding-top: calc(env(safe-area-inset-top) + var(--shell-header-h)
    Block padding keeps the links' focus outline inside the scroller. */
 .shell-header nav { min-inline-size: 0; overflow-x: auto; padding-block: var(--space-1); }
 .shell-user { flex-shrink: 0; }
+/* At phone width the menu is one Menu button (RAD-50), so no entry hides in a scroller; wider, it's the row of links. */
+.shell-menu-button { display: none; }
 @media (max-width: 30rem) {
   .shell-header { gap: var(--space-2); padding-inline: var(--space-3); }
   .shell-header a { padding-inline: var(--space-2); }
+  .shell-header .shell-menu-list { display: none; }
+  .shell-menu-button { display: block; }
 }
 .shell-user { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-muted);
   font-size: var(--text-sm); }
