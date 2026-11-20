@@ -776,8 +776,9 @@ send-message service calls `whatsapp.send()` from lib-integrations.
 - **`settings:write` needs the second factor** (D-19): it sets, for every party with none of its own, the credit
   days and the price list that `parties:manage` and `prices:approve` set one party at a time.
 - **A number series' prefix isn't a setting** (ADR-006 §3). `PUT /number-series/:key/prefix` changes it from the
-  next financial year (or this one, before its first number), under `settings:write`, with a `reason()`. `GET /number-series` (`settings:read`) shows each
-  series' label, this year's prefix, next year's, and the next number.
+  next financial year (or this one, before its first number), under `settings:write`, with a `reason()`.
+  `GET /number-series` (`settings:read`) shows each series' label, this year's prefix, next year's, and the next
+  number.
 
 ### 9. File size
 
