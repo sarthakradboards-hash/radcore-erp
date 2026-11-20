@@ -89,12 +89,15 @@ export async function addParty(ctx: Ctx, input: In<typeof createParty>): Promise
   return row;
 }
 
-/** PATCH /parties/:id: the tax rules are checked on the party as it will be, under its row lock: NO KEY UPDATE, as an
- * edit never changes the key, so documents that reference the party aren't held up (ADR-006 §1 step 3). */
+/** PATCH /parties/:id: the tax rules are checked on the party as it will be, under its row lock. An edit that leaves
+ * the GSTIN alone takes NO KEY UPDATE, so documents that reference the party (KEY SHARE) aren't held up (ADR-006 §1
+ * step 3). A GSTIN change takes FOR UPDATE from the start: `gstin` has a unique index, so it's a key column and the
+ * update would upgrade the lock anyway, waiting on a cash save's KEY SHARE while that save waits in holdParty (the
+ * auditor on #260). */
 export async function changeParty(ctx: Ctx, { id, ...change }: In<typeof updateParty>): Promise<Out<typeof updateParty>> {
   const tx = accountsTx(ctx);
   const [now] = await tx.select({ gstin: parties.gstin, pan: parties.pan, stateCode: parties.stateCode, composition: parties.composition })
-    .from(parties).where(eq(parties.id, id)).limit(1).for('no key update');
+    .from(parties).where(eq(parties.id, id)).limit(1).for(change.gstin === undefined ? 'no key update' : 'update');
   if (now === undefined) throw new AppError('not_found', 'There is no such party');
   const issues = partyTaxIssues({ gstin: change.gstin === undefined ? now.gstin : change.gstin, pan: change.pan === undefined ? now.pan : change.pan,
     stateCode: change.stateCode ?? now.stateCode, composition: change.composition ?? now.composition });
