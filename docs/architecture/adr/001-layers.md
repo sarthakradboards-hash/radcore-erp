@@ -755,6 +755,30 @@ lib-platform can't import lib-integrations, which ranks above it. So the route h
 check to the intake as data. Outbound calls go the other way, as normal downward imports. For example, lib-crm's
 send-message service calls `whatsapp.send()` from lib-integrations.
 
+### 8c. Settings and number-series prefixes (M1-30, RAD-132)
+
+- **A setting is declared once,** in its library: `defineSetting(key, schema, fallback, { label, description,
+  input, check })`.
+  - `input` tells the screen what to offer: `money`, `percent`, `integer`, `text`, `choice` (with its choices) or
+    `reference` (a kind of record, such as a price list).
+  - `check(ctx, value)`, where given, checks what a schema can't, such as a price list that exists and is active.
+  - Each library's index exports its `settings` and `series`, and apps/api composes them as it does routes. A tools
+    test fails on any declared one that isn't composed.
+- **Only changed values are stored** (`settings`), with who changed each and when. A request reads them all once,
+  when its Ctx is built, so a change applies from the next request, in every process.
+- **Changing one** is `PUT /settings/:key` under `settings:write` (admin and owner by default), with a `reason()`.
+  The value passes the setting's schema and `check`, and `null` returns it to its default. The audit keeps the old
+  and the new value, with the reason. `GET /settings` lists each setting's label, description, value, default and
+  last change, under `settings:read` (admin, owner and accounts).
+- **No setting is dated.** A setting is read when a document is saved, and what it decided is frozen in what's
+  posted, so changing it never rewrites a posted document. A rule that must apply from a date, such as a tax rate,
+  has its own dated table (GST rates, M2-12), not a setting.
+- **`settings:write` needs the second factor** (D-19): it sets, for every party with none of its own, the credit
+  days and the price list that `parties:manage` and `prices:approve` set one party at a time.
+- **A number series' prefix isn't a setting** (ADR-006 §3). `PUT /number-series/:key/prefix` changes it from the
+  next financial year (or this one, before its first number), under `settings:write`, with a `reason()`. `GET /number-series` (`settings:read`) shows each
+  series' label, this year's prefix, next year's, and the next number.
+
 ### 9. File size
 
 No source file (`.ts`, `.tsx`, `.js`, `.mjs`) under `apps/` or `packages/` is over 400 lines, tests included.

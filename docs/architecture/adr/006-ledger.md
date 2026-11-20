@@ -186,9 +186,13 @@ delivery they belong to (M5-17), so §7's per-line check still holds.
   row lock, as the last step (§1). There's no database sequence. A save that fails rolls the number back with
   everything else. lib-platform's `nextNumber` draws it in one upsert on `number_counters (series, financial_year)`,
   whose trigger sets the count to exactly one more than the last, whatever the app sends, and refuses a delete
-  (RAD-87). A series' prefix is a setting, read with the request's others (RC-200). A year's counter keeps the
-  prefix its first number took, so a change applies from the next financial year, until the CA settles the format
-  (CA-44). A series has 5 digits by default, for Rule 46's 16 characters; the journal's has 7.
+  (RAD-87). A series' prefix has its own history, `series_prefixes (series, from_year, prefix)`, and a change
+  takes effect from the next financial year, or from this one while the series hasn't drawn a number in it yet, as
+  when prefixes are set up before going live (RAD-132). A year draws the latest prefix whose `from_year` is on
+  or before it, else the series' declared one, in the same upsert, so a year never mixes two prefixes and no issued
+  number changes, even for a document dated in an earlier year. The year's counter keeps the prefix its first
+  number took. The format waits on CA-44. A series has 5 digits by default, for Rule 46's 16 characters; the
+  journal's has 7.
 - **A manual journal** carries a reason (bounded text, ADR-005 §1) and only ordinary accounts (§2).
 - **A closed year's profit and loss** is read without its `year_close` entry, which would otherwise show every
   income and expense account at zero (M5-09, M5-14).
