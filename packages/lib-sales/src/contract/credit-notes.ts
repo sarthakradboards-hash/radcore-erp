@@ -55,7 +55,7 @@ const note = header.extend({
 
 // The refusals a draft shares: its invoice, its date, its lines and its place.
 const DRAFT_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', 'not_on_source', 'over_quantity', 'quantity_too_precise',
-  'exceeds_invoice', 'exceeds_credit', 'unknown_location', 'location_inactive', 'unknown_account', 'not_cash_or_bank'] as const;
+  'exceeds_invoice', 'exceeds_credit', 'unknown_location', 'location_inactive', 'invoice_cancelled'] as const;
 /** A refund of the note's credit, refused by the database by name when approval posts it (#269). */
 // shortcut: passed to creditNoteApproval as approvalContracts' dbErrors once #269 is on dev.
 export const CREDIT_REFUND_DB_ERRORS = {
@@ -93,11 +93,11 @@ export const deleteCreditNote = defineContract({
 export const requestCreditNoteApproval = defineContract({
   method: 'POST', path: '/sales/credit-notes/:id/approval', auth: 'session', perm: 'credit_notes:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ id: idString(), versionHash: z.string() }),
-  errors: ['wrong_status', 'exceeds_invoice'],
+  errors: ['wrong_status', 'exceeds_invoice', 'invoice_cancelled', 'not_on_source', 'over_quantity', 'quantity_too_precise'],
 });
 /** The credit notes' approval routes (RAD-38): approving posts the note, applies it to its invoice and pays its refund. */
 export const creditNoteApproval = approvalContracts('credit-note', 'credit_notes:approve',
-  [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'account_inactive', 'invoice_cancelled', 'batches_mismatch', 'units_mismatch',
+  [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'account_inactive', 'batches_mismatch', 'units_mismatch',
     'serial_twice', 'not_serialised', 'credit_not_posted', 'refund_other_party', 'wrong_credit']);
 /** Cancels a posted credit note (ADR-007 §6): its entry mirrored on the cancellation's day, goods back out again at the
  * value they came back at (RC-207). Refused while it's applied or refunded: reverse those first. */

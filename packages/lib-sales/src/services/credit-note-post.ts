@@ -69,9 +69,11 @@ async function postNote(ctx: Ctx, id: string): Promise<void> {
   await holdPeriod(ctx, dated.businessDate);
   const [note] = await tx.select().from(creditNotes).where(eq(creditNotes.id, id)).for('update');
   if (note === undefined) throw new AppError('not_found', 'There is no such credit note');
+  // The approver's: the approval's read found it within their scope too.
+  ctx.see('credit_notes:approve', { owner: note.owner });
   if (note.status !== 'draft') throw wrongNoteStatus(note.status, 'posted');
   // ADR-006 §1's documents step: the invoice, locked, and what's left of it read again under that lock.
-  const inv = await invoiceToCredit(ctx, note.invoiceId, true);
+  const inv = await invoiceToCredit(ctx, note.invoiceId, 'credit_notes:approve', true);
   checkDate(note.businessDate, today(), { date: inv.businessDate, what: 'invoice' });
   if (note.locationId !== null) await checkPlace(ctx, note.locationId);
   const figures = await noteFigures(ctx, inv, note.kind as Kind, await draftedLines(ctx, id));
@@ -140,7 +142,7 @@ export async function askCreditNoteApproval(ctx: Ctx, { id }: In<typeof requestC
   const now = await noteOf(ctx, id, 'credit_notes:write', true);
   if (now.status !== 'draft') throw wrongNoteStatus(now.status, 'sent for approval');
   // Still within what's left of its invoice: another note may have posted since it was drafted.
-  await noteFigures(ctx, await invoiceToCredit(ctx, now.invoiceId), now.kind as Kind, await draftedLines(ctx, id));
+  await noteFigures(ctx, await invoiceToCredit(ctx, now.invoiceId, 'credit_notes:write'), now.kind as Kind, await draftedLines(ctx, id));
   return requestApproval(ctx, creditNoteApprovalSpec, id);
 }
 

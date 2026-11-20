@@ -40,14 +40,16 @@ export async function noteOf(ctx: Ctx, id: string, permission: string, forUpdate
   return row;
 }
 
-/** The invoice a note credits, posted; locked as a note posts, so two notes of one invoice, or a note and the
- * invoice's cancellation, take turns over what's left of it (ADR-006 §1's documents step). */
-export async function invoiceToCredit(ctx: Ctx, invoiceId: string, forUpdate = false) {
+/** The invoice a note credits, posted, within the principal's scope for `permission` (a note is its invoice's owner's);
+ * locked as a note posts, so two notes of one invoice, or a note and the invoice's cancellation, take turns over what's
+ * left of it (ADR-006 §1's documents step). */
+export async function invoiceToCredit(ctx: Ctx, invoiceId: string, permission: string, forUpdate = false) {
   const sel = salesTx(ctx).select().from(invoices).where(eq(invoices.id, invoiceId));
   const [inv] = forUpdate ? await sel.for('update') : await sel;
   if (inv === undefined) {
     throw new AppError('not_found', 'There is no such invoice', [{ path: ['invoiceId'], code: 'unknown', message: 'Choose an invoice' }]);
   }
+  ctx.see(permission, { owner: inv.owner });
   if (inv.status !== 'posted') {
     throw new AppError('invoice_cancelled', `This invoice is ${inv.status}: only a posted invoice is credited`,
       [{ path: ['invoiceId'], code: 'wrong_status', message: 'Choose a posted invoice' }]);
@@ -101,15 +103,16 @@ export async function noteFigures(ctx: Ctx, inv: Invoice, kind: Kind, lines: rea
     const left = { qty: dec(il.qty).minus(dec(was?.qty ?? '0')), taxable: m(il.taxable).minus(m(was?.taxable ?? null)),
       cgst: m(il.cgst).minus(m(was?.cgst ?? null)), sgst: m(il.sgst).minus(m(was?.sgst ?? null)),
       igst: m(il.igst).minus(m(was?.igst ?? null)), cost: m(il.cost).minus(m(was?.cost ?? null)) };
+    // The cap first (exceeds_invoice), then where goods back come from.
+    const back = kind === 'goods' ? { qty: l.qty ?? '0' } : { taxable: l.taxable ?? '0' };
+    const figures = creditLine(left, back, il.gstRate ?? '0', intraState, n);
     if (kind === 'goods') {
       await checkQuantity(ctx, il.itemId, l.qty ?? '0').catch((e: unknown) => {
         throw e instanceof AppError ? new AppError(e.code, e.message, [{ path: ['lines', n, 'qty'], code: e.code, message: e.message }]) : e;
       });
       await checkPicks(ctx, il.deliveryLineId, l, n);
     }
-    const back = kind === 'goods' ? { qty: l.qty ?? '0' } : { taxable: l.taxable ?? '0' };
-    out.push({ ...creditLine(left, back, il.gstRate ?? '0', intraState, n), lineNo: n + 1, line: l, itemId: il.itemId,
-      gstRate: il.gstRate ?? '0', gstRateSource: il.gstRateSource ?? '' });
+    out.push({ ...figures, lineNo: n + 1, line: l, itemId: il.itemId, gstRate: il.gstRate ?? '0', gstRateSource: il.gstRateSource ?? '' });
   }
   return out;
 }
@@ -141,13 +144,14 @@ export async function getCreditNoteById(ctx: Ctx, { id }: In<typeof getCreditNot
     businessDate: c.businessDate, status: c.status as Status, total: c.total, locationId: c.locationId, reason: c.reason,
     refund: c.refundAmount === null || c.refundAccountId === null ? null : { amount: roundMoney(c.refundAmount), accountId: c.refundAccountId },
     late: c.late, taxable: c.taxable, cgst: c.cgst, sgst: c.sgst, igst: c.igst, roundOff: c.roundOff,
-    lines: lines.map(({ picks, creditNoteId: _note, ...l }) => ({ ...l, ...(picks === null ? { batches: [], serials: [] } : picksOf(picks)) })) };
+    lines: lines.map((l) => ({ id: l.id, lineNo: l.lineNo, invoiceLineId: l.invoiceLineId, itemId: l.itemId, qty: l.qty, taxable: l.taxable,
+      gstRate: l.gstRate, gstRateSource: l.gstRateSource, cgst: l.cgst, sgst: l.sgst, igst: l.igst, lineTotal: l.lineTotal, cost: l.cost,
+      ...(l.picks === null ? { batches: [], serials: [] } : picksOf(l.picks)) })) };
 }
 
 /** POST /sales/credit-notes (credit_notes:write): a draft against a posted invoice the principal may see. */
 export async function addCreditNote(ctx: Ctx, input: In<typeof createCreditNote>): Promise<Out<typeof createCreditNote>> {
-  const inv = await invoiceToCredit(ctx, input.invoiceId);
-  ctx.see('sales:read', { owner: inv.owner });
+  const inv = await invoiceToCredit(ctx, input.invoiceId, 'credit_notes:write');
   checkDate(input.businessDate, today(), { date: inv.businessDate, what: 'invoice' });
   if (input.locationId !== null) await checkPlace(ctx, input.locationId);
   const figures = await noteFigures(ctx, inv, input.kind, input.lines);

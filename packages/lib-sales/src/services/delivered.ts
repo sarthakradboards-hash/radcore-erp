@@ -57,8 +57,8 @@ export async function hasDeliveries(ctx: Ctx, orderId: string): Promise<boolean>
 
 /** What has gone from one of the caller's delivery lines, on posted returns and posted invoices together: how many, and
  * their shares of the line's cost, taxable value and GST, so whichever takes the last of it clears what's left
- * (ADR-006 §4); and, of the returns alone, how many of each batch the line was picked from came back, and whether
- * each of its serials did. */
+ * (ADR-006 §4); and, of the returns and credit notes' goods back, how many of each batch the line was picked from
+ * came back, and whether each of its serials did. */
 export type Returned = { qty: Quantity; value: Money; taxable: Money; gst: Money; batches: ReadonlyMap<string, Quantity>;
   serials: ReadonlyMap<string, boolean> };
 /** A picked batch's key in `Returned.batches`: its id, or 'unknown' for "batch unknown". */
