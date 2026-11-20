@@ -261,8 +261,9 @@ sums.
   The revaluation is that value minus (V + q × r). A negative revaluation is Dr Cost of Goods Sold, Cr Stock in
   Hand; a positive one is the other way round. So a quantity of zero always carries zero value, and the units sold
   end up at what they really cost (F15).
-- **An accepted approximation.** If over-sold goods come back later (a credit note, or a delivery taken back),
-  they return at the value they went out at, which includes the estimate. The revaluation is already in Cost of
+- **An accepted approximation.** If over-sold goods come back later (a credit note, a delivery taken back, or a
+  delivery cancelled), they return at the value they went out at, which includes the estimate, and the receipt's
+  revaluation stands (RAD-114). The revaluation is already in Cost of
   Goods Sold, so stock is under by that difference until those units sell again, when their cost is lower by the
   same amount. It needs a return of over-sold goods, and it's bounded by the estimate's error.
 

@@ -223,6 +223,12 @@ They are append-only with explicit reversals:
   - A payment's net allocations and the posted refunds that name it stay at or below its amount to the party
     (gross of TDS held back, F8), and a credit's net applications and the posted refunds that name it at or below
     its total. A refund naming a credit runs the credit's check when it posts (`refund_exceeds_credit`).
+  - **A refund naming a credit** (RAD-114) locks the credit as it's inserted: a `BEFORE INSERT` trigger on
+    `payments` takes the credit's row through `lock_allocatable`, so the order stays the period, the credit, then
+    the party (ADR-006 §1). The credit must be posted, of the same party, a receivable credit, and dated on or
+    before the refund; each refusal has its own constraint name (`refund_credit_not_posted`,
+    `refund_credit_party_mismatch`, `refund_credit_side_mismatch`, `refund_credit_before_source`), mapped to its
+    route's declared code (§9).
   - So two transactions allocating 60 each against an invoice of 100 can't both pass: the second waits for the
     first's commit, sums again, and is refused (`RA006`).
 
