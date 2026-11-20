@@ -89,11 +89,12 @@ export async function addParty(ctx: Ctx, input: In<typeof createParty>): Promise
   return row;
 }
 
-/** PATCH /parties/:id: the tax rules are checked on the party as it will be, under its row lock. */
+/** PATCH /parties/:id: the tax rules are checked on the party as it will be, under its row lock: NO KEY UPDATE, as an
+ * edit never changes the key, so documents that reference the party aren't held up (ADR-006 §1 step 3). */
 export async function changeParty(ctx: Ctx, { id, ...change }: In<typeof updateParty>): Promise<Out<typeof updateParty>> {
   const tx = accountsTx(ctx);
   const [now] = await tx.select({ gstin: parties.gstin, pan: parties.pan, stateCode: parties.stateCode, composition: parties.composition })
-    .from(parties).where(eq(parties.id, id)).limit(1).for('update');
+    .from(parties).where(eq(parties.id, id)).limit(1).for('no key update');
   if (now === undefined) throw new AppError('not_found', 'There is no such party');
   const issues = partyTaxIssues({ gstin: change.gstin === undefined ? now.gstin : change.gstin, pan: change.pan === undefined ? now.pan : change.pan,
     stateCode: change.stateCode ?? now.stateCode, composition: change.composition ?? now.composition });
