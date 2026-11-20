@@ -296,7 +296,8 @@ cached, so a change applies at once in every process (RC-095).
 
 **Unowned records get a key of their own, not a scope level** (D-11, RAD-109). Where a module has records nobody
 owns yet, such as leads from the website, a separate `allOnly` key (`leads:unassigned`) lets an own-scope role see
-and take them. The module ORs `owner is null` into the scope in each reading function, so E7 still sees the check.
+and take them. Only when the principal holds that key does the module OR `owner is null` into the scope, in each
+reading function, so E7 still sees the check.
 Acting on such a record claims it in the same locked update (`lead_taken` if someone else got there first).
 Changing an owner otherwise needs the write key at `all`.
 
@@ -335,9 +336,9 @@ under these rules, each refused by name:
   Admin and owner hold both, and both are bound by the rules below: nobody gives a key they don't hold.
 - **Keys that need the second factor.** The permission catalogue marks the keys that move money, reach payroll, HR
   or user administration, or set the company's tax identity, a customer's credit terms, the GST rates every invoice
-  charges or the prices in force, or let a sale past its credit and price checks (`company:write`, `parties:manage`,
-  `gst:write`, `prices:approve`, `sales:override`, D-19). A role holding any of them requires the second factor,
-  whatever its own setting (D-19).
+  charges or the prices in force, or let a sale past its credit and price checks, or change the business's
+  settings (`company:write`, `parties:manage`, `gst:write`, `prices:approve`, `sales:override`, `settings:write`,
+  D-19). A role holding any of them requires the second factor, whatever its own setting (D-19).
 - **Screens follow permissions.** The web shows what the person's keys allow, with no separate view setting.
 
 ### 7. The web client
@@ -760,6 +761,40 @@ export async function takeShopifyOrder(ctx: Ctx, delivery: WebhookDelivery): Pro
 lib-platform can't import lib-integrations, which ranks above it. So the route hands the provider's signature
 check to the intake as data. Outbound calls go the other way, as normal downward imports. For example, lib-crm's
 send-message service calls `whatsapp.send()` from lib-integrations.
+
+### 8c. Settings and number-series prefixes (M1-30, RAD-132)
+
+- **A setting is declared once,** in its library: `defineSetting(key, schema, fallback, { label, description,
+  input, check })`.
+  - `input` tells the screen what to offer: `money`, `percent`, `integer`, `text`, `yes_no`, `choice` (with its
+    choices) or `reference` (a kind of record, such as a price list).
+  - `check(ctx, value)`, where given, checks what a schema can't, such as a price list that exists and is active.
+  - A reader of a `reference` setting treats a record that's gone or switched off since as unset, never as an
+    error: a default price list switched off means no list, so `no_list_rate` (ADR-007 §9).
+  - Each library's index exports its `settings` and `series`, and apps/api composes them as it does routes. A tools
+    test fails on any declared one that isn't composed.
+- **Only changed values are stored** (`settings`), with who changed each and when. A request reads them all once,
+  when its Ctx is built, so a change applies from the next request, in every process.
+- **Changing one** is `PUT /settings/:key` under `settings:write` (admin and owner by default), with a `reason()`.
+  The value passes the setting's schema and `check`, and `null` returns it to its default. The audit keeps the old
+  and the new value, with the reason. `GET /settings` lists each setting's label, description, value, default and
+  last change, under `settings:read` (admin, owner and accounts).
+- **No setting is dated.** A setting is read when a document is saved, and what it decided is frozen in what's
+  posted, so changing it never rewrites a posted document. A rule that must apply from a date, such as a tax rate,
+  has its own dated table (GST rates, M2-12), not a setting.
+- **A list people keep up isn't a setting.** Lost reasons, follow-up plans, quick replies and the like are master
+  tables under their module's own key (`leads:setup`, RAD-109): each item has an id that records refer to, is
+  switched off rather than deleted once used, and is audited. A setting is a single value that sets a rule.
+- **`settings:write` needs the second factor** (D-19, Sarthak, 20 Nov): it sets, for every party with none of its
+  own, the credit days and the price list that `parties:manage` and `prices:approve` set one party at a time.
+- **A number series' prefix isn't a setting** (ADR-006 §3). `PUT /number-series/:key/prefix` takes the prefix, a
+  `reason()` and which year it starts, under `settings:write`:
+  - `next_year` is always allowed;
+  - `this_year` only while the year has no number. It locks the year's counter row (creating it with no number
+    drawn if it's absent) and sets that row's prefix, so the year's first `nextNumber` waits for it and draws the
+    new prefix. Once the year has a number, it's refused (`series_in_use`).
+- `GET /number-series` (`settings:read`) shows each series' label, the prefix its counter holds this year (else the
+  one it would draw), next year's, and the next number.
 
 ### 9. File size
 
