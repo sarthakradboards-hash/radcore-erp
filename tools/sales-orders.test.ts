@@ -15,7 +15,7 @@ import {
 import { putGstRate } from '@radcore/lib-gst';
 import { addCategory, addItem } from '@radcore/lib-stock';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -171,16 +171,22 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
   it('holds the period before it locks the order it confirms', async () => {
     const at = await setup();
     const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }));
+    // The confirmation on a pool of one connection, whose backend's pid is read first, so the wait below is for it and
+    // not for another file's posting queued on the same row.
+    const own = new pg.Pool({ connectionString: url, max: 1 });
+    const first = await own.connect();
+    const confirmPid = (await first.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
+    first.release();
     const mover = await su.connect();
     try {
       await mover.query('begin');
       await mover.query('select id from radcore.period_lock where id = 1 for update');
-      const confirming = run((ctx) => confirmOrderNow(ctx, { id }));
-      // Until the confirmation is waiting on the period lock, as a move would make it.
-      for (let waiting = 0; waiting === 0;) {
-        waiting = Number((await mover.query<{ n: string }>(`select count(*) as n from pg_stat_activity
-          where wait_event_type = 'Lock' and query ilike '%period_lock%' and pid <> pg_backend_pid()`)).rows[0]?.n);
-      }
+      const confirming = runInTransaction(createDatabase(own), WRITE, staff, randomUUID(), (ctx) => confirmOrderNow(ctx, { id }))
+        .then((r) => r.number, (e: unknown) => String(e));
+      // Until that backend waits on a lock, for at most 4 s, so a failed run holds the period lock for less than other
+      // files' tests wait.
+      await vi.waitFor(async () => expect((await mover.query<{ w: string | null }>('select wait_event_type as w from pg_stat_activity where pid = $1',
+        [confirmPid])).rows[0]?.w).toBe('Lock'), { timeout: 4_000, interval: 50 });
       const other = await pool.connect();
       try {
         await other.query('begin');
@@ -190,11 +196,14 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
         other.release();
       }
       await mover.query('rollback');
-      expect((await confirming).number).toMatch(/^SO\//);
+      expect(await confirming).toMatch(/^SO\//);
     } finally {
+      // Whatever failed, the move's lock goes before its connection returns to the pool (a second rollback is a no-op).
+      await mover.query('rollback');
       mover.release();
+      await own.end();
     }
-  });
+  }, 30_000);
 
   it('cancels a confirmed order with a reason, never a draft', async () => {
     const at = await setup();
