@@ -31,6 +31,8 @@ export const COST_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.
   // What a delivery line went out at, and a return line's share of it (RAD-112, ADR-006 §4).
   delivery_lines: Object.freeze(['value']),
   delivery_return_lines: Object.freeze(['value']),
+  // The goods' cost an invoice line moves from GDNI to COGS (RAD-113, ADR-006 §6).
+  invoice_lines: Object.freeze(['cost']),
 });
 
 /** listAuditTrail (audit:read): newest first, within a date range of at most AUDIT_RANGE_MAX_DAYS India days. */
