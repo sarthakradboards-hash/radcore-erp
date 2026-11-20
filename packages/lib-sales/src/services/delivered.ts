@@ -1,22 +1,28 @@
 // What has been delivered, and taken back, of orders and deliveries (M3-08, RAD-112), read from the posted documents:
-// how much of an order line is left to deliver, how much of a delivery line is left to take back (and which batches
-// and serials), and what a party has had delivered and not yet invoiced (M3-07's credit exposure). Every document
-// counts, whoever made it: these are the business's figures, not a person's list, so this file reads past the record
-// scope, and only it (E7's exemption, ADR-001 §6a).
+// how much of an order line is left to deliver, how much of a delivery line is left to take back (of which batches and
+// serials), and what a party has had delivered and not yet invoiced (M3-07's credit exposure). Every document counts,
+// whoever made it, as the answers are about the order or party, not a person: so this file reads past the record scope,
+// and is E7's one exemption (the architect on RAD-112, ADR-001 §6a). Its rules:
+// - each export answers only aggregates (Money, Quantity, boolean), keyed by ids, batches and serials its caller passed
+//   in, never another document's row, id or field: the return types below say so;
+// - the caller has already applied ctx.see to the order, delivery or party it asks about.
 import { deliveries, deliveryLines, deliveryReturnLines, deliveryReturns, salesOrderLines, salesTx } from '@radcore/db/sales';
-import { dec, roundMoney, type Decimal, type Money, type Quantity } from '@radcore/lib-common';
+import { dec, roundMoney, roundQty, type Decimal, type Money, type Quantity } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';
 import { serialKey } from '@radcore/lib-stock';
 import { and, eq, inArray, sum } from 'drizzle-orm';
+
+const QTY_PLACES = 3; // a line's quantity column, numeric(18, 3)
+const asQty = (d: Decimal): Quantity => roundQty(d, QTY_PLACES);
 
 /** A line's picks as the draft holds them (contract/deliveries.ts's `picks`). */
 export type Picks = { batches: { batchId: string | null; qty: Quantity }[]; serials: string[] };
 export const picksOf = (v: unknown): Picks => v as Picks;
 
-/** Each order line's quantity delivered, net of what's been taken back. */
-export async function netDelivered(ctx: Ctx, orderLineIds: readonly string[]): Promise<Map<string, Decimal>> {
+/** Each of the caller's order lines' quantity delivered, net of what's been taken back. */
+export async function netDelivered(ctx: Ctx, orderLineIds: readonly string[]): Promise<Map<string, Quantity>> {
   const net = new Map<string, Decimal>();
-  if (orderLineIds.length === 0) return net;
+  if (orderLineIds.length === 0) return new Map();
   const tx = salesTx(ctx);
   const out = await tx.select({ line: deliveryLines.orderLineId, qty: sum(deliveryLines.qty) }).from(deliveryLines)
     .innerJoin(deliveries, and(eq(deliveries.id, deliveryLines.deliveryId), eq(deliveries.status, 'posted')))
@@ -27,7 +33,7 @@ export async function netDelivered(ctx: Ctx, orderLineIds: readonly string[]): P
     .where(inArray(deliveryLines.orderLineId, [...orderLineIds])).groupBy(deliveryLines.orderLineId);
   for (const r of out) net.set(r.line, dec(r.qty ?? '0'));
   for (const r of back) net.set(r.line, (net.get(r.line) ?? dec('0')).minus(dec(r.qty ?? '0')));
-  return net;
+  return new Map([...net].map(([line, q]) => [line, asQty(q)]));
 }
 
 /** Whether any of an order has gone (net of returns), and whether all of it has: what closing and cancelling it ask. */
@@ -35,7 +41,7 @@ export async function orderDelivered(ctx: Ctx, orderId: string): Promise<{ any: 
   const lines = await salesTx(ctx).select({ id: salesOrderLines.id, qty: salesOrderLines.qty }).from(salesOrderLines)
     .where(eq(salesOrderLines.orderId, orderId));
   const net = await netDelivered(ctx, lines.map((l) => l.id));
-  const gone = lines.map((l) => [net.get(l.id) ?? dec('0'), dec(l.qty)] as const);
+  const gone = lines.map((l) => [dec(net.get(l.id) ?? '0'), dec(l.qty)] as const);
   return { any: gone.some(([n]) => n.gt(0)), all: lines.length > 0 && gone.every(([n, q]) => n.gte(q)) };
 }
 
@@ -45,39 +51,35 @@ export async function hasDeliveries(ctx: Ctx, orderId: string): Promise<boolean>
   return row !== undefined;
 }
 
-/** Whether a delivery has any return, draft or posted: a draft delivery is never returned, so this is a posted one's. */
-export async function hasReturns(ctx: Ctx, deliveryId: string): Promise<boolean> {
-  const [row] = await salesTx(ctx).select({ id: deliveryReturns.id }).from(deliveryReturns)
-    .where(eq(deliveryReturns.deliveryId, deliveryId)).limit(1);
-  return row !== undefined;
-}
-
-/** What has come back of each delivery line on posted returns: its quantity, its share of the line's figures, and the
- * batches and serials it came back with. */
-export type Returned = { qty: Decimal; value: Decimal; taxable: Decimal; gst: Decimal; batches: Map<string, Decimal>; serials: Set<string> };
+/** What has come back of one of the caller's delivery lines on posted returns: how many, its share of the line's
+ * figures, how many of each batch the line was picked from, and whether each of its serials has. */
+export type Returned = { qty: Quantity; value: Money; taxable: Money; gst: Money; batches: ReadonlyMap<string, Quantity>;
+  serials: ReadonlyMap<string, boolean> };
 /** A picked batch's key in `Returned.batches`: its id, or 'unknown' for "batch unknown". */
 export const pickedBatchKey = (id: string | null): string => id ?? 'unknown';
-export const nothingBack = (): Returned =>
-  ({ qty: dec('0'), value: dec('0'), taxable: dec('0'), gst: dec('0'), batches: new Map<string, Decimal>(), serials: new Set<string>() });
 
-export async function returnedOf(ctx: Ctx, deliveryLineIds: readonly string[]): Promise<Map<string, Returned>> {
-  const back = new Map<string, Returned>();
-  if (deliveryLineIds.length === 0) return back;
-  const rows = await salesTx(ctx).select({ line: deliveryReturnLines.deliveryLineId, qty: deliveryReturnLines.qty,
+/** What has come back of each of the caller's delivery lines, by the line's id: answered only for the batches and
+ * serials the line itself was picked with, so nothing of the returns themselves leaves here. */
+export async function returnedOf(ctx: Ctx, lines: readonly { id: string; picks: unknown }[]): Promise<Map<string, Returned>> {
+  const rows = lines.length === 0 ? [] : await salesTx(ctx).select({ line: deliveryReturnLines.deliveryLineId, qty: deliveryReturnLines.qty,
     value: deliveryReturnLines.value, taxable: deliveryReturnLines.taxable, gst: deliveryReturnLines.gst, picks: deliveryReturnLines.picks })
     .from(deliveryReturnLines)
     .innerJoin(deliveryReturns, and(eq(deliveryReturns.id, deliveryReturnLines.returnId), eq(deliveryReturns.status, 'posted')))
-    .where(inArray(deliveryReturnLines.deliveryLineId, [...deliveryLineIds]));
-  for (const r of rows) {
-    const b = back.get(r.line) ?? nothingBack();
-    const picks = picksOf(r.picks);
-    b.qty = b.qty.plus(dec(r.qty));
-    b.value = b.value.plus(dec(r.value ?? '0'));
-    b.taxable = b.taxable.plus(dec(r.taxable ?? '0'));
-    b.gst = b.gst.plus(dec(r.gst ?? '0'));
-    for (const p of picks.batches) b.batches.set(pickedBatchKey(p.batchId), (b.batches.get(pickedBatchKey(p.batchId)) ?? dec('0')).plus(dec(p.qty)));
-    for (const s of picks.serials) b.serials.add(serialKey(s));
-    back.set(r.line, b);
+    .where(inArray(deliveryReturnLines.deliveryLineId, lines.map((l) => l.id)));
+  const back = new Map<string, Returned>();
+  for (const line of lines) {
+    const mine = rows.filter((r) => r.line === line.id);
+    const total = (f: (r: (typeof rows)[number]) => string | null) => mine.reduce((s, r) => s.plus(dec(f(r) ?? '0')), dec('0'));
+    const came = mine.flatMap((r) => picksOf(r.picks).batches);
+    const cameSerials = new Set(mine.flatMap((r) => picksOf(r.picks).serials.map(serialKey)));
+    const picked = picksOf(line.picks);
+    back.set(line.id, {
+      qty: asQty(total((r) => r.qty)), value: roundMoney(total((r) => r.value)), taxable: roundMoney(total((r) => r.taxable)),
+      gst: roundMoney(total((r) => r.gst)),
+      batches: new Map(picked.batches.map((p) => [pickedBatchKey(p.batchId), asQty(came.filter((c) => c.batchId === p.batchId)
+        .reduce((s, c) => s.plus(dec(c.qty)), dec('0')))])),
+      serials: new Map(picked.serials.map((x) => [serialKey(x), cameSerials.has(serialKey(x))])),
+    });
   }
   return back;
 }

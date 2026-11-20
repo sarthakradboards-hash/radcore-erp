@@ -14,7 +14,7 @@ import { z } from 'zod';
 import type {
   createDeliveryReturn, deleteDeliveryReturn, getDeliveryReturn, listDeliveryReturns, postDeliveryReturn, updateDeliveryReturn,
 } from '../contract.ts';
-import { nothingBack, pickedBatchKey, picksOf, returnedOf } from './delivered.ts';
+import { pickedBatchKey, picksOf, returnedOf } from './delivered.ts';
 import { checkDate, shareOf } from './document-rules.ts';
 import { today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
@@ -69,7 +69,7 @@ async function checkedLines(ctx: Ctx, deliveryId: string, lines: readonly LineIn
   const sent = new Map((await salesTx(ctx).select({ id: deliveryLines.id, itemId: deliveryLines.itemId, qty: deliveryLines.qty,
     picks: deliveryLines.picks, value: deliveryLines.value, taxable: deliveryLines.taxable, gst: deliveryLines.gst }).from(deliveryLines)
     .where(eq(deliveryLines.deliveryId, deliveryId))).map((l) => [l.id, l]));
-  const back = await returnedOf(ctx, [...sent.keys()]);
+  const back = await returnedOf(ctx, [...sent.values()]);
   const seen = new Set<string>();
   const rows = [];
   for (const [n, l] of lines.entries()) {
@@ -81,8 +81,9 @@ async function checkedLines(ctx: Ctx, deliveryId: string, lines: readonly LineIn
     await checkQuantity(ctx, line.itemId, l.qty).catch((e: unknown) => {
       throw e instanceof AppError ? new AppError(e.code, e.message, [{ path: ['lines', n, 'qty'], code: e.code, message: e.message }]) : e;
     });
-    const was = back.get(line.id) ?? nothingBack();
-    const out = dec(line.qty).minus(was.qty);
+    const was = back.get(line.id);
+    if (was === undefined) throw new Error(`delivery line ${line.id} has no answer`);
+    const out = dec(line.qty).minus(dec(was.qty));
     if (dec(l.qty).gt(out)) {
       throw new AppError('over_quantity', 'That’s more than is still out on this delivery',
         [{ path: ['lines', n, 'qty'], code: 'over_quantity', message: `${out.toFixed()} still out` }]);
@@ -90,7 +91,7 @@ async function checkedLines(ctx: Ctx, deliveryId: string, lines: readonly LineIn
     const picked = picksOf(line.picks);
     for (const [b, batch] of l.batches.entries()) {
       const left = picked.batches.filter((p) => p.batchId === batch.batchId).reduce((s, p) => s.plus(dec(p.qty)), dec('0'))
-        .minus(was.batches.get(pickedBatchKey(batch.batchId)) ?? dec('0'));
+        .minus(dec(was.batches.get(pickedBatchKey(batch.batchId)) ?? '0'));
       if (dec(batch.qty).gt(left)) {
         throw new AppError('over_quantity', 'That’s more of a batch than went out in it and is still out',
           [{ path: ['lines', n, 'batches', b, 'qty'], code: 'over_quantity', message: `${left.toFixed()} of this batch still out` }]);
@@ -98,7 +99,7 @@ async function checkedLines(ctx: Ctx, deliveryId: string, lines: readonly LineIn
     }
     const took = new Set(picked.serials.map(serialKey));
     for (const [s, serial] of l.serials.entries()) {
-      if (!took.has(serialKey(serial)) || was.serials.has(serialKey(serial))) {
+      if (!took.has(serialKey(serial)) || was.serials.get(serialKey(serial)) === true) {
         throw notOnSource(['lines', n, 'serials', s], `${serial} isn’t out on this line`);
       }
     }
@@ -198,7 +199,7 @@ export async function postDeliveryReturnNow(ctx: Ctx, { id }: In<typeof postDeli
   // What's still out is read again under the delivery's lock: another return may have posted since this was drafted.
   const lines = await checkedLines(ctx, d.id, drafted.map((l) => ({ deliveryLineId: l.deliveryLineId, qty: q(l.qty), ...picksOf(l.picks) })));
   const shares = lines.map((l) => {
-    const share = (total: string | null, took: ReturnType<typeof dec>) => shareOf(total ?? '0', l.sent.qty, { qty: l.was.qty, share: took }, l.qty);
+    const share = (total: string | null, took: string) => shareOf(total ?? '0', l.sent.qty, { qty: l.was.qty, share: took }, l.qty);
     return { value: share(l.sent.value, l.was.value), taxable: share(l.sent.taxable, l.was.taxable), gst: share(l.sent.gst, l.was.gst) };
   });
   const moved = await postStock(ctx, { sourceTable: 'delivery_returns', sourceId: id, businessDate: r.businessDate,

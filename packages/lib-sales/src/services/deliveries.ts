@@ -80,7 +80,7 @@ async function checkedLines(ctx: Ctx, orderId: string, lines: readonly LineIn[])
     });
     const total = (asked.get(line.id) ?? dec('0')).plus(dec(l.qty));
     asked.set(line.id, total);
-    const left = dec(line.qty).minus(gone.get(line.id) ?? dec('0'));
+    const left = dec(line.qty).minus(dec(gone.get(line.id) ?? '0'));
     if (total.gt(left)) {
       throw new AppError('over_quantity', 'That’s more than is left of the order to deliver',
         [{ path: ['lines', n, 'qty'], code: 'over_quantity', message: `${left.toFixed()} left to deliver` }]);
@@ -225,13 +225,13 @@ export async function listToInvoicePage(ctx: Ctx, input: In<typeof listToInvoice
   )).orderBy(asc(deliveries.businessDate), asc(deliveries.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const lines = page.length === 0 ? [] : await salesTx(ctx).select({ id: deliveryLines.id, deliveryId: deliveryLines.deliveryId,
-    taxable: deliveryLines.taxable, gst: deliveryLines.gst }).from(deliveryLines)
+    taxable: deliveryLines.taxable, gst: deliveryLines.gst, picks: deliveryLines.picks }).from(deliveryLines)
     .where(inArray(deliveryLines.deliveryId, page.map((p) => p.id)));
-  const back = await returnedOf(ctx, lines.map((l) => l.id));
+  const back = await returnedOf(ctx, lines);
   const left = new Map<string, ReturnType<typeof dec>>();
   for (const l of lines) {
     const b = back.get(l.id);
-    const more = dec(l.taxable ?? '0').plus(dec(l.gst ?? '0')).minus(b?.taxable ?? dec('0')).minus(b?.gst ?? dec('0'));
+    const more = dec(l.taxable ?? '0').plus(dec(l.gst ?? '0')).minus(dec(b?.taxable ?? '0')).minus(dec(b?.gst ?? '0'));
     left.set(l.deliveryId, (left.get(l.deliveryId) ?? dec('0')).plus(more));
   }
   const names = await partyNames(ctx, page.map((r) => r.partyId));

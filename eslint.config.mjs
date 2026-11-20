@@ -244,7 +244,12 @@ export const OPTIONS = {
 // E7's tables come from the catalogue. Only tools/boundaries.test.ts sets RADCORE_BOUNDARY_FIXTURES: then the
 // fixtures' own table, which no module has, is scoped too.
 OPTIONS['radcore/e7-scope-on-owned-reads'] = { tables: [...SCOPED_TABLES,
-  ...(process.env.RADCORE_BOUNDARY_FIXTURES === '1' ? ['../../../db/src/e7/tables.ts#leads'] : [])] };
+  ...(process.env.RADCORE_BOUNDARY_FIXTURES === '1' ? ['../../../db/src/e7/tables.ts#leads'] : [])],
+  // The files that rightly read past the record scope: one file each, with its reason, by an architect's ruling
+  // (ADR-001 §6a). tools/eslint-options.json pins the list.
+  exempt: {
+    'packages/lib-sales/src/services/delivered.ts': 'sums every posted delivery and return for a party’s credit exposure and an order’s remaining quantities, as aggregates keyed by ids the caller had in scope (the architect on RAD-112)',
+  } };
 const on = (id, options = OPTIONS[id]) => ({ [id]: ['error', options] });
 const L1_BASE = OPTIONS['radcore/no-sql'];
 const L1_ZONE = { allowNames: [...L1_ALLOW, 'sql'], zone: true };

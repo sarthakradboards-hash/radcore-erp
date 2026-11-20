@@ -203,4 +203,20 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
     const listed = await run((ctx) => listDeliveriesPage(ctx, { limit: 50, filter: { orderId: at.orderId } }), mine);
     expect(listed.items.map((d) => d.id)).toEqual([id]);
   });
+
+  // E7's exemption (the architect on RAD-112): what's left of their own order counts a colleague's posted delivery, yet
+  // nothing of that delivery reaches them: not in the refusal, not in their list, not by its id.
+  it('counts a colleague’s delivery in what’s left of an own-scope person’s order, without showing it', async () => {
+    const mine = person(['sales:read']);
+    const at = await setup({ stock: '2', rate: '30', ordered: '2', maker: mine });
+    const theirs = await deliver(at, '1');
+    const refused = await draft(at, '2', [], mine).then(() => null, (e: unknown) => e as AppError);
+    expect([refused?.code, refused?.issues.map((i) => i.message)]).toEqual(['over_quantity', ['1 left to deliver']]);
+    expect(JSON.stringify(refused?.issues)).not.toContain(theirs.id);
+    expect(JSON.stringify(refused?.issues)).not.toContain(theirs.number);
+    const listed = await run((ctx) => listDeliveriesPage(ctx, { limit: 50, filter: { orderId: at.orderId } }), mine);
+    expect(listed.items).toEqual([]);
+    expect(await failure(run((ctx) => getDeliveryById(ctx, { id: theirs.id }), mine))).toBe('not_found');
+    expect(await failure(draft(at, '1', [], mine))).toBe('ok');
+  });
 });
