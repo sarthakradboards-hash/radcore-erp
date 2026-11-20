@@ -1,6 +1,7 @@
 {
   "radcore/e7-scope-on-owned-reads": {
     "tables": [
+      "@radcore/db/crm#leadActivities",
       "@radcore/db/crm#leadEnquiries",
       "@radcore/db/crm#leads",
       "@radcore/db/sales#deliveries",

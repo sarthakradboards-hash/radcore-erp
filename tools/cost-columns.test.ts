@@ -18,6 +18,7 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   t_route_invoices: { total: 'a test fixture’s document total' },
   payments: { amount: 'money a party paid or was paid (payments:write)', tds: 'tax the party held back (payments:write)' },
   parties: { credit_limit: 'a customer’s credit terms (parties:read, set with parties:manage)' },
+  leads: { value: 'a lead’s expected deal value, what it might sell for (leads:read)', score: 'a lead’s score, 0 to 100' },
   price_list_rates: { rate: 'a selling price (prices:read)' },
   stock_movements: { qty: 'a quantity' },
   // A quote's or order's line (RAD-112): what was offered or ordered, at its selling rate (sales:read).
