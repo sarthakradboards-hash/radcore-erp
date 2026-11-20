@@ -1,7 +1,7 @@
-// RAD-112 (Sarthak, 20 Nov: the sales keys stay "changeable like dynamic", "by owner and admin"): sales:read, sales:write
-// and sales:override are ordinary catalogue keys, with no role they're held to, and the migration's grants are only
-// where the roles start. An owner gives a role sales:override on the roles screen and takes it away again, each step
-// seen by the database. Done inside transactions that roll back, so the shared database's grants stay as shipped.
+// RAD-112 (Sarthak, 20 Nov: the sales keys stay "changeable like dynamic", "by owner and admin"): sales:read, sales:write,
+// sales:override and deliveries:write are ordinary catalogue keys, with no role they're held to, and the migrations'
+// grants are only where the roles start. An owner gives a role sales:override, or deliveries:write, on the roles screen
+// and takes it away again, each step seen by the database. Done inside transactions that roll back, so the shared database's grants stay as shipped.
 // An override lets a sale past its checks, so a role holding sales:override needs the second factor (D-19, Sarthak on
 // 20 Nov), as prices:approve does: without it, its holder can't sign in to approve one.
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -19,7 +19,8 @@ const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const SYSTEM: Principal = { kind: 'system', name: 'test', permissions: [] };
-const SALES_KEYS = ['sales:read', 'sales:write', 'sales:override'];
+// In the catalogue's order.
+const SALES_KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'sales:override'];
 class Rollback extends Error {}
 
 it('declares the sales keys as ordinary catalogue keys, held to no role', () => {
@@ -27,8 +28,8 @@ it('declares the sales keys as ordinary catalogue keys, held to no role', () => 
   expect(keys.map((p) => [p.key, p.onlyRoles, p.allOnly])).toEqual(SALES_KEYS.map((k) => [k, undefined, undefined]));
 });
 
-it('marks sales:override as a key that needs the second factor, and sales:read and sales:write not', () => {
-  expect(SALES_KEYS.map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([false, false, true]);
+it('marks sales:override as a key that needs the second factor, and the others not', () => {
+  expect(SALES_KEYS.map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([false, false, false, true]);
 });
 
 describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
@@ -57,7 +58,8 @@ describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
     }
   });
 
-  it('lets an owner give a role sales:override, and take it away again', async () => {
+  // The sales role starts with neither key (the migrations' grants).
+  it.each(['sales:override', 'deliveries:write'])('lets an owner give a role %s, and take it away again', async (key) => {
     // As a named system principal, as every write needs one (RA005).
     const { rows: [user] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
       insert into radcore.users (email, display_name, status, password_hash, password_set_at, role)
@@ -69,12 +71,12 @@ describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
       .then((rows) => rows.map((g) => g.p));
     const both = () => runInTransaction(db, WRITE, owner, randomUUID(), async (ctx: Ctx) => {
       const before = await held(ctx);
-      const given = await setRoleGrants(ctx, { key: 'sales', grants: [...before, 'sales:override'].toSorted(),
-        version: (await permissionMatrix(ctx)).version, reason: 'The sales lead approves overrides' });
-      seen.granted = (await held(ctx)).includes('sales:override');
-      await setRoleGrants(ctx, { key: 'sales', grants: before.filter((k) => k !== 'sales:override').toSorted(), version: given.version,
+      const given = await setRoleGrants(ctx, { key: 'sales', grants: [...before, key].toSorted(),
+        version: (await permissionMatrix(ctx)).version, reason: `The sales lead is given ${key}` });
+      seen.granted = (await held(ctx)).includes(key);
+      await setRoleGrants(ctx, { key: 'sales', grants: before.filter((k) => k !== key).toSorted(), version: given.version,
         reason: 'Back to the starting grants' });
-      seen.revoked = !(await held(ctx)).includes('sales:override');
+      seen.revoked = !(await held(ctx)).includes(key);
       throw new Rollback();
     }).catch((e: unknown) => e);
     // Another file may change the matrix between the read and the write (as in roles-admin.test.ts, #160): retry.

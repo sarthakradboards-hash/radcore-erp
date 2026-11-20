@@ -20,6 +20,9 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   sales_quote_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage' },
   sales_order_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage' },
   stock_movement_batches: { qty: 'a quantity' },
+  // A delivery's or return's line (RAD-112): how many went or came back, and what they sold for (sales:read).
+  delivery_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst: 'the GST on a selling value (sales:read)' },
+  delivery_return_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst: 'the GST on a selling value (sales:read)' },
   // The books: who may read them is journal:read's question, which the architect is ruling on (auditor-2 on #224).
   journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)' },
 };

@@ -24,9 +24,9 @@ const lines = <T extends z.ZodType>(line: T) => z.array(line).min(1, 'Add at lea
 
 // The refusals a delivery's or return's draft shares: its date (§4), its lines, and its status.
 const DRAFT_ERRORS = ['date_in_future', 'date_before_source', 'wrong_status', 'not_on_source', 'over_quantity',
-  'quantity_too_precise'] as const;
-const POST_ERRORS = ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'over_quantity', 'no_gst_rate',
-  'not_enough_stock', 'batches_mismatch', 'units_mismatch', 'serial_twice', 'not_serialised'] as const;
+  'quantity_too_precise', 'unknown_location', 'location_inactive'] as const;
+const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'account_inactive', 'no_gst_rate', 'not_enough_stock', 'qty_not_positive', 'batches_mismatch',
+  'units_mismatch', 'serial_twice', 'not_serialised'] as const;
 
 const deliveryLineIn = z.object({ orderLineId: idString(), qty: quantityString(), ...picks });
 const delivery = z.object({
@@ -124,5 +124,5 @@ export const deleteDeliveryReturn = defineContract({
  * Delivered Not Invoiced releases the same; its number is drawn last. */
 export const postDeliveryReturn = defineContract({
   method: 'POST', path: '/sales/delivery-returns/:id/post', auth: 'session', perm: 'deliveries:write', tx: write,
-  input: z.object({ id: idString() }), output: z.object({ number: z.string() }), errors: [...POST_ERRORS, 'not_on_source'],
+  input: z.object({ id: idString() }), output: z.object({ number: z.string() }), errors: [...POST_ERRORS],
 });

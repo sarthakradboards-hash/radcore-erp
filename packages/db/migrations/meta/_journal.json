@@ -393,6 +393,13 @@
       "when": 1795138353420,
       "tag": "0055_quotes_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1795143373392,
+      "tag": "0056_deliveries",
+      "breakpoints": true
     }
   ]
 }

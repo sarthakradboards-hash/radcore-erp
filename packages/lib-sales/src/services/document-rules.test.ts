@@ -2,7 +2,7 @@
 // refusal pins its code and message, since a changed message is a change no other test would notice.
 import { AppError } from '@radcore/lib-platform';
 import { describe, expect, it } from 'vitest';
-import { checkDate, mayEdit, mayMove, netRate, ORDER_MOVES, QUOTE_MOVES, totalWithGst } from './document-rules.ts';
+import { checkDate, lineValues, mayEdit, mayMove, netRate, ORDER_MOVES, QUOTE_MOVES, shareOf, totalWithGst } from './document-rules.ts';
 
 const outcome = (fn: () => unknown): string => {
   try {
@@ -68,5 +68,23 @@ describe('netRate and totalWithGst', () => {
     expect(totalWithGst([{ qty: '1', rate: '0.05', discountPercent: '50', gstPercent: '18' },
       { qty: '2', rate: '10', discountPercent: '0', gstPercent: '0' }])).toBe('20.04'); // 0.025 → 0.03, its GST 0.0054 → 0.01
     expect(totalWithGst([])).toBe('0.00');
+  });
+});
+
+describe('lineValues', () => {
+  it('rounds the taxable value, then its GST, each to the paisa', () => {
+    expect(lineValues({ qty: '3', rate: '33.335', discountPercent: '10', gstPercent: '18' })).toEqual({ taxable: '90.00', gst: '16.20' });
+  });
+});
+
+// ADR-006 §4: a part return takes round(V × q / Q, 2); the one taking the last of the line clears what's left exactly.
+describe('shareOf', () => {
+  it('takes a part return’s share, rounded to the paisa', () => {
+    expect(shareOf('100.00', '3', { qty: '0', share: '0' }, '1')).toBe('33.33');
+    expect(shareOf('100.00', '3', { qty: '1', share: '33.33' }, '1')).toBe('33.33');
+  });
+  it('clears what’s left with the last return, so the shares add up to the line', () => {
+    expect(shareOf('100.00', '3', { qty: '2', share: '66.66' }, '1')).toBe('33.34');
+    expect(shareOf('100.00', '3', { qty: '0', share: '0' }, '3')).toBe('100.00');
   });
 });

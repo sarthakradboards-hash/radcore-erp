@@ -68,3 +68,15 @@ export async function updatePlace(ctx: Ctx, input: In<typeof updateLocation>): P
   if (found.length === 0) throw new AppError('not_found', 'There is no such location');
   return {};
 }
+
+/** Refuses a place a document can't move stock at: one that doesn't exist (`unknown_location`), or is switched off
+ * (`location_inactive`). A stock document calls it for its place before it posts (M3-08 onward). */
+export async function checkPlace(ctx: Ctx, id: string): Promise<void> {
+  const [row] = await stockTx(ctx).select({ active: locations.active }).from(locations).where(eq(locations.id, id)).limit(1);
+  if (row === undefined) {
+    throw new AppError('unknown_location', 'There is no such location', [{ path: ['locationId'], code: 'unknown', message: 'Choose a location' }]);
+  }
+  if (!row.active) {
+    throw new AppError('location_inactive', 'This location is switched off', [{ path: ['locationId'], code: 'inactive', message: 'Choose another location' }]);
+  }
+}

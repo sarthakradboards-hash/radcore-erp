@@ -42,7 +42,7 @@ export type SaleCheck = Readonly<{
    * deliver, this delivery's value (not yet posted, so not in notInvoiced); at invoice, only what the invoice adds beyond
    * its deliveries, which notInvoiced already holds; at handback, the job card's unpaid total. */
   adds: DecimalInput;
-  /** Delivered to the party and not yet billed. shortcut: 0 until M3-08's deliveredNotInvoiced lands; the stage passes it. */
+  /** Delivered to the party and not yet billed: the stage passes delivered.ts's deliveredNotInvoiced. */
   notInvoiced?: DecimalInput;
   lines: readonly SaleLine[];
   /** Who priced it: the document's maker (its created_by, "user:<id>"). Its discounts are judged by their role's limit,

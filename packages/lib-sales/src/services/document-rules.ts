@@ -61,3 +61,12 @@ export function totalWithGst(lines: readonly { qty: DecimalInput; rate: DecimalI
     return sum.plus(dec(v.taxable)).plus(dec(v.gst));
   }, dec('0')));
 }
+
+/** A delivery line's share for a return of `qty` of its `lineQty` units (ADR-006 §4, RC-207): round(total × qty /
+ * lineQty, 2), except that the return taking the last of the line clears what's left of it exactly, so the shares add
+ * up to the line's figure. `back` is what earlier returns took: their quantity and their share of this figure.
+ * shortcut: no invoice bills a delivery line until M3-09 (RAD-113), whose part invoices count here as earlier shares. */
+export function shareOf(total: DecimalInput, lineQty: DecimalInput, back: { qty: DecimalInput; share: DecimalInput }, qty: DecimalInput): Money {
+  if (dec(back.qty).plus(dec(qty)).eq(dec(lineQty))) return roundMoney(dec(total).minus(dec(back.share)));
+  return roundMoney(dec(total).times(dec(qty)).div(dec(lineQty)));
+}

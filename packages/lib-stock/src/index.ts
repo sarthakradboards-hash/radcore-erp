@@ -7,7 +7,7 @@ export { quantityFits } from './rules/quantity.ts';
 export { checkBooks } from './services/books-check.ts';
 export { averageCost } from './services/cost.ts';
 export { listKinds, setKindLabel } from './services/location-kinds.ts';
-export { addPlace, listPlaces, updatePlace } from './services/locations.ts';
+export { addPlace, checkPlace, listPlaces, updatePlace } from './services/locations.ts';
 export { stockSheets } from './sheets.ts';
 export {
   postUnitEvents, serialKey, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent, type UnitChange, type UnitOnLine,

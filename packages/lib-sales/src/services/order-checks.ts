@@ -9,6 +9,7 @@ import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
 import { itemLabels } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
+import { deliveredNotInvoiced } from './delivered.ts';
 import { netRate, totalWithGst } from './document-rules.ts';
 
 type Order = { partyId: string; businessDate: string; createdBy: string };
@@ -31,7 +32,7 @@ async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[]): Promise<SaleC
   for (const l of lines) gst.push((await gstRateFor(ctx, hsn.get(l.itemId)?.hsn ?? '', o.businessDate)).rate);
   return {
     stage: 'confirm', partyId: o.partyId, on: o.businessDate, pricedBy: o.createdBy,
-    adds: totalWithGst(lines.map((l, i) => ({ ...l, gstPercent: gst[i] ?? '0' }))),
+    adds: totalWithGst(lines.map((l, i) => ({ ...l, gstPercent: gst[i] ?? '0' }))), notInvoiced: await deliveredNotInvoiced(ctx, o.partyId),
     lines: lines.map((l) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent), listRate: l.rate })),
   };
 }
@@ -62,7 +63,8 @@ export const orderOverride = overrideApproval({
   },
 });
 
-const ISSUE_WORDS: Readonly<Record<string, string>> = {
+/** How each check issue reads to the person, for every document the checks stop. */
+export const ISSUE_WORDS: Readonly<Record<string, string>> = {
   over_limit: 'This takes the party over its credit limit',
   overdue: 'The party has a bill past its credit days',
   below_cost: 'This line is priced below the item’s cost',

@@ -102,7 +102,7 @@ export const createOrder = defineContract({
 /** A draft order, rewritten whole; a confirmed one's lines too, through the checks again (§1). */
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
-  input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'needs_override', 'no_gst_rate'],
+  input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'needs_override', 'no_gst_rate', 'order_delivered'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({

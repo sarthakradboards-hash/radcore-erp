@@ -15,6 +15,7 @@ import type {
 } from '../contract.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
 import { checkedLines, sellingTo, today } from './document-lines.ts';
+import { hasDeliveries, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
 import { partyNames } from './party-names.ts';
 
@@ -45,12 +46,6 @@ async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = fal
 
 // The bound an order's date keeps from its quote (§4), if it came from one.
 const fromQuote = (o: { quoteDate: string | null }) => (o.quoteDate === null ? undefined : { date: o.quoteDate, what: 'quote' });
-
-/** Whether any of the order has been delivered, and whether all of it has: its lines against the posted deliveries.
- * shortcut: no deliveries exist until RAD-112's delivery PR, which reads its posted delivery lines here. */
-async function delivered(): Promise<{ any: boolean; all: boolean }> {
-  return Promise.resolve({ any: false, all: false });
-}
 
 /** GET /sales/orders (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Promise<Out<typeof listOrders>> {
@@ -103,6 +98,8 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
     throw new AppError('wrong_status', 'A confirmed order keeps its party and date; only its lines change');
   }
   checkDate(input.businessDate, today(), fromQuote(now));
+  // A delivery, even a draft, names the order's lines, so they're fixed once one exists: close the order short instead.
+  if (await hasDeliveries(ctx, id)) throw new AppError('order_delivered', 'This order has deliveries, so its lines are fixed');
   await sellingTo(ctx, input.partyId);
   const lines = await checkedLines(ctx, input.lines);
   const tx = salesTx(ctx);
@@ -143,7 +140,7 @@ export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>)
 export async function closeOrderNow(ctx: Ctx, { id, reason }: In<typeof closeOrder>): Promise<Out<typeof closeOrder>> {
   const now = await orderOf(ctx, id, 'sales:write', true);
   mayMove('order', now.status, 'closed');
-  const short = !(await delivered()).all;
+  const short = !(await orderDelivered(ctx, id)).all;
   if (short && reason === undefined) {
     throw new AppError('reason_required', 'Lines are still undelivered: say why the order closes short',
       [{ path: ['reason'], code: 'required', message: 'Say why, in your own words' }]);
@@ -156,7 +153,7 @@ export async function closeOrderNow(ctx: Ctx, { id, reason }: In<typeof closeOrd
 export async function cancelOrderNow(ctx: Ctx, { id, reason }: In<typeof cancelOrder>): Promise<Out<typeof cancelOrder>> {
   const now = await orderOf(ctx, id, 'sales:write', true);
   mayMove('order', now.status, 'cancelled');
-  if ((await delivered()).any) {
+  if ((await orderDelivered(ctx, id)).any) {
     throw new AppError('order_delivered', 'Goods have gone on this order: close it short instead');
   }
   await salesTx(ctx).update(salesOrders).set({ status: 'cancelled', closeReason: reason }).where(eq(salesOrders.id, id));

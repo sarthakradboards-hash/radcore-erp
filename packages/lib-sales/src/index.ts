@@ -14,5 +14,14 @@ export {
 } from './services/orders.ts';
 export { orderOverride } from './services/order-checks.ts';
 export {
+  addDelivery, askDeliveryOverride, changeDelivery, DELIVERY_SERIES, dropDelivery, getDeliveryById, listDeliveriesPage, listToInvoicePage,
+  postDeliveryNow,
+} from './services/deliveries.ts';
+export { deliveryOverride } from './services/delivery-checks.ts';
+export {
+  addDeliveryReturn, changeDeliveryReturn, DELIVERY_RETURN_SERIES, dropDeliveryReturn, getDeliveryReturnById, listDeliveryReturnsPage,
+  postDeliveryReturnNow,
+} from './services/delivery-returns.ts';
+export {
   acceptQuoteNow, addQuote, changeQuote, closeQuoteNow, dropQuote, getQuoteById, listQuotesPage, QUOTE_SERIES, sendQuoteNow,
 } from './services/quotes.ts';
