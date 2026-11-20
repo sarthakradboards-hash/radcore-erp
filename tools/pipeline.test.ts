@@ -260,12 +260,14 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
     });
     await tookIt;
     const ravi = as(taker(raviId), (ctx) => followUpDone(ctx, { id }));
-    // Ravi saw it unowned and now waits on Asha's row lock.
-    // Bounded by time, not tries: under a full parallel run, Ravi's transaction can take a while to reach the lock.
+    // Ravi saw it unowned and now waits on Asha's row lock: a lock request for the very transaction that holds this
+    // lead's row (its xmax, Asha's uncommitted claim), so another test file's lock wait can't end this early, which let
+    // Ravi read Asha's committed claim (not_found). Bounded, as #252's waits are.
     await vi.waitFor(async () => {
-      const [w] = await owner<{ n: string }>("select count(*) as n from pg_stat_activity where wait_event_type = 'Lock'", []);
-      expect(Number(w?.n)).toBeGreaterThan(0);
-    }, { timeout: 10_000, interval: 20 });
+      const [w] = await owner<{ n: number }>(`select count(*)::int as n from pg_locks where not granted and locktype = 'transactionid'
+        and transactionid = (select xmax from radcore.leads where id = $1)`, [id]);
+      expect(w?.n).toBeGreaterThanOrEqual(1);
+    }, { timeout: 15_000, interval: 50 });
     release();
     await asha;
     await expect(ravi).rejects.toMatchObject({ code: 'lead_taken' });
