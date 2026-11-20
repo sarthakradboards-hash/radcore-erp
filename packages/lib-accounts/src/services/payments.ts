@@ -53,7 +53,23 @@ function linesOf(p: { kind: string; partyId: string; amount: Money; tds: Money; 
   return [{ account: { system: 'debtors' }, partyId: p.partyId, debit: p.amount }, { account: { id: p.accountId }, credit: p.amount }];
 }
 
-/** Posts a draft: its entry through the journal engine, then its number, last. */
+/** A refund's checks, against its receipt's row, locked: the receipt still posted, the same party, not dated before it,
+ * and its posted refunds with this one within its amount. Run when it's recorded and again when it posts, so a refund
+ * that waited for approval can't post past the cap, or after its receipt was cancelled (the architect on #234). */
+async function checkRefund(ctx: Ctx, r: Readonly<{ receiptId: string; partyId: string; businessDate: string; amount: Money }>) {
+  const tx = accountsTx(ctx);
+  const [receipt] = await tx.select().from(payments).where(and(eq(payments.id, r.receiptId), eq(payments.kind, 'receipt'))).limit(1)
+    .for('update');
+  if (receipt?.status !== 'posted') return refuse('receipt_not_posted', 'The receipt isn’t posted');
+  if (receipt.partyId !== r.partyId) refuse('refund_other_party', 'A refund goes back to the party who paid');
+  if (r.businessDate < receipt.businessDate) refuse('date_before_source', 'A refund is dated on or after its receipt');
+  const refunded = await tx.select({ amount: payments.amount }).from(payments)
+    .where(and(eq(payments.refundOfId, receipt.id), eq(payments.status, 'posted')));
+  if (sum([...refunded.map((x) => x.amount), r.amount]).gt(receipt.amount)) refuse('exceeds_receipt', 'That’s more than is left of the receipt');
+}
+
+/** Posts a draft: its entry through the journal engine, then its number, last. A refund is checked against its receipt
+ * again here, under the receipt's lock, whatever path posts it. */
 async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
   const tx = accountsTx(ctx);
   // The period lock first, then the payment's row (ADR-006 §1). An approval's version() has already locked the row,
@@ -62,6 +78,9 @@ async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
   if (dated !== undefined) await holdPeriod(ctx, dated.businessDate);
   const [p] = await tx.select().from(payments).where(and(eq(payments.id, id), eq(payments.status, 'draft'))).limit(1).for('update');
   if (p === undefined) return refuse('not_draft', 'This is already posted or cancelled');
+  if (p.refundOfId !== null) {
+    await checkRefund(ctx, { receiptId: p.refundOfId, partyId: p.partyId, businessDate: p.businessDate, amount: roundMoney(p.amount) });
+  }
   const entry = await postEntry(ctx, { kind: p.kind === 'receipt' ? 'payment_in' : 'payment_out', businessDate: p.businessDate,
     source: { table: 'payments', id }, lines: linesOf({ ...p, amount: roundMoney(p.amount), tds: roundMoney(p.tds) }) });
   const number = await nextNumber(ctx, p.kind === 'receipt' ? RECEIPT_SERIES : PAYMENT_SERIES, p.businessDate);
@@ -113,13 +132,7 @@ export async function recordPayment(ctx: Ctx, input: In<typeof recordPaymentCont
   await holdPeriod(ctx, p.businessDate);
   if (p.kind === 'refund') {
     if (p.refundOf === undefined) return refuse('refund_needs_receipt', 'Say which receipt this refund pays back');
-    const [r] = await tx.select().from(payments).where(and(eq(payments.id, p.refundOf), eq(payments.kind, 'receipt'))).limit(1).for('update');
-    if (r?.status !== 'posted') return refuse('receipt_not_posted', 'The receipt isn’t posted');
-    if (r.partyId !== p.partyId) refuse('refund_other_party', 'A refund goes back to the party who paid');
-    if (p.businessDate < r.businessDate) refuse('date_before_source', 'A refund is dated on or after its receipt');
-    const refunded = await tx.select({ amount: payments.amount }).from(payments)
-      .where(and(eq(payments.refundOfId, r.id), eq(payments.status, 'posted')));
-    if (sum([...refunded.map((x) => x.amount), p.amount]).gt(r.amount)) refuse('exceeds_receipt', 'That’s more than is left of the receipt');
+    await checkRefund(ctx, { receiptId: p.refundOf, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount });
   } else if (p.refundOf !== undefined) {
     refuse('refund_needs_receipt', 'Only a refund names a receipt');
   }

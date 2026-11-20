@@ -9,12 +9,12 @@ Built on 29 October 2026. Code reviewed: commit 194e2881dc1063ffc99b41b3c6d2e71a
 ## How to read this file
 Four groups, by who must answer.
 | Group | Who | Questions | Numbers |
-| A | Chartered accountant: GST, TDS, input credit, e-invoice, accounting, year-end, cut-over | 45 | CA-01 to CA-45 |
+| A | Chartered accountant: GST, TDS, input credit, e-invoice, accounting, year-end, cut-over | 49 | CA-01 to CA-49 |
 | B | Data-protection counsel: the Digital Personal Data Protection Act 2023 and Rules | 17 | DP-01 to DP-17 |
 | C | Labour-law and payroll adviser: PF, ESIC, professional tax, labour welfare fund, salary tax (Form 16, 24Q), leave, gratuity, bonus | 15 | LB-01 to LB-15 |
 | D | The owner's own policy decisions | 17 | OW-01 to OW-17 |
 
-Total 94. Questions CA-01 to CA-37 are the thirty-seven questions the finance reviewer wrote at the end of the money and compliance report (section 11), kept in the same order and with the same content. CA-38 to CA-45 come from the other reports. DP and LB questions come from the security, people, AI, data-model, hosting and operations reports.
+Total 98. Questions CA-01 to CA-37 are the thirty-seven questions the finance reviewer wrote at the end of the money and compliance report (section 11), kept in the same order and with the same content. CA-38 to CA-49 come from the other reports and the build. DP and LB questions come from the security, people, AI, data-model, hosting and operations reports.
 Each question has: its number; the question in plain words (every sub-question of the reviewer is kept); why it matters; what the code does today (file and line from the report); the register item (RC id); what the answer changes in the fix; and when the answer is needed.
 "When needed": Week 1 means it gates a decision on the handover call or a Wave 1 fix (Wave 1 is the work before any real data goes in). Before Wave 2 means the fix is built before go-live and waits for it. Before Wave 3 means it can wait until the first three months after go-live.
 Important flag for the answerer. Every statement of a rate, threshold, due date, section number or eligibility rule in this file is the reviewers' reading of public sources on 28 October 2026, mostly secondary sources such as commercial compliance sites and law-firm summaries. Many official texts were not retrievable. None of these readings is advice, and none should be relied on until you have answered. Where you disagree with a reading, please say so: the fix follows your answer.
@@ -25,7 +25,7 @@ Subject: Questions we need answered before our new accounting system holds real 
 Radboards is replacing Vyapar with a new system called RadCore, which will keep our books, GST records, TDS and salaries. Before it holds real data, an independent technical team read all of its code (about 43,000 lines) and found 222 things to fix. Some of them depend on rules of law and accounting that the technical team cannot settle. We recommended a professional sign-off from the start, and this is that request.
 What we ask. Please read the attached list for your area and answer each numbered question in one of three ways: (1) the rule, with the section or notification it comes from; (2) "it depends on X" with how to decide; or (3) "I cannot say without Y". If a reading in the list is wrong, please say so; the software will follow your answer, not the reviewers' reading.
 Your list.
-- Chartered accountant: Group A, 45 questions (CA-01 to CA-45).
+- Chartered accountant: Group A, 49 questions (CA-01 to CA-49).
 - Data-protection counsel: Group B, 17 questions (DP-01 to DP-17).
 - Payroll or labour adviser: Group C, 15 questions (LB-01 to LB-15). Salary tax (LB-07) can be answered by whichever of the CA or the payroll adviser files the salary tax return; please tell us which.
 What we need first. Every question marked "Week 1" in the list, within one week. The most important are: CA-01 (does e-invoicing apply, which depends on turnover), CA-03 (monthly or quarterly GST filing), CA-04 (credit on bills from unregistered suppliers), CA-11 (correcting an invoice after filing) and CA-37 (more than one GST registration). For counsel: DP-01 (when the duties start). For the payroll adviser: LB-01 to LB-05. The rest within [two to three weeks]; the list says for each question when the software work needs it.
@@ -41,7 +41,7 @@ Contact. [owner], [phone], [email]. The developer, [name], can explain what the 
 Thank you.
 For the owner before sending (not part of the note). Add the facts listed above. Do not attach the full area reports. If the CA also acts as payroll adviser, send one note with Groups A and C.
 # Group A. Questions for the chartered accountant
-Order: CA-01 to CA-37 are the finance reviewer's, in the reviewer's order. CA-38 to CA-45 are added from the other reports. File references are to the code root radcore-repo.
+Order: CA-01 to CA-37 are the finance reviewer's, in the reviewer's order. CA-38 to CA-49 are added from the other reports and the build. File references are to the code root radcore-repo.
 ## A1. E-invoice, e-way bill, filing and supply (CA-01 to CA-11)
 CA-01. Does e-invoicing apply to Radboards?
 - Ask: What was Radboards' total yearly turnover (aggregate turnover) in each year since 2017-18? Is it above Rs 5 crore (e-invoicing, Notification 10/2023-Central Tax, effective 1 August 2023) or Rs 10 crore (the 30-day limit for reporting an invoice, GSTN advisory effective 1 April 2025)? One secondary source says a change comes on 1 April 2026: please confirm none applies.
@@ -306,7 +306,7 @@ CA-37. Several GST registrations.
 - RC: RC-010 (Wave 1).
 - Effect on the fix: If a second GSTIN is likely within a year, the multi-company work (8 to 25 days) is needed; if not, the form is switched off (0.75 day).
 - When needed: Week 1.
-## A6. Questions added from the other reports (CA-38 to CA-45)
+## A6. Questions added from the other reports (CA-38 to CA-49)
 CA-38. Shipping, bank charges and marketplace settlements.
 - Ask: The GST treatment of shipping charges, GST on bank charges, and tax collected at source or tax deducted on marketplace (Amazon, Flipkart, Shopify) settlements.
 - Why it matters: The integrations reviewer did not look at these and left them to the CA; they affect how marketplace orders and settlements are booked.
@@ -746,4 +746,4 @@ OW-17. Rules for the counter when offline. (D-22)
 - The developer reads the "Effect on the fix" line against each answer and updates the RC item. Answers that contradict a reviewer's reading are recorded as "reviewer's reading corrected" in the register note.
 - Anything the adviser cannot answer stays in the tracker (08-Handover-Call-Pack.md, section h) with the named missing input.
 - Where an answer creates new work with no RC id (for example CA-31, franchisee stock), the developer opens a new register item.
-Counts. Group A (chartered accountant): 45. Group B (counsel): 17. Group C (labour and payroll adviser): 15. Group D (owner): 17. Total 94.
+Counts. Group A (chartered accountant): 49. Group B (counsel): 17. Group C (labour and payroll adviser): 15. Group D (owner): 17. Total 98.

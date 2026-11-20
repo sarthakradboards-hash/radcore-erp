@@ -174,6 +174,46 @@ describe.skipIf(!url || !superUrl)('receipts, payments and refunds', { timeout: 
     expect(await pay('0.01')).toMatchObject({ status: 'pending_approval' });
   });
 
+  it('re-checks a refund that waited for approval: two can’t both post past the receipt, nor one after it’s cancelled (the architect on #234)', async () => {
+    const c = await su.connect();
+    let ownerId = '';
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      ownerId = (await c.query<{ id: string }>("insert into radcore.users (email, display_name, role) values ($1, 'Owner', 'owner') returning id",
+        [`${randomUUID()}@example.test`])).rows[0]?.id ?? '';
+      await c.query('commit');
+    } finally {
+      c.release();
+    }
+    const owner: Principal = { kind: 'user', userId: ownerId, permissions: ['payments:approve'] };
+    const [bank, cash] = [await systemId('bank'), await systemId('cash')];
+    const receive = (partyId: string) => run((ctx) => recordPayment(ctx, { kind: 'receipt', partyId, businessDate: '2026-11-05',
+      amount: m('20000.00'), accountId: bank }));
+    // A cash refund over Rs 10,000 waits for an owner (section 40A(3)), still a draft.
+    const refund = (partyId: string, receiptId: string) => run((ctx) => recordPayment(ctx, { kind: 'refund', partyId, businessDate: DAY,
+      amount: m('15000.00'), accountId: cash, refundOf: receiptId }));
+    const approve = async (paymentId: string) => {
+      const [r] = (await su.query<{ id: string; version_digest: string }>(
+        "select id, version_digest from radcore.approvals where kind = 'cash-limit' and record_id = $1 and decided_at is null", [paymentId])).rows;
+      return code(as(owner)((ctx) => decideApproval(ctx, cashLimitSpec, r?.id ?? '', { decision: 'approve', versionHash: r?.version_digest ?? '' })));
+    };
+    const p = await party();
+    const receipt = await receive(p);
+    const [a, b] = [await refund(p, receipt.id), await refund(p, receipt.id)];
+    expect([a.status, b.status]).toEqual(['pending_approval', 'pending_approval']);
+    expect(await approve(a.id)).toBe('ok');
+    expect(await approve(b.id)).toBe('exceeds_receipt');
+    expect([(await paymentRow(a.id))?.status, (await paymentRow(b.id))?.status]).toEqual(['posted', 'draft']);
+    // A refund waiting when its receipt is cancelled never posts.
+    const q = await party();
+    const second = await receive(q);
+    const waiting = await refund(q, second.id);
+    await run((ctx) => cancelPayment(ctx, { id: second.id, businessDate: DAY, reason: 'Cheque bounced' }));
+    expect(await approve(waiting.id)).toBe('receipt_not_posted');
+    expect((await paymentRow(waiting.id))?.status).toBe('draft');
+  });
+
   it('cancels a posted payment by a mirror entry dated the cancellation’s day, once; a posted one is frozen', async () => {
     const p = await party();
     const r = await run(async (ctx) => recordPayment(ctx, { kind: 'receipt', partyId: p, businessDate: '2026-11-03', amount: m('700.00'),
