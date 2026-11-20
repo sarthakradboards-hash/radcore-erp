@@ -184,7 +184,17 @@ removal, so a delivery for a sale is invoiced the same day by default:
 - **Cancelling a credit note** mirrors it exactly. Goods that came back on it go out again at the value they came
   back at, never as a new sale or a new return (RC-207).
 - **A counter refund** (RC-126) is a goods-back credit note, then a refund in the same save (F26). Both are posted
-  documents, so a cash refund is in the books the moment the cash leaves.
+  documents, so a cash refund is in the books the moment the cash leaves. Since every note is approved (§1), the
+  note's draft carries the refund (amount and account) as part of what's approved, and the approval's `approved`
+  step posts the note and then the refund; a cash refund past the day's limit (§8) still waits for its own approval.
+- **A refund of a credit note** names the credit, `(credit_table, credit_id)` on `payments`, beside `refund_of_id`
+  for a receipt; a refund names exactly one. A credit's refunds and net applications stay within its total, checked
+  by the database at commit (ADR-005 §7a). Refunding what's left of a credit later is a refund under
+  `payments:write`; only a booking's advance is refunded through its owner (§5).
+- **Keys** (RAD-114): `credit_notes:write` raises a note (by default admin, owner, accounts and counter);
+  `credit_notes:approve` approves one (admin, owner and accounts; whether it needs the second factor is Sarthak's
+  to confirm); `credit_notes:cancel` cancels one (admin, owner and accounts); `deliveries:cancel` cancels a delivery
+  or a return (admin, owner and stores).
 
 ### 7. The invoice itself (RC-022, RC-113)
 
