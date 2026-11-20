@@ -73,7 +73,7 @@ describe.skipIf(!url || !superUrl)('lead capture', { timeout: 30_000 }, () => {
       source: 'walk_in', receivedAt: at('2033-03-20') }));
     const seen = await lead(sales(ashaId), first.id ?? '');
     expect([seen.followUpOn, seen.enquiries.map((e) => e.source)]).toEqual(['2033-03-20', ['walk_in', 'manual']]);
-    // Without a name, the alert shows the phone as Asha may see it: masked, she has no pii:read.
+    // Without a name, the alert shows the phone's last four digits.
     expect(await inbox(sales(ashaId))).toEqual([`••••••${phone.slice(-4)} enquired again`]);
     // A follow-up already sooner stays; the owner taking a repeat of their own lead isn't told about it.
     await as(sales(ashaId), (ctx) => captureEnquiry(ctx, { phone, source: 'manual', receivedAt: at('2033-03-25') }));
@@ -91,6 +91,17 @@ describe.skipIf(!url || !superUrl)('lead capture', { timeout: 30_000 }, () => {
     // His enquiry still counts, and Asha still hears of it.
     expect((await lead(sales(ashaId), first.id ?? '')).enquiries.map((e) => e.source)).toEqual(['walk_in', 'manual']);
     expect(await inbox(sales(ashaId))).toHaveLength(1);
+  });
+
+  it('names the lead in the alert, or shows only the last four digits even to a viewer who may see the number', async () => {
+    const ownerId = await person();
+    const seesAll: Principal = { kind: 'user', userId: ownerId, permissions: ['leads:read', 'leads:write', 'pii:read', 'leads:contact'] };
+    const [named, unnamed] = [mobile(), mobile()];
+    await as(seesAll, (ctx) => captureEnquiry(ctx, { phone: named, name: 'Meera', source: 'manual', receivedAt: at('2033-03-10') }));
+    await as(seesAll, (ctx) => captureEnquiry(ctx, { phone: unnamed, source: 'manual', receivedAt: at('2033-03-11') }));
+    for (const phone of [named, unnamed]) await as(FORM, (ctx) => captureEnquiry(ctx, { phone, source: 'form' }));
+    // The whole number shows only on the lead, where the look is logged.
+    expect((await inbox(seesAll)).toSorted()).toEqual(['Meera enquired again', `••••••${unnamed.slice(-4)} enquired again`].toSorted());
   });
 
   it('makes one lead of two enquiries from a new number at the same moment', async () => {

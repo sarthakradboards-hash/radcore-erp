@@ -34,15 +34,15 @@ export type Capture = Readonly<{
   receivedAt?: Date | undefined;
 }>;
 
-/** A repeat enquiry, to the lead's owner: the lead's name, else its phone as the viewer may see it. */
+/** A repeat enquiry, to the lead's owner: the lead's name, else its phone's last four digits, whoever views it. The
+ * whole number shows only on the lead itself, where the look is logged (ADR-005 §7c; auditor-2 on #241). */
 export const repeatEnquiry = defineNotification('crm.repeat_enquiry', {
   table: 'leads', label: 'A lead enquired again',
   async describe(ctx, ids) {
     const rows = await crmTx(ctx).select({ id: leads.id, name: leads.name, phone: leads.phone, owner: leads.owner })
       .from(leads).where(inArray(leads.id, [...ids]));
     const seen = rows.filter((r) => ctx.can('leads:read', { owner: r.owner ?? '' }));
-    const phone = (p: string) => (ctx.shows('last4') ? p : maskOf(p, 'last4').masked);
-    return new Map(seen.map((r) => [r.id, `${r.name ?? phone(r.phone)} enquired again`]));
+    return new Map(seen.map((r) => [r.id, `${r.name ?? maskOf(r.phone, 'last4').masked} enquired again`]));
   },
 });
 
