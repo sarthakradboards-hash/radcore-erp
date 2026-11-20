@@ -9,6 +9,7 @@ import {
   type Principal,
 } from '@radcore/lib-platform';
 import { listSettings, setSeriesPrefix, setSetting } from '@radcore/lib-platform/contract';
+import { getPartyList } from '@radcore/lib-sales';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
@@ -118,6 +119,21 @@ describe.skipIf(!url || !superUrl)('the settings and number-series screens', { t
       expect(await listed(send, key)).toMatchObject({ value: 30, changed: false });
       expect((await su.query('select 1 from radcore.settings where key = $1', [key])).rowCount).toBe(0);
     });
+  });
+
+  it('reads a default price list switched off since it was chosen as none (ADR-001 §8c; the auditor on #264)', async () => {
+    // Switched off before it's the default, so a test running alongside sees what it would with none.
+    const [list] = (await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+      insert into radcore.price_lists (name, active) select $1, false from p returning id`, [`Old list ${randomUUID()}`])).rows;
+    const party = (await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+      insert into radcore.parties (name, customer, state_code) select $1, true, '27' from p returning id`, [`List party ${randomUUID()}`])).rows[0]?.id ?? '';
+    const asSystem = (text: string, values: unknown[]) => su.query(`with p as (select set_config('app.principal', 'system:test', true)) ${text}`, values);
+    try {
+      await asSystem("insert into radcore.settings (key, value) select 'sales.default_price_list', to_jsonb($1::text) from p", [list?.id]);
+      expect(await run((ctx) => getPartyList(ctx, { partyId: party }))).toEqual({ priceListId: null, own: false });
+    } finally {
+      await asSystem("delete from radcore.settings where key = 'sales.default_price_list' and exists (select 1 from p)", []);
+    }
   });
 
   it('changes a prefix from this year only before its first number, and from next year always; an issued number never changes', async () => {

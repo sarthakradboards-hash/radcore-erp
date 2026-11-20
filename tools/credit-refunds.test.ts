@@ -4,7 +4,7 @@
 // credit's lock comes when the refund is written, before the cash limit takes the party (ADR-006 §1). Fixture credit
 // and charge tables are made as the owner, as a migration's are, registered for the file and removed after it.
 import { randomUUID } from 'node:crypto';
-import { openFinancialYear, refundCredit } from '@radcore/lib-accounts';
+import { applyCredit, openFinancialYear, refundCredit } from '@radcore/lib-accounts';
 import { cashLimitApproval, recordPaymentContract } from '@radcore/lib-accounts/contract';
 import { moneyString, requestFor, type Contract } from '@radcore/lib-common';
 import { loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -163,6 +163,20 @@ describe.skipIf(!url || !superUrl)('refunds of a credit note', { timeout: 30_000
       await app.query('rollback').catch(() => undefined);
       app.release();
     }
+  });
+
+  it('applies and refunds one credit at once without a deadlock, the two within its total', async () => {
+    const p = await party();
+    const credit = await doc(CREDITS, p, '100.00');
+    const invoice = await doc(INVOICES, p, '500.00');
+    const bank = await account('bank');
+    const both = await Promise.allSettled([
+      run((ctx) => applyCredit(ctx, { creditTable: CREDITS, creditId: credit, documentTable: INVOICES, documentId: invoice, amount: m('40.00'),
+        businessDate: DAY })),
+      run((ctx) => refundCredit(ctx, { creditTable: CREDITS, creditId: credit, partyId: p, businessDate: DAY, amount: m('40.00'), accountId: bank })),
+    ]);
+    expect(both.map((b) => (b.status === 'fulfilled' ? 'ok' : String(b.reason)))).toEqual(['ok', 'ok']);
+    expect((await su.query<{ u: string }>('select radcore.credit_used($1, $2)::text u', [CREDITS, credit])).rows).toEqual([{ u: '80.00' }]);
   });
 
   it('locks the credit before the party: a cancel that holds the note, then the party, never deadlocks a cash refund', async () => {
