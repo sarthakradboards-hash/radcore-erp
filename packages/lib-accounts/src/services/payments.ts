@@ -2,7 +2,7 @@
 // posted in the same save, through the journal engine, then numbered last (ADR-006 §1): RV for a receipt, PV for a
 // payment or refund. Cash past a day's limit (RC-114, CA-24) stays a draft and asks an owner, through defineApproval;
 // the approval posts it. A posted one is cancelled only by a mirror entry dated the cancellation's day (ADR-007 §6).
-import { accounts, accountsTx, parties, payments } from '@radcore/db/accounts';
+import { accounts, accountsTx, payments } from '@radcore/db/accounts';
 import { dec, indiaDate, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
   from '@radcore/lib-platform';
@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { cancelPaymentContract, recordPaymentContract } from '../contract.ts';
 import { paymentUsed } from './allocations.ts';
 import { holdPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
+import { holdParty } from './parties.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -106,8 +107,9 @@ async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
 /** Whether this cash, with the party's other posted cash that day, passes the day's limit (ADR-007 §8). */
 async function pastCashLimit(ctx: Ctx, p: { id: string; kind: string; partyId: string; businessDate: string; amount: Money }) {
   const out = p.kind !== 'receipt';
-  // The party's row, locked, so two cash saves for one party take turns and neither sums without the other.
-  await accountsTx(ctx).select({ id: parties.id }).from(parties).where(eq(parties.id, p.partyId)).limit(1).for('update');
+  // ADR-006 §1 step 3: the party, after the payment's own row, so two cash saves for one party take turns and neither
+  // sums without the other. NO KEY UPDATE: each one's insert already holds the party's KEY SHARE (the auditor on RAD-116).
+  await holdParty(ctx, p.partyId);
   const cash = accountsTx(ctx).select({ id: accounts.id }).from(accounts).where(eq(accounts.systemKey, 'cash'));
   const earlier = await accountsTx(ctx).select({ amount: payments.amount }).from(payments).where(and(eq(payments.partyId, p.partyId),
     eq(payments.businessDate, p.businessDate), eq(payments.status, 'posted'), inArray(payments.accountId, cash), ne(payments.id, p.id),
