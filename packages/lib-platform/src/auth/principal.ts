@@ -44,6 +44,13 @@ export const loadPrincipal = (db: Database): LoadPrincipal => async (by) => {
   return runInTransaction(db, READ, LOADER, randomUUID(), (ctx) => principalFor(ctx, id));
 };
 
+/** Whether an active person's role holds a key now: null for an unknown or inactive person. It answers that one
+ * question without handing out a principal to act as (auditor-2 on #262). */
+export async function holdsKey(ctx: Ctx, userId: string, key: string): Promise<boolean | null> {
+  const person = await principalFor(ctx, userId);
+  return person === null ? null : person.permissions.includes(key);
+}
+
 /** Whether the person's role asks for the second sign-in factor (D-19, RAD-33). */
 // The role's own setting, or any key it holds that needs the factor: an old row or a stray grant can't slip past (the
 // architect on RAD-83).

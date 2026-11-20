@@ -10,7 +10,7 @@ import {
 } from '@radcore/db/crm';
 import { addDays, indiaDate, maskOf, normaliseEmail } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineNotification, encodeCursor, listScope, momentKey, notify, principalFor, principalId, roleOf,
+  AppError, decodeCursor, defineNotification, encodeCursor, holdsKey, listScope, momentKey, notify, principalId, roleOf,
   type Ctx, type JobContract,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, type SQL } from 'drizzle-orm';
@@ -161,8 +161,7 @@ export async function assignLeadOwner(ctx: Ctx, { id, owner }: In<typeof assignL
       throw new AppError('unknown_person', 'There is no such person', [{ path: ['owner'], code: 'unknown', message: 'Choose a person' }]);
     }
     // A lead handed to someone who can't see leads would be lost to them and to their bell (the architect on #262).
-    const person = await principalFor(ctx, owner);
-    if (person === null || !person.permissions.includes('leads:read')) {
+    if (await holdsKey(ctx, owner, 'leads:read') !== true) {
       throw new AppError('owner_cannot_see_leads', 'That person can’t see leads', [{ path: ['owner'], code: 'owner_cannot_see_leads',
         message: 'Choose someone whose account is active and whose role sees leads' }]);
     }
