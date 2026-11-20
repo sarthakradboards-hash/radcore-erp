@@ -329,9 +329,9 @@ under these rules, each refused by name:
   Admin and owner hold both, and both are bound by the rules below: nobody gives a key they don't hold.
 - **Keys that need the second factor.** The permission catalogue marks the keys that move money, reach payroll, HR
   or user administration, or set the company's tax identity, a customer's credit terms, the GST rates every invoice
-  charges or the prices in force, or let a sale past its credit and price checks (`company:write`, `parties:manage`,
-  `gst:write`, `prices:approve`, `sales:override`, D-19). A role holding any of them requires the second factor,
-  whatever its own setting (D-19).
+  charges or the prices in force, or let a sale past its credit and price checks, or change the business's
+  settings (`company:write`, `parties:manage`, `gst:write`, `prices:approve`, `sales:override`, `settings:write`,
+  D-19). A role holding any of them requires the second factor, whatever its own setting (D-19).
 - **Screens follow permissions.** The web shows what the person's keys allow, with no separate view setting.
 
 ### 7. The web client
@@ -773,7 +773,7 @@ send-message service calls `whatsapp.send()` from lib-integrations.
 - **No setting is dated.** A setting is read when a document is saved, and what it decided is frozen in what's
   posted, so changing it never rewrites a posted document. A rule that must apply from a date, such as a tax rate,
   has its own dated table (GST rates, M2-12), not a setting.
-- **`settings:write` needs the second factor** (D-19): it sets, for every party with none of its own, the credit
+- **`settings:write` needs the second factor** (D-19, Sarthak, 20 Nov): it sets, for every party with none of its own, the credit
   days and the price list that `parties:manage` and `prices:approve` set one party at a time.
 - **A number series' prefix isn't a setting** (ADR-006 §3). `PUT /number-series/:key/prefix` changes it from the
   next financial year (or this one, before its first number), under `settings:write`, with a `reason()`.
