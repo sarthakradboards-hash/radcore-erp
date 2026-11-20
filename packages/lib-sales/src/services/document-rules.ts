@@ -70,3 +70,13 @@ export function shareOf(total: DecimalInput, lineQty: DecimalInput, back: { qty:
   if (dec(back.qty).plus(dec(qty)).eq(dec(lineQty))) return roundMoney(dec(total).minus(dec(back.share)));
   return roundMoney(dec(total).times(dec(qty)).div(dec(lineQty)));
 }
+
+/** A list rate as the price check compares it, before GST (the architect on RAD-113): a tax-inclusive list's rate less
+ * any per-unit cess, × 100 / (100 + GST % + ad valorem cess %), at the GST rate in force for the line on its date. Exact,
+ * never rounded before the comparison, since rounding can flip strictly-below at the boundary; a copy stored or shown
+ * rounds to RATE_PLACES. Cess is 0 until CA-50. */
+export function listRateBeforeTax(listRate: DecimalInput, taxInclusive: boolean, gstPercent: DecimalInput,
+  cess: { percent: DecimalInput; perUnit: DecimalInput } = { percent: '0', perUnit: '0' }): string {
+  if (!taxInclusive) return dec(listRate).toFixed();
+  return dec(listRate).minus(dec(cess.perUnit)).times('100').div(dec('100').plus(dec(gstPercent)).plus(dec(cess.percent))).toFixed();
+}

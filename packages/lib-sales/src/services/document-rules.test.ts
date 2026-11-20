@@ -2,7 +2,8 @@
 // refusal pins its code and message, since a changed message is a change no other test would notice.
 import { AppError } from '@radcore/lib-platform';
 import { describe, expect, it } from 'vitest';
-import { checkDate, lineValues, mayEdit, mayMove, netRate, ORDER_MOVES, QUOTE_MOVES, shareOf, totalWithGst } from './document-rules.ts';
+import { overDiscount } from './checks-rules.ts';
+import { checkDate, lineValues, listRateBeforeTax, mayEdit, mayMove, netRate, ORDER_MOVES, QUOTE_MOVES, shareOf, totalWithGst } from './document-rules.ts';
 
 const outcome = (fn: () => unknown): string => {
   try {
@@ -86,5 +87,24 @@ describe('shareOf', () => {
   it('clears what’s left with the last return, so the shares add up to the line', () => {
     expect(shareOf('100.00', '3', { qty: '2', share: '66.66' }, '1')).toBe('33.34');
     expect(shareOf('100.00', '3', { qty: '0', share: '0' }, '3')).toBe('100.00');
+  });
+});
+
+// The architect on RAD-113: a tax-inclusive list's rate before GST, exact, with cess in the formula though it's 0 today.
+describe('listRateBeforeTax', () => {
+  it('leaves a list rate before GST as it is, and takes GST and cess out of an inclusive one', () => {
+    expect(listRateBeforeTax('1000', false, '18')).toBe('1000');
+    expect(listRateBeforeTax('1180', true, '18')).toBe('1000');
+    // (1,230 − 10 per unit) × 100 / (100 + 18 + 4).
+    expect(listRateBeforeTax('1230', true, '18', { percent: '4', perUnit: '10' })).toBe('1000');
+  });
+  it('judges an inclusive list at 18% at exactly the allowed discount as not over, and 0.01 deeper as over', () => {
+    const list = listRateBeforeTax('1180', true, '18');
+    expect([overDiscount(list, '900', '10'), overDiscount(list, '899.99', '10')]).toEqual([false, true]);
+  });
+  it('compares exactly: a rate a hair below the list is over, though a list rounded to 6 places would let it pass', () => {
+    const exact = listRateBeforeTax('1000', true, '18');
+    expect(exact.startsWith('847.4576271186440677966')).toBe(true);
+    expect([overDiscount(exact, '847.457627', '0'), overDiscount('847.457627', '847.457627', '0')]).toEqual([true, false]);
   });
 });

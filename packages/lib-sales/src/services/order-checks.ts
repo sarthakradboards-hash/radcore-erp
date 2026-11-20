@@ -3,20 +3,23 @@
 // needs someone else to approve an override first (sales:override, through defineApproval, RAD-38). The approval
 // records the version it approved on the order; confirming takes it while the order and its issues still hash to it,
 // so a changed line, a payment or a new cost in between makes it stale.
-import { salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
+import { priceListVersions, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
 import { itemLabels } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { deliveredNotInvoiced } from './delivered.ts';
-import { netRate, totalWithGst } from './document-rules.ts';
+import { listRateBeforeTax, netRate, totalWithGst } from './document-rules.ts';
 
 type Order = { partyId: string; businessDate: string; createdBy: string };
-type Line = { itemId: string; qty: string; rate: string; discountPercent: string };
+type Line = { itemId: string; qty: string; rate: string; discountPercent: string; listRate: string | null; listTaxInclusive: boolean | null };
 
+// Each line with its list rate as priced and whether its version includes GST.
 const linesOf = (ctx: Ctx, orderId: string) => salesTx(ctx).select({ itemId: salesOrderLines.itemId, qty: salesOrderLines.qty,
-  rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent }).from(salesOrderLines)
+  rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent, listRate: salesOrderLines.listRate,
+  listTaxInclusive: priceListVersions.taxInclusive }).from(salesOrderLines)
+  .leftJoin(priceListVersions, eq(priceListVersions.id, salesOrderLines.listVersionId))
   .where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo));
 
 /** What an override approves of the order: its party, date and lines, as plain JSON (RAD-38). */
@@ -24,8 +27,9 @@ const figuresOf = (o: Omit<Order, 'createdBy'>, lines: readonly Line[]) =>
   ({ partyId: o.partyId, businessDate: o.businessDate, lines: lines.map((l) => ({ ...l })) });
 
 /** What the order asks checkSale at confirmation: its total with GST, each line at its rate after discount against its
- * list rate (its own rate before the discount), from the sellable places together, since an order names no place,
- * judged by its maker's discount limit (the architect on RAD-112). */
+ * stored list rate (its list's, on the order's date; none, so no discount judged, when the list has no rate for it: the
+ * architect on RAD-113), from the sellable places together, since an order names no place, judged by its maker's
+ * discount limit (the architect on RAD-112). */
 async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[]): Promise<SaleCheck> {
   const hsn = await itemLabels(ctx, lines.map((l) => l.itemId));
   const gst: string[] = [];
@@ -33,7 +37,8 @@ async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[]): Promise<SaleC
   return {
     stage: 'confirm', partyId: o.partyId, on: o.businessDate, pricedBy: o.createdBy,
     adds: totalWithGst(lines.map((l, i) => ({ ...l, gstPercent: gst[i] ?? '0' }))), notInvoiced: await deliveredNotInvoiced(ctx, o.partyId),
-    lines: lines.map((l) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent), listRate: l.rate })),
+    lines: lines.map((l, i) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent),
+      listRate: l.listRate === null ? null : listRateBeforeTax(l.listRate, l.listTaxInclusive === true, gst[i] ?? '0') })),
   };
 }
 
@@ -69,6 +74,7 @@ export const ISSUE_WORDS: Readonly<Record<string, string>> = {
   overdue: 'The party has a bill past its credit days',
   below_cost: 'This line is priced below the item’s cost',
   cost_unknown: 'This item has no cost to check its price against',
+  no_list_rate: 'This item has no price on the party’s price list to check its discount against',
   over_discount: 'This line’s discount is more than your limit',
 };
 

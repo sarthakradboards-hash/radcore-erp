@@ -13,6 +13,7 @@ import type {
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
 import { checkedLines, sellingTo, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
+import { listRatesOf, priceListOf } from './party-price-lists.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -120,10 +121,15 @@ export async function acceptQuoteNow(ctx: Ctx, { id, businessDate }: In<typeof a
     rate: salesQuoteLines.rate, discountPercent: salesQuoteLines.discountPercent }).from(salesQuoteLines)
     .where(eq(salesQuoteLines.quoteId, id)).orderBy(asc(salesQuoteLines.lineNo));
   await tx.update(salesQuotes).set({ status: 'accepted' }).where(eq(salesQuotes.id, id));
-  const [order] = await tx.insert(salesOrders).values({ partyId: now.partyId, quoteId: id, businessDate, notes: now.notes })
+  // The order is priced as one made directly (auditor-2 on #254): its party's list, and each line's rate in it on the
+  // order's date, filled here, never from the quote (the architect on RAD-113).
+  const priceListId = await priceListOf(ctx, now.partyId);
+  const rates = await listRatesOf(ctx, priceListId, businessDate, lines.map((l) => l.itemId));
+  const [order] = await tx.insert(salesOrders).values({ partyId: now.partyId, quoteId: id, businessDate, notes: now.notes, priceListId })
     .returning({ id: salesOrders.id });
   if (order === undefined) throw new Error('the insert returned no row');
-  await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: order.id })));
+  await tx.insert(salesOrderLines).values(lines.map((l, i) => ({ ...l, orderId: order.id, listRate: rates[i]?.listRate ?? null,
+    listVersionId: rates[i]?.listVersionId ?? null })));
   return { orderId: order.id };
 }
 

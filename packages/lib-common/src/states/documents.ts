@@ -8,6 +8,7 @@ export const STATE_TRANSITIONS: Readonly<Record<string, readonly (readonly [from
   price_list_versions: [['draft', 'approved'], ['approved', 'superseded']],
   deliveries: [['draft', 'posted'], ['posted', 'cancelled']],
   delivery_returns: [['draft', 'posted'], ['posted', 'cancelled']],
+  invoices: [['draft', 'posted'], ['posted', 'cancelled']],
 };
 
 /** A quote's statuses (ADR-007 §1): it posts nothing, so its service moves it and a CHECK holds the values. */
