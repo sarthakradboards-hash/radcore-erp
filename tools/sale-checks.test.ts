@@ -61,7 +61,7 @@ describe.skipIf(!url)('the sale checks', { timeout: 30_000 }, () => {
     });
   }
   const check = (partyId: string, on: string, adds: string, lines: SaleLine[] = [], notInvoiced = '0') =>
-    run((ctx) => checkSale(ctx, { stage: 'invoice', partyId, on, adds, notInvoiced, lines }));
+    run((ctx) => checkSale(ctx, { stage: 'invoice', partyId, on, adds, notInvoiced, lines, pricedBy: 'system:test' }));
 
   it('counts what the party owes, what it was delivered and not billed, and this sale, against its limit (RC-061)', async () => {
     const id = await party();
@@ -74,7 +74,7 @@ describe.skipIf(!url)('the sale checks', { timeout: 30_000 }, () => {
   it('is overdue once the oldest unpaid bill is past its credit days, at whatever stage asks', async () => {
     const id = await party();
     expect((await check(id, '2033-03-31', '0')).credit.overdue).toBe(false);
-    const late = await run((ctx) => checkSale(ctx, { stage: 'deliver', partyId: id, on: '2033-04-01', adds: '0', lines: [] }));
+    const late = await run((ctx) => checkSale(ctx, { stage: 'deliver', partyId: id, on: '2033-04-01', adds: '0', lines: [], pricedBy: 'system:test' }));
     expect([late.stage, late.credit.overdue, late.credit.oldestUnpaid, late.issues]).toEqual(['deliver', true, '2033-03-01', [{ code: 'overdue' }]]);
   });
 
@@ -104,7 +104,7 @@ describe.skipIf(!url)('the sale checks', { timeout: 30_000 }, () => {
     let adds = '80000';
     const spec = overrideApproval({ kind: 'test-override', table: 'files',
       read: async (_ctx, documentId) => (documentId === 'none' ? null
-        : { figures: { total: adds }, sale: { stage: 'confirm', partyId: id, on: '2033-03-20', adds, lines: [] } }),
+        : { figures: { total: adds }, sale: { stage: 'confirm', partyId: id, on: '2033-03-20', adds, lines: [], pricedBy: 'system:test' } }),
       approved: async () => undefined, rejected: async () => undefined });
     const version = (doc: string) => run((ctx) => spec.version(ctx, doc, { forUpdate: false }));
     expect(await version('doc')).toEqual({ figures: { total: '80000' }, issues: [{ code: 'over_limit' }] });

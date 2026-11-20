@@ -116,6 +116,27 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /price-lists/:id/price': 'prices:read',
   'GET /sales/discount-limits': 'prices:read',
   'PUT /sales/discount-limits': 'prices:approve',
+  // Quotes and orders (RAD-112).
+  'GET /sales/quotes': 'sales:read',
+  'GET /sales/quotes/:id': 'sales:read',
+  'POST /sales/quotes': 'sales:write',
+  'PUT /sales/quotes/:id': 'sales:write',
+  'DELETE /sales/quotes/:id': 'sales:write',
+  'POST /sales/quotes/:id/send': 'sales:write',
+  'POST /sales/quotes/:id/accept': 'sales:write',
+  'POST /sales/quotes/:id/close': 'sales:write',
+  'GET /sales/orders': 'sales:read',
+  'GET /sales/orders/:id': 'sales:read',
+  'POST /sales/orders': 'sales:write',
+  'PUT /sales/orders/:id': 'sales:write',
+  'DELETE /sales/orders/:id': 'sales:write',
+  'POST /sales/orders/:id/confirm': 'sales:write',
+  'POST /sales/orders/:id/close': 'sales:write',
+  'POST /sales/orders/:id/cancel': 'sales:write',
+  'POST /sales/orders/:id/override': 'sales:write',
+  'GET /approvals/sales-order-override': 'sales:override',
+  'GET /approvals/sales-order-override/:id': 'sales:override',
+  'POST /approvals/sales-order-override/:id/decision': 'sales:override',
   // Files, by kind (RAD-43): each kind its own pair of keys.
   'POST /files/photo': 'photo_files:write',
   'POST /files/photo/:id/confirm': 'photo_files:write',
@@ -144,6 +165,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /hr/employees': 'employees:read',
   'POST /hr/employees': 'employees:write',
   'PATCH /hr/employees/:id': 'employees:write',
+  // Leads (RAD-106): capture by hand or at the counter, and one lead.
+  'POST /leads': 'leads:write',
+  'GET /leads/:id': 'leads:read',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -168,6 +192,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
 const PLATFORM = ['lib-platform'];
 const STOCK = ['lib-platform', 'lib-stock'];
 const HR = ['lib-hr', 'lib-platform'];
+const CRM = ['lib-crm', 'lib-platform'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -264,6 +289,28 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /price-lists/:id/price': ['lib-platform', 'lib-sales'],
   'GET /sales/discount-limits': ['lib-platform', 'lib-sales'],
   'PUT /sales/discount-limits': ['lib-platform', 'lib-sales'],
+  // Quotes and orders check their party (lib-accounts) and their items' quantities (lib-stock); an order's credit and
+  // price checks read its items' GST (lib-gst).
+  'GET /sales/quotes': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /sales/quotes/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/quotes': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'PUT /sales/quotes/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'DELETE /sales/quotes/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/quotes/:id/send': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/quotes/:id/accept': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/quotes/:id/close': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /sales/orders': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /sales/orders/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/orders': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'PUT /sales/orders/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'DELETE /sales/orders/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/orders/:id/confirm': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/orders/:id/close': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/orders/:id/cancel': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/orders/:id/override': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /approvals/sales-order-override': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /approvals/sales-order-override/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /approvals/sales-order-override/:id/decision': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'GET /admin/audit/tables': PLATFORM,
   'GET /admin/security-events': PLATFORM,
   'POST /files/photo': PLATFORM,
@@ -292,6 +339,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /hr/employees': HR,
   'POST /hr/employees': HR,
   'PATCH /hr/employees/:id': HR,
+  // Leads' routes reach lib-crm and, through it, lib-platform (notifications).
+  'POST /leads': CRM,
+  'GET /leads/:id': CRM,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,

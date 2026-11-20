@@ -35,7 +35,8 @@ const fields = (o: Record<string, unknown> = {}) => ({
 // Sarthak (RAD-90): credit terms need the second factor (D-19); contact details have a key of their own, at all scope.
 it('marks parties:manage as needing the second factor, and parties:contact as all-scope only without it', () => {
   expect([SECOND_FACTOR_KEYS.includes('parties:manage'), SECOND_FACTOR_KEYS.includes('parties:contact')]).toEqual([true, false]);
-  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact']);
+  // leads:contact (RAD-106) is all-only for the same reason.
+  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'leads:contact']);
 });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {

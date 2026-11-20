@@ -148,3 +148,6 @@ export const setDiscountLimit = defineContract({
   input: z.object({ role: roleKey().nullable(), maxPercent: percentString().nullable(), reason: reason() }),
   output: z.object({}), errors: ['unknown_role'],
 });
+
+// Quotes and orders (M3-08, RAD-112), in a file of their own.
+export * from './contract/documents.ts';

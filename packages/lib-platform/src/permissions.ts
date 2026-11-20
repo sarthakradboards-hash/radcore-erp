@@ -49,6 +49,12 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'prices:read', module: 'Prices', label: 'See price lists and discount limits' },
   { key: 'prices:write', module: 'Prices', label: 'Draft price lists, which price nothing until approved' },
   { key: 'prices:approve', module: 'Prices', label: 'Approve another person’s price list, and set discount limits', secondFactor: true },
+  { key: 'sales:read', module: 'Sales', label: 'See quotes and orders',
+    records: ['@radcore/db/sales#salesQuotes', '@radcore/db/sales#salesOrders'] },
+  { key: 'sales:write', module: 'Sales', label: 'Draft and send quotes, and draft, confirm and close orders',
+    records: ['@radcore/db/sales#salesQuotes', '@radcore/db/sales#salesOrders'] },
+  { key: 'sales:override', module: 'Sales', label: 'Approve another person’s sale over a credit limit, below cost or over a discount limit',
+    secondFactor: true },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
   { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'], secondFactor: true },
   { key: 'photo_files:read', module: 'Files', label: 'See job photos' },
@@ -72,6 +78,11 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // The masters workbook (M2-14, RAD-92): one file of every master the person may read, a sheet each. Any role may be
   // granted it; admin and owner start with it.
   { key: 'masters:export', module: 'Masters', label: 'Export the masters workbook' },
+  // Leads (M3-02, RAD-106): granted at `own`, a person sees and captures into their own leads only (E7). A lead's phone
+  // and email show with pii:read or leads:contact, which reaches only the leads leads:read lets them open (the architect).
+  { key: 'leads:read', module: 'Leads', label: 'See leads and their enquiries', records: ['@radcore/db/crm#leads', '@radcore/db/crm#leadEnquiries'] },
+  { key: 'leads:write', module: 'Leads', label: 'Add leads and enquiries', records: ['@radcore/db/crm#leads', '@radcore/db/crm#leadEnquiries'] },
+  { key: 'leads:contact', module: 'Leads', label: 'See the phone and email of the leads they may open', allOnly: true, unmasks: true },
 ].map((p) => Object.freeze(p)));
 
 /**

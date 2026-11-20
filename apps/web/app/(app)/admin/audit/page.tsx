@@ -15,7 +15,9 @@ import { DataTable, type Column } from '../../../../components/ui/table/data-tab
 import { ApiError } from '../../../../lib/api-client.ts';
 import { useApiList, useApiQuery, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
+import { Pii } from '../../../../components/ui/masked.tsx';
 import { foldReason } from './fold.ts';
+import { auditValue } from './value.ts';
 import { ChoiceButtons, MESSAGES } from '../shared.tsx';
 import type { AdminUser, AuditOp, AuditRow, SecurityEvent, SecurityEventKind } from '../types.ts';
 
@@ -38,9 +40,10 @@ type Principal = AuditRow['principal'];
 const who = (p: Principal | null) => (p === null ? t('admin.events.noAccount') : p.kind === 'system' ? t('admin.audit.system', { name: p.id.replace(/^system:/, '') })
   : p.kind === 'link' ? t('admin.audit.link', { id: p.id }) : p.displayName ?? t('admin.audit.unknown'));
 
-const show = (v: unknown) => (v === undefined ? t('admin.audit.none') : typeof v === 'string' ? v : JSON.stringify(v));
+/** One value, a mask shown as the kit's "Hidden" (value.ts). */
+const Value = ({ v }: { v: unknown }) => <Pii value={auditValue(v, t('admin.audit.none'))} />;
 
-function Pairs({ pairs }: { pairs: readonly (readonly [string, string])[] }) {
+function Pairs({ pairs }: { pairs: readonly (readonly [string, ReactNode])[] }) {
   return (
     <dl className="admin-changes">
       {pairs.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}
@@ -71,7 +74,7 @@ const changeColumns: Column<AuditRow>[] = [
   { id: 'op', header: t('admin.audit.col.op'), cell: (r) => t(`admin.audit.op.${r.op}`) },
   { id: 'changes', header: t('admin.audit.col.changes'), cell: (r) => <Pairs pairs={Object.entries(r.changed).map(
     ([column, { old: before, new: after }]) => [column,
-      r.op === 'update' ? `${show(before)} → ${show(after)}` : show(r.op === 'insert' ? after : before)] as const)} /> },
+      r.op === 'update' ? <><Value v={before} /> → <Value v={after} /></> : <Value v={r.op === 'insert' ? after : before} />] as const)} /> },
   // Why, in the person's own words, when the change asked for a reason (RAD-36; e2e on #191 found it never showed).
   { id: 'reason', header: t('admin.audit.col.reason'), cell: (r) => <Reason text={r.reason} /> },
 ];
@@ -82,7 +85,7 @@ const eventColumns: Column<SecurityEvent>[] = [
   { id: 'kind', header: t('admin.events.col.kind'), cell: (e) => t(`admin.events.kind.${e.kind}`) },
   { id: 'device', header: t('admin.sessions.col.device'), cell: (e) => e.device },
   { id: 'detail', header: t('admin.events.col.detail'),
-    cell: (e) => <Pairs pairs={Object.entries(e.detail).map(([k, v]) => [k, show(v)] as const)} /> },
+    cell: (e) => <Pairs pairs={Object.entries(e.detail).map(([k, v]) => [k, <Value key={k} v={v} />] as const)} /> },
 ];
 
 /** The "changed by" filter: the kit's Picker over the people list, and a way back to everyone. */

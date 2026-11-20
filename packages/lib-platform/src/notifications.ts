@@ -1,8 +1,9 @@
 // In-app notifications (M3-17, RAD-121, RC-142): a library declares each kind once, `defineNotification('crm.
 // repeat_enquiry', { table: 'leads', label, describe })`, and its service raises one with `notify(ctx, kind, …)` inside
 // its own save, so a save that rolls back raises none. A notification stores references only: its kind, and the
-// record's table and id. Its text is built when it's read, by the kind's `describe`, run with the viewer's ctx, so the
-// viewer's keys and sight (ctx.shows) decide what it says (M6-16); a record it can't describe shows the kind's label.
+// record's table and id. Its text is built when it's read, by the kind's `describe`, with the viewer's keys but a
+// sight that shows nothing (ADR-001 §7a, the architect on RAD-106): it describes only records the viewer may see, every
+// personal field in it is masked, and it logs no look; a record it can't describe shows the kind's label.
 // Each person reads, counts and marks only their own (the /me routes).
 import { after, notifications, platformTx } from '@radcore/db/platform';
 import { and, desc, eq, inArray, isNull, count } from 'drizzle-orm';
@@ -69,14 +70,18 @@ export async function myNotificationsPage(ctx: Ctx, input: In<typeof listMyNotif
       after([notifications.at, notifications.id], key && [key.at, key.id], 'desc')))
     .orderBy(desc(notifications.at), desc(notifications.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
-  // Each kind describes its own records in one call, with the viewer's ctx.
+  // Each kind describes its own records in one call: the viewer's keys (can, see), so it tells them only of records
+  // they may read, but a sight that shows nothing, so no describer can unmask a field, however it's written.
+  const blind: Ctx = Object.freeze({ ...ctx, shows: () => false });
   const texts = new Map<string, string>();
   for (const kind of new Set(page.map((r) => r.kind))) {
-    const def = kinds.get(kind);
-    if (def?.describe === undefined) continue;
+    const describe = kinds.get(kind)?.describe;
+    if (describe === undefined) continue;
     const ofKind = page.filter((r) => r.kind === kind);
-    // One kind that fails to describe its records shows its label, never fails everyone's list (the auditor on #227).
-    const described = await def.describe(ctx, [...new Set(ofKind.map((r) => r.recordId))])
+    // One kind that fails to describe its records shows its label, never fails everyone's list (the auditor on #227),
+    // inside a savepoint, so a database error in it leaves the transaction whole for the next kind.
+    const ids = [...new Set(ofKind.map((r) => r.recordId))];
+    const described = await platformTx(ctx).transaction(() => describe(blind, ids))
       .catch((): ReadonlyMap<string, string> => new Map());
     for (const r of ofKind) {
       const text = described.get(r.recordId);

@@ -386,6 +386,20 @@
       "when": 1795084582731,
       "tag": "0054_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1795138353420,
+      "tag": "0055_quotes_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1795142578546,
+      "tag": "0056_leads",
+      "breakpoints": true
     }
   ]
 }
