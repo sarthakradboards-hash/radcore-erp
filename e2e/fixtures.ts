@@ -61,8 +61,9 @@ export function isCancelledRscPrefetch(message: string, origin: string): boolean
 /**
  * The same WebKit text for a GET to this site's own `/api/` that a full-page navigation cut off: the shell's queries,
  * like the bell's unread count (#232), are torn down by the browser when sign-in sends the page home, and WebKit alone
- * reports that as uncaught. Only when the page really sent a GET to exactly that URL (`gets`, every URL it requested by
- * GET): a URL it never asked for, any other method, another origin, a path outside /api/ or other text is still a problem.
+ * reports that as uncaught. Only when the page really asked for a GET of exactly that URL (`gets`: every URL it fetched
+ * by GET, from the fetch call itself, as WebKit can cancel before the request is seen): a URL it never asked for, any
+ * other method, another origin, a path outside /api/ or other text is still a problem.
  */
 export function isCancelledApiGet(message: string, origin: string, gets: ReadonlySet<string>): boolean {
   const site = new URL(origin);
@@ -84,6 +85,21 @@ export const test = base.extend<Options & Fixtures>({
       });
       const gets = new Set<string>(); // what the pages asked for by GET, for isCancelledApiGet
       context.on('request', (r) => { if (r.method() === 'GET') gets.add(r.url()); });
+      // WebKit can cancel a fetch before Playwright sees its request (#232's bell on sign-in), so each page also says
+      // which URLs it fetched by GET at the call itself. The wrapper only listens: it passes every call through as is.
+      await context.exposeBinding('__e2eFetchGet', (_source, url: string) => { gets.add(url); });
+      await context.addInitScript(`if (!window.__e2eFetchWatched) {
+        window.__e2eFetchWatched = true;
+        const fetchAsIs = window.fetch;
+        window.fetch = function (input, init) {
+          try {
+            const asked = input instanceof Request ? input : null;
+            const method = String((init && init.method) || (asked && asked.method) || 'GET').toUpperCase();
+            if (method === 'GET') window.__e2eFetchGet(new URL(asked ? asked.url : String(input), location.href).href);
+          } catch (e) { /* never in the page's way */ }
+          return fetchAsIs.apply(this, arguments);
+        };
+      }`);
       context.on('weberror', (e) => {
         const message = e.error().message;
         const cancelled = baseURL !== undefined && (isCancelledRscPrefetch(message, baseURL) || isCancelledApiGet(message, baseURL, gets));
