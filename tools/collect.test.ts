@@ -3,8 +3,10 @@
 // receivable charge, stands in for lib-sales' invoices; each invoice's entry posts Dr Debtors, Cr Sales. Its dates are
 // in the past, so with no credit days both are overdue whatever the run date (RC-156).
 import { randomUUID } from 'node:crypto';
-import { allocatePayment, openFinancialYear, partyStatement, postEntry, recordPayment, toCollectPage } from '@radcore/lib-accounts';
-import { getPartyStatement } from '@radcore/lib-accounts/contract';
+import {
+  allocatePayment, openFinancialYear, partyStatement, postEntry, recordPayment, remind, remindersPage, toCollectPage,
+} from '@radcore/lib-accounts';
+import { getPartyStatement, recordReminder } from '@radcore/lib-accounts/contract';
 import { moneyString, requestFor } from '@radcore/lib-common';
 import { loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -16,7 +18,7 @@ import accountRoutes from '../apps/api/src/routes/accounts.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
-const CLERK: Principal = { kind: 'user', userId: randomUUID(), permissions: ['payments:write', 'receivables:read'] };
+const CLERK: Principal = { kind: 'user', userId: randomUUID(), permissions: ['payments:write', 'receivables:read', 'receivables:remind'] };
 const INVOICES = 't_collect_invoices';
 const m = (s: string) => moneyString().parse(s);
 
@@ -121,6 +123,17 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
       return page.items.find((i) => i.partyId === party) ?? (page.next === null ? undefined : found(page.next));
     };
     expect(await found()).toMatchObject({ outstanding: '80.00', overdue: '110.00', notOnABill: '-30.00', lastReminderAt: null });
+    // A reminder records the amounts as they are, answers with its text, and shows on the list.
+    const sent = await run((ctx) => remind(ctx, { id: party, channel: 'whatsapp', note: 'Asked for the April bill' }));
+    expect(sent).toMatchObject({ outstanding: '80.00', overdue: '110.00', oldestDue: '2026-04-10', channel: 'whatsapp' });
+    expect(sent.text).toMatch(/80\.00 is outstanding, of which .*110\.00 has been due since/);
+    const listed = await run((ctx) => remindersPage(ctx, { id: party, filter: {}, limit: 10 }));
+    expect(listed.items.map((r) => [r.id, r.overdue, r.by.id])).toEqual([[sent.id, '110.00', CLERK.userId]]);
+    expect(await found()).toMatchObject({ lastReminderAt: sent.asAt });
+    // It's append-only (ADR-005 §7).
+    for (const change of ['update radcore.payment_reminders set note = null where id = $1', 'delete from radcore.payment_reminders where id = $1']) {
+      expect(await owner(change, [sent.id]).then(() => 'ok', (e: { code?: string }) => e.code)).toBe('RA001');
+    }
   });
 
   it('shows a statement only to receivables:read, never to parties:read alone (RC-042)', async () => {
@@ -139,6 +152,22 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
     };
     expect(await status({ kind: 'user', userId: randomUUID(), permissions: ['parties:read'] })).toBe(403);
     expect(await status(CLERK)).toBe(200);
+    // A reminder answers with the amounts, so receivables:remind alone isn't enough (the architect's ruling).
+    const reminded = async (permissions: string[]) => {
+      const principal: Principal = { kind: 'user', userId: randomUUID(), permissions };
+      const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => principal, routes: accountRoutes }),
+        0, '127.0.0.1');
+      try {
+        const sent = requestFor(recordReminder, { id: p?.id, channel: 'phone' });
+        return (await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { method: sent.method, body: sent.body ?? null,
+          headers: { 'content-type': 'application/json', origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin', 'idempotency-key': randomUUID() } }))
+          .status;
+      } finally {
+        await server.stop();
+      }
+    };
+    expect(await reminded(['receivables:remind'])).toBe(403);
+    expect(await reminded(['receivables:remind', 'receivables:read'])).toBe(200);
   });
 });
 

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { collect, openBills, statement, type PartyLine } from './collect.ts';
 
 const line = (o: Partial<PartyLine> & { businessDate: string }): PartyLine => ({
-  entryId: randomUUID(), reversesEntryId: null, number: 'JV/26-27/0000001', kind: 'invoice', sourceTable: 'invoices', sourceId: randomUUID(),
+  entryId: randomUUID(), reversesEntryId: null, entryNumber: 'JV/26-27/0000001', kind: 'invoice', sourceTable: 'invoices', sourceId: randomUUID(),
   debit: '0.00', credit: '0.00', ...o,
 });
 const bill = (businessDate: string, debit: string, sourceId = randomUUID()) => line({ businessDate, debit, sourceId });
@@ -21,8 +21,8 @@ describe('open bills', () => {
     const paid = (_t: string, id: string) => (id === a ? '40.00' : '0.00');
     expect(openBills([bill('2026-10-01', '100.00', a), bill('2026-11-01', '50.00', b)], { isBill, paid, creditDays: 30, today: '2026-11-15' }))
       .toEqual([
-        { table: 'invoices', id: a, number: 'JV/26-27/0000001', date: '2026-10-01', due: '2026-10-31', amount: '100.00', paid: '40.00', open: '60.00', overdue: true },
-        { table: 'invoices', id: b, number: 'JV/26-27/0000001', date: '2026-11-01', due: '2026-12-01', amount: '50.00', paid: '0.00', open: '50.00', overdue: false },
+        { table: 'invoices', id: a, entryNumber: 'JV/26-27/0000001', date: '2026-10-01', due: '2026-10-31', amount: '100.00', paid: '40.00', open: '60.00', overdue: true },
+        { table: 'invoices', id: b, entryNumber: 'JV/26-27/0000001', date: '2026-11-01', due: '2026-12-01', amount: '50.00', paid: '0.00', open: '50.00', overdue: false },
       ]);
   });
 

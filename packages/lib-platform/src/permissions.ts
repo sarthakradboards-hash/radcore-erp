@@ -46,7 +46,7 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
   { key: 'receivables:read', module: 'Payments', label: 'See what each party owes: statements and the To collect list' },
-  { key: 'receivables:remind', module: 'Payments', label: 'Record a reminder to a party of what they owe' },
+  { key: 'receivables:remind', module: 'Payments', label: 'Record a reminder to a party of what they owe (with receivables:read)' },
   { key: 'journal:read', module: 'Journal', label: 'See the chart of accounts and the journal' },
   { key: 'journal:post', module: 'Journal', label: 'Post a manual journal', secondFactor: true },
   { key: 'journal:reverse', module: 'Journal', label: 'Reverse a journal entry', secondFactor: true },

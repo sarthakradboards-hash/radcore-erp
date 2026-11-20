@@ -2,12 +2,12 @@
 // of accounts and journal (RAD-86), and what parties owe (RAD-119).
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
-  partyStatement, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage,
+  partyStatement, remind, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, reverseAllocationContract,
   reverseCreditApplicationContract, createParty, getCompany, recordPaymentContract, getJournal, getParty, listAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
-  getPartyStatement, listToCollect, setCompany, setPartyCredit, updateParty,
+  getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
 } from '@radcore/lib-accounts/contract';
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 
@@ -18,6 +18,8 @@ export default [
   defineRoute(getParty, getPartyById),
   defineRoute(getPartyStatement, partyStatement),
   defineRoute(listToCollect, toCollectPage),
+  defineRoute(recordReminder, remind),
+  defineRoute(listReminders, remindersPage),
   defineRoute(createParty, addParty),
   defineRoute(updateParty, changeParty),
   defineRoute(setPartyCredit, setCreditTerms),
