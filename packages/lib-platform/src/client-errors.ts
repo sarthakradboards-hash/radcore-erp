@@ -16,9 +16,10 @@ import { defineRoute } from './route.ts';
  * .test.ts holds this list to apps/web/app's page files, so a new page fails there until it has its line. */
 export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accounts/chart', '/accounts/journal',
   '/accounts/journal/[id]', '/accounts/journal/new', '/admin/audit', '/admin/company', '/admin/discount-limits', '/admin/gst-rates',
-  '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/parties', '/admin/parties/[id]', '/admin/permissions',
-  '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
-  '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/users', '/invite', '/kit', '/password-reset', '/password-reset/new',
+  '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/number-series', '/admin/parties', '/admin/parties/[id]',
+  '/admin/permissions', '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
+  '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/invite', '/kit', '/password-reset',
+  '/password-reset/new',
   '/sign-in'] as const;
 
 /** The error classes an alert may name; any other is counted as `Error`. */

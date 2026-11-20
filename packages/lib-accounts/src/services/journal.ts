@@ -38,6 +38,19 @@ export const periodLockRow = (ctx: Ctx) => accountsTx(ctx).select({ through: per
   .where(eq(periodLock.id, 1));
 
 /**
+ * ADR-006 §1's step 1's locks alone, refusing nothing: the company profile, then the period lock row, FOR SHARE. The
+ * profile first, so changing it waits for the postings in flight and the GSTIN and state an invoice freezes can't
+ * change under it (the architect on RAD-113); before it's set there's no row. An approval's lockFirst takes these
+ * before its record and leaves the checks to its posting (the auditor on #275): a reject must never be refused by
+ * them. Answers where the lock stands.
+ */
+export async function lockPeriod(ctx: Ctx): Promise<string | null> {
+  await accountsTx(ctx).select({ id: company.id }).from(company).for('share');
+  const [lock] = await periodLockRow(ctx).for('share');
+  return lock?.through ?? null;
+}
+
+/**
  * ADR-006 §1's step 1, for every posting: the company profile and the period lock read FOR SHARE, so moving it waits for this posting and this
  * one sees where it stands (RC-163), then `period_locked` on or before it and `year_not_open` for a year nobody opened
  * (the database's foreign key holds that too, RC-111). A document's service calls it first, before locking its
@@ -46,13 +59,8 @@ export const periodLockRow = (ctx: Ctx) => accountsTx(ctx).select({ through: per
  * shortcut: the filed-month lock row (M5-08) joins this read when its table lands.
  */
 export async function holdPeriod(ctx: Ctx, businessDate: string): Promise<void> {
-  // The company profile first, FOR SHARE, so changing it waits for the postings in flight and the GSTIN and state an
-  // invoice freezes can't change under it (ADR-006 §1 step 1, the architect on RAD-113). Before it's set there's no row.
-  await accountsTx(ctx).select({ id: company.id }).from(company).for('share');
-  const [lock] = await periodLockRow(ctx).for('share');
-  if (lock?.through !== null && lock?.through !== undefined && businessDate <= lock.through) {
-    refuse('period_locked', `The books are locked through ${lock.through}`);
-  }
+  const through = await lockPeriod(ctx);
+  if (through !== null && businessDate <= through) refuse('period_locked', `The books are locked through ${through}`);
   const year = financialYear(businessDate);
   const [open] = await accountsTx(ctx).select({ start: financialYears.start }).from(financialYears)
     .where(eq(financialYears.start, year.start)).limit(1);
