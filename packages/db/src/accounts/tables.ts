@@ -248,3 +248,60 @@ export const payments = radcoreTable('payments', {
   index('ix_payments_posted_entry').on(t.postedEntryId),
   index('ix_payments_cancel_entry').on(t.cancelEntryId),
 ]);
+
+/**
+ * A payment applied to a document (M3-12, RAD-116; ADR-005 §7a, the architect's ruling): a receipt to a receivable
+ * charge, a payment to a payable charge, of one party. The document is named as `(document_table, document_id)`, its
+ * table one `allocatable_documents` lists (hand-written in this migration, with its foreign keys). Append-only: a
+ * reversal undoes exactly one apply of the same document, payment and amount, through the composite foreign key. The
+ * caps are checked at commit (RA006), the rows locked in id order.
+ */
+export const paymentAllocations = radcoreTable('payment_allocations', {
+  id: id(),
+  paymentId: uuid().notNull().references(() => payments.id, { onDelete: 'restrict' }),
+  documentTable: text().notNull(),
+  documentId: uuid().notNull(),
+  direction: text().notNull(),
+  amount: money().notNull(),
+  reversesId: uuid().unique('ux_payment_allocations_reverses'),
+  reversesDirection: text().generatedAlwaysAs(sql`case when reverses_id is not null then 'apply' end`),
+}, (t) => [
+  check('ck_payment_allocations_direction', sql`${t.direction} in ('apply', 'reverse')`),
+  check('ck_payment_allocations_positive', sql`${t.amount} > 0`),
+  check('ck_payment_allocations_reverse', sql`(${t.direction} = 'reverse') = (${t.reversesId} is not null)`),
+  unique('ux_payment_allocations_key').on(t.id, t.documentTable, t.documentId, t.paymentId, t.amount, t.direction),
+  foreignKey({ name: 'fk_payment_allocations_reverses',
+    columns: [t.reversesId, t.documentTable, t.documentId, t.paymentId, t.amount, t.reversesDirection],
+    foreignColumns: [t.id, t.documentTable, t.documentId, t.paymentId, t.amount, t.direction] }),
+  index('ix_payment_allocations_payment').on(t.paymentId),
+  index('ix_payment_allocations_document').on(t.documentTable, t.documentId),
+  index('ix_payment_allocations_reverses').on(t.reversesId, t.documentTable, t.documentId, t.paymentId, t.amount, t.reversesDirection),
+]);
+
+/**
+ * A credit (a credit note, or M4's debit note) applied to a charge on the same side, of one party (ADR-005 §7a). Both
+ * are named by table and id, each table one `allocatable_documents` lists. Append-only, with reversals as above.
+ */
+export const creditApplications = radcoreTable('credit_applications', {
+  id: id(),
+  creditTable: text().notNull(),
+  creditId: uuid().notNull(),
+  documentTable: text().notNull(),
+  documentId: uuid().notNull(),
+  direction: text().notNull(),
+  amount: money().notNull(),
+  reversesId: uuid().unique('ux_credit_applications_reverses'),
+  reversesDirection: text().generatedAlwaysAs(sql`case when reverses_id is not null then 'apply' end`),
+}, (t) => [
+  check('ck_credit_applications_direction', sql`${t.direction} in ('apply', 'reverse')`),
+  check('ck_credit_applications_positive', sql`${t.amount} > 0`),
+  check('ck_credit_applications_reverse', sql`(${t.direction} = 'reverse') = (${t.reversesId} is not null)`),
+  unique('ux_credit_applications_key').on(t.id, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount, t.direction),
+  foreignKey({ name: 'fk_credit_applications_reverses',
+    columns: [t.reversesId, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount, t.reversesDirection],
+    foreignColumns: [t.id, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount, t.direction] }),
+  index('ix_credit_applications_credit').on(t.creditTable, t.creditId),
+  index('ix_credit_applications_document').on(t.documentTable, t.documentId),
+  index('ix_credit_applications_reverses').on(t.reversesId, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount,
+    t.reversesDirection),
+]);
