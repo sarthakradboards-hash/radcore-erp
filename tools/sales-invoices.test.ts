@@ -141,7 +141,7 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
       '2000.00', '2000.00', '0.00', '0.00', '27']);
     expect([i.issuer?.legalName, i.issuer?.gstin, i.issuer?.city, i.buyer?.stateCode, i.buyer?.gstin]).toEqual(['Radboards Pvt Ltd',
       '27AAPFU0939F1ZV', 'Pune', '27', null]);
-    expect(i.lines.map((l) => [l.hsn, l.gstRate, l.gstRateSource, l.taxable, l.cgst, l.lineTotal, l.cost])).toEqual([[at.hsn, '5.000',
+    expect(i.lines.map((l) => [l.hsn, l.gstRate, l.gstRateSource, l.taxable, l.cgst, l.lineTotal, l.cost])).toEqual([[at.hsn, '5.000000',
       'Notification 1/2017-CT(R)', '80000.00', '2000.00', '84000.00', '61250.00']]);
     expect(out.waiting).toBe(0);
   });
@@ -206,7 +206,8 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
 
   // ADR-007 §9: credit is checked again at the invoice, and price only on a line not at its order's price.
   it('checks the price of a line billed below its order’s rate, and leaves one at the order’s rate alone', async () => {
-    const at = await setup({ stock: '2', stockRate: '100', ordered: '2', rate: '1000', delivered: '2' });
+    // One left at the store, so its average (100.00) is the cost the changed line is checked against.
+    const at = await setup({ stock: '3', stockRate: '100', ordered: '2', rate: '1000', delivered: '2' });
     const out = await inBooks(async (ctx) => {
       const below = await post(ctx, at, '1', { rate: '50' }).then(() => null, (e: unknown) => e as AppError);
       const atOrder = await failure(post(ctx, at, '1'));
@@ -255,8 +256,8 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
       await c.query('begin');
       try {
         await c.query("set local app.principal = 'system:test'");
-        const { rows: [inv] } = await c.query<{ id: string }>(`insert into radcore.invoices (party_id, business_date) values ($1, '${DATE}')
-          returning id`, [at.partyId]);
+        const { rows: [inv] } = await c.query<{ id: string }>(`insert into radcore.invoices (party_id, owner, business_date)
+          values ($1, 'system:test', '${DATE}') returning id`, [at.partyId]);
         await c.query(`insert into radcore.invoice_lines (invoice_id, line_no, delivery_line_id, item_id, qty, rate, hsn, gst_rate,
           gst_rate_source, taxable, cgst, sgst, igst, cess_ad_valorem, cess_per_unit_amount, line_total, cost, delivery_taxable, delivery_gst)
           values ($1, 1, $2, $3, 1, 1000, '8716', 5, 'Test', 1000, 25, 25, 0, 0, 0, 1050, 100, 1000, 50)`, [inv?.id, at.deliveryLineId, at.itemId]);

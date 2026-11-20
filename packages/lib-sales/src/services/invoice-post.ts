@@ -83,6 +83,8 @@ async function workedOut(ctx: Ctx, inv: Invoice, o: { forUpdate: boolean; permis
     discountPercent: invoiceLines.discountPercent }).from(invoiceLines).where(eq(invoiceLines.invoiceId, inv.id)).orderBy(asc(invoiceLines.lineNo));
   const lines = await checkedLines(ctx, inv.partyId, drafted.map((l) => ({ ...l, qty: l.qty as never, rate: l.rate as never,
     discountPercent: l.discountPercent as never })), o);
+  // Its date against its deliveries before any rate is looked up for it (ADR-007 §4), so the date is what's refused.
+  checkInvoiceDate(inv.businessDate, lines.map((l) => l.delivery.businessDate), ctx.settings.get(INVOICE_LAG_DAYS));
   const company = await companyForInvoice(ctx);
   const party = await getPartyById(ctx, { id: inv.partyId });
   const place = placeOfSupply(company.stateCode, party.stateCode, inv.shipToStateCode);
@@ -152,7 +154,6 @@ export async function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): 
   await sellingTo(ctx, inv.partyId);
   // The deliveries it bills, locked by id, and what's still to invoice on each read again under those locks.
   const w = await workedOut(ctx, inv, { forUpdate: true, permission: 'invoices:write' });
-  checkInvoiceDate(inv.businessDate, w.lines.map((l) => l.delivery.businessDate), ctx.settings.get(INVOICE_LAG_DAYS));
   // Rule 46: a registered buyer is named by their GSTIN; an unregistered one needs a name, address and state at the limit.
   const registered = w.party.gstin !== null;
   if (!registered && needsBuyerDetails(w.totals, ctx.settings.get(B2C_DETAILS_LIMIT), ctx.settings.get(B2C_DETAILS_BASIS))
