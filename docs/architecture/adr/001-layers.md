@@ -571,6 +571,9 @@ always six bullets, so it doesn't give away the length.
   `pii()` columns only with `pii:read`, so contacts can be seen on a screen without being downloaded as a list. Such a
   key is granted at `all` scope only, and the catalogue marks it `unmasks`, so the matrix warns of it. The manifest
   test refuses a record seen with a key not so marked, and a mark no record uses.
+- A notification's text (RAD-121) is built with the viewer's keys but a sight that shows nothing: it describes only
+  records the viewer may see, every personal field in it is masked (an identifier keeps its last 4), and it logs no
+  look. The record's own page shows the field, and logs the look there.
 - The generic handler masks after the output check and before saved-once keeps the answer, so a stored answer never
   holds what its principal couldn't see.
 - A service asks `ctx.shows(kind, seenWith?)` before it searches or sorts by a personal field. It's the same answer
