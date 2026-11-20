@@ -53,6 +53,7 @@ differs from plan.md, this log and the ADR win.
 | 2026-11-20 | **A party with no credit days set takes the company's default**, `accounts.default_credit_days`, an admin setting that starts at 0, so a bill is due the day it's made | Sarthak, in chat, via the coordinator | [ADR-007](architecture/adr/007-sales-documents.md) §9; RAD-111 |
 | 2026-11-20 | **A party with no credit limit set gets no credit.** Any amount left unpaid is over its limit, as with a limit of 0. Credit is given by setting a limit | Sarthak, in chat, via the coordinator | [ADR-007](architecture/adr/007-sales-documents.md) §9; RAD-111 |
 | 2026-11-20 | **D-19 widened: `sales:override` requires the second factor.** Approving an override lets a sale through a credit stop, below cost or past a discount limit (RAD-111's checks; the key is RAD-112's), so a role holding it signs in with the second factor, like `parties:manage` and `prices:approve` | Sarthak, in chat, via the coordinator | [ADR-001](architecture/adr/001-layers.md) §6a; RAD-112 |
+| 2026-11-20 | **`invoices:cancel` doesn't require the second factor.** Cancelling an issued invoice has its own key, kept from the counter by default (admin, owner and accounts), but a role holding it signs in as usual, like `invoices:write` | Sarthak, in chat, via the coordinator | [ADR-007](architecture/adr/007-sales-documents.md) §7; RAD-113 |
 
 **Still open**, and recorded here when decided:
 - Whether the Vercel test copy fits the Hobby plan's non-commercial terms, or needs Pro (ADR-004 §7).
