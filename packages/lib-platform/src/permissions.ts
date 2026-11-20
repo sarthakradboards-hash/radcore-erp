@@ -51,6 +51,7 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
     records: ['@radcore/db/sales#salesQuotes', '@radcore/db/sales#salesOrders'] },
   { key: 'sales:write', module: 'Sales', label: 'Draft and send quotes, and draft, confirm and close orders',
     records: ['@radcore/db/sales#salesQuotes', '@radcore/db/sales#salesOrders'] },
+  { key: 'sales:override', module: 'Sales', label: 'Approve another person’s sale over a credit limit, below cost or over a discount limit' },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
   { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'], secondFactor: true },
   { key: 'photo_files:read', module: 'Files', label: 'See job photos' },

@@ -4,22 +4,24 @@
 // sell to, and an item's quantity must fit its unit. A role holding the keys only over its own documents lists only
 // those. Each test makes its own party and item, so the shuffled order doesn't matter.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty } from '@radcore/lib-accounts';
-import { indiaDate, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accounts';
+import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
+import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  acceptQuoteNow, addOrder, addQuote, cancelOrderNow, changeQuote, closeOrderNow, confirmOrderNow, getOrderById, getQuoteById,
+  acceptQuoteNow, addOrder, addQuote, askOrderOverride, orderOverride, cancelOrderNow, changeOrder, changeQuote, closeOrderNow, confirmOrderNow, getOrderById, getQuoteById,
   listOrdersPage, sendQuoteNow,
 } from '@radcore/lib-sales';
+import { putGstRate } from '@radcore/lib-gst';
 import { addCategory, addItem } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
-const TODAY = indiaDate(new Date());
-const KEYS = ['sales:read', 'sales:write', 'parties:write', 'items:write'];
+// A fixed past day, so no test reads the run date (RC-156); the services bound dates by the real one.
+const DATE = '2026-11-15';
+const KEYS = ['sales:read', 'sales:write', 'parties:write', 'parties:manage', 'items:write', 'gst:write'];
 const person = (ownScope: string[] = []): Principal => ({ kind: 'user', userId: randomUUID(), permissions: KEYS, ownScope });
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const line = (itemId: string, qty = '2') => ({ itemId, qty: quantityString().parse(qty), rate: unitPriceString().parse('61250'),
@@ -36,10 +38,14 @@ describe.skipIf(!url)('quotes and orders', () => {
   // A party we sell to (or, with `kinds`, another), and an item counted whole.
   async function setup(kinds: string[] = ['customer']) {
     return run(async (ctx) => {
+      await openFinancialYear(ctx, DATE);
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: kinds as never, gstin: null, pan: null, composition: false,
         stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
-      const { id: itemId } = await addItem(ctx, { sku: `Q-${tag()}`, name: 'Electric scooter', categoryId, hsn: '8711', unit: 'NOS',
+      // An HSN of its own, rated from the test's day, so no other file's rate is the one in force for it (RC-115).
+      const hsn = `8711${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}`;
+      await putGstRate(ctx, { hsn, effectiveFrom: DATE, rate: percentString().parse('5'), source: 'Test', note: null, reason: 'Test' });
+      const { id: itemId } = await addItem(ctx, { sku: `Q-${tag()}`, name: 'Electric scooter', categoryId, hsn, unit: 'NOS',
         barcode: null, serialised: false, hasChassis: false });
       return { partyId, itemId };
     });
@@ -47,24 +53,61 @@ describe.skipIf(!url)('quotes and orders', () => {
 
   it('sends a quote with its number, then accepts it into a draft order with its lines', async () => {
     const at = await setup();
-    const { id } = await run((ctx) => addQuote(ctx, { partyId: at.partyId, businessDate: TODAY, validUntil: null, notes: 'Two scooters',
+    const { id } = await run((ctx) => addQuote(ctx, { partyId: at.partyId, businessDate: DATE, validUntil: null, notes: 'Two scooters',
       lines: [line(at.itemId)] }));
     const { number } = await run((ctx) => sendQuoteNow(ctx, { id }));
     expect(number).toMatch(/^QT\/\d{2}-\d{2}\/\d{5}$/);
     // A sent quote is no longer edited.
-    expect(await code(run((ctx) => changeQuote(ctx, { id, partyId: at.partyId, businessDate: TODAY, validUntil: null, notes: null,
+    expect(await code(run((ctx) => changeQuote(ctx, { id, partyId: at.partyId, businessDate: DATE, validUntil: null, notes: null,
       lines: [line(at.itemId, '1')] })))).toBe('wrong_status');
-    const { orderId } = await run((ctx) => acceptQuoteNow(ctx, { id, businessDate: TODAY }));
+    const { orderId } = await run((ctx) => acceptQuoteNow(ctx, { id, businessDate: DATE }));
     const quote = await run((ctx) => getQuoteById(ctx, { id }));
     const order = await run((ctx) => getOrderById(ctx, { id: orderId }));
     expect([quote.status, order.status, order.number, order.quoteId, order.notes]).toEqual(['accepted', 'draft', null, id, 'Two scooters']);
     expect(order.lines.map((l) => [l.lineNo, l.itemId, l.qty, l.rate])).toEqual([[1, at.itemId, '2', '61250.000000']]);
-    expect(await code(run((ctx) => acceptQuoteNow(ctx, { id, businessDate: TODAY })))).toBe('wrong_status');
+    expect(await code(run((ctx) => acceptQuoteNow(ctx, { id, businessDate: DATE })))).toBe('wrong_status');
+  });
+
+  // A person, made now in a transaction of its own, as the approval engine reads their account's age (RAD-38).
+  const newUser = async (permissions: string[]): Promise<Principal> => {
+    const { rows } = await pool.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+      insert into radcore.users (email, display_name, role) select $1, 'Test person', 'sales' from p returning id`,
+    [`sales-${randomUUID()}@example.test`]);
+    return { kind: 'user', userId: rows[0]?.id ?? '', permissions };
+  };
+
+  // M3-07 at confirmation (RC-061, RC-131): a party with no credit, and an item with no cost, stop the order until
+  // someone else approves an override of exactly those issues; a changed line makes the approval stale.
+  it('confirms an order over its checks only once someone else approved the override', async () => {
+    const at = await setup();
+    await run((ctx) => setCreditTerms(ctx, { id: at.partyId, creditDays: null, creditLimit: moneyString().parse('0'), reason: 'No credit' }));
+    const maker = await newUser(KEYS);
+    const approver = await newUser(['sales:override']);
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), maker);
+    const refused = await run((ctx) => confirmOrderNow(ctx, { id }), maker).then(() => null, (e: unknown) => e as AppError);
+    expect([refused?.code, refused?.issues.map((i) => i.code)]).toEqual(['needs_override', ['over_limit', 'cost_unknown']]);
+    const request = await run((ctx) => askOrderOverride(ctx, { id }), maker);
+    expect(await code(run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), maker)))
+      .toBe('own_request');
+    await run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), approver);
+    expect((await run((ctx) => confirmOrderNow(ctx, { id }), maker)).number).toMatch(/^SO\//);
+  });
+
+  it('makes an approved override stale when the order changes after it', async () => {
+    const at = await setup();
+    await run((ctx) => setCreditTerms(ctx, { id: at.partyId, creditDays: null, creditLimit: moneyString().parse('0'), reason: 'No credit' }));
+    const maker = await newUser(KEYS);
+    const approver = await newUser(['sales:override']);
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), maker);
+    const request = await run((ctx) => askOrderOverride(ctx, { id }), maker);
+    await run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), approver);
+    await run((ctx) => changeOrder(ctx, { id, partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId, '3')] }), maker);
+    expect(await code(run((ctx) => confirmOrderNow(ctx, { id }), maker))).toBe('needs_override');
   });
 
   it('confirms an order with its number, and closes it short only with a reason (RC-125)', async () => {
     const at = await setup();
-    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: TODAY, notes: null, lines: [line(at.itemId)] }));
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }));
     expect(await code(run((ctx) => closeOrderNow(ctx, { id })))).toBe('wrong_status');
     const { number } = await run((ctx) => confirmOrderNow(ctx, { id }));
     expect(number).toMatch(/^SO\/\d{2}-\d{2}\/\d{5}$/);
@@ -76,7 +119,7 @@ describe.skipIf(!url)('quotes and orders', () => {
 
   it('cancels a confirmed order with a reason, never a draft', async () => {
     const at = await setup();
-    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: TODAY, notes: null, lines: [line(at.itemId)] }));
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }));
     expect(await code(run((ctx) => cancelOrderNow(ctx, { id, reason: 'Wrong party' })))).toBe('wrong_status');
     await run((ctx) => confirmOrderNow(ctx, { id }));
     await run((ctx) => cancelOrderNow(ctx, { id, reason: 'The customer changed their mind' }));
@@ -87,26 +130,25 @@ describe.skipIf(!url)('quotes and orders', () => {
   // ADR-007 §4 (RC-111): not after today, and an order not before its quote.
   it('refuses a date after today, and an order dated before its quote', async () => {
     const at = await setup();
-    const tomorrow = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-    const yesterday = new Date(Date.parse(`${TODAY}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
-    expect(await code(run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: tomorrow, notes: null, lines: [line(at.itemId)] }))))
+    const [future, dayBefore] = ['2099-01-01', '2026-11-14'];
+    expect(await code(run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: future, notes: null, lines: [line(at.itemId)] }))))
       .toBe('date_in_future');
-    const { id } = await run((ctx) => addQuote(ctx, { partyId: at.partyId, businessDate: TODAY, validUntil: null, notes: null,
+    const { id } = await run((ctx) => addQuote(ctx, { partyId: at.partyId, businessDate: DATE, validUntil: null, notes: null,
       lines: [line(at.itemId)] }));
     await run((ctx) => sendQuoteNow(ctx, { id }));
-    expect(await code(run((ctx) => acceptQuoteNow(ctx, { id, businessDate: yesterday })))).toBe('date_before_source');
+    expect(await code(run((ctx) => acceptQuoteNow(ctx, { id, businessDate: dayBefore })))).toBe('date_before_source');
   });
 
   it('sells only to a party we sell to, and only in quantities its items’ units allow', async () => {
     const supplier = await setup(['supplier']);
-    expect(await code(run((ctx) => addOrder(ctx, { partyId: supplier.partyId, businessDate: TODAY, notes: null,
+    expect(await code(run((ctx) => addOrder(ctx, { partyId: supplier.partyId, businessDate: DATE, notes: null,
       lines: [line(supplier.itemId)] })))).toBe('not_a_customer');
-    expect(await code(run((ctx) => addOrder(ctx, { partyId: randomUUID(), businessDate: TODAY, notes: null,
+    expect(await code(run((ctx) => addOrder(ctx, { partyId: randomUUID(), businessDate: DATE, notes: null,
       lines: [line(supplier.itemId)] })))).toBe('unknown_party');
     const at = await setup();
-    expect(await code(run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: TODAY, notes: null,
+    expect(await code(run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null,
       lines: [line(at.itemId, '1.5')] })))).toBe('quantity_too_precise');
-    expect(await code(run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: TODAY, notes: null,
+    expect(await code(run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null,
       lines: [line(randomUUID())] })))).toBe('unknown_item');
   });
 
@@ -114,8 +156,8 @@ describe.skipIf(!url)('quotes and orders', () => {
   it('lists and opens only their own orders for a role holding the keys at own scope', async () => {
     const at = await setup();
     const mine = person(['sales:read', 'sales:write']);
-    const { id: theirs } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: TODAY, notes: null, lines: [line(at.itemId)] }));
-    const { id: own } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: TODAY, notes: null, lines: [line(at.itemId)] }), mine);
+    const { id: theirs } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }));
+    const { id: own } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), mine);
     const listed = await run((ctx) => listOrdersPage(ctx, { filter: { partyId: at.partyId }, limit: 50 }), mine);
     expect(listed.items.map((o) => o.id)).toEqual([own]);
     expect(await code(run((ctx) => getOrderById(ctx, { id: theirs }), mine))).toBe('not_found');

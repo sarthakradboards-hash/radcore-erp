@@ -5,14 +5,17 @@
 import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radcore/db/sales';
 import { holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
-import { AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, type Ctx } from '@radcore/lib-platform';
+import {
+  AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
+} from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
-  cancelOrder, closeOrder, confirmOrder, createOrder, deleteOrder, getOrder, listOrders, updateOrder,
+  cancelOrder, closeOrder, confirmOrder, createOrder, deleteOrder, getOrder, listOrders, requestOrderOverride, updateOrder,
 } from '../contract.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
 import { checkedLines, sellingTo, today } from './document-lines.ts';
+import { checkOrder, orderOverride } from './order-checks.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -29,7 +32,8 @@ const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
 /** The order, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
 async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
   // With its quote's date: an order isn't dated before its quote (§4).
-  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, quoteDate: salesQuotes.businessDate }).from(salesOrders)
+  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, quoteDate: salesQuotes.businessDate,
+    overrideHash: salesOrders.overrideHash }).from(salesOrders)
     .leftJoin(salesQuotes, eq(salesQuotes.id, salesOrders.quoteId)).where(eq(salesOrders.id, id));
   const [row] = forUpdate ? await q.for('update') : await q;
   if (row === undefined) throw notFound();
@@ -88,8 +92,9 @@ export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise
   return row;
 }
 
-/** PUT /sales/orders/:id (sales:write): a draft, or a confirmed order's lines through the checks again (§1).
- * shortcut: RAD-111's checkSale runs on a confirmed order's new lines once it merges; until then they're saved as sent. */
+/** PUT /sales/orders/:id (sales:write): a draft, or a confirmed order's lines through the checks again (§1). A
+ * confirmed order whose new lines the checks would stop is refused (needs_override): an override is approved for a
+ * draft's confirmation, so such a change is a new order. */
 export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOrder>): Promise<Out<typeof updateOrder>> {
   const now = await orderOf(ctx, id, 'sales:write', true);
   mayEdit('order', now.status, true);
@@ -104,6 +109,9 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
     .where(eq(salesOrders.id, id));
   await tx.delete(salesOrderLines).where(eq(salesOrderLines.orderId, id));
   await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: id })));
+  // A draft's lines changing makes any override approved for the old ones stale; it's asked for again.
+  await tx.update(salesOrders).set({ overrideHash: null }).where(eq(salesOrders.id, id));
+  if (now.status === 'confirmed') await checkOrder(ctx, id, { ...input, overrideHash: null });
   return {};
 }
 
@@ -115,15 +123,15 @@ export async function dropOrder(ctx: Ctx, { id }: In<typeof deleteOrder>): Promi
   return {};
 }
 
-/** POST /sales/orders/:id/confirm (sales:write): its number is drawn as the last step (§3).
- * shortcut: RAD-111's checkSale (stage 'confirm') runs first once it merges, refusing with its issues unless an
- * override (sales:override) was granted; until then an order confirms unchecked. */
+/** POST /sales/orders/:id/confirm (sales:write): the credit and price checks (M3-07) first, refused with their issues
+ * unless an override was approved for them (sales:override); then its number, drawn as the last step (§3). */
 export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>): Promise<Out<typeof confirmOrder>> {
   const now = await orderOf(ctx, id, 'sales:write', true);
   mayMove('order', now.status, 'confirmed');
   checkDate(now.businessDate, today(), fromQuote(now));
   await sellingTo(ctx, now.partyId);
   await holdPeriod(ctx, now.businessDate);
+  await checkOrder(ctx, id, now);
   const number = await nextNumber(ctx, ORDER_SERIES, now.businessDate);
   await salesTx(ctx).update(salesOrders).set({ status: 'confirmed', number }).where(eq(salesOrders.id, id));
   return { number };
@@ -152,4 +160,11 @@ export async function cancelOrderNow(ctx: Ctx, { id, reason }: In<typeof cancelO
   }
   await salesTx(ctx).update(salesOrders).set({ status: 'cancelled', closeReason: reason }).where(eq(salesOrders.id, id));
   return {};
+}
+
+/** POST /sales/orders/:id/override (sales:write): asks someone holding sales:override to approve the draft's issues. */
+export async function askOrderOverride(ctx: Ctx, { id }: In<typeof requestOrderOverride>): Promise<Out<typeof requestOrderOverride>> {
+  const now = await orderOf(ctx, id, 'sales:write', true);
+  mayEdit('order', now.status);
+  return requestApproval(ctx, orderOverride, id);
 }

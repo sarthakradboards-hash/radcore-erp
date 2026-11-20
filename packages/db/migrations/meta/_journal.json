@@ -379,6 +379,13 @@
       "when": 1795082675438,
       "tag": "0053_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1795137145120,
+      "tag": "0054_quotes_orders",
+      "breakpoints": true
     }
   ]
 }

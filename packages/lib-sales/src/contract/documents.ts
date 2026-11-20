@@ -6,6 +6,7 @@ import {
   dateString, defineContract, idString, listInput, listOf, percentString, quantityString, reason, SALES_ORDER_STATUSES,
   SALES_QUOTE_STATUSES, unitPriceString,
 } from '@radcore/lib-common';
+import { approvalContracts } from '@radcore/lib-platform/contract';
 import { z } from 'zod';
 
 const read = { readOnly: true, isolation: 'read committed' } as const;
@@ -101,19 +102,27 @@ export const createOrder = defineContract({
 /** A draft order, rewritten whole; a confirmed one's lines too, through the checks again (§1). */
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
-  input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS],
+  input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'needs_override', 'no_gst_rate'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({
   method: 'DELETE', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({}), errors: ['wrong_status'],
 });
-/** Confirms a draft after the credit and price checks (M3-07): its number is drawn, last (§3). */
+/** Confirms a draft after the credit and price checks (M3-07): its number is drawn, last (§3). With an issue it needs an
+ * approved override (needs_override, naming each issue). */
 export const confirmOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/confirm', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }),
-  errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked'],
+  errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'needs_override', 'no_gst_rate'],
 });
+/** Asks for an override of a draft order's issues: someone holding sales:override approves it (RAD-38). */
+export const requestOrderOverride = defineContract({
+  method: 'POST', path: '/sales/orders/:id/override', auth: 'session', perm: 'sales:write', tx: write,
+  input: z.object({ id: idString() }), output: z.object({ id: idString(), versionHash: z.string() }), errors: ['wrong_status', 'no_gst_rate'],
+});
+/** The overrides' approval routes (RAD-38): the pending list, one request, and the decision. */
+export const orderOverrideApproval = approvalContracts('sales-order-override', 'sales:override');
 /** Closes a confirmed order. With lines undelivered it's closed short, and needs a reason (RC-125). */
 export const closeOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/close', auth: 'session', perm: 'sales:write', tx: write,

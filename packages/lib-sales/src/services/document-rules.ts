@@ -1,7 +1,7 @@
 // The sales documents' rules, from what the services read (ADR-007 §1, §4; M3-08, RAD-112): which status moves each allows, and
 // the bounds on a document's date (RC-111). The services call these with what they read; their unit tests reach every
 // branch, so Stryker can judge them.
-import type { SalesOrderStatus, SalesQuoteStatus } from '@radcore/lib-common';
+import { dec, roundMoney, roundRate, type DecimalInput, type Money, type Rate, type SalesOrderStatus, type SalesQuoteStatus } from '@radcore/lib-common';
 import { AppError } from '@radcore/lib-platform';
 
 /** The moves each document's service makes (ADR-007 §1). Quotes and orders post nothing, so a CHECK holds the values
@@ -40,4 +40,18 @@ export function checkDate(date: string, today: string, source?: { date: string; 
     throw new AppError('date_before_source', `It can’t be dated before its ${source.what}`,
       [{ path: ['businessDate'], code: 'before_source', message: `Its ${source.what} is dated ${source.date}` }]);
   }
+}
+
+/** A line's rate after its discount, per unit, before GST: what the price check compares with the item's cost (the
+ * architect on RAD-111), to a rate's 6 places. */
+export const netRate = (rate: DecimalInput, discountPercent: DecimalInput): Rate =>
+  roundRate(dec(rate).times(dec('100').minus(dec(discountPercent))).div('100'));
+
+/** What a document's lines come to with GST: each line's taxable value, round(qty × rate less discount, 2), plus its
+ * GST, round(taxable × rate / 100, 2). The credit check adds it to what the party owes (M3-07). */
+export function totalWithGst(lines: readonly { qty: DecimalInput; rate: DecimalInput; discountPercent: DecimalInput; gstPercent: DecimalInput }[]): Money {
+  return roundMoney(lines.reduce((sum, l) => {
+    const taxable = dec(roundMoney(dec(l.qty).times(dec(l.rate)).times(dec('100').minus(dec(l.discountPercent))).div('100')));
+    return sum.plus(taxable).plus(dec(roundMoney(taxable.times(dec(l.gstPercent)).div('100'))));
+  }, dec('0')));
 }

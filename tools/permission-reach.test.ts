@@ -158,7 +158,7 @@ describe('the manifest’s reach', () => {
 
   it('counts a module library a file reaches, and never lib-common', async () => {
     expect(await reachOf([['packages/lib-sales/src/index.ts'], ['packages/lib-common/src/index.ts'], ['packages/lib-platform/src/route.ts']]))
-      .toEqual([['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'], [], ['lib-platform']]);
+      .toEqual([['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'], [], ['lib-platform']]);
   }, 120_000);
 
   // RC-153: the sweep must notice a reach that's new or gone. Each case tampers with a copy of what was found.
