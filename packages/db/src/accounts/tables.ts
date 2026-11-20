@@ -229,6 +229,10 @@ export const payments = radcoreTable('payments', {
   accountId: uuid().notNull().references(() => accounts.id, { onDelete: 'restrict' }),
   refundOfId: uuid().references((): AnyPgColumn => payments.id, { onDelete: 'restrict' }),
   narration: boundedText({ max: 500 }),
+  // A receipt held for a document (a booking's advance, RAD-117), named as an allocation names one: refunded only
+  // through that document's service (refundHeld). lib-accounts never reads the document.
+  heldForTable: text(),
+  heldForId: uuid(),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
   cancelledAt: timestamp({ withTimezone: true }),
   cancelledBy: text(),
@@ -242,9 +246,81 @@ export const payments = radcoreTable('payments', {
   check('ck_payments_refund', sql`(${t.kind} = 'refund') = (${t.refundOfId} is not null) and (${t.kind} <> 'refund' or ${t.tds} = 0)`),
   check('ck_payments_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
   check('ck_payments_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
+  check('ck_payments_held_for', sql`(${t.heldForTable} is null) = (${t.heldForId} is null) and (${t.heldForTable} is null or (${t.kind} = 'receipt'
+    and ${t.heldForTable} ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || ${t.heldForTable}) is not null))`),
   index('ix_payments_party_date').on(t.partyId, t.businessDate),
   index('ix_payments_refund_of').on(t.refundOfId),
   index('ix_payments_account').on(t.accountId),
   index('ix_payments_posted_entry').on(t.postedEntryId),
   index('ix_payments_cancel_entry').on(t.cancelEntryId),
+  index('ix_payments_held_for').on(t.heldForTable, t.heldForId),
+]);
+
+/**
+ * A payment applied to a document (M3-12, RAD-116; ADR-005 §7a, the architect's ruling): a receipt to a receivable
+ * charge, a payment to a payable charge, of one party. The document is named as `(document_table, document_id)`, its
+ * table one `allocatable_documents` lists (hand-written in this migration, with its foreign keys). Append-only: a
+ * reversal undoes exactly one apply of the same document, payment and amount, through the composite foreign key. The
+ * caps are checked at commit (RA006), the payment's row locked before the document's.
+ */
+export const paymentAllocations = radcoreTable('payment_allocations', {
+  id: id(),
+  paymentId: uuid().notNull().references(() => payments.id, { onDelete: 'restrict' }),
+  documentTable: text().notNull(),
+  documentId: uuid().notNull(),
+  direction: text().notNull(),
+  amount: money().notNull(),
+  businessDate: date({ mode: 'string' }).notNull(),
+  postedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  fyStart: date({ mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)`),
+  reversesId: uuid().unique('ux_payment_allocations_reverses'),
+  reversesDirection: text().generatedAlwaysAs(sql`case when reverses_id is not null then 'apply' end`),
+}, (t) => [
+  check('ck_payment_allocations_direction', sql`${t.direction} in ('apply', 'reverse')`),
+  check('ck_payment_allocations_positive', sql`${t.amount} > 0`),
+  check('ck_payment_allocations_reverse', sql`(${t.direction} = 'reverse') = (${t.reversesId} is not null)`),
+  unique('ux_payment_allocations_key').on(t.id, t.documentTable, t.documentId, t.paymentId, t.amount, t.direction),
+  foreignKey({ name: 'fk_payment_allocations_reverses',
+    columns: [t.reversesId, t.documentTable, t.documentId, t.paymentId, t.amount, t.reversesDirection],
+    foreignColumns: [t.id, t.documentTable, t.documentId, t.paymentId, t.amount, t.direction] }),
+  index('ix_payment_allocations_payment').on(t.paymentId),
+  index('ix_payment_allocations_document').on(t.documentTable, t.documentId),
+  foreignKey({ name: 'fk_payment_allocations_fy_start', columns: [t.fyStart], foreignColumns: [financialYears.start] }),
+  index('ix_payment_allocations_fy_start').on(t.fyStart),
+  index('ix_payment_allocations_reverses').on(t.reversesId, t.documentTable, t.documentId, t.paymentId, t.amount, t.reversesDirection),
+]);
+
+/**
+ * A credit (a credit note, or M4's debit note) applied to a charge on the same side, of one party (ADR-005 §7a). Both
+ * are named by table and id, each table one `allocatable_documents` lists. Append-only, with reversals as above.
+ */
+export const creditApplications = radcoreTable('credit_applications', {
+  id: id(),
+  creditTable: text().notNull(),
+  creditId: uuid().notNull(),
+  documentTable: text().notNull(),
+  documentId: uuid().notNull(),
+  direction: text().notNull(),
+  amount: money().notNull(),
+  businessDate: date({ mode: 'string' }).notNull(),
+  postedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  fyStart: date({ mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)`),
+  reversesId: uuid().unique('ux_credit_applications_reverses'),
+  reversesDirection: text().generatedAlwaysAs(sql`case when reverses_id is not null then 'apply' end`),
+}, (t) => [
+  check('ck_credit_applications_direction', sql`${t.direction} in ('apply', 'reverse')`),
+  check('ck_credit_applications_positive', sql`${t.amount} > 0`),
+  check('ck_credit_applications_reverse', sql`(${t.direction} = 'reverse') = (${t.reversesId} is not null)`),
+  unique('ux_credit_applications_key').on(t.id, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount, t.direction),
+  foreignKey({ name: 'fk_credit_applications_reverses',
+    columns: [t.reversesId, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount, t.reversesDirection],
+    foreignColumns: [t.id, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount, t.direction] }),
+  index('ix_credit_applications_credit').on(t.creditTable, t.creditId),
+  index('ix_credit_applications_document').on(t.documentTable, t.documentId),
+  foreignKey({ name: 'fk_credit_applications_fy_start', columns: [t.fyStart], foreignColumns: [financialYears.start] }),
+  index('ix_credit_applications_fy_start').on(t.fyStart),
+  index('ix_credit_applications_reverses').on(t.reversesId, t.creditTable, t.creditId, t.documentTable, t.documentId, t.amount,
+    t.reversesDirection),
 ]);

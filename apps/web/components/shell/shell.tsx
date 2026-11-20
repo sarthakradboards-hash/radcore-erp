@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { t } from '../../lib/i18n/index.ts';
 import { SignOutButton } from '../auth/sign-out.tsx';
+import { Bell } from './bell.tsx';
 import { isCurrent, menuFor, NAV } from './nav.ts';
 import { useMe } from './session-provider.tsx';
 
@@ -26,6 +27,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </ul>
         </nav>
         <div className="shell-user">
+          <Bell />
           <p className="shell-user-name">{t('shell.signedInAs', { name: me.user.displayName })}</p>
           <SignOutButton userId={me.user.id} />
         </div>

@@ -58,10 +58,14 @@ half covers every sum and comparison in them, and they round half up, as lib-com
    a lock takes `FOR UPDATE`, so it waits for the postings in flight (RC-163, M5-09), and so does a change to the
    profile, so the GSTIN and state an invoice prints can't change under it (RAD-88);
 2. the documents being posted, `ORDER BY id FOR UPDATE` (ADR-005 §7a);
-3. the stock positions, `ORDER BY item_id, location_id FOR UPDATE` (§4), then any new batch rows, created in
+3. the party whose credit a sale checks, or whose cash a payment counts, `FOR NO KEY UPDATE` (lib-accounts'
+   `holdParty`), so two sales to one party take turns at the credit check (ADR-007 §9) and two cash saves at the
+   day's limit (ADR-007 §8). `NO KEY`, because every insert that references the party by foreign key takes
+   `KEY SHARE`, which it doesn't block, where `FOR UPDATE` would (as with `items`, below);
+4. the stock positions, `ORDER BY item_id, location_id FOR UPDATE` (§4), then any new batch rows, created in
    `(item_id, supplier_id, batch_key)` order (§4a);
-4. the units, `ORDER BY id FOR UPDATE` (§5);
-5. the numbering series (M2-04), last. A number is drawn only once every check has passed, and the series row is
+5. the units, `ORDER BY id FOR UPDATE` (§5);
+6. the numbering series (M2-04), last. A number is drawn only once every check has passed, and the series row is
    held for the shortest time.
 
 The stock lock is a row in `stock_positions (item_id, location_id)`, never the item row. A `FOR UPDATE` on `items`
