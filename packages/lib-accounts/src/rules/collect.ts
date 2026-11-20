@@ -32,9 +32,9 @@ export function openBills(lines: readonly PartyLine[], o: Readonly<{ isBill: (ta
     const was = bills.get(key);
     const amount = roundMoney(dec(was?.amount ?? '0').plus(l.debit));
     const paid = roundMoney(o.paid(l.sourceTable, l.sourceId));
-    const due = addDays(l.businessDate, o.creditDays);
-    bills.set(key, { table: l.sourceTable, id: l.sourceId, entryNumber: l.entryNumber, date: l.businessDate, due, amount, paid,
-      open: roundMoney(dec(amount).minus(paid)), overdue: due < o.today });
+    const dueOn = addDays(l.businessDate, o.creditDays);
+    bills.set(key, { table: l.sourceTable, id: l.sourceId, entryNumber: l.entryNumber, date: l.businessDate, due: dueOn, amount, paid,
+      open: roundMoney(dec(amount).minus(paid)), overdue: dueOn.localeCompare(o.today) < 0 });
   }
   return [...bills.values()].filter((b) => dec(b.open).gt(0)).toSorted((a, b) => a.date.localeCompare(b.date));
 }
