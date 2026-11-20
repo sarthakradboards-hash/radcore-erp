@@ -40,7 +40,13 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
 - **Quotes and orders post nothing,** so they carry no ledger guard. Their services move their states, and a CHECK
   holds the status values. A confirmed order's lines change only through the order service, which runs M3-07's
   checks again. An order is **closed** when every line is delivered, or **closed short** when a person closes it
-  with lines still undelivered. The undelivered quantities are released, and a reason is kept (RC-125).
+  with lines still undelivered. The undelivered quantities are released, and a reason is kept (RC-125). A posted
+  delivery return that brings a line back below what was ordered reopens an order its deliveries closed
+  (`closed → confirmed`), so the goods can go again; an order a person closed short stays closed (RAD-112).
+- **A delivery** comes from a sellable place only (`place_not_sellable`, ADR-006 §4). Selling a demo or rejected
+  unit is a transfer to a sellable place first (M4-06). A delivery made against an order is owned, for record
+  scope (ADR-001 §6a), by the order's owner, copied when it's made; one with no order by its maker; and a return
+  by its delivery's owner. So a salesperson sees the delivery of their own order, whoever made it.
 - **A credit note is approved before it posts**, through `defineApproval` (RAD-38). It stays a draft while its
   request is pending. The approval's version hash means the approver approves exactly what was sent, and the
   approval's `approved` step posts it (ADR-001 §8b). Every credit note is approved, whatever its amount (Sarthak,
@@ -128,7 +134,8 @@ removal, so a delivery for a sale is invoiced the same day by default:
 - **A refunded advance** is a payment out to the customer: Dr Debtors, Cr Bank or Cash. The refund names the receipt
   it pays back, so neither shows as open (F24).
 - **A cancelled booking's advance** (M3-13, RC-127). Cancelling a booking says what happens to what's left of its
-  advance (the receipt's amount less its net allocations and refunds), so none is left unexplained. It's **refunded
+  advance (the receipts' amount less their net allocations and their refunds, posted or waiting for approval), so
+  none is left unexplained. It's **refunded
   in full** (`bookings:refund_full`), **refunded in part** (`bookings:refund_part`), or **kept** (`bookings:forfeit`,
   once CA-47 is answered, below), and whatever isn't refunded or kept stays as the customer's credit on Debtors,
   named so on the cancellation.
@@ -138,7 +145,8 @@ removal, so a delivery for a sale is invoiced the same day by default:
   - **Which refund key an amount needs:** all of what's left needs `bookings:refund_full`; more than nothing but
     less than that needs `bookings:refund_part`; nothing refunded needs neither. Without the key the amount needs,
     the cancellation is refused (`forbidden`, naming the key). So a role with only `bookings:refund_part` can't
-    refund everything, in one refund or in several: each is judged against what's left at that moment.
+    refund everything, in one refund or in several: each is judged against what's left at that moment, under the
+    booking's row lock (`FOR UPDATE`, after the period lock), so two refunds at once take turns.
   - A refund is a payment out naming the receipt (F24), within the receipt's cap and under the cash limit (§8).
   - **Later**, what was left as credit is refunded from the cancelled booking under the same keys and rule. The
     booking reads what's still held live from its receipts, so it stays right whatever else applies them.
@@ -210,7 +218,9 @@ The amounts are settings until CA-24 confirms them.
 
 Each stage that commits a sale (confirming an order, a delivery, an invoice, handing back a repaired vehicle) runs
 M3-07's `checkSale`. What it finds needs someone else's approval, through `defineApproval` under `sales:override`,
-which needs the second factor (D-19, Sarthak, 20 Nov).
+which needs the second factor (D-19, Sarthak, 20 Nov). The stage holds its party (`holdParty`, ADR-006 §1) after
+locking its own documents and before the check, so two sales to one party can't both pass on the same balance.
+`checkSale` itself takes no lock, since it also answers in read-only paths.
 - **Credit, at every stage.** A party's exposure is its net Debtors balance (an advance already reduces it), plus
   what it has been delivered and not billed, at selling value with GST, plus this document, nothing counted twice:
   an invoice replaces the deliveries it bills. It's over when it's above the party's credit limit.
