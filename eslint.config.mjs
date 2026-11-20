@@ -329,8 +329,10 @@ export default tseslint.config(
       ...on('radcore/e4-no-escape'),
     } },
 
-  // D7's export guard on every library entry, with the same type information.
-  { files: ['packages/lib-*/src/index.ts', 'packages/lib-*/src/contract.ts', 'packages/lib-*/src/contract/**'],
+  // D7's export guard on the module libraries' server entries, with the same type information. Not lib-common's entry
+  // or any contract file: dependency-cruiser already keeps the database out of those (lib-common MAY_IMPORT [],
+  // D5-contract-server-code, tables-in-schema), and walking their zod types took lint past V8's default heap (RAD-89).
+  { files: ['packages/lib-*/src/index.ts'], ignores: ['packages/lib-common/src/index.ts'],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: on('radcore/d7-no-table-exports') },
 

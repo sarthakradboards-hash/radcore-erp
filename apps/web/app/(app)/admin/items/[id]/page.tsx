@@ -3,20 +3,24 @@
 // it off or back on (never deleted: ADR-005 §3). The SKU never changes: documents print and search by it. Pictures are
 // short-lived links the item's own answer carries, shown inline (pictures.tsx adds and takes them off).
 import { getItem, listItemCategories, listItems, listUnitsOfMeasure, updateItem } from '@radcore/lib-stock/contract';
+import type { z } from 'zod';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
+import { Pii } from '../../../../../components/ui/masked.tsx';
 import { Form, SubmitButton } from '../../../../../components/ui/form/form.tsx';
 import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog, MESSAGES } from '../../shared.tsx';
+import { costField } from '../cost-field.ts';
 import { editItemSchema, ItemFields } from '../item-fields.tsx';
 import { Pictures } from './pictures.tsx';
 import { useState } from 'react';
 
 export default function ItemPage() {
   const { id } = useParams<{ id: string }>();
-  const mayWrite = useMe().permissions.includes('items:write');
+  const { permissions } = useMe();
+  const mayWrite = permissions.includes('items:write');
   const q = useApiQuery(getItem, { id });
   const categories = useApiQuery(listItemCategories, {}).data?.categories ?? [];
   const units = useApiQuery(listUnitsOfMeasure, {}).data?.units ?? [];
@@ -37,6 +41,7 @@ export default function ItemPage() {
   }
   if (item === undefined) return <p>{t('loading')}</p>;
   const unit = units.find((u) => u.code === item.unit);
+  const cost = costField(permissions.includes('cost:read'), item.purchasePrice);
 
   return (
     <>
@@ -48,6 +53,7 @@ export default function ItemPage() {
         <dt>{t('admin.items.unit')}</dt><dd>{unit === undefined ? item.unit : `${unit.name} (${unit.code})`}</dd>
         <dt>{t('admin.items.hsn')}</dt><dd>{item.hsn}</dd>
         <dt>{t('admin.items.barcode')}</dt><dd>{item.barcode ?? t('admin.items.none')}</dd>
+        <dt>{t('admin.items.purchasePrice')}</dt><dd><Pii value={item.purchasePrice ?? t('admin.items.none')} /></dd>
         <dt>{t('admin.items.tracking')}</dt>
         <dd>{t(item.hasChassis ? 'admin.items.tracking.chassis' : item.serialised ? 'admin.items.tracking.serial' : 'admin.items.tracking.none')}</dd>
         <dt>{t('admin.locations.col.status')}</dt><dd>{t(item.active ? 'admin.locations.active' : 'admin.locations.inactive')}</dd>
@@ -66,12 +72,14 @@ export default function ItemPage() {
           {/* Keyed on the saved item, so after a save the form starts from what's saved. */}
           <Form key={JSON.stringify(item)} aria-labelledby="item-form" schema={editItemSchema} messages={MESSAGES}
             saved={t('admin.items.saved')}
+            // A price only when it's a box to edit; a masked one is the mask, for MaskedField, which the form never
+            // sends, so the type the schema reads (a string) never sees it (cost-field.ts).
             defaultValues={{
               name: item.name, categoryId: item.categoryId, hsn: item.hsn, unit: item.unit, barcode: item.barcode ?? '',
-              serialised: item.serialised, hasChassis: item.hasChassis,
-            }}
+              serialised: item.serialised, hasChassis: item.hasChassis, ...cost.defaults,
+            } as unknown as z.input<typeof editItemSchema>}
             onSubmit={(v) => save.submit({ id: item.id, ...v })}>
-            <ItemFields categories={categories} units={units} withSku={false} />
+            <ItemFields categories={categories} units={units} withSku={false} cost={cost.cost} />
             <SubmitButton>{t('admin.items.save')}</SubmitButton>
           </Form>
           <ConfirmDialog open={toggling} onOpenChange={setToggling}

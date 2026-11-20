@@ -85,6 +85,27 @@ export function CheckboxField({ name, label, hint }: Common) {
   );
 }
 
+/** Any of a short, fixed list, as checkboxes in one labelled group (a party's kinds): the value is the array of the
+ * chosen values, in the list's order of ticking. Ticking only fills the form, which acts on Submit (RC-148). */
+export function CheckboxesField({ name, label, hint, options }: Common & {
+  options: readonly { value: string; label: string }[];
+}) {
+  const { id, error, control } = useField(name);
+  return (
+    <fieldset className="kit-field kit-radios" aria-describedby={described(id, hint, error)} aria-invalid={error !== undefined}>
+      <legend>{label}</legend>
+      {hint !== undefined && <p id={`${id}-hint`} className="kit-field-hint">{hint}</p>}
+      {options.map((o) => (
+        <label key={o.value} className="kit-radio">
+          <input type="checkbox" value={o.value} {...control} />
+          <span>{o.label}</span>
+        </label>
+      ))}
+      {error?.message !== undefined && <p id={`${id}-error`} className="kit-field-error">{error.message}</p>}
+    </fieldset>
+  );
+}
+
 /** One choice from a short, fixed list, as radio buttons: picking one only fills the form, which acts on Submit
  * (RC-148). A long or searched list uses the Picker instead. `disabled` options are the server's (a role you may
  * not grant), shown so the person sees why. */
