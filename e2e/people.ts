@@ -71,6 +71,22 @@ export async function seedBooksChecker(): Promise<Person> {
 }
 
 /**
+ * Seeds a role that is no built-in one (no template, so global setup leaves it alone) with exactly `grants`, each at
+ * scope 'all', set afresh each run. For a journey that needs a person the built-in roles don't give: one with a key
+ * but without another (say audit:read without cost:read, RAD-57). `session:read` is every role's, and the shell needs it.
+ */
+export async function seedRole(key: string, name: string, grants: readonly string[]): Promise<void> {
+  await withDb(async (db) => {
+    await db.query(`insert into radcore.roles (key, name, description) values ($1, $2, 'Seeded by an e2e journey')
+      on conflict (key) do update set name = excluded.name`, [key, name]);
+    await db.query('delete from radcore.role_grants where role = $1', [key]);
+    for (const permission of grants) {
+      await db.query(`insert into radcore.role_grants (role, permission, scope) values ($1, $2, 'all')`, [key, permission]);
+    }
+  });
+}
+
+/**
  * An active person with `role` and this run's password, and no authenticator yet. An existing address is reset to
  * that state, so a rerun starts clean. Without `email`, a new address unique to this call.
  */

@@ -1,5 +1,5 @@
 {
-  "id": "94b12bda-f96c-469e-afd3-8e7c3e09a4df",
+  "id": "2ad87a69-7b79-420c-b5f1-93f72d289ba7",
   "prevId": "cdb178c9-5488-4ff4-9724-dd45d0aef4ff",
   "version": "7",
   "dialect": "postgresql",
@@ -33,8 +33,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))"
+            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
           }
         },
         "type": {
@@ -110,57 +110,57 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "accounts_parent_id_accounts_id_fk": {
           "name": "accounts_parent_id_accounts_id_fk",
           "tableFrom": "accounts",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "parent_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "accounts_systemKey_unique": {
           "name": "accounts_systemKey_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "system_key"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_accounts_code": {
           "name": "ux_accounts_code",
+          "nullsNotDistinct": false,
           "columns": [
             "code"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_accounts_name_key": {
           "name": "ux_accounts_name_key",
+          "nullsNotDistinct": false,
           "columns": [
             "name_key"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_accounts_id_control_kind": {
           "name": "ux_accounts_id_control_kind",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "control_kind"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -225,8 +225,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "left(gstin, 2)"
+            "as": "left(gstin, 2)",
+            "type": "stored"
           }
         },
         "address_line1": {
@@ -385,8 +385,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)"
+            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
+            "type": "stored"
           }
         },
         "reverses_id": {
@@ -401,8 +401,8 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "type": "stored",
-            "as": "case when reverses_id is not null then 'apply' end"
+            "as": "case when reverses_id is not null then 'apply' end",
+            "type": "stored"
           }
         },
         "created_at": {
@@ -452,9 +452,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_credit_applications_document": {
           "name": "ix_credit_applications_document",
@@ -473,9 +473,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_credit_applications_fy_start": {
           "name": "ix_credit_applications_fy_start",
@@ -488,9 +488,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_credit_applications_reverses": {
           "name": "ix_credit_applications_reverses",
@@ -539,15 +539,17 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "fk_credit_applications_reverses": {
           "name": "fk_credit_applications_reverses",
           "tableFrom": "credit_applications",
+          "tableTo": "credit_applications",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "reverses_id",
             "credit_table",
@@ -557,8 +559,6 @@
             "amount",
             "reverses_direction"
           ],
-          "tableTo": "credit_applications",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "credit_table",
@@ -568,35 +568,36 @@
             "amount",
             "direction"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_credit_applications_fy_start": {
           "name": "fk_credit_applications_fy_start",
           "tableFrom": "credit_applications",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "fy_start"
           ],
-          "tableTo": "financial_years",
-          "schemaTo": "radcore",
           "columnsTo": [
             "start"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ux_credit_applications_reverses": {
           "name": "ux_credit_applications_reverses",
+          "nullsNotDistinct": false,
           "columns": [
             "reverses_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_credit_applications_key": {
           "name": "ux_credit_applications_key",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "credit_table",
@@ -605,8 +606,7 @@
             "document_id",
             "amount",
             "direction"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -724,8 +724,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)"
+            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
+            "type": "stored"
           }
         },
         "source_table": {
@@ -800,9 +800,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_journal_entries_reverses": {
           "name": "ix_journal_entries_reverses",
@@ -821,9 +821,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_journal_entries_fy_start": {
           "name": "ix_journal_entries_fy_start",
@@ -836,85 +836,85 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "fk_journal_entries_reverses": {
           "name": "fk_journal_entries_reverses",
           "tableFrom": "journal_entries",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "reverses_entry_id",
             "kind"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "kind"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_journal_entries_fy_start": {
           "name": "fk_journal_entries_fy_start",
           "tableFrom": "journal_entries",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "fy_start"
           ],
-          "tableTo": "financial_years",
-          "schemaTo": "radcore",
           "columnsTo": [
             "start"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "journal_entries_number_unique": {
           "name": "journal_entries_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "journal_entries_reversesEntryId_unique": {
           "name": "journal_entries_reversesEntryId_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "reverses_entry_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_journal_entries_source": {
           "name": "ux_journal_entries_source",
+          "nullsNotDistinct": true,
           "columns": [
             "source_table",
             "source_id",
             "kind",
             "reverses_entry_id"
-          ],
-          "nullsNotDistinct": true
+          ]
         },
         "ux_journal_entries_id_kind": {
           "name": "ux_journal_entries_id_kind",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "kind"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_journal_entries_id_kind_date": {
           "name": "ux_journal_entries_id_kind_date",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "kind",
             "business_date"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -986,8 +986,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)"
+            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
+            "type": "stored"
           }
         },
         "account_id": {
@@ -1008,8 +1008,8 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "type": "stored",
-            "as": "nullif(account_control_kind, 'none')"
+            "as": "nullif(account_control_kind, 'none')",
+            "type": "stored"
           }
         },
         "debit": {
@@ -1091,9 +1091,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_journal_lines_entry": {
           "name": "ix_journal_lines_entry",
@@ -1118,9 +1118,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_journal_lines_rule": {
           "name": "ix_journal_lines_rule",
@@ -1139,9 +1139,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_journal_lines_fy_start": {
           "name": "ix_journal_lines_fy_start",
@@ -1154,9 +1154,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_journal_lines_party_id": {
           "name": "ix_journal_lines_party_id",
@@ -1169,86 +1169,86 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "fk_journal_lines_entry": {
           "name": "fk_journal_lines_entry",
           "tableFrom": "journal_lines",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "entry_id",
             "entry_kind",
             "business_date"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "kind",
             "business_date"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_journal_lines_account": {
           "name": "fk_journal_lines_account",
           "tableFrom": "journal_lines",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "account_id",
             "account_control_kind"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "control_kind"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_journal_lines_rule": {
           "name": "fk_journal_lines_rule",
           "tableFrom": "journal_lines",
+          "tableTo": "posting_rules",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "rule_kind",
             "entry_kind"
           ],
-          "tableTo": "posting_rules",
-          "schemaTo": "radcore",
           "columnsTo": [
             "control_kind",
             "entry_kind"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_journal_lines_fy_start": {
           "name": "fk_journal_lines_fy_start",
           "tableFrom": "journal_lines",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "fy_start"
           ],
-          "tableTo": "financial_years",
-          "schemaTo": "radcore",
           "columnsTo": [
             "start"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ux_journal_lines_entry_line": {
           "name": "ux_journal_lines_entry_line",
+          "nullsNotDistinct": false,
           "columns": [
             "entry_id",
             "line_no"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1446,9 +1446,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_parties_name_trgm": {
           "name": "ix_parties_name_trgm",
@@ -1462,9 +1462,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "gin",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -1595,8 +1595,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)"
+            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
+            "type": "stored"
           }
         },
         "reverses_id": {
@@ -1611,8 +1611,8 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "type": "stored",
-            "as": "case when reverses_id is not null then 'apply' end"
+            "as": "case when reverses_id is not null then 'apply' end",
+            "type": "stored"
           }
         },
         "created_at": {
@@ -1656,9 +1656,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_payment_allocations_document": {
           "name": "ix_payment_allocations_document",
@@ -1677,9 +1677,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_payment_allocations_fy_start": {
           "name": "ix_payment_allocations_fy_start",
@@ -1692,9 +1692,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_payment_allocations_reverses": {
           "name": "ix_payment_allocations_reverses",
@@ -1737,29 +1737,31 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "payment_allocations_payment_id_payments_id_fk": {
           "name": "payment_allocations_payment_id_payments_id_fk",
           "tableFrom": "payment_allocations",
+          "tableTo": "payments",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "payment_id"
           ],
-          "tableTo": "payments",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "fk_payment_allocations_reverses": {
           "name": "fk_payment_allocations_reverses",
           "tableFrom": "payment_allocations",
+          "tableTo": "payment_allocations",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "reverses_id",
             "document_table",
@@ -1768,8 +1770,6 @@
             "amount",
             "reverses_direction"
           ],
-          "tableTo": "payment_allocations",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "document_table",
@@ -1778,35 +1778,36 @@
             "amount",
             "direction"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_payment_allocations_fy_start": {
           "name": "fk_payment_allocations_fy_start",
           "tableFrom": "payment_allocations",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "fy_start"
           ],
-          "tableTo": "financial_years",
-          "schemaTo": "radcore",
           "columnsTo": [
             "start"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ux_payment_allocations_reverses": {
           "name": "ux_payment_allocations_reverses",
+          "nullsNotDistinct": false,
           "columns": [
             "reverses_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_payment_allocations_key": {
           "name": "ux_payment_allocations_key",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "document_table",
@@ -1814,8 +1815,7 @@
             "payment_id",
             "amount",
             "direction"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -2001,9 +2001,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_payments_refund_of": {
           "name": "ix_payments_refund_of",
@@ -2016,9 +2016,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_payments_account": {
           "name": "ix_payments_account",
@@ -2031,9 +2031,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_payments_posted_entry": {
           "name": "ix_payments_posted_entry",
@@ -2046,9 +2046,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_payments_cancel_entry": {
           "name": "ix_payments_cancel_entry",
@@ -2061,9 +2061,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_payments_held_for": {
           "name": "ix_payments_held_for",
@@ -2082,91 +2082,91 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "payments_party_id_parties_id_fk": {
           "name": "payments_party_id_parties_id_fk",
           "tableFrom": "payments",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "party_id"
           ],
-          "tableTo": "parties",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "payments_account_id_accounts_id_fk": {
           "name": "payments_account_id_accounts_id_fk",
           "tableFrom": "payments",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "payments_refund_of_id_payments_id_fk": {
           "name": "payments_refund_of_id_payments_id_fk",
           "tableFrom": "payments",
+          "tableTo": "payments",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "refund_of_id"
           ],
-          "tableTo": "payments",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "payments_posted_entry_id_journal_entries_id_fk": {
           "name": "payments_posted_entry_id_journal_entries_id_fk",
           "tableFrom": "payments",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "posted_entry_id"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "payments_cancel_entry_id_journal_entries_id_fk": {
           "name": "payments_cancel_entry_id_journal_entries_id_fk",
           "tableFrom": "payments",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "cancel_entry_id"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "payments_number_unique": {
           "name": "payments_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -2399,6 +2399,321 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "radcore.follow_up_plan_steps": {
+      "name": "follow_up_plan_steps",
+      "schema": "radcore",
+      "columns": {
+        "plan_id": {
+          "name": "plan_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "step": {
+          "name": "step",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "after_days": {
+          "name": "after_days",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "follow_up_plan_steps_plan_id_follow_up_plans_id_fk": {
+          "name": "follow_up_plan_steps_plan_id_follow_up_plans_id_fk",
+          "tableFrom": "follow_up_plan_steps",
+          "tableTo": "follow_up_plans",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "plan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "follow_up_plan_steps_plan_id_step_pk": {
+          "name": "follow_up_plan_steps_plan_id_step_pk",
+          "columns": [
+            "plan_id",
+            "step"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_follow_up_plan_steps_note": {
+          "name": "ck_follow_up_plan_steps_note",
+          "value": "char_length(\"radcore\".\"follow_up_plan_steps\".\"note\") <= 200"
+        },
+        "ck_follow_up_plan_steps_step": {
+          "name": "ck_follow_up_plan_steps_step",
+          "value": "\"radcore\".\"follow_up_plan_steps\".\"step\" between 1 and 20"
+        },
+        "ck_follow_up_plan_steps_after_days": {
+          "name": "ck_follow_up_plan_steps_after_days",
+          "value": "\"radcore\".\"follow_up_plan_steps\".\"after_days\" between 1 and 365"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.follow_up_plans": {
+      "name": "follow_up_plans",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "name_key": {
+          "name": "name_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_follow_up_plans_name_key": {
+          "name": "ux_follow_up_plans_name_key",
+          "columns": [
+            {
+              "expression": "name_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_follow_up_plans_name": {
+          "name": "ck_follow_up_plans_name",
+          "value": "char_length(\"radcore\".\"follow_up_plans\".\"name\") <= 60"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.lead_activities": {
+      "name": "lead_activities",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ix_lead_activities_lead": {
+          "name": "ix_lead_activities_lead",
+          "columns": [
+            {
+              "expression": "lead_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lead_activities_lead_id_leads_id_fk": {
+          "name": "lead_activities_lead_id_leads_id_fk",
+          "tableFrom": "lead_activities",
+          "tableTo": "leads",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "lead_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_lead_activities_note": {
+          "name": "ck_lead_activities_note",
+          "value": "char_length(\"radcore\".\"lead_activities\".\"note\") <= 2000"
+        },
+        "ck_lead_activities_kind": {
+          "name": "ck_lead_activities_kind",
+          "value": "\"radcore\".\"lead_activities\".\"kind\" in ('follow_up', 'quick_reply', 'stage')"
+        },
+        "ck_lead_activities_stage": {
+          "name": "ck_lead_activities_stage",
+          "value": "(\"radcore\".\"lead_activities\".\"kind\" = 'stage') = (\"radcore\".\"lead_activities\".\"stage\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "radcore.lead_enquiries": {
       "name": "lead_enquiries",
       "schema": "radcore",
@@ -2481,25 +2796,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "lead_enquiries_lead_id_leads_id_fk": {
           "name": "lead_enquiries_lead_id_leads_id_fk",
           "tableFrom": "lead_enquiries",
+          "tableTo": "leads",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "lead_id"
           ],
-          "tableTo": "leads",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2513,6 +2828,98 @@
         "ck_lead_enquiries_source": {
           "name": "ck_lead_enquiries_source",
           "value": "\"radcore\".\"lead_enquiries\".\"source\" in ('manual', 'walk_in', 'form', 'meta', 'google', 'whatsapp', 'qr')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.lead_lost_reasons": {
+      "name": "lead_lost_reasons",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "label_key": {
+          "name": "label_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "lower(btrim(regexp_replace(label, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_lead_lost_reasons_label_key": {
+          "name": "ux_lead_lost_reasons_label_key",
+          "columns": [
+            {
+              "expression": "label_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_lead_lost_reasons_label": {
+          "name": "ck_lead_lost_reasons_label",
+          "value": "char_length(\"radcore\".\"lead_lost_reasons\".\"label\") <= 80"
         }
       },
       "isRLSEnabled": false
@@ -2570,6 +2977,49 @@
           "primaryKey": false,
           "notNull": false
         },
+        "stage": {
+          "name": "stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'new'"
+        },
+        "lost_reason_id": {
+          "name": "lost_reason_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "score": {
+          "name": "score",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plan_id": {
+          "name": "plan_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plan_step": {
+          "name": "plan_step",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "follow_up_told_on": {
+          "name": "follow_up_told_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2611,9 +3061,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_leads_owner_follow_up": {
           "name": "ix_leads_owner_follow_up",
@@ -2632,12 +3082,71 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
+        },
+        "ix_leads_lost_reason": {
+          "name": "ix_leads_lost_reason",
+          "columns": [
+            {
+              "expression": "lost_reason_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_leads_plan": {
+          "name": "ix_leads_plan",
+          "columns": [
+            {
+              "expression": "plan_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "leads_lost_reason_id_lead_lost_reasons_id_fk": {
+          "name": "leads_lost_reason_id_lead_lost_reasons_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "lead_lost_reasons",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "lost_reason_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "leads_plan_id_follow_up_plans_id_fk": {
+          "name": "leads_plan_id_follow_up_plans_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "follow_up_plans",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "plan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -2654,6 +3163,10 @@
           "name": "ck_leads_notes",
           "value": "char_length(\"radcore\".\"leads\".\"notes\") <= 2000"
         },
+        "ck_leads_value": {
+          "name": "ck_leads_value",
+          "value": "\"radcore\".\"leads\".\"value\" >= 0 and \"radcore\".\"leads\".\"value\" <> 'NaN'"
+        },
         "ck_leads_phone": {
           "name": "ck_leads_phone",
           "value": "\"radcore\".\"leads\".\"phone\" ~ '^[+][1-9][0-9]{6,14}$'"
@@ -2661,6 +3174,124 @@
         "ck_leads_owner": {
           "name": "ck_leads_owner",
           "value": "\"radcore\".\"leads\".\"owner\" ~ '^user:[0-9a-f-]{36}$'"
+        },
+        "ck_leads_stage": {
+          "name": "ck_leads_stage",
+          "value": "\"radcore\".\"leads\".\"stage\" in ('new', 'contacted', 'interested', 'meeting_booked', 'converted', 'lost')"
+        },
+        "ck_leads_lost_with_reason": {
+          "name": "ck_leads_lost_with_reason",
+          "value": "(\"radcore\".\"leads\".\"stage\" = 'lost') = (\"radcore\".\"leads\".\"lost_reason_id\" is not null)"
+        },
+        "ck_leads_score": {
+          "name": "ck_leads_score",
+          "value": "\"radcore\".\"leads\".\"score\" between 0 and 100"
+        },
+        "ck_leads_plan_whole": {
+          "name": "ck_leads_plan_whole",
+          "value": "(\"radcore\".\"leads\".\"plan_id\" is null) = (\"radcore\".\"leads\".\"plan_step\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.quick_replies": {
+      "name": "quick_replies",
+      "schema": "radcore",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "title_key": {
+          "name": "title_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "lower(btrim(regexp_replace(title, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {
+        "ux_quick_replies_title_key": {
+          "name": "ux_quick_replies_title_key",
+          "columns": [
+            {
+              "expression": "title_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_quick_replies_title": {
+          "name": "ck_quick_replies_title",
+          "value": "char_length(\"radcore\".\"quick_replies\".\"title\") <= 60"
+        },
+        "ck_quick_replies_body": {
+          "name": "ck_quick_replies_body",
+          "value": "char_length(\"radcore\".\"quick_replies\".\"body\") <= 1000"
         }
       },
       "isRLSEnabled": false
@@ -2753,9 +3384,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -2842,8 +3473,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "upper(btrim(code))"
+            "as": "upper(btrim(code))",
+            "type": "stored"
           }
         },
         "created_at": {
@@ -2887,9 +3518,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3027,10 +3658,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"radcore\".\"approvals\".\"decided_at\" is null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "ix_approvals_kind_status": {
           "name": "ix_approvals_kind_status",
@@ -3055,9 +3686,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3145,25 +3776,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "bootstrap_user_id_users_id_fk": {
           "name": "bootstrap_user_id_users_id_fk",
           "tableFrom": "bootstrap",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3332,9 +3963,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3458,9 +4089,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3579,9 +4210,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ux_invites_job_id": {
           "name": "ux_invites_job_id",
@@ -3594,9 +4225,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invites_user_id": {
           "name": "ix_invites_user_id",
@@ -3609,25 +4240,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "invites_user_id_users_id_fk": {
           "name": "invites_user_id_users_id_fk",
           "tableFrom": "invites",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3737,10 +4368,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"radcore\".\"jobs_outbox\".\"dead_at\" is null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3860,9 +4491,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_notifications_unread": {
           "name": "ix_notifications_unread",
@@ -3875,26 +4506,26 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"radcore\".\"notifications\".\"read_at\" is null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "notifications_user_id_users_id_fk": {
           "name": "notifications_user_id_users_id_fk",
           "tableFrom": "notifications",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4074,9 +4705,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ux_password_resets_job_id": {
           "name": "ux_password_resets_job_id",
@@ -4089,9 +4720,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_password_resets_user_id": {
           "name": "ix_password_resets_user_id",
@@ -4104,25 +4735,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "password_resets_user_id_users_id_fk": {
           "name": "password_resets_user_id_users_id_fk",
           "tableFrom": "password_resets",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4236,9 +4867,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_public_links_action_record_id": {
           "name": "ix_public_links_action_record_id",
@@ -4257,9 +4888,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -4346,16 +4977,16 @@
         "role_grants_role_roles_key_fk": {
           "name": "role_grants_role_roles_key_fk",
           "tableFrom": "role_grants",
+          "tableTo": "roles",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "role"
           ],
-          "tableTo": "roles",
-          "schemaTo": "radcore",
           "columnsTo": [
             "key"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -4376,7 +5007,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -4437,16 +5068,16 @@
         "role_templates_role_roles_key_fk": {
           "name": "role_templates_role_roles_key_fk",
           "tableFrom": "role_templates",
+          "tableTo": "roles",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "role"
           ],
-          "tableTo": "roles",
-          "schemaTo": "radcore",
           "columnsTo": [
             "key"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -4463,7 +5094,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -4490,8 +5121,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))"
+            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
           }
         },
         "description": {
@@ -4548,9 +5179,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -4661,9 +5292,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -4763,10 +5394,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"radcore\".\"secrets\".\"expires_at\" is not null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -4938,8 +5569,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "lower(btrim(email))"
+            "as": "lower(btrim(email))",
+            "type": "stored"
           }
         },
         "display_name": {
@@ -5020,9 +5651,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_users_role": {
           "name": "ix_users_role",
@@ -5035,25 +5666,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "users_role_roles_key_fk": {
           "name": "users_role_roles_key_fk",
           "tableFrom": "users",
+          "tableTo": "roles",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "role"
           ],
-          "tableTo": "roles",
-          "schemaTo": "radcore",
           "columnsTo": [
             "key"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5167,9 +5798,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ux_webhook_deliveries_source_body_sha256": {
           "name": "ux_webhook_deliveries_source_body_sha256",
@@ -5188,9 +5819,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_webhook_deliveries_unprocessed": {
           "name": "ix_webhook_deliveries_unprocessed",
@@ -5203,10 +5834,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"radcore\".\"webhook_deliveries\".\"processed_at\" is null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -5358,9 +5989,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_deliveries_party_date": {
           "name": "ix_deliveries_party_date",
@@ -5379,9 +6010,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_deliveries_location": {
           "name": "ix_deliveries_location",
@@ -5394,9 +6025,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_deliveries_posted_entry": {
           "name": "ix_deliveries_posted_entry",
@@ -5409,9 +6040,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_deliveries_cancel_entry": {
           "name": "ix_deliveries_cancel_entry",
@@ -5424,9 +6055,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_deliveries_date": {
           "name": "ix_deliveries_date",
@@ -5445,9 +6076,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_deliveries_owner": {
           "name": "ix_deliveries_owner",
@@ -5460,91 +6091,91 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "deliveries_order_id_sales_orders_id_fk": {
           "name": "deliveries_order_id_sales_orders_id_fk",
           "tableFrom": "deliveries",
+          "tableTo": "sales_orders",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "sales_orders",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "deliveries_party_id_parties_id_fk": {
           "name": "deliveries_party_id_parties_id_fk",
           "tableFrom": "deliveries",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "party_id"
           ],
-          "tableTo": "parties",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "deliveries_location_id_locations_id_fk": {
           "name": "deliveries_location_id_locations_id_fk",
           "tableFrom": "deliveries",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "deliveries_posted_entry_id_journal_entries_id_fk": {
           "name": "deliveries_posted_entry_id_journal_entries_id_fk",
           "tableFrom": "deliveries",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "posted_entry_id"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "deliveries_cancel_entry_id_journal_entries_id_fk": {
           "name": "deliveries_cancel_entry_id_journal_entries_id_fk",
           "tableFrom": "deliveries",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "cancel_entry_id"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "deliveries_number_unique": {
           "name": "deliveries_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -5684,9 +6315,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_lines_order_line": {
           "name": "ix_delivery_lines_order_line",
@@ -5699,9 +6330,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_lines_item": {
           "name": "ix_delivery_lines_item",
@@ -5714,53 +6345,53 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "delivery_lines_delivery_id_deliveries_id_fk": {
           "name": "delivery_lines_delivery_id_deliveries_id_fk",
           "tableFrom": "delivery_lines",
+          "tableTo": "deliveries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "delivery_id"
           ],
-          "tableTo": "deliveries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "delivery_lines_order_line_id_sales_order_lines_id_fk": {
           "name": "delivery_lines_order_line_id_sales_order_lines_id_fk",
           "tableFrom": "delivery_lines",
+          "tableTo": "sales_order_lines",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "order_line_id"
           ],
-          "tableTo": "sales_order_lines",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "delivery_lines_item_id_items_id_fk": {
           "name": "delivery_lines_item_id_items_id_fk",
           "tableFrom": "delivery_lines",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5902,9 +6533,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_return_lines_delivery_line": {
           "name": "ix_delivery_return_lines_delivery_line",
@@ -5917,9 +6548,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_return_lines_item": {
           "name": "ix_delivery_return_lines_item",
@@ -5932,53 +6563,53 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "delivery_return_lines_return_id_delivery_returns_id_fk": {
           "name": "delivery_return_lines_return_id_delivery_returns_id_fk",
           "tableFrom": "delivery_return_lines",
+          "tableTo": "delivery_returns",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "return_id"
           ],
-          "tableTo": "delivery_returns",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "delivery_return_lines_delivery_line_id_delivery_lines_id_fk": {
           "name": "delivery_return_lines_delivery_line_id_delivery_lines_id_fk",
           "tableFrom": "delivery_return_lines",
+          "tableTo": "delivery_lines",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "delivery_line_id"
           ],
-          "tableTo": "delivery_lines",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "delivery_return_lines_item_id_items_id_fk": {
           "name": "delivery_return_lines_item_id_items_id_fk",
           "tableFrom": "delivery_return_lines",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6139,9 +6770,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_returns_party_date": {
           "name": "ix_delivery_returns_party_date",
@@ -6160,9 +6791,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_returns_location": {
           "name": "ix_delivery_returns_location",
@@ -6175,9 +6806,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_returns_posted_entry": {
           "name": "ix_delivery_returns_posted_entry",
@@ -6190,9 +6821,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_returns_cancel_entry": {
           "name": "ix_delivery_returns_cancel_entry",
@@ -6205,9 +6836,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_returns_date": {
           "name": "ix_delivery_returns_date",
@@ -6226,9 +6857,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_delivery_returns_owner": {
           "name": "ix_delivery_returns_owner",
@@ -6241,91 +6872,91 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "delivery_returns_delivery_id_deliveries_id_fk": {
           "name": "delivery_returns_delivery_id_deliveries_id_fk",
           "tableFrom": "delivery_returns",
+          "tableTo": "deliveries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "delivery_id"
           ],
-          "tableTo": "deliveries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "delivery_returns_party_id_parties_id_fk": {
           "name": "delivery_returns_party_id_parties_id_fk",
           "tableFrom": "delivery_returns",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "party_id"
           ],
-          "tableTo": "parties",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "delivery_returns_location_id_locations_id_fk": {
           "name": "delivery_returns_location_id_locations_id_fk",
           "tableFrom": "delivery_returns",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "delivery_returns_posted_entry_id_journal_entries_id_fk": {
           "name": "delivery_returns_posted_entry_id_journal_entries_id_fk",
           "tableFrom": "delivery_returns",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "posted_entry_id"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "delivery_returns_cancel_entry_id_journal_entries_id_fk": {
           "name": "delivery_returns_cancel_entry_id_journal_entries_id_fk",
           "tableFrom": "delivery_returns",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "cancel_entry_id"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "delivery_returns_number_unique": {
           "name": "delivery_returns_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -6403,16 +7034,16 @@
         "discount_limits_role_roles_key_fk": {
           "name": "discount_limits_role_roles_key_fk",
           "tableFrom": "discount_limits",
+          "tableTo": "roles",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "role"
           ],
-          "tableTo": "roles",
-          "schemaTo": "radcore",
           "columnsTo": [
             "key"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6619,9 +7250,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invoice_lines_list_version": {
           "name": "ix_invoice_lines_list_version",
@@ -6634,9 +7265,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invoice_lines_delivery_line": {
           "name": "ix_invoice_lines_delivery_line",
@@ -6649,9 +7280,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invoice_lines_item": {
           "name": "ix_invoice_lines_item",
@@ -6664,67 +7295,67 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "invoice_lines_invoice_id_invoices_id_fk": {
           "name": "invoice_lines_invoice_id_invoices_id_fk",
           "tableFrom": "invoice_lines",
+          "tableTo": "invoices",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "invoice_id"
           ],
-          "tableTo": "invoices",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "invoice_lines_delivery_line_id_delivery_lines_id_fk": {
           "name": "invoice_lines_delivery_line_id_delivery_lines_id_fk",
           "tableFrom": "invoice_lines",
+          "tableTo": "delivery_lines",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "delivery_line_id"
           ],
-          "tableTo": "delivery_lines",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "invoice_lines_item_id_items_id_fk": {
           "name": "invoice_lines_item_id_items_id_fk",
           "tableFrom": "invoice_lines",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "invoice_lines_list_version_id_price_list_versions_id_fk": {
           "name": "invoice_lines_list_version_id_price_list_versions_id_fk",
           "tableFrom": "invoice_lines",
+          "tableTo": "price_list_versions",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "list_version_id"
           ],
-          "tableTo": "price_list_versions",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7100,9 +7731,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invoices_posted_entry": {
           "name": "ix_invoices_posted_entry",
@@ -7115,9 +7746,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invoices_cancel_entry": {
           "name": "ix_invoices_cancel_entry",
@@ -7130,9 +7761,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invoices_date": {
           "name": "ix_invoices_date",
@@ -7151,9 +7782,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invoices_owner": {
           "name": "ix_invoices_owner",
@@ -7166,9 +7797,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_invoices_price_list": {
           "name": "ix_invoices_price_list",
@@ -7181,77 +7812,77 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "invoices_party_id_parties_id_fk": {
           "name": "invoices_party_id_parties_id_fk",
           "tableFrom": "invoices",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "party_id"
           ],
-          "tableTo": "parties",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "invoices_price_list_id_price_lists_id_fk": {
           "name": "invoices_price_list_id_price_lists_id_fk",
           "tableFrom": "invoices",
+          "tableTo": "price_lists",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "price_list_id"
           ],
-          "tableTo": "price_lists",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "invoices_posted_entry_id_journal_entries_id_fk": {
           "name": "invoices_posted_entry_id_journal_entries_id_fk",
           "tableFrom": "invoices",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "posted_entry_id"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "invoices_cancel_entry_id_journal_entries_id_fk": {
           "name": "invoices_cancel_entry_id_journal_entries_id_fk",
           "tableFrom": "invoices",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "cancel_entry_id"
           ],
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "invoices_number_unique": {
           "name": "invoices_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -7412,39 +8043,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "party_price_lists_party_id_parties_id_fk": {
           "name": "party_price_lists_party_id_parties_id_fk",
           "tableFrom": "party_price_lists",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "party_id"
           ],
-          "tableTo": "parties",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "party_price_lists_price_list_id_price_lists_id_fk": {
           "name": "party_price_lists_price_list_id_price_lists_id_fk",
           "tableFrom": "party_price_lists",
+          "tableTo": "price_lists",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "price_list_id"
           ],
-          "tableTo": "price_lists",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7529,9 +8160,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_price_list_rates_item": {
           "name": "ix_price_list_rates_item",
@@ -7544,39 +8175,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "price_list_rates_version_id_price_list_versions_id_fk": {
           "name": "price_list_rates_version_id_price_list_versions_id_fk",
           "tableFrom": "price_list_rates",
+          "tableTo": "price_list_versions",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "version_id"
           ],
-          "tableTo": "price_list_versions",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "price_list_rates_item_id_items_id_fk": {
           "name": "price_list_rates_item_id_items_id_fk",
           "tableFrom": "price_list_rates",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7673,9 +8304,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ux_price_list_versions_draft": {
           "name": "ux_price_list_versions_draft",
@@ -7688,10 +8319,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"radcore\".\"price_list_versions\".\"in_force_from\" is null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "ux_price_list_versions_in_force": {
           "name": "ux_price_list_versions_in_force",
@@ -7704,26 +8335,26 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "(\"radcore\".\"price_list_versions\".\"in_force_from\" is not null and \"radcore\".\"price_list_versions\".\"superseded_from\" is null)",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "price_list_versions_price_list_id_price_lists_id_fk": {
           "name": "price_list_versions_price_list_id_price_lists_id_fk",
           "tableFrom": "price_list_versions",
+          "tableTo": "price_lists",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "price_list_id"
           ],
-          "tableTo": "price_lists",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7764,8 +8395,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))"
+            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
           }
         },
         "active": {
@@ -7816,9 +8447,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -7940,9 +8571,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_sales_order_lines_list_version": {
           "name": "ix_sales_order_lines_list_version",
@@ -7955,9 +8586,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_sales_order_lines_item": {
           "name": "ix_sales_order_lines_item",
@@ -7970,53 +8601,53 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sales_order_lines_order_id_sales_orders_id_fk": {
           "name": "sales_order_lines_order_id_sales_orders_id_fk",
           "tableFrom": "sales_order_lines",
+          "tableTo": "sales_orders",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "sales_orders",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "sales_order_lines_item_id_items_id_fk": {
           "name": "sales_order_lines_item_id_items_id_fk",
           "tableFrom": "sales_order_lines",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "sales_order_lines_list_version_id_price_list_versions_id_fk": {
           "name": "sales_order_lines_list_version_id_price_list_versions_id_fk",
           "tableFrom": "sales_order_lines",
+          "tableTo": "price_list_versions",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "list_version_id"
           ],
-          "tableTo": "price_list_versions",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8149,9 +8780,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_sales_orders_party": {
           "name": "ix_sales_orders_party",
@@ -8164,9 +8795,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_sales_orders_date": {
           "name": "ix_sales_orders_date",
@@ -8185,70 +8816,70 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sales_orders_party_id_parties_id_fk": {
           "name": "sales_orders_party_id_parties_id_fk",
           "tableFrom": "sales_orders",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "party_id"
           ],
-          "tableTo": "parties",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "sales_orders_price_list_id_price_lists_id_fk": {
           "name": "sales_orders_price_list_id_price_lists_id_fk",
           "tableFrom": "sales_orders",
+          "tableTo": "price_lists",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "price_list_id"
           ],
-          "tableTo": "price_lists",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "sales_orders_quote_id_sales_quotes_id_fk": {
           "name": "sales_orders_quote_id_sales_quotes_id_fk",
           "tableFrom": "sales_orders",
+          "tableTo": "sales_quotes",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "quote_id"
           ],
-          "tableTo": "sales_quotes",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "sales_orders_number_unique": {
           "name": "sales_orders_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "sales_orders_quoteId_unique": {
           "name": "sales_orders_quoteId_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "quote_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -8375,9 +9006,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_sales_quote_lines_item": {
           "name": "ix_sales_quote_lines_item",
@@ -8390,39 +9021,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sales_quote_lines_quote_id_sales_quotes_id_fk": {
           "name": "sales_quote_lines_quote_id_sales_quotes_id_fk",
           "tableFrom": "sales_quote_lines",
+          "tableTo": "sales_quotes",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "quote_id"
           ],
-          "tableTo": "sales_quotes",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "sales_quote_lines_item_id_items_id_fk": {
           "name": "sales_quote_lines_item_id_items_id_fk",
           "tableFrom": "sales_quote_lines",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8533,9 +9164,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_sales_quotes_date": {
           "name": "ix_sales_quotes_date",
@@ -8554,35 +9185,35 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sales_quotes_party_id_parties_id_fk": {
           "name": "sales_quotes_party_id_parties_id_fk",
           "tableFrom": "sales_quotes",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "party_id"
           ],
-          "tableTo": "parties",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "sales_quotes_number_unique": {
           "name": "sales_quotes_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -8641,8 +9272,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "upper(regexp_replace(batch_no, '[[:space:]-]', '', 'g'))"
+            "as": "upper(regexp_replace(batch_no, '[[:space:]-]', '', 'g'))",
+            "type": "stored"
           }
         },
         "created_at": {
@@ -8686,59 +9317,59 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "batches_item_id_items_id_fk": {
           "name": "batches_item_id_items_id_fk",
           "tableFrom": "batches",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "batches_supplier_id_parties_id_fk": {
           "name": "batches_supplier_id_parties_id_fk",
           "tableFrom": "batches",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "supplier_id"
           ],
-          "tableTo": "parties",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ux_batches_item_supplier_key": {
           "name": "ux_batches_item_supplier_key",
+          "nullsNotDistinct": true,
           "columns": [
             "item_id",
             "supplier_id",
             "batch_key"
-          ],
-          "nullsNotDistinct": true
+          ]
         },
         "ux_batches_id_item": {
           "name": "ux_batches_id_item",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "item_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -8773,8 +9404,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))"
+            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
+            "type": "stored"
           }
         },
         "created_at": {
@@ -8818,9 +9449,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -8904,39 +9535,39 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "item_pictures_file_id_files_id_fk": {
           "name": "item_pictures_file_id_files_id_fk",
           "tableFrom": "item_pictures",
+          "tableTo": "files",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "file_id"
           ],
-          "tableTo": "files",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "item_pictures_item_id_items_id_fk": {
           "name": "item_pictures_item_id_items_id_fk",
           "tableFrom": "item_pictures",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8973,8 +9604,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "upper(sku)"
+            "as": "upper(sku)",
+            "type": "stored"
           }
         },
         "name": {
@@ -9013,8 +9644,8 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "type": "stored",
-            "as": "upper(barcode)"
+            "as": "upper(barcode)",
+            "type": "stored"
           }
         },
         "serialised": {
@@ -9085,9 +9716,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ux_items_barcode_key": {
           "name": "ux_items_barcode_key",
@@ -9100,9 +9731,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_items_category_id": {
           "name": "ix_items_category_id",
@@ -9115,9 +9746,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_items_unit": {
           "name": "ix_items_unit",
@@ -9130,9 +9761,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_items_name_trgm": {
           "name": "ix_items_name_trgm",
@@ -9146,39 +9777,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "gin",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "items_category_id_item_categories_id_fk": {
           "name": "items_category_id_item_categories_id_fk",
           "tableFrom": "items",
+          "tableTo": "item_categories",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "category_id"
           ],
-          "tableTo": "item_categories",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "items_unit_units_of_measure_code_fk": {
           "name": "items_unit_units_of_measure_code_fk",
           "tableFrom": "items",
+          "tableTo": "units_of_measure",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "unit"
           ],
-          "tableTo": "units_of_measure",
-          "schemaTo": "radcore",
           "columnsTo": [
             "code"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -9254,8 +9885,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "upper(btrim(code))"
+            "as": "upper(btrim(code))",
+            "type": "stored"
           }
         },
         "created_at": {
@@ -9299,9 +9930,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_locations_kind": {
           "name": "ix_locations_kind",
@@ -9314,9 +9945,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -9421,9 +10052,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_stock_movement_batches_batch": {
           "name": "ix_stock_movement_batches_batch",
@@ -9442,54 +10073,54 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "fk_stock_movement_batches_movement": {
           "name": "fk_stock_movement_batches_movement",
           "tableFrom": "stock_movement_batches",
+          "tableTo": "stock_movements",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "movement_id",
             "item_id"
           ],
-          "tableTo": "stock_movements",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "item_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_stock_movement_batches_batch": {
           "name": "fk_stock_movement_batches_batch",
           "tableFrom": "stock_movement_batches",
+          "tableTo": "batches",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "batch_id",
             "item_id"
           ],
-          "tableTo": "batches",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "item_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ux_stock_movement_batches_movement_batch": {
           "name": "ux_stock_movement_batches_movement_batch",
+          "nullsNotDistinct": true,
           "columns": [
             "movement_id",
             "batch_id"
-          ],
-          "nullsNotDistinct": true
+          ]
         }
       },
       "policies": {},
@@ -9585,8 +10216,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)"
+            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
+            "type": "stored"
           }
         },
         "reverses_movement_id": {
@@ -9636,9 +10267,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ux_stock_movements_reverses": {
           "name": "ux_stock_movements_reverses",
@@ -9651,9 +10282,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_stock_movements_item_location": {
           "name": "ix_stock_movements_item_location",
@@ -9672,9 +10303,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_stock_movements_location": {
           "name": "ix_stock_movements_location",
@@ -9687,9 +10318,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_stock_movements_source": {
           "name": "ix_stock_movements_source",
@@ -9708,86 +10339,86 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "stock_movements_item_id_items_id_fk": {
           "name": "stock_movements_item_id_items_id_fk",
           "tableFrom": "stock_movements",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "stock_movements_location_id_locations_id_fk": {
           "name": "stock_movements_location_id_locations_id_fk",
           "tableFrom": "stock_movements",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "fk_stock_movements_fy_start": {
           "name": "fk_stock_movements_fy_start",
           "tableFrom": "stock_movements",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "fy_start"
           ],
-          "tableTo": "financial_years",
-          "schemaTo": "radcore",
           "columnsTo": [
             "start"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_stock_movements_reverses": {
           "name": "fk_stock_movements_reverses",
           "tableFrom": "stock_movements",
+          "tableTo": "stock_movements",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "reverses_movement_id"
           ],
-          "tableTo": "stock_movements",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ux_stock_movements_id_item": {
           "name": "ux_stock_movements_id_item",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "item_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_stock_movements_id_direction": {
           "name": "ux_stock_movements_id_direction",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "direction"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -9884,39 +10515,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "stock_positions_item_id_items_id_fk": {
           "name": "stock_positions_item_id_items_id_fk",
           "tableFrom": "stock_positions",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "stock_positions_location_id_locations_id_fk": {
           "name": "stock_positions_location_id_locations_id_fk",
           "tableFrom": "stock_positions",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -10060,8 +10691,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)"
+            "as": "make_date(extract(year from business_date)::int - (extract(month from business_date) < 4)::int, 4, 1)",
+            "type": "stored"
           }
         },
         "out_movement_id": {
@@ -10076,8 +10707,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "'out'"
+            "as": "'out'",
+            "type": "stored"
           }
         },
         "in_movement_id": {
@@ -10092,8 +10723,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "'in'"
+            "as": "'in'",
+            "type": "stored"
           }
         },
         "location_id": {
@@ -10185,9 +10816,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_unit_events_out": {
           "name": "ix_unit_events_out",
@@ -10206,9 +10837,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_unit_events_in": {
           "name": "ix_unit_events_in",
@@ -10227,9 +10858,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_unit_events_batch": {
           "name": "ix_unit_events_batch",
@@ -10248,9 +10879,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_unit_events_location": {
           "name": "ix_unit_events_location",
@@ -10263,9 +10894,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_unit_events_fy_start": {
           "name": "ix_unit_events_fy_start",
@@ -10278,9 +10909,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_unit_events_item": {
           "name": "ix_unit_events_item",
@@ -10293,9 +10924,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_unit_events_source": {
           "name": "ix_unit_events_source",
@@ -10314,117 +10945,117 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "unit_events_item_id_items_id_fk": {
           "name": "unit_events_item_id_items_id_fk",
           "tableFrom": "unit_events",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "unit_events_location_id_locations_id_fk": {
           "name": "unit_events_location_id_locations_id_fk",
           "tableFrom": "unit_events",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "fk_unit_events_unit": {
           "name": "fk_unit_events_unit",
           "tableFrom": "unit_events",
+          "tableTo": "units",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "unit_id",
             "item_id"
           ],
-          "tableTo": "units",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "item_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_unit_events_out": {
           "name": "fk_unit_events_out",
           "tableFrom": "unit_events",
+          "tableTo": "stock_movements",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "out_movement_id",
             "out_direction"
           ],
-          "tableTo": "stock_movements",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "direction"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_unit_events_in": {
           "name": "fk_unit_events_in",
           "tableFrom": "unit_events",
+          "tableTo": "stock_movements",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "in_movement_id",
             "in_direction"
           ],
-          "tableTo": "stock_movements",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "direction"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_unit_events_batch": {
           "name": "fk_unit_events_batch",
           "tableFrom": "unit_events",
+          "tableTo": "batches",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "batch_id",
             "item_id"
           ],
-          "tableTo": "batches",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "item_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "fk_unit_events_fy_start": {
           "name": "fk_unit_events_fy_start",
           "tableFrom": "unit_events",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "fy_start"
           ],
-          "tableTo": "financial_years",
-          "schemaTo": "radcore",
           "columnsTo": [
             "start"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10499,8 +11130,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "upper(regexp_replace(serial_no, '[[:space:]]', '', 'g'))"
+            "as": "upper(regexp_replace(serial_no, '[[:space:]]', '', 'g'))",
+            "type": "stored"
           }
         },
         "ownership": {
@@ -10551,8 +11182,8 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "type": "stored",
-            "as": "upper(regexp_replace(chassis_no, '[[:space:]-]', '', 'g'))"
+            "as": "upper(regexp_replace(chassis_no, '[[:space:]-]', '', 'g'))",
+            "type": "stored"
           }
         },
         "created_at": {
@@ -10596,9 +11227,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_units_batch": {
           "name": "ix_units_batch",
@@ -10617,9 +11248,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_units_location": {
           "name": "ix_units_location",
@@ -10632,74 +11263,74 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "units_item_id_items_id_fk": {
           "name": "units_item_id_items_id_fk",
           "tableFrom": "units",
+          "tableTo": "items",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
           ],
-          "tableTo": "items",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "units_location_id_locations_id_fk": {
           "name": "units_location_id_locations_id_fk",
           "tableFrom": "units",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "fk_units_batch": {
           "name": "fk_units_batch",
           "tableFrom": "units",
+          "tableTo": "batches",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "batch_id",
             "item_id"
           ],
-          "tableTo": "batches",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id",
             "item_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ux_units_item_serial": {
           "name": "ux_units_item_serial",
+          "nullsNotDistinct": false,
           "columns": [
             "item_id",
             "serial_key"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "ux_units_id_item": {
           "name": "ux_units_id_item",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "item_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -10887,9 +11518,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_pending_sign_ins_user_id": {
           "name": "ix_pending_sign_ins_user_id",
@@ -10902,25 +11533,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "pending_sign_ins_user_id_users_id_fk": {
           "name": "pending_sign_ins_user_id_users_id_fk",
           "tableFrom": "pending_sign_ins",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -11004,25 +11635,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "recovery_codes_user_id_users_id_fk": {
           "name": "recovery_codes_user_id_users_id_fk",
           "tableFrom": "recovery_codes",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -11113,25 +11744,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "second_factors_user_id_users_id_fk": {
           "name": "second_factors_user_id_users_id_fk",
           "tableFrom": "second_factors",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -11241,9 +11872,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "ix_sessions_user_id": {
           "name": "ix_sessions_user_id",
@@ -11256,25 +11887,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sessions_user_id_users_id_fk": {
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -11322,8 +11953,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "coalesce(last_sign_in_at, timestamptz 'epoch')"
+            "as": "coalesce(last_sign_in_at, timestamptz 'epoch')",
+            "type": "stored"
           }
         },
         "created_at": {
@@ -11373,25 +12004,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "user_sign_ins_user_id_users_id_fk": {
           "name": "user_sign_ins_user_id_users_id_fk",
           "tableFrom": "user_sign_ins",
+          "tableTo": "users",
+          "schemaTo": "radcore",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "users",
-          "schemaTo": "radcore",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -11405,10 +12036,11 @@
   "schemas": {
     "radcore": "radcore"
   },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
   "views": {
     "radcore.v_schema_audit_columns": {
-      "name": "v_schema_audit_columns",
-      "schema": "radcore",
       "columns": {
         "tableName": {
           "name": "tableName",
@@ -11430,12 +12062,12 @@
         }
       },
       "definition": "with audited as (\n    select c.oid, c.relname,\n      string_to_array(split_part(encode(g.tgargs, 'escape'), '\\000',1), ',') as keys,\n      string_to_array(nullif(split_part(encode(g.tgargs, 'escape'), '\\000',2), ''), ',') as keep,\n      string_to_array(nullif(split_part(encode(g.tgargs, 'escape'), '\\000',3), ''), ',') as redact\n    from pg_catalog.pg_trigger g\n    join pg_catalog.pg_class c on c.oid = g.tgrelid\n    join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n    where g.tgname = 'audit_row' and not g.tgisinternal and n.nspname = 'radcore'\n  ), columns as (\n    select t.relname, a.attname,\n      a.attname = any (coalesce(t.keep, '{}')) as kept, a.attname = any (coalesce(t.redact, '{}')) as redacted,\n      a.attname ~ '(hash|secret|token|ciphertext|password)' and a.atttypid not in ('timestamptz'::regtype,\n        'timestamp'::regtype, 'date'::regtype, 'bool'::regtype, 'int4'::regtype, 'int8'::regtype, 'numeric'::regtype) as secret_like,\n      a.attname = any (t.keys || array['created_at', 'created_by', 'updated_at', 'updated_by']) as exempt\n    from audited t\n    join pg_catalog.pg_attribute a on a.attrelid = t.oid and a.attnum > 0 and not a.attisdropped\n  )\n  select relname::text as table_name, attname::text as column_name, 'unlisted' as problem from columns\n    where not exempt and not kept and not redacted\n  union all\n  select relname::text, attname::text, 'kept and redacted' from columns where kept and redacted\n  union all\n  select relname::text, attname::text, 'a secret not redacted' from columns\n    where secret_like and not redacted",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_schema_audit_columns",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_audited_tables": {
-      "name": "v_audited_tables",
-      "schema": "radcore",
       "columns": {
         "tableName": {
           "name": "tableName",
@@ -11445,12 +12077,12 @@
         }
       },
       "definition": "select c.relname::text as table_name\n    from pg_catalog.pg_trigger g\n    join pg_catalog.pg_class c on c.oid = g.tgrelid\n    join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n    where g.tgname = 'audit_row' and not g.tgisinternal and n.nspname = 'radcore'",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_audited_tables",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_batch_on_hand": {
-      "name": "v_batch_on_hand",
-      "schema": "radcore",
       "columns": {
         "itemId": {
           "name": "itemId",
@@ -11478,12 +12110,12 @@
         }
       },
       "definition": "select m.item_id, m.location_id, b.batch_id,\n    sum(case m.direction when 'in' then b.qty else -b.qty end) as qty\n  from radcore.stock_movement_batches b\n  join radcore.stock_movements m on m.id = b.movement_id and m.item_id = b.item_id\n  group by m.item_id, m.location_id, b.batch_id",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_batch_on_hand",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_document_paid": {
-      "name": "v_document_paid",
-      "schema": "radcore",
       "columns": {
         "documentTable": {
           "name": "documentTable",
@@ -11517,12 +12149,12 @@
         }
       },
       "definition": "select document_table, document_id, sum(allocated) as allocated, sum(credited) as credited,\n    sum(allocated + credited) as paid\n  from (select a.document_table, a.document_id, case a.direction when 'apply' then a.amount else -a.amount end as allocated,\n      0::numeric as credited\n    from radcore.payment_allocations a\n    union all\n    select c.document_table, c.document_id, 0::numeric, case c.direction when 'apply' then c.amount else -c.amount end\n    from radcore.credit_applications c) as m\n  group by document_table, document_id",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_document_paid",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_schema_enums": {
-      "name": "v_schema_enums",
-      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -11538,12 +12170,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, t.typname::text as type_name\n  from pg_catalog.pg_type t\n  join pg_catalog.pg_namespace n on n.oid = t.typnamespace\n  where t.typtype = 'e'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_schema_enums",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_schema_fk_without_index": {
-      "name": "v_schema_fk_without_index",
-      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -11565,12 +12197,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, k.conname::text as constraint_name\n  from pg_catalog.pg_constraint k\n  join pg_catalog.pg_class c on c.oid = k.conrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where k.contype = 'f'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_index i\n      where i.indrelid = k.conrelid\n        and array_to_string((i.indkey::int2[])[0:cardinality(k.conkey) - 1], ',') = array_to_string(k.conkey, ','))",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_schema_fk_without_index",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_schema_missing_audit": {
-      "name": "v_schema_missing_audit",
-      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -11586,12 +12218,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and (select count(*) from pg_catalog.pg_attribute a\n      where a.attrelid = c.oid and not a.attisdropped\n        and a.attname in ('created_at', 'created_by', 'updated_at', 'updated_by')) < 4",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_schema_missing_audit",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_schema_missing_triggers": {
-      "name": "v_schema_missing_triggers",
-      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -11613,12 +12245,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, t.name::text as missing\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  cross join (values ('stamp_who_when'), ('audit_row')) as t(name)\n  where c.relkind in ('r', 'p') and not c.relispartition\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'radcore_ext', 'ratelimit')\n    and left(n.nspname, 3) <> 'pg_'\n    and not (t.name = 'audit_row' and n.nspname = 'radcore'\n      and c.relname in ('audit_log', 'access_log', 'event_log', 'saved_once', 'jobs_outbox', 'webhook_deliveries', 'sessions',\n        'change_reasons', 'user_sign_ins', 'number_counters', 'pending_document_checks', 'stock_positions', 'notifications'))\n    and not exists (select 1 from pg_catalog.pg_trigger g\n      where g.tgrelid = c.oid and g.tgname = t.name and not g.tgisinternal)",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_schema_missing_triggers",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_schema_numeric_without_check": {
-      "name": "v_schema_numeric_without_check",
-      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -11640,12 +12272,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, a.attname::text as column_name\n  from pg_catalog.pg_attribute a\n  join pg_catalog.pg_class c on c.oid = a.attrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p') and not c.relispartition and a.attnum > 0 and not a.attisdropped\n    and a.atttypid = 'pg_catalog.numeric'::pg_catalog.regtype\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_constraint k\n      where k.conrelid = c.oid and k.contype = 'c' and k.conname = 'ck_' || c.relname || '_' || a.attname)",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_schema_numeric_without_check",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     },
     "radcore.v_schema_public_relations": {
-      "name": "v_schema_public_relations",
-      "schema": "radcore",
       "columns": {
         "schemaName": {
           "name": "schemaName",
@@ -11661,13 +12293,12 @@
         }
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name\n  from pg_catalog.pg_class c\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where c.relkind in ('r', 'p', 'v', 'm') and n.nspname = 'public'",
-      "materialized": false,
-      "isExisting": false
+      "name": "v_schema_public_relations",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
     }
   },
-  "sequences": {},
-  "roles": {},
-  "policies": {},
   "_meta": {
     "columns": {},
     "schemas": {},

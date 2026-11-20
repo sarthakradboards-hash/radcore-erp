@@ -205,6 +205,21 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Leads (RAD-106): capture by hand or at the counter, and one lead.
   'POST /leads': 'leads:write',
   'GET /leads/:id': 'leads:read',
+  // The pipeline (RAD-109).
+  'GET /leads': 'leads:read',
+  'GET /lead-lists': 'leads:read',
+  'POST /lead-lists/lost-reasons': 'leads:setup',
+  'PUT /lead-lists/lost-reasons/:id': 'leads:setup',
+  'POST /lead-lists/plans': 'leads:setup',
+  'PUT /lead-lists/plans/:id': 'leads:setup',
+  'POST /lead-lists/quick-replies': 'leads:setup',
+  'PUT /lead-lists/quick-replies/:id': 'leads:setup',
+  'PATCH /leads/:id': 'leads:write',
+  'POST /leads/:id/stage': 'leads:write',
+  'POST /leads/:id/follow-up': 'leads:write',
+  'POST /leads/:id/plan': 'leads:write',
+  'POST /leads/:id/quick-reply': 'leads:write',
+  'POST /leads/:id/owner': 'leads:write',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -219,6 +234,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'platform.password-reset-email': 'system password-reset []',
   'platform.invite-email': 'system invites []',
   'platform.export': 'user <by input>',
+  'crm.follow-ups-due': 'system follow-ups-due [leads:read]',
 };
 
 /** Which libraries each route's and job's own code reaches (RAD-84, M1-19, RC-153), keyed as above: the library of the
@@ -417,6 +433,20 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Leads' routes reach lib-crm and, through it, lib-platform (notifications).
   'POST /leads': CRM,
   'GET /leads/:id': CRM,
+  'GET /leads': CRM,
+  'GET /lead-lists': CRM,
+  'POST /lead-lists/lost-reasons': CRM,
+  'PUT /lead-lists/lost-reasons/:id': CRM,
+  'POST /lead-lists/plans': CRM,
+  'PUT /lead-lists/plans/:id': CRM,
+  'POST /lead-lists/quick-replies': CRM,
+  'PUT /lead-lists/quick-replies/:id': CRM,
+  'PATCH /leads/:id': CRM,
+  'POST /leads/:id/stage': CRM,
+  'POST /leads/:id/follow-up': CRM,
+  'POST /leads/:id/plan': CRM,
+  'POST /leads/:id/quick-reply': CRM,
+  'POST /leads/:id/owner': CRM,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,
@@ -428,4 +458,5 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // The export job runs every export, the masters workbook's sheets from lib-stock and lib-hr among them (RAD-92).
   // lib-stock's entry holds its stock engine too, which posts revaluations through lib-accounts (RAD-93).
   'platform.export': ['lib-accounts', 'lib-hr', 'lib-platform', 'lib-stock'],
+  'crm.follow-ups-due': CRM,
 };
