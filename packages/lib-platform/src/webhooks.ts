@@ -18,8 +18,13 @@ export type WebhookCheck = { valid: false } | { valid: true; deliveryId: string 
 /** The provider's signature check over the raw bytes, with the request's headers (lib-integrations supplies it), and
  * the hook's stored secret, read by the lane for each request (null when none is stored, which should refuse). */
 export type WebhookVerifier = (raw: Buffer, header: (name: string) => string | undefined, secret: string | null) => WebhookCheck;
-/** A provider's GET subscription handshake (Meta, WhatsApp): its answer when the stored token matches, else null. */
-export type WebhookHandshake = { secret: string; answer: (query: (name: string) => string | undefined, token: string | null) => string | null };
+/** A provider's GET subscription handshake (Meta, WhatsApp): its answer when the stored token matches, else null.
+ * `asks` says whether the query is a handshake at all, so one that isn't is refused before the token is read. */
+export type WebhookHandshake = { secret: string; asks: (query: (name: string) => string | undefined) => boolean;
+  answer: (query: (name: string) => string | undefined, token: string | null) => string | null };
+/** Whether a delivery could pass at all, judged without its secret (a signature header of the right shape, say), so a
+ * request that couldn't costs no secret read and no KMS decrypt (auditor-2 on #274). */
+export type WebhookPrecheck = (raw: Buffer, header: (name: string) => string | undefined) => boolean;
 
 /** The input every webhook job takes: the stored delivery's id only, so its payload has one copy (auditor-2). */
 export const webhookDelivery = z.strictObject({ id: z.uuid() });
@@ -29,11 +34,11 @@ export type WebhookDelivery = { id: string; source: string; deliveryId: string; 
 
 export type Webhook = Readonly<{ contract: Contract; source: string; verify: WebhookVerifier; job: JobContract<{ id: string }>;
   /** The stored secret (`secrets.name`) the verifier checks with, read for each request so a rotated one applies at once. */
-  secret?: string; handshake?: WebhookHandshake }>;
+  secret?: string; precheck?: WebhookPrecheck; handshake?: WebhookHandshake }>;
 
 /** A webhook route: its contract (a POST with `auth: 'webhook'`), the provider's check, and the job that acts on it. */
 export function defineWebhook(contract: Contract, verify: WebhookVerifier, job: JobContract<{ id: string }>,
-  stored: { secret?: string; handshake?: WebhookHandshake } = {}): Webhook {
+  stored: { secret?: string; precheck?: WebhookPrecheck; handshake?: WebhookHandshake } = {}): Webhook {
   const source = `${contract.method} ${contract.path}`;
   if (contract.auth !== 'webhook' || contract.method !== 'POST') throw new TypeError(`${source}: a webhook is a POST with auth: 'webhook'`);
   // ADR-001 §6a: a webhook's work runs as a named system principal with only its listed permissions.

@@ -188,9 +188,13 @@ describe.skipIf(!url || !superUrl)('lead doors', { timeout: 30_000 }, () => {
       expect((await post('/hooks/meta-leads', body, { 'x-hub-signature-256': sig('another-secret') })).status).toBe(401);
     });
 
-    it('refuses every delivery while a secret isn’t stored, and alerts with that secret’s key', async () => {
-      const res = await post('/hooks/whatsapp', fixture('whatsapp-messages.json'), { 'x-hub-signature-256': 'sha256=00' });
-      expect(res.status).toBe(401);
+    it('refuses what couldn’t pass before reading any secret, and alerts when a secret isn’t stored', async () => {
+      const payload = fixture('whatsapp-messages.json');
+      // No signature of the right shape: refused before the secret is read, so nothing alerts.
+      expect((await post('/hooks/whatsapp', payload, { 'x-hub-signature-256': 'sha256=00' })).status).toBe(401);
+      expect(alert.mock.calls.filter(([, key]) => key === 'webhook secret crm.whatsapp_app_secret')).toEqual([]);
+      // One that could pass reads the secret, which isn't stored: refused, with an alert under the secret's own key.
+      expect((await post('/hooks/whatsapp', payload, { 'x-hub-signature-256': `sha256=${'0'.repeat(64)}` })).status).toBe(401);
       expect(alert).toHaveBeenCalledWith(expect.stringContaining('no crm.whatsapp_app_secret is stored'), 'webhook secret crm.whatsapp_app_secret');
     });
 

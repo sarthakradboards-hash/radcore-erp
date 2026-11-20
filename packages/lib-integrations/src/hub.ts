@@ -10,6 +10,14 @@ export function sameSecret(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+/** Whether a delivery carries a signature of the right shape at all: the check before the app secret is read. */
+export const hubSigned = (_raw: Buffer, header: (name: string) => string | undefined): boolean =>
+  /^sha256=[0-9a-f]{64}$/.test(header('x-hub-signature-256') ?? '');
+
+/** Whether the query is a subscription handshake at all: the check before the verify token is read. */
+export const hubAsks = (query: (name: string) => string | undefined): boolean =>
+  query('hub.mode') === 'subscribe' && query('hub.challenge') !== undefined && query('hub.verify_token') !== undefined;
+
 /** Checks `sha256=<hex>` against the HMAC of the raw bytes. These providers send no delivery id we can trust in a
  * header, so the intake keys the delivery on its body. A missing secret refuses every delivery. */
 export function hubSignature(raw: Buffer, header: (name: string) => string | undefined, secret: string | null): WebhookCheck {

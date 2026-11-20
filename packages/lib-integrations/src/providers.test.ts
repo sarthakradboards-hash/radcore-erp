@@ -4,10 +4,10 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Outbound } from '@radcore/lib-platform';
 import { describe, expect, it } from 'vitest';
-import { googleLeadCheck, parseGoogleLead } from './google.ts';
-import { hubChallenge, hubSignature, sameSecret } from './hub.ts';
+import { googleKeyed, googleLeadCheck, parseGoogleLead } from './google.ts';
+import { hubAsks, hubChallenge, hubSignature, hubSigned, sameSecret } from './hub.ts';
 import { leadgenNotices, parseMetaLead } from './meta.ts';
-import { TURNSTILE_ORIGIN, turnstilePasses } from './turnstile.ts';
+import { TURNSTILE_ORIGIN, TURNSTILE_TEST_SECRETS, turnstilePasses, turnstileSecretFor } from './turnstile.ts';
 import { whatsappMessages } from './whatsapp.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8');
@@ -28,6 +28,16 @@ describe('the shared proof', () => {
     expect(hubSignature(raw, headers({}), 'app-secret')).toEqual({ valid: false });
     expect(hubSignature(raw, headers({ 'x-hub-signature-256': signed.replace('sha256=', 'sha1=') }), 'app-secret')).toEqual({ valid: false });
     expect(hubSignature(raw, headers({ 'x-hub-signature-256': signed }), null)).toEqual({ valid: false });
+  });
+
+  it('refuses before any secret is read what couldn’t pass: no signature of the right shape, or no handshake', () => {
+    const raw = Buffer.from('{}');
+    expect([hubSigned(raw, headers({ 'x-hub-signature-256': `sha256=${'a'.repeat(64)}` })), hubSigned(raw, headers({})),
+      hubSigned(raw, headers({ 'x-hub-signature-256': 'sha256=00' })), hubSigned(raw, headers({ 'x-hub-signature-256': `sha1=${'a'.repeat(40)}` }))])
+      .toEqual([true, false, false, false]);
+    const q = (h: Record<string, string>) => (name: string) => h[name];
+    expect([hubAsks(q({ 'hub.mode': 'subscribe', 'hub.verify_token': 't', 'hub.challenge': '1' })), hubAsks(q({ 'hub.mode': 'subscribe' })),
+      hubAsks(q({ 'hub.verify_token': 't', 'hub.challenge': '1' }))]).toEqual([true, false, false]);
   });
 
   it('answers the subscription handshake only with the stored verify token', () => {
@@ -51,6 +61,9 @@ describe('Google lead forms', () => {
     expect(googleLeadCheck(raw, headers({}), null)).toEqual({ valid: false });
     expect(googleLeadCheck(raw, headers({}), '')).toEqual({ valid: false });
     expect(googleLeadCheck(Buffer.from('not json'), headers({}), 'a-key-set-on-the-form')).toEqual({ valid: false });
+    // Before the stored key is read: a lead with a key at all.
+    expect([googleKeyed(raw), googleKeyed(Buffer.from('not json')),
+      googleKeyed(Buffer.from(JSON.stringify({ lead_id: 'x', google_key: '', user_column_data: [] })))]).toEqual([true, false, false]);
   });
 
   it('reads the answers by Google’s column ids', () => {
@@ -98,6 +111,13 @@ describe('Turnstile', () => {
     const { outbound, sent } = answering(200, '{"success":true,"error-codes":[]}');
     expect(await turnstilePasses(outbound, 'the-secret', 'the-token')).toBe(true);
     expect(sent).toEqual([{ url: `${TURNSTILE_ORIGIN}/turnstile/v0/siteverify`, body: 'secret=the-secret&response=the-token' }]);
+  });
+
+  it('uses a test secret only in development, CI and the review copy, which fails closed, and nowhere else', () => {
+    expect([turnstileSecretFor('production', 'real'), turnstileSecretFor('development', null), turnstileSecretFor('ci', null),
+      turnstileSecretFor('review', null)]).toEqual(['real', TURNSTILE_TEST_SECRETS.passes, TURNSTILE_TEST_SECRETS.passes,
+      TURNSTILE_TEST_SECRETS.fails]);
+    for (const env of ['staging', 'production', 'anything']) expect(() => turnstileSecretFor(env, null)).toThrow(/TURNSTILE_SECRET is required/);
   });
 
   it('refuses a failed token, an error status and an unreadable answer', async () => {

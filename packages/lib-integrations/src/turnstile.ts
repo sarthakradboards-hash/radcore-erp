@@ -8,8 +8,21 @@ export const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
 const SITEVERIFY = `${TURNSTILE_ORIGIN}/turnstile/v0/siteverify`;
 const ANSWER = z.object({ success: z.boolean() });
 
-/** Turnstile's published test secret keys, for development and CI only: one always passes, one always fails. */
+/** Turnstile's published test secret keys (turnstileSecretFor picks one where no real secret is set): one always passes, one always fails. */
 export const TURNSTILE_TEST_SECRETS = { passes: '1x0000000000000000000000000000000AA', fails: '2x0000000000000000000000000000000AA' } as const;
+
+/**
+ * The secret the api checks with: TURNSTILE_SECRET wherever it's set. Without it, development and CI use the
+ * always-passing test secret, the review copy the always-failing one (its form refuses every enquiry rather than
+ * taking any), and anywhere else is refused at start, so no config change can make the captcha always pass
+ * (auditor-2 on #274).
+ */
+export function turnstileSecretFor(appEnv: string, configured: string | null): string {
+  if (configured !== null) return configured;
+  if (appEnv === 'development' || appEnv === 'ci') return TURNSTILE_TEST_SECRETS.passes;
+  if (appEnv === 'review') return TURNSTILE_TEST_SECRETS.fails;
+  throw new Error(`TURNSTILE_SECRET is required in ${appEnv}`);
+}
 
 /** Whether Cloudflare accepts the token. An unreadable answer, or any status but 200, is a refusal (fail closed). */
 export async function turnstilePasses(outbound: Outbound, secret: string, token: string): Promise<boolean> {

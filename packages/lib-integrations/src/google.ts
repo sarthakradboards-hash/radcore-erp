@@ -18,6 +18,12 @@ const parse = (raw: Buffer | string) => {
   }
 };
 
+/** Whether a delivery is a well-formed lead with a key at all: the check before the stored key is read. */
+export const googleKeyed = (raw: Buffer): boolean => {
+  const lead = parse(raw);
+  return lead.success && lead.data.google_key !== '';
+};
+
 /** The delivery's proof: a well-formed lead whose `google_key` is the stored one. The lead's own id keys it. */
 export function googleLeadCheck(raw: Buffer, _header: (name: string) => string | undefined, key: string | null): WebhookCheck {
   const lead = parse(raw);

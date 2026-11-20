@@ -1,8 +1,9 @@
 // Webhooks' own lane (ADR-001 §6, §8a; RAD-45): a signature is over the raw bytes, so these routes keep the body as
 // received, skip the browser's guards (no session, no Origin, no Idempotency-Key: the provider's delivery id does that
 // job), and answer as soon as the delivery is stored. The work runs from the queue (lib-platform's webhooks.ts).
-// Each request is limited per client address first (RAD-39's `provider-hook` class, RAD-107), then its hook's stored
-// secret is read, outside any write, so a rotated secret applies at once, and only then is the signature checked.
+// Each request is limited per client address first (RAD-39's `provider-hook` class, RAD-107), then refused if it
+// couldn't pass anyway (the hook's precheck, no secret needed), and only then is its hook's stored secret read, outside
+// any write, so a rotated secret applies at once, and the signature checked.
 // A hook with a handshake also answers the provider's GET subscription check on the same path.
 import { randomUUID } from 'node:crypto';
 import type { Principal, RequestGuards, Secrets, Webhook } from '@radcore/lib-platform';
@@ -48,6 +49,10 @@ export function mountWebhooks(app: Express, hooks: readonly Webhook[], deps: { d
             return;
           }
           const query = (name: string) => (typeof req.query[name] === 'string' ? req.query[name] : undefined);
+          if (!handshake.asks(query)) {
+            res.status(403).end();
+            return;
+          }
           const answer = handshake.answer(query, await secretOf(handshake.secret, `GET ${hook.contract.path}`));
           if (answer === null) res.status(403).end();
           else res.status(200).type('text/plain').send(answer);
@@ -69,7 +74,9 @@ export function mountWebhooks(app: Express, hooks: readonly Webhook[], deps: { d
           return;
         }
         const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-        const check = hook.verify(raw, (name) => req.get(name), await secretOf(hook.secret, hook.source));
+        const header = (name: string) => req.get(name);
+        const check = hook.precheck !== undefined && !hook.precheck(raw, header) ? { valid: false as const }
+          : hook.verify(raw, header, await secretOf(hook.secret, hook.source));
         // Refused before anything is stored: a forged or altered delivery leaves no trace but this answer.
         if (!check.valid) {
           answer(res, 401, 'signed_out', 'The signature does not match', requestId);
