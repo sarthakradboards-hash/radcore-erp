@@ -58,8 +58,10 @@ describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
   });
 
   it('lets an owner give a role sales:override, and take it away again', async () => {
-    const { rows: [user] } = await su.query<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash,
-      password_set_at, role) values ($1, 'Owner', 'active', '$argon2id$v=19$m=19456,t=2,p=1$x$y', now(), 'owner') returning id`,
+    // As a named system principal, as every write needs one (RA005).
+    const { rows: [user] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+      insert into radcore.users (email, display_name, status, password_hash, password_set_at, role)
+      select $1, 'Owner', 'active', '$argon2id$v=19$m=19456,t=2,p=1$x$y', now(), 'owner' from p returning id`,
     [`owner.${randomBytes(3).toString('hex')}@example.in`]);
     const owner = (await runInTransaction(db, WRITE, SYSTEM, randomUUID(), (ctx) => principalFor(ctx, user?.id ?? ''))) ?? SYSTEM;
     const seen = { granted: false, revoked: true };
