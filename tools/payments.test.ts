@@ -156,7 +156,7 @@ describe.skipIf(!url || !superUrl)('receipts, payments and refunds', { timeout: 
     expect(await through(plain.id, booking)).toBe('refund_through_owner');
   });
 
-  it('counts a held receipt’s refunds waiting for approval as gone from what’s left, until refused (the architect on RAD-117)', async () => {
+  it('counts a held receipt’s refunds waiting for approval as gone, until refused; approved, one posts within the cap (RAD-117)', async () => {
     const c = await su.connect();
     let ownerId = '';
     try {
@@ -184,6 +184,17 @@ describe.skipIf(!url || !superUrl)('receipts, payments and refunds', { timeout: 
     const owner: Principal = { kind: 'user', userId: ownerId, permissions: ['payments:approve'] };
     await as(owner)((ctx) => decideApproval(ctx, cashLimitSpec, request?.id ?? '', { decision: 'reject', reason: 'Pay it by bank' }));
     expect(await left()).toBe('20000.00');
+    // Approved, it posts with no owner asked again (the earmark is frozen), what's left stays, and the cap still holds.
+    const again = await run(async (ctx) => refundHeld(ctx, { receiptId: advance.id, owner: booking, partyId: p, businessDate: DAY,
+      amount: m('12000.00'), accountId: await systemId('cash') }));
+    expect(await left()).toBe('8000.00');
+    const [second] = (await su.query<{ id: string; version_digest: string }>(
+      "select id, version_digest from radcore.approvals where kind = 'cash-limit' and record_id = $1", [again.id])).rows;
+    await as(owner)((ctx) => decideApproval(ctx, cashLimitSpec, second?.id ?? '', { decision: 'approve', versionHash: second?.version_digest ?? '' }));
+    expect(await paymentRow(again.id)).toMatchObject({ status: 'posted', number: expect.stringMatching(/^PV\//) });
+    expect(await left()).toBe('8000.00');
+    expect(await code(run(async (ctx) => refundHeld(ctx, { receiptId: advance.id, owner: booking, partyId: p, businessDate: DAY,
+      amount: m('8000.01'), accountId: await systemId('bank') })))).toBe('exceeds_receipt');
   });
 
   it('refuses TDS on a refund, TDS of the whole amount, a date after today, and a year never opened', async () => {
