@@ -17,6 +17,7 @@ import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog, MESSAGES } from '../../shared.tsx';
 import { editPartySchema, kindsText, PartyFields } from '../party-fields.tsx';
+import { PartyPriceList } from './price-list.tsx';
 
 const credit = setPartyCredit.input.shape;
 // Empty boxes are "no credit" (the contract's null); days are typed as text and sent as a whole number.
@@ -71,6 +72,8 @@ export default function PartyPage() {
         <dt>{t('admin.parties.creditLimit')}</dt><dd>{p.creditLimit === null ? t('admin.parties.noCredit') : formatMoney(p.creditLimit)}</dd>
         <dt>{t('admin.locations.col.status')}</dt><dd>{t(p.active ? 'admin.locations.active' : 'admin.locations.inactive')}</dd>
       </dl>
+
+      <PartyPriceList partyId={p.id} partyName={p.name} />
 
       {mayWrite ? (
         <>
