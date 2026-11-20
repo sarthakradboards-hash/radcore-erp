@@ -11,6 +11,7 @@ import {
   getInvoiceById, invoiceOverride, listInvoicesPage, postInvoiceNow,
   cancelInvoiceNow,
   cancelDeliveryNow, cancelDeliveryReturnNow,
+  orderCounts, quoteCounts,
 } from '@radcore/lib-sales';
 import {
   createPriceList, getPrice, getPriceList, getPriceListChanges, getPriceListVersion, listDiscountLimits, listPriceListRates, listPriceLists, priceListApproval as
@@ -23,6 +24,7 @@ import {
   requestInvoiceOverride, updateInvoice,
   getPartyPriceList, setPartyPriceList,
   cancelInvoice,
+  countOrders, countQuotes,
   cancelDelivery, cancelDeliveryReturn,
 } from '@radcore/lib-sales/contract';
 
@@ -45,6 +47,7 @@ export default [
   defineRoute(getPartyPriceList, getPartyList),
   defineRoute(setPartyPriceList, setPartyList),
   defineRoute(listQuotes, listQuotesPage),
+  defineRoute(countQuotes, quoteCounts),
   defineRoute(getQuote, getQuoteById),
   defineRoute(createQuote, addQuote),
   defineRoute(updateQuote, changeQuote),
@@ -53,6 +56,7 @@ export default [
   defineRoute(acceptQuote, acceptQuoteNow),
   defineRoute(closeQuote, closeQuoteNow),
   defineRoute(listOrders, listOrdersPage),
+  defineRoute(countOrders, orderCounts),
   defineRoute(getOrder, getOrderById),
   defineRoute(createOrder, addOrder),
   defineRoute(updateOrder, changeOrder),
