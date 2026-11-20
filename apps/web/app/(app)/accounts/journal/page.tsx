@@ -14,6 +14,7 @@ import { useApiList } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { ChoiceButtons } from '../../admin/shared.tsx';
 import { kindText, postedBy, type Entry } from '../shared.tsx';
+import { PrefixNote } from './prefix-note.tsx';
 
 // Empty boxes mean no bound; a range must run forwards.
 const day = z.string().trim().refine((s) => s === '' || /^\d{4}-\d{2}-\d{2}$/.test(s), t('books.journal.err.date'));
@@ -45,6 +46,7 @@ export default function JournalPage() {
     <>
       <h1>{t('books.journal.title')}</h1>
       <p>{t('books.journal.intro')}</p>
+      <PrefixNote />
       <section aria-labelledby="journal-filters" className="admin-toolbar">
         <h2 id="journal-filters" className="visually-hidden">{t('books.journal.filters')}</h2>
         <Form aria-labelledby="journal-filters" schema={filters} defaultValues={applied} saved={false}

@@ -50,6 +50,8 @@ export const books = {
   'books.journal.show': 'Show',
   'books.journal.all': 'All',
   'books.journal.empty': 'No entries match.',
+  'books.journal.prefixNote': 'Entries are numbered {prefix}/… A change to the prefix applies from the next financial year, and is made under',
+  'books.journal.prefixLink': 'Number series',
   'books.journal.number': 'Number',
   'books.journal.date': 'Date',
   'books.journal.kind': 'Kind',
