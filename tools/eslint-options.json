@@ -1,6 +1,11 @@
 {
   "radcore/e7-scope-on-owned-reads": {
-    "tables": ["@radcore/db/sales#salesOrders", "@radcore/db/sales#salesQuotes"]
+    "tables": [
+      "@radcore/db/crm#leadEnquiries",
+      "@radcore/db/crm#leads",
+      "@radcore/db/sales#salesOrders",
+      "@radcore/db/sales#salesQuotes"
+    ]
   },
   "radcore/no-sql": {
     "allowNames": [

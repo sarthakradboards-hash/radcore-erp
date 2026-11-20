@@ -97,13 +97,14 @@ describe('the permission manifest', () => {
 
   it('marks every key a record is seen with as unmasks and all-only, and no other (RAD-90)', async () => {
     const used = (await apiList()).flatMap((r) => seenWithKeys(piiPlan(r.contract.output)));
-    expect(used).toContain('parties:contact');
+    expect(used).toEqual(expect.arrayContaining(['parties:contact', 'leads:contact']));
     expect(unmaskIssues(used, PERMISSIONS)).toEqual([]);
     // A record seen with a key the catalogue doesn't mark is refused, and so is a mark nothing uses.
     expect(unmaskIssues([...used, 'session:read'], PERMISSIONS)).toEqual([
       "session:read: a record is seen with it, but the catalogue doesn't mark it unmasks and all-only"]);
     expect(unmaskIssues(used, PERMISSIONS.map((p) => (p.key === 'parties:contact' ? { ...p, allOnly: false } : p)))).toHaveLength(1);
-    expect(unmaskIssues([], PERMISSIONS)).toEqual(['parties:contact: marked unmasks, but no record is seen with it']);
+    expect(unmaskIssues([], PERMISSIONS)).toEqual(['parties:contact: marked unmasks, but no record is seen with it',
+      'leads:contact: marked unmasks, but no record is seen with it']);
   });
 
   it('names a link route by its action, and catches a public route that also names a key', () => {
