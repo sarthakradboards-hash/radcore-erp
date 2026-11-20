@@ -94,7 +94,7 @@ The database checks the identities that hold whatever rounding rule is used. The
       `check_document` runs every rule that compares its ledgers: its stock movements and its Stock in Hand lines
       agree (ADR-006 §4, RA007), and each movement of a serialised item has as many unit events as its quantity,
       batch by batch (§5, RAD-94).
-  - These raise at `COMMIT`. The generic handler maps codes raised at commit like any other (§9).
+  - These raise at `COMMIT`. A code raised at commit is mapped like any other (§9): by its contract, or as a bug.
 
 ### 3. Keys and indexes (M1-05)
 
@@ -193,17 +193,35 @@ They are append-only with explicit reversals:
     reversal names one;
   - `reverses_id` is unique, so a row is reversed at most once;
   - a generated column `reverses_direction` (`'apply'` when `reverses_id` is set);
-  - a composite foreign key `(reverses_id, document_id, payment_id, amount, reverses_direction)` to a unique key
-    on `(id, document_id, payment_id, amount, direction)`.
+  - a composite foreign key `(reverses_id, document_table, document_id, payment_id, amount, reverses_direction)` to a
+    unique key on `(id, document_table, document_id, payment_id, amount, direction)`.
 
   So a reversal must point at an `apply` row on the same document and payment, for the same amount. A reversal
   of 1,000 against an apply of 10, or one filed against another document, is refused.
-- **When rows may be written.** An apply needs its document to be posted. A posted document moves to cancelled
-  only when its net allocations are zero.
+- **When rows may be written.** An apply needs its document to be posted. A posted document moves to cancelled only
+  when nothing is applied to it or from it: its net allocations, and its net credit applications as a charge or as a
+  credit, are zero (`guard_applied_cancel`, attached before the table is registered).
+- **What a row names.** A row names its document as `(document_table, document_id)`, as a journal entry names its
+  source. The table must be in `allocatable_documents`, which each document's own migration seeds with its side
+  (`receivable` or `payable`) and kind (`charge`, an invoice or bill; `credit`, a credit or debit note). A receipt
+  applies to a receivable charge and a payment to a payable charge; a credit application takes a credit to a charge
+  on the same side; each pair is of one party. A credit application names its credit the same way, `(credit_table,
+  credit_id)`.
+- **What a registered document carries.** `id`, `party_id`, `status`, `business_date` and `total`: the amount it
+  posts to the party's Debtors or Creditors line, gross of GST, cess and TCS, after round-off. A posted document's
+  guard (§7b) freezes it.
+- **Paid** is `v_document_paid`: per document, its net allocations and net credit applications, from these two
+  tables alone. The document's owner subtracts it from its own `total`, so lib-accounts writes and reads no other
+  module's table.
 - **The cap.** A deferred check holds net allocations plus net credit applications at or below the document's
   total.
-  - It **first locks the document row** (`SELECT ... ORDER BY id FOR UPDATE`, so locks are always taken in one
-    order) and only then sums.
+  - It **takes its locks in one order**: the payments and credits it sums against, by id, then the documents, by
+    table and id (a row is only ever one side). A service that writes these rows locks its payments by id before its
+    first insert, then inserts its rows in document order, so the checks lock the documents in order too. A credit is
+    another module's row, so its check locks it, before the charge. A multi-line allocation, or a reversal, can't
+    hold a document while it waits for a payment. Only then does the check sum.
+  - A payment's net allocations stay at or below its amount to the party (gross of TDS held back, F8), and a
+    credit's net applications at or below its total.
   - So two transactions allocating 60 each against an invoice of 100 can't both pass: the second waits for the
     first's commit, sums again, and is refused (`RA006`).
 
@@ -419,6 +437,12 @@ A trigger raises a custom SQLSTATE in the `RA` class. A constraint raises Postgr
 CHECK, `23505` for a unique violation, `23503` for a foreign key, `23502` for a not-null. lib-platform maps
 errors by **SQLSTATE plus constraint name**, never by message text (ADR-001 §6). That's why constraint names stay
 under 63 bytes (§1).
+
+A refusal a person can cause, which no service can say first (an allocation past what's left on another module's
+document, for one), is raised with its constraint's name (`USING CONSTRAINT`), and the route's contract maps that
+SQLSTATE and name to one of its declared codes (`dbErrors`). The handler applies the map wherever the error is
+raised, at the statement or at commit, and answers with the contract's message, never the database's. A code no
+contract maps is a backstop that fired: a bug, answered 500 with an alert.
 
 | Code | Meaning |
 |---|---|
