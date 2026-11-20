@@ -12,4 +12,4 @@ export { stockSheets } from './sheets.ts';
 export {
   postUnitEvents, serialKey, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent, type UnitChange, type UnitOnLine,
 } from './engine/units.ts';
-export { NEGATIVE_STOCK, batchKey, postStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
+export { NEGATIVE_STOCK, batchKey, postStock, reverseStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
