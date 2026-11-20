@@ -4,11 +4,11 @@ export {
 } from './services/books.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
 export {
-  holdPeriod, JOURNAL_SERIES, openFinancialYear, postEntry, postManualJournal, reverseEntry,
+  holdPeriod, JOURNAL_SERIES, openFinancialYear, postEntry, postManualJournal, reverseEntriesOf, reverseEntry,
   type AccountRef, type JournalLine, type NewEntry, type Posted,
 } from './services/journal.ts';
 export {
-  cancelPayment, CASH_PAYMENT_LIMIT, CASH_RECEIPT_LIMIT, cashLimitSpec, DEFAULT_CREDIT_DAYS, heldLeft, PAYMENT_SERIES, RECEIPT_SERIES, recordHeldReceipt, recordPayment, refundHeld,
+  cancelPayment, CASH_PAYMENT_LIMIT, CASH_RECEIPT_LIMIT, cashLimitSpec, DEFAULT_CREDIT_DAYS, heldLeft, PAYMENT_SERIES, RECEIPT_SERIES, recordHeldReceipt, recordPayment, refundCredit, refundHeld,
   type HeldFor,
 } from './services/payments.ts';
 export { partyReceivable } from './services/receivables.ts';

@@ -20,7 +20,8 @@ const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const SYSTEM: Principal = { kind: 'system', name: 'test', permissions: [] };
 // In the catalogue's order.
-const SALES_KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'invoices:cancel', 'sales:override'];
+const SALES_KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'deliveries:cancel', 'invoices:write', 'invoices:cancel', 'credit_notes:cancel',
+  'sales:override'];
 class Rollback extends Error {}
 
 it('declares the sales keys as ordinary catalogue keys, held to no role', () => {
@@ -29,7 +30,7 @@ it('declares the sales keys as ordinary catalogue keys, held to no role', () => 
 });
 
 it('marks sales:override as a key that needs the second factor, and the others not', () => {
-  expect(SALES_KEYS.map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([false, false, false, false, false, true]);
+  expect(SALES_KEYS.map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([false, false, false, false, false, false, false, true]);
 });
 
 describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
@@ -59,7 +60,7 @@ describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
   });
 
   // The sales role starts with none of these keys (the migrations' grants).
-  it.each(['sales:override', 'deliveries:write', 'invoices:write', 'invoices:cancel'])('lets an owner give a role %s, and take it away again', async (key) => {
+  it.each(['sales:override', 'deliveries:write', 'deliveries:cancel', 'invoices:write', 'invoices:cancel', 'credit_notes:cancel'])('lets an owner give a role %s, and take it away again', async (key) => {
     // As a named system principal, as every write needs one (RA005).
     const { rows: [user] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
       insert into radcore.users (email, display_name, status, password_hash, password_set_at, role)

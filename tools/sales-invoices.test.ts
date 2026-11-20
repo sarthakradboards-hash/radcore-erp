@@ -13,7 +13,7 @@ import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addDelivery, addDeliveryReturn, addInvoice, addOrder, confirmOrderNow, getDeliveryById, getInvoiceById, getOrderById, listToInvoicePage,
-  postDeliveryNow, postDeliveryReturnNow, postInvoiceNow, setPartyList,
+  cancelInvoiceNow, postDeliveryNow, postDeliveryReturnNow, postInvoiceNow, setPartyList,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
@@ -26,7 +26,7 @@ const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156); the services bound dates by the real one.
 const DATE = '2026-11-15';
-const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'parties:write', 'parties:manage', 'items:write',
+const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'invoices:cancel', 'parties:write', 'parties:manage', 'items:write',
   'locations:write', 'cost:read', 'gst:write', 'journal:read', 'company:write', 'payments:write', 'prices:approve'];
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
@@ -244,6 +244,41 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
       return [invoice.total, (await paidOf(ctx, 'invoices', [invoice.id])).get(invoice.id)?.paid];
     });
     expect(out).toEqual(['1050.00', '500.00']);
+  });
+
+  // F10 (RAD-114, ADR-007 §6): cancelled on a later day, its entry mirrored on that day, so the cost is back in GDNI and
+  // the delivery is open to invoice again; never twice, and not while a receipt is applied to it (RC-126).
+  it('cancels an invoice with a mirror entry on its day, opening its delivery again', async () => {
+    const at = await setup({ stock: '4', stockRate: '61250', ordered: '1', rate: '80000', delivered: '1' });
+    const later = '2026-11-16';
+    const out = await inBooks(async (ctx) => {
+      const posted = await post(ctx, at, '1');
+      const early = await failure(cancelInvoiceNow(ctx, { id: posted.id, businessDate: '2026-11-14', reason: 'Billed in error' }));
+      await cancelInvoiceNow(ctx, { id: posted.id, businessDate: later, reason: 'Billed in error' });
+      const page = await journalPage(ctx, { limit: 100, filter: { from: later, to: later, kind: 'invoice' } });
+      const mirror = page.items.find((e) => e.source.id === posted.id);
+      const lines = mirror === undefined ? [] : (await journalEntryById(ctx, { id: mirror.id })).lines
+        .map((l) => `${l.account.name} ${l.debit} ${l.credit}`);
+      const again = await failure(cancelInvoiceNow(ctx, { id: posted.id, businessDate: later, reason: 'Twice' }));
+      const open = (await listToInvoicePage(ctx, { limit: 50, filter: { partyId: at.partyId } })).items.map((d) => d.toInvoice);
+      return { early, status: (await getInvoiceById(ctx, { id: posted.id })).status, reverses: mirror?.reversesEntryId !== null, lines, again, open };
+    });
+    expect(out).toEqual({ early: 'date_before_source', status: 'cancelled', reverses: true,
+      lines: ['Debtors 0.00 84000.00', 'Sales 80000.00 0.00', 'Output CGST 2000.00 0.00', 'Output SGST 2000.00 0.00',
+        'Cost of Goods Sold 0.00 61250.00', 'Goods Delivered Not Invoiced 61250.00 0.00'],
+      again: 'wrong_status', open: ['84000.00'] });
+  });
+
+  it('refuses to cancel an invoice while a receipt is applied to it, and never touches the receipt', async () => {
+    const at = await setup({ stock: '1', stockRate: '100', ordered: '1', rate: '1000', delivered: '1' });
+    const out = await inBooks(async (ctx) => {
+      const invoice = await post(ctx, at, '1');
+      const bank = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'bank'")).rows[0]?.id ?? '';
+      const receipt = await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('500'), accountId: bank });
+      await allocatePayment(ctx, { id: receipt.id, businessDate: DATE, lines: [{ documentTable: 'invoices', documentId: invoice.id, amount: m('500') }] });
+      return [await failure(cancelInvoiceNow(ctx, { id: invoice.id, businessDate: DATE, reason: 'Billed in error' })), receipt.status];
+    });
+    expect(out).toEqual(['still_applied', 'posted']);
   });
 
   // ADR-007 §7 (the architect on RAD-113): an invoice is owned by the owner its deliveries share, else by its maker.
