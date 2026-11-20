@@ -16,9 +16,11 @@ const write = { readOnly: false, isolation: 'read committed' } as const;
  *   `currentHash` what the record hashes to now, and `changed` says they differ (then it can only be rejected).
  * - decide: approve the version the screen showed (`versionHash`), or reject with a reason. Refused with
  *   `own_request`, `approver_too_new`, `version_changed` or `not_pending`, and whatever the module's `approved()` may
- *   refuse, named in `approvedErrors` (a payment's posting: `period_locked`, for one), so it's a 422, never a 500.
+ *   refuse, named in `approvedErrors` (a payment's posting: `period_locked`, for one), so it's a 422, never a 500, and
+ *   what the database refuses then, mapped by `dbErrors`.
  */
-export const approvalContracts = <K extends string>(kind: K, perm: `${string}:${string}`, approvedErrors: readonly string[] = []) => {
+export const approvalContracts = <K extends string>(kind: K, perm: `${string}:${string}`, approvedErrors: readonly string[] = [],
+  dbErrors: Readonly<Record<string, Readonly<{ code: string; message: string }>>> = {}) => {
   const request = z.object({
     id: idString(), recordId: idString(), status: z.enum(['pending', 'approved', 'rejected', 'superseded']),
     requestedBy: principalOut, requestedAt: momentString(),
@@ -44,6 +46,8 @@ export const approvalContracts = <K extends string>(kind: K, perm: `${string}:${
         .refine((d) => d.decision === 'approve' || d.reason !== undefined, { path: ['reason'], error: 'Say why, in your own words' }),
       output: z.object({ status: z.enum(['approved', 'rejected']) }),
       errors: ['own_request', 'approver_too_new', 'version_changed', 'not_pending', ...approvedErrors],
+      // A refusal the database finds when approved() posts, by name (ADR-005 §9): a credit refund's checks.
+      dbErrors,
     }),
   });
 };

@@ -205,20 +205,34 @@ export const reverseJournal = defineContract({
 // Receipts, payments and refunds (M3-12, RAD-116; ADR-007 §1–§5, §8). Recording and cancelling move money, so
 // payments:write needs the second factor (D-19); cash past a day's limit waits for payments:approve.
 
+/** A refund of a credit, checked by the database when it posts, each rule by name (RAD-114, the architect's build rules). */
+const CREDIT_REFUND_DB_ERRORS = {
+  'RA006:refund_credit_not_posted': { code: 'credit_not_posted', message: 'Refund a credit note only once it’s posted' },
+  'RA006:refund_credit_party_mismatch': { code: 'refund_other_party', message: 'A refund goes back to the credit note’s party' },
+  'RA006:refund_credit_before_source': { code: 'date_before_source', message: 'A refund is dated on or after its credit note' },
+  'RA006:refund_credit_side_mismatch': { code: 'wrong_credit', message: 'A refund pays a customer back against a credit note' },
+  'RA006:refund_exceeds_credit': { code: 'exceeds_credit', message: 'That’s more than is left of the credit note' },
+  'RA006:allocatable_document_missing': { code: 'wrong_credit', message: 'There’s no such credit note' },
+  '23503:fk_payments_credit_table': { code: 'wrong_credit', message: 'Refunds aren’t made against that kind of document' },
+} as const;
+const CREDIT_REFUND_ERRORS = ['credit_not_posted', 'wrong_credit', 'exceeds_credit'] as const;
+
 /** POST /payments: a receipt (money in, Cr Debtors), payment (out, Dr Creditors) or refund (back to a customer,
- * against the receipt it names). `amount` is the party's, gross of any TDS held back (F8). Posted now, numbered RV or
- * PV, or held as a draft for an owner when cash passes the day's limit (`pending_approval`). */
+ * against the receipt or the credit note it names). `amount` is the party's, gross of any TDS held back (F8). Posted
+ * now, numbered RV or PV, or held as a draft for an owner when cash passes the day's limit (`pending_approval`). */
 export const recordPaymentContract = defineContract({
   method: 'POST', path: '/payments', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({
     kind: z.enum(['receipt', 'payment', 'refund']), partyId: idString(), businessDate: dateString(), amount: moneyString(),
     tds: moneyString().optional(), accountId: idString(), refundOf: idString().optional(),
+    credit: z.object({ table: z.string().regex(/^[a-z][a-z0-9_]*$/, 'Not a document table'), id: idString() }).optional(),
     narration: z.string().trim().min(1).max(500).optional(),
   }),
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
   errors: ['invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',
     'refund_other_party', 'date_before_source', 'exceeds_receipt', 'unknown_account', 'not_money_account', 'account_inactive', 'not_draft',
-    'refund_through_owner'],
+    'refund_through_owner', ...CREDIT_REFUND_ERRORS],
+  dbErrors: CREDIT_REFUND_DB_ERRORS,
 });
 
 /** POST /payments/:id/cancel: cancels a posted payment by a mirror entry dated `businessDate`, with the reason. */
@@ -234,7 +248,8 @@ export const cancelPaymentContract = defineContract({
 /** An owner's override for cash past the day's limit (ADR-007 §8, RC-114): its approval posts the payment, so the
  * decision can meet the engine's refusals. */
 export const cashLimitApproval = approvalContracts('cash-limit', 'payments:approve',
-  ['account_inactive', 'period_locked', 'year_not_open', 'not_draft', 'receipt_not_posted', 'exceeds_receipt']);
+  ['account_inactive', 'period_locked', 'year_not_open', 'not_draft', 'receipt_not_posted', 'exceeds_receipt', 'refund_other_party',
+    'date_before_source', ...CREDIT_REFUND_ERRORS], CREDIT_REFUND_DB_ERRORS);
 
 // Allocations and credit applications (M3-12, RAD-116 part 2; ADR-005 §7a). A document is named by its table, one
 // `allocatable_documents` lists, and its id. The rules the database checks at commit answer by name (dbErrors, §9).

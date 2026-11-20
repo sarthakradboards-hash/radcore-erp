@@ -10,7 +10,7 @@ import './style-nonce.ts';
 
 /** An action, or a link to a page: a link stays a link (its href, opening in a new tab), with `current` for the page
  * the person is on. */
-export type MenuItem = { label: string; onSelect: () => void; disabled?: boolean } | { label: string; href: string; current?: boolean };
+export type MenuItem = { label: string; onSelect: () => void; disabled?: boolean; href?: never } | { label: string; href: string; current?: boolean };
 
 /** `label` names the button, for example "Actions for INV-0042"; give it the row's name so each one differs. */
 export function Menu({ label, items }: { label: string; items: readonly MenuItem[] }) {
@@ -24,7 +24,7 @@ export function Menu({ label, items }: { label: string; items: readonly MenuItem
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="kit-menu" align="end" sideOffset={4}
           onCloseAutoFocus={() => { const run = chosen.current; chosen.current = null; run?.(); }}>
-          {items.map((item) => ('href' in item ? (
+          {items.map((item) => (item.href !== undefined ? (
             <DropdownMenu.Item key={item.label} className="kit-menu-item" asChild>
               <Link href={item.href} aria-current={item.current === true ? 'page' : undefined}>{item.label}</Link>
             </DropdownMenu.Item>

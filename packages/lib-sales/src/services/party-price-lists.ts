@@ -15,12 +15,13 @@ import { priceFor } from './price-lists.ts';
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
-/** The list a party with none of its own is sold from (admin); none set: no list, so no discount is judged. */
+/** The list a party with none of its own is sold from (admin); none set, or switched off since: no list, so each priced
+ * line has no list rate and needs approval (no_list_rate, #256). */
 export const DEFAULT_PRICE_LIST = defineSetting('sales.default_price_list', z.uuid().nullable(), null, {
   label: 'Default price list',
-  description: 'The list a party with none of its own is sold from. None: no list, so no discount is judged.',
+  description: 'The list a party with none of its own is sold from. With none, a priced line has no list rate and needs approval.',
   input: { kind: 'reference', record: 'price_list' },
-  // An existing, active list (ADR-001 §8c). A reader treats a list switched off since as none.
+  // An existing, active list (ADR-001 §8c). getPartyList treats one switched off since as none.
   check: async (ctx, id) => {
     if (id === null) return null;
     const [list] = await salesTx(ctx).select({ active: priceLists.active }).from(priceLists).where(eq(priceLists.id, id)).limit(1);
@@ -28,10 +29,15 @@ export const DEFAULT_PRICE_LIST = defineSetting('sales.default_price_list', z.uu
   },
 });
 
-/** GET /sales/party-price-lists/:partyId (prices:read): the party's own list, or the default it takes. */
+/** GET /sales/party-price-lists/:partyId (prices:read): the party's own list, or the default it takes. A default
+ * switched off since it was chosen reads as none (ADR-001 §8c, the auditor on #264). */
 export async function getPartyList(ctx: Ctx, { partyId }: In<typeof getPartyPriceList>): Promise<Out<typeof getPartyPriceList>> {
-  const [own] = await salesTx(ctx).select({ id: partyPriceLists.priceListId }).from(partyPriceLists).where(eq(partyPriceLists.partyId, partyId));
-  return { priceListId: own?.id ?? ctx.settings.get(DEFAULT_PRICE_LIST), own: own !== undefined };
+  const tx = salesTx(ctx);
+  const [own] = await tx.select({ id: partyPriceLists.priceListId }).from(partyPriceLists).where(eq(partyPriceLists.partyId, partyId));
+  if (own !== undefined) return { priceListId: own.id, own: true };
+  const fallback = ctx.settings.get(DEFAULT_PRICE_LIST);
+  const [list] = fallback === null ? [] : await tx.select({ active: priceLists.active }).from(priceLists).where(eq(priceLists.id, fallback));
+  return { priceListId: list?.active === true ? fallback : null, own: false };
 }
 
 /** PUT /sales/party-price-lists/:partyId (prices:approve): the party's own list, or none (null) to take the default.
