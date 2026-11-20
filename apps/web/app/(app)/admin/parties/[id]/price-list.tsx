@@ -32,7 +32,7 @@ export function PartyPriceList({ partyId, partyName }: { partyId: string; partyN
   const mayApprove = permissions.includes('prices:approve');
   const current = useApiQuery(getPartyPriceList, { partyId }, { enabled: mayRead });
   const listId = current.data?.priceListId ?? null;
-  const name = useApiQuery(getPriceList, { id: listId ?? '' }, { enabled: listId !== null }).data?.name;
+  const nameQuery = useApiQuery(getPriceList, { id: listId ?? '' }, { enabled: listId !== null });
   const set = useApiMutation(setPartyPriceList, { invalidates: [getPartyPriceList] });
   const [choosing, setChoosing] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -44,12 +44,13 @@ export function PartyPriceList({ partyId, partyName }: { partyId: string; partyN
   if (!mayRead || current.data === undefined) return null;
   const own = current.data.own;
   const text = listId === null ? t('admin.parties.priceList.none')
-    : t(own ? 'admin.parties.priceList.own' : 'admin.parties.priceList.default', { name: name ?? t('loading') });
+    : nameQuery.isError ? ''
+    : t(own ? 'admin.parties.priceList.own' : 'admin.parties.priceList.default', { name: nameQuery.data?.name ?? t('loading') });
 
   return (
     <section aria-labelledby="party-price-list">
       <h2 id="party-price-list">{t('admin.parties.priceList')}</h2>
-      <p>{text}</p>
+      {text === '' ? null : <p>{text}</p>}
       {mayApprove ? (
         <div className="kit-actions">
           <button type="button" className="kit-button" onClick={() => setChoosing(true)}>{t('admin.parties.priceList.choose')}</button>
@@ -62,8 +63,7 @@ export function PartyPriceList({ partyId, partyName }: { partyId: string; partyN
         <Form schema={schema} saved={false} messages={LIST_MESSAGES} defaultValues={{ reason: '' }}
           onSubmit={async (v) => {
             if (picked === null) {
-              throw new ApiError(400, { code: 'invalid_input', message: t('admin.parties.priceList.pick'), requestId: '',
-                issues: [{ path: ['priceListId'], message: t('admin.parties.priceList.pick'), code: 'custom' }] });
+              throw new ApiError(400, { code: 'invalid_input', message: t('admin.parties.priceList.pick'), requestId: '', issues: [] });
             }
             await set.submit({ partyId, priceListId: picked.id, reason: v.reason });
             close();
