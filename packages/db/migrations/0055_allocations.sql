@@ -306,8 +306,9 @@ BEGIN
       USING ERRCODE = 'RA006', CONSTRAINT = 'allocatable_document_shape';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t WHERE t.tgrelid = rel AND t.tgfoid = 'radcore.guard_applied_cancel()'::regprocedure
-                   AND t.tgenabled <> 'D') THEN
-    RAISE EXCEPTION '% can''t be registered: attach radcore.guard_applied_cancel() to it first', NEW.document_table
+                   AND t.tgenabled <> 'D' AND t.tgtype::int & 19 = 19) THEN -- 1 a row trigger, 2 before, 16 on update
+    RAISE EXCEPTION '% can''t be registered: attach radcore.guard_applied_cancel() to it first, before update, for each row',
+      NEW.document_table
       USING ERRCODE = 'RA006', CONSTRAINT = 'allocatable_document_shape';
   END IF;
   RETURN NEW;

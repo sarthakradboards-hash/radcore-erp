@@ -51,8 +51,9 @@ export async function allocatePayment(ctx: Ctx, a: In<typeof allocatePaymentCont
   if (allocated.plus(refunded).plus(sum(a.lines.map((l) => l.amount))).gt(p.amount)) {
     refuse('exceeds_payment', 'That’s more than is left of the payment');
   }
-  // Rows in document order, so their deferred checks lock the documents in order, after the payment (ADR-005 §7a).
-  const lines = a.lines.toSorted((x, y) => cmp(x.documentTable, y.documentTable) || cmp(x.documentId, y.documentId));
+  // Rows in document order, so their deferred checks lock the documents in order, after the payment (ADR-005 §7a); a
+  // uuid sorts as its lower-case text does in PostgreSQL.
+  const lines = a.lines.toSorted((x, y) => cmp(x.documentTable, y.documentTable) || cmp(x.documentId.toLowerCase(), y.documentId.toLowerCase()));
   const rows = await tx.insert(paymentAllocations).values(lines.map((l) => ({ paymentId: p.id, documentTable: l.documentTable,
     documentId: l.documentId, direction: 'apply', amount: l.amount, businessDate: a.businessDate }))).returning({ id: paymentAllocations.id });
   return { ids: rows.map((r) => r.id) };

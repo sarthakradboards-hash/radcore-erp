@@ -262,11 +262,13 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
         t_text_total: 'party_id uuid, status text, total text, business_date date',
         t_undated: 'party_id uuid, status text, total numeric(18,2)',
         t_unguarded: 'party_id uuid, status text, total numeric(18,2), business_date date',
+        t_after: 'party_id uuid, status text, total numeric(18,2), business_date date',
         t_ready: 'party_id uuid, status text, total numeric(18,2), business_date date',
       };
       for (const [t, cols] of Object.entries(shapes)) {
         await c.query(`create table radcore.${t} (id uuid primary key, ${cols})`);
-        if (t !== 't_unguarded') await c.query(guard(t));
+        if (t === 't_after') await c.query(guard(t).replace('before update', 'after update'));
+        else if (t !== 't_unguarded') await c.query(guard(t));
       }
       const register = async (t: string) => {
         await c.query('savepoint s');
@@ -276,7 +278,7 @@ describe.skipIf(!url || !superUrl)('allocations and credit applications', { time
             return `${e.code}:${e.constraint}`;
           });
       };
-      for (const t of ['t_shapeless', 't_text_total', 't_undated', 't_unguarded', 't_nowhere']) expect(await register(t)).toBe('RA006:allocatable_document_shape');
+      for (const t of ['t_shapeless', 't_text_total', 't_undated', 't_unguarded', 't_after', 't_nowhere']) expect(await register(t)).toBe('RA006:allocatable_document_shape');
       expect(await register('t_ready')).toBe('ok');
     } finally {
       await c.query('rollback');
