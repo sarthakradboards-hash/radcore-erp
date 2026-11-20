@@ -14,11 +14,16 @@ import { settingRow, type SettingDef } from './settings.ts';
  */
 export async function saveSetting<T>(ctx: Ctx, def: SettingDef<T>, value: T | null): Promise<void> {
   if (def.key.startsWith('platform.')) throw new TypeError(`${def.key} is lib-platform's: a module can't change it`);
+  await storeSetting(ctx, def.key, value === null ? null : settingRow(def, value).value);
+}
+
+/** Writes a value already checked, or removes the row for null. lib-platform's own: saveSetting for a module's
+ * setting, and the settings screen's PUT /settings/:key (RAD-132), which checks against the composed catalogue. */
+export async function storeSetting(ctx: Ctx, key: string, value: unknown): Promise<void> {
   const tx = platformTx(ctx);
   if (value === null) {
-    await tx.delete(settings).where(eq(settings.key, def.key));
+    await tx.delete(settings).where(eq(settings.key, key));
     return;
   }
-  const row = settingRow(def, value);
-  await tx.insert(settings).values(row).onConflictDoUpdate({ target: settings.key, set: { value: row.value } });
+  await tx.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } });
 }

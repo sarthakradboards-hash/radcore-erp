@@ -2,19 +2,45 @@
 // when nobody has set it; the `settings` table (packages/db/src/platform/tables.ts) stores only what an admin
 // changed, as JSON. A request reads every row once, when its Ctx is built (M1-08), and services get typed values from
 // that one read: no setting is fetched twice in a request, and no request sees a half-applied change.
-import { z } from 'zod';
+import type { z } from 'zod';
+import type { Ctx } from './ctx.ts';
 
 const KEY = /^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$/;
 
-/** One setting: its key (`<module>.<name>`, the same pattern as the table's CHECK), schema and default. */
-export type SettingDef<T> = Readonly<{ key: string; schema: z.ZodType<T>; fallback: T }>;
+/** What the settings screen offers for a setting (ADR-001 §8c): a field of its kind, a choice of fixed values, or a
+ * pick of one record of a kind (`reference`, such as a price list). */
+export type SettingInput =
+  | Readonly<{ kind: 'money' | 'percent' | 'integer' | 'text' | 'yes_no' }>
+  | Readonly<{ kind: 'choice'; choices: readonly Readonly<{ value: string; label: string }>[] }>
+  | Readonly<{ kind: 'reference'; record: string }>;
 
-/** Declares a setting. Throws at load time on a bad key or a default its own schema refuses. */
-export function defineSetting<T>(key: string, schema: z.ZodType<T>, fallback: T): SettingDef<T> {
+/** A setting's label and description for the screen, its input, and what a schema can't check, run on a change (a
+ * price list that exists and is active): the refusal's message, or null. */
+export type SettingMeta<T> = Readonly<{
+  label: string;
+  description: string;
+  input: SettingInput;
+  check?(ctx: Ctx, value: T): Promise<string | null>;
+}>;
+
+/** One setting: its key (`<module>.<name>`, the same pattern as the table's CHECK), schema, default and meta. */
+export type SettingDef<T> = Readonly<{ key: string; schema: z.ZodType<T>; fallback: T } & SettingMeta<T>>;
+
+// Every setting declared in this process, by key: the tools test checks apps/api composes each one (ADR-001 §8c).
+const declared = new Set<string>();
+
+/** Declares a setting. Throws at load time on a bad key, a default its own schema refuses, or no label or description. */
+export function defineSetting<T>(key: string, schema: z.ZodType<T>, fallback: T, meta: SettingMeta<T>): SettingDef<T> {
   if (!KEY.test(key)) throw new TypeError(`Setting key "${key}" must be <module>.<name> in lower case`);
   schema.parse(fallback);
-  return Object.freeze({ key, schema, fallback });
+  if (meta.label.trim() === '' || meta.description.trim() === '') throw new TypeError(`Setting ${key} needs a label and a description`);
+  const def: SettingDef<T> = Object.freeze({ key, schema, fallback, ...meta });
+  declared.add(key);
+  return def;
 }
+
+/** The keys of every setting declared so far in this process (for the composition test). */
+export const declaredSettingKeys = (): readonly string[] => [...declared].toSorted();
 
 /** A stored row, as the settings table gives it. */
 export type SettingRow = { key: string; value: unknown };

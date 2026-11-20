@@ -13,7 +13,11 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 /** The limit for a role with none of its own: 0% (D-21, docs/decisions.md). */
-const defaultDiscountLimit = defineSetting<string>('sales.discount_limit_default', percentString(), '0');
+const defaultDiscountLimit = defineSetting<string>('sales.discount_limit_default', percentString(), '0', {
+  label: 'Discount limit',
+  description: 'The most a person whose role has no limit of its own may take off a list price, in percent.',
+  input: { kind: 'percent' },
+});
 
 /** The most this person may take off a list price, in percent: their role's limit, else the default. A job, a link
  * or a person with no role has the default. The screen's hint to the person typing; a document is judged by its
