@@ -127,11 +127,16 @@ export async function dropOrder(ctx: Ctx, { id }: In<typeof deleteOrder>): Promi
 /** POST /sales/orders/:id/confirm (sales:write): the credit and price checks (M3-07) first, refused with their issues
  * unless an override was approved for them (sales:override); then its number, drawn as the last step (§3). */
 export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>): Promise<Out<typeof confirmOrder>> {
+  // ADR-006 §1: the period lock first, by the order's date read unlocked; then the order, locked, still on that date, as
+  // a delivery's posting does, so a confirmation and a delivery never wait on each other in opposite orders (auditor-2
+  // on #247).
+  const held = (await orderOf(ctx, id, 'sales:write')).businessDate;
+  await holdPeriod(ctx, held);
   const now = await orderOf(ctx, id, 'sales:write', true);
+  if (now.businessDate !== held) throw new AppError('version_changed', 'This order changed while it was being confirmed: confirm it again');
   mayMove('order', now.status, 'confirmed');
   checkDate(now.businessDate, today(), fromQuote(now));
   await sellingTo(ctx, now.partyId);
-  await holdPeriod(ctx, now.businessDate);
   // ADR-006 §1's step 3: the party, after the order, so two sales to it take turns at the credit check (ADR-007 §9).
   await holdParty(ctx, now.partyId);
   await checkOrder(ctx, id, now);
