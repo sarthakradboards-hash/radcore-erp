@@ -20,14 +20,19 @@ const READ = { readOnly: true, isolation: 'read committed' } as const;
 const SYSTEM: Principal = { kind: 'system', name: 'test', permissions: [] };
 const letters = () => [...randomBytes(8)].map((b) => String.fromCharCode(97 + (b % 26))).join('');
 
-// A person's name and email, the email shown only to a viewer who may see personal data.
+// A person's name and email, the email asked for with the viewer's sight, as a careless describer might, and with a
+// seenWith key too: the bell's sight shows nothing, so it's masked whatever the viewer holds (the architect on RAD-106).
 const PERSON = defineNotification('platform.t_person', { table: 'users', label: 'Someone needs you',
   describe: async (ctx, ids) => new Map((await platformTx(ctx).select({ id: users.id, name: users.displayName, email: users.email })
     .from(users).where(inArray(users.id, [...ids]))).map((u) => [u.id,
-    `${u.name} (${ctx.shows('whole') ? u.email : maskOf(u.email, 'whole').masked})`])) });
+    `${u.name} (${ctx.shows('whole') || ctx.shows('whole', 'users:read') ? u.email : maskOf(u.email, 'whole').masked})`])) });
 const PLAIN = defineNotification('platform.t_plain', { table: 'users', label: 'Something changed' });
 const BROKEN = defineNotification('platform.t_broken', { table: 'users', label: 'A broken kind',
   describe: () => Promise.reject(new Error('this kind cannot describe its records')) });
+// A describer whose query the database refuses (not a uuid), which would abort the read transaction without its savepoint.
+const REFUSED = defineNotification('platform.t_refused', { table: 'users', label: 'A refused kind',
+  describe: async (ctx) => new Map((await platformTx(ctx).select({ id: users.id }).from(users).where(inArray(users.id, ['not-a-uuid'])))
+    .map((u) => [u.id, 'never'])) });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
   expect.fail('TEST_DATABASE_URL is not set: in CI the notification tests must run, not skip');
@@ -84,7 +89,10 @@ describe.skipIf(!url || !superUrl)('notifications', { timeout: 30_000 }, () => {
       .toEqual(['at', 'id', 'kind', 'read_at', 'record_id', 'record_table', 'user_id']);
     const masked = (await page(viewer(to))).items[0];
     expect(masked).toMatchObject({ kind: 'platform.t_person', record: { table: 'users', id: about }, text: 'Ravi Kumar (••••••)', readAt: null });
-    expect((await page(viewer(to, ['pii:read']))).items[0]?.text).toMatch(/^Ravi Kumar \([a-z]+@example\.test\)$/);
+    // Even a viewer who may see personal data, and holds the record's seenWith key, gets it masked in the bell, and no
+    // look is logged: the record's own page shows the field (ADR-001 §7a).
+    expect((await page(viewer(to, ['pii:read', 'users:read']))).items[0]?.text).toBe('Ravi Kumar (••••••)');
+    expect((await su.query('select 1 from radcore.access_log where record_id = $1', [about])).rowCount).toBe(0);
     // Renamed after the notification was raised: the text shows the record as it is now.
     await owner("update radcore.users set display_name = 'Ravi K' where id = $1", [about]);
     expect((await page(viewer(to))).items[0]?.text).toBe('Ravi K (••••••)');
@@ -106,6 +114,14 @@ describe.skipIf(!url || !superUrl)('notifications', { timeout: 30_000 }, () => {
     await as(SYSTEM)((ctx) => notify(ctx, PERSON, { to, recordId: about }));
     await as(SYSTEM)((ctx) => notify(ctx, BROKEN, { to, recordId: about }));
     expect((await page(viewer(to))).items.map((n) => n.text)).toEqual(['A broken kind', 'Meera Shah (••••••)']);
+  });
+
+  it('keeps the read whole when a kind’s query is refused: that kind shows its label, and the next is still described', async () => {
+    const to = await person();
+    const about = await person('Asha Iyer');
+    await as(SYSTEM)((ctx) => notify(ctx, PERSON, { to, recordId: about }));
+    await as(SYSTEM)((ctx) => notify(ctx, REFUSED, { to, recordId: about }));
+    expect((await page(viewer(to))).items.map((n) => n.text)).toEqual(['A refused kind', 'Asha Iyer (••••••)']);
   });
 
   it('lists a person’s own newest first, a page at a time, never skipping one raised in the same moment', async () => {

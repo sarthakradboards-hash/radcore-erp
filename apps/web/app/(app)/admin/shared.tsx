@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { z } from 'zod';
 import { Dialog, CloseButton } from '../../../components/ui/dialog/dialog.tsx';
 import { Form, SubmitButton } from '../../../components/ui/form/form.tsx';
-import { ADMIN_PAGES, allowed } from '../../../components/shell/nav.ts';
+import { ADMIN_PAGES, allowed, type NavPage } from '../../../components/shell/nav.ts';
 import { useMe } from '../../../components/shell/session-provider.tsx';
 import { announce } from '../../../components/ui/live-region.tsx';
 import { t } from '../../../lib/i18n/index.ts';
@@ -15,19 +15,22 @@ import './admin.css';
 
 // The pages come from the shell's menu (components/shell/nav.ts), each with the permission its screen reads, so the
 // sub-menu, like the main one, offers only what the person may open (RC-151). The server still checks every request.
-export function AdminNav() {
+// The admin area and the accounts area (RAD-100) each have one.
+export function SectionNav({ label, pages }: { label: string; pages: readonly NavPage[] }) {
   const here = usePathname();
   const { permissions } = useMe();
   return (
-    <nav aria-label={t('admin.nav')} className="admin-nav">
+    <nav aria-label={label} className="admin-nav">
       <ul>
-        {ADMIN_PAGES.filter((page) => allowed(page, permissions)).map(({ href, label }) => (
+        {pages.filter((page) => allowed(page, permissions)).map(({ href, label }) => (
           <li key={href}><Link href={href} aria-current={here === href || here.startsWith(`${href}/`) ? 'page' : undefined}>{t(label)}</Link></li>
         ))}
       </ul>
     </nav>
   );
 }
+
+export const AdminNav = () => <SectionNav label={t('admin.nav')} pages={ADMIN_PAGES} />;
 
 const CODES = ['own_account', 'last_admin', 'role_not_grantable', 'email_taken', 'role_not_editable', 'matrix_changed',
   'unknown_permission', 'permission_not_held', 'current_session', 'basics_required', 'permission_not_for_role',

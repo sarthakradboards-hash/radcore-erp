@@ -5,16 +5,17 @@
 //   document; over its limit, or with a bill past its credit days, needs someone else's approval.
 // - Price, only on lines with a price set: below the item's average cost at the place (the moving average, landed
 //   cost included; the purchase price when nothing is on hand), or below the list rate by more than the person's
-//   discount limit (RAD-98, 0% by default), needs approval. A stock item with no cost at all needs it too.
+//   discount limit (RAD-98, 0% by default), needs approval: the document's maker's limit, whoever reads it. A stock item
+//   with no cost at all needs it too.
 // The arithmetic is checks-rules.ts's. An override goes through defineApproval (RAD-38) with overrideApproval below.
 import { dec, type DecimalInput, type Money } from '@radcore/lib-common';
 import { getPartyById, partyReceivable } from '@radcore/lib-accounts';
-import type { ApprovalSpec, ApprovalVersion, Ctx } from '@radcore/lib-platform';
+import { roleOf, type ApprovalSpec, type ApprovalVersion, type Ctx } from '@radcore/lib-platform';
 import { averageCost, purchasePrices } from '@radcore/lib-stock';
 import type { z } from 'zod';
 import type { saleCheck } from '../contract/checks.ts';
 import { costResult, creditResult, discountPercent, issuesOf, overDiscount, type CheckIssue } from './checks-rules.ts';
-import { discountLimitFor } from './discounts.ts';
+import { discountLimitOf } from './discounts.ts';
 
 /** The stages a sale is checked at (RC-061). */
 export type SaleStage = 'confirm' | 'deliver' | 'invoice' | 'handback';
@@ -44,6 +45,10 @@ export type SaleCheck = Readonly<{
   /** Delivered to the party and not yet billed. shortcut: 0 until M3-08's deliveredNotInvoiced lands; the stage passes it. */
   notInvoiced?: DecimalInput;
   lines: readonly SaleLine[];
+  /** Who priced it: the document's maker (its created_by, "user:<id>"). Its discounts are judged by their role's limit,
+   * never the reader's, so the maker, an override's approver and whoever confirms or posts it see the same issues
+   * (the architect on RAD-112). */
+  pricedBy: string;
 }>;
 
 /** The answer, in the contract's shape: every figure, each line's result, and the issues that need approval. */
@@ -57,7 +62,7 @@ export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult
   const credit = creditResult({ limit: party.creditLimit, outstanding: owed.outstanding, notInvoiced, adds: s.adds,
     creditDays: party.creditDays, oldestUnpaid: owed.oldestUnpaid, on: s.on });
   const priced = s.lines.filter((l) => l.rate !== null);
-  const limit = priced.length === 0 ? '0' : await discountLimitFor(ctx);
+  const limit = priced.length === 0 ? '0' : await discountLimitOf(ctx, await roleOf(ctx, s.pricedBy));
   // The average at the place, else the item's purchase price; each read once per line.
   const averages = await Promise.all(s.lines.map((l) => (l.rate === null ? null : averageCost(ctx, l.itemId, l.locationId))));
   const missing = s.lines.filter((l, i) => l.rate !== null && averages[i] === null).map((l) => l.itemId);
