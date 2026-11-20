@@ -11,19 +11,20 @@ export const LEAD_SOURCES = ['manual', 'walk_in', 'form', 'meta', 'google', 'wha
 
 /**
  * An enquiry taken by staff, by hand or at the counter (M3-02). A number that already has a lead joins it: the lead's
- * owner is told and its follow-up comes forward to today (RC-142). `repeat` says which happened; `id` is the lead's.
+ * owner is told and its follow-up comes forward to today (RC-142). `repeat` says which happened. `id` is the lead's,
+ * left out when the number's lead is one the person may not open, so capture shows nothing of it.
  * The form and the platforms (M3-03) capture through the same service.
  */
 export const captureLead = defineContract({
   method: 'POST', path: '/leads', auth: 'session', perm: 'leads:write', tx: write,
   input: z.object({ phone: phoneString(), name: z.string().trim().min(1).max(120).optional(), email: emailString().optional(),
     source: z.enum(['manual', 'walk_in']) }),
-  output: z.object({ id: idString(), repeat: z.boolean() }),
+  output: z.object({ id: idString().optional(), repeat: z.boolean() }),
 });
 
 /**
- * A lead with each of its enquiries, newest first. Its phone and email are personal data, masked without pii:read, and
- * each record shown unmasked is logged as a look. An enquiry's `message` is what the outsider wrote, apart from staff's
+ * A lead with each of its enquiries, newest first. Its phone and email are personal data, masked without pii:read or
+ * leads:contact, and each record shown unmasked is logged as a look. An enquiry's `message` is what the outsider wrote, apart from staff's
  * `notes` (RC-173): a screen shows it as text, never as markup.
  */
 export const getLead = defineContract({
@@ -33,5 +34,5 @@ export const getLead = defineContract({
     id: idString(), name: z.string().nullable(), phone: pii(z.string(), 'last4'), email: pii(z.string().nullable()),
     owner: z.string().nullable(), followUpOn: dateString().nullable(), notes: z.string().nullable(),
     enquiries: z.array(z.object({ source: z.enum(LEAD_SOURCES), message: z.string().nullable(), receivedAt: momentString() })),
-  })),
+  }), { seenWith: 'leads:contact' }),
 });

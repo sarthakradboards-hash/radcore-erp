@@ -6,13 +6,17 @@
 // - A repeat enquiry tells the lead's owner (crm.repeat_enquiry) and brings its follow-up forward to the enquiry's day.
 // - What an outsider wrote is kept as they wrote it, on the enquiry, never in a staff field (RC-173).
 // Capture reaches every lead, whatever the principal's scope: a number must join its lead even when someone else owns
-// it. It writes and answers only the lead's id, so it shows nothing of a lead the principal can't see.
+// it. It answers the lead's id only when the principal may open that lead, so it shows nothing of one they can't (the
+// architect on RAD-106).
 import { crmTx, leadEnquiries, leads } from '@radcore/db/crm';
 import { indiaDate, maskOf, normaliseEmail, normalisePhone } from '@radcore/lib-common';
 import { AppError, defineNotification, notify, principalId, type Ctx } from '@radcore/lib-platform';
 import { desc, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { getLead, LEAD_SOURCES } from '../contract.ts';
+
+// lead_enquiries.message's cap, in characters (code points, as char_length counts them).
+const MESSAGE_MAX = 2000;
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -23,7 +27,8 @@ export type Capture = Readonly<{
   name?: string | undefined;
   email?: string | undefined;
   source: (typeof LEAD_SOURCES)[number];
-  /** The outsider's own words (a form's message, a chat's text); staff's words are never put here. */
+  /** The outsider's own words (a form's message, a chat's text); staff's words are never put here. Past 2,000
+   * characters the rest is dropped: the door keeps the whole of what came in (ADR-001 §8a), and the lead isn't lost. */
   message?: string | undefined;
   /** When it arrived; now unless a door stored it first (M3-03's webhooks). */
   receivedAt?: Date | undefined;
@@ -43,7 +48,7 @@ export const repeatEnquiry = defineNotification('crm.repeat_enquiry', {
 
 /** Takes an enquiry, and POST /leads (leads:write): a new lead for a new number, else the number's lead, told and
  * brought forward. */
-export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id: string; repeat: boolean }> {
+export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id?: string; repeat: boolean }> {
   const phone = normalisePhone(c.phone);
   if (phone === undefined) throw new AppError('invalid_input', 'Enter a valid phone number', [{ path: ['phone'], code: 'invalid', message: 'Enter a valid phone number' }]);
   const receivedAt = c.receivedAt ?? new Date();
@@ -54,6 +59,7 @@ export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id: string
   const [made] = await tx.insert(leads).values({ phone, name: c.name ?? null, email: c.email === undefined ? null : normaliseEmail(c.email),
     owner: me, followUpOn: on, lastEnquiryAt: receivedAt }).onConflictDoNothing({ target: leads.phone }).returning({ id: leads.id });
   let id = made?.id;
+  let owner = me;
   if (id === undefined) {
     // The number has a lead. This update locks its row, so a second repeat at the same time waits for this one.
     const [lead] = await tx.update(leads).set({ lastEnquiryAt: receivedAt }).where(eq(leads.phone, phone))
@@ -62,9 +68,12 @@ export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id: string
     if (lead.followUpOn === null || lead.followUpOn > on) await tx.update(leads).set({ followUpOn: on }).where(eq(leads.id, lead.id));
     if (lead.owner !== null && lead.owner !== me) await notify(ctx, repeatEnquiry, { to: lead.owner.slice('user:'.length), recordId: lead.id });
     id = lead.id;
+    owner = lead.owner;
   }
-  await tx.insert(leadEnquiries).values({ leadId: id, source: c.source, message: c.message ?? null, receivedAt });
-  return { id, repeat: made === undefined };
+  const message = c.message === undefined ? null : [...c.message].slice(0, MESSAGE_MAX).join('');
+  await tx.insert(leadEnquiries).values({ leadId: id, source: c.source, message, receivedAt });
+  const repeat = made === undefined;
+  return ctx.can('leads:read', { owner: owner ?? '' }) ? { id, repeat } : { repeat };
 }
 
 /** GET /leads/:id (leads:read): one the principal may see, else not_found, as if there were none. */

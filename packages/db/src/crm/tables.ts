@@ -35,7 +35,7 @@ export const leadEnquiries = radcoreTable('lead_enquiries', {
   id: id(),
   leadId: uuid().notNull().references(() => leads.id),
   source: text().notNull(),
-  message: boundedText({ max: 4000 }),
+  message: boundedText({ max: 2000 }),
   receivedAt: timestamp({ withTimezone: true }).notNull(),
 }, (t) => [
   index('ix_lead_enquiries_lead').on(t.leadId, t.receivedAt),

@@ -71,9 +71,10 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // granted it; admin and owner start with it.
   { key: 'masters:export', module: 'Masters', label: 'Export the masters workbook' },
   // Leads (M3-02, RAD-106): granted at `own`, a person sees and captures into their own leads only (E7). A lead's phone
-  // and email stay masked without pii:read.
-  { key: 'leads:read', module: 'Leads', label: 'See leads and their enquiries', records: ['@radcore/db/crm#leads'] },
-  { key: 'leads:write', module: 'Leads', label: 'Add leads and enquiries', records: ['@radcore/db/crm#leads'] },
+  // and email show with pii:read or leads:contact, which reaches only the leads leads:read lets them open (the architect).
+  { key: 'leads:read', module: 'Leads', label: 'See leads and their enquiries', records: ['@radcore/db/crm#leads', '@radcore/db/crm#leadEnquiries'] },
+  { key: 'leads:write', module: 'Leads', label: 'Add leads and enquiries', records: ['@radcore/db/crm#leads', '@radcore/db/crm#leadEnquiries'] },
+  { key: 'leads:contact', module: 'Leads', label: 'See the phone and email of the leads they may open', allOnly: true, unmasks: true },
 ].map((p) => Object.freeze(p)));
 
 /**
