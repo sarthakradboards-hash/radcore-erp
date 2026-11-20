@@ -18,6 +18,7 @@ import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
+const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156); the services bound dates by the real one.
 const DATE = '2026-11-15';
@@ -27,10 +28,14 @@ const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const line = (itemId: string, qty = '2') => ({ itemId, qty: quantityString().parse(qty), rate: unitPriceString().parse('61250'),
   discountPercent: percentString({ max: '100' }).parse('0') });
 
-describe.skipIf(!url)('quotes and orders', () => {
+describe.skipIf(!url || !superUrl)('quotes and orders', () => {
   const pool = new pg.Pool({ connectionString: url, max: 3 });
+  const su = new pg.Pool({ connectionString: superUrl, max: 1 });
   const db = createDatabase(pool);
-  afterAll(async () => { await pool.end(); });
+  afterAll(async () => {
+    await pool.end();
+    await su.end();
+  });
   const staff = person();
   const run = <T>(fn: (ctx: Ctx) => Promise<T>, as: Principal = staff) => runInTransaction(db, WRITE, as, randomUUID(), fn);
   const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
@@ -70,11 +75,26 @@ describe.skipIf(!url)('quotes and orders', () => {
   });
 
   // A person, made now in a transaction of its own, as the approval engine reads their account's age (RAD-38).
-  const newUser = async (permissions: string[]): Promise<Principal> => {
+  const newUser = async (permissions: string[], role = 'sales'): Promise<Principal> => {
     const { rows } = await pool.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
-      insert into radcore.users (email, display_name, role) select $1, 'Test person', 'sales' from p returning id`,
-    [`sales-${randomUUID()}@example.test`]);
-    return { kind: 'user', userId: rows[0]?.id ?? '', permissions };
+      insert into radcore.users (email, display_name, role) select $1, 'Test person', $2 from p returning id`,
+    [`sales-${randomUUID()}@example.test`, role]);
+    return { kind: 'user', userId: rows[0]?.id ?? '', permissions, role };
+  };
+  // A role of the test's own with a discount limit, so no built-in role another file reads is changed.
+  const roleWithLimit = async (percent: string): Promise<string> => {
+    const key = `test_${tag().toLowerCase()}`;
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      await c.query("insert into radcore.roles (key, name, description, second_factor_required) values ($1, $1, 'Test', false)", [key]);
+      await c.query('insert into radcore.discount_limits (role, max_percent) values ($1, $2)', [key, percent]);
+      await c.query('commit');
+    } finally {
+      c.release();
+    }
+    return key;
   };
 
   // M3-07 at confirmation (RC-061): a party with no credit stops the order until
@@ -101,6 +121,21 @@ describe.skipIf(!url)('quotes and orders', () => {
     const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [cheap] }));
     const refused = await run((ctx) => confirmOrderNow(ctx, { id })).then(() => null, (e: unknown) => e as AppError);
     expect([refused?.code, refused?.issues.map((i) => [i.code, i.path.join('.')])]).toEqual(['needs_override', [['below_cost', 'lines.0']]]);
+  });
+
+  // The architect on RAD-112: an order's discounts are judged by its maker's limit, whoever reads it, so what the
+  // approver approves is what the maker's confirmation finds. A maker on 5% gives 8%; an approver on 10% approves it.
+  it("judges an order's discount by its maker's limit, so an approver with a higher one approves what the maker confirms", async () => {
+    const at = await setup();
+    const maker = await newUser(KEYS, await roleWithLimit('5'));
+    const approver = await newUser(['sales:override'], await roleWithLimit('10'));
+    const eight = { ...line(at.itemId), discountPercent: percentString({ max: '100' }).parse('8') };
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [eight] }), maker);
+    const refused = await run((ctx) => confirmOrderNow(ctx, { id }), maker).then(() => null, (e: unknown) => e as AppError);
+    expect(refused?.issues.map((i) => i.code)).toEqual(['over_discount']);
+    const request = await run((ctx) => askOrderOverride(ctx, { id }), maker);
+    await run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), approver);
+    expect((await run((ctx) => confirmOrderNow(ctx, { id }), maker)).number).toMatch(/^SO\//);
   });
 
   it('makes an approved override stale when the order changes after it', async () => {

@@ -6,12 +6,12 @@
 import { salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
-import { getItemById } from '@radcore/lib-stock';
+import { itemLabels } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { netRate, totalWithGst } from './document-rules.ts';
 
-type Order = { partyId: string; businessDate: string };
+type Order = { partyId: string; businessDate: string; createdBy: string };
 type Line = { itemId: string; qty: string; rate: string; discountPercent: string };
 
 const linesOf = (ctx: Ctx, orderId: string) => salesTx(ctx).select({ itemId: salesOrderLines.itemId, qty: salesOrderLines.qty,
@@ -19,16 +19,18 @@ const linesOf = (ctx: Ctx, orderId: string) => salesTx(ctx).select({ itemId: sal
   .where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo));
 
 /** What an override approves of the order: its party, date and lines, as plain JSON (RAD-38). */
-const figuresOf = (o: Order, lines: readonly Line[]) =>
+const figuresOf = (o: Omit<Order, 'createdBy'>, lines: readonly Line[]) =>
   ({ partyId: o.partyId, businessDate: o.businessDate, lines: lines.map((l) => ({ ...l })) });
 
 /** What the order asks checkSale at confirmation: its total with GST, each line at its rate after discount against its
- * list rate (its own rate before the discount), from the sellable places together, since an order names no place. */
+ * list rate (its own rate before the discount), from the sellable places together, since an order names no place,
+ * judged by its maker's discount limit (the architect on RAD-112). */
 async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[]): Promise<SaleCheck> {
+  const hsn = await itemLabels(ctx, lines.map((l) => l.itemId));
   const gst: string[] = [];
-  for (const l of lines) gst.push((await gstRateFor(ctx, (await getItemById(ctx, { id: l.itemId })).hsn, o.businessDate)).rate);
+  for (const l of lines) gst.push((await gstRateFor(ctx, hsn.get(l.itemId)?.hsn ?? '', o.businessDate)).rate);
   return {
-    stage: 'confirm', partyId: o.partyId, on: o.businessDate,
+    stage: 'confirm', partyId: o.partyId, on: o.businessDate, pricedBy: o.createdBy,
     adds: totalWithGst(lines.map((l, i) => ({ ...l, gstPercent: gst[i] ?? '0' }))),
     lines: lines.map((l) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent), listRate: l.rate })),
   };
@@ -41,12 +43,12 @@ export const orderOverride = overrideApproval({
   parts: ['sales_order_lines'],
   async read(ctx, id, { forUpdate }) {
     const q = salesTx(ctx).select({ partyId: salesOrders.partyId, businessDate: salesOrders.businessDate, status: salesOrders.status,
-      owner: salesOrders.createdBy })
+      createdBy: salesOrders.createdBy })
       .from(salesOrders).where(eq(salesOrders.id, id));
     const [order] = forUpdate ? await q.for('update') : await q;
     // Its maker asks (sales:write) and someone else decides (sales:override); outside both, there's no such order.
     if (order === undefined || order.status !== 'draft') return null;
-    if (!ctx.can('sales:write', { owner: order.owner }) && !ctx.can('sales:override', { owner: order.owner })) return null;
+    if (!ctx.can('sales:write', { owner: order.createdBy }) && !ctx.can('sales:override', { owner: order.createdBy })) return null;
     const lines = await linesOf(ctx, id);
     return { figures: figuresOf(order, lines), sale: await saleOf(ctx, order, lines) };
   },

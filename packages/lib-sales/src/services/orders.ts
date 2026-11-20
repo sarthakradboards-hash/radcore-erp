@@ -40,7 +40,7 @@ async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = fal
   ctx.see(permission, { owner });
   const [quote] = order.quoteId === null ? [] : await salesTx(ctx).select({ date: salesQuotes.businessDate }).from(salesQuotes)
     .where(eq(salesQuotes.id, order.quoteId));
-  return { ...order, status: order.status as SalesOrderStatus, quoteDate: quote?.date ?? null };
+  return { ...order, status: order.status as SalesOrderStatus, quoteDate: quote?.date ?? null, createdBy: owner };
 }
 
 // The bound an order's date keeps from its quote (§4), if it came from one.
@@ -112,7 +112,7 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: id })));
   // A draft's lines changing makes any override approved for the old ones stale; it's asked for again.
   await tx.update(salesOrders).set({ overrideVersion: null }).where(eq(salesOrders.id, id));
-  if (now.status === 'confirmed') await checkOrder(ctx, id, { ...input, overrideVersion: null });
+  if (now.status === 'confirmed') await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy });
   return {};
 }
 

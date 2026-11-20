@@ -39,6 +39,10 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
   holds the status values. A confirmed order's lines change only through the order service, which runs M3-07's
   checks again. An order is **closed** when every line is delivered, or **closed short** when a person closes it
   with lines still undelivered. The undelivered quantities are released, and a reason is kept (RC-125).
+- **Whose discount limit.** M3-07's checks judge a document's discounts against its maker's limit (the role of
+  `created_by`), never the reader's. So the maker, the approver of an override, and whoever confirms or posts it see
+  the same issues, and the version an approver approves is the one the document goes ahead with. A limit changed while
+  a request waits makes the request stale, and the maker asks again.
 - **A credit note is approved before it posts**, through `defineApproval` (RAD-38). It stays a draft while its
   request is pending. The approval's version hash means the approver approves exactly what was sent, and the
   approval's `approved` step posts it (ADR-001 §8b). Every credit note is approved, whatever its amount (Sarthak,

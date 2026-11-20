@@ -13,13 +13,11 @@ export const ORDER_MOVES: Readonly<Record<string, readonly SalesOrderStatus[]>> 
   draft: ['confirmed'], confirmed: ['closed', 'cancelled'], closed: [], cancelled: [],
 };
 
-const words: Readonly<Record<string, string>> = { quote: 'quote', order: 'order' };
-
 /** Refuses a move its document doesn't allow: `wrong_status`, naming where it stands. */
 export function mayMove(kind: 'quote' | 'order', from: string, to: string): void {
   const moves = kind === 'quote' ? QUOTE_MOVES : ORDER_MOVES;
-  if (!(moves[from] ?? []).includes(to as never)) {
-    throw new AppError('wrong_status', `This ${words[kind] ?? kind} is ${from}, so it can’t be ${to}`);
+  if (moves[from]?.includes(to as never) !== true) {
+    throw new AppError('wrong_status', `This ${kind} is ${from}, so it can’t be ${to}`);
   }
 }
 
@@ -27,7 +25,7 @@ export function mayMove(kind: 'quote' | 'order', from: string, to: string): void
  * through the checks again (§1), so `alsoConfirmed` lets an order through. */
 export function mayEdit(kind: 'quote' | 'order', status: string, alsoConfirmed = false): void {
   if (status === 'draft' || (alsoConfirmed && status === 'confirmed')) return;
-  throw new AppError('wrong_status', `This ${words[kind] ?? kind} is ${status}, so it can’t be changed`);
+  throw new AppError('wrong_status', `This ${kind} is ${status}, so it can’t be changed`);
 }
 
 /** A document's date bounds (§4): not after today (India's date), and not before the document it comes from. */
