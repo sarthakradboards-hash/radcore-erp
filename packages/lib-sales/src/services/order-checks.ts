@@ -70,6 +70,7 @@ export const ISSUE_WORDS: Readonly<Record<string, string>> = {
   overdue: 'The party has a bill past its credit days',
   below_cost: 'This line is priced below the item’s cost',
   cost_unknown: 'This item has no cost to check its price against',
+  no_list_rate: 'This item has no price on the party’s price list to check its discount against',
   over_discount: 'This line’s discount is more than your limit',
 };
 

@@ -88,7 +88,8 @@ describe.skipIf(!url)('the sale checks', { timeout: 30_000 }, () => {
   it('prices against the average cost at the place, else the purchase price, and a stock item with no cost needs approval (RC-131)', async () => {
     const id = await party();
     const at = await items();
-    const line = (itemId: string, rate: string | null, listRate: string | null = null, locationId: string | null = at.place): SaleLine =>
+    // Each priced line at its own list rate, so only cost is judged here (no_list_rate and discounts are tested apart).
+    const line = (itemId: string, rate: string | null, listRate: string | null = rate, locationId: string | null = at.place): SaleLine =>
       ({ itemId, locationId, rate, listRate });
     const result = await check(id, '2033-03-20', '0', [line(at.stocked, '99.99'), line(at.stocked, '100'), line(at.priced, '49', null, null),
       line(at.unknown, '10', null, null), line(at.stocked, null)]);

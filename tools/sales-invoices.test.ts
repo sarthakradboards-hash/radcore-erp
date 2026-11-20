@@ -66,7 +66,7 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
   /** A customer with credit (in `state`, with or without a GSTIN and an address), an item rated `gst`%, a store holding
    * `stock` at `stockRate`, a confirmed order for `ordered` at `rate`, and a posted delivery of `delivered` of it. */
   async function setup(o: Setup) {
-    const at = await run(async (ctx) => {
+    const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: [o.kind ?? 'customer'], gstin: o.gstin ?? null, pan: null,
         composition: false,
@@ -83,6 +83,12 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
       const { id: placeId } = await addPlace(ctx, { code: `L${tag()}`, name: `Store ${tag()}`, kind: 'store' });
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: placeId,
         qty: q(o.stock), rate: unitPriceString().parse(o.stockRate), batches: [{ batchNo: 'B1', qty: q(o.stock) }] }] });
+      return { partyId, itemId, placeId, hsn };
+    }, o.maker);
+    // The party's list prices the item at the order's rate: a priced line with no list rate needs approval (#256).
+    await priceListFrom(su, DATE, { [made.itemId]: o.rate }, { partyId: made.partyId });
+    const at = await run(async (ctx) => {
+      const { partyId, itemId, placeId, hsn } = made;
       const { id: orderId } = await addOrder(ctx, { partyId, businessDate: DATE, notes: null, lines: [{ itemId, qty: q(o.ordered),
         rate: unitPriceString().parse(o.rate), discountPercent: percentString({ max: '100' }).parse('0') }] });
       await confirmOrderNow(ctx, { id: orderId });
@@ -217,6 +223,7 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
   it('checks a repriced line against cost and the party’s list, and leaves one at its order’s price alone', async () => {
     // One left at the store, so its average (100.00) is the cost the changed lines are checked against.
     const at = await setup({ stock: '4', stockRate: '100', ordered: '3', rate: '1000', delivered: '3' });
+    // Another list for the party, set through the service, as prices:approve would (the architect on RAD-113).
     const list = await priceListFrom(su, DATE, { [at.itemId]: '1000' });
     await run((ctx) => setPartyList(ctx, { partyId: at.partyId, priceListId: list, reason: 'The dealer list' }));
     const out = await inBooks(async (ctx) => {
