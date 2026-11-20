@@ -29,17 +29,18 @@ const header = { id: salesOrders.id, number: salesOrders.number, partyId: salesO
   businessDate: salesOrders.businessDate, status: salesOrders.status, notes: salesOrders.notes, closeReason: salesOrders.closeReason };
 const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
 
-/** The order, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
+/** The order, locked when it's to be written, within the principal's scope for `permission` (else not_found), with
+ * its quote's date: an order isn't dated before its quote (§4). The quote is read apart, so only the order is locked. */
 async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  // With its quote's date: an order isn't dated before its quote (§4).
-  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, quoteDate: salesQuotes.businessDate,
-    overrideVersion: salesOrders.overrideVersion }).from(salesOrders)
-    .leftJoin(salesQuotes, eq(salesQuotes.id, salesOrders.quoteId)).where(eq(salesOrders.id, id));
-  const [row] = forUpdate ? await q.for('update', { of: salesOrders }) : await q;
+  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, overrideVersion: salesOrders.overrideVersion })
+    .from(salesOrders).where(eq(salesOrders.id, id));
+  const [row] = forUpdate ? await q.for('update') : await q;
   if (row === undefined) throw notFound();
   const { owner, ...order } = row;
   ctx.see(permission, { owner });
-  return { ...order, status: order.status as SalesOrderStatus };
+  const [quote] = order.quoteId === null ? [] : await salesTx(ctx).select({ date: salesQuotes.businessDate }).from(salesQuotes)
+    .where(eq(salesQuotes.id, order.quoteId));
+  return { ...order, status: order.status as SalesOrderStatus, quoteDate: quote?.date ?? null };
 }
 
 // The bound an order's date keeps from its quote (§4), if it came from one.
