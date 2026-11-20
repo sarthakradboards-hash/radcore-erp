@@ -19,7 +19,9 @@ const REQUEST_CONTEXT = 'packages/db/src/request-context.ts';
 /** The calls to the database's log functions, record_event (RAD-31): `sql` only in its exported functions. */
 const LOG_WRITERS = 'packages/db/src/log-writers.ts';
 // A module's second table file is named here exactly, never by a wider glob (the architect on RAD-92).
-const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/columns.ts'];
+// A module's tables, and a second file per document family once its tables.ts would pass E2's cap (the architect on RAD-114).
+const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/sales/tables-credit.ts',
+  'packages/db/src/columns.ts'];
 // The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.
 export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${TS}`, `apps/api/src/**/*.${TS}`,
   `apps/worker/src/**/*.${TS}`, `apps/web/**/*.${TS}`];

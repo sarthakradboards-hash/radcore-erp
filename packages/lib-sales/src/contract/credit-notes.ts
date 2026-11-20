@@ -57,8 +57,7 @@ const note = header.extend({
 const DRAFT_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', 'not_on_source', 'over_quantity', 'quantity_too_precise',
   'exceeds_invoice', 'exceeds_credit', 'unknown_location', 'location_inactive', 'invoice_cancelled'] as const;
 /** A refund of the note's credit, refused by the database by name when approval posts it (#269). */
-// shortcut: passed to creditNoteApproval as approvalContracts' dbErrors once #269 is on dev.
-export const CREDIT_REFUND_DB_ERRORS = {
+const CREDIT_REFUND_DB_ERRORS = {
   'RA006:refund_credit_not_posted': { code: 'credit_not_posted', message: 'Refund a credit note only once it’s posted' },
   'RA006:refund_credit_party_mismatch': { code: 'refund_other_party', message: 'A refund goes back to the credit note’s party' },
   'RA006:refund_credit_before_source': { code: 'date_before_source', message: 'A refund is dated on or after its credit note' },
@@ -98,7 +97,8 @@ export const requestCreditNoteApproval = defineContract({
 /** The credit notes' approval routes (RAD-38): approving posts the note, applies it to its invoice and pays its refund. */
 export const creditNoteApproval = approvalContracts('credit-note', 'credit_notes:approve',
   [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'account_inactive', 'batches_mismatch', 'units_mismatch',
-    'serial_twice', 'not_serialised', 'credit_not_posted', 'refund_other_party', 'wrong_credit']);
+    'serial_twice', 'not_serialised', 'credit_not_posted', 'refund_other_party', 'wrong_credit', 'unknown_account', 'not_money_account'],
+  CREDIT_REFUND_DB_ERRORS);
 /** Cancels a posted credit note (ADR-007 §6): its entry mirrored on the cancellation's day, goods back out again at the
  * value they came back at (RC-207). Refused while it's applied or refunded: reverse those first. */
 export const cancelCreditNote = defineContract({

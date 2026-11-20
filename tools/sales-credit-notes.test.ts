@@ -127,8 +127,9 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
     return { id, lineId: (await getInvoiceById(ctx, { id })).lines[0]?.id ?? '' };
   };
   type Inv = Awaited<ReturnType<typeof invoice>>;
-  const goodsBack = (ctx: Ctx, at: At, inv: Inv, qty: string, more: { serials?: string[]; on?: string } = {}) => addCreditNote(ctx, {
-    invoiceId: inv.id, kind: 'goods', businessDate: more.on ?? at.on, locationId: at.placeId, reason: 'Came back unused', refund: null,
+  const goodsBack = (ctx: Ctx, at: At, inv: Inv, qty: string, more: { serials?: string[]; on?: string; refund?: { amount: string; accountId: string } } = {}) =>
+    addCreditNote(ctx, { invoiceId: inv.id, kind: 'goods', businessDate: more.on ?? at.on, locationId: at.placeId, reason: 'Came back unused',
+    refund: more.refund === undefined ? null : { amount: m(more.refund.amount), accountId: more.refund.accountId },
     lines: [{ invoiceLineId: inv.lineId, qty: q(qty), batches: [{ batchId: at.batchId, qty: q(qty) }], serials: more.serials ?? [] }] });
   const valueOff = (ctx: Ctx, at: At, inv: Inv, taxable: string, on = at.on) => addCreditNote(ctx, { invoiceId: inv.id, kind: 'value',
     businessDate: on, locationId: null, reason: 'Discount agreed', refund: null, lines: [{ invoiceLineId: inv.lineId, taxable: m(taxable) }] });
@@ -218,10 +219,11 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       late: [true, ['Sales 1000.00 0.00', 'GST Borne on Late Credit Notes 50.00 0.00', 'Debtors 0.00 1050.00']] });
   });
 
-  // F26: one pad of three back at the counter, its share of what they went out at; the note's lines come to 407.10 and
-  // its total to 407.00, the round-off a credit. The invoice was paid in cash, so nothing applies: 407.00 is the
-  // customer's, to refund.
-  it('takes one pad of three back at its share, rounds F26’s total to 407.00, and applies nothing to a paid invoice', async () => {
+  // F26, RC-126: one pad of three back at the counter, its share of what they went out at; the note's lines come to
+  // 407.10 and its total to 407.00, the round-off a credit. The invoice was paid in cash, so nothing applies, and the
+  // refund drafted with the note is paid in the same save: Dr Debtors, Cr Cash, the customer's balance 0.00. A refund
+  // past what's left is refused.
+  it('takes one pad of three back at its share, rounds F26’s total to 407.00, and refunds it in cash in the same save', async () => {
     const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
     const approver = await approverWith(['credit_notes:approve']);
     const out = await inBooks(async (ctx) => {
@@ -229,14 +231,23 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       const cash = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'cash'`))[0]?.id ?? '';
       const receipt = await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('1221'), accountId: cash });
       await allocatePayment(ctx, { id: receipt.id, businessDate: DATE, lines: [{ documentTable: 'invoices', documentId: inv.id, amount: m('1221') }] });
-      const { id } = await goodsBack(ctx, at, inv, '1');
+      const tooMuch = await failure(goodsBack(ctx, at, inv, '1', { refund: { amount: '407.01', accountId: cash } }));
+      const { id } = await goodsBack(ctx, at, inv, '1', { refund: { amount: '407', accountId: cash } });
       const note = await approve(ctx, id, approver);
-      return { note: [note.taxable, note.cgst, note.roundOff, note.total], entry: await entryOf(ctx, id, DATE),
-        paid: (await paidOf(ctx, 'invoices', [inv.id])).get(inv.id)?.credited };
+      const [refund] = await rows<{ id: string; status: string }>(ctx, sql`select id, status from radcore.payments
+        where credit_table = 'credit_notes' and credit_id = ${id}`);
+      const page = await journalPage(ctx, { limit: 100, filter: { from: DATE, to: DATE, kind: 'payment_out' } });
+      const paidOut = (await journalEntryById(ctx, { id: page.items.find((e) => e.source.id === refund?.id)?.id ?? '' })).lines
+        .map((l) => `${l.account.name} ${l.debit} ${l.credit}`);
+      const [balance] = await rows<{ balance: string }>(ctx, sql`select (coalesce(sum(debit), 0) - coalesce(sum(credit), 0))::numeric(18, 2)::text
+        as balance from radcore.journal_lines where party_id = ${at.partyId}`);
+      return { tooMuch, note: [note.taxable, note.cgst, note.roundOff, note.total], entry: await entryOf(ctx, id, DATE),
+        paid: (await paidOf(ctx, 'invoices', [inv.id])).get(inv.id)?.credited, refund: refund?.status, paidOut, balance: balance?.balance };
     });
-    expect(out).toEqual({ note: ['345.00', '31.05', '-0.10', '407.00'],
+    expect(out).toEqual({ tooMuch: 'exceeds_credit', note: ['345.00', '31.05', '-0.10', '407.00'],
       entry: ['Sales 345.00 0.00', 'Output CGST 31.05 0.00', 'Output SGST 31.05 0.00', 'Debtors 0.00 407.00', 'Round Off 0.00 0.10',
-        'Stock in Hand 200.00 0.00', 'Cost of Goods Sold 0.00 200.00'], paid: '0.00' });
+        'Stock in Hand 200.00 0.00', 'Cost of Goods Sold 0.00 200.00'], paid: '0.00', refund: 'posted',
+      paidOut: ['Debtors 407.00 0.00', 'Cash 0.00 407.00'], balance: '0.00' });
   });
 
   // RC-128: a serialised unit sold on the invoice comes back `returned`: ours again, its sale cleared. RC-207: the

@@ -4,9 +4,10 @@
 // of one invoice, or a note and the invoice's cancellation, take turns; then the stock engine's, the entry, the number
 // last. The entry (F9): Dr Sales, Dr Output GST (or GST Borne on Late Credit Notes past section 34's limit, F25), Cr
 // Debtors for the total, the round-off, and for goods back Dr Stock in Hand, Cr COGS at the value they went out at,
-// their units `returned` (RC-128). The note then applies to its invoice, as far as the invoice is unpaid.
+// their units `returned` (RC-128). The note then applies to its invoice, as far as the invoice is unpaid, and pays the
+// counter refund drafted with it (F26).
 import { creditNoteLines, creditNotes, salesTx } from '@radcore/db/sales';
-import { applyCredit, holdPeriod, paidOf, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
+import { applyCredit, holdPeriod, paidOf, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundRate, type Money } from '@radcore/lib-common';
 import { AppError, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
 import { checkPlace, postStock, reverseStock, type PostedMovement } from '@radcore/lib-stock';
@@ -108,7 +109,12 @@ async function postNote(ctx: Ctx, id: string): Promise<void> {
     throw new AppError('exceeds_credit', 'The refund is more than is left of the credit note once it settles its invoice',
       [{ path: ['refund', 'amount'], code: 'exceeds_credit', message: `${roundMoney(dec(totals.total).minus(dec(applied)))} is left to refund` }]);
   }
-  // shortcut: the counter refund (F26) is paid here through lib-accounts' refundCredit once #269 is on dev.
+  // A counter refund (F26), part of what was approved, in the same save: the refund's insert locks the note, then the
+  // cash limit takes the party (ADR-006 §1). Cash past the day's limit waits for its own approval (payments:approve).
+  if (note.refundAmount !== null && note.refundAccountId !== null) {
+    await refundCredit(ctx, { creditTable: 'credit_notes', creditId: id, partyId: note.partyId, businessDate: note.businessDate,
+      amount: roundMoney(note.refundAmount), accountId: note.refundAccountId, narration: `Refund of credit note ${number}` });
+  }
 }
 
 /** The credit-note approval (RAD-38): its maker asks (credit_notes:write) and someone else approves (credit_notes:approve);
