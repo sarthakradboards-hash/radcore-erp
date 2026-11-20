@@ -4,7 +4,7 @@ export {
 } from './services/books.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
 export {
-  holdPeriod, JOURNAL_SERIES, openFinancialYear, postEntry, postManualJournal, reverseEntry,
+  holdPeriod, JOURNAL_SERIES, openFinancialYear, postEntry, postManualJournal, reverseEntriesOf, reverseEntry,
   type AccountRef, type JournalLine, type NewEntry, type Posted,
 } from './services/journal.ts';
 export {

@@ -3,7 +3,7 @@
 // document's row, id or field. The types are checked when the tests are typechecked; a field added to any answer fails.
 import type { Money, Quantity } from '@radcore/lib-common';
 import { expectTypeOf, it } from 'vitest';
-import type { deliveredNotInvoiced, hasDeliveries, netDelivered, orderDelivered, Returned, returnedOf } from './delivered.ts';
+import type { deliveredNotInvoiced, hasDeliveries, holdDeliveriesOf, netDelivered, orderDelivered, Returned, returnedOf } from './delivered.ts';
 
 type Answer<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
 
@@ -12,6 +12,7 @@ it('answers only aggregates, keyed by the caller’s own ids', () => {
   expectTypeOf<Answer<typeof orderDelivered>>().toEqualTypeOf<{ any: boolean; all: boolean }>();
   expectTypeOf<Answer<typeof hasDeliveries>>().toEqualTypeOf<boolean>();
   expectTypeOf<Answer<typeof deliveredNotInvoiced>>().toEqualTypeOf<Money>();
+  expectTypeOf<Answer<typeof holdDeliveriesOf>>().toEqualTypeOf<void>();
   expectTypeOf<Answer<typeof returnedOf>>().toEqualTypeOf<Map<string, Returned>>();
   expectTypeOf<Returned>().toEqualTypeOf<{ qty: Quantity; value: Money; taxable: Money; gst: Money;
     batches: ReadonlyMap<string, Quantity>; serials: ReadonlyMap<string, boolean> }>();

@@ -8,12 +8,14 @@
 // Capture reaches every lead, whatever the principal's scope: a number must join its lead even when someone else owns
 // it. It answers the lead's id only when the principal may open that lead, so it shows nothing of one they can't (the
 // architect on RAD-106).
-import { crmTx, leadEnquiries, leads } from '@radcore/db/crm';
+// A person who holds leads:unassigned (D-11) also opens the leads no one owns, and their repeat enquiry on one takes it;
+// a form or a platform never does (the architect on RAD-109).
+import { crmTx, leadActivities, leadEnquiries, leads } from '@radcore/db/crm';
 import { indiaDate, maskOf, normaliseEmail, normalisePhone } from '@radcore/lib-common';
-import { AppError, defineNotification, notify, principalId, type Ctx } from '@radcore/lib-platform';
+import { AppError, defineNotification, notify, principalId, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { desc, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { getLead, LEAD_SOURCES } from '../contract.ts';
+import type { getLead, LEAD_SOURCES, LEAD_STAGES } from '../contract.ts';
 
 // lead_enquiries.message's cap, in characters (code points, as char_length counts them).
 const MESSAGE_MAX = 2000;
@@ -57,34 +59,50 @@ export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id?: strin
   const me = ctx.principal.kind === 'user' ? principalId(ctx.principal) : null;
   const tx = crmTx(ctx);
   const [made] = await tx.insert(leads).values({ phone, name: c.name ?? null, email: c.email === undefined ? null : normaliseEmail(c.email),
-    owner: me, followUpOn: on, lastEnquiryAt: receivedAt }).onConflictDoNothing({ target: leads.phone }).returning({ id: leads.id });
+    owner: me, followUpOn: on, lastEnquiryAt: receivedAt.toISOString() }).onConflictDoNothing({ target: leads.phone }).returning({ id: leads.id });
   let id = made?.id;
   let owner = me;
   if (id === undefined) {
     // The number has a lead. This update locks its row, so a second repeat at the same time waits for this one.
-    const [lead] = await tx.update(leads).set({ lastEnquiryAt: receivedAt }).where(eq(leads.phone, phone))
+    const [lead] = await tx.update(leads).set({ lastEnquiryAt: receivedAt.toISOString() }).where(eq(leads.phone, phone))
       .returning({ id: leads.id, owner: leads.owner, followUpOn: leads.followUpOn });
     if (lead === undefined) throw new Error('a lead held the number and is gone: leads are never deleted');
-    if (lead.followUpOn === null || lead.followUpOn > on) await tx.update(leads).set({ followUpOn: on }).where(eq(leads.id, lead.id));
+    // The update above holds the row, so taking an unowned lead here can't race another taker.
+    const takes = lead.owner === null && me !== null && ctx.can('leads:unassigned');
+    const sooner = lead.followUpOn === null || lead.followUpOn > on;
+    if (sooner || takes) await tx.update(leads).set({ ...(takes ? { owner: me } : {}), ...(sooner ? { followUpOn: on } : {}) }).where(eq(leads.id, lead.id));
     if (lead.owner !== null && lead.owner !== me) await notify(ctx, repeatEnquiry, { to: lead.owner.slice('user:'.length), recordId: lead.id });
     id = lead.id;
-    owner = lead.owner;
+    owner = takes ? me : lead.owner;
   }
   const message = c.message === undefined ? null : [...c.message].slice(0, MESSAGE_MAX).join('');
   await tx.insert(leadEnquiries).values({ leadId: id, source: c.source, message, receivedAt });
   const repeat = made === undefined;
-  return ctx.can('leads:read', { owner: owner ?? '' }) ? { id, repeat } : { repeat };
+  const opens = ctx.can('leads:read', { owner: owner ?? '' }) || (owner === null && ctx.can('leads:unassigned'));
+  return opens ? { id, repeat } : { repeat };
 }
 
-/** GET /leads/:id (leads:read): one the principal may see, else not_found, as if there were none. */
+type Stage = (typeof LEAD_STAGES)[number];
+
+/** GET /leads/:id (leads:read): one the principal may see, else not_found, as if there were none. Opening an unowned
+ * one doesn't take it. */
 export async function leadById(ctx: Ctx, { id }: In<typeof getLead>): Promise<Out<typeof getLead>> {
   const tx = crmTx(ctx);
   const [lead] = await tx.select({ id: leads.id, name: leads.name, phone: leads.phone, email: leads.email, owner: leads.owner,
-    followUpOn: leads.followUpOn, notes: leads.notes }).from(leads).where(eq(leads.id, id));
+    followUpOn: leads.followUpOn, notes: leads.notes, stage: leads.stage, lostReasonId: leads.lostReasonId, value: leads.value,
+    score: leads.score, planId: leads.planId, planStep: leads.planStep }).from(leads).where(eq(leads.id, id));
   if (lead === undefined) throw new AppError('not_found', 'There is no such lead');
-  ctx.see('leads:read', { owner: lead.owner ?? '' });
+  if (!ctx.can('leads:read', { owner: lead.owner ?? '' }) && !(lead.owner === null && ctx.can('leads:unassigned'))) {
+    throw new AppError('not_found', 'There is no such lead');
+  }
   const enquiries = await tx.select({ source: leadEnquiries.source, message: leadEnquiries.message, receivedAt: leadEnquiries.receivedAt })
     .from(leadEnquiries).where(eq(leadEnquiries.leadId, id)).orderBy(desc(leadEnquiries.receivedAt), desc(leadEnquiries.id));
-  return { ...lead, enquiries: enquiries.map((e) => ({ source: e.source as Capture['source'], message: e.message,
-    receivedAt: e.receivedAt.toISOString() })) };
+  const done = await tx.select({ kind: leadActivities.kind, stage: leadActivities.stage, note: leadActivities.note,
+    at: leadActivities.createdAt, by: leadActivities.createdBy }).from(leadActivities).where(eq(leadActivities.leadId, id))
+    .orderBy(desc(leadActivities.createdAt), desc(leadActivities.id));
+  const who = await principalsOf(ctx, done.map((a) => a.by));
+  return { ...lead, stage: lead.stage as Stage, enquiries: enquiries.map((e) => ({ source: e.source as Capture['source'], message: e.message,
+    receivedAt: e.receivedAt.toISOString() })),
+    activities: done.map((a) => ({ kind: a.kind as 'follow_up' | 'quick_reply' | 'stage', stage: a.stage as Stage | null, note: a.note,
+      at: a.at.toISOString(), by: who(a.by) })) };
 }

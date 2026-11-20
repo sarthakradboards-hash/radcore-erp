@@ -121,9 +121,15 @@ test('a request that cannot connect is recorded', async ({ page, pageProblems })
 
 test('an aborted request is not recorded', async ({ page, pageProblems }) => {
   await page.goto('/');
-  // Wait for the abort itself, so this can't pass without a request ever being sent.
+  // Held open by a route that never answers, and aborted only once the request is seen: aborting in the same tick as
+  // the fetch could cancel it before any request existed, and then no requestfailed came (once, under suite load).
+  await page.route('**/?slow', () => undefined);
+  const sent = page.waitForEvent('request', (r) => r.url().endsWith('/?slow'));
   const failed = page.waitForEvent('requestfailed', (r) => r.url().endsWith('/?slow'));
-  await page.evaluate('(() => { const c = new AbortController(); fetch("/?slow", { signal: c.signal }).catch(() => {}); c.abort(); })()');
+  // Not returned: evaluate would wait for the fetch's promise, and the route never answers it.
+  await page.evaluate('(() => { window.__slow = new AbortController(); fetch("/?slow", { signal: window.__slow.signal }).catch(() => {}); })()');
+  await sent;
+  await page.evaluate('window.__slow.abort()');
   expect((await failed).failure()?.errorText).toMatch(/ERR_ABORTED|NS_BINDING_ABORTED|cancelled/i);
   expect(pageProblems).toEqual([]);
 });

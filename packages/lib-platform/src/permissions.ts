@@ -58,11 +58,16 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
     records: ['@radcore/db/sales#salesQuotes', '@radcore/db/sales#salesOrders'] },
   { key: 'deliveries:write', module: 'Sales', label: 'Draft and post deliveries, and take delivered goods back before invoicing',
     records: ['@radcore/db/sales#deliveries', '@radcore/db/sales#deliveryReturns'] },
+  // Cancelling a posted delivery or return mirrors its stock and books (RAD-114, the architect's ruling): its own key.
+  { key: 'deliveries:cancel', module: 'Sales', label: 'Cancel a posted delivery or delivery return',
+    records: ['@radcore/db/sales#deliveries', '@radcore/db/sales#deliveryReturns'] },
   { key: 'invoices:write', module: 'Sales', label: 'Draft and post invoices of delivered goods',
     records: ['@radcore/db/sales#invoices'] },
-  // Its own key, so cancelling can be kept from the counter (the architect on RAD-113). Whether it needs the second
-  // factor is Sarthak's to decide (D-19); without it until then. Its route comes with cancellations (M3-10, RAD-114).
+  // Its own key, so cancelling can be kept from the counter (the architect on RAD-113), without the second factor
+  // (Sarthak, 20 Nov). Its route is RAD-114's.
   { key: 'invoices:cancel', module: 'Sales', label: 'Cancel a posted invoice', records: ['@radcore/db/sales#invoices'] },
+  // Cancelling a posted credit note (RAD-114, the architect's ruling); its records join with the credit notes (PR 2).
+  { key: 'credit_notes:cancel', module: 'Sales', label: 'Cancel a posted credit note' },
   { key: 'sales:override', module: 'Sales', label: 'Approve another person’s sale over a credit limit, below cost or over a discount limit',
     secondFactor: true },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
@@ -90,9 +95,14 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'masters:export', module: 'Masters', label: 'Export the masters workbook' },
   // Leads (M3-02, RAD-106): granted at `own`, a person sees and captures into their own leads only (E7). A lead's phone
   // and email show with pii:read or leads:contact, which reaches only the leads leads:read lets them open (the architect).
-  { key: 'leads:read', module: 'Leads', label: 'See leads and their enquiries', records: ['@radcore/db/crm#leads', '@radcore/db/crm#leadEnquiries'] },
-  { key: 'leads:write', module: 'Leads', label: 'Add leads and enquiries', records: ['@radcore/db/crm#leads', '@radcore/db/crm#leadEnquiries'] },
+  { key: 'leads:read', module: 'Leads', label: 'See leads and their enquiries', records: ['@radcore/db/crm#leads', '@radcore/db/crm#leadEnquiries', '@radcore/db/crm#leadActivities'] },
+  { key: 'leads:write', module: 'Leads', label: 'Add and work leads', records: ['@radcore/db/crm#leads', '@radcore/db/crm#leadEnquiries', '@radcore/db/crm#leadActivities'] },
   { key: 'leads:contact', module: 'Leads', label: 'See the phone and email of the leads they may open', allOnly: true, unmasks: true },
+  // D-11 (Sarthak, 20 Nov; the architect on RAD-109): with leads:read and leads:write at `own`, also the leads no one
+  // owns, and acting on one takes it. A scope on it means nothing, so it's all-only.
+  { key: 'leads:unassigned', module: 'Leads', label: 'See and take unassigned leads', allOnly: true },
+  // The CRM's own lists (the architect on RAD-109): kept up by marketing as they work, so no second factor.
+  { key: 'leads:setup', module: 'Leads', label: 'Set up lost reasons, follow-up plans and quick replies' },
 ].map((p) => Object.freeze(p)));
 
 /**

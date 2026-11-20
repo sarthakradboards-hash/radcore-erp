@@ -14,7 +14,7 @@
 // The document posts its own entry from the movements answered here; the engine posts only the revaluations it makes,
 // as the document's one `revaluation` entry (§1, F15).
 import {
-  batches, stockMovementBatches, stockMovements, stockPositions, stockTx,
+  batches, stockMovementBatches, stockMovements, stockPositions, stockTx, unitEvents,
 } from '@radcore/db/stock';
 import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
@@ -23,7 +23,7 @@ import {
   checkUnits, lockUnits, serialisedItems, writeUnitEvents, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent,
   type UnitEventRow, type UnitOnLine,
 } from './units.ts';
-import { and, asc, desc, eq, isNull, or, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm';
 import { averageIssue, estimatedIssue, lowestFrom, position, revaluation } from './valuation.ts';
 import { z } from 'zod';
 
@@ -265,4 +265,77 @@ function revaluationLines(m: PostedMovement): JournalLine[] {
   const cogs = { account: { system: 'cogs' } };
   return dec(m.value).isNegative() ? [{ ...cogs, debit: amount }, { ...stock, credit: amount }]
     : [{ ...stock, debit: amount }, { ...cogs, credit: amount }];
+}
+
+// The unit event that undoes one on a movement being mirrored (§5): goods that went out come back, and goods that came
+// back go out again, on the sale they were on. Any other kind isn't cancelled by a document's mirror.
+const UNDO: Readonly<Record<string, 'delivered' | 'delivery_returned'>> = {
+  delivered: 'delivery_returned', delivery_returned: 'delivered', returned: 'delivered',
+};
+
+/**
+ * A document's cancellation (ADR-006 §4, §6; RC-207): the mirror of each of its movements, dated `businessDate`, at the
+ * same value and in the same batches, each naming the movement it undoes (`reverses_movement_id`, unique, so once);
+ * every unit that moved on them moves back. Goods taken out again must be on hand: only a delivery may go below zero
+ * (`not_enough_stock`). The document's entries are reversed by its own service (lib-accounts), the revaluation the
+ * engine posted included, so the books and stock still agree for the document (RA007).
+ */
+export async function reverseStock(ctx: Ctx, p: { sourceTable: string; sourceId: string; businessDate: string }): Promise<PostedMovement[]> {
+  await holdPeriod(ctx, p.businessDate);
+  const tx = stockTx(ctx);
+  const originals = await tx.select().from(stockMovements)
+    .where(and(eq(stockMovements.sourceTable, p.sourceTable), eq(stockMovements.sourceId, p.sourceId), isNull(stockMovements.reversesMovementId)))
+    .orderBy(asc(stockMovements.postedAt), asc(stockMovements.id));
+  if (originals.length === 0) return [];
+  const ids = originals.map((m) => m.id);
+  const [done] = await tx.select({ id: stockMovements.id }).from(stockMovements).where(inArray(stockMovements.reversesMovementId, ids)).limit(1);
+  if (done !== undefined) throw new AppError('already_reversed', 'This document’s stock is already cancelled');
+  await lockPositions(ctx, originals.map((m) => [m.itemId, m.locationId] as const));
+  const events = await tx.select({ itemId: unitEvents.itemId, serialNo: unitEvents.serialNo, kind: unitEvents.kind,
+    outMovementId: unitEvents.outMovementId, inMovementId: unitEvents.inMovementId }).from(unitEvents)
+    .where(or(inArray(unitEvents.outMovementId, ids), inArray(unitEvents.inMovementId, ids)));
+  await lockUnits(ctx, events);
+  const rows = await tx.select({ movementId: stockMovementBatches.movementId, batchId: stockMovementBatches.batchId, qty: stockMovementBatches.qty })
+    .from(stockMovementBatches).where(inArray(stockMovementBatches.movementId, ids));
+  const base = { sourceTable: p.sourceTable, sourceId: p.sourceId, businessDate: p.businessDate };
+  const mirrors = new Map<string, string>();
+  const posted: PostedMovement[] = [];
+  for (const m of originals) {
+    const direction = m.direction === 'in' ? 'out' : m.direction === 'out' ? 'in' : 'revalue';
+    const qty = roundQty(m.qty, 3);
+    // Taken out again: what's there now must cover it, as for any issue but a delivery (§4).
+    if (direction === 'out' && position(await byDate(ctx, m.itemId, m.locationId)).qty.lt(dec(qty))) {
+      throw new AppError('not_enough_stock', 'The goods have gone since, so this can’t be cancelled');
+    }
+    const value = roundMoney(m.direction === 'revalue' ? dec(m.value).negated() : m.value);
+    const [row] = await tx.insert(stockMovements).values({ ...base, itemId: m.itemId, locationId: m.locationId, sourceLineId: m.sourceLineId,
+      direction, qty, value, rate: direction === 'in' ? roundRate(dec(value).div(dec(qty))) : null, reversesMovementId: m.id })
+      .returning({ id: stockMovements.id });
+    if (row === undefined) throw new Error('the mirror insert returned no row');
+    const batchRows = rows.filter((b) => b.movementId === m.id);
+    if (batchRows.length > 0) {
+      await tx.insert(stockMovementBatches).values(batchRows.map((b) => ({ movementId: row.id, itemId: m.itemId, batchId: b.batchId, qty: b.qty })));
+    }
+    mirrors.set(m.id, row.id);
+    posted.push({ id: row.id, itemId: m.itemId, locationId: m.locationId, direction, qty, value });
+  }
+  const undone: UnitEventRow[] = [];
+  for (const e of events) {
+    const kind = UNDO[e.kind];
+    if (kind === undefined) throw new AppError('not_reversible', `A unit’s ${e.kind} isn’t undone by cancelling this document`);
+    const mirror = mirrors.get(e.outMovementId ?? e.inMovementId ?? '') ?? '';
+    undone.push(kind === 'delivery_returned' ? { itemId: e.itemId, serialNo: e.serialNo, kind, inMovementId: mirror }
+      : { itemId: e.itemId, serialNo: e.serialNo, kind, outMovementId: mirror, saleLineId: await lastSaleLine(ctx, e.itemId, e.serialNo) });
+  }
+  await writeUnitEvents(ctx, base, undone);
+  return posted;
+}
+
+// The sale a unit was last delivered on: where goods that came back go out again.
+async function lastSaleLine(ctx: Ctx, itemId: string, serialNo: string): Promise<string> {
+  const [row] = await stockTx(ctx).select({ saleLineId: unitEvents.saleLineId }).from(unitEvents)
+    .where(and(eq(unitEvents.itemId, itemId), eq(unitEvents.serialNo, serialNo), eq(unitEvents.kind, 'delivered')))
+    .orderBy(desc(unitEvents.postedAt)).limit(1);
+  if (row?.saleLineId == null) throw new AppError('not_reversible', `Unit ${serialNo} was never delivered on a sale`);
+  return row.saleLineId;
 }

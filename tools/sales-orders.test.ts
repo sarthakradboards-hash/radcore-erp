@@ -159,12 +159,18 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     const listed = await setup(['customer'], { listRate: '65000' });
     const unlisted = await setup(['customer'], { listRate: null });
     const inclusive = await setup(['customer'], { listRate: '64312.50', taxInclusive: true });
+    // A party whose own list is switched off has no list rate either, as a switched-off default (auditor on #269).
+    const offList = await setup(['customer']);
+    await su.query(`with p as (select set_config('app.principal', 'system:test', true))
+      update radcore.price_lists set active = false from p
+      where id = (select price_list_id from radcore.party_price_lists where party_id = $1)`, [offList.partyId]);
     const maker = await newUser(KEYS, await roleWithLimit('0'));
     const confirm = async (at: { partyId: string; itemId: string }) => {
       const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), maker);
       return run((ctx) => confirmOrderNow(ctx, { id }), maker).then(() => 'ok', (e: unknown) => (e as AppError).issues.map((i) => i.code).join());
     };
-    expect([await confirm(listed), await confirm(unlisted), await confirm(inclusive)]).toEqual(['over_discount', 'no_list_rate', 'ok']);
+    expect([await confirm(listed), await confirm(unlisted), await confirm(inclusive), await confirm(offList)])
+      .toEqual(['over_discount', 'no_list_rate', 'ok', 'no_list_rate']);
   });
 
   it('makes an approved override stale when the order changes after it', async () => {

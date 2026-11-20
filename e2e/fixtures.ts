@@ -95,7 +95,7 @@ export const test = base.extend<Options & Fixtures>({
           try {
             const asked = input instanceof Request ? input : null;
             const method = String((init && init.method) || (asked && asked.method) || 'GET').toUpperCase();
-            if (method === 'GET') window.__e2eFetchGet(new URL(asked ? asked.url : String(input), location.href).href);
+            if (method === 'GET') window.__e2eFetchGet(new URL(asked ? asked.url : String(input), location.href).href).catch(() => {});
           } catch (e) { /* never in the page's way */ }
           return fetchAsIs.apply(this, arguments);
         };
@@ -111,8 +111,9 @@ export const test = base.extend<Options & Fixtures>({
       await context.exposeBinding('__e2eCspViolation', (_source, v: string) => problems.push(`CSP violation: ${v}`));
       await context.addInitScript(`if (!window.__e2eCspWatched) {
         window.__e2eCspWatched = true;
+        // A binding's promise is caught, so a page closing mid-call can't raise an unhandled rejection (auditor on #245).
         window.addEventListener('securitypolicyviolation', (e) => window.__e2eCspViolation(
-          e.violatedDirective + ' blocked ' + (e.blockedURI || 'inline') + ' in ' + (e.sourceFile || 'the page')));
+          e.violatedDirective + ' blocked ' + (e.blockedURI || 'inline') + ' in ' + (e.sourceFile || 'the page')).catch(() => {}));
       }`);
       context.on('requestfailed', (r) => {
         const error = r.failure()?.errorText ?? '';

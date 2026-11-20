@@ -428,6 +428,20 @@
       "when": 1795163281315,
       "tag": "0060_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1795175296385,
+      "tag": "0061_pipeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1795176550440,
+      "tag": "0062_cancellations",
+      "breakpoints": true
     }
   ]
 }
