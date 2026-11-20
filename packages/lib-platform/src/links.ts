@@ -10,7 +10,7 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { principalId, type Ctx, type Principal } from './ctx.ts';
 import { AppError } from './errors.ts';
-import { defineSetting } from './settings.ts';
+import { defineSetting } from './define-setting.ts';
 
 /** The longest a link may last, in days: every link expires within it (RAD-41). */
 export const linkMaxDays = defineSetting('platform.public_link_max_days', z.number().int().min(1).max(365), 30, {

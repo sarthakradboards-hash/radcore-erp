@@ -14,7 +14,7 @@ import { AppError } from './errors.ts';
 
 const KEY = /^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\.[a-z][a-z0-9_]*$/;
 /** A series' prefix: 1 to 4 capital letters or digits. */
-export const seriesPrefix = () => z.string().regex(/^[A-Z0-9]{1,4}$/, 'Use 1 to 4 capital letters or digits');
+const seriesPrefix = () => z.string().regex(/^[A-Z0-9]{1,4}$/, 'Use 1 to 4 capital letters or digits');
 // Rule 46 allows a tax invoice 16 characters: a prefix of up to 4, "/26-27/" and 5 digits, so 5 is the default. A
 // series no rule bounds takes more: the journal numbers nearly every document's entry (the architect on #171).
 const DIGITS = 5;

@@ -5,13 +5,25 @@ import { numberCounters, platformTx, seriesPrefixes, settings } from '@radcore/d
 import { financialYear, indiaDate } from '@radcore/lib-common';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { listNumberSeries, listSettings, setSeriesPrefix, setSetting } from './contract/settings.ts';
+import { listNumberSeries, listSettings, setSeriesPrefix, setSetting } from './contract/settings.ts';
 import type { Ctx } from './ctx.ts';
 import { AppError } from './errors.ts';
 import { formatNumber, type Series } from './numbering.ts';
 import { principalsOf } from './principals.ts';
+import { defineRoute } from './route.ts';
 import { storeSetting } from './settings-store.ts';
-import type { SettingDef } from './settings.ts';
+import type { SettingDef } from './define-setting.ts';
+
+/** The settings screens' four routes over apps/api's composed settings and series, built once at start, as
+ * createClientErrors' are: a route file imports no catalogue (E1). */
+export function createSettingsScreens(catalogue: readonly SettingDef<unknown>[], series: readonly Series[]) {
+  return Object.freeze({ routes: [
+    defineRoute(listSettings, (ctx) => listSettingsOf(ctx, catalogue)),
+    defineRoute(setSetting, (ctx, input) => changeSetting(ctx, catalogue, input)),
+    defineRoute(listNumberSeries, (ctx) => listSeriesOf(ctx, series)),
+    defineRoute(setSeriesPrefix, (ctx, input) => changeSeriesPrefix(ctx, series, input)),
+  ] });
+}
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;

@@ -8,7 +8,7 @@ import { ForeignTableError, moduleTx, UnboundedWriteError } from '../packages/db
 import { openTransaction, type Database } from '../packages/db/src/schema.ts';
 import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
 import { runInTransaction } from '../packages/lib-platform/src/db/transaction.ts';
-import { defineSetting } from '../packages/lib-platform/src/settings.ts';
+import { defineSetting } from '../packages/lib-platform/src/define-setting.ts';
 import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { integer, pgSchema, uuid } from 'drizzle-orm/pg-core';

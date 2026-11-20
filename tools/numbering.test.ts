@@ -135,11 +135,18 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
       const { rows } = await c.query<{ last: number }>(
-        "update radcore.number_counters set last = 500, prefix = 'XX' where series = $1 returning last, prefix", [s.key]);
+        "update radcore.number_counters set last = 500 where series = $1 returning last, prefix", [s.key]);
       expect(rows).toEqual([{ last: 2, prefix: 'TS' }]);
-      const moved = await c.query("update radcore.number_counters set financial_year = '2030-31' where series = $1", [s.key])
-        .catch((e: unknown) => (e as { code?: string }).code);
-      expect(moved).toBe('RA001');
+      const refused = async (text: string) => {
+        await c.query('savepoint s');
+        return c.query(text, [s.key]).then(() => 'ok', async (e: unknown) => {
+          await c.query('rollback to savepoint s');
+          return (e as { code?: string }).code;
+        });
+      };
+      expect(await refused("update radcore.number_counters set financial_year = '2030-31' where series = $1")).toBe('RA001');
+      // Once a number is drawn, the year keeps its prefix (RAD-132): a change is refused, never a draw.
+      expect(await refused("update radcore.number_counters set prefix = 'XX' where series = $1")).toBe('RA001');
     } finally {
       await c.query('rollback');
       c.release();

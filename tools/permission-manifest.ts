@@ -68,6 +68,11 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'PATCH /items/:id': 'items:write',
   'POST /items/:id/pictures': 'items:write',
   'DELETE /items/:id/pictures/:fileId': 'items:write',
+  // Settings and number-series prefixes (RAD-132): read under settings:read, changed under settings:write.
+  'GET /settings': 'settings:read',
+  'PUT /settings/:key': 'settings:write',
+  'GET /number-series': 'settings:read',
+  'PUT /number-series/:key/prefix': 'settings:write',
   // The company profile (RAD-88): one company, set by whoever holds company:write.
   'GET /admin/company': 'company:read',
   'PUT /admin/company': 'company:write',
@@ -210,6 +215,7 @@ const PLATFORM = ['lib-platform'];
 const STOCK = ['lib-platform', 'lib-stock'];
 const HR = ['lib-hr', 'lib-platform'];
 const CRM = ['lib-crm', 'lib-platform'];
+const SETTINGS = ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -263,6 +269,11 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /items/:id/pictures': STOCK,
   'DELETE /items/:id/pictures/:fileId': STOCK,
   // lib-accounts' services, which run under lib-platform's.
+  // The settings screens read every library's declared settings and series, and a setting's own check (RAD-132).
+  'GET /settings': SETTINGS,
+  'PUT /settings/:key': SETTINGS,
+  'GET /number-series': SETTINGS,
+  'PUT /number-series/:key/prefix': SETTINGS,
   'GET /admin/company': ['lib-accounts', 'lib-platform'],
   'PUT /admin/company': ['lib-accounts', 'lib-platform'],
   'GET /gst/rates': ['lib-gst', 'lib-platform'],

@@ -25,3 +25,12 @@ export {
 export {
   acceptQuoteNow, addQuote, changeQuote, closeQuoteNow, dropQuote, getQuoteById, listQuotesPage, QUOTE_SERIES, sendQuoteNow,
 } from './services/quotes.ts';
+
+// This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
+import { DELIVERY_RETURN_SERIES as returned } from './services/delivery-returns.ts';
+import { DELIVERY_SERIES as delivered } from './services/deliveries.ts';
+import { defaultDiscountLimit } from './services/discounts.ts';
+import { ORDER_SERIES as ordered } from './services/orders.ts';
+import { QUOTE_SERIES as quoted } from './services/quotes.ts';
+export const settings = [defaultDiscountLimit] as const;
+export const series = [quoted, ordered, delivered, returned] as const;
