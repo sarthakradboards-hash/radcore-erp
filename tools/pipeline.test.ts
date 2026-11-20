@@ -8,7 +8,7 @@ import {
   listLeadsPage, moveLeadStage, putOnPlan, quickReplyText, tellFollowUpsDue, updateLeadDetails,
 } from '@radcore/lib-crm';
 import { listLeads } from '@radcore/lib-crm/contract';
-import { addDays, maskOutput, moneyString, piiPlan, sightOf } from '@radcore/lib-common';
+import { addDays, moneyString, piiPlan } from '@radcore/lib-common';
 import { myNotificationsPage, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
@@ -86,11 +86,14 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
     const second = await as(sales(ashaId), (ctx) => listLeadsPage(ctx, { limit: 1, filter: {}, after: first.next ?? '' }));
     expect([...first.items, ...second.items].map((i) => i.id)).toEqual([a2, a1]);
     expect(second.next).toBeNull();
-    // As the handler sends it, to a salesperson who may see their own leads' numbers on each lead's page.
-    const plan = piiPlan(listLeads.output);
-    if (plan === null) throw new Error('listLeads has no pii() field');
-    const sent = maskOutput(plan, first, sightOf(['leads:read', 'leads:write', 'leads:contact']));
-    expect([(sent.value as typeof first).items[0]?.phone, sent.looks]).toEqual([{ masked: expect.stringMatching(/^••••••\d{4}$/) as unknown }, []]);
+    // The list carries the mask itself, for every viewer, pii:read included: the contract has no pii() field to
+    // unmask, so the handler logs no look (the architect on #262).
+    const [{ phone } = { phone: '' }] = await owner<{ phone: string }>('select phone from radcore.leads where id = $1', [a2]);
+    const reader: Principal = { kind: 'user', userId: ashaId, permissions: ['leads:read', 'pii:read'], ownScope: ['leads:read'] };
+    const seen = await as(reader, (ctx) => listLeadsPage(ctx, { limit: 1, filter: {} }));
+    expect([seen.items[0]?.phone, first.items[0]?.phone, piiPlan(listLeads.output)])
+      .toEqual([{ masked: `••••••${phone.slice(-4)}` }, { masked: `••••••${phone.slice(-4)}` }, null]);
+    expect(await owner('select 1 from radcore.access_log where record_id = $1', [a2])).toEqual([]);
     // Filters: a stage, and follow-ups due by a day. Each new lead is due the day it came.
     await as(sales(ashaId), (ctx) => moveLeadStage(ctx, { id: a1, stage: 'interested' }));
     const ids = async (filter: Parameters<typeof listLeadsPage>[1]['filter']) =>
@@ -285,10 +288,14 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
     await expect(as(taker(ashaId), (ctx) => assignLeadOwner(ctx, { id, owner: raviId }))).rejects.toMatchObject({ code: 'forbidden' });
     await expect(as(taker(ashaId), (ctx) => assignLeadOwner(ctx, { id, owner: null }))).rejects.toMatchObject({ code: 'forbidden' });
     await expect(as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: randomUUID() }))).rejects.toMatchObject({ code: 'unknown_person' });
-    // Someone whose role doesn't see leads can't be handed one.
+    // Someone whose role doesn't see leads, or whose account is switched off, can't be handed one.
     const [clerk] = await owner<{ id: string }>("insert into radcore.users (email, display_name, role, status, password_hash) values ($1, 'Clerk', 'accounts', 'active', 'test') returning id",
       [`${letters()}@example.test`]);
-    await expect(as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: clerk?.id ?? '' }))).rejects.toMatchObject({ code: 'not_a_seller' });
+    const [gone] = await owner<{ id: string }>("insert into radcore.users (email, display_name, role, status, password_hash) values ($1, 'Gone', 'sales', 'disabled', 'test') returning id",
+      [`${letters()}@example.test`]);
+    for (const to of [clerk?.id ?? '', gone?.id ?? '']) {
+      await expect(as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: to }))).rejects.toMatchObject({ code: 'owner_cannot_see_leads' });
+    }
     await as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: raviId }));
     expect(await owner('select owner from radcore.leads where id = $1', [id])).toEqual([{ owner: `user:${raviId}` }]);
     await as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: null }));

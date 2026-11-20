@@ -10,7 +10,7 @@ import {
 } from '@radcore/db/crm';
 import { addDays, indiaDate, maskOf, normaliseEmail } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineNotification, encodeCursor, listScope, momentKey, notify, principalFor, principalId,
+  AppError, decodeCursor, defineNotification, encodeCursor, listScope, momentKey, notify, principalFor, principalId, roleOf,
   type Ctx, type JobContract,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, type SQL } from 'drizzle-orm';
@@ -43,7 +43,7 @@ export async function listLeadsPage(ctx: Ctx, input: In<typeof listLeads>): Prom
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
   return {
-    items: page.map((r) => ({ ...r, stage: r.stage as Stage })),
+    items: page.map((r) => ({ ...r, phone: maskOf(r.phone, 'last4'), stage: r.stage as Stage })),
     next: rows.length > input.limit && last ? encodeCursor({ at: last.lastEnquiryAt, id: last.id }) : null,
   };
 }
@@ -157,11 +157,14 @@ export async function assignLeadOwner(ctx: Ctx, { id, owner }: In<typeof assignL
   if (lead === undefined) throw new AppError('not_found', 'There is no such lead');
   const to = owner === null ? null : `user:${owner}`;
   if (owner !== null) {
+    if (await roleOf(ctx, to ?? '') === undefined) {
+      throw new AppError('unknown_person', 'There is no such person', [{ path: ['owner'], code: 'unknown', message: 'Choose a person' }]);
+    }
+    // A lead handed to someone who can't see leads would be lost to them and to their bell (the architect on #262).
     const person = await principalFor(ctx, owner);
-    if (person === null) throw new AppError('unknown_person', 'There is no such person', [{ path: ['owner'], code: 'unknown', message: 'Choose a person' }]);
-    // A lead handed to someone who can't see leads would be lost to them and to their bell (auditor-2 on #262).
-    if (!person.permissions.includes('leads:read')) {
-      throw new AppError('not_a_seller', 'That person’s role can’t see leads', [{ path: ['owner'], code: 'not_a_seller', message: 'Choose someone who works leads' }]);
+    if (person === null || !person.permissions.includes('leads:read')) {
+      throw new AppError('owner_cannot_see_leads', 'That person can’t see leads', [{ path: ['owner'], code: 'owner_cannot_see_leads',
+        message: 'Choose someone whose account is active and whose role sees leads' }]);
     }
   }
   await tx.update(leads).set({ owner: to, followUpToldOn: null }).where(eq(leads.id, id));

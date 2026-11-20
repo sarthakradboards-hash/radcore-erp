@@ -53,18 +53,18 @@ export const getLead = defineContract({
 
 /**
  * Leads, latest enquiry first, a page of at most 200 (RC-041). A person who holds leads:read at `own` gets only their
- * own, and the unowned ones too with leads:unassigned (D-11). The phone keeps its last 4 and the email is masked,
- * without pii:read, so a list never hands out the numbers: the lead's own page shows them to a leads:contact holder,
- * and logs the look. leads:contact unmasks a lead's page, never the list, so this record has no `seenWith` on purpose
- * (RC-041). `owner: 'none'` is the unowned ones, `followUpBy` those whose follow-up falls on or before that day.
+ * own, and the unowned ones too with leads:unassigned (D-11). The phone is the mask itself, its last 4 kept, for every
+ * viewer, pii:read included, so no list row can carry a whole number and a list logs no look (RC-041, the architect on
+ * #262). The lead's own page shows the number to a pii:read or leads:contact holder, and logs that look.
+ * `owner: 'none'` is the unowned ones, `followUpBy` those whose follow-up falls on or before that day.
  */
 export const listLeads = defineContract({
   method: 'GET', path: '/leads', auth: 'session', perm: 'leads:read', tx: read,
   input: listInput(z.object({ stage: stage.optional(), owner: z.enum(['me', 'none']).optional(), followUpBy: dateString().optional() })),
-  output: listOf(piiRecord('leads', z.object({
-    id: idString(), name: z.string().nullable(), phone: pii(z.string(), 'last4'), stage, owner: z.string().nullable(),
+  output: listOf(z.object({
+    id: idString(), name: z.string().nullable(), phone: z.object({ masked: z.string() }), stage, owner: z.string().nullable(),
     followUpOn: dateString().nullable(), value: moneyString().nullable(), score: score.nullable(), lastEnquiryAt: momentString(),
-  }))),
+  })),
 });
 
 const active = z.boolean();
@@ -156,9 +156,10 @@ export const quickReply = defineContract({
   output: z.object({ text: z.string() }), errors: ['unknown_reply', 'lead_taken'],
 });
 
-/** Hands a lead to a person, or (null) back to no one: only for someone who holds leads:write at `all` (D-11). */
+/** Hands a lead to a person, or (null) back to no one: only for someone who holds leads:write at `all` (D-11). A person
+ * whose role lacks leads:read, or whose account isn't active, is `owner_cannot_see_leads`. */
 export const assignLead = defineContract({
   method: 'POST', path: '/leads/:id/owner', auth: 'session', perm: 'leads:write', tx: write,
   input: z.object({ id: idString(), owner: idString().nullable() }),
-  output: z.object({}), errors: ['unknown_person', 'not_a_seller'],
+  output: z.object({}), errors: ['unknown_person', 'owner_cannot_see_leads'],
 });
