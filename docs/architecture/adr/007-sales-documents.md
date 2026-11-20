@@ -133,8 +133,21 @@ removal, so a delivery for a sale is invoiced the same day by default:
   once CA-47 is answered, below), and whatever isn't refunded or kept stays as the customer's credit on Debtors,
   named so on the cancellation.
   - Each choice is a key of its own, granted per role on the roles screen like any other (Sarthak, 20 Nov). Each
-    needs the second factor, since each moves money (D-19). The cancellation takes a `reason()`.
+    needs the second factor, since each moves money (D-19). The cancellation takes a `reason()`. By default
+    admin, owner and accounts hold both refund keys.
+  - **Which refund key an amount needs:** all of what's left needs `bookings:refund_full`; more than nothing but
+    less than that needs `bookings:refund_part`; nothing refunded needs neither. Without the key the amount needs,
+    the cancellation is refused (`forbidden`, naming the key). So a role with only `bookings:refund_part` can't
+    refund everything, in one refund or in several: each is judged against what's left at that moment.
   - A refund is a payment out naming the receipt (F24), within the receipt's cap and under the cash limit (§8).
+  - **Later**, what was left as credit is refunded from the cancelled booking under the same keys and rule. The
+    booking reads what's still held live from its receipts, so it stays right whatever else applies them.
+  - **A booking's advance is refunded only through its booking**, so the booking keys decide who may, as Sarthak
+    asked. The receipt names what it's held for, `(held_for_table, held_for_id)` on `payments`, as an allocation
+    names its document: lib-accounts stores the name and never reads the booking. POST /payments refuses a refund
+    of a held receipt (`refund_through_owner`); the bookings service refunds it through lib-accounts' `refundHeld`,
+    which no route reaches, after checking its own keys. The same cap and cash limit apply. Applying the advance to
+    an invoice, or cancelling a receipt entered by mistake, stays as for any receipt.
 - **Keeping an advance** (forfeiture) waits on CA-47: whether GST is due on the amount kept, and on which document.
   Until it's answered there's no posting, and `bookings:forfeit` and its route aren't built. What would be kept
   stays as the customer's credit, and it can be forfeited from there, at cancellation or later, once ADR-006 §6
