@@ -13,7 +13,7 @@ import {
 import { dec, roundMoney, roundQty, type Decimal, type Money, type Quantity } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';
 import { serialKey } from '@radcore/lib-stock';
-import { and, eq, inArray, sum } from 'drizzle-orm';
+import { and, asc, eq, inArray, sum } from 'drizzle-orm';
 
 const QTY_PLACES = 3; // a line's quantity column, numeric(18, 3)
 const asQty = (d: Decimal): Quantity => roundQty(d, QTY_PLACES);
@@ -110,4 +110,14 @@ export async function deliveredNotInvoiced(ctx: Ctx, partyId: string): Promise<M
     .innerJoin(invoices, and(eq(invoices.id, invoiceLines.invoiceId), eq(invoices.status, 'posted'), eq(invoices.partyId, partyId)));
   const total = (r: { taxable: string | null; gst: string | null } | undefined) => dec(r?.taxable ?? '0').plus(dec(r?.gst ?? '0'));
   return roundMoney(total(out).minus(total(back)).minus(total(billed)));
+}
+
+/** Locks the deliveries of the caller's delivery lines, FOR UPDATE in id order, answering nothing: an invoice's
+ * cancellation holds them so a return or another invoice of them waits for it (ADR-006 §1). */
+export async function holdDeliveriesOf(ctx: Ctx, deliveryLineIds: readonly string[]): Promise<void> {
+  if (deliveryLineIds.length === 0) return;
+  const tx = salesTx(ctx);
+  const ids = [...new Set((await tx.select({ id: deliveryLines.deliveryId }).from(deliveryLines)
+    .where(inArray(deliveryLines.id, [...deliveryLineIds]))).map((r) => r.id))];
+  await tx.select({ id: deliveries.id }).from(deliveries).where(inArray(deliveries.id, ids)).orderBy(asc(deliveries.id)).for('update');
 }

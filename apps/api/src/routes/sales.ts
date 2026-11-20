@@ -9,6 +9,7 @@ import {
   getDeliveryById, listDeliveriesPage, listToInvoicePage, postDeliveryNow, addDeliveryReturn, changeDeliveryReturn, dropDeliveryReturn,
   getDeliveryReturnById, listDeliveryReturnsPage, postDeliveryReturnNow, addInvoice, askInvoiceOverride, changeInvoice, dropInvoice,
   getInvoiceById, invoiceOverride, listInvoicesPage, postInvoiceNow,
+  cancelInvoiceNow,
 } from '@radcore/lib-sales';
 import {
   createPriceList, getPrice, getPriceList, getPriceListChanges, getPriceListVersion, listDiscountLimits, listPriceListRates, listPriceLists, priceListApproval as
@@ -20,6 +21,7 @@ import {
   updateDeliveryReturn, createInvoice, deleteInvoice, getInvoice, invoiceOverrideApproval, listInvoices, postInvoice,
   requestInvoiceOverride, updateInvoice,
   getPartyPriceList, setPartyPriceList,
+  cancelInvoice,
 } from '@radcore/lib-sales/contract';
 
 export default [
@@ -81,4 +83,5 @@ export default [
   defineRoute(postInvoice, postInvoiceNow),
   defineRoute(requestInvoiceOverride, askInvoiceOverride),
   ...defineApproval(invoiceOverrideApproval, invoiceOverride),
+  defineRoute(cancelInvoice, cancelInvoiceNow),
 ];
