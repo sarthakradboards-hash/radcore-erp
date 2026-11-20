@@ -100,8 +100,8 @@ async function checkRefund(ctx: Ctx, r: Readonly<{ receiptId: string; partyId: s
  * again here, under the receipt's lock, whatever path posts it. */
 async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
   const tx = accountsTx(ctx);
-  // The period lock first, then the payment's row (ADR-006 §1). An approval's version() has already locked the row,
-  // as the engine reads it before deciding; that path takes the period lock second (the auditor on #234).
+  // The period lock first, then the payment's row (ADR-006 §1). An approval holds the period already, through
+  // cashLimitSpec's lockFirst, before the engine locks the row (the architect on RAD-114); holding it again is free.
   const [dated] = await tx.select({ businessDate: payments.businessDate }).from(payments).where(eq(payments.id, id)).limit(1);
   if (dated !== undefined) await holdPeriod(ctx, dated.businessDate);
   const [p] = await tx.select().from(payments).where(and(eq(payments.id, id), eq(payments.status, 'draft'))).limit(1).for('update');
@@ -141,6 +141,12 @@ export const cashLimitSpec: ApprovalSpec<{ kind: string; partyId: string; busine
       amount: payments.amount, accountId: payments.accountId }).from(payments).where(eq(payments.id, id)).limit(1);
     const [row] = forUpdate ? await q.for('update') : await q;
     return row === undefined ? null : { ...row, amount: roundMoney(row.amount) };
+  },
+  // The period first, on the payment's date read unlocked, before the engine locks the payment (the architect on
+  // RAD-114): a changed date fails the version check after.
+  async lockFirst(ctx, id) {
+    const [row] = await accountsTx(ctx).select({ businessDate: payments.businessDate }).from(payments).where(eq(payments.id, id)).limit(1);
+    if (row !== undefined) await holdPeriod(ctx, row.businessDate);
   },
   async approved(ctx, id) {
     await post(ctx, id);

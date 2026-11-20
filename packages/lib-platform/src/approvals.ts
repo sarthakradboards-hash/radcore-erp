@@ -41,6 +41,13 @@ export type ApprovalSpec<V extends ApprovalVersion = ApprovalVersion> = {
    * RAD-35 adds the test that an out-of-scope approver gets 404.
    */
   version(ctx: Ctx, recordId: string, options: { forUpdate: boolean }): Promise<V | null>;
+  /**
+   * What the decision locks before the record, for a spec whose approved() posts (the architect on RAD-114): the period
+   * lock, so a decision takes its locks in ADR-006 §1's one order, the period before the documents. A posting spec reads
+   * the record's business date, unlocked, and holds the period on it (lib-accounts' holdPeriod, which lib-platform can't
+   * call); if the date changes before the record is locked, the version no longer matches and the decision is refused.
+   */
+  lockFirst?(ctx: Ctx, recordId: string): Promise<void>;
   /** The record takes effect, in the approval's transaction. */
   approved(ctx: Ctx, recordId: string): Promise<void>;
   /** The record goes back to its maker, in the rejection's transaction. */
@@ -139,8 +146,10 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
   const [found] = await tx.select({ recordId: approvals.recordId }).from(approvals)
     .where(and(eq(approvals.id, id), eq(approvals.kind, spec.kind)));
   if (found === undefined) throw notFound();
-  // The record first, locked, then the request: requestApproval locks in the same order, so a request and a decision
-  // at once never deadlock (auditor). Outside the approver's scope the record is not found, for either decision.
+  // What the spec locks first (the period, for a posting: ADR-006 §1), then the record, locked, then the request:
+  // requestApproval locks the record and the request in the same order, so a request and a decision at once never
+  // deadlock (auditor). Outside the approver's scope the record is not found, for either decision.
+  await spec.lockFirst?.(ctx, found.recordId);
   const version = await spec.version(ctx, found.recordId, { forUpdate: true });
   if (version === null) throw notFound();
   // The request locked too, so two people deciding at once are taken one after the other: the second finds it decided.
