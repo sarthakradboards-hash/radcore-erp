@@ -142,9 +142,12 @@ removal, so a delivery for a sale is invoiced the same day by default:
   - A refund is a payment out naming the receipt (F24), within the receipt's cap and under the cash limit (§8).
   - **Later**, what was left as credit is refunded from the cancelled booking under the same keys and rule. The
     booking reads what's still held live from its receipts, so it stays right whatever else applies them.
-  - **`payments:write` reaches every receipt**, a booking's advance included. It's the accounts power, wider than
-    the booking keys, which let a role that handles bookings refund an advance without holding it. A role that
-    mustn't refund advances holds neither.
+  - **A booking's advance is refunded only through its booking**, so the booking keys decide who may, as Sarthak
+    asked. The receipt names what it's held for, `(held_for_table, held_for_id)` on `payments`, as an allocation
+    names its document: lib-accounts stores the name and never reads the booking. POST /payments refuses a refund
+    of a held receipt (`refund_through_owner`); the bookings service refunds it through lib-accounts' `refundHeld`,
+    which no route reaches, after checking its own keys. The same cap and cash limit apply. Applying the advance to
+    an invoice, or cancelling a receipt entered by mistake, stays as for any receipt.
 - **Keeping an advance** (forfeiture) waits on CA-47: whether GST is due on the amount kept, and on which document.
   Until it's answered there's no posting, and `bookings:forfeit` and its route aren't built. What would be kept
   stays as the customer's credit, and it can be forfeited from there, at cancellation or later, once ADR-006 §6
