@@ -35,7 +35,9 @@ export {
 import { DELIVERY_RETURN_SERIES as returned } from './services/delivery-returns.ts';
 import { DELIVERY_SERIES as delivered } from './services/deliveries.ts';
 import { defaultDiscountLimit } from './services/discounts.ts';
+import { B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, INVOICE_LAG_DAYS, INVOICE_SERIES } from './services/invoice-post.ts';
 import { ORDER_SERIES as ordered } from './services/orders.ts';
+import { DEFAULT_PRICE_LIST } from './services/party-price-lists.ts';
 import { QUOTE_SERIES as quoted } from './services/quotes.ts';
-export const settings = [defaultDiscountLimit] as const;
-export const series = [quoted, ordered, delivered, returned] as const;
+export const settings = [defaultDiscountLimit, DEFAULT_PRICE_LIST, INVOICE_LAG_DAYS, B2C_DETAILS_LIMIT, B2C_DETAILS_BASIS] as const;
+export const series = [quoted, ordered, delivered, returned, INVOICE_SERIES] as const;

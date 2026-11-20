@@ -103,6 +103,9 @@ describe.skipIf(!url || !superUrl)('the settings and number-series screens', { t
       const [kinds] = API_SETTINGS.filter((s) => s.key.startsWith('stock.location_kind_label_'));
       const [, other] = API_SETTINGS.filter((s) => s.key.startsWith('stock.location_kind_label_'));
       expect(await send(setSetting, { key: kinds?.key, value: other?.fallback, reason: 'Testing' })).toMatchObject([422, { code: 'value_refused' }]);
+      // A default price list that doesn't exist: refused by its check, before anything is stored.
+      expect(await send(setSetting, { key: 'sales.default_price_list', value: randomUUID(), reason: 'Testing' }))
+        .toMatchObject([422, { code: 'value_refused' }]);
       try {
         expect((await send(setSetting, { key, value: 45, reason: 'Links for a longer tender' }))[0]).toBe(200);
         expect(await listed(send, key)).toMatchObject({ value: 45, default: 30, changed: true, changedBy: { id: ADMIN.userId } });
