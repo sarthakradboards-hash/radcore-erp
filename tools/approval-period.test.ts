@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import { cashLimitSpec, openFinancialYear, recordPayment } from '@radcore/lib-accounts';
 import { moneyString } from '@radcore/lib-common';
-import { decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
+import { decideApproval, requestApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -78,5 +78,26 @@ describe.skipIf(!url || !superUrl)('an approval that posts', { timeout: 30_000 }
       other.release();
       mover.release();
     }
+  });
+
+  it('rejects a draft the period would refuse: lockFirst takes locks and refuses nothing (the auditor on #275)', async () => {
+    const ownerId = await asSystem("insert into radcore.users (email, display_name, role) select $1, 'Owner', 'owner' from p returning id",
+      [`${randomUUID()}@example.test`]);
+    const party = await asSystem("insert into radcore.parties (name, supplier, state_code) select $1, true, '27' from p returning id",
+      [`Old party ${randomUUID()}`]);
+    const cash = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'cash'")).rows[0]?.id ?? '';
+    // A draft dated in a year nobody opened: holdPeriod refuses it (year_not_open), as it would a locked period.
+    const draft = await asSystem(`insert into radcore.payments (kind, party_id, business_date, amount, account_id)
+      select 'payment', $1, '2019-05-01', '20000.00', $2 from p returning id`, [party, cash]);
+    await as(CLERK)((ctx) => requestApproval(ctx, cashLimitSpec, draft));
+    const [request] = (await su.query<{ id: string; version_digest: string }>(
+      "select id, version_digest from radcore.approvals where kind = 'cash-limit' and record_id = $1", [draft])).rows;
+    const owner: Principal = { kind: 'user', userId: ownerId, permissions: ['payments:approve'] };
+    const decide = (decision: 'approve' | 'reject') => as(owner)((ctx) => decideApproval(ctx, cashLimitSpec, request?.id ?? '',
+      decision === 'approve' ? { decision, versionHash: request?.version_digest ?? '' } : { decision, reason: 'Dated in a closed year' }))
+      .then((r) => r.status, (e: unknown) => String((e as { code?: string }).code ?? e));
+    // Approving posts, and the posting refuses the date by name; rejecting goes through.
+    expect(await decide('approve')).toBe('year_not_open');
+    expect(await decide('reject')).toBe('rejected');
   });
 });

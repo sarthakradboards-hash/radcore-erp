@@ -43,9 +43,9 @@ export type ApprovalSpec<V extends ApprovalVersion = ApprovalVersion> = {
   version(ctx: Ctx, recordId: string, options: { forUpdate: boolean }): Promise<V | null>;
   /**
    * What the decision locks before the record, for a spec whose approved() posts (the architect on RAD-114): the period
-   * lock, so a decision takes its locks in ADR-006 §1's one order, the period before the documents. A posting spec reads
-   * the record's business date, unlocked, and holds the period on it (lib-accounts' holdPeriod, which lib-platform can't
-   * call); if the date changes before the record is locked, the version no longer matches and the decision is refused.
+   * lock, so a decision takes its locks in ADR-006 §1's one order, the period before the documents (lib-accounts'
+   * lockPeriod, which lib-platform can't call). It takes locks and refuses nothing: it runs for a reject too, and before
+   * version()'s scope check, so any refusal is the posting's, in approved() (the auditor on #275).
    */
   lockFirst?(ctx: Ctx, recordId: string): Promise<void>;
   /** The record takes effect, in the approval's transaction. */

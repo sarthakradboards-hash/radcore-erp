@@ -10,7 +10,7 @@ import { and, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelPaymentContract, recordPaymentContract } from '../contract.ts';
 import { paymentUsed } from './allocations.ts';
-import { holdPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
+import { holdPeriod, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { holdParty } from './parties.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -142,11 +142,10 @@ export const cashLimitSpec: ApprovalSpec<{ kind: string; partyId: string; busine
     const [row] = forUpdate ? await q.for('update') : await q;
     return row === undefined ? null : { ...row, amount: roundMoney(row.amount) };
   },
-  // The period first, on the payment's date read unlocked, before the engine locks the payment (the architect on
-  // RAD-114): a changed date fails the version check after.
-  async lockFirst(ctx, id) {
-    const [row] = await accountsTx(ctx).select({ businessDate: payments.businessDate }).from(payments).where(eq(payments.id, id)).limit(1);
-    if (row !== undefined) await holdPeriod(ctx, row.businessDate);
+  // The period's locks first, before the engine locks the payment (the architect on RAD-114), refusing nothing: a
+  // reject must go through whatever the period says, and an approval's post() checks the date under the same locks.
+  async lockFirst(ctx) {
+    await lockPeriod(ctx);
   },
   async approved(ctx, id) {
     await post(ctx, id);
