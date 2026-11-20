@@ -83,7 +83,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
   };
   // A role of the test's own with a discount limit, so no built-in role another file reads is changed.
   const roleWithLimit = async (percent: string): Promise<string> => {
-    const key = `test_${tag().toLowerCase()}`;
+    // A role key is letters and underscores (ck_roles_key).
+    const key = `t_${[...randomBytes(10)].map((b) => String.fromCharCode(97 + (b % 26))).join('')}`;
     const c = await su.connect();
     try {
       await c.query('begin');
