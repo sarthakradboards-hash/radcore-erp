@@ -21,9 +21,10 @@ const KEYS = ['receivables:read', 'receivables:remind'];
 
 class Rollback extends Error {}
 
-// All-only: they reach every party's balance, with no records of one's own to narrow them to (the auditor on #276).
-it('declares the receivables keys as ordinary catalogue keys, held to no role, all-only, with no second factor', () => {
-  expect(PERMISSIONS.filter((p) => KEYS.includes(p.key)).map((p) => [p.key, p.onlyRoles, p.allOnly])).toEqual(KEYS.map((k) => [k, undefined, true]));
+// Their records are party_managers: at `own`, the parties a person manages (the architect on RAD-119).
+it('declares the receivables keys as ordinary catalogue keys, held to no role, scoped to the parties one manages, with no second factor', () => {
+  expect(PERMISSIONS.filter((p) => KEYS.includes(p.key)).map((p) => [p.key, p.onlyRoles, p.allOnly, p.records]))
+    .toEqual(KEYS.map((k) => [k, undefined, undefined, ['@radcore/db/accounts#partyManagers']]));
   expect(KEYS.map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([false, false]);
 });
 

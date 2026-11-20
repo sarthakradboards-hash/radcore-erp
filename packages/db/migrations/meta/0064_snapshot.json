@@ -1,5 +1,5 @@
 {
-  "id": "ea1f29f2-68d7-4bc9-a488-5a3686431251",
+  "id": "260bc47d-7cc3-453b-b88d-72091848e9bb",
   "prevId": "6bbd00fe-43ca-487d-8eb5-c37c8e5aca86",
   "version": "7",
   "dialect": "postgresql",
@@ -1531,6 +1531,79 @@
         "ck_parties_credit_days": {
           "name": "ck_parties_credit_days",
           "value": "\"radcore\".\"parties\".\"credit_days\" between 0 and 365"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.party_managers": {
+      "name": "party_managers",
+      "schema": "radcore",
+      "columns": {
+        "party_id": {
+          "name": "party_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "party_managers_party_id_parties_id_fk": {
+          "name": "party_managers_party_id_parties_id_fk",
+          "tableFrom": "party_managers",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "party_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_party_managers_owner": {
+          "name": "ck_party_managers_owner",
+          "value": "\"radcore\".\"party_managers\".\"owner\" ~ '^user:[0-9a-f-]{36}$'"
         }
       },
       "isRLSEnabled": false

@@ -120,6 +120,8 @@ export const updateParty = defineContract({
 export const setPartyCredit = defineContract({
   method: 'PUT', path: '/parties/:id/credit', auth: 'session', perm: 'parties:manage', tx: write,
   input: z.object({ id: idString(), creditDays: z.number().int().min(0).max(365).nullable(), creditLimit: moneyString().nullable(),
+    // Who manages the party (a person's id), or null for no one; left out, it stays as it is (RAD-119).
+    accountManager: idString().nullable().optional(),
     reason: reason() }),
   output: z.object({}),
 });

@@ -4,7 +4,7 @@
 // in the past, so with no credit days both are overdue whatever the run date (RC-156).
 import { randomUUID } from 'node:crypto';
 import {
-  allocatePayment, openFinancialYear, partyStatement, postEntry, recordPayment, remind, remindersPage, toCollectPage,
+  allocatePayment, openFinancialYear, partyStatement, postEntry, recordPayment, remind, remindersPage, setCreditTerms, toCollectPage,
 } from '@radcore/lib-accounts';
 import { getPartyStatement, recordReminder } from '@radcore/lib-accounts/contract';
 import { moneyString, requestFor } from '@radcore/lib-common';
@@ -49,6 +49,13 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
       c.release();
     }
   }
+  /** A party of its own, managed by `manager` (`user:<id>`), or by no one. */
+  const managedParty = async (manager: string | null) => {
+    const rows = await owner<{ id: string }>("insert into radcore.parties (name, customer, state_code) values ($1, true, '27') returning id",
+      [`Scoped party ${randomUUID()}`]);
+    if (manager !== null) await owner('insert into radcore.party_managers (party_id, owner) values ($1, $2)', [rows[0]?.id, manager]);
+    return rows;
+  };
   const bank = async () => (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'bank'")).rows[0]?.id ?? '';
   /** An invoice of `total` to the party, dated `on`: its fixture row, and its entry, Dr Debtors, Cr Sales. */
   const invoice = async (partyId: string, on: string, total: string) => {
@@ -134,6 +141,38 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
     for (const change of ['update radcore.payment_reminders set note = null where id = $1', 'delete from radcore.payment_reminders where id = $1']) {
       expect(await owner(change, [sent.id]).then(() => 'ok', (e: { code?: string }) => e.code)).toBe('RA001');
     }
+  });
+
+  it('at own, shows and reminds only the parties a person manages; managers are set under parties:manage (the architect on RAD-119)', async () => {
+    const me = randomUUID();
+    const keys = ['receivables:read', 'receivables:remind'];
+    const SALES: Principal = { kind: 'user', userId: me, permissions: keys, ownScope: keys };
+    const owing = async (manager: string | null) => {
+      const [p] = await managedParty(manager);
+      await invoice(p?.id ?? '', '2026-11-12', '75.00');
+      return p?.id ?? '';
+    };
+    const mine = await owing(`user:${me}`);
+    const theirs = await owing(`user:${randomUUID()}`);
+    const unassigned = await owing(null);
+    const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => String((e as { code?: string }).code ?? e));
+    const listed = async (after?: string): Promise<string[]> => {
+      const page = await run((ctx) => toCollectPage(ctx, { filter: {}, limit: 200, ...(after === undefined ? {} : { after }) }), SALES);
+      return [...page.items.map((i) => i.partyId), ...(page.next === null ? [] : await listed(page.next))];
+    };
+    const seen = await listed();
+    expect([seen.includes(mine), seen.includes(theirs), seen.includes(unassigned)]).toEqual([true, false, false]);
+    const statementOf = (id: string) => code(run((ctx) => partyStatement(ctx, { id, from: '2026-11-01', to: '2026-11-30' }), SALES));
+    expect([await statementOf(mine), await statementOf(theirs), await statementOf(unassigned)]).toEqual(['ok', 'not_found', 'not_found']);
+    const remindOf = (id: string) => code(run((ctx) => remind(ctx, { id, channel: 'phone' }), SALES));
+    expect([await remindOf(mine), await remindOf(theirs)]).toEqual(['ok', 'not_found']);
+    expect(await code(run((ctx) => remindersPage(ctx, { id: theirs, filter: {}, limit: 10 }), SALES))).toBe('not_found');
+    // Who manages a party is set under parties:manage, and then they see it.
+    const assign = (p: Principal) => code(run((ctx) => setCreditTerms(ctx, { id: unassigned, creditDays: null, creditLimit: null,
+      accountManager: me, reason: 'Ravi looks after this dealer' }), p));
+    expect(await assign(SALES)).toBe('forbidden');
+    expect(await assign({ kind: 'user', userId: randomUUID(), permissions: ['parties:manage'] })).toBe('ok');
+    expect(await statementOf(unassigned)).toBe('ok');
   });
 
   it('names each numbered invoice, and no draft, through v_sales_document_refs (backend-3’s OK on RAD-119)', async () => {

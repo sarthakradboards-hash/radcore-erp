@@ -264,6 +264,17 @@ export const payments = radcoreTable('payments', {
 ]);
 
 /**
+ * Who manages a party (RAD-119, the architect's ruling): its account manager (`user:<id>`), the record-scope owner
+ * (ADR-001 §6a) the receivables keys name, so at `own` a person sees and reminds only the parties they manage. Apart
+ * from `parties`, so only what reads a party's balance meets the scope (E7). A party with no row is seen only at `all`.
+ * Set and cleared under parties:manage; audited.
+ */
+export const partyManagers = radcoreTable('party_managers', {
+  partyId: uuid().primaryKey().references(() => parties.id, { onDelete: 'restrict' }),
+  owner: text().notNull(),
+}, (t) => [check('ck_party_managers_owner', sql`${t.owner} ~ '^user:[0-9a-f-]{36}$'`)]);
+
+/**
  * A reminder to a party of what it owes (RAD-119, M3-15): the amounts as at when it was made, how it went, and later
  * the link it carried (RAD-118: `link_id`, its foreign key added then). Append-only (ADR-005 §7), audited. Sending by
  * WhatsApp waits for M7: today the person sends it and records it here.

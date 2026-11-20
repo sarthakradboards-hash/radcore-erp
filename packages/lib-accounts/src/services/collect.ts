@@ -1,7 +1,7 @@
 // What parties owe (M3-15, RAD-119): a party's statement and the To collect list, from the Debtors lines and what's
 // been paid on each bill (allocations and credits, v_document_paid), with rules/collect.ts doing the sums. A bill is an
 // invoice's entry; it's due the party's credit days after its date, else accounts.default_credit_days.
-import { accounts, accountsTx, journalEntries, journalLines, parties, paymentReminders } from '@radcore/db/accounts';
+import { accounts, accountsTx, journalEntries, journalLines, parties, partyManagers, paymentReminders } from '@radcore/db/accounts';
 import { vSalesDocumentRefs } from '@radcore/db/views';
 import { dec, ENTRY_KINDS, indiaDate } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
@@ -51,10 +51,13 @@ const isBillOf = (lines: readonly PartyLine[]) => {
 };
 
 /** What a party owes today: its Debtors lines to today, its open bills and the sums (for its statement and a reminder). */
-export async function partyOwed(ctx: Ctx, id: string) {
-  const [party] = await accountsTx(ctx).select({ id: parties.id, name: parties.name, creditDays: parties.creditDays }).from(parties)
-    .where(eq(parties.id, id)).limit(1);
+export async function partyOwed(ctx: Ctx, id: string, key: 'receivables:read' | 'receivables:remind') {
+  const [party] = await accountsTx(ctx).select({ id: parties.id, name: parties.name, creditDays: parties.creditDays, owner: partyManagers.owner })
+    .from(parties).leftJoin(partyManagers, eq(partyManagers.partyId, parties.id)).where(eq(parties.id, id)).limit(1);
   if (party === undefined) throw new AppError('not_found', 'There is no such party');
+  // At `own`, only the parties this person manages; outside that scope, as if there were none (the architect on RAD-119).
+  ctx.see(key, { owner: party.owner ?? '' });
+  if (key !== 'receivables:read') ctx.see('receivables:read', { owner: party.owner ?? '' });
   const on = today();
   const lines = await debtorsLines(ctx, on, [id]);
   const creditDays = party.creditDays ?? ctx.settings.get(DEFAULT_CREDIT_DAYS);
@@ -65,7 +68,7 @@ export async function partyOwed(ctx: Ctx, id: string) {
 /** GET /parties/:id/statement. Nothing posts after today, so today's lines hold the range asked for; the open bills and
  * what's owed are today's. */
 export async function partyStatement(ctx: Ctx, { id, from, to }: In<typeof getPartyStatement>): Promise<Out<typeof getPartyStatement>> {
-  const { party, lines, bills, owed } = await partyOwed(ctx, id);
+  const { party, lines, bills, owed } = await partyOwed(ctx, id, 'receivables:read');
   const s = statement(lines, from, to);
   return { party, opening: s.opening, closing: s.closing,
     lines: s.lines.map((l) => ({ businessDate: l.businessDate, entryNumber: l.entryNumber, documentNumber: l.documentNumber, kind: entryKind.parse(l.kind), sourceTable: l.sourceTable,
@@ -81,8 +84,10 @@ export async function toCollectPage(ctx: Ctx, { after, limit }: In<typeof listTo
   const lines = await debtorsLines(ctx, on);
   const byParty = Map.groupBy(lines, (l) => l.partyId ?? '');
   const ids = [...byParty.keys()];
-  const known = ids.length === 0 ? [] : await accountsTx(ctx).select({ id: parties.id, name: parties.name, creditDays: parties.creditDays })
-    .from(parties).where(inArray(parties.id, ids));
+  // At `own`, only the parties this person manages (the architect on RAD-119).
+  const known = (ids.length === 0 ? [] : await accountsTx(ctx).select({ id: parties.id, name: parties.name, creditDays: parties.creditDays,
+    owner: partyManagers.owner }).from(parties).leftJoin(partyManagers, eq(partyManagers.partyId, parties.id)).where(inArray(parties.id, ids)))
+    .filter((p) => ctx.can('receivables:read', { owner: p.owner ?? '' }));
   const paid = await paidOnBills(ctx, lines);
   const isBill = isBillOf(lines);
   const fallback = ctx.settings.get(DEFAULT_CREDIT_DAYS);

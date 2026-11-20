@@ -1,7 +1,7 @@
 // Reminders to a party of what it owes (M3-15, RAD-119; the architect's ruling). Each is recorded, append-only, with the
 // amounts as at when it was made; its text carries the party's name and the amounts, and nothing of how to reach them
 // (ADR-001 §7a). Sending it by WhatsApp waits for M7; a link to the oldest overdue bill joins with RAD-118.
-import { accountsTx, paymentReminders } from '@radcore/db/accounts';
+import { accountsTx, parties, partyManagers, paymentReminders } from '@radcore/db/accounts';
 import { dec, formatDate, formatMoney } from '@radcore/lib-common';
 import { AppError, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { desc, eq } from 'drizzle-orm';
@@ -16,7 +16,7 @@ const channelOf = z.enum(REMINDER_CHANNELS);
 /** POST /parties/:id/reminders. A reminder answers with the amounts, so it needs receivables:read too (RC-042). */
 export async function remind(ctx: Ctx, { id, channel, note }: In<typeof recordReminder>): Promise<Out<typeof recordReminder>> {
   if (!ctx.can('receivables:read')) throw new AppError('forbidden', 'A reminder shows what the party owes: it needs receivables:read');
-  const { party, owed } = await partyOwed(ctx, id);
+  const { party, owed } = await partyOwed(ctx, id, 'receivables:remind');
   if (!dec(owed.outstanding).gt(0)) throw new AppError('nothing_owed', 'This party owes nothing to remind them of');
   const [row] = await accountsTx(ctx).insert(paymentReminders).values({ partyId: party.id, outstanding: owed.outstanding, overdue: owed.overdue,
     oldestDue: owed.oldestDue, channel, note: note ?? null }).returning({ id: paymentReminders.id, asAt: paymentReminders.asAt });
@@ -28,6 +28,11 @@ export async function remind(ctx: Ctx, { id, channel, note }: In<typeof recordRe
 
 /** GET /parties/:id/reminders: the latest first. shortcut: paged by position, as a party's reminders are few. */
 export async function remindersPage(ctx: Ctx, { id, after, limit }: In<typeof listReminders>): Promise<Out<typeof listReminders>> {
+  // The party's scope first: at `own`, only a party this person manages (the architect on RAD-119).
+  const [party] = await accountsTx(ctx).select({ owner: partyManagers.owner }).from(parties).leftJoin(partyManagers, eq(partyManagers.partyId, parties.id))
+    .where(eq(parties.id, id)).limit(1);
+  if (party === undefined) throw new AppError('not_found', 'There is no such party');
+  ctx.see('receivables:read', { owner: party.owner ?? '' });
   const start = after === undefined ? 0 : Number(after);
   const rows = await accountsTx(ctx).select().from(paymentReminders).where(eq(paymentReminders.partyId, id))
     .orderBy(desc(paymentReminders.asAt), desc(paymentReminders.id)).limit(limit + 1).offset(start);

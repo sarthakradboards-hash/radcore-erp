@@ -1,3 +1,13 @@
+CREATE TABLE "radcore"."party_managers" (
+	"party_id" uuid PRIMARY KEY NOT NULL,
+	"owner" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
+	CONSTRAINT "ck_party_managers_owner" CHECK ("radcore"."party_managers"."owner" ~ '^user:[0-9a-f-]{36}$')
+);
+--> statement-breakpoint
 CREATE TABLE "radcore"."payment_reminders" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"party_id" uuid NOT NULL,
@@ -18,6 +28,7 @@ CREATE TABLE "radcore"."payment_reminders" (
 	CONSTRAINT "ck_payment_reminders_channel" CHECK ("radcore"."payment_reminders"."channel" in ('whatsapp', 'phone', 'email', 'in_person'))
 );
 --> statement-breakpoint
+ALTER TABLE "radcore"."party_managers" ADD CONSTRAINT "party_managers_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "radcore"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."payment_reminders" ADD CONSTRAINT "payment_reminders_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "radcore"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "ix_payment_reminders_party" ON "radcore"."payment_reminders" USING btree ("party_id","as_at");--> statement-breakpoint
 CREATE VIEW "radcore"."v_sales_document_refs" AS (select 'invoices'::text as document_table, i.id as document_id, i.number, i.business_date
@@ -48,3 +59,6 @@ ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 -- RAD-24's rule for a view's migration: no writing through a view, since a simple view writes as its owner.
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.v_sales_document_refs FROM radcore_app;
+--> statement-breakpoint
+-- Who manages a party (RAD-119, the architect's ruling) is audited: set and cleared under parties:manage.
+SELECT radcore.audit_attach('party_managers', keep => array['party_id', 'owner']);
