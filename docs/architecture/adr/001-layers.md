@@ -294,6 +294,12 @@ throws `not_found` out of scope, so it answers 404 like a record that doesn't ex
 lists. A person's role and grants are read from the database on every request and every job (`loadPrincipal`), never
 cached, so a change applies at once in every process (RC-095).
 
+**Unowned records get a key of their own, not a scope level** (D-11, RAD-109). Where a module has records nobody
+owns yet, such as leads from the website, a separate `allOnly` key (`leads:unassigned`) lets an own-scope role see
+and take them. The module ORs `owner is null` into the scope in each reading function, so E7 still sees the check.
+Acting on such a record claims it in the same locked update (`lead_taken` if someone else got there first).
+Changing an owner otherwise needs the write key at `all`.
+
 **A forgotten scope fails lint (RAD-85, E7).** The catalogue names, for each key, the tables that hold its records
 (`records`). Any key may be granted at `own`, so a module service (`src/services/**`) that reads one of those tables
 must apply the scope in the outermost function around the read: `ctx.see`, `ctx.can` or `listScope`. This is a
