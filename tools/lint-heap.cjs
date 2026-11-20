@@ -3,8 +3,10 @@
 // --require`, it collects garbage when the run ends and fails it when the live heap left is above 75% of V8's heap limit.
 // Peak RSS is printed for information only: it swings ~2400–2850 MB on CI with when garbage is collected, so a gate on
 // it flaps (#235's +510 MB was that noise).
-// Reference live heaps: <filled from CI runs>. Raise the share only with a measured reason, never by giving ESLint a
-// bigger heap.
+// Reference live heaps: CI (Linux) 1450 MB in both of two runs at 31b372ac, while their peak RSS was 2772 and 2874 MB;
+// Windows 1435 and 1443 MB. The live heap at exit is the run's peak: --trace-gc's largest after any full collection
+// was 1440 MB against 1435 at exit, since ESLint keeps its typed program to the end. Raise the share only with a
+// measured reason, never by giving ESLint a bigger heap.
 const { getHeapStatistics } = require('node:v8');
 
 const BUDGET_SHARE = 0.75;
