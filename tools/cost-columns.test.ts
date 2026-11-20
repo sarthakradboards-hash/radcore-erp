@@ -12,6 +12,10 @@ const url = process.env['TEST_DATABASE_URL'];
 const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   discount_limits: { max_percent: 'a role’s discount limit, a percentage (prices:read)' },
   gst_rates: { rate: 'a tax rate' },
+  payment_allocations: { amount: 'money applied to a document (payments:write)' },
+  credit_applications: { amount: 'a credit applied to a document (payments:write)' },
+  // tools/allocations-routes.test.ts's fixture document, there only while that file runs.
+  t_route_invoices: { total: 'a test fixture’s document total' },
   payments: { amount: 'money a party paid or was paid (payments:write)', tds: 'tax the party held back (payments:write)' },
   parties: { credit_limit: 'a customer’s credit terms (parties:read, set with parties:manage)' },
   price_list_rates: { rate: 'a selling price (prices:read)' },
