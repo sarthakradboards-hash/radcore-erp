@@ -7,7 +7,7 @@
 // their units `returned` (RC-128). The note then applies to its invoice, as far as the invoice is unpaid, and pays the
 // counter refund drafted with it (F26).
 import { creditNoteLines, creditNotes, salesTx } from '@radcore/db/sales';
-import { applyCredit, holdPeriod, paidOf, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
+import { applyCredit, holdParty, holdPeriod, paidOf, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundRate, type Money } from '@radcore/lib-common';
 import { AppError, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
 import { checkPlace, postStock, reverseStock, type PostedMovement } from '@radcore/lib-stock';
@@ -75,6 +75,9 @@ async function postNote(ctx: Ctx, id: string): Promise<void> {
   if (note.status !== 'draft') throw wrongNoteStatus(note.status, 'posted');
   // ADR-006 §1's documents step: the invoice, locked, and what's left of it read again under that lock.
   const inv = await invoiceToCredit(ctx, note.invoiceId, 'credit_notes:approve', true);
+  // ADR-006 §1's step 3: a counter refund's cash limit takes the party, so it's taken here, before the stock engine's
+  // positions (step 4), as a delivery to the same party takes them (auditor-2 on #273); the refund then re-takes it.
+  if (note.refundAmount !== null) await holdParty(ctx, note.partyId);
   checkDate(note.businessDate, today(), { date: inv.businessDate, what: 'invoice' });
   if (note.locationId !== null) await checkPlace(ctx, note.locationId);
   const figures = await noteFigures(ctx, inv, note.kind as Kind, await draftedLines(ctx, id));
