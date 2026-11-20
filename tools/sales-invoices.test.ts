@@ -59,14 +59,16 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
     return out as R;
   }
 
-  type Setup = { state?: string; gstin?: string | null; address?: boolean; gst?: string; stock: string; stockRate: string; ordered: string;
+  type Setup = { kind?: 'customer' | 'dealer'; state?: string; gstin?: string | null; address?: boolean; gst?: string; stock: string;
+    stockRate: string; ordered: string;
     rate: string; delivered: string; maker?: Principal };
   /** A customer with credit (in `state`, with or without a GSTIN and an address), an item rated `gst`%, a store holding
    * `stock` at `stockRate`, a confirmed order for `ordered` at `rate`, and a posted delivery of `delivered` of it. */
   async function setup(o: Setup) {
     const at = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
-      const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: ['customer'], gstin: o.gstin ?? null, pan: null, composition: false,
+      const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: [o.kind ?? 'customer'], gstin: o.gstin ?? null, pan: null,
+        composition: false,
         stateCode: o.state ?? '27', phone: null, email: null, addressLine1: o.address === false ? null : '12 MG Road', addressLine2: null,
         city: o.address === false ? null : 'Pune', pincode: o.address === false ? null : '411001' });
       await setCreditTerms(ctx, { id: partyId, creditDays: 30, creditLimit: m('100000000'), reason: 'Test' });
@@ -161,14 +163,14 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
 
   // CA-08: the place of supply is the buyer's state, or the ship-to state: IGST between states, CGST and SGST within.
   it('charges IGST to a buyer in another state, and CGST and SGST when the goods go to one in ours', async () => {
-    const at = await setup({ state: '29', gstin: '29AAACR5055K1Z5', stock: '2', stockRate: '100', ordered: '2', rate: '1000', delivered: '2' });
+    const at = await setup({ state: '29', gstin: '29AAACR5055K1Z3', stock: '2', stockRate: '100', ordered: '2', rate: '1000', delivered: '2' });
     const out = await inBooks(async (ctx) => {
       const away = await post(ctx, at, '1');
       const here = await post(ctx, at, '1', { shipTo: { name: 'Site office', address: '3 Nashik Road, Nashik', stateCode: '27' } });
       return [await getInvoiceById(ctx, { id: away.id }), await getInvoiceById(ctx, { id: here.id })];
     });
-    expect(out.map((i) => [i.placeOfSupply, i.cgst, i.sgst, i.igst, i.buyer?.gstin])).toEqual([['29', '0.00', '0.00', '50.00', '29AAACR5055K1Z5'],
-      ['27', '25.00', '25.00', '0.00', '29AAACR5055K1Z5']]);
+    expect(out.map((i) => [i.placeOfSupply, i.cgst, i.sgst, i.igst, i.buyer?.gstin])).toEqual([['29', '0.00', '0.00', '50.00', '29AAACR5055K1Z3'],
+      ['27', '25.00', '25.00', '0.00', '29AAACR5055K1Z3']]);
   });
 
   // ADR-006 §4: an invoice and a return share a delivery line; each takes round(V × q / Q, 2), the last clearing it.
@@ -196,12 +198,16 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
     expect(out).toEqual(['date_before_source', 'invoice_too_late']);
   });
 
-  // RC-113 (Rule 46, CA-43): an unregistered buyer is named, with an address, once the invoice reaches 50,000.
-  it('needs an unregistered buyer’s address at 50,000 and above, and not below', async () => {
-    const big = await setup({ address: false, stock: '1', stockRate: '100', ordered: '1', rate: '50000', delivered: '1' });
-    const small = await setup({ address: false, stock: '1', stockRate: '100', ordered: '1', rate: '47000', delivered: '1' });
-    const out = await inBooks(async (ctx) => [await failure(post(ctx, big, '1')), await failure(post(ctx, small, '1'))]);
-    expect(out).toEqual(['buyer_details_required', 'ok']);
+  // RC-113 (Rule 46, CA-43): a buyer is B2B by the GSTIN on the invoice, never by the party's type. A dealer without a
+  // GSTIN is unregistered, named with an address once the invoice reaches 50,000; a customer with a GSTIN needs none.
+  it('needs an unregistered buyer’s address at 50,000, whatever its type, and a registered one’s never', async () => {
+    const dealer = await setup({ kind: 'dealer', address: false, stock: '1', stockRate: '100', ordered: '1', rate: '50000', delivered: '1' });
+    const small = await setup({ kind: 'dealer', address: false, stock: '1', stockRate: '100', ordered: '1', rate: '47000', delivered: '1' });
+    const registered = await setup({ gstin: '27AAACR5055K1Z7', address: false, stock: '1', stockRate: '100', ordered: '1', rate: '50000',
+      delivered: '1' });
+    const out = await inBooks(async (ctx) => [await failure(post(ctx, dealer, '1')), await failure(post(ctx, small, '1')),
+      await failure(post(ctx, registered, '1'))]);
+    expect(out).toEqual(['buyer_details_required', 'ok', 'ok']);
   });
 
   // ADR-007 §9: credit is checked again at the invoice, and price only on a line not at its order's price.

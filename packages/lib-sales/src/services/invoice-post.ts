@@ -34,6 +34,7 @@ export const B2C_DETAILS_LIMIT = defineSetting('sales.b2c_details_limit', moneyS
 export const B2C_DETAILS_BASIS = defineSetting('sales.b2c_details_basis', z.enum(['invoice_value', 'taxable_value']), 'invoice_value');
 
 type Invoice = Awaited<ReturnType<typeof invoiceOf>>;
+type Company = Awaited<ReturnType<typeof companyForInvoice>>;
 
 /** A party's stored value, as lib-accounts' service answers it to another service: the handler masks answers, never a
  * service's values, so a masked one here is a bug, refused rather than frozen onto an invoice. */
@@ -78,14 +79,13 @@ function saleOf(inv: Invoice, lines: readonly Priced[], total: Money, notInvoice
 
 /** Everything posting works out, read in the posting's own transaction: the parties, the place of supply, the lines'
  * figures and the totals. Reads only; the override's version and posting both ask it. */
-async function workedOut(ctx: Ctx, inv: Invoice, o: { forUpdate: boolean; permission: string }) {
+async function workedOut(ctx: Ctx, inv: Invoice, company: Company, o: { forUpdate: boolean; permission: string }) {
   const drafted = await salesTx(ctx).select({ deliveryLineId: invoiceLines.deliveryLineId, qty: invoiceLines.qty, rate: invoiceLines.rate,
     discountPercent: invoiceLines.discountPercent }).from(invoiceLines).where(eq(invoiceLines.invoiceId, inv.id)).orderBy(asc(invoiceLines.lineNo));
   const lines = await checkedLines(ctx, inv.partyId, drafted.map((l) => ({ ...l, qty: l.qty as never, rate: l.rate as never,
     discountPercent: l.discountPercent as never })), o);
   // Its date against its deliveries before any rate is looked up for it (ADR-007 §4), so the date is what's refused.
   checkInvoiceDate(inv.businessDate, lines.map((l) => l.delivery.businessDate), ctx.settings.get(INVOICE_LAG_DAYS));
-  const company = await companyForInvoice(ctx);
   const party = await getPartyById(ctx, { id: inv.partyId });
   const place = placeOfSupply(company.stateCode, party.stateCode, inv.shipToStateCode);
   const figures = await priced(ctx, inv, lines, place.intraState);
@@ -104,7 +104,7 @@ export const invoiceOverride = overrideApproval({
     if (inv === undefined || inv.status !== 'draft') return null;
     const asks = ctx.can('invoices:write', { owner: inv.owner });
     if (!asks && !ctx.can('sales:override', { owner: inv.owner })) return null;
-    const w = await workedOut(ctx, inv, { forUpdate: false, permission: asks ? 'invoices:write' : 'sales:override' });
+    const w = await workedOut(ctx, inv, await companyForInvoice(ctx), { forUpdate: false, permission: asks ? 'invoices:write' : 'sales:override' });
     return { figures: figuresOf(inv, w.lines), sale: saleOf(inv, w.figures, w.totals.total, await deliveredNotInvoiced(ctx, inv.partyId)) };
   },
   // It records what was approved; posting the invoice is its maker's next step.
@@ -147,13 +147,16 @@ export async function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): 
   // Its date first, unlocked, for the period lock; then the invoice, locked, still on that date.
   const held = (await invoiceOf(ctx, id, 'invoices:write')).businessDate;
   await holdPeriod(ctx, held);
+  // ADR-006 §1's step 1 with the period: the company profile row FOR SHARE, so it can't change while it's frozen onto
+  // this invoice (auditor-2 on #254).
+  const company = await companyForInvoice(ctx);
   const inv = await invoiceOf(ctx, id, 'invoices:write', true);
   if (inv.status !== 'draft') throw wrongStatus(inv.status, 'posted');
   if (inv.businessDate !== held) throw new AppError('version_changed', 'This invoice changed while it was being posted: post it again');
   checkDate(inv.businessDate, today());
   await sellingTo(ctx, inv.partyId);
   // The deliveries it bills, locked by id, and what's still to invoice on each read again under those locks.
-  const w = await workedOut(ctx, inv, { forUpdate: true, permission: 'invoices:write' });
+  const w = await workedOut(ctx, inv, company, { forUpdate: true, permission: 'invoices:write' });
   // Rule 46: a registered buyer is named by their GSTIN; an unregistered one needs a name, address and state at the limit.
   const registered = w.party.gstin !== null;
   if (!registered && needsBuyerDetails(w.totals, ctx.settings.get(B2C_DETAILS_LIMIT), ctx.settings.get(B2C_DETAILS_BASIS))
