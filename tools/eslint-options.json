@@ -485,7 +485,7 @@
         "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
       },
       {
-        "selector": "CallExpression:not([callee.name=/^define(Route|Webhook|Job|Export|ExportJob|Import|Approval)$/])",
+        "selector": "CallExpression:not([callee.name=/^define(Route|Webhook|WebhookJob|Job|Export|ExportJob|Import|Approval)$/])",
         "message": "[E1] Route and job files hold only define* calls; put the rule in the library (ADR-001)."
       },
       {

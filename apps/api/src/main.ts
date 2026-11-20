@@ -1,8 +1,11 @@
-import { createClientErrors, createSecrets, sessionCookieFor } from '@radcore/lib-platform';
+import { createEnquiryForm } from '@radcore/lib-crm';
+import { TURNSTILE_ORIGIN, TURNSTILE_TEST_SECRETS } from '@radcore/lib-integrations';
+import { createClientErrors, createOutbound, createSecrets, sessionCookieFor } from '@radcore/lib-platform';
 import { authenticateSession, createAlerter, createAuth, createDatabase, newPasswordCheckFor, startFileStore, startProcess,
 } from '@radcore/lib-platform/runtime';
 import { createApp, listen } from './app.ts';
 import { apiRoutes } from './routes.ts';
+import webhooks from './routes/hooks.ts';
 
 await startProcess('api', async ({ config, pool, log }) => {
   const db = createDatabase(pool);
@@ -11,7 +14,12 @@ await startProcess('api', async ({ config, pool, log }) => {
   const session = sessionCookieFor(config.publicOrigin);
   const alert = createAlerter(config.alertWebhookUrl, log, { repeats: auth.limits });
   // Sign-in and the password routes are built at start, with Argon2id and the lockout store (createAuth).
-  const api = { db, routes: apiRoutes(auth, createClientErrors(log, alert)), newPasswordCheck: newPasswordCheckFor(config, log), files: files.store,
+  // Turnstile's siteverify, through the outbound client (L8): the enquiry form's check (RAD-107). TURNSTILE_SECRET is
+  // required wherever the app is deployed; development and CI use Cloudflare's published always-passing test secret.
+  const turnstile = { outbound: createOutbound({ name: 'turnstile', allowedOrigins: [TURNSTILE_ORIGIN] }, { log }),
+    secret: config.turnstile.secret ?? TURNSTILE_TEST_SECRETS.passes };
+  const api = { db, routes: apiRoutes(auth, createClientErrors(log, alert), createEnquiryForm(turnstile)), webhooks,
+    newPasswordCheck: newPasswordCheckFor(config, log), files: files.store,
     secrets: createSecrets(config.secrets), guards: auth.guards,
     alert,
     // GET /me isn't activity: the shell reads it every minute, and that mustn't keep an idle session alive (RAD-52).

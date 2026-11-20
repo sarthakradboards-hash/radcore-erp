@@ -64,8 +64,9 @@ export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';
 export { STUCK_AFTER_MS, watchStuckDeliveries, webhookStuckWatch } from './webhooks-watch.ts';
 export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
-  type WebhookVerifier,
+  type WebhookHandshake, type WebhookVerifier,
 } from './webhooks.ts';
+export { storedSecret, storeSecret, type ReadOnce } from './stored-secrets.ts';
 export {
   EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows, type ExportSheet,
 } from './export/engine.ts';

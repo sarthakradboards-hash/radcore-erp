@@ -19,6 +19,7 @@
     "db:up": "npm run dev:env && docker compose -f compose.dev.yml up -d --wait && npm run db:logins",
     "db:logins": "node --env-file-if-exists=.env tools/db-logins.ts",
     "db:migrate": "node --env-file-if-exists=.env packages/db/scripts/migrate.ts",
+    "secret:set": "node --env-file-if-exists=.env tools/set-secret.ts",
     "deps:check": "node tools/deps/cli.ts",
     "knip": "knip",
     "mutation": "stryker run",

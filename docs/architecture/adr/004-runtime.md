@@ -35,6 +35,7 @@ production.
 | Jobs | pg-boss tables in the same PostgreSQL. No other queue service. | RDS |
 | Mail | Amazon SES in Mumbai, for invites, password resets and alerts to people. Its client library is added under ADR-003 §4 by the first ticket that sends mail (M1-14) | SES |
 | Breached passwords | the Pwned Passwords range API (`api.pwnedpasswords.com`): free, no key, no rate limit. `api` calls it through the outbound client only when someone sets a password, and sends only the first five hex characters of the password's SHA-1, with padding (ADR-001 §7a, RAD-32) | Outside service |
+| Anti-bot check | Cloudflare Turnstile on the public enquiry form (RAD-107, RC-054, Sarthak, 20 Nov). The page loads Turnstile's script and frame from `challenges.cloudflare.com`, which only that page's CSP allows; `api` checks the token with siteverify through the outbound client, sending the token and no visitor address. The secret key is in the secrets store; development and CI use Turnstile's published test keys | Outside service |
 | Monitoring | a small separate server watching health and heartbeats from outside (RC-083) | Outside the app server |
 
 The same major versions run everywhere:

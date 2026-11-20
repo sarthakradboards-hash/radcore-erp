@@ -62,6 +62,20 @@ describe('content security policy', () => {
     }
   });
 
+  it('allows Cloudflare Turnstile’s script and frame on the enquiry page only (RAD-107)', () => {
+    const cspOf = (path: string) => proxy(new NextRequest(`http://127.0.0.1:3000${path}`)).headers.get('content-security-policy') ?? '';
+    for (const path of ['/enquiry', '/enquiry/thanks']) {
+      const csp = cspOf(path);
+      expect(csp).toMatch(/script-src [^;]* https:\/\/challenges\.cloudflare\.com(;|$)/);
+      expect(csp).toContain('frame-src https://challenges.cloudflare.com;');
+    }
+    for (const path of ['/', '/enquiries', '/leads', '/enquiryx']) expect(cspOf(path)).not.toContain('cloudflare');
+    // Otherwise it's the same policy: only those two additions.
+    const turnstile = contentSecurityPolicy('abc', false, null, true);
+    expect(turnstile.replace(' https://challenges.cloudflare.com', '').replace('frame-src https://challenges.cloudflare.com; ', ''))
+      .toBe(contentSecurityPolicy('abc', false));
+  });
+
   it('gives each request its own nonce, on the response and on the request Next renders', () => {
     const nonces = [1, 2].map(() => {
       const res = proxy(new NextRequest('http://127.0.0.1:3000/l/some-token'));
