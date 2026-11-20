@@ -1,8 +1,9 @@
-// lib-sales's tables (ADR-001 §3, §5): price lists and discount limits (M2-13, RAD-98). SQL zone (ADR-002 §3): `sql`
-// only as a CHECK's argument or a generated column.
+// lib-sales's tables (ADR-001 §3, §5): price lists and discount limits (M2-13, RAD-98); quotes and orders (M3-08,
+// RAD-112). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
 import { and, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
-import { boolean, check, date, index, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, percent, radcoreTable, unitPrice } from '../columns.ts';
+import { boolean, check, date, index, smallint, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { parties } from '../accounts/tables.ts';
+import { boundedText, id, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
 import { roles } from '../platform/tables.ts';
 import { items } from '../stock/tables.ts';
 
@@ -59,3 +60,82 @@ export const discountLimits = radcoreTable('discount_limits', {
   role: text().primaryKey().references(() => roles.key, { onDelete: 'cascade' }),
   maxPercent: percent().notNull(),
 });
+
+/**
+ * A quote (ADR-007 §1, M3-08): what we offered a party, at what rates. It posts nothing. Its service moves it:
+ * draft → sent (its number drawn, QT) → accepted (which makes a draft order from it), declined or expired. A draft
+ * has no number, so thrown-away drafts leave no gaps (§3).
+ */
+export const salesQuotes = radcoreTable('sales_quotes', {
+  id: id(),
+  number: text().unique(),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  businessDate: date({ mode: 'string' }).notNull(),
+  validUntil: date({ mode: 'string' }),
+  status: text().notNull().default('draft'),
+  notes: boundedText({ max: 500 }),
+}, (t) => [
+  index('ix_sales_quotes_party').on(t.partyId),
+  index('ix_sales_quotes_date').on(t.businessDate, t.id),
+  // lib-common's SALES_QUOTE_STATUSES, written out (L1); tools/sales-lists.test.ts holds them equal.
+  check('ck_sales_quotes_status', sql`${t.status} in ('draft', 'sent', 'accepted', 'declined', 'expired')`),
+  check('ck_sales_quotes_number', sql`(${t.status} = 'draft') = (${t.number} is null)`),
+  check('ck_sales_quotes_valid_until', sql`${t.validUntil} is null or ${t.validUntil} >= ${t.businessDate}`),
+]);
+
+/** A quote's line: an item, how many, at what rate per unit before GST, less a discount (RAD-98's limits apply). */
+export const salesQuoteLines = radcoreTable('sales_quote_lines', {
+  id: id(),
+  quoteId: uuid().notNull().references(() => salesQuotes.id, { onDelete: 'cascade' }),
+  lineNo: smallint().notNull(),
+  itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
+  qty: qty({ line: true }).notNull(),
+  rate: unitPrice().notNull(),
+  discountPercent: percent().notNull().default('0'),
+}, (t) => [
+  uniqueIndex('ux_sales_quote_lines_line').on(t.quoteId, t.lineNo),
+  index('ix_sales_quote_lines_item').on(t.itemId),
+]);
+
+/**
+ * An order (ADR-007 §1, M3-08): what a party will take. It posts nothing; deliveries post against its lines. Its
+ * service moves it: draft → confirmed (its number drawn, SO, after the credit and price checks, M3-07) → closed or
+ * cancelled. It's closed when every line is delivered, or closed short by a person with lines still undelivered,
+ * which releases them and keeps the reason (RC-125). A quote makes at most one order.
+ */
+export const salesOrders = radcoreTable('sales_orders', {
+  id: id(),
+  number: text().unique(),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  quoteId: uuid().unique().references(() => salesQuotes.id, { onDelete: 'restrict' }),
+  businessDate: date({ mode: 'string' }).notNull(),
+  status: text().notNull().default('draft'),
+  notes: boundedText({ max: 500 }),
+  // Why it was closed with lines undelivered, or cancelled (RC-125); null otherwise.
+  closeReason: boundedText({ max: 500 }),
+  // The version an override of its checks was approved for (sales:override, M3-07): confirming takes it while the
+  // order and its issues still hash to it.
+  overrideVersion: text(),
+}, (t) => [
+  index('ix_sales_orders_party').on(t.partyId),
+  index('ix_sales_orders_date').on(t.businessDate, t.id),
+  // lib-common's SALES_ORDER_STATUSES, written out (L1); tools/sales-lists.test.ts holds them equal.
+  check('ck_sales_orders_status', sql`${t.status} in ('draft', 'confirmed', 'closed', 'cancelled')`),
+  check('ck_sales_orders_number', sql`(${t.status} = 'draft') = (${t.number} is null)`),
+  check('ck_sales_orders_reason', sql`${t.closeReason} is null or ${t.status} in ('closed', 'cancelled')`),
+  check('ck_sales_orders_cancel_reason', sql`${t.status} <> 'cancelled' or ${t.closeReason} is not null`),
+]);
+
+/** An order's line, as a quote's. Its deliveries (M3-08's delivery lines) say how much of it has gone. */
+export const salesOrderLines = radcoreTable('sales_order_lines', {
+  id: id(),
+  orderId: uuid().notNull().references(() => salesOrders.id, { onDelete: 'cascade' }),
+  lineNo: smallint().notNull(),
+  itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
+  qty: qty({ line: true }).notNull(),
+  rate: unitPrice().notNull(),
+  discountPercent: percent().notNull().default('0'),
+}, (t) => [
+  uniqueIndex('ux_sales_order_lines_line').on(t.orderId, t.lineNo),
+  index('ix_sales_order_lines_item').on(t.itemId),
+]);

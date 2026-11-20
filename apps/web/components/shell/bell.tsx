@@ -16,6 +16,7 @@ import { t } from '../../lib/i18n/index.ts';
 const RECORD_PAGES: Readonly<Partial<Record<string, (id: string) => string>>> = {
   items: (id) => `/admin/items/${id}`,
   parties: (id) => `/admin/parties/${id}`,
+  journal_entries: (id) => `/accounts/journal/${id}`,
 };
 
 function Notifications({ onOpen }: { onOpen: () => void }) {
