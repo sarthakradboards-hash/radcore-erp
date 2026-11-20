@@ -50,6 +50,15 @@ html { scroll-padding-top: calc(env(safe-area-inset-top) + var(--shell-header-h)
 .shell-header a { display: inline-flex; align-items: center; min-block-size: var(--tap); padding: 0 var(--space-3);
   border-radius: var(--radius-sm); }
 .shell-header a[aria-current="page"] { background: var(--surface-selected); color: var(--text); }
+/* One row at any width (the scroll padding above counts on it): the menu shrinks and scrolls within itself when its
+   entries don't fit, and the person's own controls never shrink, so Sign out stays whole (e2e on #226, WCAG 1.4.10).
+   Block padding keeps the links' focus outline inside the scroller. */
+.shell-header nav { min-inline-size: 0; overflow-x: auto; padding-block: var(--space-1); }
+.shell-user { flex-shrink: 0; }
+@media (max-width: 30rem) {
+  .shell-header { gap: var(--space-2); padding-inline: var(--space-3); }
+  .shell-header a { padding-inline: var(--space-2); }
+}
 .shell-user { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-muted);
   font-size: var(--text-sm); }
 .shell-user p { margin: 0; }
