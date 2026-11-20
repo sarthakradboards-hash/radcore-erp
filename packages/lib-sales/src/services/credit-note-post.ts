@@ -110,7 +110,8 @@ async function postNote(ctx: Ctx, id: string): Promise<void> {
       [{ path: ['refund', 'amount'], code: 'exceeds_credit', message: `${roundMoney(dec(totals.total).minus(dec(applied)))} is left to refund` }]);
   }
   // A counter refund (F26), part of what was approved, in the same save: the refund's insert locks the note, then the
-  // cash limit takes the party (ADR-006 §1). Cash past the day's limit waits for its own approval (payments:approve).
+  // cash limit takes the party (ADR-006 §1). Cash past the day's limit stays a draft with its own cash-limit request,
+  // made here by the note's approver, so someone else approves the cash (payments:approve; the architect on RAD-114).
   if (note.refundAmount !== null && note.refundAccountId !== null) {
     await refundCredit(ctx, { creditTable: 'credit_notes', creditId: id, partyId: note.partyId, businessDate: note.businessDate,
       amount: roundMoney(note.refundAmount), accountId: note.refundAccountId, narration: `Refund of credit note ${number}` });

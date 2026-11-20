@@ -5,7 +5,7 @@
 // them (actingAs): the request is the maker's, the approval the approver's, as two requests would be.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addParty, allocatePayment, journalEntryById, journalPage, openFinancialYear, paidOf, recordPayment, reverseCreditApplication,
+  addParty, allocatePayment, cashLimitSpec, journalEntryById, journalPage, openFinancialYear, paidOf, recordPayment, reverseCreditApplication,
   setCompanyProfile, setCreditTerms,
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
@@ -248,6 +248,34 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       entry: ['Sales 345.00 0.00', 'Output CGST 31.05 0.00', 'Output SGST 31.05 0.00', 'Debtors 0.00 407.00', 'Round Off 0.00 0.10',
         'Stock in Hand 200.00 0.00', 'Cost of Goods Sold 0.00 200.00'], paid: '0.00', refund: 'posted',
       paidOut: ['Debtors 407.00 0.00', 'Cash 0.00 407.00'], balance: '0.00' });
+  });
+
+  // F26 past the day's cash limit (the architect on RAD-114): the note posts, and its cash refund stays a draft with its
+  // own cash-limit request, made in the approval's save by the note's approver, so someone else approves the cash.
+  it('posts the note and leaves a cash refund past the day’s limit waiting for someone else’s cash-limit approval', async () => {
+    const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
+    const approver = await approverWith(['credit_notes:approve', 'payments:approve']);
+    const owner = await approverWith(['payments:approve']);
+    const out = await inBooks(async (ctx) => {
+      const inv = await invoice(ctx, at);
+      const cash = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'cash'`))[0]?.id ?? '';
+      const receipt = await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('1221'), accountId: cash });
+      await allocatePayment(ctx, { id: receipt.id, businessDate: DATE, lines: [{ documentTable: 'invoices', documentId: inv.id, amount: m('1221') }] });
+      const { id } = await goodsBack(ctx, at, inv, '1', { refund: { amount: '407', accountId: cash } });
+      const note = await approve(ctx, id, approver, new Settings([{ key: 'accounts.cash_payment_limit', value: '100.00' }]));
+      const [refund] = await rows<{ id: string; status: string }>(ctx, sql`select id, status from radcore.payments
+        where credit_table = 'credit_notes' and credit_id = ${id}`);
+      const [request] = await rows<{ id: string; by: string; digest: string }>(ctx, sql`select id, requested_by as by,
+        version_digest as digest from radcore.approvals where kind = 'cash-limit' and record_id = ${refund?.id ?? ''}`);
+      const decide = async (as: Principal) => decideApproval(await actingAs(ctx, as), cashLimitSpec, request?.id ?? '',
+        { decision: 'approve', versionHash: request?.digest ?? '' });
+      const ownCash = await failure(decide(approver));
+      await decide(owner);
+      await actingAs(ctx, ctx.principal);
+      const [after] = await rows<{ status: string }>(ctx, sql`select status from radcore.payments where id = ${refund?.id ?? ''}`);
+      return { note: note.status, waiting: refund?.status, requestedBy: request?.by === principalId(approver), ownCash, after: after?.status };
+    });
+    expect(out).toEqual({ note: 'posted', waiting: 'draft', requestedBy: true, ownCash: 'own_request', after: 'posted' });
   });
 
   // RC-128: a serialised unit sold on the invoice comes back `returned`: ours again, its sale cleared. RC-207: the
