@@ -18,6 +18,10 @@ export {
   postDeliveryNow,
 } from './services/deliveries.ts';
 export { deliveryOverride } from './services/delivery-checks.ts';
+export { addInvoice, changeInvoice, dropInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
+export {
+  askInvoiceOverride, B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, INVOICE_LAG_DAYS, INVOICE_SERIES, invoiceOverride, postInvoiceNow,
+} from './services/invoice-post.ts';
 export {
   addDeliveryReturn, changeDeliveryReturn, DELIVERY_RETURN_SERIES, dropDeliveryReturn, getDeliveryReturnById, listDeliveryReturnsPage,
   postDeliveryReturnNow,

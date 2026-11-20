@@ -259,3 +259,119 @@ export const deliveryReturnLines = radcoreTable('delivery_return_lines', {
   index('ix_delivery_return_lines_item').on(t.itemId),
   check('ck_delivery_return_lines_posted', sql`(${t.value} is null) = (${t.taxable} is null) and (${t.taxable} is null) = (${t.gst} is null)`),
 ]);
+
+/**
+ * An invoice (ADR-007 §1–§4, §7; ADR-006 §6, F6, F7; RC-022, RC-113): a party's delivered goods billed, all or part of
+ * its posted deliveries' lines. Draft → posted → cancelled (#185's guards, and the cancel guard of allocations, ADR-005
+ * §7a). Posting freezes the issuer's details from the company profile and the buyer's from the party, decides the place
+ * of supply, copies each line's GST rate and its source, and posts Dr Debtors (the total), Cr Sales and Output GST,
+ * the round-off, and Dr COGS, Cr GDNI for the goods' cost; its number (INV) is drawn last. `total` is what it posts to
+ * the party's Debtors line, gross of GST and cess, after round-off: what receipts are allocated against (RAD-116).
+ */
+export const invoices = radcoreTable('invoices', {
+  id: id(),
+  status: text().notNull().default('draft'),
+  number: text().unique(),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  businessDate: date({ mode: 'string' }).notNull(),
+  notes: boundedText({ max: 500 }),
+  // Whose it is for record scope (ADR-007 §7, the architect on RAD-113): the owner its deliveries share, else its
+  // maker, copied while it's a draft and frozen when it's posted. A principal key ("user:<id>"), as created_by is.
+  owner: text().notNull(),
+  // Where the goods go, when it isn't the buyer's address (Rule 46): its state decides the place of supply (CA-08).
+  shipToName: boundedText({ max: 200 }),
+  shipToAddress: boundedText({ max: 400 }),
+  shipToStateCode: text(),
+  // Frozen at posting (RC-022): the issuer from the company profile, the buyer from the party, never read again.
+  issuerLegalName: boundedText({ max: 200 }),
+  issuerGstin: text(),
+  issuerAddressLine1: boundedText({ max: 200 }),
+  issuerAddressLine2: boundedText({ max: 200 }),
+  issuerCity: boundedText({ max: 100 }),
+  issuerPincode: text(),
+  issuerStateCode: text(),
+  buyerName: boundedText({ max: 200 }),
+  buyerGstin: text(),
+  buyerAddressLine1: boundedText({ max: 200 }),
+  buyerAddressLine2: boundedText({ max: 200 }),
+  buyerCity: boundedText({ max: 100 }),
+  buyerPincode: text(),
+  buyerStateCode: text(),
+  placeOfSupply: text(),
+  // The totals, written at posting: the lines' sums, and the round-off that brings them to the rupee (ADR-005 §2).
+  taxable: money().notNull().default('0'),
+  cgst: money().notNull().default('0'),
+  sgst: money().notNull().default('0'),
+  igst: money().notNull().default('0'),
+  cess: money().notNull().default('0'),
+  roundOff: money({ signed: true }).notNull().default('0'),
+  total: money().notNull().default('0'),
+  // The version an override of its checks was approved for (sales:override, M3-07), as a delivery's.
+  overrideVersion: text(),
+  postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+  cancelledAt: timestamp({ withTimezone: true }),
+  cancelledBy: text(),
+  cancelReason: boundedText({ max: 500 }),
+  cancelEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_invoices_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
+  // Posted, it has its number, its frozen issuer and place of supply, and its entry unless nothing it posts has value.
+  check('ck_invoices_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} <> 'draft' or ${t.postedEntryId} is null)
+    and (${t.status} = 'draft') = (${t.issuerGstin} is null) and (${t.status} = 'draft') = (${t.placeOfSupply} is null)`),
+  check('ck_invoices_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
+  // The header's own identity (ADR-005 §2): its total is its taxes and taxable value plus a round-off under 1. The
+  // lines against the header are checked at commit (RA006).
+  check('ck_invoices_identity', sql`${t.total} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.cess} + ${t.roundOff}
+    and abs(${t.roundOff}) < 1 and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
+  check('ck_invoices_state_codes', sql`coalesce(${t.shipToStateCode}, '00') ~ '^[0-9]{2}$' and coalesce(${t.issuerStateCode}, '00') ~ '^[0-9]{2}$'
+    and coalesce(${t.buyerStateCode}, '00') ~ '^[0-9]{2}$' and coalesce(${t.placeOfSupply}, '00') ~ '^[0-9]{2}$'`),
+  index('ix_invoices_party_date').on(t.partyId, t.businessDate),
+  index('ix_invoices_posted_entry').on(t.postedEntryId),
+  index('ix_invoices_cancel_entry').on(t.cancelEntryId),
+  index('ix_invoices_date').on(t.businessDate, t.id),
+  index('ix_invoices_owner').on(t.owner),
+]);
+
+/**
+ * An invoice's line: how many of a delivery line it bills, at the order line's rate and discount unless the person set
+ * another (then the price check runs, ADR-007 §9). Posting writes the item's HSN, the GST rate in force on the invoice's
+ * date and its source (copied, never looked up again), the taxable value and tax, the goods' cost moved from GDNI to
+ * COGS (`cost`, the line's share of what the delivery line went out at), and its share of the delivery line's taxable
+ * value and GST, which it takes off the party's delivered-not-invoiced (`deliveryTaxable`, `deliveryGst`). Returns and
+ * invoices of one delivery line share it: whichever comes last clears what's left (ADR-006 §4).
+ */
+export const invoiceLines = radcoreTable('invoice_lines', {
+  id: id(),
+  invoiceId: uuid().notNull().references(() => invoices.id, { onDelete: 'cascade' }),
+  lineNo: smallint().notNull(),
+  deliveryLineId: uuid().notNull().references(() => deliveryLines.id, { onDelete: 'restrict' }),
+  itemId: uuid().notNull().references(() => items.id, { onDelete: 'restrict' }),
+  qty: qty({ line: true }).notNull(),
+  rate: unitPrice().notNull(),
+  discountPercent: percent().notNull().default('0'),
+  hsn: text(),
+  gstRate: percent(),
+  gstRateSource: boundedText({ max: 200 }),
+  taxable: money(),
+  cgst: money(),
+  sgst: money(),
+  igst: money(),
+  // Cess, held at 0 until lib-gst has cess rates (CA-50; the architect on RAD-113): no CHECK pins it, so rates need
+  // no migration to lift one.
+  cessAdValorem: money().notNull().default('0'),
+  cessPerUnitAmount: money().notNull().default('0'),
+  lineTotal: money(),
+  cost: money(),
+  deliveryTaxable: money(),
+  deliveryGst: money(),
+}, (t) => [
+  uniqueIndex('ux_invoice_lines_line').on(t.invoiceId, t.lineNo),
+  index('ix_invoice_lines_delivery_line').on(t.deliveryLineId),
+  index('ix_invoice_lines_item').on(t.itemId),
+  // Posting writes every figure at once; a draft line has none.
+  check('ck_invoice_lines_posted', sql`num_nulls(${t.hsn}, ${t.gstRate}, ${t.gstRateSource}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst},
+    ${t.lineTotal}, ${t.cost}, ${t.deliveryTaxable}, ${t.deliveryGst}) in (0, 11)`),
+  // ADR-005 §2's row identities.
+  check('ck_invoice_lines_identity', sql`${t.lineTotal} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.cessAdValorem} + ${t.cessPerUnitAmount}
+    and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
+]);
