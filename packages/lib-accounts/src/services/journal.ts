@@ -13,7 +13,7 @@ import { balancedAmounts, swapSides } from './posting.ts';
 
 /** The journal's numbering series (RAD-87): "JV/26-27/0000042". Nearly every document posts an entry, so it has 7 digits,
  * where a document series under Rule 46 has 5 (the architect on #171). */
-export const JOURNAL_SERIES = defineSeries('accounts.journal', 'JV', { digits: 7 });
+export const JOURNAL_SERIES = defineSeries('accounts.journal', 'JV', { digits: 7, label: 'Journal entries' });
 
 /** An account, by its system key (`{ system: 'cash' }`) or, for one people added, its id. */
 export type AccountRef = Readonly<{ system: string } | { id: string }>;

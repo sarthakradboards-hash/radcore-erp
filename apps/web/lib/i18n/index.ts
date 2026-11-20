@@ -21,6 +21,7 @@ export const core = {
   'offline.banner': "You're offline. What you've typed stays on this page, and saves are sent when you're back online.",
   'shell.skip': 'Skip to the main content',
   'shell.menu': 'Main menu',
+  'shell.menuButton': 'Menu',
   'shell.signedInAs': 'Signed in as {name}',
   'nav.home': 'Home',
   'nav.admin': 'Admin',

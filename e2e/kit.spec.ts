@@ -158,6 +158,21 @@ test('a masked value reads "Hidden", or "Hidden, ends …" for a last-4 field; t
 });
 
 test.describe('the menu and dialogs', () => {
+  test('a menu of pages: each is a link with its href, the current one marked, and choosing one goes there (RAD-50)', async ({ page }) => {
+    await open(page);
+    await page.getByRole('button', { name: 'Go to' }).focus();
+    await page.keyboard.press('Enter'); // by keyboard, so the first link has focus
+    const links = page.getByRole('menuitem');
+    await expect(links).toHaveCount(2);
+    await expect(page.getByRole('menuitem', { name: 'Actions' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('menuitem', { name: 'Masked values' })).toHaveAttribute('href', '#masked');
+    // Focus the link itself: which item an opening Enter focuses differs by engine (WebKit leaves the first unfocused).
+    await page.getByRole('menuitem', { name: 'Masked values' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/#masked$/);
+    await expect(links).toHaveCount(0);
+  });
+
   test('menu: 44 px items, Archive disabled and skipped by the arrows, Escape returns focus; the page stays reachable', async ({ page }) => {
     await open(page);
     await menuButton(page).focus();

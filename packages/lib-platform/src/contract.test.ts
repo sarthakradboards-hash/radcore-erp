@@ -64,9 +64,10 @@ describe('the sign-in and own-session contracts', () => {
     expect(KEY_EXEMPT_ROUTES).toHaveLength(4);
   });
 
-  // Not own-account: the admin, file and export routes, and a feature's export (POST /platform/masters/exports).
+  // Not own-account: the admin, file and export routes, a feature's export (POST /platform/masters/exports), and the
+  // settings and number-series screens (RAD-132).
   it('puts every own-account route on the one key every role holds, session:read (RAD-32)', () => {
-    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\/|\/exports$/.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
+    expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\/|\/exports$|^\/(settings|number-series)(\/|$)/.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['POST /me/second-factor/recovery-codes', 'session:read'], ['GET /me/sessions', 'session:read'],
       ['DELETE /me/sessions/:id', 'session:read'], ['GET /me/notifications/unread', 'session:read'],

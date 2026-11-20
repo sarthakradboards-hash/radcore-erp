@@ -220,8 +220,9 @@ They are append-only with explicit reversals:
     first insert, then inserts its rows in document order, so the checks lock the documents in order too. A credit is
     another module's row, so its check locks it, before the charge. A multi-line allocation, or a reversal, can't
     hold a document while it waits for a payment. Only then does the check sum.
-  - A payment's net allocations stay at or below its amount to the party (gross of TDS held back, F8), and a
-    credit's net applications at or below its total.
+  - A payment's net allocations and the posted refunds that name it stay at or below its amount to the party
+    (gross of TDS held back, F8), and a credit's net applications and the posted refunds that name it at or below
+    its total. A refund naming a credit runs the credit's check when it posts (`refund_exceeds_credit`).
   - So two transactions allocating 60 each against an invoice of 100 can't both pass: the second waits for the
     first's commit, sums again, and is refused (`RA006`).
 

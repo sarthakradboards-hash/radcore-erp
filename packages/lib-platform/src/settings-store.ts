@@ -4,7 +4,7 @@
 import { platformTx, settings } from '@radcore/db/platform';
 import { eq } from 'drizzle-orm';
 import type { Ctx } from './ctx.ts';
-import { settingRow, type SettingDef } from './settings.ts';
+import { settingRow, type StoredSetting } from './settings.ts';
 
 /**
  * Stores a module's setting, checked by its schema first; `null` removes the stored row, so its default comes back.
@@ -12,13 +12,18 @@ import { settingRow, type SettingDef } from './settings.ts';
  * setting is refused: lib-platform exports some of its own (linkMaxDays), and a module's service mustn't change them
  * (auditor-2 on #181). lib-platform writes its own with its own writer, when one first needs one.
  */
-export async function saveSetting<T>(ctx: Ctx, def: SettingDef<T>, value: T | null): Promise<void> {
+export async function saveSetting<T>(ctx: Ctx, def: StoredSetting<T>, value: T | null): Promise<void> {
   if (def.key.startsWith('platform.')) throw new TypeError(`${def.key} is lib-platform's: a module can't change it`);
+  await storeSetting(ctx, def.key, value === null ? null : settingRow(def, value).value);
+}
+
+/** Writes a value already checked, or removes the row for null. lib-platform's own: saveSetting for a module's
+ * setting, and the settings screen's PUT /settings/:key (RAD-132), which checks against the composed catalogue. */
+export async function storeSetting(ctx: Ctx, key: string, value: unknown): Promise<void> {
   const tx = platformTx(ctx);
   if (value === null) {
-    await tx.delete(settings).where(eq(settings.key, def.key));
+    await tx.delete(settings).where(eq(settings.key, key));
     return;
   }
-  const row = settingRow(def, value);
-  await tx.insert(settings).values(row).onConflictDoUpdate({ target: settings.key, set: { value: row.value } });
+  await tx.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } });
 }

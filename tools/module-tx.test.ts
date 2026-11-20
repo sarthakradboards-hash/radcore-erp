@@ -8,7 +8,7 @@ import { ForeignTableError, moduleTx, UnboundedWriteError } from '../packages/db
 import { openTransaction, type Database } from '../packages/db/src/schema.ts';
 import { createDatabase } from '../packages/lib-platform/src/db/client.ts';
 import { runInTransaction } from '../packages/lib-platform/src/db/transaction.ts';
-import { defineSetting } from '../packages/lib-platform/src/settings.ts';
+import { defineSetting } from '../packages/lib-platform/src/define-setting.ts';
 import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { integer, pgSchema, uuid } from 'drizzle-orm/pg-core';
@@ -188,8 +188,8 @@ describe.skipIf(!url)('the module transaction', () => {
 
   // RAD-48's mechanism: one read of the settings table when the Ctx is built, typed values from memory after.
   it("gives the service the settings read once at the start of its transaction, and each one's default when unset", async () => {
-    const stored = defineSetting(`platform.test_${randomBytes(4).toString('hex')}`, z.number().int(), 1);
-    const unset = defineSetting(`platform.test_${randomBytes(4).toString('hex')}`, z.string(), 'fallback');
+    const stored = defineSetting(`platform.test_${randomBytes(4).toString('hex')}`, z.number().int(), 1, { label: 'A test setting', description: 'For a test.', input: { kind: 'text' } });
+    const unset = defineSetting(`platform.test_${randomBytes(4).toString('hex')}`, z.string(), 'fallback', { label: 'A test setting', description: 'For a test.', input: { kind: 'text' } });
     // Settings rows carry audit columns, so the insert says who made it.
     const asTest = async (text: string, values: unknown[]) => {
       const c = await pool.connect();
