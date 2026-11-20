@@ -66,14 +66,15 @@ const figuresOf = (inv: Invoice, lines: readonly CheckedLine[]) => ({ partyId: i
     discountPercent: l.discountPercent })) });
 
 /** What the invoice asks checkSale (ADR-007 §9): what it adds beyond the deliveries it bills, which delivered-not-
- * invoiced already counts; and a price check only on a line whose rate or discount isn't its order line's. */
+ * invoiced already counts; and a price check only on a line whose rate or discount isn't its order line's, its
+ * discount measured from the list's rate (the architect on RAD-113). */
 function saleOf(inv: Invoice, lines: readonly Priced[], total: Money, notInvoiced: Money): SaleCheck {
   const replaced = lines.reduce((s, l) => s.plus(dec(l.deliveryTaxable)).plus(dec(l.deliveryGst)), dec('0'));
   return {
     stage: 'invoice', partyId: inv.partyId, on: inv.businessDate, pricedBy: inv.createdBy, notInvoiced,
     adds: roundMoney(dec(total).minus(replaced)),
     lines: lines.map((l) => ({ itemId: l.itemId, locationId: l.delivery.locationId, rate: l.priceChanged ? netRate(l.rate, l.discountPercent) : null,
-      listRate: l.priceChanged ? l.rate : null })),
+      listRate: l.priceChanged ? l.listRate : null })),
   };
 }
 
@@ -83,7 +84,7 @@ async function workedOut(ctx: Ctx, inv: Invoice, company: Company, o: { forUpdat
   const drafted = await salesTx(ctx).select({ deliveryLineId: invoiceLines.deliveryLineId, qty: invoiceLines.qty, rate: invoiceLines.rate,
     discountPercent: invoiceLines.discountPercent }).from(invoiceLines).where(eq(invoiceLines.invoiceId, inv.id)).orderBy(asc(invoiceLines.lineNo));
   const lines = await checkedLines(ctx, inv.partyId, drafted.map((l) => ({ ...l, qty: l.qty as never, rate: l.rate as never,
-    discountPercent: l.discountPercent as never })), o);
+    discountPercent: l.discountPercent as never })), { ...o, priceListId: inv.priceListId, on: inv.businessDate });
   // Its date against its deliveries before any rate is looked up for it (ADR-007 §4), so the date is what's refused.
   checkInvoiceDate(inv.businessDate, lines.map((l) => l.delivery.businessDate), ctx.settings.get(INVOICE_LAG_DAYS));
   const party = await getPartyById(ctx, { id: inv.partyId });
@@ -177,7 +178,8 @@ export async function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): 
   // The lines' figures first: once the invoice is posted, its lines are fixed (guard_document_line).
   for (const f of w.figures) {
     // Cess stays at its default 0 until lib-gst has cess rates (CA-50), so posting writes no cess line.
-    await tx.update(invoiceLines).set({ hsn: f.hsn, gstRate: f.gstRate, gstRateSource: f.gstRateSource, taxable: f.taxable, cgst: f.cgst,
+    await tx.update(invoiceLines).set({ listRate: f.listRate, listVersionId: f.listVersionId, hsn: f.hsn, gstRate: f.gstRate,
+      gstRateSource: f.gstRateSource, taxable: f.taxable, cgst: f.cgst,
       sgst: f.sgst, igst: f.igst, lineTotal: f.lineTotal, cost: f.cost,
       deliveryTaxable: f.deliveryTaxable, deliveryGst: f.deliveryGst })
       .where(and(eq(invoiceLines.invoiceId, id), eq(invoiceLines.lineNo, f.lineNo)));

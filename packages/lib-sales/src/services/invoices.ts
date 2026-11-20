@@ -12,6 +12,7 @@ import type { createInvoice, deleteInvoice, getInvoice, listInvoices, updateInvo
 import { returnedOf, type Returned } from './delivered.ts';
 import { checkDate } from './document-rules.ts';
 import { invoiceOwner } from './invoice-rules.ts';
+import { listRatesOf, priceListOf } from './party-price-lists.ts';
 import { sellingTo, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
@@ -41,6 +42,9 @@ export const ownerOf = (ctx: Ctx, lines: readonly CheckedLine[]): string =>
 /** A billed line as checked: what it bills, at what price, and the delivery line it bills with what's gone from it. */
 export type CheckedLine = {
   lineNo: number; deliveryLineId: string; itemId: string; qty: string; rate: string; discountPercent: string; priceChanged: boolean;
+  /** What its discount is measured from (the architect on RAD-113): its order line's list rate when its price is
+   * unchanged, else the invoice's list's rate on the invoice's date; null when the list has none. */
+  listRate: string | null; listVersionId: string | null;
   delivery: { id: string; businessDate: string; locationId: string; owner: string };
   sent: { qty: string; value: string | null; taxable: string | null; gst: string | null }; gone: Returned;
 };
@@ -52,15 +56,16 @@ export type CheckedLine = {
  * bill deliveries of several orders and owners. Locks the deliveries, by id, when posting, so two invoices of one
  * delivery take turns over what's left of it.
  */
-export async function checkedLines(ctx: Ctx, partyId: string, lines: readonly LineIn[], o: { forUpdate?: boolean; permission?: string } = {}):
-  Promise<CheckedLine[]> {
+export async function checkedLines(ctx: Ctx, partyId: string, lines: readonly LineIn[],
+  o: { priceListId: string | null; on: string; forUpdate?: boolean; permission?: string }): Promise<CheckedLine[]> {
   const forUpdate = o.forUpdate === true;
   const permission = o.permission ?? 'invoices:write';
   const tx = salesTx(ctx);
   const ids = [...new Set(lines.map((l) => l.deliveryLineId))];
   const sent = new Map((await tx.select({ id: deliveryLines.id, deliveryId: deliveryLines.deliveryId, itemId: deliveryLines.itemId,
     qty: deliveryLines.qty, picks: deliveryLines.picks, value: deliveryLines.value, taxable: deliveryLines.taxable, gst: deliveryLines.gst,
-    rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent }).from(deliveryLines)
+    rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent, listRate: salesOrderLines.listRate,
+    listVersionId: salesOrderLines.listVersionId }).from(deliveryLines)
     .innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId))
     .where(inArray(deliveryLines.id, ids))).map((l) => [l.id, l])); // a contract's lines are one or more
   const deliveryIds = [...new Set([...sent.values()].map((l) => l.deliveryId))].toSorted();
@@ -98,14 +103,19 @@ export async function checkedLines(ctx: Ctx, partyId: string, lines: readonly Li
     const discountPercent = l.discountPercent ?? line.discountPercent;
     rows.push({ lineNo: n + 1, deliveryLineId: line.id, itemId: line.itemId, qty: l.qty, rate, discountPercent,
       priceChanged: !dec(rate).eq(dec(line.rate)) || !dec(discountPercent).eq(dec(line.discountPercent)),
+      listRate: line.listRate, listVersionId: line.listVersionId,
       delivery: { id: delivery.id, businessDate: delivery.businessDate, locationId: delivery.locationId, owner: delivery.owner },
       sent: { qty: line.qty, value: line.value, taxable: line.taxable, gst: line.gst }, gone: was });
   }
+  // A changed line is measured from the invoice's own list on its date, never from its order's or a typed rate.
+  const changed = rows.filter((r) => r.priceChanged);
+  const listed = await listRatesOf(ctx, o.priceListId, o.on, changed.map((r) => r.itemId));
+  changed.forEach((r, i) => Object.assign(r, listed[i]));
   return rows;
 }
 
 const stored = (lines: readonly CheckedLine[]) => lines.map((l) => ({ lineNo: l.lineNo, deliveryLineId: l.deliveryLineId, itemId: l.itemId,
-  qty: l.qty, rate: l.rate, discountPercent: l.discountPercent }));
+  qty: l.qty, rate: l.rate, discountPercent: l.discountPercent, listRate: l.listRate, listVersionId: l.listVersionId }));
 const shipToColumns = (s: In<typeof createInvoice>['shipTo']) =>
   ({ shipToName: s?.name ?? null, shipToAddress: s?.address ?? null, shipToStateCode: s?.stateCode ?? null });
 
@@ -156,10 +166,11 @@ export async function getInvoiceById(ctx: Ctx, { id }: In<typeof getInvoice>): P
 export async function addInvoice(ctx: Ctx, input: In<typeof createInvoice>): Promise<Out<typeof createInvoice>> {
   checkDate(input.businessDate, today());
   await sellingTo(ctx, input.partyId);
-  const lines = await checkedLines(ctx, input.partyId, input.lines);
+  const priceListId = await priceListOf(ctx, input.partyId);
+  const lines = await checkedLines(ctx, input.partyId, input.lines, { priceListId, on: input.businessDate });
   const tx = salesTx(ctx);
   const [row] = await tx.insert(invoices).values({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes,
-    owner: ownerOf(ctx, lines), ...shipToColumns(input.shipTo) }).returning({ id: invoices.id });
+    owner: ownerOf(ctx, lines), priceListId, ...shipToColumns(input.shipTo) }).returning({ id: invoices.id });
   if (row === undefined) throw new Error('the insert returned no row');
   await tx.insert(invoiceLines).values(stored(lines).map((l) => ({ ...l, invoiceId: row.id })));
   return row;
@@ -171,10 +182,11 @@ export async function changeInvoice(ctx: Ctx, { id, ...input }: In<typeof update
   if (now.status !== 'draft') throw wrongStatus(now.status);
   checkDate(input.businessDate, today());
   await sellingTo(ctx, input.partyId);
-  const lines = await checkedLines(ctx, input.partyId, input.lines);
+  const priceListId = await priceListOf(ctx, input.partyId);
+  const lines = await checkedLines(ctx, input.partyId, input.lines, { priceListId, on: input.businessDate });
   const tx = salesTx(ctx);
   await tx.update(invoices).set({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes, ...shipToColumns(input.shipTo),
-    owner: ownerOf(ctx, lines), overrideVersion: null }).where(eq(invoices.id, id));
+    owner: ownerOf(ctx, lines), priceListId, overrideVersion: null }).where(eq(invoices.id, id));
   await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id));
   await tx.insert(invoiceLines).values(stored(lines).map((l) => ({ ...l, invoiceId: id })));
   return {};

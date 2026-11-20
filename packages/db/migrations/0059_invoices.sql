@@ -7,6 +7,8 @@ CREATE TABLE "radcore"."invoice_lines" (
 	"qty" numeric(18, 3) NOT NULL,
 	"rate" numeric(18, 6) NOT NULL,
 	"discount_percent" numeric(9, 6) DEFAULT '0' NOT NULL,
+	"list_rate" numeric(18, 6),
+	"list_version_id" uuid,
 	"hsn" text,
 	"gst_rate" numeric(9, 6),
 	"gst_rate_source" text,
@@ -27,6 +29,7 @@ CREATE TABLE "radcore"."invoice_lines" (
 	CONSTRAINT "ck_invoice_lines_qty" CHECK ("radcore"."invoice_lines"."qty" > 0 and "radcore"."invoice_lines"."qty" <> 'NaN'),
 	CONSTRAINT "ck_invoice_lines_rate" CHECK ("radcore"."invoice_lines"."rate" >= 0 and "radcore"."invoice_lines"."rate" <> 'NaN'),
 	CONSTRAINT "ck_invoice_lines_discount_percent" CHECK ("radcore"."invoice_lines"."discount_percent" between 0 and 100 and "radcore"."invoice_lines"."discount_percent" <> 'NaN'),
+	CONSTRAINT "ck_invoice_lines_list_rate" CHECK ("radcore"."invoice_lines"."list_rate" >= 0 and "radcore"."invoice_lines"."list_rate" <> 'NaN'),
 	CONSTRAINT "ck_invoice_lines_gst_rate" CHECK ("radcore"."invoice_lines"."gst_rate" between 0 and 100 and "radcore"."invoice_lines"."gst_rate" <> 'NaN'),
 	CONSTRAINT "ck_invoice_lines_gst_rate_source" CHECK (char_length("radcore"."invoice_lines"."gst_rate_source") <= 200),
 	CONSTRAINT "ck_invoice_lines_taxable" CHECK ("radcore"."invoice_lines"."taxable" >= 0 and "radcore"."invoice_lines"."taxable" <> 'NaN'),
@@ -50,6 +53,7 @@ CREATE TABLE "radcore"."invoices" (
 	"status" text DEFAULT 'draft' NOT NULL,
 	"number" text,
 	"party_id" uuid NOT NULL,
+	"price_list_id" uuid,
 	"business_date" date NOT NULL,
 	"notes" text,
 	"owner" text NOT NULL,
@@ -118,12 +122,28 @@ CREATE TABLE "radcore"."invoices" (
     and coalesce("radcore"."invoices"."buyer_state_code", '00') ~ '^[0-9]{2}$' and coalesce("radcore"."invoices"."place_of_supply", '00') ~ '^[0-9]{2}$')
 );
 --> statement-breakpoint
+CREATE TABLE "radcore"."party_price_lists" (
+	"party_id" uuid PRIMARY KEY NOT NULL,
+	"price_list_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "radcore"."sales_order_lines" ADD COLUMN "list_rate" numeric(18, 6);--> statement-breakpoint
+ALTER TABLE "radcore"."sales_order_lines" ADD COLUMN "list_version_id" uuid;--> statement-breakpoint
+ALTER TABLE "radcore"."sales_orders" ADD COLUMN "price_list_id" uuid;--> statement-breakpoint
 ALTER TABLE "radcore"."invoice_lines" ADD CONSTRAINT "invoice_lines_invoice_id_invoices_id_fk" FOREIGN KEY ("invoice_id") REFERENCES "radcore"."invoices"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."invoice_lines" ADD CONSTRAINT "invoice_lines_delivery_line_id_delivery_lines_id_fk" FOREIGN KEY ("delivery_line_id") REFERENCES "radcore"."delivery_lines"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."invoice_lines" ADD CONSTRAINT "invoice_lines_item_id_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "radcore"."items"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."invoice_lines" ADD CONSTRAINT "invoice_lines_list_version_id_price_list_versions_id_fk" FOREIGN KEY ("list_version_id") REFERENCES "radcore"."price_list_versions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."invoices" ADD CONSTRAINT "invoices_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "radcore"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."invoices" ADD CONSTRAINT "invoices_price_list_id_price_lists_id_fk" FOREIGN KEY ("price_list_id") REFERENCES "radcore"."price_lists"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."invoices" ADD CONSTRAINT "invoices_posted_entry_id_journal_entries_id_fk" FOREIGN KEY ("posted_entry_id") REFERENCES "radcore"."journal_entries"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."invoices" ADD CONSTRAINT "invoices_cancel_entry_id_journal_entries_id_fk" FOREIGN KEY ("cancel_entry_id") REFERENCES "radcore"."journal_entries"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."party_price_lists" ADD CONSTRAINT "party_price_lists_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "radcore"."parties"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."party_price_lists" ADD CONSTRAINT "party_price_lists_price_list_id_price_lists_id_fk" FOREIGN KEY ("price_list_id") REFERENCES "radcore"."price_lists"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "ux_invoice_lines_line" ON "radcore"."invoice_lines" USING btree ("invoice_id","line_no");--> statement-breakpoint
 CREATE INDEX "ix_invoice_lines_delivery_line" ON "radcore"."invoice_lines" USING btree ("delivery_line_id");--> statement-breakpoint
 CREATE INDEX "ix_invoice_lines_item" ON "radcore"."invoice_lines" USING btree ("item_id");--> statement-breakpoint
@@ -132,6 +152,10 @@ CREATE INDEX "ix_invoices_posted_entry" ON "radcore"."invoices" USING btree ("po
 CREATE INDEX "ix_invoices_cancel_entry" ON "radcore"."invoices" USING btree ("cancel_entry_id");--> statement-breakpoint
 CREATE INDEX "ix_invoices_date" ON "radcore"."invoices" USING btree ("business_date","id");--> statement-breakpoint
 CREATE INDEX "ix_invoices_owner" ON "radcore"."invoices" USING btree ("owner");--> statement-breakpoint
+CREATE INDEX "ix_party_price_lists_list" ON "radcore"."party_price_lists" USING btree ("price_list_id");--> statement-breakpoint
+ALTER TABLE "radcore"."sales_order_lines" ADD CONSTRAINT "sales_order_lines_list_version_id_price_list_versions_id_fk" FOREIGN KEY ("list_version_id") REFERENCES "radcore"."price_list_versions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."sales_orders" ADD CONSTRAINT "sales_orders_price_list_id_price_lists_id_fk" FOREIGN KEY ("price_list_id") REFERENCES "radcore"."price_lists"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."sales_order_lines" ADD CONSTRAINT "ck_sales_order_lines_list_rate" CHECK ("radcore"."sales_order_lines"."list_rate" >= 0 and "radcore"."sales_order_lines"."list_rate" <> 'NaN');--> statement-breakpoint
 -- Invoices are posted documents (ADR-007 §1, §2; ADR-005 §7b): draft -> posted -> cancelled, cancelled final. While a
 -- draft, anything changes; its posting sets its number, entry, frozen issuer and buyer, and figures; after that only
 -- the move to cancelled and its cancel columns (M3-10), and the lines not at all. No write-once columns until M5's IRN.
@@ -220,15 +244,25 @@ END $$;
 -- A money document is audited in full. The buyer's and ship-to addresses are personal data, as on the party (RAD-40):
 -- the trail says they changed, never what they were. A document's lines are its parts (ADR-001 §8b).
 SELECT radcore.audit_attach('invoices',
-  keep => array['status', 'number', 'party_id', 'owner', 'business_date', 'notes', 'ship_to_name', 'ship_to_state_code', 'issuer_legal_name',
+  keep => array['status', 'number', 'party_id', 'owner', 'price_list_id', 'business_date', 'notes', 'ship_to_name', 'ship_to_state_code', 'issuer_legal_name',
     'issuer_gstin', 'issuer_address_line1', 'issuer_address_line2', 'issuer_city', 'issuer_pincode', 'issuer_state_code', 'buyer_name',
     'buyer_gstin', 'buyer_state_code', 'place_of_supply', 'taxable', 'cgst', 'sgst', 'igst', 'cess', 'round_off', 'total',
     'override_version', 'posted_entry_id', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'cancel_entry_id'],
   redact => array['ship_to_address', 'buyer_address_line1', 'buyer_address_line2', 'buyer_city', 'buyer_pincode']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('invoice_lines', keep => array['invoice_id', 'line_no', 'delivery_line_id', 'item_id', 'qty', 'rate',
-  'discount_percent', 'hsn', 'gst_rate', 'gst_rate_source', 'taxable', 'cgst', 'sgst', 'igst', 'cess_ad_valorem', 'cess_per_unit_amount',
+  'discount_percent', 'list_rate', 'list_version_id', 'hsn', 'gst_rate', 'gst_rate_source', 'taxable', 'cgst', 'sgst', 'igst', 'cess_ad_valorem', 'cess_per_unit_amount',
   'line_total', 'cost', 'delivery_taxable', 'delivery_gst'], owner => 'invoice_id', owner_table => 'invoices');
+--> statement-breakpoint
+-- A party's price list (the architect on RAD-113), set under prices:approve: audited, as a price is.
+SELECT radcore.audit_attach('party_price_lists', keep => array['party_id', 'price_list_id']);
+--> statement-breakpoint
+-- Orders now copy their price list and each line its list rate (Refs RAD-112): attached again, with those kept.
+SELECT radcore.audit_attach('sales_orders', keep => array['number', 'party_id', 'price_list_id', 'quote_id', 'business_date', 'status',
+  'notes', 'close_reason', 'override_version']);
+--> statement-breakpoint
+SELECT radcore.audit_attach('sales_order_lines', keep => array['order_id', 'line_no', 'item_id', 'qty', 'rate', 'discount_percent',
+  'list_rate', 'list_version_id'], owner => 'order_id', owner_table => 'sales_orders');
 --> statement-breakpoint
 -- A posted invoice is never emptied: only a draft is deleted, row by row, and the guards refuse the rest.
 REVOKE TRUNCATE ON radcore.invoices, radcore.invoice_lines FROM radcore_app;

@@ -13,11 +13,12 @@ import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addDelivery, addDeliveryReturn, addInvoice, addOrder, confirmOrderNow, getDeliveryById, getInvoiceById, getOrderById, listToInvoicePage,
-  postDeliveryNow, postDeliveryReturnNow, postInvoiceNow,
+  postDeliveryNow, postDeliveryReturnNow, postInvoiceNow, setPartyList,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -26,7 +27,7 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156); the services bound dates by the real one.
 const DATE = '2026-11-15';
 const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'parties:write', 'parties:manage', 'items:write',
-  'locations:write', 'cost:read', 'gst:write', 'journal:read', 'company:write', 'payments:write'];
+  'locations:write', 'cost:read', 'gst:write', 'journal:read', 'company:write', 'payments:write', 'prices:approve'];
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
@@ -210,16 +211,19 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
     expect(out).toEqual(['buyer_details_required', 'ok', 'ok']);
   });
 
-  // ADR-007 §9: credit is checked again at the invoice, and price only on a line not at its order's price.
-  it('checks the price of a line billed below its order’s rate, and leaves one at the order’s rate alone', async () => {
-    // One left at the store, so its average (100.00) is the cost the changed line is checked against.
-    const at = await setup({ stock: '3', stockRate: '100', ordered: '2', rate: '1000', delivered: '2' });
+  // ADR-007 §9 (the architect on RAD-113): credit is checked again at the invoice, and price only on a line not at its
+  // order's price, below cost and its discount measured from the party's list on the invoice's date, never from the
+  // rate typed: a 10% cut is over the maker's limit (the default, at most 2%). A line at its order's price isn't checked.
+  it('checks a repriced line against cost and the party’s list, and leaves one at its order’s price alone', async () => {
+    // One left at the store, so its average (100.00) is the cost the changed lines are checked against.
+    const at = await setup({ stock: '4', stockRate: '100', ordered: '3', rate: '1000', delivered: '3' });
+    const list = await priceListFrom(su, DATE, { [at.itemId]: '1000' });
+    await run((ctx) => setPartyList(ctx, { partyId: at.partyId, priceListId: list, reason: 'The dealer list' }));
     const out = await inBooks(async (ctx) => {
-      const below = await post(ctx, at, '1', { rate: '50' }).then(() => null, (e: unknown) => e as AppError);
-      const atOrder = await failure(post(ctx, at, '1'));
-      return [below?.code, below?.issues.map((i) => i.code), atOrder];
+      const issues = (rate: string) => post(ctx, at, '1', { rate }).then(() => 'ok', (e: unknown) => (e as AppError).issues.map((i) => i.code).join());
+      return [await issues('50'), await issues('900'), await failure(post(ctx, at, '1'))];
     });
-    expect(out).toEqual(['needs_override', ['below_cost'], 'ok']);
+    expect(out).toEqual(['below_cost,over_discount', 'over_discount', 'ok']);
   });
 
   // RAD-116: a posted invoice is a receivable charge, its total what receipts are allocated against.

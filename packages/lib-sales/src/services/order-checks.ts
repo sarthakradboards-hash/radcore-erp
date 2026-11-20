@@ -13,10 +13,10 @@ import { deliveredNotInvoiced } from './delivered.ts';
 import { netRate, totalWithGst } from './document-rules.ts';
 
 type Order = { partyId: string; businessDate: string; createdBy: string };
-type Line = { itemId: string; qty: string; rate: string; discountPercent: string };
+type Line = { itemId: string; qty: string; rate: string; discountPercent: string; listRate: string | null };
 
 const linesOf = (ctx: Ctx, orderId: string) => salesTx(ctx).select({ itemId: salesOrderLines.itemId, qty: salesOrderLines.qty,
-  rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent }).from(salesOrderLines)
+  rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent, listRate: salesOrderLines.listRate }).from(salesOrderLines)
   .where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo));
 
 /** What an override approves of the order: its party, date and lines, as plain JSON (RAD-38). */
@@ -24,8 +24,9 @@ const figuresOf = (o: Omit<Order, 'createdBy'>, lines: readonly Line[]) =>
   ({ partyId: o.partyId, businessDate: o.businessDate, lines: lines.map((l) => ({ ...l })) });
 
 /** What the order asks checkSale at confirmation: its total with GST, each line at its rate after discount against its
- * list rate (its own rate before the discount), from the sellable places together, since an order names no place,
- * judged by its maker's discount limit (the architect on RAD-112). */
+ * stored list rate (its list's, on the order's date; none, so no discount judged, when the list has no rate for it: the
+ * architect on RAD-113), from the sellable places together, since an order names no place, judged by its maker's
+ * discount limit (the architect on RAD-112). */
 async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[]): Promise<SaleCheck> {
   const hsn = await itemLabels(ctx, lines.map((l) => l.itemId));
   const gst: string[] = [];
@@ -33,7 +34,7 @@ async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[]): Promise<SaleC
   return {
     stage: 'confirm', partyId: o.partyId, on: o.businessDate, pricedBy: o.createdBy,
     adds: totalWithGst(lines.map((l, i) => ({ ...l, gstPercent: gst[i] ?? '0' }))), notInvoiced: await deliveredNotInvoiced(ctx, o.partyId),
-    lines: lines.map((l) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent), listRate: l.rate })),
+    lines: lines.map((l) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent), listRate: l.listRate })),
   };
 }
 

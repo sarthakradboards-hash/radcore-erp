@@ -22,7 +22,8 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   stock_movements: { qty: 'a quantity' },
   // A quote's or order's line (RAD-112): what was offered or ordered, at its selling rate (sales:read).
   sales_quote_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage' },
-  sales_order_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage' },
+  sales_order_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage',
+    list_rate: 'a list price (prices:read)' },
   stock_movement_batches: { qty: 'a quantity' },
   // A delivery's or return's line (RAD-112): how many went or came back, and what they sold for (sales:read).
   delivery_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst: 'the GST on a selling value (sales:read)' },
@@ -32,6 +33,7 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     igst: 'tax charged (sales:read)', cess: 'tax charged (sales:read)', round_off: 'the round-off to the rupee (sales:read)',
     total: 'what the party owes on it (sales:read)' },
   invoice_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage',
+    list_rate: 'a list price (prices:read)',
     gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax charged (sales:read)', sgst: 'tax charged (sales:read)',
     igst: 'tax charged (sales:read)', cess_ad_valorem: 'tax charged (sales:read)', cess_per_unit_amount: 'tax charged (sales:read)',
     line_total: 'a selling value with tax (sales:read)', delivery_taxable: 'a selling value (sales:read)',

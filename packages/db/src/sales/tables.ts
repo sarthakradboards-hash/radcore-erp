@@ -61,6 +61,14 @@ export const discountLimits = radcoreTable('discount_limits', {
   maxPercent: percent().notNull(),
 });
 
+/** The price list a party is sold from (the architect on RAD-113): what a document copies when it's made, so each
+ * priced line's discount is measured from the list's rate. Set under prices:approve; a party with none takes the
+ * `sales.default_price_list` setting. */
+export const partyPriceLists = radcoreTable('party_price_lists', {
+  partyId: uuid().primaryKey().references(() => parties.id, { onDelete: 'cascade' }),
+  priceListId: uuid().notNull().references(() => priceLists.id, { onDelete: 'restrict' }),
+}, (t) => [index('ix_party_price_lists_list').on(t.priceListId)]);
+
 /**
  * A quote (ADR-007 §1, M3-08): what we offered a party, at what rates. It posts nothing. Its service moves it:
  * draft → sent (its number drawn, QT) → accepted (which makes a draft order from it), declined or expired. A draft
@@ -107,6 +115,8 @@ export const salesOrders = radcoreTable('sales_orders', {
   id: id(),
   number: text().unique(),
   partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  // The price list it was made from (its party's, else the default), copied when it's made (RAD-113).
+  priceListId: uuid().references(() => priceLists.id, { onDelete: 'restrict' }),
   quoteId: uuid().unique().references(() => salesQuotes.id, { onDelete: 'restrict' }),
   businessDate: date({ mode: 'string' }).notNull(),
   status: text().notNull().default('draft'),
@@ -135,6 +145,11 @@ export const salesOrderLines = radcoreTable('sales_order_lines', {
   qty: qty({ line: true }).notNull(),
   rate: unitPrice().notNull(),
   discountPercent: percent().notNull().default('0'),
+  // The list's rate for the item on the order's date, before GST, and the version it came from, filled by the service,
+  // never from input: what its discount is measured from (the architect on RAD-113). Null: no rate in the list, so no
+  // discount is judged.
+  listRate: unitPrice(),
+  listVersionId: uuid().references(() => priceListVersions.id, { onDelete: 'restrict' }),
 }, (t) => [
   uniqueIndex('ux_sales_order_lines_line').on(t.orderId, t.lineNo),
   index('ix_sales_order_lines_item').on(t.itemId),
@@ -273,6 +288,8 @@ export const invoices = radcoreTable('invoices', {
   status: text().notNull().default('draft'),
   number: text().unique(),
   partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  // The price list a changed line's discount is measured from (its party's, else the default), copied when it's made.
+  priceListId: uuid().references(() => priceLists.id, { onDelete: 'restrict' }),
   businessDate: date({ mode: 'string' }).notNull(),
   notes: boundedText({ max: 500 }),
   // Whose it is for record scope (ADR-007 §7, the architect on RAD-113): the owner its deliveries share, else its
@@ -349,6 +366,10 @@ export const invoiceLines = radcoreTable('invoice_lines', {
   qty: qty({ line: true }).notNull(),
   rate: unitPrice().notNull(),
   discountPercent: percent().notNull().default('0'),
+  // What its discount is measured from: its order line's list rate when its price is unchanged, else the invoice's
+  // list's rate on its date; null when the list has none (the architect on RAD-113).
+  listRate: unitPrice(),
+  listVersionId: uuid().references(() => priceListVersions.id, { onDelete: 'restrict' }),
   hsn: text(),
   gstRate: percent(),
   gstRateSource: boundedText({ max: 200 }),

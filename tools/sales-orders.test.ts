@@ -16,6 +16,7 @@ import { putGstRate } from '@radcore/lib-gst';
 import { addCategory, addItem } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { priceListFrom } from './price-list-fixture.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -130,6 +131,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
   // approver approves is what the maker's confirmation finds. A maker on 5% gives 8%; an approver on 10% approves it.
   it("judges an order's discount by its maker's limit, so an approver with a higher one approves what the maker confirms", async () => {
     const at = await setup();
+    // The party's list prices the item at the line's rate, so the 8% is all the discount there is (the architect on RAD-113).
+    await priceListFrom(su, DATE, { [at.itemId]: '61250' }, { partyId: at.partyId });
     const maker = await newUser(KEYS, await roleWithLimit('5'));
     const approver = await newUser(['sales:override'], await roleWithLimit('10'));
     const eight = { ...line(at.itemId), discountPercent: percentString({ max: '100' }).parse('8') };
@@ -139,6 +142,24 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     const request = await run((ctx) => askOrderOverride(ctx, { id }), maker);
     await run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), approver);
     expect((await run((ctx) => confirmOrderNow(ctx, { id }), maker)).number).toMatch(/^SO\//);
+  });
+
+  // Refs RAD-112 (the architect on RAD-113): a line's discount is measured from its party's list, never from a rate
+  // typed on it, so a typed rate below the list with 0% discount is over a 0% limit; an item the list doesn't price
+  // isn't judged; a tax-inclusive list is compared before its GST (64,312.50 at 5% is 61,250.00).
+  it('measures a typed rate against the party’s list, and judges no discount where the list has no rate', async () => {
+    const listed = await setup();
+    await priceListFrom(su, DATE, { [listed.itemId]: '65000' }, { partyId: listed.partyId });
+    const unlisted = await setup();
+    await priceListFrom(su, DATE, {}, { partyId: unlisted.partyId });
+    const inclusive = await setup();
+    await priceListFrom(su, DATE, { [inclusive.itemId]: '64312.50' }, { partyId: inclusive.partyId, taxInclusive: true });
+    const maker = await newUser(KEYS, await roleWithLimit('0'));
+    const confirm = async (at: { partyId: string; itemId: string }) => {
+      const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), maker);
+      return run((ctx) => confirmOrderNow(ctx, { id }), maker).then(() => 'ok', (e: unknown) => (e as AppError).issues.map((i) => i.code).join());
+    };
+    expect([await confirm(listed), await confirm(unlisted), await confirm(inclusive)]).toEqual(['over_discount', 'ok', 'ok']);
   });
 
   it('makes an approved override stale when the order changes after it', async () => {
