@@ -24,7 +24,7 @@ CREATE TABLE "radcore"."sales_orders" (
 	"status" text DEFAULT 'draft' NOT NULL,
 	"notes" text,
 	"close_reason" text,
-	"override_hash" text,
+	"override_version" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -99,7 +99,7 @@ SELECT radcore.audit_attach('sales_quote_lines', keep => array['quote_id', 'line
   owner => 'quote_id', owner_table => 'sales_quotes');
 --> statement-breakpoint
 SELECT radcore.audit_attach('sales_orders', keep => array['number', 'party_id', 'quote_id', 'business_date', 'status', 'notes',
-  'close_reason', 'override_hash']);
+  'close_reason', 'override_version']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('sales_order_lines', keep => array['order_id', 'line_no', 'item_id', 'qty', 'rate', 'discount_percent'],
   owner => 'order_id', owner_table => 'sales_orders');
@@ -109,15 +109,16 @@ REVOKE TRUNCATE ON radcore.sales_quotes, radcore.sales_quote_lines, radcore.sale
 --> statement-breakpoint
 -- The sales keys (RAD-112), ordinary catalogue keys any role can be given (Sarthak: dynamic). The starting grants, in
 -- each role's template too (RAD-83): those who sell draft and confirm, stores and accounts read, and an override of the
--- credit and price checks is the owner's or accounts' (the architect on RAD-111).
+-- credit and price checks is the owner's or accounts' (the architect on RAD-111). The admin holds every key, as it
+-- must to give any role.
 INSERT INTO radcore.role_grants (role, permission, scope)
 SELECT r, 'sales:read', 'all' FROM unnest(array['admin', 'owner', 'accounts', 'sales', 'counter', 'stores']) AS r
-UNION ALL SELECT r, 'sales:write', 'all' FROM unnest(array['owner', 'sales', 'counter']) AS r
-UNION ALL SELECT r, 'sales:override', 'all' FROM unnest(array['owner', 'accounts']) AS r
+UNION ALL SELECT r, 'sales:write', 'all' FROM unnest(array['admin', 'owner', 'sales', 'counter']) AS r
+UNION ALL SELECT r, 'sales:override', 'all' FROM unnest(array['admin', 'owner', 'accounts']) AS r
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 INSERT INTO radcore.role_templates (role, permission, scope)
 SELECT r, 'sales:read', 'all' FROM unnest(array['admin', 'owner', 'accounts', 'sales', 'counter', 'stores']) AS r
-UNION ALL SELECT r, 'sales:write', 'all' FROM unnest(array['owner', 'sales', 'counter']) AS r
-UNION ALL SELECT r, 'sales:override', 'all' FROM unnest(array['owner', 'accounts']) AS r
+UNION ALL SELECT r, 'sales:write', 'all' FROM unnest(array['admin', 'owner', 'sales', 'counter']) AS r
+UNION ALL SELECT r, 'sales:override', 'all' FROM unnest(array['admin', 'owner', 'accounts']) AS r
 ON CONFLICT DO NOTHING;

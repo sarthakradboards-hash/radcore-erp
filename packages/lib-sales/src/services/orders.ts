@@ -33,9 +33,9 @@ const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
 async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
   // With its quote's date: an order isn't dated before its quote (§4).
   const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, quoteDate: salesQuotes.businessDate,
-    overrideHash: salesOrders.overrideHash }).from(salesOrders)
+    overrideVersion: salesOrders.overrideVersion }).from(salesOrders)
     .leftJoin(salesQuotes, eq(salesQuotes.id, salesOrders.quoteId)).where(eq(salesOrders.id, id));
-  const [row] = forUpdate ? await q.for('update') : await q;
+  const [row] = forUpdate ? await q.for('update', { of: salesOrders }) : await q;
   if (row === undefined) throw notFound();
   const { owner, ...order } = row;
   ctx.see(permission, { owner });
@@ -110,8 +110,8 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   await tx.delete(salesOrderLines).where(eq(salesOrderLines.orderId, id));
   await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: id })));
   // A draft's lines changing makes any override approved for the old ones stale; it's asked for again.
-  await tx.update(salesOrders).set({ overrideHash: null }).where(eq(salesOrders.id, id));
-  if (now.status === 'confirmed') await checkOrder(ctx, id, { ...input, overrideHash: null });
+  await tx.update(salesOrders).set({ overrideVersion: null }).where(eq(salesOrders.id, id));
+  if (now.status === 'confirmed') await checkOrder(ctx, id, { ...input, overrideVersion: null });
   return {};
 }
 

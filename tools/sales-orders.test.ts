@@ -64,7 +64,7 @@ describe.skipIf(!url)('quotes and orders', () => {
     const quote = await run((ctx) => getQuoteById(ctx, { id }));
     const order = await run((ctx) => getOrderById(ctx, { id: orderId }));
     expect([quote.status, order.status, order.number, order.quoteId, order.notes]).toEqual(['accepted', 'draft', null, id, 'Two scooters']);
-    expect(order.lines.map((l) => [l.lineNo, l.itemId, l.qty, l.rate])).toEqual([[1, at.itemId, '2', '61250.000000']]);
+    expect(order.lines.map((l) => [l.lineNo, l.itemId, l.qty, l.rate])).toEqual([[1, at.itemId, '2.000', '61250.000000']]);
     expect(await code(run((ctx) => acceptQuoteNow(ctx, { id, businessDate: DATE })))).toBe('wrong_status');
   });
 

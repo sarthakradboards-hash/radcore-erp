@@ -1,5 +1,5 @@
 {
-  "id": "1315b85d-ec5a-4164-8113-4429cfb20446",
+  "id": "9e9b835b-f7e1-4636-b9d9-6469067cdc8f",
   "prevId": "a45c581f-f21b-43e9-99ae-1ae7793f6b53",
   "version": "7",
   "dialect": "postgresql",
@@ -4556,8 +4556,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "override_hash": {
-          "name": "override_hash",
+        "override_version": {
+          "name": "override_version",
           "type": "text",
           "primaryKey": false,
           "notNull": false

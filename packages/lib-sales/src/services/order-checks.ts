@@ -53,7 +53,7 @@ export const orderOverride = overrideApproval({
   // It records what was approved; confirming the order is its maker's next step.
   async approved(ctx, id) {
     const version = await orderOverride.version(ctx, id, { forUpdate: false });
-    if (version !== null) await salesTx(ctx).update(salesOrders).set({ overrideHash: versionHash(version) }).where(eq(salesOrders.id, id));
+    if (version !== null) await salesTx(ctx).update(salesOrders).set({ overrideVersion: versionHash(version) }).where(eq(salesOrders.id, id));
   },
   async rejected() {
     // A refused override leaves the order a draft, to change or to ask again.
@@ -72,12 +72,12 @@ const ISSUE_WORDS: Readonly<Record<string, string>> = {
  * Runs the order's checks at confirmation. With issues it's refused, `needs_override`, naming each, unless an override
  * was approved for exactly this order and these issues.
  */
-export async function checkOrder(ctx: Ctx, orderId: string, o: Order & { overrideHash: string | null }): Promise<void> {
+export async function checkOrder(ctx: Ctx, orderId: string, o: Order & { overrideVersion: string | null }): Promise<void> {
   const lines = await linesOf(ctx, orderId);
   const { issues } = await checkSale(ctx, await saleOf(ctx, o, lines));
   if (issues.length === 0) return;
   const version: OverrideVersion = { figures: figuresOf(o, lines), issues };
-  if (o.overrideHash !== null && o.overrideHash === versionHash(version)) return;
+  if (o.overrideVersion !== null && o.overrideVersion === versionHash(version)) return;
   throw new AppError('needs_override', 'This order needs someone else to approve an override before it’s confirmed',
     issues.map((i) => ({ path: 'line' in i ? ['lines', i.line] : ['partyId'], code: i.code, message: ISSUE_WORDS[i.code] ?? i.code })));
 }

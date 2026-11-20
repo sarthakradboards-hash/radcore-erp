@@ -15,6 +15,9 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   parties: { credit_limit: 'a customer’s credit terms (parties:read, set with parties:manage)' },
   price_list_rates: { rate: 'a selling price (prices:read)' },
   stock_movements: { qty: 'a quantity' },
+  // A quote's or order's line (RAD-112): what was offered or ordered, at its selling rate (sales:read).
+  sales_quote_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage' },
+  sales_order_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage' },
   stock_movement_batches: { qty: 'a quantity' },
   // The books: who may read them is journal:read's question, which the architect is ruling on (auditor-2 on #224).
   journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)' },

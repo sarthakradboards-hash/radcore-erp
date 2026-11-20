@@ -115,7 +115,7 @@ export const salesOrders = radcoreTable('sales_orders', {
   closeReason: boundedText({ max: 500 }),
   // The version an override of its checks was approved for (sales:override, M3-07): confirming takes it while the
   // order and its issues still hash to it.
-  overrideHash: text(),
+  overrideVersion: text(),
 }, (t) => [
   index('ix_sales_orders_party').on(t.partyId),
   index('ix_sales_orders_date').on(t.businessDate, t.id),
