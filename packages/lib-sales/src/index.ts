@@ -5,3 +5,9 @@ export {
   addList, askApproval, changeList, getList, getVersion, listListsPage, priceFor, priceListApproval, priceOf, putRates, setTax,
   startDraft,
 } from './services/price-lists.ts';
+export {
+  addOrder, cancelOrderNow, changeOrder, closeOrderNow, confirmOrderNow, dropOrder, getOrderById, listOrdersPage, ORDER_SERIES,
+} from './services/orders.ts';
+export {
+  acceptQuoteNow, addQuote, changeQuote, closeQuoteNow, dropQuote, getQuoteById, listQuotesPage, QUOTE_SERIES, sendQuoteNow,
+} from './services/quotes.ts';

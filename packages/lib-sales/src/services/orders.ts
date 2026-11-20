@@ -1,0 +1,155 @@
+// Orders (M3-08, RAD-112; ADR-007 §1, §3, §4): what a party will take. An order posts nothing; deliveries post against
+// its lines. It's edited as a draft, confirmed (its number drawn, last, after the credit and price checks of M3-07),
+// then closed (every line delivered, or short with a reason, RC-125) or cancelled (nothing delivered, with a reason).
+// A confirmed order's lines still change, only through here, and the checks run again (§1).
+import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radcore/db/sales';
+import { holdPeriod } from '@radcore/lib-accounts';
+import type { SalesOrderStatus } from '@radcore/lib-common';
+import { AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, type Ctx } from '@radcore/lib-platform';
+import { and, asc, desc, eq } from 'drizzle-orm';
+import { z } from 'zod';
+import type {
+  cancelOrder, closeOrder, confirmOrder, createOrder, deleteOrder, getOrder, listOrders, updateOrder,
+} from '../contract.ts';
+import { checkDate, mayEdit, mayMove } from './document-rules.ts';
+import { checkedLines, sellingTo, today } from './document-lines.ts';
+import { partyNames } from './party-names.ts';
+
+type In<C extends { input: z.ZodType }> = z.output<C['input']>;
+type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
+
+/** Orders' numbers (§3): SO/26-27/00001, drawn when an order is confirmed. */
+export const ORDER_SERIES = defineSeries('sales.order', 'SO', { digits: 5 });
+
+const notFound = () => new AppError('not_found', 'There is no such order');
+const header = { id: salesOrders.id, number: salesOrders.number, partyId: salesOrders.partyId, quoteId: salesOrders.quoteId,
+  businessDate: salesOrders.businessDate, status: salesOrders.status, notes: salesOrders.notes, closeReason: salesOrders.closeReason };
+const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+
+/** The order, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
+async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
+  // With its quote's date: an order isn't dated before its quote (§4).
+  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, quoteDate: salesQuotes.businessDate }).from(salesOrders)
+    .leftJoin(salesQuotes, eq(salesQuotes.id, salesOrders.quoteId)).where(eq(salesOrders.id, id));
+  const [row] = forUpdate ? await q.for('update') : await q;
+  if (row === undefined) throw notFound();
+  const { owner, ...order } = row;
+  ctx.see(permission, { owner });
+  return { ...order, status: order.status as SalesOrderStatus };
+}
+
+// The bound an order's date keeps from its quote (§4), if it came from one.
+const fromQuote = (o: { quoteDate: string | null }) => (o.quoteDate === null ? undefined : { date: o.quoteDate, what: 'quote' });
+
+/** Whether any of the order has been delivered, and whether all of it has: its lines against the posted deliveries.
+ * shortcut: no deliveries exist until RAD-112's delivery PR, which reads its posted delivery lines here. */
+async function delivered(): Promise<{ any: boolean; all: boolean }> {
+  return Promise.resolve({ any: false, all: false });
+}
+
+/** GET /sales/orders (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
+export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Promise<Out<typeof listOrders>> {
+  const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
+  const rows = await salesTx(ctx).select(header).from(salesOrders).where(and(
+    input.filter.status === undefined ? undefined : eq(salesOrders.status, input.filter.status),
+    input.filter.partyId === undefined ? undefined : eq(salesOrders.partyId, input.filter.partyId),
+    listScope(ctx, 'sales:read', salesOrders.createdBy),
+    after([salesOrders.businessDate, salesOrders.id], key && [key.date, key.id], 'desc'),
+  )).orderBy(desc(salesOrders.businessDate), desc(salesOrders.id)).limit(input.limit + 1);
+  const page = rows.slice(0, input.limit);
+  const names = await partyNames(ctx, page.map((r) => r.partyId));
+  const last = page.at(-1);
+  return {
+    items: page.map((r) => ({ ...r, status: r.status as SalesOrderStatus, partyName: names.get(r.partyId) ?? '' })),
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+  };
+}
+
+/** GET /sales/orders/:id (sales:read). */
+export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promise<Out<typeof getOrder>> {
+  const row = await orderOf(ctx, id, 'sales:read');
+  const lines = await salesTx(ctx).select({ id: salesOrderLines.id, lineNo: salesOrderLines.lineNo, itemId: salesOrderLines.itemId,
+    qty: salesOrderLines.qty, rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent }).from(salesOrderLines)
+    .where(eq(salesOrderLines.orderId, id)).orderBy(asc(salesOrderLines.lineNo));
+  const names = await partyNames(ctx, [row.partyId]);
+  return { ...row, partyName: names.get(row.partyId) ?? '', lines };
+}
+
+/** POST /sales/orders (sales:write): a draft. */
+export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
+  checkDate(input.businessDate, today());
+  await sellingTo(ctx, input.partyId);
+  const lines = await checkedLines(ctx, input.lines);
+  const tx = salesTx(ctx);
+  const [row] = await tx.insert(salesOrders).values({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes })
+    .returning({ id: salesOrders.id });
+  if (row === undefined) throw new Error('the insert returned no row');
+  await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: row.id })));
+  return row;
+}
+
+/** PUT /sales/orders/:id (sales:write): a draft, or a confirmed order's lines through the checks again (§1).
+ * shortcut: RAD-111's checkSale runs on a confirmed order's new lines once it merges; until then they're saved as sent. */
+export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOrder>): Promise<Out<typeof updateOrder>> {
+  const now = await orderOf(ctx, id, 'sales:write', true);
+  mayEdit('order', now.status, true);
+  if (now.status === 'confirmed' && (input.partyId !== now.partyId || input.businessDate !== now.businessDate)) {
+    throw new AppError('wrong_status', 'A confirmed order keeps its party and date; only its lines change');
+  }
+  checkDate(input.businessDate, today(), fromQuote(now));
+  await sellingTo(ctx, input.partyId);
+  const lines = await checkedLines(ctx, input.lines);
+  const tx = salesTx(ctx);
+  await tx.update(salesOrders).set({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes })
+    .where(eq(salesOrders.id, id));
+  await tx.delete(salesOrderLines).where(eq(salesOrderLines.orderId, id));
+  await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: id })));
+  return {};
+}
+
+/** DELETE /sales/orders/:id (sales:write): a draft only. Its quote stays accepted. */
+export async function dropOrder(ctx: Ctx, { id }: In<typeof deleteOrder>): Promise<Out<typeof deleteOrder>> {
+  const now = await orderOf(ctx, id, 'sales:write', true);
+  mayEdit('order', now.status);
+  await salesTx(ctx).delete(salesOrders).where(eq(salesOrders.id, id));
+  return {};
+}
+
+/** POST /sales/orders/:id/confirm (sales:write): its number is drawn as the last step (§3).
+ * shortcut: RAD-111's checkSale (stage 'confirm') runs first once it merges, refusing with its issues unless an
+ * override (sales:override) was granted; until then an order confirms unchecked. */
+export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>): Promise<Out<typeof confirmOrder>> {
+  const now = await orderOf(ctx, id, 'sales:write', true);
+  mayMove('order', now.status, 'confirmed');
+  checkDate(now.businessDate, today(), fromQuote(now));
+  await sellingTo(ctx, now.partyId);
+  await holdPeriod(ctx, now.businessDate);
+  const number = await nextNumber(ctx, ORDER_SERIES, now.businessDate);
+  await salesTx(ctx).update(salesOrders).set({ status: 'confirmed', number }).where(eq(salesOrders.id, id));
+  return { number };
+}
+
+/** POST /sales/orders/:id/close (sales:write): closed when every line is delivered; closed short otherwise, which
+ * releases what's undelivered and needs a reason (RC-125). */
+export async function closeOrderNow(ctx: Ctx, { id, reason }: In<typeof closeOrder>): Promise<Out<typeof closeOrder>> {
+  const now = await orderOf(ctx, id, 'sales:write', true);
+  mayMove('order', now.status, 'closed');
+  const short = !(await delivered()).all;
+  if (short && reason === undefined) {
+    throw new AppError('reason_required', 'Lines are still undelivered: say why the order closes short',
+      [{ path: ['reason'], code: 'required', message: 'Say why, in your own words' }]);
+  }
+  await salesTx(ctx).update(salesOrders).set({ status: 'closed', closeReason: short ? reason ?? null : null }).where(eq(salesOrders.id, id));
+  return { short };
+}
+
+/** POST /sales/orders/:id/cancel (sales:write): only while nothing on it has been delivered, with a reason. */
+export async function cancelOrderNow(ctx: Ctx, { id, reason }: In<typeof cancelOrder>): Promise<Out<typeof cancelOrder>> {
+  const now = await orderOf(ctx, id, 'sales:write', true);
+  mayMove('order', now.status, 'cancelled');
+  if ((await delivered()).any) {
+    throw new AppError('order_delivered', 'Goods have gone on this order: close it short instead');
+  }
+  await salesTx(ctx).update(salesOrders).set({ status: 'cancelled', closeReason: reason }).where(eq(salesOrders.id, id));
+  return {};
+}
