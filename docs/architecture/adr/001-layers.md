@@ -762,6 +762,8 @@ send-message service calls `whatsapp.send()` from lib-integrations.
   - `input` tells the screen what to offer: `money`, `percent`, `integer`, `text`, `choice` (with its choices) or
     `reference` (a kind of record, such as a price list).
   - `check(ctx, value)`, where given, checks what a schema can't, such as a price list that exists and is active.
+  - A reader of a `reference` setting treats a record that's gone or switched off since as unset, never as an
+    error: a default price list switched off means no list, so `no_list_rate` (ADR-007 §9).
   - Each library's index exports its `settings` and `series`, and apps/api composes them as it does routes. A tools
     test fails on any declared one that isn't composed.
 - **Only changed values are stored** (`settings`), with who changed each and when. A request reads them all once,
@@ -773,12 +775,16 @@ send-message service calls `whatsapp.send()` from lib-integrations.
 - **No setting is dated.** A setting is read when a document is saved, and what it decided is frozen in what's
   posted, so changing it never rewrites a posted document. A rule that must apply from a date, such as a tax rate,
   has its own dated table (GST rates, M2-12), not a setting.
-- **`settings:write` needs the second factor** (D-19, Sarthak, 20 Nov): it sets, for every party with none of its own, the credit
-  days and the price list that `parties:manage` and `prices:approve` set one party at a time.
-- **A number series' prefix isn't a setting** (ADR-006 §3). `PUT /number-series/:key/prefix` changes it from the
-  next financial year (or this one, before its first number), under `settings:write`, with a `reason()`.
-  `GET /number-series` (`settings:read`) shows each series' label, this year's prefix, next year's, and the next
-  number.
+- **`settings:write` needs the second factor** (D-19, Sarthak, 20 Nov): it sets, for every party with none of its
+  own, the credit days and the price list that `parties:manage` and `prices:approve` set one party at a time.
+- **A number series' prefix isn't a setting** (ADR-006 §3). `PUT /number-series/:key/prefix` takes the prefix, a
+  `reason()` and which year it starts, under `settings:write`:
+  - `next_year` is always allowed;
+  - `this_year` only while the year has no number. It locks the year's counter row (creating it with no number
+    drawn if it's absent) and sets that row's prefix, so the year's first `nextNumber` waits for it and draws the
+    new prefix. Once the year has a number, it's refused (`series_in_use`).
+- `GET /number-series` (`settings:read`) shows each series' label, the prefix its counter holds this year (else the
+  one it would draw), next year's, and the next number.
 
 ### 9. File size
 

@@ -188,7 +188,9 @@ delivery they belong to (M5-17), so §7's per-line check still holds.
   whose trigger sets the count to exactly one more than the last, whatever the app sends, and refuses a delete
   (RAD-87). A series' prefix has its own history, `series_prefixes (series, from_year, prefix)`, and a change
   takes effect from the next financial year, or from this one while the series hasn't drawn a number in it yet, as
-  when prefixes are set up before going live (RAD-132). A year draws the latest prefix whose `from_year` is on
+  when prefixes are set up before going live (RAD-132). A change for this year locks the year's counter row,
+  created with no number drawn if it's absent, so it and the year's first number take turns (ADR-001 §8c); once a
+  number is drawn it's refused (`series_in_use`). A year draws the latest prefix whose `from_year` is on
   or before it, else the series' declared one, in the same upsert, so a year never mixes two prefixes and no issued
   number changes, even for a document dated in an earlier year. The year's counter keeps the prefix its first
   number took. The format waits on CA-44. A series has 5 digits by default, for Rule 46's 16 characters; the
