@@ -19,6 +19,7 @@ import { Picker } from '../../../../../components/ui/picker/picker.tsx';
 import { DataTable, type Column } from '../../../../../components/ui/table/data-table.tsx';
 import { useApiList, useApiMutation, useApiQuery, useApiSearch } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
+import { asPrice } from '../../decimal.ts';
 import { ConfirmDialog, MESSAGES } from '../../shared.tsx';
 import type { PriceRate, StockItem } from '../../types.ts';
 import { PriceChanges } from '../changes.tsx';
@@ -33,7 +34,7 @@ export const rateColumns: Column<PriceRate>[] = [
   { id: 'sku', header: t('admin.items.sku'), cell: (r) => r.sku },
   { id: 'name', header: t('admin.items.name'), cell: (r) => r.name },
   { id: 'unit', header: t('admin.items.unit'), cell: (r) => r.unit },
-  { id: 'rate', header: t('admin.prices.rate'), numeric: true, cell: (r) => r.rate },
+  { id: 'rate', header: t('admin.prices.rate'), numeric: true, cell: (r) => asPrice(r.rate) },
 ];
 
 /** Prices an item in the draft: the kit's Picker over active items, then its rate. */
@@ -111,7 +112,7 @@ export function Draft({ draftId, name }: { draftId: string; name: string }) {
 
       <Dialog open={acting?.kind === 'change'} onOpenChange={close} title={t('admin.prices.change.title', { name: target?.name ?? '' })}>
         {target === undefined ? null : (
-          <Form schema={rateSchema} saved={false} messages={DRAFT_MESSAGES} defaultValues={{ rate: target.rate }}
+          <Form schema={rateSchema} saved={false} messages={DRAFT_MESSAGES} defaultValues={{ rate: asPrice(target.rate) }}
             onSubmit={async ({ rate }) => {
               await setRate(target.itemId, rate);
               setActing(null);

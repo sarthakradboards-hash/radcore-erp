@@ -2,7 +2,6 @@
 // Discount limits (RAD-99 on RAD-98's contracts): the most each role may take off a list price without a discount
 // approval (M3), and the default for roles without their own. prices:read sees them. Raising one lets a role discount
 // without approval, so only prices:approve (which the server grants only with the second factor) sets one, with a reason.
-import { dec } from '@radcore/lib-common';
 import { listRoles } from '@radcore/lib-platform/contract';
 import { listDiscountLimits, setDiscountLimit } from '@radcore/lib-sales/contract';
 import { useId, useState } from 'react';
@@ -15,9 +14,10 @@ import { announce } from '../../../../components/ui/live-region.tsx';
 import { useApiMutation, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import '../../../../components/ui/table/table.css';
+import { asWritten } from '../decimal.ts';
 import { MESSAGES } from '../shared.tsx';
 
-const percent = (p: string) => `${dec(p).toFixed()}%`; // "10.000000" reads 10%
+const percent = (p: string) => `${asWritten(p)}%`; // "10.000000" reads 10%
 const later = (text: string) => setTimeout(() => announce(text), 0);
 const limit = setDiscountLimit.input.shape;
 // A role's empty box clears its own limit, so it follows the default again; the default always has one.
@@ -92,7 +92,7 @@ export default function DiscountLimitsPage() {
         description={t(editing?.role === null ? 'admin.discounts.change.default' : 'admin.discounts.change.role')}>
         {editing === null ? null : (
           <Form schema={editing.role === null ? defaultSchema : roleSchema} saved={false} messages={LIMIT_MESSAGES}
-            defaultValues={{ maxPercent: dec(editing.current).toFixed(), reason: '' }}
+            defaultValues={{ maxPercent: asWritten(editing.current), reason: '' }}
             onSubmit={async ({ maxPercent, reason }) => {
               await set.submit({ role: editing.role, maxPercent, reason });
               setEditing(null);

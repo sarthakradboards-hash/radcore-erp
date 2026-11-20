@@ -2,6 +2,7 @@
 // sends every default it holds except a masked field's, whether or not a box is on screen, so only a price the person
 // may edit carries a value; anything else would send a price and be refused (`forbidden`) without cost:read.
 import { isMasked, type Masked } from '@radcore/lib-common';
+import { asPrice } from '../decimal.ts';
 
 /** 'edit': a box (cost:read). 'masked': shown read-only, never sent. 'none': not on the form at all. */
 export type CostField = 'edit' | 'masked' | 'none';
@@ -15,6 +16,6 @@ export function costField<P extends string | null | Masked | undefined>(mayCost:
   if (price !== undefined && price !== null && isMasked(price)) {
     return { cost: 'masked', defaults: { purchasePrice: price as Extract<P, Masked> } };
   }
-  if (mayCost) return { cost: 'edit', defaults: { purchasePrice: typeof price === 'string' ? price : '' } };
+  if (mayCost) return { cost: 'edit', defaults: { purchasePrice: typeof price === 'string' ? asPrice(price) : '' } };
   return { cost: 'none', defaults: {} };
 }

@@ -7,6 +7,7 @@ import { useId } from 'react';
 import { useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import '../../../../components/ui/table/table.css';
+import { asPrice } from '../decimal.ts';
 
 export function PriceChanges({ versionId }: { versionId: string }) {
   const captionId = useId();
@@ -42,8 +43,8 @@ export function PriceChanges({ versionId }: { versionId: string }) {
                     <td>{r.sku}</td>
                     <td>{r.name}</td>
                     <td>{r.unit}</td>
-                    <td className="kit-numeric">{r.inForce ?? '—'}</td>
-                    <td className="kit-numeric">{r.proposed ?? '—'}</td>
+                    <td className="kit-numeric">{r.inForce === null ? '—' : asPrice(r.inForce)}</td>
+                    <td className="kit-numeric">{r.proposed === null ? '—' : asPrice(r.proposed)}</td>
                     <td>{t(r.inForce === null ? 'admin.prices.changes.new' : r.proposed === null ? 'admin.prices.changes.out' : 'admin.prices.changes.changed')}</td>
                   </tr>
                 ))}
