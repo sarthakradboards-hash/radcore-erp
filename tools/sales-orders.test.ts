@@ -21,7 +21,7 @@ const url = process.env['TEST_DATABASE_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156); the services bound dates by the real one.
 const DATE = '2026-11-15';
-const KEYS = ['sales:read', 'sales:write', 'parties:write', 'parties:manage', 'items:write', 'gst:write'];
+const KEYS = ['sales:read', 'sales:write', 'parties:write', 'parties:manage', 'items:write', 'cost:read', 'gst:write'];
 const person = (ownScope: string[] = []): Principal => ({ kind: 'user', userId: randomUUID(), permissions: KEYS, ownScope });
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const line = (itemId: string, qty = '2') => ({ itemId, qty: quantityString().parse(qty), rate: unitPriceString().parse('61250'),
@@ -45,8 +45,9 @@ describe.skipIf(!url)('quotes and orders', () => {
       // An HSN of its own, rated from the test's day, so no other file's rate is the one in force for it (RC-115).
       const hsn = `8711${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}`;
       await putGstRate(ctx, { hsn, effectiveFrom: DATE, rate: percentString().parse('5'), source: 'Test', note: null, reason: 'Test' });
+      // Priced below the lines' 61,250.00, so the price check passes: only credit stops an order here.
       const { id: itemId } = await addItem(ctx, { sku: `Q-${tag()}`, name: 'Electric scooter', categoryId, hsn, unit: 'NOS',
-        barcode: null, serialised: false, hasChassis: false });
+        barcode: null, serialised: false, hasChassis: false, purchasePrice: unitPriceString().parse('50000') });
       return { partyId, itemId };
     });
   }
@@ -76,7 +77,7 @@ describe.skipIf(!url)('quotes and orders', () => {
     return { kind: 'user', userId: rows[0]?.id ?? '', permissions };
   };
 
-  // M3-07 at confirmation (RC-061, RC-131): a party with no credit, and an item with no cost, stop the order until
+  // M3-07 at confirmation (RC-061): a party with no credit stops the order until
   // someone else approves an override of exactly those issues; a changed line makes the approval stale.
   it('confirms an order over its checks only once someone else approved the override', async () => {
     const at = await setup();
@@ -85,12 +86,21 @@ describe.skipIf(!url)('quotes and orders', () => {
     const approver = await newUser(['sales:override']);
     const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), maker);
     const refused = await run((ctx) => confirmOrderNow(ctx, { id }), maker).then(() => null, (e: unknown) => e as AppError);
-    expect([refused?.code, refused?.issues.map((i) => i.code)]).toEqual(['needs_override', ['over_limit', 'cost_unknown']]);
+    expect([refused?.code, refused?.issues.map((i) => i.code)]).toEqual(['needs_override', ['over_limit']]);
     const request = await run((ctx) => askOrderOverride(ctx, { id }), maker);
     expect(await code(run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), maker)))
       .toBe('own_request');
     await run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), approver);
     expect((await run((ctx) => confirmOrderNow(ctx, { id }), maker)).number).toMatch(/^SO\//);
+  });
+
+  // RC-131: below the item's cost (its purchase price, with nothing on hand) stops a line, whatever the party's credit.
+  it('stops a confirmation with a line priced below the item’s cost', async () => {
+    const at = await setup();
+    const cheap = { ...line(at.itemId), rate: unitPriceString().parse('40000') };
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [cheap] }));
+    const refused = await run((ctx) => confirmOrderNow(ctx, { id })).then(() => null, (e: unknown) => e as AppError);
+    expect([refused?.code, refused?.issues.map((i) => [i.code, i.path.join('.')])]).toEqual(['needs_override', [['below_cost', 'lines.0']]]);
   });
 
   it('makes an approved override stale when the order changes after it', async () => {
