@@ -194,15 +194,25 @@ removal, so a delivery for a sale is invoiced the same day by default:
   - A buyer with a GSTIN is B2B, decided by the GSTIN on the invoice when it's posted, never by the party's type
     (RC-113). A dealer without a GSTIN is unregistered, and the invoice says so.
   - An unregistered buyer's name, address and state are required when the invoice reaches Rs 50,000 (Rule 46). Taxable
-    value or invoice value waits on CA-43; the default is invoice value, the stricter reading.
+    value or invoice value waits on CA-43; the default is invoice value, the stricter reading. Both are settings:
+    `sales.b2c_details_limit` (50,000.00) and `sales.b2c_details_basis` (`invoice_value` or `taxable_value`).
   - A counter sale below that limit may go to the seeded party **Counter customer** (system key `walk_in`). A
     Debtors line always names a party (ADR-006 §2).
 - **Place of supply** decides CGST and SGST against IGST, from the company's state and the buyer's (or ship-to)
   state (CA-08).
 - **Each posted line copies its GST rate (and rate source) at posting, never looking it up later.** That's the rate
   in force on the invoice's business date (M2-12).
+- **Cess.** Invoice and credit-note lines carry `cess_ad_valorem` and `cess_per_unit_amount` (ADR-005 §2), held at
+  0 until lib-gst has cess rates, and posting writes no cess line while it's 0. Whether any goods sold attract
+  cess waits on CA-50; if one does, its rates are a lib-gst ticket of their own.
 - **Round-off.** The total is rounded to the rupee, and the round-off line is under 1 (ADR-005 §2, F7). CA-33
   confirms.
+- **Who issues and cancels.** `invoices:write` issues (by default admin, owner, accounts and counter), and
+  `invoices:cancel` cancels (admin, owner and accounts): two keys, so cancelling can be kept from the counter.
+  Whether `invoices:cancel` needs the second factor (D-19) is Sarthak's to decide.
+- **Record scope.** An invoice is owned by the owner its deliveries share. One that bills deliveries of several
+  owners, or none, is owned by its maker. The owner is fixed when it posts. A salesperson whose order went on a
+  mixed invoice still sees the order and its deliveries, with the number of the invoice that billed them.
 - **Every Rule 46 particular is on the printout** (CA-35), including "Tax payable on reverse charge: No" and the
   ship-to address where it differs.
 
@@ -248,14 +258,16 @@ locking its own documents and before the check, so two sales to one party can't 
 - M3-07 to M3-13 build to §1 to §9, and each document adds its own rows to `state_transitions` in its migration.
 - ADR-006 gains three rows in §6 (advance, refund, late credit note), the `late_cn_gst` account in §2, and figures
   F23 to F26 in §8. M3-10's owner migration seeds `late_cn_gst`, and M3-11's seeds the Counter customer party.
-- New settings: `sales.invoice_lag_days` (0), `sales.credit_note_tax_deadline` (30 November) and the two cash limits.
-  Each is the strict default until its CA answer. Also `accounts.default_credit_days` (0), lib-accounts' as the
-  owner of parties' terms, which M3-15's To collect reads too.
+- New settings: `sales.invoice_lag_days` (0), `sales.credit_note_tax_deadline` (30 November), the two cash limits,
+  `sales.b2c_details_limit` (50,000.00) and `sales.b2c_details_basis` (`invoice_value`). Each is the strict default
+  until its CA answer. Also `accounts.default_credit_days` (0), lib-accounts' as the owner of parties' terms, which
+  M3-15's To collect reads too.
 - New keys, each with the second factor (D-19): `sales:override` (M3-08), `bookings:refund_full` and
-  `bookings:refund_part` (M3-13), and `bookings:forfeit` with CA-47's posting.
+  `bookings:refund_part` (M3-13), and `bookings:forfeit` with CA-47's posting. Without it, for now:
+  `invoices:write` and `invoices:cancel` (M3-09).
 - New error codes for the services: `date_in_future`, `date_before_source`, `invoice_too_late` and `exceeds_invoice`.
   The database's own guards stay RA003 and RA004.
-- CA-47 (GST on a forfeited advance) is added to the CA questions.
+- CA-47 (GST on a forfeited advance) and CA-50 (cess on goods sold) are added to the CA questions.
 
 ## Alternatives considered
 
