@@ -42,7 +42,7 @@ export async function leadLists(ctx: Ctx): Promise<Out<typeof getLeadLists>> {
     .from(quickReplies).orderBy(asc(quickReplies.titleKey));
   return {
     lostReasons,
-    plans: plans.map((p) => ({ ...p, steps: steps.filter((s) => s.planId === p.id).map(({ planId: _, ...s }) => s) })),
+    plans: plans.map((p) => ({ ...p, steps: steps.filter((s) => s.planId === p.id).map((s) => ({ step: s.step, afterDays: s.afterDays, note: s.note })) })),
     quickReplies: quick,
   };
 }

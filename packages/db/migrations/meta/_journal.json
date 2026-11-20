@@ -421,6 +421,13 @@
       "when": 1795161303938,
       "tag": "0059_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1795163762560,
+      "tag": "0060_pipeline",
+      "breakpoints": true
     }
   ]
 }

@@ -74,6 +74,8 @@ export const leads = radcoreTable('leads', {
 }, (t) => [
   uniqueIndex('ux_leads_phone').on(t.phone),
   index('ix_leads_owner_follow_up').on(t.owner, t.followUpOn),
+  index('ix_leads_lost_reason').on(t.lostReasonId),
+  index('ix_leads_plan').on(t.planId),
   check('ck_leads_phone', sql`${t.phone} ~ '^[+][1-9][0-9]{6,14}$'`),
   check('ck_leads_owner', sql`${t.owner} ~ '^user:[0-9a-f-]{36}$'`),
   check('ck_leads_stage', sql`${t.stage} in ('new', 'contacted', 'interested', 'meeting_booked', 'converted', 'lost')`),
