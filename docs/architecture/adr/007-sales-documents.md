@@ -252,7 +252,10 @@ locking its own documents and before the check, so two sales to one party can't 
   - **The list rate** is the price list's, never a rate typed on the line or the order's. A party's list is set
     under `prices:approve` (`party_price_lists`), else the company's `sales.default_price_list`. A document copies
     its list when it's created, and the service stores each priced line's `list_rate` from that list's rate in force
-    on the document's date (`priceFor`). An item with no rate in the list stores none, so no discount is judged.
+    on the document's date (`priceFor`). A priced line with no list rate, because its item isn't on the list or the
+    document has no list, is `no_list_rate` and needs approval, as `cost_unknown` does: the strict default
+    (18 Nov). `sales.default_price_list` starts unset, so until an admin sets it, a party with no list of its own
+    needs approval for every priced line.
 - **One version for everyone.** An override approves the document's figures and the issues found. Nothing in them
   depends on who reads them, so the maker, the approver and whoever confirms or posts see the same issues. An
   edit, or a limit changed while a request waits, makes the request stale, and the maker asks again.
@@ -265,7 +268,7 @@ locking its own documents and before the check, so two sales to one party can't 
 - New settings: `sales.invoice_lag_days` (0), `sales.credit_note_tax_deadline` (30 November), the two cash limits,
   `sales.b2c_details_limit` (50,000.00) and `sales.b2c_details_basis` (`invoice_value`). Each is the strict default
   until its CA answer. Also `accounts.default_credit_days` (0), lib-accounts' as the owner of parties' terms, which
-  M3-15's To collect reads too; and `sales.default_price_list`, the list for a party with none of its own.
+  M3-15's To collect reads too; and `sales.default_price_list` (unset), the list for a party with none of its own.
 - New keys, each with the second factor (D-19): `sales:override` (M3-08), `bookings:refund_full` and
   `bookings:refund_part` (M3-13), and `bookings:forfeit` with CA-47's posting. Without it (Sarthak, 20 Nov):
   `invoices:write` and `invoices:cancel` (M3-09).
