@@ -192,8 +192,8 @@ removal, so a delivery for a sale is invoiced the same day by default:
   by the database at commit (ADR-005 §7a). Refunding what's left of a credit later is a refund under
   `payments:write`; only a booking's advance is refunded through its owner (§5).
 - **Keys** (RAD-114): `credit_notes:write` raises a note (by default admin, owner, accounts and counter);
-  `credit_notes:approve` approves one (admin, owner and accounts; whether it needs the second factor is Sarthak's
-  to confirm); `credit_notes:cancel` cancels one (admin, owner and accounts); `deliveries:cancel` cancels a delivery
+  `credit_notes:approve` approves one (admin, owner and accounts; with the second factor, D-19, Sarthak, 20 Nov);
+  `credit_notes:cancel` cancels one (admin, owner and accounts); `deliveries:cancel` cancels a delivery
   or a return (admin, owner and stores).
 
 ### 7. The invoice itself (RC-022, RC-113)
