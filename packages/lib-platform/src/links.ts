@@ -10,10 +10,14 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { principalId, type Ctx, type Principal } from './ctx.ts';
 import { AppError } from './errors.ts';
-import { defineSetting } from './settings.ts';
+import { defineSetting } from './define-setting.ts';
 
 /** The longest a link may last, in days: every link expires within it (RAD-41). */
-export const linkMaxDays = defineSetting('platform.public_link_max_days', z.number().int().min(1).max(365), 30);
+export const linkMaxDays = defineSetting('platform.public_link_max_days', z.number().int().min(1).max(365), 30, {
+  label: 'Shared links last at most',
+  description: 'The most days a link sent to a customer or a member of staff stays open.',
+  input: { kind: 'integer' },
+});
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 /** `<module>.<what>`, as public_links' CHECK has it: `sales.invoice_view`. */

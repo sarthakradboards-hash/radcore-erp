@@ -25,7 +25,7 @@ type LineIn = In<typeof createDeliveryReturn>['lines'][number];
 type Status = 'draft' | 'posted' | 'cancelled';
 
 /** Delivery returns' numbers (ADR-007 §3): DR/26-27/00001, drawn when a return posts. */
-export const DELIVERY_RETURN_SERIES = defineSeries('sales.delivery_return', 'DR', { digits: 5 });
+export const DELIVERY_RETURN_SERIES = defineSeries('sales.delivery_return', 'DR', { digits: 5, label: 'Delivery returns' });
 
 const header = { id: deliveryReturns.id, number: deliveryReturns.number, deliveryId: deliveryReturns.deliveryId,
   partyId: deliveryReturns.partyId, locationId: deliveryReturns.locationId, businessDate: deliveryReturns.businessDate,

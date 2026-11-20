@@ -17,3 +17,11 @@ export {
 } from './services/allocations.ts';
 export type { Receivable } from './rules/receivable.ts';
 export { addParty, changeParty, getPartyById, holdParty, listPartiesPage, setCreditTerms } from './services/parties.ts';
+
+// This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
+import type { Series, SettingDef } from '@radcore/lib-platform';
+import { JOURNAL_SERIES as journal } from './services/journal.ts';
+import { CASH_PAYMENT_LIMIT as cashOut, CASH_RECEIPT_LIMIT as cashIn, DEFAULT_CREDIT_DAYS as creditDays, PAYMENT_SERIES as paid,
+  RECEIPT_SERIES as received } from './services/payments.ts';
+export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays];
+export const series: readonly Series[] = [journal, received, paid];

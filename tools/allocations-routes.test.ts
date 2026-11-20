@@ -32,11 +32,12 @@ describe.skipIf(!url || !superUrl)('allocations over the real routes', { timeout
   const db = createDatabase(pool);
   const cfg = loadConfig(testSettings(), 'api');
   const run = <R>(fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, { readOnly: false, isolation: 'read committed' }, CLERK, randomUUID(), fn);
-  async function owner<T extends pg.QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> {
+  async function owner<T extends pg.QueryResultRow>(text: string, values: unknown[] = [], role?: string): Promise<T[]> {
     const c = await su.connect();
     try {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
+      if (role !== undefined) await c.query(`set local role ${role}`);
       const { rows } = await c.query<T>(text, values);
       await c.query('commit');
       return rows;
@@ -56,13 +57,13 @@ describe.skipIf(!url || !superUrl)('allocations over the real routes', { timeout
 
   beforeAll(async () => {
     await run((ctx) => openFinancialYear(ctx, DAY));
+    // Made as the owner, as a migration's table is, so logins.test.ts, running alongside, finds nothing else's.
     await owner(`create table radcore.${DOCS} (id uuid primary key default gen_random_uuid(), party_id uuid not null, status text not null,
       total numeric(18,2) not null constraint ck_${DOCS}_total check (total >= 0), business_date date not null default '2026-11-12',
       created_at timestamptz not null default now(), created_by text not null default 'system:test',
-      updated_at timestamptz not null default now(), updated_by text not null default 'system:test')`);
+      updated_at timestamptz not null default now(), updated_by text not null default 'system:test')`, [], 'radcore_owner');
     await owner(`select radcore.audit_attach('${DOCS}', keep => array['party_id', 'status', 'total', 'business_date'])`);
     await owner(`grant select, insert, update on radcore.${DOCS} to radcore_app`);
-    await owner(`grant select, insert, update on radcore.${DOCS} to radcore_owner`);
     await owner(`create trigger guard_applied_cancel before update of status on radcore.${DOCS}
       for each row execute function radcore.guard_applied_cancel()`);
     await owner(`insert into radcore.allocatable_documents (document_table, side, kind) values ('${DOCS}', 'receivable', 'charge')`);

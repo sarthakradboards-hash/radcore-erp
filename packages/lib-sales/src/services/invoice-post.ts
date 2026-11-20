@@ -25,13 +25,25 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 /** Invoices' numbers (ADR-007 §3): INV/26-27/00001, drawn when an invoice posts. */
-export const INVOICE_SERIES = defineSeries('sales.invoice', 'INV', { digits: 5 });
+export const INVOICE_SERIES = defineSeries('sales.invoice', 'INV', { digits: 5, label: 'Tax invoices' });
 /** How many days after its earliest delivery an invoice may be dated (ADR-007 §4): 0 until CA-09 says otherwise. */
-export const INVOICE_LAG_DAYS = defineSetting('sales.invoice_lag_days', z.number().int().min(0).max(30), 0);
+export const INVOICE_LAG_DAYS = defineSetting('sales.invoice_lag_days', z.number().int().min(0).max(30), 0, {
+  label: 'Invoice lag',
+  description: 'How many days after its earliest delivery an invoice may be dated.',
+  input: { kind: 'integer' },
+});
 /** At what amount an unregistered buyer must be named, with their address and state (Rule 46), and whether that's
  * judged on the invoice value or the taxable value: the stricter reading until CA-43 answers. */
-export const B2C_DETAILS_LIMIT = defineSetting('sales.b2c_details_limit', moneyString(), roundMoney('50000'));
-export const B2C_DETAILS_BASIS = defineSetting('sales.b2c_details_basis', z.enum(['invoice_value', 'taxable_value']), 'invoice_value');
+export const B2C_DETAILS_LIMIT = defineSetting('sales.b2c_details_limit', moneyString(), roundMoney('50000'), {
+  label: 'Unregistered buyer’s details from',
+  description: 'At this amount or more, an invoice to an unregistered buyer names them, with their address and state (Rule 46).',
+  input: { kind: 'money' },
+});
+export const B2C_DETAILS_BASIS = defineSetting('sales.b2c_details_basis', z.enum(['invoice_value', 'taxable_value']), 'invoice_value', {
+  label: 'Unregistered buyer’s details judged on',
+  description: 'Whether that amount is the invoice’s value or its taxable value.',
+  input: { kind: 'choice', choices: [{ value: 'invoice_value', label: 'Invoice value' }, { value: 'taxable_value', label: 'Taxable value' }] },
+});
 
 type Invoice = Awaited<ReturnType<typeof invoiceOf>>;
 type Company = Awaited<ReturnType<typeof companyForInvoice>>;

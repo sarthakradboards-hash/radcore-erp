@@ -28,7 +28,7 @@ type LineIn = In<typeof createDelivery>['lines'][number];
 type Status = 'draft' | 'posted' | 'cancelled';
 
 /** Deliveries' numbers (ADR-007 §3): DC/26-27/00001, drawn when a delivery posts. */
-export const DELIVERY_SERIES = defineSeries('sales.delivery', 'DC', { digits: 5 });
+export const DELIVERY_SERIES = defineSeries('sales.delivery', 'DC', { digits: 5, label: 'Delivery challans' });
 
 const header = { id: deliveries.id, number: deliveries.number, orderId: deliveries.orderId, partyId: deliveries.partyId,
   locationId: deliveries.locationId, businessDate: deliveries.businessDate, status: deliveries.status, notes: deliveries.notes };
