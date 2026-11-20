@@ -327,8 +327,9 @@ under these rules, each refused by name:
   Admin and owner hold both, and both are bound by the rules below: nobody gives a key they don't hold.
 - **Keys that need the second factor.** The permission catalogue marks the keys that move money, reach payroll, HR
   or user administration, or set the company's tax identity, a customer's credit terms, the GST rates every invoice
-  charges or the prices in force (`company:write`, `parties:manage`, `gst:write`, `prices:approve`, D-19). A role
-  holding any of them requires the second factor, whatever its own setting (D-19).
+  charges or the prices in force, or let a sale past its credit and price checks (`company:write`, `parties:manage`,
+  `gst:write`, `prices:approve`, `sales:override`, D-19). A role holding any of them requires the second factor,
+  whatever its own setting (D-19).
 - **Screens follow permissions.** The web shows what the person's keys allow, with no separate view setting.
 
 ### 7. The web client

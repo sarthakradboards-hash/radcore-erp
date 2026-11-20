@@ -2,13 +2,15 @@
 
 - Status: proposed
 - Date: 2026-11-19
-- Ticket: RAD-105 (M3-01). The design basis for M3-08 (quotes, orders, deliveries), M3-09 (invoices), M3-10
-  (credit notes, cancellations, refunds), M3-11 (quick bill), M3-12 (payments) and M3-13 (bookings).
+- Ticket: RAD-105 (M3-01). The design basis for M3-07 (credit and price checks), M3-08 (quotes, orders,
+  deliveries), M3-09 (invoices), M3-10 (credit notes, cancellations, refunds), M3-11 (quick bill), M3-12 (payments)
+  and M3-13 (bookings).
 - Builds on: [ADR-005](005-database.md) §6 (business date), §7a (allocations), §7b (posted documents);
   [ADR-006](006-ledger.md) §1 (lock order), §3 (entries and numbers), §4 to §6 (stock, units, postings), §8
   (figures); [ADR-001](001-layers.md) §8b (approvals).
-- Source: the register (RC-022, RC-110, RC-111, RC-113, RC-125, RC-126, RC-207); CA questions CA-08 to CA-11,
-  CA-24, CA-33, CA-35, CA-43, CA-44 and CA-47 (docs/source/10-Questions-for-CA-and-Counsel.md).
+- Source: the register (RC-022, RC-061, RC-110, RC-111, RC-113, RC-125, RC-126, RC-127, RC-131, RC-207); CA
+  questions CA-08 to CA-11, CA-24, CA-33, CA-35, CA-43, CA-44 and CA-47
+  (docs/source/10-Questions-for-CA-and-Counsel.md).
 
 ## Context
 
@@ -125,8 +127,18 @@ removal, so a delivery for a sale is invoiced the same day by default:
   M6 adds its row.
 - **A refunded advance** is a payment out to the customer: Dr Debtors, Cr Bank or Cash. The refund names the receipt
   it pays back, so neither shows as open (F24).
-- **A forfeited advance** (a cancelled booking whose advance is kept) waits on Sarthak's rule for cancelled bookings
-  (M3-13) and on CA-47 (whether GST is due on it). It has no row until both answer.
+- **A cancelled booking's advance** (M3-13, RC-127). Cancelling a booking says what happens to what's left of its
+  advance (the receipt's amount less its net allocations and refunds), so none is left unexplained. It's **refunded
+  in full** (`bookings:refund_full`), **refunded in part** (`bookings:refund_part`), or **kept** (`bookings:forfeit`,
+  once CA-47 is answered, below), and whatever isn't refunded or kept stays as the customer's credit on Debtors,
+  named so on the cancellation.
+  - Each choice is a key of its own, granted per role on the roles screen like any other (Sarthak, 20 Nov). Each
+    needs the second factor, since each moves money (D-19). The cancellation takes a `reason()`.
+  - A refund is a payment out naming the receipt (F24), within the receipt's cap and under the cash limit (§8).
+- **Keeping an advance** (forfeiture) waits on CA-47: whether GST is due on the amount kept, and on which document.
+  Until it's answered there's no posting, and `bookings:forfeit` and its route aren't built. What would be kept
+  stays as the customer's credit, and it can be forfeited from there, at cancellation or later, once ADR-006 §6
+  has its row.
 
 ### 6. Credit notes, cancellations and refunds
 
@@ -181,13 +193,43 @@ The receipt and payment services warn, with an owner override recorded through `
 
 The amounts are settings until CA-24 confirms them.
 
+### 9. Credit and price checks (M3-07, RC-061, RC-131)
+
+Each stage that commits a sale (confirming an order, a delivery, an invoice, handing back a repaired vehicle) runs
+M3-07's `checkSale`. What it finds needs someone else's approval, through `defineApproval` under `sales:override`,
+which needs the second factor (D-19, Sarthak, 20 Nov).
+- **Credit, at every stage.** A party's exposure is its net Debtors balance (an advance already reduces it), plus
+  what it has been delivered and not billed, at selling value with GST, plus this document, nothing counted twice:
+  an invoice replaces the deliveries it bills. It's over when it's above the party's credit limit.
+  - **A party with no credit limit set gets no credit** (Sarthak, 20 Nov): any exposure above zero is over, as with
+    a limit of 0. Credit is given by setting a limit (`parties:manage`). The quick bill (M3-11) counts only the
+    part left unpaid.
+  - **Overdue:** a bill dated D is overdue after D plus the party's credit days. A party with none set takes the
+    company's `accounts.default_credit_days`, which starts at 0, so a bill is due the day it's made (Sarthak,
+    20 Nov).
+- **Price, where a price is set:** on an order at confirmation, and on any line whose rate or discount isn't copied
+  unchanged from an approved order line.
+  - **Below cost:** the line's rate after discount, per base unit and before GST, against the item's moving average
+    at the place (landed cost included; across the sellable places when the line has none), else its purchase
+    price, never the last purchase rate. A stock item with neither is `cost_unknown`, and needs approval too. A
+    person without `cost:read` sees the warning, never the figure.
+  - **Discount:** the percent off the list rate, judged against **the document maker's limit** (the role of
+    `created_by`), never the reader's, in exact decimals. A role with no limit of its own has
+    `sales.discount_limit_default`, 0%.
+- **One version for everyone.** An override approves the document's figures and the issues found. Nothing in them
+  depends on who reads them, so the maker, the approver and whoever confirms or posts see the same issues. An
+  edit, or a limit changed while a request waits, makes the request stale, and the maker asks again.
+
 ## Consequences
 
-- M3-08 to M3-13 build to §1 to §8, and each adds its own rows to `state_transitions` in its migration.
+- M3-07 to M3-13 build to §1 to §9, and each document adds its own rows to `state_transitions` in its migration.
 - ADR-006 gains three rows in §6 (advance, refund, late credit note), the `late_cn_gst` account in §2, and figures
   F23 to F26 in §8. M3-10's owner migration seeds `late_cn_gst`, and M3-11's seeds the Counter customer party.
 - New settings: `sales.invoice_lag_days` (0), `sales.credit_note_tax_deadline` (30 November) and the two cash limits.
-  Each is the strict default until its CA answer.
+  Each is the strict default until its CA answer. Also `accounts.default_credit_days` (0), lib-accounts' as the
+  owner of parties' terms, which M3-15's To collect reads too.
+- New keys, each with the second factor (D-19): `sales:override` (M3-08), `bookings:refund_full` and
+  `bookings:refund_part` (M3-13), and `bookings:forfeit` with CA-47's posting.
 - New error codes for the services: `date_in_future`, `date_before_source`, `invoice_too_late` and `exceeds_invoice`.
   The database's own guards stay RA003 and RA004.
 - CA-47 (GST on a forfeited advance) is added to the CA questions.
@@ -202,3 +244,7 @@ The amounts are settings until CA-24 confirms them.
   would then need moving to Debtors at the invoice. On Debtors, the allocation alone does the set-off.
 - **A pending state on credit notes.** The approval engine already holds the request and its version hash. A second
   state on the document would need the guards to allow posting from it.
+- **One key for whatever happens to a booking's advance.** Simpler, but Sarthak wants each choice adjustable per
+  role (20 Nov). With a key per choice, a role can refund in full without being able to keep any of an advance.
+- **No limit set means no limit.** It would let a new party buy on credit before anyone decided it should. Sarthak
+  chose the other way (20 Nov): credit is given by setting a limit.
