@@ -4,6 +4,7 @@
 // short-lived links the item's own answer carries, shown inline (pictures.tsx adds and takes them off).
 import { getItem, listItemCategories, listItems, listUnitsOfMeasure, updateItem } from '@radcore/lib-stock/contract';
 import type { z } from 'zod';
+import { isMasked } from '@radcore/lib-common';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
@@ -12,6 +13,7 @@ import { Form, SubmitButton } from '../../../../../components/ui/form/form.tsx';
 import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog, MESSAGES } from '../../shared.tsx';
+import { asPrice } from '../../decimal.ts';
 import { costField } from '../cost-field.ts';
 import { editItemSchema, ItemFields } from '../item-fields.tsx';
 import { Pictures } from './pictures.tsx';
@@ -53,7 +55,7 @@ export default function ItemPage() {
         <dt>{t('admin.items.unit')}</dt><dd>{unit === undefined ? item.unit : `${unit.name} (${unit.code})`}</dd>
         <dt>{t('admin.items.hsn')}</dt><dd>{item.hsn}</dd>
         <dt>{t('admin.items.barcode')}</dt><dd>{item.barcode ?? t('admin.items.none')}</dd>
-        <dt>{t('admin.items.purchasePrice')}</dt><dd><Pii value={item.purchasePrice ?? t('admin.items.none')} /></dd>
+        <dt>{t('admin.items.purchasePrice')}</dt><dd><Pii value={item.purchasePrice === null ? t('admin.items.none') : isMasked(item.purchasePrice) ? item.purchasePrice : asPrice(item.purchasePrice)} /></dd>
         <dt>{t('admin.items.tracking')}</dt>
         <dd>{t(item.hasChassis ? 'admin.items.tracking.chassis' : item.serialised ? 'admin.items.tracking.serial' : 'admin.items.tracking.none')}</dd>
         <dt>{t('admin.locations.col.status')}</dt><dd>{t(item.active ? 'admin.locations.active' : 'admin.locations.inactive')}</dd>
