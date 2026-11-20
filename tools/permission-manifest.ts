@@ -134,6 +134,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /hr/employees': 'employees:read',
   'POST /hr/employees': 'employees:write',
   'PATCH /hr/employees/:id': 'employees:write',
+  // Leads (RAD-106): capture by hand or at the counter, and one lead.
+  'POST /leads': 'leads:write',
+  'GET /leads/:id': 'leads:read',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -158,6 +161,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
 const PLATFORM = ['lib-platform'];
 const STOCK = ['lib-platform', 'lib-stock'];
 const HR = ['lib-hr', 'lib-platform'];
+const CRM = ['lib-crm', 'lib-platform'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -273,6 +277,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /hr/employees': HR,
   'POST /hr/employees': HR,
   'PATCH /hr/employees/:id': HR,
+  // Leads' routes reach lib-crm and, through it, lib-platform (notifications).
+  'POST /leads': CRM,
+  'GET /leads/:id': CRM,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,

@@ -1,6 +1,8 @@
 {
   "radcore/e7-scope-on-owned-reads": {
-    "tables": []
+    "tables": [
+      "@radcore/db/crm#leads"
+    ]
   },
   "radcore/no-sql": {
     "allowNames": [
