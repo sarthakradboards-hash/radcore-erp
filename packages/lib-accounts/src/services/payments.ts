@@ -170,6 +170,15 @@ export function recordHeldReceipt(ctx: Ctx, input: Readonly<Omit<In<typeof recor
   return record(ctx, { ...input, kind: 'receipt' }, heldFor, null);
 }
 
+/** For a credit note's own service (RAD-114), reached by no route of its own: refunds what's left of a posted credit
+ * note to its party, under the same checks as any refund (its cap shared with the note's applications, its date, the
+ * cash limit). The database checks the credit, by name, when the refund posts. */
+export function refundCredit(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'credit' | 'tds'> & {
+  creditTable: string; creditId: string }>): Promise<Out<typeof recordPaymentContract>> {
+  const { creditTable, creditId, ...rest } = r;
+  return record(ctx, { ...rest, kind: 'refund', credit: { table: creditTable, id: creditId } }, null, null);
+}
+
 /** For a document's own service (bookings, M3-13), reached by no route: refunds a receipt held for `owner`, with the
  * same checks as any refund (its cap, its date, the cash limit). */
 export function refundHeld(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'tds'> & {
@@ -189,15 +198,22 @@ async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor
   // The period lock FOR SHARE first (ADR-006 §1), with year_not_open and period_locked by name.
   await holdPeriod(ctx, p.businessDate);
   if (p.kind === 'refund') {
-    if (p.refundOf === undefined) return refuse('refund_needs_receipt', 'Say which receipt this refund pays back');
-    await checkRefund(ctx, { receiptId: p.refundOf, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount }, owner);
-  } else if (p.refundOf !== undefined) {
-    refuse('refund_needs_receipt', 'Only a refund names a receipt');
+    if ((p.refundOf === undefined) === (p.credit === undefined)) {
+      return refuse('refund_needs_receipt', 'Say which receipt or credit note this refund pays back, and only one');
+    }
+    // A credit's checks are the database's, under the credit's lock, taken by the insert below (it can't be read here).
+    if (p.refundOf !== undefined) {
+      await checkRefund(ctx, { receiptId: p.refundOf, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount }, owner);
+    }
+  } else if (p.refundOf !== undefined || p.credit !== undefined) {
+    refuse('refund_needs_receipt', 'Only a refund names a receipt or a credit note');
   }
   const { cash } = await moneyAccount(ctx, p.accountId);
   const [row] = await tx.insert(payments).values({ kind: p.kind, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount, tds: p.tds,
-    accountId: p.accountId, refundOfId: p.refundOf ?? null, narration: p.narration ?? null, heldForTable: heldFor?.table ?? null,
-    heldForId: heldFor?.id ?? null }).returning({ id: payments.id });
+    accountId: p.accountId, refundOfId: p.refundOf ?? null, creditTable: p.credit?.table ?? null, creditId: p.credit?.id ?? null,
+    narration: p.narration ?? null, heldForTable: heldFor?.table ?? null, heldForId: heldFor?.id ?? null }).returning({ id: payments.id });
+  // The insert locked a credit it names (check_credit_refund), so the cash limit's party lock below comes after the
+  // document's, as ADR-006 §1 orders them.
   const id = row?.id ?? refuse('server_error', 'The payment was not stored');
   if (cash && await pastCashLimit(ctx, { id, ...p })) {
     await requestApproval(ctx, cashLimitSpec, id);
