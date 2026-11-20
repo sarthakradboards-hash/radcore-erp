@@ -66,7 +66,7 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     return at;
   }
 
-  it('sends a quote with its number, then accepts it into a draft order with its lines', async () => {
+  it('sends a quote with its number, then accepts it into a draft order priced from the party’s list', async () => {
     const at = await setup();
     const { id } = await run((ctx) => addQuote(ctx, { partyId: at.partyId, businessDate: DATE, validUntil: null, notes: 'Two scooters',
       lines: [line(at.itemId)] }));
@@ -81,6 +81,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     expect([quote.status, order.status, order.number, order.quoteId, order.notes]).toEqual(['accepted', 'draft', null, id, 'Two scooters']);
     expect(order.lines.map((l) => [l.lineNo, l.itemId, l.qty, l.rate])).toEqual([[1, at.itemId, '2.000', '61250.000000']]);
     expect(await code(run((ctx) => acceptQuoteNow(ctx, { id, businessDate: DATE })))).toBe('wrong_status');
+    // Priced from the party's list like any order (auditor-2 on #254): it confirms with no override needed.
+    expect((await run((ctx) => confirmOrderNow(ctx, { id: orderId }))).number).toMatch(/^SO\//);
   });
 
   // A person, made now in a transaction of its own, as the approval engine reads their account's age (RAD-38).
