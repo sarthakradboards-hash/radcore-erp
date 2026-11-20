@@ -25,6 +25,8 @@ npm run e2e
 - Before the journeys, `global-setup.ts` seeds one person per built-in role and signs each one in (below). It writes
   to the same database as its superuser, from `E2E_SEED_DATABASE_URL`, default
   `postgres://radcore@127.0.0.1:5432/radcore_e2e`. Nothing else uses that login.
+- On a big machine, run the suite with `--workers=2`, close to CI's pace. Playwright's default (half the cores, 8 on a
+  16-core box) signs people in faster than the API's 100-a-minute limit, and the auth journeys then fail with 429.
 - `npx playwright test -c e2e --ui` opens the interactive runner. `npx playwright show-trace <trace.zip>` opens a
   trace from `e2e/test-results/` or from a CI run's `e2e-results` artifact. A failed test's trace holds what the
   browser sent, including this run's password and the session cookies. Both are made for the run only, against a
@@ -38,9 +40,12 @@ npm run e2e
   test fails on a console error, an uncaught error, a Content Security Policy violation, or a request that fails or
   answers 4xx/5xx, without asking. That covers every page of the test's browser context, popups and new tabs
   included. CSP violations are caught from the browser's `securitypolicyviolation` event, since Chromium never logs
-  them to the console. Requests the page cancels when it navigates away are not problems: Chromium's `ERR_ABORTED`,
+  them to the console. And every test ends with the **books check** (RAD-95): `GET /books/check`, read as
+  `books_check@e2e.test`, a person seeded with `journal:read` only. Any problem it finds (the trial balance, Stock in Hand
+  against the stock ledger, empty places, batches) fails the test, listed. Requests the page cancels when it navigates away are not problems: Chromium's `ERR_ABORTED`,
   Firefox's `NS_BINDING_ABORTED`, and WebKit's uncaught "…?_rsc=… due to access control checks." for this site's own
-  Next prefetch (RAD-76). A violation inside a web worker fires in the worker, not the page, so the guard doesn't see
+  Next prefetch (RAD-76), and the same for a GET to its own `/api/` that the page really sent (the bell's unread count when
+  sign-in navigates home, #232). A violation inside a web worker fires in the worker, not the page, so the guard doesn't see
   it: whoever adds the first worker extends the guard to it.
   Requests the browser aborts itself (Next cancels prefetches on navigation) don't count. A journey that expects
   a status says so: `test.use({ expectedStatuses: [401] })`.

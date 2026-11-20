@@ -4,11 +4,18 @@
 import { readFileSync } from 'node:fs';
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
+import drizzleConfig from '../drizzle.config.ts';
 import { L1_EXTRA_NAMES, L1_SQL_ZONE, L8_LIFTED, REQUEST_CONTEXT_HELPER, ZONES } from '../eslint.config.mjs';
 
 const VIEW = 'packages/db/views/!(index|*.test|*.d).ts';
 const PINNED = JSON.parse(readFileSync('tools/eslint-options.json', 'utf8')) as
   Record<string, { allowNames?: string[]; imports?: { message: string }[] }>;
+
+// The two hand-kept lists of table files can't drift (the architect on RAD-92): drizzle-kit reads every file lint lets
+// declare a table, so none is left out of a migration.
+it('has drizzle.config read every file that may declare a table', () => {
+  expect(drizzleConfig.schema).toEqual(expect.arrayContaining(ZONES['radcore/tables-in-schema'] ?? ['none']));
+});
 
 it('each zone is exactly the ADR-002 table', () => {
   expect(ZONES).toEqual({
@@ -16,12 +23,13 @@ it('each zone is exactly the ADR-002 table', () => {
     'radcore/no-raw-execution': ['packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts',
       'packages/db/src/migrate.ts'],
     'radcore/no-driver': ['packages/lib-platform/src/db/client.ts', 'packages/db/src/migrate.ts'],
-    'radcore/tables-in-schema': ['packages/db/src/*/tables.ts', 'packages/db/src/columns.ts'],
+    'radcore/tables-in-schema': ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
+      'packages/db/src/columns.ts'],
     'radcore/views-in-views': [VIEW],
     'radcore/outbound-only': ['packages/lib-platform/src/http/outbound.ts'],
   });
-  expect(L1_SQL_ZONE).toEqual([VIEW, 'packages/db/src/*/tables.ts', 'packages/db/src/columns.ts',
-    'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts']);
+  expect(L1_SQL_ZONE).toEqual([VIEW, 'packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
+    'packages/db/src/columns.ts', 'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts']);
   expect(L1_EXTRA_NAMES).toEqual({
     'packages/db/src/*/relations.ts': ['relations'],
     'packages/db/src/conditions.ts': ['notInArray'],
@@ -72,16 +80,18 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   // Beyond ADR-002's seven: a view's test file is outside the zone, and so is a web page.
   'packages/db/views/receivables-ageing.test.ts': { rules: SERVER, l1: { ...L1.base, importExpressions: false }, typed: false, server: true },
   'packages/db/src/sales/tables.ts': { rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
+  'packages/db/src/platform/tables-sign-in.ts': {
+    rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
   'packages/db/src/sales/relations.ts': {
     rules: [...SERVER, 'radcore/e4-no-escape'], l1: { allowNames: [...ALLOW, 'relations'] }, typed: true, server: true },
   'apps/web/app/page.tsx': { rules: EVERYWHERE, l1: L1.base, typed: false, server: false },
   // E3's three scopes, and D7's export guard on library entries.
   'packages/lib-common/src/money.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
-  'packages/lib-sales/src/contract.ts': {
-    rules: [...LIB, 'radcore/e3-no-io', 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
-  // A contract entry's part kept in src/contract/ gets the entry's rules (RAD-33).
-  'packages/lib-platform/src/contract/sign-in.ts': {
-    rules: [...LIB, 'radcore/e3-no-io', 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
+  // A contract and its parts in src/contract/: E3, with D7's typed guard left to dependency-cruiser's D5 (RAD-89).
+  'packages/lib-sales/src/contract.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
+  'packages/lib-platform/src/contract/sign-in.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
+  // lib-common's entry: no D7 guard (it may import nothing, MAY_IMPORT []).
+  'packages/lib-common/src/index.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/rules/tax.ts': { rules: [...LIB, 'radcore/e3-no-io'], l1: L1.base, typed: true, server: true },
   'packages/lib-sales/src/index.ts': { rules: [...LIB, 'radcore/d7-no-table-exports'], l1: L1.base, typed: true, server: true },
   'packages/lib-platform/src/import/isolate.ts': {

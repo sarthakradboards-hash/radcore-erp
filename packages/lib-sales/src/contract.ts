@@ -6,6 +6,11 @@ import {
 import { approvalContracts } from '@radcore/lib-platform/contract';
 import { z } from 'zod';
 
+// The credit and price checks (M3-07) and the documents' print (ADR-007 §7) live in files of their own, each with one
+// writer; this file only re-exports them (RAD-112).
+export * from './contract/checks.ts';
+export * from './contract/print.ts';
+
 const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
 

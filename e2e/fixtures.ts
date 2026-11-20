@@ -1,8 +1,9 @@
 // What every journey imports instead of @playwright/test. Each test fails if the page logged a console error, threw,
 // broke the Content Security Policy, or had a request fail or answer 4xx/5xx, so no journey has to remember to check.
-// `expectAccessible` is the axe scan.
+// `expectAccessible` is the axe scan. And every test ends with the books check (RAD-95): the books are healthy after it.
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test as base, type Page } from '@playwright/test';
+import { expect, request, test as base, type APIRequestContext, type Page } from '@playwright/test';
+import { apiSignIn, BOOKS_ROLE, roleEmail, stateFor } from './people.ts';
 
 export { expect };
 
@@ -13,7 +14,37 @@ type Options = {
 type Fixtures = {
   /** What went wrong on the page so far. Checked when the test ends; the guard self-checks read it directly. */
   pageProblems: string[];
+  /** The books check after the test (RAD-95). Nothing to use: it runs on its own when the test ends. */
+  booksCheck: void;
 };
+
+type BooksProblem = { check: string; itemId: string | null; locationId: string | null; message: string };
+
+/**
+ * GET /books/check (journal:read, #217): the problems in the books now, read as the books check's own person (seeded by
+ * global-setup.ts with journal:read only). Its session ending is not a books problem: it signs in again once.
+ */
+export async function readBooksProblems(baseURL: string): Promise<BooksProblem[]> {
+  const ask = (api: APIRequestContext) => api.get('/api/books/check?input=%7B%7D');
+  let api = await request.newContext({ baseURL, storageState: stateFor(BOOKS_ROLE) });
+  try {
+    let res = await ask(api);
+    if (res.status() === 401) {
+      await api.dispose();
+      api = await apiSignIn(baseURL, roleEmail(BOOKS_ROLE));
+      await api.storageState({ path: stateFor(BOOKS_ROLE) });
+      res = await ask(api);
+    }
+    if (res.status() !== 200) throw new Error(`the books check answered ${res.status()}: ${await res.text()}`);
+    return ((await res.json()) as { problems: BooksProblem[] }).problems;
+  } finally {
+    await api.dispose();
+  }
+}
+
+/** One line per problem, as a failed test shows it. */
+export const describeBooksProblems = (problems: readonly BooksProblem[]): string[] =>
+  problems.map((p) => `${p.check}: ${p.message}${p.itemId === null ? '' : ` (item ${p.itemId})`}${p.locationId === null ? '' : ` (location ${p.locationId})`}`);
 
 /**
  * WebKit's uncaught error for a Next RSC prefetch (`?_rsc=`) that navigation cut off, on this site's own `origin`:
@@ -27,6 +58,19 @@ export function isCancelledRscPrefetch(message: string, origin: string): boolean
     .test(message);
 }
 
+/**
+ * The same WebKit text for a GET to this site's own `/api/` that a full-page navigation cut off: the shell's queries,
+ * like the bell's unread count (#232), are torn down by the browser when sign-in sends the page home, and WebKit alone
+ * reports that as uncaught. Only when the page really sent a GET to exactly that URL (`gets`, every URL it requested by
+ * GET): a URL it never asked for, any other method, another origin, a path outside /api/ or other text is still a problem.
+ */
+export function isCancelledApiGet(message: string, origin: string, gets: ReadonlySet<string>): boolean {
+  const site = new URL(origin);
+  const host = site.host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`(?:^|\\s|:)/{0,2}${host}(/api/[^\\s#]*) due to access control checks\\.$`).exec(message);
+  return m !== null && gets.has(new URL(m[1]!, site.origin).href);
+}
+
 export const test = base.extend<Options & Fixtures>({
   expectedStatuses: [[], { option: true }],
   pageProblems: [
@@ -38,9 +82,12 @@ export const test = base.extend<Options & Fixtures>({
         // The browser logs every 4xx/5xx as a console error too; those are judged by status below.
         if (m.type() === 'error' && !m.text().startsWith('Failed to load resource:')) problems.push(`console error: ${m.text()}`);
       });
+      const gets = new Set<string>(); // what the pages asked for by GET, for isCancelledApiGet
+      context.on('request', (r) => { if (r.method() === 'GET') gets.add(r.url()); });
       context.on('weberror', (e) => {
         const message = e.error().message;
-        if (baseURL === undefined || !isCancelledRscPrefetch(message, baseURL)) problems.push(`uncaught: ${message}`);
+        const cancelled = baseURL !== undefined && (isCancelledRscPrefetch(message, baseURL) || isCancelledApiGet(message, baseURL, gets));
+        if (!cancelled) problems.push(`uncaught: ${message}`);
       });
       // Chromium doesn't reliably log a CSP violation to the console, so listen for the event itself (RAD-72); Firefox
       // then reports one violation twice, which fails the test all the same. On the window, not the document: a popup
@@ -61,6 +108,15 @@ export const test = base.extend<Options & Fixtures>({
       });
       await use(problems);
       expect(problems, 'console errors, CSP violations and failed requests').toEqual([]);
+    },
+    { auto: true },
+  ],
+  // RAD-95, RC-063: every journey ends with the books healthy. After the test, whatever it did, the books check must
+  // find nothing; a problem fails the test, listed. It reads one snapshot, so another test half-done can't trip it.
+  booksCheck: [
+    async ({ baseURL }, use) => {
+      await use();
+      expect(describeBooksProblems(await readBooksProblems(baseURL!)), 'the books check (RAD-95) after this test').toEqual([]);
     },
     { auto: true },
   ],

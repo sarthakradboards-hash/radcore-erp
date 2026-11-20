@@ -1,6 +1,7 @@
 // Items, their categories and units of measure (M2-10, RAD-89; ADR-001 §5: lib-stock's). Every write is audited by
 // the tables' triggers. A quantity follows its item's unit (RC-162): checkQuantity is what every stock document calls.
 import { after, itemCategories, itemPictures, items, searchWords, stockMovements, stockTx, units, unitsOfMeasure } from '@radcore/db/stock';
+import type { Rate } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, readyFile, viewLinks, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -17,8 +18,17 @@ type Tx = ReturnType<typeof stockTx>;
 const itemColumns = {
   id: items.id, sku: items.sku, name: items.name, categoryId: items.categoryId, hsn: items.hsn, unit: items.unit,
   barcode: items.barcode, serialised: items.serialised, hasChassis: items.hasChassis, active: items.active,
+  purchasePrice: items.purchasePrice,
 };
 const field = (path: string, code: string, message: string) => [{ path: [path], code, message }];
+
+/** Setting a cost needs cost:read as well as items:write, so nobody sets what they can't see (ADR-001 §7a). A form
+ * shown to someone without it has the field masked and never sends it, so their other edits still save. */
+function mayWriteCost(ctx: Ctx, input: { purchasePrice?: string | null | undefined }): void {
+  if (input.purchasePrice !== undefined && !ctx.can('cost:read')) {
+    throw new AppError('forbidden', 'Setting a purchase price needs cost:read', field('purchasePrice', 'forbidden', 'You can’t see costs'));
+  }
+}
 
 /** A unique key's refusal, by its index, as the contract's error: a race the checks before it couldn't see. */
 async function uniquely<T>(write: Promise<T>, refusals: Readonly<Record<string, AppError>>): Promise<T> {
@@ -127,6 +137,16 @@ export async function itemLabels(ctx: Ctx, ids: readonly string[]): Promise<Map<
   return new Map(rows.map((r) => [r.id, { sku: r.sku, name: r.name, unit: r.unit }]));
 }
 
+/** Each item's purchase price, by id, for a sale's below-cost check when nothing is on hand (RAD-111; lib-sales'
+ * checkSale). One read, no pictures; an id that names no item is left out. A cost (ADR-001 §7a): for services only,
+ * so a route of its own would need cost:read. */
+export async function purchasePrices(ctx: Ctx, ids: readonly string[]): Promise<ReadonlyMap<string, Rate | null>> {
+  if (ids.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ id: items.id, price: items.purchasePrice }).from(items).where(inArray(items.id, [...ids]));
+  // A unitPrice() column: numeric(18,6), a Rate.
+  return new Map(rows.map((r) => [r.id, r.price as Rate | null]));
+}
+
 /** POST /items/:id/pictures: the file must be a ready item picture; it takes the lowest free place, so a gap left by
  * a removed picture is filled. The item's row is locked, so two pictures added at once take turns and never share a
  * place (the auditor on #178: the next after the last could be 8, past the CHECK). */
@@ -154,6 +174,7 @@ export async function dropItemPicture(ctx: Ctx, { id, fileId }: In<typeof remove
 
 /** POST /items. */
 export async function addItem(ctx: Ctx, input: In<typeof createItem>): Promise<Out<typeof createItem>> {
+  mayWriteCost(ctx, input);
   const tx = stockTx(ctx);
   await checkRefs(tx, input);
   const [row] = await uniquely(tx.insert(items).values(input).returning({ id: items.id }),
@@ -164,6 +185,7 @@ export async function addItem(ctx: Ctx, input: In<typeof createItem>): Promise<O
 
 /** PATCH /items/:id. The item's row is locked, so two changes take turns and the chassis rule sees the latest. */
 export async function changeItem(ctx: Ctx, { id, ...change }: In<typeof updateItem>): Promise<Out<typeof updateItem>> {
+  mayWriteCost(ctx, change);
   const tx = stockTx(ctx);
   const [now] = await tx.select({ serialised: items.serialised, hasChassis: items.hasChassis, unit: items.unit }).from(items)
     .where(eq(items.id, id)).limit(1).for('update');

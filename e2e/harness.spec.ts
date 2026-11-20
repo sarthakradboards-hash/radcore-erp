@@ -1,6 +1,8 @@
 // Proof that the guards in fixtures.ts still catch what they promise to, each for its own reason. Each test checks
 // what the guard recorded, then clears it so the test itself passes.
-import { expect, isCancelledRscPrefetch, seriousA11yIssues, test } from './fixtures.ts';
+import { request } from '@playwright/test';
+import { describeBooksProblems, expect, isCancelledApiGet, isCancelledRscPrefetch, readBooksProblems, seriousA11yIssues, test } from './fixtures.ts';
+import { BOOKS_ROLE, stateFor } from './people.ts';
 
 test('a page answering 404 is recorded', async ({ page, pageProblems }) => {
   await page.goto('/no-such-page');
@@ -47,6 +49,42 @@ test('only WebKit\'s cancelled same-origin ?_rsc= prefetch is ignored as an unca
   expect(ignored(`Fetch API cannot load ${origin}/admin?_rsc=1a2b due to access control checks. And then something else.`)).toBe(false);
   expect(ignored(`Fetch API cannot load https://evil.example/${host}/admin?_rsc=1a2b due to access control checks.`)).toBe(false);
   expect(ignored(`Fetch API cannot load http://${host}.evil.example/admin?_rsc=1a2b due to access control checks.`)).toBe(false);
+});
+
+// #232: the same WebKit text for a GET to this site's /api/ (the bell's unread count, cut off by sign-in's navigation).
+// Ignored only for a URL the page really sent a GET to; each `false` fails if the filter is made wider.
+test('only WebKit\'s cancelled same-origin GET to /api/ that the page sent is ignored as an uncaught error', ({ baseURL }) => {
+  const origin = baseURL!;
+  const host = new URL(origin).host;
+  const bell = `${origin}/api/me/notifications/unread`;
+  const ignored = (m: string, gets: string[] = [bell]) => isCancelledApiGet(m, origin, new Set(gets));
+  // As WebKit says it, and with the scheme cut off as CI's log shows it.
+  expect(ignored(`Fetch API cannot load ${bell} due to access control checks.`)).toBe(true);
+  expect(ignored(`/${host}/api/me/notifications/unread due to access control checks.`)).toBe(true);
+  expect(ignored(`Fetch API cannot load ${origin}/api/items?input=%7B%7D due to access control checks.`, [`${origin}/api/items?input=%7B%7D`])).toBe(true);
+  // Still problems: a URL the page never sent a GET to (a POST, or nothing), another query, a path outside /api/,
+  // another origin, other text, and another site dressed as this one.
+  expect(ignored(`Fetch API cannot load ${bell} due to access control checks.`, [])).toBe(false);
+  expect(ignored(`Fetch API cannot load ${bell}?x=1 due to access control checks.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load ${origin}/apix/me due to access control checks.`, [`${origin}/apix/me`])).toBe(false);
+  expect(ignored(`Fetch API cannot load ${origin}/admin/items due to access control checks.`, [`${origin}/admin/items`])).toBe(false);
+  expect(ignored('Fetch API cannot load https://evil.example/api/me/notifications/unread due to access control checks.',
+    ['https://evil.example/api/me/notifications/unread'])).toBe(false);
+  expect(ignored(`Fetch API cannot load ${bell} due to access control checks. And then something else.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load https://evil.example/${host}/api/me/notifications/unread due to access control checks.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load http://${host}.evil.example/api/me/notifications/unread due to access control checks.`)).toBe(false);
+});
+
+test('a cancelled /api/ GET error is not recorded; the same for a POST, or a URL never requested, is', async ({ page, pageProblems, baseURL }) => {
+  await page.goto('/');
+  await page.route('**/api/e2e-harness/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.evaluate(`Promise.all([fetch('/api/e2e-harness/got'), fetch('/api/e2e-harness/posted', { method: 'POST' })])`);
+  const throwLater = (m: string) => page.evaluate(`setTimeout(() => { throw new Error(${JSON.stringify(m)}) })`);
+  const text = (path: string) => `Fetch API cannot load ${baseURL}/api/e2e-harness/${path} due to access control checks.`;
+  for (const path of ['got', 'posted', 'never']) await throwLater(text(path));
+  // Only the POST and the never-requested one are problems; waiting for them proves the GET had its turn.
+  await expect.poll(() => pageProblems).toEqual([`uncaught: ${text('posted')}`, `uncaught: ${text('never')}`]);
+  pageProblems.length = 0;
 });
 
 test('a cancelled-prefetch error from this site is not recorded; the same from another site is', async ({ page, pageProblems, baseURL }) => {
@@ -164,4 +202,28 @@ test.describe('browser writes reach the API', () => {
     // 5xx from an API that's down. Update it when the API gets its own not-found answer.
     expect(answer).toEqual({ status: 404, body: expect.stringContaining('Cannot POST /e2e-origin-probe') });
   });
+});
+
+// RAD-95: the books check every test ends with. It reads as its own person, who may read the journal and nothing else,
+// and a problem fails the test in words. (Planting a real problem here would trip every test running alongside: that
+// proof is on the PR, against a database of its own.)
+test('the books check reads healthy books as a person who can do nothing else', async ({ baseURL }) => {
+  expect(await readBooksProblems(baseURL!)).toEqual([]);
+  const api = await request.newContext({ baseURL: baseURL!, storageState: stateFor(BOOKS_ROLE) });
+  // Reads with valid input ({}), so the refusal is the permission's (input is checked first: a bad one answers 400).
+  expect((await api.get('/api/admin/company?input=%7B%7D')).status()).toBe(403);
+  expect((await api.get('/api/stock/location-kinds?input=%7B%7D')).status()).toBe(403);
+  await api.dispose();
+});
+
+test('a books problem is worded for the failed test, with its item and place', () => {
+  const lines = describeBooksProblems([
+    { check: 'trial_balance', itemId: null, locationId: null, message: 'Debits 100.00 and credits 99.00 differ' },
+    { check: 'stock_value', itemId: 'i-1', locationId: 'l-1', message: 'Stock in Hand 0.00, the ledger 100.00' },
+  ]);
+  expect(lines).toEqual([
+    'trial_balance: Debits 100.00 and credits 99.00 differ',
+    'stock_value: Stock in Hand 0.00, the ledger 100.00 (item i-1) (location l-1)',
+  ]);
+  expect(() => expect(lines, 'the books check (RAD-95) after this test').toEqual([])).toThrow(/the books check \(RAD-95\)/);
 });

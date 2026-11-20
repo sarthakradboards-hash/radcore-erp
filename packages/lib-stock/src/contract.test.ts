@@ -1,8 +1,9 @@
 // RAD-89's contracts: items and categories read with items:read and changed with items:write; an item's HSN is 4, 6
 // or 8 digits, and only a serialised item can have a chassis number (D-15).
+import { piiPlan } from '@radcore/lib-common';
 import { describe, expect, it } from 'vitest';
 import * as contracts from './contract.ts';
-import { createItem, updateItem } from './contract.ts';
+import { createItem, getItem, listItems, updateItem } from './contract.ts';
 
 const item = {
   sku: 'SCOOT-01', name: 'Electric scooter', categoryId: '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01', hsn: '87116020', unit: 'NOS',
@@ -50,5 +51,16 @@ describe('the books check contract', () => {
   it('takes a business date, or none for every posting', () => {
     expect([ok(contracts.checkBooksContract, {}), ok(contracts.checkBooksContract, { asAt: '2026-11-19' }),
       ok(contracts.checkBooksContract, { asAt: '2026-02-30' })]).toEqual([true, true, false]);
+  });
+});
+
+// ADR-001 §7a (RAD-89): an item's purchase price is a cost, masked whole without cost:read, with no record or look.
+describe('an item’s cost', () => {
+  it('is masked as a cost in an item and in the list, and may be set, cleared or left out', () => {
+    expect(piiPlan(getItem.output)).toEqual({ fields: { purchasePrice: { kind: 'cost' } } });
+    expect(piiPlan(listItems.output)).toEqual({ fields: { items: { each: { fields: { purchasePrice: { kind: 'cost' } } } } } });
+    const id = '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01';
+    expect([{ id, purchasePrice: '64000.5' }, { id, purchasePrice: null }, { id }, { id, purchasePrice: '-1' }]
+      .map((v) => updateItem.input.safeParse(v).success)).toEqual([true, true, true, false]);
   });
 });

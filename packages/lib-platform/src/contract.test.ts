@@ -69,7 +69,8 @@ describe('the sign-in and own-session contracts', () => {
     expect(declared.filter((c) => c.auth === 'session' && !/^\/(admin|files|exports)\/|\/exports$/.test(c.path)).map((c) => [route(c), c.perm])).toEqual([
       ['GET /me', 'session:read'], ['POST /sign-out', 'session:read'], ['POST /me/password', 'session:read'],
       ['POST /me/second-factor/recovery-codes', 'session:read'], ['GET /me/sessions', 'session:read'],
-      ['DELETE /me/sessions/:id', 'session:read']]);
+      ['DELETE /me/sessions/:id', 'session:read'], ['GET /me/notifications/unread', 'session:read'],
+      ['GET /me/notifications', 'session:read'], ['POST /me/notifications/read', 'session:read']]);
   });
 
   it('marks exactly the three new-password fields for the check before the transaction (ADR-001 §7a)', () => {
