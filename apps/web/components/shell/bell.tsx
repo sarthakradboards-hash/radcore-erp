@@ -15,6 +15,7 @@ import { t } from '../../lib/i18n/index.ts';
  * PR adds its own line as its page lands. */
 const RECORD_PAGES: Readonly<Partial<Record<string, (id: string) => string>>> = {
   items: (id) => `/admin/items/${id}`,
+  parties: (id) => `/admin/parties/${id}`,
 };
 
 function Notifications({ onOpen }: { onOpen: () => void }) {
