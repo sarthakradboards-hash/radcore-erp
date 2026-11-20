@@ -44,7 +44,8 @@ npm run e2e
   `books_check@e2e.test`, a person seeded with `journal:read` only. Any problem it finds (the trial balance, Stock in Hand
   against the stock ledger, empty places, batches) fails the test, listed. Requests the page cancels when it navigates away are not problems: Chromium's `ERR_ABORTED`,
   Firefox's `NS_BINDING_ABORTED`, and WebKit's uncaught "…?_rsc=… due to access control checks." for this site's own
-  Next prefetch (RAD-76). A violation inside a web worker fires in the worker, not the page, so the guard doesn't see
+  Next prefetch (RAD-76), and the same for a GET to its own `/api/` that the page really sent (the bell's unread count when
+  sign-in navigates home, #232). A violation inside a web worker fires in the worker, not the page, so the guard doesn't see
   it: whoever adds the first worker extends the guard to it.
   Requests the browser aborts itself (Next cancels prefetches on navigation) don't count. A journey that expects
   a status says so: `test.use({ expectedStatuses: [401] })`.

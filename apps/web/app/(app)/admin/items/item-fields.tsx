@@ -1,20 +1,23 @@
 'use client';
 // An item's fields, shared by "New item" (items.tsx) and the item's own page, on createItem's schema. The one change
-// is the barcode: an empty box is the contract's null. The rule that only a serialised item has a chassis number is
+// is the barcode and the purchase price: an empty box is the contract's null. The rule that only a serialised item has a chassis number is
 // the contract's own refine, checked again before sending, so the screen holds no rule of its own.
 import { createItem } from '@radcore/lib-stock/contract';
 import { z } from 'zod';
-import { CheckboxField, SelectField, TextField } from '../../../../components/ui/form/fields.tsx';
+import { CheckboxField, MaskedField, SelectField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { t } from '../../../../lib/i18n/index.ts';
 import type { ItemCategory, ItemUnit } from '../types.ts';
+import type { CostField } from './cost-field.ts';
 
 const shape = createItem.input.shape;
 const barcode = z.string().trim().transform((s) => (s === '' ? null : s)).pipe(shape.barcode);
-export const newItemSchema = z.object({ ...shape, barcode });
-export const editItemSchema = z.object(shape).omit({ sku: true }).extend({ barcode });
+// Left out when the field isn't on the form (no cost:read) or is masked, so the server keeps the stored price.
+const purchasePrice = z.string().trim().transform((s) => (s === '' ? null : s)).pipe(shape.purchasePrice.unwrap()).optional();
+export const newItemSchema = z.object({ ...shape, barcode, purchasePrice });
+export const editItemSchema = z.object(shape).omit({ sku: true }).extend({ barcode, purchasePrice });
 
-export function ItemFields({ categories, units, withSku }: {
-  categories: readonly ItemCategory[]; units: readonly ItemUnit[]; withSku: boolean;
+export function ItemFields({ categories, units, withSku, cost }: {
+  categories: readonly ItemCategory[]; units: readonly ItemUnit[]; withSku: boolean; cost: CostField;
 }) {
   return (
     <>
@@ -28,6 +31,9 @@ export function ItemFields({ categories, units, withSku }: {
       <TextField name="barcode" label={t('admin.items.barcode')} hint={t('admin.items.barcode.hint')} autoComplete="off" />
       <CheckboxField name="serialised" label={t('admin.items.serialised')} hint={t('admin.items.serialised.hint')} />
       <CheckboxField name="hasChassis" label={t('admin.items.hasChassis')} hint={t('admin.items.hasChassis.hint')} />
+      {cost === 'edit' ? (
+        <TextField name="purchasePrice" label={t('admin.items.purchasePrice')} hint={t('admin.items.purchasePrice.hint')} inputMode="decimal" autoComplete="off" />
+      ) : cost === 'masked' ? <MaskedField name="purchasePrice" label={t('admin.items.purchasePrice')} /> : null}
     </>
   );
 }

@@ -1,7 +1,7 @@
 // Proof that the guards in fixtures.ts still catch what they promise to, each for its own reason. Each test checks
 // what the guard recorded, then clears it so the test itself passes.
 import { request } from '@playwright/test';
-import { describeBooksProblems, expect, isCancelledRscPrefetch, readBooksProblems, seriousA11yIssues, test } from './fixtures.ts';
+import { describeBooksProblems, expect, isCancelledApiGet, isCancelledRscPrefetch, readBooksProblems, seriousA11yIssues, test } from './fixtures.ts';
 import { BOOKS_ROLE, stateFor } from './people.ts';
 
 test('a page answering 404 is recorded', async ({ page, pageProblems }) => {
@@ -49,6 +49,42 @@ test('only WebKit\'s cancelled same-origin ?_rsc= prefetch is ignored as an unca
   expect(ignored(`Fetch API cannot load ${origin}/admin?_rsc=1a2b due to access control checks. And then something else.`)).toBe(false);
   expect(ignored(`Fetch API cannot load https://evil.example/${host}/admin?_rsc=1a2b due to access control checks.`)).toBe(false);
   expect(ignored(`Fetch API cannot load http://${host}.evil.example/admin?_rsc=1a2b due to access control checks.`)).toBe(false);
+});
+
+// #232: the same WebKit text for a GET to this site's /api/ (the bell's unread count, cut off by sign-in's navigation).
+// Ignored only for a URL the page really sent a GET to; each `false` fails if the filter is made wider.
+test('only WebKit\'s cancelled same-origin GET to /api/ that the page sent is ignored as an uncaught error', ({ baseURL }) => {
+  const origin = baseURL!;
+  const host = new URL(origin).host;
+  const bell = `${origin}/api/me/notifications/unread`;
+  const ignored = (m: string, gets: string[] = [bell]) => isCancelledApiGet(m, origin, new Set(gets));
+  // As WebKit says it, and with the scheme cut off as CI's log shows it.
+  expect(ignored(`Fetch API cannot load ${bell} due to access control checks.`)).toBe(true);
+  expect(ignored(`/${host}/api/me/notifications/unread due to access control checks.`)).toBe(true);
+  expect(ignored(`Fetch API cannot load ${origin}/api/items?input=%7B%7D due to access control checks.`, [`${origin}/api/items?input=%7B%7D`])).toBe(true);
+  // Still problems: a URL the page never sent a GET to (a POST, or nothing), another query, a path outside /api/,
+  // another origin, other text, and another site dressed as this one.
+  expect(ignored(`Fetch API cannot load ${bell} due to access control checks.`, [])).toBe(false);
+  expect(ignored(`Fetch API cannot load ${bell}?x=1 due to access control checks.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load ${origin}/apix/me due to access control checks.`, [`${origin}/apix/me`])).toBe(false);
+  expect(ignored(`Fetch API cannot load ${origin}/admin/items due to access control checks.`, [`${origin}/admin/items`])).toBe(false);
+  expect(ignored('Fetch API cannot load https://evil.example/api/me/notifications/unread due to access control checks.',
+    ['https://evil.example/api/me/notifications/unread'])).toBe(false);
+  expect(ignored(`Fetch API cannot load ${bell} due to access control checks. And then something else.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load https://evil.example/${host}/api/me/notifications/unread due to access control checks.`)).toBe(false);
+  expect(ignored(`Fetch API cannot load http://${host}.evil.example/api/me/notifications/unread due to access control checks.`)).toBe(false);
+});
+
+test('a cancelled /api/ GET error is not recorded; the same for a POST, or a URL never requested, is', async ({ page, pageProblems, baseURL }) => {
+  await page.goto('/');
+  await page.route('**/api/e2e-harness/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.evaluate(`Promise.all([fetch('/api/e2e-harness/got'), fetch('/api/e2e-harness/posted', { method: 'POST' })])`);
+  const throwLater = (m: string) => page.evaluate(`setTimeout(() => { throw new Error(${JSON.stringify(m)}) })`);
+  const text = (path: string) => `Fetch API cannot load ${baseURL}/api/e2e-harness/${path} due to access control checks.`;
+  for (const path of ['got', 'posted', 'never']) await throwLater(text(path));
+  // Only the POST and the never-requested one are problems; waiting for them proves the GET had its turn.
+  await expect.poll(() => pageProblems).toEqual([`uncaught: ${text('posted')}`, `uncaught: ${text('never')}`]);
+  pageProblems.length = 0;
 });
 
 test('a cancelled-prefetch error from this site is not recorded; the same from another site is', async ({ page, pageProblems, baseURL }) => {
