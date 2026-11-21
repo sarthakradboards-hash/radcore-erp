@@ -115,6 +115,19 @@ export async function refuseDamaged(ctx: Ctx, named: readonly { itemId: string; 
   if (hit !== undefined) throw new AppError('unit_damaged', `Unit ${hit.serialNo} is damaged: change its condition or move it before you sell it`);
 }
 
+/** A sale line's units' worst condition, as an invoice line carries it (the architect on RAD-112: the buyer is told): of
+ * the units still sold on each of the caller's delivery lines, damaged, then used, then demo; none when every one is
+ * new or the line has no units. Read as the line is invoiced, so a condition changed since delivery counts. */
+export async function soldCondition(ctx: Ctx, saleLineIds: readonly string[]): Promise<Map<string, Exclude<UnitCondition, 'new'> | null>> {
+  const rows = saleLineIds.length === 0 ? [] : await stockTx(ctx).select({ line: units.saleLineId, condition: units.condition }).from(units)
+    .where(inArray(units.saleLineId, [...saleLineIds]));
+  const worst = (['damaged', 'used', 'demo'] as const);
+  return new Map(saleLineIds.map((id) => {
+    const seen = new Set(rows.filter((r) => r.line === id).map((r) => r.condition));
+    return [id, worst.find((c) => seen.has(c)) ?? null];
+  }));
+}
+
 /** Writes a document's unit events, in the order given; the trigger applies each to its unit (RA008). */
 export async function writeUnitEvents(ctx: Ctx, doc: { sourceTable: string; sourceId: string; businessDate: string },
   rows: readonly UnitEventRow[]): Promise<void> {

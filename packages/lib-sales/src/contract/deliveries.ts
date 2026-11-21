@@ -32,7 +32,9 @@ const deliveryLineIn = z.object({ orderLineId: idString(), qty: quantityString()
 const delivery = z.object({
   id: idString(), number: z.string().nullable(), orderId: idString(), partyId: idString(), partyName: z.string(),
   locationId: idString(), businessDate: dateString(), status, notes: z.string().nullable(),
-  lines: z.array(deliveryLineIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), ...posted })),
+  // Each line's quantity still to invoice, posted lines' only, worked out on read (auditor-3 on #285).
+  lines: z.array(deliveryLineIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), ...posted,
+    qtyToInvoice: quantityString() })),
 });
 const deliveryIn = z.object({ orderId: idString(), locationId: idString(), businessDate: dateString(), notes: notes(),
   lines: lines(deliveryLineIn) });
@@ -82,7 +84,10 @@ export const listToInvoice = defineContract({
   method: 'GET', path: '/sales/deliveries/to-invoice', auth: 'session', perm: 'sales:read', tx: read,
   input: listInput(z.object({ partyId: idString().optional() })),
   output: listOf(z.object({ id: idString(), number: z.string(), partyId: idString(), partyName: z.string(), businessDate: dateString(),
-    toInvoice: moneyString() })),
+    toInvoice: moneyString(),
+    // Its lines still to invoice, each with how many and its item (auditor-3 on #285).
+    lines: z.array(z.object({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(), name: z.string(),
+      qtyToInvoice: quantityString() })) })),
 });
 
 const returnLineIn = z.object({ deliveryLineId: idString(), qty: quantityString(), ...picks });
