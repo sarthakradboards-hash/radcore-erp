@@ -13,6 +13,7 @@ import {
   listCreditNotesPage,
   cancelDeliveryNow, cancelDeliveryReturnNow,
   deliveryReturnCounts, orderCounts, quoteCounts,
+  addAdvance, addBooking, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow,
 } from '@radcore/lib-sales';
 import {
   createPriceList, getPrice, getPriceList, getPriceListChanges, getPriceListVersion, listDiscountLimits, listPriceListRates, listPriceLists, priceListApproval as
@@ -28,6 +29,7 @@ import {
   requestCreditNoteApproval,
   countDeliveryReturns, countOrders, countQuotes,
   cancelDelivery, cancelDeliveryReturn,
+  addBookingAdvance, cancelBooking, createBooking, getBooking, listBookings, refundBooking,
 } from '@radcore/lib-sales/contract';
 
 export default [
@@ -102,4 +104,11 @@ export default [
   defineRoute(cancelCreditNote, cancelCreditNoteNow),
   defineRoute(cancelDelivery, cancelDeliveryNow),
   defineRoute(cancelDeliveryReturn, cancelDeliveryReturnNow),
+  // Vehicle bookings (RAD-117).
+  defineRoute(listBookings, listBookingsPage),
+  defineRoute(getBooking, getBookingById),
+  defineRoute(createBooking, addBooking),
+  defineRoute(addBookingAdvance, addAdvance),
+  defineRoute(cancelBooking, cancelBookingNow),
+  defineRoute(refundBooking, refundBookingNow),
 ];

@@ -17,7 +17,8 @@ import { eq } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { cancelDelivery, cancelDeliveryReturn } from '../contract.ts';
 import { deliveryOf } from './deliveries.ts';
-import { netDelivered, orderDelivered, returnedOf } from './delivered.ts';
+import { netDelivered, orderDelivered, picksOf, returnedOf } from './delivered.ts';
+import { bookingsBack, lockLiveBookings } from './booking-holds.ts';
 import { returnOf } from './delivery-returns.ts';
 import { checkDate } from './document-rules.ts';
 import { today } from './document-lines.ts';
@@ -56,11 +57,17 @@ export async function cancelDeliveryNow(ctx: Ctx, { id, businessDate, reason }: 
   checkDate(businessDate, today(), { date: d.businessDate, what: 'delivery' });
   const order = await lockedOrder(ctx, d.orderId);
   const tx = salesTx(ctx);
-  const lines = await tx.select({ id: deliveryLines.id, picks: deliveryLines.picks }).from(deliveryLines).where(eq(deliveryLines.deliveryId, id));
+  const lines = await tx.select({ id: deliveryLines.id, orderLineId: deliveryLines.orderLineId, picks: deliveryLines.picks }).from(deliveryLines)
+    .where(eq(deliveryLines.deliveryId, id));
+  // Its lines' bookings, after the order and before the units (the architect on RAD-117).
+  const booked = await lockLiveBookings(ctx, lines.map((l) => l.orderLineId));
   if ([...(await returnedOf(ctx, lines)).values()].some((g) => dec(g.qty).gt(0))) {
     throw new AppError('delivery_in_use', 'Goods on this delivery have been invoiced or taken back: cancel those first');
   }
   await reverseStock(ctx, { sourceTable: 'deliveries', sourceId: id, businessDate });
+  // A booked line back: its booking is booked again, holding the unit that came back.
+  await bookingsBack(ctx, { sourceTable: 'deliveries', sourceId: id, businessDate }, booked,
+    lines.map((l) => ({ orderLineId: l.orderLineId, serials: picksOf(l.picks).serials })));
   const [own] = await reverseEntriesOf(ctx, { source: { table: 'deliveries', id }, businessDate, reason });
   await tx.update(deliveries).set(cancelled(ctx, reason, own?.id)).where(eq(deliveries.id, id));
   await settleOrder(ctx, d.orderId, order);

@@ -158,7 +158,7 @@ export const cashLimitSpec: ApprovalSpec<{ kind: string; partyId: string; busine
  * receipt held for `owner`, its amount less its net allocations, its posted refunds and its refunds still waiting for
  * an owner's cash-limit approval. Not a receipt's cap, which checkRefund holds: the booking judges which key a refund
  * needs against this, under its own row's lock, before it calls refundHeld. */
-export async function heldLeft(ctx: Ctx, owner: HeldFor): Promise<{ left: Money; receipts: readonly { id: string; left: Money }[] }> {
+export async function heldLeft(ctx: Ctx, owner: HeldFor): Promise<{ taken: Money; left: Money; receipts: readonly { id: string; left: Money }[] }> {
   const tx = accountsTx(ctx);
   const held = await tx.select({ id: payments.id, amount: payments.amount }).from(payments).where(and(eq(payments.kind, 'receipt'),
     eq(payments.status, 'posted'), eq(payments.heldForTable, owner.table), eq(payments.heldForId, owner.id)));
@@ -171,7 +171,8 @@ export async function heldLeft(ctx: Ctx, owner: HeldFor): Promise<{ left: Money;
     const pending = sum(drafts.filter((d) => d.of === h.id && waiting.has(d.id)).map((d) => d.amount));
     receipts.push({ id: h.id, left: roundMoney(dec(h.amount).minus(allocated).minus(refunded).minus(pending)) });
   }
-  return { left: roundMoney(sum(receipts.map((r) => r.left))), receipts };
+  // `taken`: what the held receipts took in, whatever has since been applied or refunded (a booking's "advance taken").
+  return { taken: roundMoney(sum(held.map((h) => h.amount))), left: roundMoney(sum(receipts.map((r) => r.left))), receipts };
 }
 
 /** POST /payments: a receipt, payment or refund, posted now, or held as a draft for an owner past the cash limit. */

@@ -123,7 +123,8 @@ describe.skipIf(!url || !superUrl)('units by serial', () => {
     expect(await unitOf(at.itemId, unit)).toMatchObject({ ownership: 'ours', promised: order });
     const deliver = (orderLineId: string) => post({ outs: [{ itemId: at.itemId, locationId: at.showroom, sourceLineId: line, orderLineId,
       qty: q('1'), batches: [{ batchId: lot, qty: q('1') }], units: [{ serialNo: unit }] }] });
-    expect(await failure(deliver(other), 'promised')).toBe('RA008');
+    // Answered by name before the database's RA008 (RAD-117: a held unit is `unit_held`).
+    expect(await failure(deliver(other), 'promised')).toBe('unit_held');
     await deliver(order);
     expect(await unitOf(at.itemId, unit)).toMatchObject({ ownership: 'customer', location: null, sale: line, promised: null });
     await post({ ins: [{ itemId: at.itemId, locationId: at.showroom, qty: q('1'), rate: r('61250'), batches: [{ batchNo: 'B1', qty: q('1') }],

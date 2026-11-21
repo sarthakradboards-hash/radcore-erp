@@ -9,7 +9,7 @@ import { items, stockTx, unitEvents, units } from '@radcore/db/stock';
 import { holdPeriod } from '@radcore/lib-accounts';
 import { dec, type UnitCondition, type UnitEventKind } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
-import { and, asc, eq, inArray, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 /** One unit on a stock line: its serial, and on goods in, which of the line's batches it came in (when the line has
@@ -51,6 +51,18 @@ export const serialKey = (serialNo: string): string => serialNo.toUpperCase().re
 /** A chassis number as `units.chassis_key` holds it: upper case, without spaces or hyphens. */
 export const chassisKey = (chassisNo: string): string => chassisNo.toUpperCase().replace(/[\s-]/g, '');
 
+/** Whether an item is serialised, and its unit with this serial as it stands, or null: for another library judging a
+ * unit before it promises it (a booking, RAD-117). With `lock`, the unit's row is held FOR UPDATE, so what's judged
+ * stays true until the promise is written (auditor-2 on #286). */
+export async function unitFor(ctx: Ctx, itemId: string, serialNo: string, o: { lock?: boolean } = {}): Promise<{ serialised: boolean; unit: {
+  ownership: string; condition: string; locationId: string | null; promisedTo: string | null } | null }> {
+  const [item] = await stockTx(ctx).select({ serialised: items.serialised }).from(items).where(eq(items.id, itemId)).limit(1);
+  const q = stockTx(ctx).select({ ownership: units.ownership, condition: units.condition, locationId: units.locationId,
+    promisedTo: units.promisedTo }).from(units).where(and(eq(units.itemId, itemId), eq(units.serialKey, serialKey(serialNo)))).limit(1);
+  const [unit] = o.lock === true ? await q.for('update') : await q;
+  return { serialised: item?.serialised === true, unit: unit ?? null };
+}
+
 /** The serialised items among `itemIds`. */
 export async function serialisedItems(ctx: Ctx, itemIds: readonly string[]): Promise<Set<string>> {
   if (itemIds.length === 0) return new Set();
@@ -89,13 +101,47 @@ export function checkUnits(lines: readonly { itemId: string; qty: string; units?
   });
 }
 
-/** The units a posting names that already exist, locked `ORDER BY id FOR UPDATE` (§1's step 4, after the positions and
- * batches), so two postings naming the same units take turns in one order. */
-export async function lockUnits(ctx: Ctx, named: readonly { itemId: string; serialNo: string }[]): Promise<void> {
-  if (named.length === 0) return;
-  await stockTx(ctx).select({ id: units.id }).from(units)
-    .where(or(...named.map((u) => and(eq(units.itemId, u.itemId), eq(units.serialKey, serialKey(u.serialNo))))))
+/** The units a posting names that already exist, and those still promised to the order lines whose promises it ends,
+ * locked together `ORDER BY id FOR UPDATE` (§1's step 4, after the positions and batches), so two postings naming the
+ * same units take turns in one order (the architect on RAD-117: a release locked after the delivered units could
+ * deadlock against another delivery naming both). Answers the promised ones, for their release. */
+export async function lockUnits(ctx: Ctx, named: readonly { itemId: string; serialNo: string }[], endingPromisesOf: readonly string[] = []):
+  Promise<{ itemId: string; serialNo: string; promisedTo: string }[]> {
+  if (named.length === 0 && endingPromisesOf.length === 0) return [];
+  const rows = await stockTx(ctx).select({ id: units.id, itemId: units.itemId, serialNo: units.serialNo, promisedTo: units.promisedTo })
+    .from(units).where(or(...named.map((u) => and(eq(units.itemId, u.itemId), eq(units.serialKey, serialKey(u.serialNo)))),
+      endingPromisesOf.length === 0 ? undefined : inArray(units.promisedTo, [...endingPromisesOf])))
     .orderBy(asc(units.id)).for('update');
+  return rows.filter((r): r is typeof r & { promisedTo: string } => r.promisedTo !== null && endingPromisesOf.includes(r.promisedTo));
+}
+
+/** A unit going out that's held for another order line (a booking's, RC-122): answered by name, before the database's
+ * RA008. Run under the units' locks. */
+export async function checkHeld(ctx: Ctx, outs: readonly { itemId: string; orderLineId?: string; units?: readonly UnitOnLine[] }[]): Promise<void> {
+  for (const [n, o] of outs.entries()) {
+    const keys = (o.units ?? []).map((u) => serialKey(u.serialNo));
+    if (keys.length === 0) continue;
+    const [held] = await stockTx(ctx).select({ serialNo: units.serialNo }).from(units).where(and(eq(units.itemId, o.itemId),
+      inArray(units.serialKey, keys), isNotNull(units.promisedTo),
+      o.orderLineId === undefined ? undefined : ne(units.promisedTo, o.orderLineId))).limit(1);
+    if (held !== undefined) {
+      throw new AppError('unit_held', `${held.serialNo} is held for another order`,
+        [{ path: ['lines', n, 'units'], code: 'unit_held', message: `${held.serialNo} is held for another order: choose another unit` }]);
+    }
+  }
+}
+
+/**
+ * Ends every promise to these order lines (RC-122): a `released` event for each unit still promised to one. For a
+ * document that ends a line's hold without delivering it, such as a cancelled booking; a delivery ends them through
+ * postStock's `endingPromisesOf`, in the same lock as its own units. Route-less: the owning library decides when.
+ */
+export async function releasePromises(ctx: Ctx, p: { sourceTable: string; sourceId: string; businessDate: string;
+  orderLineIds: readonly string[] }): Promise<void> {
+  if (p.orderLineIds.length === 0) return;
+  await holdPeriod(ctx, p.businessDate); // §1's step 1, as every posting
+  const promised = await lockUnits(ctx, [], p.orderLineIds);
+  await writeUnitEvents(ctx, p, promised.map((u) => ({ itemId: u.itemId, serialNo: u.serialNo, kind: 'released' })));
 }
 
 /** Whether a damaged unit may be sold as it is (Sarthak on RAD-112: "Setting, default off"; the architect's proposal). */

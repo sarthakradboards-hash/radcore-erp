@@ -163,6 +163,7 @@ export const setPartyPriceList = defineContract({
 
 // Quotes and orders (M3-08, RAD-112), in a file of their own.
 export * from './contract/documents.ts';
+export * from './contract/bookings.ts';
 // Deliveries and delivery returns (M3-08, RAD-112), in a file of their own.
 export * from './contract/deliveries.ts';
 // Invoices (M3-09, RAD-113), in a file of their own.

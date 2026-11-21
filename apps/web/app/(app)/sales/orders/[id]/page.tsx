@@ -19,15 +19,14 @@ import { TextAreaField } from '../../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../../components/ui/form/form.tsx';
 import { announce } from '../../../../../components/ui/live-region.tsx';
 import { CountCards, RelatedRecords, StatusBar } from '../../../../../components/ui/record/record.tsx';
-import { ApiError } from '../../../../../lib/api-client.ts';
 import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
+import { OverrideConfirm } from '../../override-confirm.tsx';
 import { LinesTable, SALES_MESSAGES } from '../../shared.tsx';
 import { orderSteps } from '../../status.ts';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
-const nothing = z.object({});
 // An empty reason box means none: the server asks for one only when lines are still undelivered.
 const closeSchema = z.object({
   reason: z.string().trim().transform((s) => (s === '' ? undefined : s)).pipe(closeOrder.input.shape.reason),
@@ -47,8 +46,6 @@ export default function OrderPage() {
   // A deleted record is gone: refetching it would be a 404, so only the list is refreshed (e2e-2 on #278).
   const remove = useApiMutation(deleteOrder, { invalidates: [listOrders] });
   const [dialog, setDialog] = useState<Dialogs>(null);
-  const [needsOverride, setNeedsOverride] = useState(false);
-  const [asked, setAsked] = useState<string | null>(null);
   const order = q.data;
 
   if (q.error !== null) {
@@ -63,17 +60,7 @@ export default function OrderPage() {
   }
   if (order === undefined) return <p>{t('loading')}</p>;
   const open = (which: Exclude<Dialogs, null>) => () => setDialog(which);
-  const shut = (isOpen: boolean) => { if (!isOpen) { setDialog(null); setNeedsOverride(false); setAsked(null); } };
-  const askForOverride = async () => {
-    try {
-      await override.submit({ id });
-      shut(false);
-      later(t('sales.order.overridden'));
-    } catch (e) {
-      setAsked(e instanceof ApiError ? SALES_MESSAGES[e.code] ?? e.message : t('error.title'));
-    }
-  };
-
+  const shut = (isOpen: boolean) => { if (!isOpen) setDialog(null); };
   return (
     <>
       <p><Link href="/sales/orders">{t('sales.back')}</Link></p>
@@ -109,32 +96,10 @@ export default function OrderPage() {
         </div>
       ) : null}
 
-      <Dialog open={dialog === 'confirm'} onOpenChange={shut} title={t('sales.order.confirm.title')} description={t('sales.order.confirm.body')}>
-        <Form schema={nothing} saved={false} messages={SALES_MESSAGES} defaultValues={{}}
-          onSubmit={async () => {
-            try {
-              const { number } = await confirm.submit({ id });
-              shut(false);
-              later(t('sales.order.confirmed', { number }));
-            } catch (e) {
-              // The form shows what the server found; asking for an override is the way on from it.
-              if (e instanceof ApiError && e.code === 'needs_override') setNeedsOverride(true);
-              throw e;
-            }
-          }}>
-          <div className="kit-actions">
-            <CloseButton>{t('sales.cancel')}</CloseButton>
-            <SubmitButton>{t('sales.order.confirm')}</SubmitButton>
-          </div>
-        </Form>
-        {needsOverride ? (
-          <div>
-            <p>{t('sales.order.override.body')}</p>
-            {asked === null ? null : <p role="alert" className="kit-form-alert">{asked}</p>}
-            <button type="button" className="kit-button" onClick={() => void askForOverride()}>{t('sales.order.override')}</button>
-          </div>
-        ) : null}
-      </Dialog>
+      <OverrideConfirm open={dialog === 'confirm'} onOpenChange={shut} title={t('sales.order.confirm.title')} body={t('sales.order.confirm.body')}
+        action={t('sales.order.confirm')} overrideBody={t('sales.order.override.body')} overrideAction={t('sales.order.override')}
+        onConfirm={async () => t('sales.order.confirmed', { number: (await confirm.submit({ id })).number })}
+        onAskOverride={async () => { await override.submit({ id }); return t('sales.order.overridden'); }} />
 
       <ConfirmDialog open={dialog === 'delete'} onOpenChange={shut} messages={SALES_MESSAGES} title={t('sales.order.delete.title')}
         body={t('sales.order.delete.body')} action={t('sales.delete')} done={t('sales.order.deleted')}

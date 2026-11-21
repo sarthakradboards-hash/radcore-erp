@@ -154,6 +154,13 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /sales/orders/:id/confirm': 'sales:write',
   'POST /sales/orders/:id/close': 'sales:write',
   'POST /sales/orders/:id/cancel': 'sales:write',
+  // Vehicle bookings (RAD-117): the refund keys are checked in the service, by how much of what's left is refunded.
+  'GET /sales/bookings': 'bookings:read',
+  'GET /sales/bookings/:id': 'bookings:read',
+  'POST /sales/bookings': 'bookings:write',
+  'POST /sales/bookings/:id/advance': 'bookings:write',
+  'POST /sales/bookings/:id/cancel': 'bookings:write',
+  'POST /sales/bookings/:id/refund': 'bookings:write',
   'POST /sales/orders/:id/override': 'sales:write',
   'GET /approvals/sales-order-override': 'sales:override',
   'GET /approvals/sales-order-override/:id': 'sales:override',
@@ -276,7 +283,9 @@ const HR = ['lib-hr', 'lib-platform'];
 const CRM = ['lib-crm', 'lib-platform'];
 // lib-crm's outside doors parse with lib-integrations (RAD-107).
 const CRM_DOORS = ['lib-crm', 'lib-integrations', 'lib-platform'];
-const SETTINGS = ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'];
+// lib-sales' index reaches lib-crm for its bookings' leads (RAD-117), and through it lib-integrations.
+const SETTINGS = ['lib-accounts', 'lib-crm', 'lib-gst', 'lib-integrations', 'lib-platform', 'lib-sales', 'lib-stock'];
+const BOOKINGS = ['lib-accounts', 'lib-crm', 'lib-integrations', 'lib-platform', 'lib-sales', 'lib-stock'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -405,6 +414,12 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /sales/orders/:id/confirm': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/orders/:id/close': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/orders/:id/cancel': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /sales/bookings': BOOKINGS,
+  'GET /sales/bookings/:id': BOOKINGS,
+  'POST /sales/bookings': BOOKINGS,
+  'POST /sales/bookings/:id/advance': BOOKINGS,
+  'POST /sales/bookings/:id/cancel': BOOKINGS,
+  'POST /sales/bookings/:id/refund': BOOKINGS,
   'POST /sales/orders/:id/override': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'GET /approvals/sales-order-override': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'GET /approvals/sales-order-override/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
