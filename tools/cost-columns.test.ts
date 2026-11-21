@@ -13,6 +13,7 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   discount_limits: { max_percent: 'a role’s discount limit, a percentage (prices:read)' },
   gst_rates: { rate: 'a tax rate' },
   payment_allocations: { amount: 'money applied to a document (payments:write)' },
+  payment_reminders: { outstanding: 'what a party owed when reminded (receivables:read)', overdue: 'what of it was overdue (receivables:read)' },
   credit_applications: { amount: 'a credit applied to a document (payments:write)' },
   // tools/allocations-routes.test.ts's fixture document, there only while that file runs.
   t_route_invoices: { total: 'a test fixture’s document total' },

@@ -12,11 +12,13 @@ export {
   type HeldFor,
 } from './services/payments.ts';
 export { partyReceivable } from './services/receivables.ts';
+export { partyStatement, toCollectPage } from './services/collect.ts';
+export { remind, remindersPage } from './services/reminders.ts';
 export {
   allocatePayment, applyCredit, paidOf, reverseAllocation, reverseCreditApplication,
 } from './services/allocations.ts';
 export type { Receivable } from './rules/receivable.ts';
-export { addParty, changeParty, getPartyById, holdParty, listPartiesPage, setCreditTerms } from './services/parties.ts';
+export { addParty, changeParty, getPartyById, holdParty, listPartiesPage, partyNames, setCreditTerms } from './services/parties.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';

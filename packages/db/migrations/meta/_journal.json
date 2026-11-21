@@ -463,6 +463,20 @@
       "when": 1795264875206,
       "tag": "0065_lead_doors",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1795266778801,
+      "tag": "0066_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795271335174,
+      "tag": "0067_stock_read",
+      "breakpoints": true
     }
   ]
 }

@@ -2,8 +2,10 @@
 // with the same keys, and the type below makes a missing key a compile error.
 import { admin } from './admin.ts';
 import { books } from './books.ts';
+import { invoices } from './invoices.ts';
 import { kit } from './kit.ts';
 import { masters } from './masters.ts';
+import { sales } from './sales.ts';
 
 /** The app's own text; the admin screens', the masters', the accounts screens' and the kit's are in admin.ts, masters.ts,
  * books.ts and kit.ts. */
@@ -26,6 +28,7 @@ export const core = {
   'nav.home': 'Home',
   'nav.admin': 'Admin',
   'nav.accounts': 'Accounts',
+  'nav.sales': 'Sales',
   'bell.label': 'Notifications',
   'bell.labelUnread': 'Notifications, {n} unread',
   'bell.title': 'Your notifications',
@@ -90,7 +93,7 @@ export const core = {
 
 // Spreading lets a later key silently replace an earlier one (TypeScript allows it), so index.test.ts checks that the
 // catalogues share no key: a clash once put the account page's words on the admin Sessions page.
-const en = { ...core, ...admin, ...masters, ...books, ...kit } as const;
+const en = { ...core, ...admin, ...masters, ...books, ...sales, ...invoices, ...kit } as const;
 
 export type MessageKey = keyof typeof en;
 

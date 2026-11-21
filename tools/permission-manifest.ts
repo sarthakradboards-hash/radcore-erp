@@ -89,6 +89,11 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Parties (RAD-90): credit terms only with parties:manage.
   'GET /parties': 'parties:read',
   'GET /parties/:id': 'parties:read',
+  // What parties owe (RAD-119): behind receivables:read, never parties:read (RC-042).
+  'GET /parties/:id/statement': 'receivables:read',
+  'GET /to-collect': 'receivables:read',
+  'POST /parties/:id/reminders': 'receivables:remind',
+  'GET /parties/:id/reminders': 'receivables:read',
   'POST /parties': 'parties:write',
   'PATCH /parties/:id': 'parties:write',
   'PUT /parties/:id/credit': 'parties:manage',
@@ -209,6 +214,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/item-picture/:id/confirm': 'items:write',
   // Stock (RAD-92): locations, and their kinds' labels.
   'GET /stock/location-kinds': 'locations:read',
+  'GET /stock/on-hand': 'stock:read',
   'PUT /stock/location-kinds/:kind': 'locations:write',
   'GET /stock/locations': 'locations:read',
   'POST /stock/locations': 'locations:write',
@@ -335,6 +341,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'PUT /gst/rates': ['lib-gst', 'lib-platform'],
   'GET /parties': ['lib-accounts', 'lib-platform'],
   'GET /parties/:id': ['lib-accounts', 'lib-platform'],
+  'GET /parties/:id/statement': ['lib-accounts', 'lib-platform'],
+  'GET /to-collect': ['lib-accounts', 'lib-platform'],
+  'POST /parties/:id/reminders': ['lib-accounts', 'lib-platform'],
+  'GET /parties/:id/reminders': ['lib-accounts', 'lib-platform'],
   'POST /parties': ['lib-accounts', 'lib-platform'],
   'PATCH /parties/:id': ['lib-accounts', 'lib-platform'],
   'PUT /parties/:id/credit': ['lib-accounts', 'lib-platform'],
@@ -454,6 +464,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/item-picture/:id/confirm': PLATFORM,
   // Stock's routes reach lib-stock and, through it, lib-platform.
   'GET /stock/location-kinds': STOCK,
+  'GET /stock/on-hand': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'PUT /stock/location-kinds/:kind': STOCK,
   'GET /stock/locations': STOCK,
   'POST /stock/locations': STOCK,

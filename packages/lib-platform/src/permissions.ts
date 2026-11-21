@@ -45,6 +45,10 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'accounts:write', module: 'Journal', label: 'Change the chart of accounts: codes, and switching accounts off and on' },
   { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
+  { key: 'receivables:read', module: 'Payments', label: 'See what each party owes: statements and the To collect list',
+    records: ['@radcore/db/accounts#partyManagers'] },
+  { key: 'receivables:remind', module: 'Payments', label: 'Record a reminder to a party of what they owe (with receivables:read)',
+    records: ['@radcore/db/accounts#partyManagers'] },
   { key: 'journal:read', module: 'Journal', label: 'See the chart of accounts and the journal' },
   { key: 'journal:post', module: 'Journal', label: 'Post a manual journal', secondFactor: true },
   { key: 'journal:reverse', module: 'Journal', label: 'Reverse a journal entry', secondFactor: true },
@@ -86,6 +90,7 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'import_files:write', module: 'Files', label: 'Upload import files' },
   // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so the keys name no records.
   { key: 'locations:read', module: 'Stock', label: 'See locations' },
+  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial' },
   { key: 'locations:write', module: 'Stock', label: 'Add and change locations, switch them off' },
   // HR (M2-14, RAD-92): the employee master. Writing it reaches HR, so it needs the second factor (D-19); reading is a
   // directory whose contact details stay masked without pii:read. Any role may be granted either (Sarthak, 15 Nov).
