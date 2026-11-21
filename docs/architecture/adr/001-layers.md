@@ -552,7 +552,9 @@ codes.
     (RAD-43), or an export's, `POST /exports/:id/download` (RAD-47). The answer is a live presigned link, and a
     stored answer must carry no tokens (RC-132);
   - making a link to a posted invoice, `POST /sales/invoices/:id/links` (RAD-118). The answer holds the link's token,
-    which is shown this once; only its hash is kept (RAD-41).
+    which is shown this once; only its hash is kept (RAD-41);
+  - recording a payment reminder, `POST /parties/:id/reminders` (RAD-119), whose answer carries a new link to the
+    party's oldest overdue invoice the same way.
 
   How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
