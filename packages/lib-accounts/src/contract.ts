@@ -236,7 +236,7 @@ export const recordPaymentContract = defineContract({
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
   errors: ['invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',
     'refund_other_party', 'date_before_source', 'exceeds_receipt', 'unknown_account', 'not_money_account', 'account_inactive', 'not_draft',
-    'refund_through_owner', ...CREDIT_REFUND_ERRORS],
+    'refund_through_owner', 'series_full', ...CREDIT_REFUND_ERRORS],
   dbErrors: CREDIT_REFUND_DB_ERRORS,
 });
 
@@ -254,7 +254,7 @@ export const cancelPaymentContract = defineContract({
  * decision can meet the engine's refusals. */
 export const cashLimitApproval = approvalContracts('cash-limit', 'payments:approve',
   ['account_inactive', 'period_locked', 'year_not_open', 'not_draft', 'receipt_not_posted', 'exceeds_receipt', 'refund_other_party',
-    'date_before_source', ...CREDIT_REFUND_ERRORS], CREDIT_REFUND_DB_ERRORS);
+    'date_before_source', 'series_full', ...CREDIT_REFUND_ERRORS], CREDIT_REFUND_DB_ERRORS);
 
 // Allocations and credit applications (M3-12, RAD-116 part 2; ADR-005 §7a). A document is named by its table, one
 // `allocatable_documents` lists, and its id. The rules the database checks at commit answer by name (dbErrors, §9).

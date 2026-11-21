@@ -84,7 +84,7 @@ export const deleteQuote = defineContract({
 export const sendQuote = defineContract({
   method: 'POST', path: '/sales/quotes/:id/send', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }),
-  errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'company_profile_incomplete', 'no_gst_rate'],
+  errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'company_profile_incomplete', 'no_gst_rate', 'series_full'],
 });
 /** The party accepted a sent quote: it makes a draft order with its lines, dated `businessDate` (not before the quote). */
 export const acceptQuote = defineContract({
@@ -152,7 +152,7 @@ export const confirmOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/confirm', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }),
   errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'needs_override', 'no_gst_rate', 'version_changed',
-    'company_profile_incomplete'],
+    'company_profile_incomplete', 'series_full'],
 });
 /** Asks for an override of a draft order's issues: someone holding sales:override approves it (RAD-38). */
 export const requestOrderOverride = defineContract({
