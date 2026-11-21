@@ -125,8 +125,9 @@ export async function getDeliveryById(ctx: Ctx, { id }: In<typeof getDelivery>):
 
 /** How much of each posted delivery line is still to invoice (auditor-3 on #285), worked out on read: what went, less
  * what came back and what posted invoices billed (returnedOf counts both). A draft has nothing to invoice yet. */
-async function leftToInvoice(ctx: Ctx, lines: readonly { id: string; qty: string; picks: unknown }[], posted: boolean): Promise<Map<string, Quantity>> {
-  const gone = posted ? await returnedOf(ctx, lines) : new Map<string, never>();
+async function leftToInvoice(ctx: Ctx, lines: readonly { id: string; qty: string; picks: unknown }[], posted: boolean,
+  known?: Awaited<ReturnType<typeof returnedOf>>): Promise<Map<string, Quantity>> {
+  const gone = !posted ? new Map<string, never>() : known ?? await returnedOf(ctx, lines);
   return new Map(lines.map((l) => [l.id, posted ? roundQty(dec(l.qty).minus(dec(gone.get(l.id)?.qty ?? '0')), 3) : roundQty(dec('0'), 3)]));
 }
 
@@ -251,7 +252,7 @@ export async function listToInvoicePage(ctx: Ctx, input: In<typeof listToInvoice
   }
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   // Each line still to invoice, by quantity, with its item (auditor-3 on #285).
-  const qtyLeft = await leftToInvoice(ctx, lines, true);
+  const qtyLeft = await leftToInvoice(ctx, lines, true, back);
   const open = (await labelled(ctx, lines)).filter((l) => dec(qtyLeft.get(l.id) ?? '0').gt(0));
   const last = page.at(-1);
   return {
