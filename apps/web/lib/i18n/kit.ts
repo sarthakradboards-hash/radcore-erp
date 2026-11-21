@@ -19,4 +19,6 @@ export const kit = {
   'kit.picker.searching': 'Searching…',
   'kit.picker.none': 'Nothing matches “{query}”',
   'kit.picker.error': 'The search could not be run. Try again.',
+  'kit.record.done': 'done',
+  'kit.record.now': 'now',
 } as const;
