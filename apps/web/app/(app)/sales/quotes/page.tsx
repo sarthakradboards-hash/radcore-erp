@@ -12,6 +12,7 @@ import { useApiList } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { ChoiceButtons } from '../../admin/shared.tsx';
 import { numberText, type QuoteRow } from '../shared.tsx';
+import { StatusCounts } from '../status-counts.tsx';
 
 type Show = (typeof SALES_QUOTE_STATUSES)[number] | 'all';
 
@@ -31,6 +32,7 @@ export default function QuotesPage() {
     <>
       <h1>{t('sales.quotes.title')}</h1>
       <p>{t('sales.quotes.intro')}</p>
+      <StatusCounts kind="quote" />
       <div className="admin-toolbar">
         <ChoiceButtons<Show> label={t('sales.status')} value={show} onChange={setShow} options={[
           { value: 'all', label: t('sales.all') },

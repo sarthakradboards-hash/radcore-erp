@@ -6,7 +6,7 @@ import { listParties } from '@radcore/lib-accounts/contract';
 import { indiaDate } from '@radcore/lib-common';
 import { createQuote } from '@radcore/lib-sales/contract';
 import { getItem, listItems } from '@radcore/lib-stock/contract';
-import { useFieldArray, useFormContext } from 'react-hook-form';
+import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { TextAreaField, TextField } from '../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../components/ui/form/form.tsx';
@@ -42,8 +42,10 @@ export const NEW_DOCUMENT: DocumentInput = { partyId: '', businessDate: indiaDat
 const useParties = (query: string) => useApiSearch(listParties, query, { params: { filter: { kind: 'customer', active: true } } });
 const useItems = (query: string) => useApiSearch(listItems, query, { params: { filter: { active: true } } });
 
-/** One line's item box; an existing line shows its item's name before anything is typed. */
-function ItemBox({ index, itemId }: { index: number; itemId: string }) {
+/** One line's item box. It names the item the line's own value holds, so it stays right when a line before it is removed. */
+function ItemBox({ index }: { index: number }) {
+  const { control } = useFormContext<DocumentInput>();
+  const itemId = useWatch({ control, name: `lines.${index}.itemId` });
   const item = useApiQuery(getItem, { id: itemId }, { enabled: itemId !== '' }).data ?? null;
   return (
     <PickedField name={`lines.${index}.itemId`} label={t('sales.line.item')} hint={t('sales.line.item.hint')} initial={item}
@@ -51,7 +53,7 @@ function ItemBox({ index, itemId }: { index: number; itemId: string }) {
   );
 }
 
-function Lines({ itemIds }: { itemIds: readonly string[] }) {
+function Lines() {
   const { control } = useFormContext<DocumentInput>();
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
   return (
@@ -59,7 +61,7 @@ function Lines({ itemIds }: { itemIds: readonly string[] }) {
       {fields.map((f, i) => (
         <fieldset key={f.id}>
           <legend>{t('sales.line', { n: String(i + 1) })}</legend>
-          <ItemBox index={i} itemId={itemIds[i] ?? ''} />
+          <ItemBox index={i} />
           <TextField name={`lines.${i}.qty`} label={t('sales.line.qty')} inputMode="decimal" autoComplete="off" />
           <TextField name={`lines.${i}.rate`} label={t('sales.line.rate')} inputMode="decimal" autoComplete="off" />
           <TextField name={`lines.${i}.discountPercent`} label={t('sales.line.discount')} inputMode="decimal" autoComplete="off" />
@@ -73,10 +75,10 @@ function Lines({ itemIds }: { itemIds: readonly string[] }) {
   );
 }
 
-/** The form. `initial` is what it starts from; `party` is the customer already chosen (an edit); `itemIds` are the lines'
- * items already chosen. `quote` adds the valid-until date. */
-export function DocumentForm({ labelledBy, initial, party, itemIds = [], quote, submit, onSubmit }: {
-  labelledBy: string; initial: DocumentInput; party?: { id: string; name: string }; itemIds?: readonly string[]; quote: boolean;
+/** The form. `initial` is what it starts from; `party` is the customer already chosen (an edit). `quote` adds the valid-until
+ * date. */
+export function DocumentForm({ labelledBy, initial, party, quote, submit, onSubmit }: {
+  labelledBy: string; initial: DocumentInput; party?: { id: string; name: string }; quote: boolean;
   submit: string; onSubmit: (values: DocumentValues) => Promise<unknown>;
 }) {
   return (
@@ -87,7 +89,7 @@ export function DocumentForm({ labelledBy, initial, party, itemIds = [], quote, 
       <TextField name="businessDate" label={t('sales.date')} type="date" />
       {quote ? <TextField name="validUntil" label={t('sales.quote.validUntil')} type="date" /> : null}
       <TextAreaField name="notes" label={t('sales.notes')} />
-      <Lines itemIds={itemIds} />
+      <Lines />
       <p>{t('sales.rate.note')}</p>
       <SubmitButton>{submit}</SubmitButton>
     </Form>

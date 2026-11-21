@@ -2,11 +2,9 @@
 // What the sales screens share (RAD-125): the row types read off lib-sales' contracts, the refusals in the screen's
 // words, and a document's lines as a table. The server holds every rule (credit, price, status, dates); the screens only
 // draw what it sends and word what it refuses.
-import { getItem } from '@radcore/lib-stock/contract';
 import type { getQuote, listOrders, listQuotes } from '@radcore/lib-sales/contract';
 import { useId } from 'react';
 import type { z } from 'zod';
-import { useApiQuery } from '../../../lib/api/query.ts';
 import { t } from '../../../lib/i18n/index.ts';
 import '../../../components/ui/table/table.css';
 import { asPrice, asWritten } from '../admin/decimal.ts';
@@ -24,13 +22,6 @@ export const SALES_MESSAGES: Partial<Record<string, string>> = Object.fromEntrie
 
 /** A document's number, or "Draft" while it has none. */
 export const numberText = (number: string | null) => number ?? t('sales.draft');
-
-/** An item by its name and SKU, read from the item list; a role that can't read items sees a plain word. */
-function ItemName({ id }: { id: string }) {
-  const q = useApiQuery(getItem, { id });
-  if (q.error !== null) return t('sales.line.unknownItem');
-  return q.data === undefined ? t('loading') : `${q.data.name} (${q.data.sku})`;
-}
 
 /** The lines as they were written: item, quantity, rate before GST, and discount. */
 export function LinesTable({ number, lines }: { number: string | null; lines: readonly Line[] }) {
@@ -51,7 +42,7 @@ export function LinesTable({ number, lines }: { number: string | null; lines: re
           <tbody>
             {lines.map((l) => (
               <tr key={l.id}>
-                <td><ItemName id={l.itemId} /></td>
+                <td>{l.name} ({l.sku})</td>
                 <td className="kit-numeric">{asWritten(l.qty)}</td>
                 <td className="kit-numeric">{asPrice(l.rate)}</td>
                 <td className="kit-numeric">{asWritten(l.discountPercent)}</td>

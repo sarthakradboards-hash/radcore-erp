@@ -7,6 +7,13 @@ import { useController } from 'react-hook-form';
 import { useFieldName } from '../../../components/ui/form/form.tsx';
 import { Picker } from '../../../components/ui/picker/picker.tsx';
 
+/** The record a box names: the one just picked, while the form's value is still its id; otherwise the one the value's id
+ * stands for (`initial`). A line removed from a list leaves the lines after it with their own boxes, so the box must
+ * follow the value it sits on, never a position or a stale pick. */
+export function shownOption<T extends { id: string }>(picked: T | null, initial: T | null, value: unknown): T | null {
+  return picked !== null && picked.id === value ? picked : initial;
+}
+
 type Found<T> = { items: readonly T[]; isFetching: boolean; error: Error | null };
 
 export function PickedField<T extends { id: string }>({ name, label, hint, initial, useSearch, optionLabel, optionDetail }: {
@@ -25,7 +32,7 @@ export function PickedField<T extends { id: string }>({ name, label, hint, initi
   return (
     <div>
       <Picker label={label} {...(hint === undefined ? {} : { hint })} query={query} onQueryChange={setQuery} options={found.items}
-        loading={found.isFetching} error={found.error} value={picked ?? initial} optionKey={(o) => o.id} optionLabel={optionLabel}
+        loading={found.isFetching} error={found.error} value={shownOption(picked, initial, field.value)} optionKey={(o) => o.id} optionLabel={optionLabel}
         {...(optionDetail === undefined ? {} : { optionDetail })}
         onChange={(option) => { setPicked(option); field.onChange(option.id); }} />
       {error === undefined ? null : <p role="alert" className="kit-field-error">{error}</p>}

@@ -28,7 +28,6 @@ export default function EditOrderPage() {
       {back}
       <h1 id="edit-order">{t('sales.order.edit.title')}</h1>
       <DocumentForm labelledBy="edit-order" quote={false} submit={t('sales.order.save')} party={{ id: order.partyId, name: order.partyName }}
-        itemIds={order.lines.map((l) => l.itemId)}
         initial={{ partyId: order.partyId, businessDate: order.businessDate, validUntil: '', notes: order.notes ?? '',
           lines: order.lines.map((l) => ({ itemId: l.itemId, qty: asWritten(l.qty), rate: asPrice(l.rate), discountPercent: asWritten(l.discountPercent) })) }}
         onSubmit={async ({ partyId, businessDate, notes, lines }) => {

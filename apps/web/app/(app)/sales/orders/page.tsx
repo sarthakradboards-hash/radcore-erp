@@ -11,6 +11,7 @@ import { useApiList } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { ChoiceButtons } from '../../admin/shared.tsx';
 import { numberText, type OrderRow } from '../shared.tsx';
+import { StatusCounts } from '../status-counts.tsx';
 
 type Show = (typeof SALES_ORDER_STATUSES)[number] | 'all';
 
@@ -29,6 +30,7 @@ export default function OrdersPage() {
     <>
       <h1>{t('sales.orders.title')}</h1>
       <p>{t('sales.orders.intro')}</p>
+      <StatusCounts kind="order" />
       <div className="admin-toolbar">
         <ChoiceButtons<Show> label={t('sales.status')} value={show} onChange={setShow} options={[
           { value: 'all', label: t('sales.all') },

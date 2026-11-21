@@ -24,7 +24,6 @@ export default function EditQuotePage() {
       {back}
       <h1 id="edit-quote">{t('sales.quote.edit.title')}</h1>
       <DocumentForm labelledBy="edit-quote" quote submit={t('sales.quote.save')} party={{ id: quote.partyId, name: quote.partyName }}
-        itemIds={quote.lines.map((l) => l.itemId)}
         initial={{ partyId: quote.partyId, businessDate: quote.businessDate, validUntil: quote.validUntil ?? '', notes: quote.notes ?? '',
           lines: quote.lines.map((l) => ({ itemId: l.itemId, qty: asWritten(l.qty), rate: asPrice(l.rate), discountPercent: asWritten(l.discountPercent) })) }}
         onSubmit={async (v) => {

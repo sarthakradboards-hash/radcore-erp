@@ -14,7 +14,7 @@ import { CloseButton, Dialog } from '../../../../../components/ui/dialog/dialog.
 import { RadioField, TextField } from '../../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../../components/ui/form/form.tsx';
 import { announce } from '../../../../../components/ui/live-region.tsx';
-import { CountCards, StatusBar } from '../../../../../components/ui/record/record.tsx';
+import { CountCards, RelatedRecords, StatusBar } from '../../../../../components/ui/record/record.tsx';
 import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
@@ -58,6 +58,8 @@ export default function QuotePage() {
       <p><Link href="/sales/quotes">{t('sales.back')}</Link></p>
       <h1>{quote.number === null ? t('sales.quote.title.draft') : t('sales.quote.title', { number: quote.number })}</h1>
       <StatusBar label={t('sales.status.step')} steps={quoteSteps(quote.status)} current={quote.status} />
+      <RelatedRecords label={t('sales.related')}
+        links={quote.orderId === null ? [] : [{ label: t('sales.quote.order'), href: `/sales/orders/${quote.orderId}` }]} />
       <CountCards label={t('sales.counts')} cards={[{ label: t('sales.count.lines'), value: String(quote.lines.length) }]} />
       <dl className="admin-facts" aria-label={t('sales.facts')}>
         <dt>{t('sales.party')}</dt><dd>{quote.partyName}</dd>
