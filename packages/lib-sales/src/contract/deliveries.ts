@@ -33,8 +33,8 @@ const delivery = z.object({
   id: idString(), number: z.string().nullable(), orderId: idString(), partyId: idString(), partyName: z.string(),
   locationId: idString(), businessDate: dateString(), status, notes: z.string().nullable(),
   // Each line's quantity still to invoice, posted lines' only, worked out on read (auditor-3 on #285).
-  lines: z.array(deliveryLineIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), ...posted,
-    qtyToInvoice: quantityString() })),
+  lines: z.array(deliveryLineIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(),
+    name: z.string(), ...posted, qtyToInvoice: quantityString() })),
 });
 const deliveryIn = z.object({ orderId: idString(), locationId: idString(), businessDate: dateString(), notes: notes(),
   lines: lines(deliveryLineIn) });
@@ -94,7 +94,9 @@ const returnLineIn = z.object({ deliveryLineId: idString(), qty: quantityString(
 const deliveryReturn = z.object({
   id: idString(), number: z.string().nullable(), deliveryId: idString(), partyId: idString(), partyName: z.string(),
   locationId: idString(), businessDate: dateString(), status, notes: z.string().nullable(),
-  lines: z.array(returnLineIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), ...posted })),
+  // Each line with its item's SKU and name (auditor-3 on #288).
+  lines: z.array(returnLineIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(),
+    name: z.string(), ...posted })),
 });
 const returnIn = z.object({ deliveryId: idString(), locationId: idString(), businessDate: dateString(), notes: notes(),
   lines: lines(returnLineIn) });
@@ -104,6 +106,13 @@ export const listDeliveryReturns = defineContract({
   method: 'GET', path: '/sales/delivery-returns', auth: 'session', perm: 'sales:read', tx: read,
   input: listInput(z.object({ status: status.optional(), deliveryId: idString().optional() })),
   output: listOf(deliveryReturn.omit({ lines: true })),
+});
+/** How many delivery returns are in each status, within the principal's scope as the list is: a screen's counts
+ * (RC-176: a list has no total; auditor-3 on #288). A delivery's own when `deliveryId` is given. */
+export const countDeliveryReturns = defineContract({
+  method: 'GET', path: '/sales/delivery-return-counts', auth: 'session', perm: 'sales:read', tx: read,
+  input: z.object({ deliveryId: idString().optional() }),
+  output: z.object({ byStatus: z.record(status, z.number().int().nonnegative()) }),
 });
 /** One delivery return with its lines. */
 export const getDeliveryReturn = defineContract({

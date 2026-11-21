@@ -115,12 +115,34 @@ export async function refuseDamaged(ctx: Ctx, named: readonly { itemId: string; 
   if (hit !== undefined) throw new AppError('unit_damaged', `Unit ${hit.serialNo} is damaged: change its condition or move it before you sell it`);
 }
 
-/** A sale line's units' worst condition, as an invoice line carries it (the architect on RAD-112: the buyer is told): of
- * the units still sold on each of the caller's delivery lines, damaged, then used, then demo; none when every one is
- * new or the line has no units. Read as the line is invoiced, so a condition changed since delivery counts. */
+/** Each delivery line's units are of one condition (the architect on RAD-112), so an invoice line billing part of it
+ * carries the line's one condition: a mixed line is refused (`mixed_condition`), naming the odd units. Read under the
+ * units' locks; answers each unit's condition, by item and serial key, for its `delivered` event to record. */
+export async function oneCondition(ctx: Ctx, lines: readonly { itemId: string; units?: readonly UnitOnLine[] }[]): Promise<Map<string, UnitCondition>> {
+  const named = lines.flatMap((l) => (l.units ?? []).map((u) => ({ itemId: l.itemId, serialNo: u.serialNo })));
+  if (named.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ itemId: units.itemId, key: units.serialKey, condition: units.condition }).from(units)
+    .where(or(...named.map((u) => and(eq(units.itemId, u.itemId), eq(units.serialKey, serialKey(u.serialNo))))));
+  const conditions = new Map(rows.map((r) => [`${r.itemId}:${r.key}`, r.condition as UnitCondition]));
+  for (const l of lines) {
+    const own = (l.units ?? []).map((u) => ({ serialNo: u.serialNo, condition: conditions.get(`${l.itemId}:${serialKey(u.serialNo)}`) }));
+    const count = (c: UnitCondition | undefined) => own.filter((u) => u.condition === c).length;
+    const most = own.map((u) => u.condition).reduce((m, c) => (count(c) > count(m) ? c : m), own[0]?.condition);
+    const odd = own.filter((u) => u.condition !== most);
+    if (odd.length > 0) {
+      const which = odd.map((u) => `${u.serialNo} is ${u.condition ?? 'unknown'}`).join(', ');
+      throw new AppError('mixed_condition', `${which} and the rest are ${most ?? 'unknown'}: put each condition on its own line`);
+    }
+  }
+  return conditions;
+}
+
+/** A sale line's one condition, as an invoice line carries it (the architect on RAD-112: the buyer is told): the
+ * condition its units left with on their delivery (its `delivered` events), frozen then; none when they were new or the
+ * line has no units. Worst first (damaged, used, demo), though a line holds one condition (oneCondition). */
 export async function soldCondition(ctx: Ctx, saleLineIds: readonly string[]): Promise<Map<string, Exclude<UnitCondition, 'new'> | null>> {
-  const rows = saleLineIds.length === 0 ? [] : await stockTx(ctx).select({ line: units.saleLineId, condition: units.condition }).from(units)
-    .where(inArray(units.saleLineId, [...saleLineIds]));
+  const rows = saleLineIds.length === 0 ? [] : await stockTx(ctx).select({ line: unitEvents.saleLineId, condition: unitEvents.condition })
+    .from(unitEvents).where(and(eq(unitEvents.kind, 'delivered'), inArray(unitEvents.saleLineId, [...saleLineIds])));
   const worst = (['damaged', 'used', 'demo'] as const);
   return new Map(saleLineIds.map((id) => {
     const seen = new Set(rows.filter((r) => r.line === id).map((r) => r.condition));

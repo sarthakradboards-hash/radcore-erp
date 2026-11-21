@@ -120,7 +120,7 @@ export async function getDeliveryById(ctx: Ctx, { id }: In<typeof getDelivery>):
   const names = await partyNames(ctx, [d.partyId]);
   const left = await leftToInvoice(ctx, lines, d.status === 'posted');
   return { ...d, status: d.status as Status, partyName: names.get(d.partyId) ?? '',
-    lines: lines.map(({ picks, ...l }) => ({ ...l, ...picksOf(picks), qtyToInvoice: left.get(l.id) ?? '0' })) };
+    lines: (await labelled(ctx, lines)).map(({ picks, ...l }) => ({ ...l, ...picksOf(picks), qtyToInvoice: left.get(l.id) ?? '0' })) };
 }
 
 /** How much of each posted delivery line is still to invoice (auditor-3 on #285), worked out on read: what went, less
