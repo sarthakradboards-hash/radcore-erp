@@ -498,13 +498,6 @@
       "when": 1795283280398,
       "tag": "0070_invoice_share",
       "breakpoints": true
-    },
-    {
-      "idx": 71,
-      "version": "7",
-      "when": 1795285341607,
-      "tag": "0071_test_rides",
-      "breakpoints": true
     }
   ]
 }
