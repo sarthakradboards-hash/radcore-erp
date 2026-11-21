@@ -350,6 +350,9 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
       locationId: at.placeId, qty: q('1'), rate: unitPriceString().parse('40'), batches: [{ batchNo: 'B2', qty: q('1') }] }] }));
     await run((ctx) => cancelDeliveryNow(ctx, { id, businessDate: DATE, reason: 'Wrong customer' }));
     expect(await onHand(at.itemId, at.placeId)).toEqual({ qty: '2', value: '60.00' });
-    expect((await run((ctx) => checkBooks(ctx, {}))).problems).toEqual([]);
+    // As GET /books/check reads it, read-only at repeatable read, so the books and stock are one snapshot; and only this
+    // item and place, since the check covers every item in the run, other files' included (auditor-2 on #289, RAD-76).
+    const checked = await runInTransaction(db, { readOnly: true, isolation: 'repeatable read' }, staff, randomUUID(), (ctx) => checkBooks(ctx, {}));
+    expect(checked.problems.filter((p) => p.itemId === at.itemId || p.locationId === at.placeId)).toEqual([]);
   });
 });

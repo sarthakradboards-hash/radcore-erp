@@ -16,7 +16,7 @@ import type {
 } from '../contract.ts';
 import { orderDelivered, pickedBatchKey, picksOf, returnedOf } from './delivered.ts';
 import { checkDate, shareOf } from './document-rules.ts';
-import { labelled, today } from './document-lines.ts';
+import { labelled, numberedBatches, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -139,7 +139,7 @@ export async function getDeliveryReturnById(ctx: Ctx, { id }: In<typeof getDeliv
     .from(deliveryReturnLines).where(eq(deliveryReturnLines.returnId, id)).orderBy(asc(deliveryReturnLines.lineNo));
   const names = await partyNames(ctx, [r.partyId]);
   return { ...r, status: r.status as Status, partyName: names.get(r.partyId) ?? '',
-    lines: (await labelled(ctx, lines)).map(({ picks, ...l }) => ({ ...l, ...picksOf(picks) })) };
+    lines: await numberedBatches(ctx, (await labelled(ctx, lines)).map(({ picks, ...l }) => ({ ...l, ...picksOf(picks) }))) };
 }
 
 const stored = (lines: Awaited<ReturnType<typeof checkedLines>>) =>
