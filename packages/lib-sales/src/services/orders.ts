@@ -126,7 +126,15 @@ export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise
  * override is approved for a draft's confirmation, so such a change is a new order (auditor-3 on #278; the architect on
  * RAD-112). A change the checks pass still saves. */
 export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOrder>): Promise<Out<typeof updateOrder>> {
+  // A confirmed order's change is checked and its amounts stored again, as at its confirmation, so it holds the period
+  // first, as confirming does (ADR-006 §1; auditor-2 on #282): the date read unlocked, then the order locked, and it
+  // must still be the confirmed order on that date. A draft's change posts nothing and stores nothing frozen.
+  const seen = await orderOf(ctx, id, 'sales:write');
+  if (seen.status === 'confirmed') await holdPeriod(ctx, seen.businessDate);
   const now = await orderOf(ctx, id, 'sales:write', true);
+  if (now.status === 'confirmed' && (seen.status !== 'confirmed' || now.businessDate !== seen.businessDate)) {
+    throw new AppError('version_changed', 'This order changed while it was being changed: change it again');
+  }
   mayEdit('order', now.status, true);
   if (now.status === 'confirmed' && (input.partyId !== now.partyId || input.businessDate !== now.businessDate)) {
     throw new AppError('wrong_status', 'A confirmed order keeps its party and date; only its lines change');
@@ -145,7 +153,8 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   await tx.update(salesOrders).set({ overrideVersion: null }).where(eq(salesOrders.id, id));
   if (now.status === 'confirmed') {
     await holdParty(ctx, now.partyId); // ADR-006 §1's step 3, after the order and before the check
-    // Its lines changed, so what it stores is worked out again for them, as at its confirmation.
+    // Its lines changed, so what it stores is worked out again for them, as at its confirmation. Every line is, at the
+    // order's own date: an unchanged line comes out the same unless lib-gst's rate for that date was corrected since.
     const a = await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy }).catch((e: unknown) => {
       if (!(e instanceof AppError) || e.code !== 'needs_override') throw e;
       // The way forward (the architect on RAD-112): more goods go on a new order, through its own override; a price or

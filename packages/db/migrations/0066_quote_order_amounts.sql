@@ -67,6 +67,10 @@ ALTER TABLE "radcore"."sales_quotes" ADD CONSTRAINT "ck_sales_quotes_frozen" CHE
 ALTER TABLE "radcore"."sales_quotes" ADD CONSTRAINT "ck_sales_quotes_identity" CHECK ("radcore"."sales_quotes"."total" = "radcore"."sales_quotes"."taxable" + "radcore"."sales_quotes"."cgst" + "radcore"."sales_quotes"."sgst" + "radcore"."sales_quotes"."igst" + "radcore"."sales_quotes"."round_off"
     and abs("radcore"."sales_quotes"."round_off") < 1 and "radcore"."sales_quotes"."cgst" = "radcore"."sales_quotes"."sgst" and ("radcore"."sales_quotes"."igst" = 0 or "radcore"."sales_quotes"."cgst" = 0));
 --> statement-breakpoint
+-- The ck_*_frozen CHECKs above require amounts on every quote that isn't a draft and every order that isn't, and adding
+-- them validates the rows already there (auditor-2 on #282). No deployed database holds sales documents yet: the
+-- prototype waits for M5 (Sarthak). A local database with sent quotes or confirmed orders from before this migration is
+-- dropped and migrated afresh (db:up, then db:migrate), not migrated: their amounts can't be worked out in SQL.
 -- Part of RAD-112 (the architect on RAD-112, ruled on RAD-125): what a quote and an order freeze when sent or confirmed,
 -- their lines' GST rates, tax and totals, kept in the audit trail with the rest of each row (attached again, as 0059 did).
 SELECT radcore.audit_attach('sales_quotes', keep => array['number', 'party_id', 'business_date', 'valid_until', 'status', 'notes',

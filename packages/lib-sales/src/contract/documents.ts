@@ -138,7 +138,8 @@ export const createOrder = defineContract({
  * override (`change_over_checks`): only a draft gets one. */
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
-  input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'change_over_checks', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete'],
+  input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'change_over_checks', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete', 'version_changed',
+    'period_locked', 'year_not_open'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({
