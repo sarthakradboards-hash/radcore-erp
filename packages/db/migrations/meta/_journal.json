@@ -484,6 +484,13 @@
       "when": 1795272229138,
       "tag": "0068_quote_order_amounts",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1795283101777,
+      "tag": "0069_invoice_share",
+      "breakpoints": true
     }
   ]
 }
