@@ -1,29 +1,38 @@
 // Reminders to a party of what it owes (M3-15, RAD-119; the architect's ruling). Each is recorded, append-only, with the
 // amounts as at when it was made; its text carries the party's name and the amounts, and nothing of how to reach them
-// (ADR-001 §7a). Sending it by WhatsApp waits for M7; a link to the oldest overdue bill joins with RAD-118.
+// (ADR-001 §7a). Sending it by WhatsApp waits for M7. Its link to the oldest overdue invoice is made by the module that
+// owns invoices (lib-sales' remindWithLink, RAD-118): the row keeps only the link's id, never its token.
 import { accountsTx, parties, partyManagers, paymentReminders } from '@radcore/db/accounts';
 import { dec, formatDate, formatMoney } from '@radcore/lib-common';
 import { AppError, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { REMINDER_CHANNELS, type listReminders, type recordReminder } from '../contract.ts';
+import { REMINDER_CHANNELS, type listReminders, type NO_LINK_REASONS, type recordReminder } from '../contract.ts';
 import { partyOwed } from './collect.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 const channelOf = z.enum(REMINDER_CHANNELS);
 
+/** A reminder's link, or why there's none. */
+export type ReminderLink = { link: { id: string; path: string; expiresAt: string } | null; noLink: (typeof NO_LINK_REASONS)[number] | null };
+/** Makes the link for a reminder from the party's open bills, the oldest due first. */
+export type ReminderLinkFor = (ctx: Ctx, bills: readonly { table: string; id: string }[]) => Promise<ReminderLink>;
+
 /** POST /parties/:id/reminders. A reminder answers with the amounts, so it needs receivables:read too (RC-042). */
-export async function remind(ctx: Ctx, { id, channel, note }: In<typeof recordReminder>): Promise<Out<typeof recordReminder>> {
+export async function remind(ctx: Ctx, { id, channel, note }: In<typeof recordReminder>, linkFor: ReminderLinkFor): Promise<Out<typeof recordReminder>> {
   if (!ctx.can('receivables:read')) throw new AppError('forbidden', 'A reminder shows what the party owes: it needs receivables:read');
-  const { party, owed } = await partyOwed(ctx, id, 'receivables:remind');
+  const { party, owed, bills } = await partyOwed(ctx, id, 'receivables:remind');
   if (!dec(owed.outstanding).gt(0)) throw new AppError('nothing_owed', 'This party owes nothing to remind them of');
+  const { link, noLink } = await linkFor(ctx, [...bills].sort((a, b) => a.due.localeCompare(b.due) || a.date.localeCompare(b.date)));
   const [row] = await accountsTx(ctx).insert(paymentReminders).values({ partyId: party.id, outstanding: owed.outstanding, overdue: owed.overdue,
-    oldestDue: owed.oldestDue, channel, note: note ?? null }).returning({ id: paymentReminders.id, asAt: paymentReminders.asAt });
+    oldestDue: owed.oldestDue, channel, note: note ?? null, linkId: link?.id ?? null })
+    .returning({ id: paymentReminders.id, asAt: paymentReminders.asAt });
   if (row === undefined) throw new Error('The reminder was not stored');
   const overdue = owed.oldestDue === null ? '' : `, of which ${formatMoney(owed.overdue)} has been due since ${formatDate(owed.oldestDue)}`;
   return { id: row.id, asAt: row.asAt.toISOString(), channel, note: note ?? null, outstanding: owed.outstanding, overdue: owed.overdue,
-    oldestDue: owed.oldestDue, text: `${party.name}: ${formatMoney(owed.outstanding)} is outstanding${overdue}.` };
+    // The text names no link: the screen adds its own origin to link.path when it sends one.
+    oldestDue: owed.oldestDue, text: `${party.name}: ${formatMoney(owed.outstanding)} is outstanding${overdue}.`, link, noLink };
 }
 
 /** GET /parties/:id/reminders: the latest first. shortcut: paged by position, as a party's reminders are few. */

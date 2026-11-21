@@ -2,7 +2,7 @@
 // of accounts and journal (RAD-86), and what parties owe (RAD-119).
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
-  partyStatement, remind, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage,
+  partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, reverseAllocationContract,
@@ -10,6 +10,7 @@ import {
   getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
 } from '@radcore/lib-accounts/contract';
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
+import { remindWithLink } from '@radcore/lib-sales';
 
 export default [
   defineRoute(getCompany, getCompanyProfile),
@@ -18,7 +19,8 @@ export default [
   defineRoute(getParty, getPartyById),
   defineRoute(getPartyStatement, partyStatement),
   defineRoute(listToCollect, toCollectPage),
-  defineRoute(recordReminder, remind),
+  // lib-accounts' contract, served by lib-sales: the reminder's invoice link is lib-sales' (RAD-119).
+  defineRoute(recordReminder, remindWithLink),
   defineRoute(listReminders, remindersPage),
   defineRoute(createParty, addParty),
   defineRoute(updateParty, changeParty),
