@@ -9,7 +9,10 @@ import { moneyString, percentString, quantityString, unitPriceString } from '@ra
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { addDelivery, addOrder, CARD_ACCOUNT, confirmOrderNow, getInvoiceById, getOrderById, postDeliveryNow, quickBill } from '@radcore/lib-sales';
+import {
+  addDelivery, addInvoice, addOrder, CARD_ACCOUNT, confirmOrderNow, getDeliveryById, getInvoiceById, getOrderById, postDeliveryNow, postInvoiceNow,
+  quickBill,
+} from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
 import { sql } from 'drizzle-orm';
@@ -19,6 +22,7 @@ import { createApp, listen } from '../apps/api/src/app.ts';
 import accountsRoutes from '../apps/api/src/routes/accounts.ts';
 import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { rawOf } from '../packages/db/src/tx.ts';
+import { deliveredNotInvoiced } from '../packages/lib-sales/src/services/delivered.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -185,6 +189,34 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     });
     const paid = await atCounter(half, async (ctx) => (await bill(ctx, half, '1', [cash('363')], partyId)).total);
     expect([...out, paid]).toEqual(['362.00', 'needs_override', '363.00']);
+  });
+
+  // backend-3 on RAD-115: each delivery's net (out, less back, less billed) is rounded, never its total less what's
+  // billed, so a delivery invoiced whole counts exactly 0 and one invoiced in part rounds what's left.
+  it('counts a delivery with paise to the rupee while it waits, half of it once half is invoiced, and 0.00 once all is', async () => {
+    const at = await setup({ rate: '345' });
+    const partyId = await named('27', '100000');
+    const out = await atCounter(at, async (ctx) => {
+      const { id: orderId } = await addOrder(ctx, { partyId, businessDate: DATE, notes: null, lines: [{ itemId: at.itemId, qty: q('3'),
+        rate: unitPriceString().parse('345'), discountPercent: percentString({ max: '100' }).parse('0') }] });
+      await confirmOrderNow(ctx, { id: orderId });
+      const orderLineId = (await getOrderById(ctx, { id: orderId })).lines[0]?.id ?? '';
+      const { id } = await addDelivery(ctx, { orderId, locationId: at.placeId, businessDate: DATE, notes: null,
+        lines: [{ orderLineId, qty: q('3'), batches: [{ batchId: at.batchId, qty: q('3') }], serials: [] }] });
+      await postDeliveryNow(ctx, { id });
+      const lineId = (await getDeliveryById(ctx, { id })).lines[0]?.id ?? '';
+      const invoice = async (qty: string) => {
+        const { id: invoiceId } = await addInvoice(ctx, { partyId, businessDate: DATE, notes: null, shipTo: null, lines: [{ deliveryLineId: lineId, qty: q(qty) }] });
+        await postInvoiceNow(ctx, { id: invoiceId });
+      };
+      const seen = [await deliveredNotInvoiced(ctx, partyId)];
+      await invoice('2');
+      seen.push(await deliveredNotInvoiced(ctx, partyId));
+      await invoice('1');
+      return [...seen, await deliveredNotInvoiced(ctx, partyId)];
+    });
+    // 3 × 362.25 = 1,086.75 waits as 1,087.00; with 2 invoiced, 362.25 waits as 362.00; with all, nothing.
+    expect(out).toEqual(['1087.00', '362.00', '0.00']);
   });
 
   it('keeps the Counter customer to the quick bill: an order of its own is refused', async () => {
