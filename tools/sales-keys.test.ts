@@ -1,9 +1,10 @@
 // RAD-112 (Sarthak, 20 Nov: the sales keys stay "changeable like dynamic", "by owner and admin"): sales:read, sales:write,
-// sales:override, deliveries:write, invoices:write and invoices:cancel are ordinary catalogue keys, with no role they're held to, and the migrations'
+// sales:override, deliveries:write, invoices:write, invoices:cancel and the credit_notes keys are ordinary catalogue keys, with no role they're held to, and the migrations'
 // grants are only where the roles start. An owner gives a role any of the last four on the roles screen
 // and takes it away again, each step seen by the database. Done inside transactions that roll back, so the shared database's grants stay as shipped.
 // An override lets a sale past its checks, so a role holding sales:override needs the second factor (D-19, Sarthak on
-// 20 Nov), as prices:approve does: without it, its holder can't sign in to approve one.
+// 20 Nov), as prices:approve does: without it, its holder can't sign in to approve one. So does credit_notes:approve,
+// whose approval posts a note and pays its refund (RAD-114; Sarthak, 20 Nov).
 import { randomBytes, randomUUID } from 'node:crypto';
 import { platformTx, roleGrants } from '@radcore/db/platform';
 import { AppError, roleNeedsSecondFactor, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -20,8 +21,8 @@ const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const SYSTEM: Principal = { kind: 'system', name: 'test', permissions: [] };
 // In the catalogue's order.
-const SALES_KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'deliveries:cancel', 'invoices:write', 'invoices:cancel', 'credit_notes:cancel',
-  'sales:override'];
+const SALES_KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'deliveries:cancel', 'invoices:write', 'invoices:cancel', 'credit_notes:write',
+  'credit_notes:approve', 'credit_notes:cancel', 'sales:override'];
 class Rollback extends Error {}
 
 it('declares the sales keys as ordinary catalogue keys, held to no role', () => {
@@ -29,8 +30,8 @@ it('declares the sales keys as ordinary catalogue keys, held to no role', () => 
   expect(keys.map((p) => [p.key, p.onlyRoles, p.allOnly])).toEqual(SALES_KEYS.map((k) => [k, undefined, undefined]));
 });
 
-it('marks sales:override as a key that needs the second factor, and the others not', () => {
-  expect(SALES_KEYS.map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([false, false, false, false, false, false, false, true]);
+it('marks sales:override and credit_notes:approve as keys that need the second factor, and the others not', () => {
+  expect(SALES_KEYS.map((k) => SECOND_FACTOR_KEYS.includes(k))).toEqual([false, false, false, false, false, false, false, true, false, true]);
 });
 
 describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
@@ -42,14 +43,14 @@ describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
     await su.end();
   });
 
-  it('asks the second factor of someone whose role holds sales:override, whatever the role says (D-19)', async () => {
+  it.each(['sales:override', 'credit_notes:approve'])('asks the second factor of someone whose role holds %s, whatever the role says (D-19)', async (key) => {
     const role = `t_${[...randomBytes(10)].map((b) => String.fromCharCode(97 + (b % 26))).join('')}`;
     const c = await su.connect();
     try {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
       await c.query("insert into radcore.roles (key, name, description) values ($1, $1, 'For sales-keys.test.ts')", [role]);
-      await c.query("insert into radcore.role_grants (role, permission, scope) values ($1, 'session:read', 'all'), ($1, 'sales:override', 'all')", [role]);
+      await c.query("insert into radcore.role_grants (role, permission, scope) values ($1, 'session:read', 'all'), ($1, $2, 'all')", [role, key]);
       const { rows } = await c.query<{ id: string }>(`insert into radcore.users (email, display_name, status, password_hash, role)
         values ($1, 'Test', 'active', 'x', $2) returning id`, [`sales.${randomUUID()}@example.test`, role]);
       await c.query('commit');
@@ -60,7 +61,8 @@ describe.skipIf(!url || !superUrl)('the sales keys on the roles screen', () => {
   });
 
   // The sales role starts with none of these keys (the migrations' grants).
-  it.each(['sales:override', 'deliveries:write', 'deliveries:cancel', 'invoices:write', 'invoices:cancel', 'credit_notes:cancel'])('lets an owner give a role %s, and take it away again', async (key) => {
+  it.each(['sales:override', 'deliveries:write', 'deliveries:cancel', 'invoices:write', 'invoices:cancel', 'credit_notes:write', 'credit_notes:approve',
+    'credit_notes:cancel'])('lets an owner give a role %s, and take it away again', async (key) => {
     // As a named system principal, as every write needs one (RA005).
     const { rows: [user] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
       insert into radcore.users (email, display_name, status, password_hash, password_set_at, role)

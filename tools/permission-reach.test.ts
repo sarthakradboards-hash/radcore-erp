@@ -195,6 +195,7 @@ const DB_BACKSTOPS: Record<string, string> = {
   'RA006:allocation_payment_not_posted': 'allocatePayment says not_posted first, under the payment’s lock',
   'RA006:allocatable_document_shape': 'raised only by a migration registering a table',
   'RA006:invoice_lines_total': 'postInvoiceNow writes the header from the same figures as its lines (invoice-rules’ totalsOf); a backstop for any other path',
+  'RA006:credit_note_lines_total': 'a credit note’s posting writes the header from the same figures as its lines (invoice-rules’ totalsOf); a backstop for any other path',
 };
 
 describe('the manifest’s reach', () => {
