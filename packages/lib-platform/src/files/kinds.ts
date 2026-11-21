@@ -13,6 +13,12 @@ export const FILE_KINDS = {
   // items keys, not file keys of their own.
   item_picture: { maxBytes: 5 * MB, types: ['image/jpeg', 'image/png', 'image/webp'], view: true,
     perms: { read: 'items:read', write: 'items:write' } },
+  // A delivered booking's checklist (RAD-117, RC-208; the architect): its photo and its signed note, kept with the
+  // bookings keys, since the checklist is the booking's. Downloaded, not viewed: HEIC can't show in a page.
+  delivery_photo: { maxBytes: 10 * MB, types: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
+    perms: { read: 'bookings:read', write: 'bookings:write' } },
+  delivery_note: { maxBytes: 10 * MB, types: ['application/pdf', 'image/jpeg', 'image/png'],
+    perms: { read: 'bookings:read', write: 'bookings:write' } },
 } as const satisfies Record<string, { maxBytes: number; types: readonly string[]; view?: true;
   perms?: { read: string; write: string } }>;
 

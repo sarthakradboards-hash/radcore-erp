@@ -505,6 +505,13 @@
       "when": 1795285243676,
       "tag": "0071_invoice_line_condition",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1795286134695,
+      "tag": "0072_test_rides",
+      "breakpoints": true
     }
   ]
 }
