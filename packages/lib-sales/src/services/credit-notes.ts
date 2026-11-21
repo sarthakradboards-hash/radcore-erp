@@ -12,7 +12,7 @@ import type { createCreditNote, deleteCreditNote, getCreditNote, listCreditNotes
 import { creditLine, type CreditFigures } from './credit-note-rules.ts';
 import { creditedOf, pickedBatchKey, picksOf, returnedOf, type Picks } from './delivered.ts';
 import { checkDate } from './document-rules.ts';
-import { today } from './document-lines.ts';
+import { labelled, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -135,8 +135,8 @@ export async function listCreditNotesPage(ctx: Ctx, input: In<typeof listCreditN
   };
 }
 
-/** GET /sales/credit-notes/:id (sales:read). */
-export async function getCreditNoteById(ctx: Ctx, { id }: In<typeof getCreditNote>): Promise<Out<typeof getCreditNote>> {
+/** GET /sales/credit-notes/:id (sales:read), but for where its approval stands (credit-note-post.ts's getCreditNoteById). */
+export async function creditNoteShown(ctx: Ctx, { id }: In<typeof getCreditNote>): Promise<Omit<Out<typeof getCreditNote>, 'approval'>> {
   const c = await noteOf(ctx, id, 'sales:read');
   const lines = await salesTx(ctx).select().from(creditNoteLines).where(eq(creditNoteLines.creditNoteId, id)).orderBy(asc(creditNoteLines.lineNo));
   const names = await partyNames(ctx, [c.partyId]);
@@ -144,7 +144,8 @@ export async function getCreditNoteById(ctx: Ctx, { id }: In<typeof getCreditNot
     businessDate: c.businessDate, status: c.status as Status, total: c.total, locationId: c.locationId, reason: c.reason,
     refund: c.refundAmount === null || c.refundAccountId === null ? null : { amount: roundMoney(c.refundAmount), accountId: c.refundAccountId },
     late: c.late, taxable: c.taxable, cgst: c.cgst, sgst: c.sgst, igst: c.igst, roundOff: c.roundOff,
-    lines: lines.map((l) => ({ id: l.id, lineNo: l.lineNo, invoiceLineId: l.invoiceLineId, itemId: l.itemId, qty: l.qty, taxable: l.taxable,
+    lines: (await labelled(ctx, lines)).map((l) => ({ id: l.id, lineNo: l.lineNo, invoiceLineId: l.invoiceLineId, itemId: l.itemId,
+      sku: l.sku, name: l.name, qty: l.qty, taxable: l.taxable,
       gstRate: l.gstRate, gstRateSource: l.gstRateSource, cgst: l.cgst, sgst: l.sgst, igst: l.igst, lineTotal: l.lineTotal, cost: l.cost,
       ...(l.picks === null ? { batches: [], serials: [] } : picksOf(l.picks)) })) };
 }
