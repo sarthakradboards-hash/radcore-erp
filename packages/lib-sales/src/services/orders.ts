@@ -19,6 +19,7 @@ import { amountsForRead, frozenHeader, frozenLine, type Amounts } from './docume
 import { hasDeliveries, invoicedOf, netDelivered, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
+import { labelled } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -75,6 +76,7 @@ export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Pr
   const rows = await salesTx(ctx).select(header).from(salesOrders).where(and(
     input.filter.status === undefined ? undefined : eq(salesOrders.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(salesOrders.partyId, input.filter.partyId),
+    input.filter.quoteId === undefined ? undefined : eq(salesOrders.quoteId, input.filter.quoteId),
     listScope(ctx, 'sales:read', salesOrders.createdBy),
     after([salesOrders.businessDate, salesOrders.id], key && [key.date, key.id], 'desc'),
   )).orderBy(desc(salesOrders.businessDate), desc(salesOrders.id)).limit(input.limit + 1);
@@ -97,8 +99,9 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promi
   const [delivered, invoiced] = [await netDelivered(ctx, ids), await invoicedOf(ctx, ids)];
   const names = await partyNames(ctx, [row.partyId]);
   return { ...row, partyName: names.get(row.partyId) ?? '', amounts: worked.amounts,
-    lines: lines.map((l, i) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent,
-      amounts: worked.lines[i] ?? null, delivered: delivered.get(l.id) ?? '0', invoiced: invoiced.get(l.id) ?? '0' })) };
+    lines: (await labelled(ctx, lines)).map((l, i) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: l.sku, name: l.name, qty: l.qty,
+      rate: l.rate, discountPercent: l.discountPercent, amounts: worked.lines[i] ?? null, delivered: delivered.get(l.id) ?? '0',
+      invoiced: invoiced.get(l.id) ?? '0' })) };
 }
 
 /** POST /sales/orders (sales:write): a draft. */

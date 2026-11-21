@@ -263,9 +263,9 @@ sums.
   end up at what they really cost (F15).
 - **An accepted approximation.** If over-sold goods come back later (a credit note, a delivery taken back, or a
   delivery cancelled), they return at the value they went out at, which includes the estimate, and the receipt's
-  revaluation stands (RAD-114). The revaluation is already in Cost of
-  Goods Sold, so stock is under by that difference until those units sell again, when their cost is lower by the
-  same amount. It needs a return of over-sold goods, and it's bounded by the estimate's error.
+  revaluation stands (RAD-114). The revaluation is already in Cost of Goods Sold, so stock is under by that
+  difference until those units sell again, when their cost is lower by the same amount. It needs a return of
+  over-sold goods, and it's bounded by the estimate's error.
 
 **A bill's price difference (M4-03).** A bill's goods amount can differ from what the receipt accrued at the order
 rate. The difference d, plus any input GST that can't be claimed (M4-04), is split by what is still on hand: Q is

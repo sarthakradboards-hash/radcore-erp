@@ -24,7 +24,9 @@ const lineAmounts = z.object({ gstRate: z.string(), gstRateSource: z.string(), t
 /** The document's place of supply and totals, rounded to the rupee as an invoice's; none as for its lines. */
 const amounts = z.object({ placeOfSupply: z.string(), taxable: moneyString(), cgst: moneyString(), sgst: moneyString(),
   igst: moneyString(), roundOff: z.string(), total: moneyString() }).nullable();
-const lineOut = lineIn.extend({ id: idString(), lineNo: z.number().int().positive(), amounts: lineAmounts });
+// A line as answered, with its item's SKU and name, so a screen needn't look each item up (RAD-125), and its amounts.
+const lineOut = lineIn.extend({ id: idString(), lineNo: z.number().int().positive(), sku: z.string(), name: z.string(),
+  amounts: lineAmounts });
 const lines = () => z.array(lineIn).min(1, 'Add at least one line').max(200, 'At most 200 lines');
 const notes = () => z.string().trim().max(500).nullable();
 
@@ -47,10 +49,18 @@ export const listQuotes = defineContract({
   input: listInput(z.object({ status: z.enum(SALES_QUOTE_STATUSES).optional(), partyId: idString().optional() })),
   output: listOf(quoteRow),
 });
-/** One quote with its lines. */
+/** How many quotes are in each status, within the principal's scope as the list is: a screen's count cards (ADR-001,
+ * RC-176: a list has no total). A party's own when `partyId` is given. */
+export const countQuotes = defineContract({
+  method: 'GET', path: '/sales/quote-counts', auth: 'session', perm: 'sales:read', tx: read,
+  input: z.object({ partyId: idString().optional() }),
+  output: z.object({ byStatus: z.record(z.enum(SALES_QUOTE_STATUSES), z.number().int().nonnegative()) }),
+});
+/** One quote with its lines, and the order it became (`orderId`, read through the order's quote_id; null when there's
+ * none, or it's an order the principal may not open). */
 export const getQuote = defineContract({
   method: 'GET', path: '/sales/quotes/:id', auth: 'session', perm: 'sales:read', tx: read,
-  input: z.object({ id: idString() }), output: quote,
+  input: z.object({ id: idString() }), output: quote.extend({ orderId: idString().nullable() }),
 });
 /** A new draft quote. */
 export const createQuote = defineContract({
@@ -96,11 +106,18 @@ const order = z.object({
 const orderIn = z.object({ partyId: idString(), businessDate: dateString(), notes: notes(), lines: lines() });
 const orderRow = order.omit({ lines: true, amounts: true }).extend({ total: moneyString().nullable() });
 
-/** Orders, newest first, a page at a time. */
+/** Orders, newest first, a page at a time. `quoteId` is the orders a quote became (RAD-125's link from a quote). */
 export const listOrders = defineContract({
   method: 'GET', path: '/sales/orders', auth: 'session', perm: 'sales:read', tx: read,
-  input: listInput(z.object({ status: z.enum(SALES_ORDER_STATUSES).optional(), partyId: idString().optional() })),
+  input: listInput(z.object({ status: z.enum(SALES_ORDER_STATUSES).optional(), partyId: idString().optional(), quoteId: idString().optional() })),
   output: listOf(orderRow),
+});
+/** How many orders are in each status, within the principal's scope as the list is: a screen's count cards. A party's
+ * own when `partyId` is given. */
+export const countOrders = defineContract({
+  method: 'GET', path: '/sales/order-counts', auth: 'session', perm: 'sales:read', tx: read,
+  input: z.object({ partyId: idString().optional() }),
+  output: z.object({ byStatus: z.record(z.enum(SALES_ORDER_STATUSES), z.number().int().nonnegative()) }),
 });
 /** One order with its lines. */
 export const getOrder = defineContract({

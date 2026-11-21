@@ -3,7 +3,7 @@
 import { getPartyById } from '@radcore/lib-accounts';
 import { indiaDate } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
-import { checkQuantity } from '@radcore/lib-stock';
+import { checkQuantity, itemLabels } from '@radcore/lib-stock';
 
 export type LineIn = { itemId: string; qty: string; rate: string; discountPercent: string };
 
@@ -36,4 +36,10 @@ export async function checkedLines(ctx: Ctx, lines: readonly LineIn[]): Promise<
     });
   }
   return lines.map((l, i) => ({ ...l, lineNo: i + 1 }));
+}
+
+/** Each line with its item's SKU and name, in one read of lib-stock's items (RAD-125). An item gone since shows empty. */
+export async function labelled<L extends { itemId: string }>(ctx: Ctx, lines: readonly L[]): Promise<(L & { sku: string; name: string })[]> {
+  const labels = await itemLabels(ctx, lines.map((l) => l.itemId));
+  return lines.map((l) => ({ ...l, sku: labels.get(l.itemId)?.sku ?? '', name: labels.get(l.itemId)?.name ?? '' }));
 }

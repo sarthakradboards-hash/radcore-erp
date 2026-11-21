@@ -10,7 +10,7 @@ import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   acceptQuoteNow, addOrder, addQuote, askOrderOverride, orderOverride, cancelOrderNow, changeOrder, changeQuote, closeOrderNow, confirmOrderNow, getOrderById, getQuoteById,
-  listOrdersPage, sendQuoteNow,
+  listOrdersPage, orderCounts, quoteCounts, sendQuoteNow,
 } from '@radcore/lib-sales';
 import { putGstRate } from '@radcore/lib-gst';
 import { addCategory, addItem } from '@radcore/lib-stock';
@@ -83,6 +83,40 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     expect(await code(run((ctx) => acceptQuoteNow(ctx, { id, businessDate: DATE })))).toBe('wrong_status');
     // Priced from the party's list like any order (auditor-2 on #254): it confirms with no override needed.
     expect((await run((ctx) => confirmOrderNow(ctx, { id: orderId }))).number).toMatch(/^SO\//);
+  });
+
+  it('counts quotes and orders by status in the list’s scope, lists a quote’s orders, and names each line’s item (RAD-125)', async () => {
+    const at = await setup();
+    const mine = person(['sales:read', 'sales:write']);
+    const make = (as: Principal = staff) => run((ctx) => addQuote(ctx, { partyId: at.partyId, businessDate: DATE, validUntil: null,
+      notes: null, lines: [line(at.itemId)] }), as);
+    const { id: sent } = await make();
+    await run((ctx) => sendQuoteNow(ctx, { id: sent }));
+    const { id: other } = await make();
+    const { id: theirs } = await make(mine);
+    const { orderId } = await run((ctx) => acceptQuoteNow(ctx, { id: sent, businessDate: DATE }));
+    // Every status is answered, 0 where none; someone who works only their own counts only their own.
+    expect((await run((ctx) => quoteCounts(ctx, { partyId: at.partyId }))).byStatus)
+      .toEqual({ draft: 2, sent: 0, accepted: 1, declined: 0, expired: 0 });
+    expect((await run((ctx) => quoteCounts(ctx, { partyId: at.partyId }), mine)).byStatus)
+      .toEqual({ draft: 1, sent: 0, accepted: 0, declined: 0, expired: 0 });
+    expect((await run((ctx) => orderCounts(ctx, { partyId: at.partyId }))).byStatus).toEqual({ draft: 1, confirmed: 0, closed: 0, cancelled: 0 });
+    expect((await run((ctx) => orderCounts(ctx, { partyId: at.partyId }), mine)).byStatus).toEqual({ draft: 0, confirmed: 0, closed: 0, cancelled: 0 });
+    // The orders a quote became, and none for one that became none.
+    const ordersOf = async (quoteId: string) => (await run((ctx) => listOrdersPage(ctx, { filter: { quoteId }, limit: 50 }))).items.map((o) => o.id);
+    expect([await ordersOf(sent), await ordersOf(other)]).toEqual([[orderId], []]);
+    // And the quote names the order it became, but not to someone who may not open that order.
+    expect([(await run((ctx) => getQuoteById(ctx, { id: sent }))).orderId, (await run((ctx) => getQuoteById(ctx, { id: other }))).orderId])
+      .toEqual([orderId, null]);
+    // Their own quote, which staff sent and accepted into an order of staff's: they see the quote, not the order.
+    await run((ctx) => sendQuoteNow(ctx, { id: theirs }));
+    const { orderId: staffs } = await run((ctx) => acceptQuoteNow(ctx, { id: theirs, businessDate: DATE }));
+    expect([(await run((ctx) => getQuoteById(ctx, { id: theirs }), mine)).orderId, (await run((ctx) => getQuoteById(ctx, { id: theirs }))).orderId])
+      .toEqual([null, staffs]);
+    // Each line names its item, so a screen needn't look items up line by line.
+    const named = (lines: readonly { sku: string; name: string }[]) => lines.map((l) => [l.sku.startsWith('Q-'), l.name]);
+    expect(named((await run((ctx) => getQuoteById(ctx, { id: sent }))).lines)).toEqual([[true, 'Electric scooter']]);
+    expect(named((await run((ctx) => getOrderById(ctx, { id: orderId }))).lines)).toEqual([[true, 'Electric scooter']]);
   });
 
   // A person, made now in a transaction of its own, as the approval engine reads their account's age (RAD-38).
