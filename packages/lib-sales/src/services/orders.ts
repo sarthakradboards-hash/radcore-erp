@@ -123,7 +123,8 @@ export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise
 
 /** PUT /sales/orders/:id (sales:write): a draft, or a confirmed order's lines through the checks again (§1). A
  * confirmed order whose new lines the checks would stop is refused (`change_over_checks`, naming each issue): an
- * override is approved for a draft's confirmation, so such a change is a new order (auditor-3 on #278). */
+ * override is approved for a draft's confirmation, so such a change is a new order (auditor-3 on #278; the architect on
+ * RAD-112). A change the checks pass still saves. */
 export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOrder>): Promise<Out<typeof updateOrder>> {
   const now = await orderOf(ctx, id, 'sales:write', true);
   mayEdit('order', now.status, true);
@@ -147,8 +148,10 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
     // Its lines changed, so what it stores is worked out again for them, as at its confirmation.
     const a = await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy }).catch((e: unknown) => {
       if (!(e instanceof AppError) || e.code !== 'needs_override') throw e;
-      throw new AppError('change_over_checks', 'These lines need an override, which only a draft order gets: close this order short and raise a new one',
-        e.issues);
+      // The way forward (the architect on RAD-112): more goods go on a new order, through its own override; a price or
+      // discount the checks refuse means closing this one short and raising it again.
+      throw new AppError('change_over_checks', 'This order keeps its lines: these need an override, which only a draft order gets. '
+        + 'Put extra goods on a new order, or close this one short and raise it again for a new price or discount', e.issues);
     });
     await freezeLines(ctx, id, a);
     await tx.update(salesOrders).set(frozenHeader(a)).where(eq(salesOrders.id, id));
