@@ -97,6 +97,9 @@ describe.skipIf(!url || !superUrl)('stock on hand', { timeout: 30_000 }, () => {
     // Each unit says its condition, so a used one is picked knowingly (the architect on RAD-112).
     await change([{ kind: 'condition_changed', itemId: at.itemId, serialNo: free ?? '', condition: 'used' }]);
     expect(((await read(at.itemId, at.showroom)).units?.items ?? []).map((u) => [u.serialNo, u.condition])).toEqual([[free, 'used']]);
+    // Each unit names its batch, so the delivery form fills a serialised line's batches from the units picked (ui-2's #291).
+    const { rows: [b1] } = await su.query<{ id: string }>("select id from radcore.batches where item_id = $1 and batch_no = 'B1'", [at.itemId]);
+    expect(((await read(at.itemId, at.showroom)).units?.items ?? []).map((u) => [u.batchId, u.batchNo])).toEqual([[b1?.id, 'B1']]);
     // A delivery naming the damaged unit is refused at posting, whatever the picker showed (unit_damaged).
     const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => String((e as { code?: string }).code ?? e));
     expect(await code(post({ outs: [{ itemId: at.itemId, locationId: at.showroom, sourceLineId: randomUUID(), qty: q('1'),
