@@ -470,6 +470,13 @@
       "when": 1795266778801,
       "tag": "0066_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795270424937,
+      "tag": "0067_vehicle_bookings",
+      "breakpoints": true
     }
   ]
 }
