@@ -57,7 +57,8 @@ test('without cost:read the audit trail shows a price as "Hidden", never as the 
   await expect(change).toContainText('purchase_price');
   await expect(change.locator('dd').filter({ hasText: '→' })).toContainText(/Hidden.*→.*Hidden/s);
   await expect(rows.filter({ hasText: 'Added' })).toContainText('Hidden');
-  const text = (await rows.allInnerTexts()).join('\n').replace(UUID, '<id>'); // an id can hold digits like 1300
+  // Ids out, and this run's tag (it's in the item's SKU and name): either can hold digits like 1300 (auditor's NIT).
+  const text = (await rows.allInnerTexts()).join('\n').replace(UUID, '<id>').replaceAll(R, '<run>');
   expect(text).not.toMatch(/1250|1300/);
   expect(text).not.toContain('masked');
   await expectAccessible(page);

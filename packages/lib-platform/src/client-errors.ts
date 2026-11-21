@@ -19,7 +19,8 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accou
   '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/number-series', '/admin/parties', '/admin/parties/[id]',
   '/admin/permissions', '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
   '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/invite', '/kit', '/password-reset',
-  '/password-reset/new',
+  '/password-reset/new', '/sales/orders', '/sales/orders/[id]', '/sales/orders/[id]/edit', '/sales/orders/new', '/sales/quotes',
+  '/sales/quotes/[id]', '/sales/quotes/[id]/edit', '/sales/quotes/new',
   '/sign-in'] as const;
 
 /** The error classes an alert may name; any other is counted as `Error`. */

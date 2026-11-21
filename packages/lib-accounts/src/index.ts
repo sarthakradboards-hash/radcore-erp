@@ -12,6 +12,8 @@ export {
   type HeldFor,
 } from './services/payments.ts';
 export { partyReceivable } from './services/receivables.ts';
+export { partyStatement, toCollectPage } from './services/collect.ts';
+export { remind, remindersPage } from './services/reminders.ts';
 export {
   allocatePayment, applyCredit, paidOf, reverseAllocation, reverseCreditApplication,
 } from './services/allocations.ts';
