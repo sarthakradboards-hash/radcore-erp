@@ -18,6 +18,12 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /invites/accept': 'public',
   // The browser's error report (RC-158): public, so a signed-out page reports too; its own per-address limit.
   'POST /client-errors': 'public',
+  // The public enquiry form's one door, with the captcha (RAD-107, RC-054).
+  'POST /public/enquiries': 'public',
+  // Provider webhooks (RAD-107): each proved by the provider's own check under its stored secret.
+  'POST /hooks/google-leads': 'webhook',
+  'POST /hooks/meta-leads': 'webhook',
+  'POST /hooks/whatsapp': 'webhook',
   // Your own account (RAD-32, RAD-33, RAD-34, RAD-47): session:read, which every role holds.
   'POST /sign-out': 'session:read',
   'GET /me': 'session:read',
@@ -246,6 +252,10 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'platform.invite-email': 'system invites []',
   'platform.export': 'user <by input>',
   'crm.follow-ups-due': 'system follow-ups-due [leads:read]',
+  'crm.form-enquiry': 'system enquiry-form [leads:read, leads:write]',
+  'crm.google-lead': 'system google-leads [leads:read, leads:write]',
+  'crm.meta-lead': 'system meta-leads [leads:read, leads:write]',
+  'crm.whatsapp-message': 'system whatsapp [leads:read, leads:write]',
 };
 
 /** Which libraries each route's and job's own code reaches (RAD-84, M1-19, RC-153), keyed as above: the library of the
@@ -257,6 +267,8 @@ const PLATFORM = ['lib-platform'];
 const STOCK = ['lib-platform', 'lib-stock'];
 const HR = ['lib-hr', 'lib-platform'];
 const CRM = ['lib-crm', 'lib-platform'];
+// lib-crm's outside doors parse with lib-integrations (RAD-107).
+const CRM_DOORS = ['lib-crm', 'lib-integrations', 'lib-platform'];
 const SETTINGS = ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
@@ -469,6 +481,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /leads/:id/plan': CRM,
   'POST /leads/:id/quick-reply': CRM,
   'POST /leads/:id/owner': CRM,
+  'POST /public/enquiries': CRM_DOORS,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,
@@ -481,4 +494,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // lib-stock's entry holds its stock engine too, which posts revaluations through lib-accounts (RAD-93).
   'platform.export': ['lib-accounts', 'lib-hr', 'lib-platform', 'lib-stock'],
   'crm.follow-ups-due': CRM,
+  'crm.form-enquiry': CRM_DOORS,
+  'crm.google-lead': CRM_DOORS,
+  'crm.meta-lead': CRM_DOORS,
+  'crm.whatsapp-message': CRM_DOORS,
 };

@@ -14,6 +14,7 @@ import { cruise } from 'dependency-cruiser';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { settingsRoutes } from '../apps/api/src/catalogue.ts';
+import { createEnquiryForm } from '@radcore/lib-crm';
 import { apiRoutes } from '../apps/api/src/routes.ts';
 import { workerJobs } from '../apps/worker/src/worker-jobs.ts';
 import { ROUTE_REACH } from './permission-manifest.ts';
@@ -205,13 +206,13 @@ describe('the manifest’s reach', () => {
     const clientErrors = createClientErrors(log);
     let routes: readonly Route[];
     try {
-      routes = apiRoutes(auth, clientErrors);
+      routes = apiRoutes(auth, clientErrors, createEnquiryForm({ outbound: { request: () => Promise.reject(new Error('no network in this test')) }, secret: 'unused' }));
     } finally {
       await auth.store.stop();
     }
     const jobs: readonly JobDefinition[] = workerJobs({ mailer: { send: async () => undefined }, publicOrigin: cfg.publicOrigin });
     const routeFiles = entriesOf(LISTS.api, { 'auth.routes': auth.routes.length, 'clientErrors.routes': clientErrors.routes.length,
-      settingsRoutes: settingsRoutes.length });
+      settingsRoutes: settingsRoutes.length, 'enquiryForm.routes': 1 });
     const jobFiles = entriesOf(LISTS.worker, {});
     expect([routeFiles.length, jobFiles.length]).toEqual([routes.length, jobs.length]);
     const keys = [...routes.map((r) => `${r.contract.method} ${r.contract.path}`), ...jobs.map((j) => j.name)];
@@ -225,9 +226,9 @@ describe('the manifest’s reach', () => {
 
   it('reads each route file as the api mounts it, and finds the service’s own file', () => {
     // files.ts's first route is the photo upload, served by lib-platform's files engine.
-    const [first] = entriesOf(LISTS.api, { 'auth.routes': 0, 'clientErrors.routes': 0, settingsRoutes: 0 });
+    const [first] = entriesOf(LISTS.api, { 'auth.routes': 0, 'clientErrors.routes': 0, settingsRoutes: 0, 'enquiryForm.routes': 1 });
     // A list built at start is sized from the runtime by name, wherever it sits; one with no size is refused.
-    expect(() => entriesOf(LISTS.api, {})).toThrow('no runtime size given for auth.routes');
+    expect(() => entriesOf(LISTS.api, {})).toThrow('no runtime size given for enquiryForm.routes');
     expect(first?.some((f) => f.startsWith('packages/lib-platform/src/files/'))).toBe(true);
     expect(readdirSync(join('apps', 'api', 'src', 'routes')).every((f) => f.endsWith('.ts'))).toBe(true);
     // The type checker resolves the route files' symbols on first use: past vitest's 5 s under a full parallel run.
@@ -239,12 +240,12 @@ describe('the manifest’s reach', () => {
     const clientErrors = createClientErrors(log);
     let routes: readonly Route[];
     try {
-      routes = apiRoutes(auth, clientErrors);
+      routes = apiRoutes(auth, clientErrors, createEnquiryForm({ outbound: { request: () => Promise.reject(new Error('no network in this test')) }, secret: 'unused' }));
     } finally {
       await auth.store.stop();
     }
     const calls = routeCalls({ 'auth.routes': auth.routes.length, 'clientErrors.routes': clientErrors.routes.length,
-      settingsRoutes: settingsRoutes.length });
+      settingsRoutes: settingsRoutes.length, 'enquiryForm.routes': 1 });
     expect(calls).toHaveLength(routes.length);
     const posting = calls.map(postingOf);
     const missing = routes.flatMap((r, i) => (r.contract.tx.readOnly ? [] : [...(posting[i] ?? [])]

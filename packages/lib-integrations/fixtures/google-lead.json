@@ -1,0 +1,16 @@
+{
+  "lead_id": "TeSter-123-ABCDEFGHIJKLMNOPQRSTUVWXYZ-abcdefghijklmnopqrstuvwxyz-0123456789-AaBb",
+  "user_column_data": [
+    { "column_name": "Full Name", "string_value": "Kiran Rao", "column_id": "FULL_NAME" },
+    { "column_name": "User Phone", "string_value": "+919876543210", "column_id": "PHONE_NUMBER" },
+    { "column_name": "User Email", "string_value": "kiran@example.test", "column_id": "EMAIL" }
+  ],
+  "api_version": "1.0",
+  "form_id": 40000000000,
+  "campaign_id": 12345678901,
+  "google_key": "a-key-set-on-the-form",
+  "is_test": true,
+  "gcl_id": "TeSter-123-ABCDEFGHIJKLMNOPQRSTUVWXYZ-abcdefghijklmnopqrstuvwxyz-0123456789-AaBb",
+  "adgroup_id": 20000000000,
+  "creative_id": 30000000000
+}

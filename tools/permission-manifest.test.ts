@@ -8,14 +8,16 @@ import { createClientErrors } from '@radcore/lib-platform';
 import { piiPlan, type PiiPlan } from '@radcore/lib-common';
 import { testSettings } from '@radcore/test-helpers';
 import { describe, expect, it } from 'vitest';
+import { createEnquiryForm } from '@radcore/lib-crm';
 import { apiRoutes } from '../apps/api/src/routes.ts';
+import webhooks from '../apps/api/src/routes/hooks.ts';
 import { workerJobs } from '../apps/worker/src/worker-jobs.ts';
 import { PERMISSIONS, type Permission } from '../packages/lib-platform/src/permissions.ts';
 import { JOB_PRINCIPALS, ROUTE_CHECKS } from './permission-manifest.ts';
 
 /** What a route checks, in the manifest's words: its key; `public`, with any key it also names, which shouldn't be
  * there; or `link <action>`, the one action a public link may take (RAD-41). */
-function checkOf(r: Route): string {
+function checkOf(r: Pick<Route, 'contract'>): string {
   const c = r.contract;
   if (c.auth === 'public') return c.perm === null ? 'public' : `public ${c.perm}`;
   if (c.auth === 'link') return `link ${c.action}`;
@@ -59,12 +61,14 @@ describe('the permission manifest', () => {
     const log = { info: () => undefined, error: () => undefined };
     const auth = await createAuth(cfg, log);
     try {
-      return apiRoutes(auth, createClientErrors(log));
+      return apiRoutes(auth, createClientErrors(log), createEnquiryForm({ outbound: { request: () => Promise.reject(new Error('no network in this test')) }, secret: 'unused' }));
     } finally {
       await auth.store.stop();
     }
   }
-  const mountedRoutes = async () => Object.fromEntries((await apiList()).map((r) => [`${r.contract.method} ${r.contract.path}`, checkOf(r)]));
+  // The webhooks too (RAD-107): their own lane, mounted beside the routes.
+  const mountedRoutes = async () => Object.fromEntries([...(await apiList()), ...webhooks]
+    .map((r) => [`${r.contract.method} ${r.contract.path}`, checkOf(r)]));
   const mountedJobs = () => Object.fromEntries(workerJobs({ mailer: { send: async () => undefined }, publicOrigin: cfg.publicOrigin })
     .map((j) => [j.name, principalOf(j)]));
 
