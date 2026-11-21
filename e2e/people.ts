@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { request, type APIRequestContext } from '@playwright/test';
 import { Secret, TOTP, URI } from 'otpauth';
 import pg from 'pg';
+import { gstinCheckChar } from '../packages/lib-common/src/identity.ts';
 import { createPasswords } from '../packages/lib-platform/src/auth/passwords.ts';
 
 /** The e2e database as its superuser: only the seeding here uses it, never the app. */
@@ -51,6 +52,21 @@ async function withDb<T>(work: (db: pg.Client) => Promise<T>): Promise<T> {
 export const builtInRoles = (): Promise<{ key: string; name: string }[]> => withDb(async (db) =>
   (await db.query<{ key: string; name: string }>(
     'select key, name from radcore.roles where key in (select role from radcore.role_templates) order by key')).rows);
+
+/**
+ * The company profile every journey runs against (RAD-88): a name, a GSTIN (so the state, 27, Maharashtra) and an
+ * address, set afresh each run. Without one, sending a quote or confirming an order refuses `company_profile_incomplete`
+ * and nothing is invoiced (RAD-112, RC-112). A journey that needs the profile unset clears it itself.
+ */
+export async function seedCompany(): Promise<void> {
+  const first14 = '27AAACE1234F1Z'; // state 27, a company PAN, entity 1, then Z; the check character follows
+  await withDb((db) => db.query(
+    `insert into radcore.company (id, legal_name, gstin, address_line1, city, pincode)
+     values (1, 'E2E Radboards Pvt Ltd', $1, '12 Test Road', 'Pune', '411001')
+     on conflict (id) do update set legal_name = excluded.legal_name, gstin = excluded.gstin,
+       address_line1 = excluded.address_line1, city = excluded.city, pincode = excluded.pincode`,
+    [first14 + gstinCheckChar(first14)]));
+}
 
 /** The role the books check signs in as (RAD-95): `journal:read` only, so no authenticator and no other power. */
 export const BOOKS_ROLE = 'books_check'; // a role key is letters and _ only (ck_roles_key)

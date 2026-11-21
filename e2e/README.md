@@ -22,7 +22,9 @@ npm run e2e
 - The API and worker check their settings at start. `npm run e2e` writes them to the root `.env` first
   (`npm run dev:env`, which keeps an existing `.env` and adds only missing settings). The servers run with
   `APP_ENV=ci`, since the e2e database URL has no password.
-- Before the journeys, `global-setup.ts` seeds one person per built-in role and signs each one in (below). It writes
+- Before the journeys, `global-setup.ts` sets the **company profile** (a name, a GSTIN in state 27 and an address;
+  without one a quote or an order refuses `company_profile_incomplete`, RAD-112), then seeds one person per built-in
+  role and signs each one in (below). It writes
   to the same database as its superuser, from `E2E_SEED_DATABASE_URL`, default
   `postgres://radcore@127.0.0.1:5432/radcore_e2e`. Nothing else uses that login.
 - On a big machine, run the suite with `--workers=2`, close to CI's pace. Playwright's default (half the cores, 8 on a
