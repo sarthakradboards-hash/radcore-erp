@@ -67,6 +67,9 @@ export const deliveries = {
 
   'sales.delivery.err.date_before_source': 'A delivery can’t be dated before its order.',
   'sales.return.err.date_before_source': 'A return can’t be dated before the delivery it takes back.',
+  'sales.delivery.err.over_quantity': 'A line delivers more than is left to deliver on its order line.',
+  'sales.delivery.err.not_on_source': 'A line isn’t one of this order’s lines.',
+  'sales.delivery.err.forbidden': 'You don’t have permission to write deliveries.',
   'sales.delivery.err.cancel_date': 'The cancellation can’t be dated before the delivery.',
   'sales.return.err.cancel_date': 'The cancellation can’t be dated before the return.',
   'sales.deliveries.new': 'New delivery',

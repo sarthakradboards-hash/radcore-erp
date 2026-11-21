@@ -3,6 +3,7 @@
 import { createDelivery, listDeliveries } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import { announce } from '../../../../../components/ui/live-region.tsx';
 import { useApiMutation } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
@@ -11,7 +12,9 @@ import { NEW_DELIVERY } from '../delivery-values.ts';
 
 export default function NewDeliveryPage() {
   const router = useRouter();
+  const mayWrite = useMe().permissions.includes('deliveries:write');
   const create = useApiMutation(createDelivery, { invalidates: [listDeliveries] });
+  if (!mayWrite) return <><p><Link href="/sales/deliveries">{t('sales.back')}</Link></p><p role="alert" className="kit-form-alert">{t('sales.delivery.err.forbidden')}</p></>;
   return (
     <>
       <p><Link href="/sales/deliveries">{t('sales.back')}</Link></p>

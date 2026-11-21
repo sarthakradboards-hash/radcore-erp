@@ -14,7 +14,8 @@ import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
-import { ItemName, SALES_MESSAGES } from '../shared.tsx';
+import { ItemName } from '../shared.tsx';
+import { DELIVERY_MESSAGES } from './shared.tsx';
 import { deliverySchema, type DeliveryInput, type DeliveryValues, type LineInput } from './delivery-values.ts';
 import { StockPick } from './stock-pick.tsx';
 
@@ -103,7 +104,7 @@ export function DeliveryForm({ labelledBy, initial, submit, onSubmit }: {
   // A select's chosen value is lost if its options arrive after it, so the form waits for the places.
   if (!places.ready) return <p>{t('loading')}</p>;
   return (
-    <Form aria-labelledby={labelledBy} schema={deliverySchema} saved={false} messages={SALES_MESSAGES} defaultValues={initial} onSubmit={onSubmit}>
+    <Form aria-labelledby={labelledBy} schema={deliverySchema} saved={false} messages={DELIVERY_MESSAGES} defaultValues={initial} onSubmit={onSubmit}>
       <SelectField name="locationId" label={t('sales.delivery.form.place')} placeholder={t('sales.delivery.form.place.none')} options={places.options} />
       <TextField name="businessDate" label={t('sales.date')} type="date" />
       <TextAreaField name="notes" label={t('sales.notes')} />
