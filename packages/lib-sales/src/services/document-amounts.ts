@@ -34,7 +34,7 @@ export async function amountsOf(ctx: Ctx, partyId: string, on: string, lines: re
 }
 
 /** A draft's amounts on read: none while they can't be worked out yet, so the document still opens. */
-export function draftAmounts(ctx: Ctx, partyId: string, on: string, lines: readonly Line[]): Promise<Amounts | null> {
+function draftAmounts(ctx: Ctx, partyId: string, on: string, lines: readonly Line[]): Promise<Amounts | null> {
   return amountsOf(ctx, partyId, on, lines).catch((e: unknown) => {
     if (e instanceof AppError && (e.code === 'company_profile_incomplete' || e.code === 'no_gst_rate')) return null;
     throw e;
