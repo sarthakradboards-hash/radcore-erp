@@ -18,6 +18,7 @@ import { checkedLines, sellingTo, today } from './document-lines.ts';
 import { hasDeliveries, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
+import { labelled } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -62,6 +63,7 @@ export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Pr
   const rows = await salesTx(ctx).select(header).from(salesOrders).where(and(
     input.filter.status === undefined ? undefined : eq(salesOrders.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(salesOrders.partyId, input.filter.partyId),
+    input.filter.quoteId === undefined ? undefined : eq(salesOrders.quoteId, input.filter.quoteId),
     listScope(ctx, 'sales:read', salesOrders.createdBy),
     after([salesOrders.businessDate, salesOrders.id], key && [key.date, key.id], 'desc'),
   )).orderBy(desc(salesOrders.businessDate), desc(salesOrders.id)).limit(input.limit + 1);
@@ -81,7 +83,7 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promi
     qty: salesOrderLines.qty, rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent }).from(salesOrderLines)
     .where(eq(salesOrderLines.orderId, id)).orderBy(asc(salesOrderLines.lineNo));
   const names = await partyNames(ctx, [row.partyId]);
-  return { ...row, partyName: names.get(row.partyId) ?? '', lines };
+  return { ...row, partyName: names.get(row.partyId) ?? '', lines: await labelled(ctx, lines) };
 }
 
 /** POST /sales/orders (sales:write): a draft. */

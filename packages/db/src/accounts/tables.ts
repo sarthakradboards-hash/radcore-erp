@@ -264,6 +264,37 @@ export const payments = radcoreTable('payments', {
 ]);
 
 /**
+ * Who manages a party (RAD-119, the architect's ruling): its account manager (`user:<id>`), the record-scope owner
+ * (ADR-001 §6a) the receivables keys name, so at `own` a person sees and reminds only the parties they manage. Apart
+ * from `parties`, so only what reads a party's balance meets the scope (E7). A party with no row is seen only at `all`.
+ * Set and cleared under parties:manage; audited.
+ */
+export const partyManagers = radcoreTable('party_managers', {
+  partyId: uuid().primaryKey().references(() => parties.id, { onDelete: 'restrict' }),
+  owner: text().notNull(),
+}, (t) => [check('ck_party_managers_owner', sql`${t.owner} ~ '^user:[0-9a-f-]{36}$'`)]);
+
+/**
+ * A reminder to a party of what it owes (RAD-119, M3-15): the amounts as at when it was made, how it went, and later
+ * the link it carried (RAD-118: `link_id`, its foreign key added then). Append-only (ADR-005 §7), audited. Sending by
+ * WhatsApp waits for M7: today the person sends it and records it here.
+ */
+export const paymentReminders = radcoreTable('payment_reminders', {
+  id: id(),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  asAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  outstanding: money({ signed: true }).notNull(),
+  overdue: money().notNull(),
+  oldestDue: date({ mode: 'string' }),
+  channel: text().notNull(),
+  note: boundedText({ max: 500 }),
+  linkId: uuid(),
+}, (t) => [
+  check('ck_payment_reminders_channel', sql`${t.channel} in ('whatsapp', 'phone', 'email', 'in_person')`),
+  index('ix_payment_reminders_party').on(t.partyId, t.asAt),
+]);
+
+/**
  * A payment applied to a document (M3-12, RAD-116; ADR-005 §7a, the architect's ruling): a receipt to a receivable
  * charge, a payment to a payable charge, of one party. The document is named as `(document_table, document_id)`, its
  * table one `allocatable_documents` lists (hand-written in this migration, with its foreign keys). Append-only: a

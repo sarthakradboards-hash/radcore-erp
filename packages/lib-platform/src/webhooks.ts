@@ -15,8 +15,16 @@ import { defineJob, type JobContract, type JobDefinition, type JobMeta } from '.
 
 /** A provider's check of one delivery: refused, or valid with the provider's delivery id (null when it sends none). */
 export type WebhookCheck = { valid: false } | { valid: true; deliveryId: string | null };
-/** The provider's signature check over the raw bytes, with the request's headers (lib-integrations supplies it). */
-export type WebhookVerifier = (raw: Buffer, header: (name: string) => string | undefined) => WebhookCheck;
+/** The provider's signature check over the raw bytes, with the request's headers (lib-integrations supplies it), and
+ * the hook's stored secret, read by the lane for each request (null when none is stored, which should refuse). */
+export type WebhookVerifier = (raw: Buffer, header: (name: string) => string | undefined, secret: string | null) => WebhookCheck;
+/** A provider's GET subscription handshake (Meta, WhatsApp): its answer when the stored token matches, else null.
+ * `asks` says whether the query is a handshake at all, so one that isn't is refused before the token is read. */
+export type WebhookHandshake = { secret: string; asks: (query: (name: string) => string | undefined) => boolean;
+  answer: (query: (name: string) => string | undefined, token: string | null) => string | null };
+/** Whether a delivery could pass at all, judged without its secret (a signature header of the right shape, say), so a
+ * request that couldn't costs no secret read and no KMS decrypt (auditor-2 on #274). */
+export type WebhookPrecheck = (raw: Buffer, header: (name: string) => string | undefined) => boolean;
 
 /** The input every webhook job takes: the stored delivery's id only, so its payload has one copy (auditor-2). */
 export const webhookDelivery = z.strictObject({ id: z.uuid() });
@@ -24,15 +32,18 @@ export const webhookDelivery = z.strictObject({ id: z.uuid() });
 /** What the owning library's service gets: the stored delivery, loaded by the job in its own transaction. */
 export type WebhookDelivery = { id: string; source: string; deliveryId: string; payload: string };
 
-export type Webhook = Readonly<{ contract: Contract; source: string; verify: WebhookVerifier; job: JobContract<{ id: string }> }>;
+export type Webhook = Readonly<{ contract: Contract; source: string; verify: WebhookVerifier; job: JobContract<{ id: string }>;
+  /** The stored secret (`secrets.name`) the verifier checks with, read for each request so a rotated one applies at once. */
+  secret?: string; precheck?: WebhookPrecheck; handshake?: WebhookHandshake }>;
 
 /** A webhook route: its contract (a POST with `auth: 'webhook'`), the provider's check, and the job that acts on it. */
-export function defineWebhook(contract: Contract, verify: WebhookVerifier, job: JobContract<{ id: string }>): Webhook {
+export function defineWebhook(contract: Contract, verify: WebhookVerifier, job: JobContract<{ id: string }>,
+  stored: { secret?: string; precheck?: WebhookPrecheck; handshake?: WebhookHandshake } = {}): Webhook {
   const source = `${contract.method} ${contract.path}`;
   if (contract.auth !== 'webhook' || contract.method !== 'POST') throw new TypeError(`${source}: a webhook is a POST with auth: 'webhook'`);
   // ADR-001 §6a: a webhook's work runs as a named system principal with only its listed permissions.
   if (job.principal.kind !== 'system') throw new TypeError(`${job.name}: a webhook's job runs as a system principal`);
-  return Object.freeze({ contract, source, verify, job });
+  return Object.freeze({ contract, source, verify, job, ...stored });
 }
 
 /**
@@ -40,7 +51,7 @@ export function defineWebhook(contract: Contract, verify: WebhookVerifier, job: 
  * was stored and queued already: it's answered the same and acted on once. A repeat is the same provider id, or the
  * same signed body under another id, since many providers put the id in an unsigned header (auditor-2, RC-084).
  */
-export async function takeDelivery(ctx: Ctx, hook: Webhook, raw: Buffer, providerId: string | null): Promise<boolean> {
+export async function takeDelivery(ctx: Ctx, hook: Pick<Webhook, 'source' | 'job'>, raw: Buffer, providerId: string | null): Promise<boolean> {
   const payload = raw.toString('utf8');
   const bodySha256 = createHash('sha256').update(raw).digest('hex');
   // A provider that sends no id is keyed on its body alone.

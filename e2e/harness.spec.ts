@@ -235,6 +235,21 @@ test('the books check reads healthy books as a person who can do nothing else', 
   await api.dispose();
 });
 
+test('global setup has set the company profile: a name, a GSTIN and its state (RAD-112)', async ({ baseURL }) => {
+  const admin = await request.newContext({ baseURL: baseURL!, storageState: stateFor('admin') });
+  try {
+    const res = await admin.get('/api/admin/company?input=%7B%7D');
+    expect(res.status()).toBe(200);
+    const { company } = (await res.json()) as { company: { legalName: string; gstin: string; stateCode: string } | null };
+    expect(company).not.toBeNull();
+    expect(company!.legalName).not.toBe('');
+    expect(company!.gstin).toMatch(/^27[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/);
+    expect(company!.stateCode).toBe('27');
+  } finally {
+    await admin.dispose();
+  }
+});
+
 test('a books problem is worded for the failed test, with its item and place', () => {
   const lines = describeBooksProblems([
     { check: 'trial_balance', itemId: null, locationId: null, message: 'Debits 100.00 and credits 99.00 differ' },

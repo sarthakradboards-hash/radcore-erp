@@ -36,9 +36,16 @@ export const ACCOUNTS_PAGES = [
   { href: '/accounts/chart', label: 'books.nav.chart', perm: 'journal:read' },
 ] as const satisfies readonly NavPage[];
 
+/** The sales area's pages (RAD-125): quotes first, as an order usually starts from one. */
+export const SALES_PAGES = [
+  { href: '/sales/quotes', label: 'sales.nav.quotes', perm: 'sales:read' },
+  { href: '/sales/orders', label: 'sales.nav.orders', perm: 'sales:read' },
+] as const satisfies readonly NavPage[];
+
 export const NAV: readonly NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
   // The owner holds audit:read alone (RAD-35), so Admin opens on the audit trail for them.
+  { label: 'nav.sales', pages: SALES_PAGES, section: '/sales' },
   { label: 'nav.accounts', pages: ACCOUNTS_PAGES, section: '/accounts' },
   { label: 'nav.admin', pages: ADMIN_PAGES, section: '/admin' },
 ];

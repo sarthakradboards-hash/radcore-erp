@@ -18,6 +18,12 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /invites/accept': 'public',
   // The browser's error report (RC-158): public, so a signed-out page reports too; its own per-address limit.
   'POST /client-errors': 'public',
+  // The public enquiry form's one door, with the captcha (RAD-107, RC-054).
+  'POST /public/enquiries': 'public',
+  // Provider webhooks (RAD-107): each proved by the provider's own check under its stored secret.
+  'POST /hooks/google-leads': 'webhook',
+  'POST /hooks/meta-leads': 'webhook',
+  'POST /hooks/whatsapp': 'webhook',
   // Your own account (RAD-32, RAD-33, RAD-34, RAD-47): session:read, which every role holds.
   'POST /sign-out': 'session:read',
   'GET /me': 'session:read',
@@ -83,6 +89,11 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Parties (RAD-90): credit terms only with parties:manage.
   'GET /parties': 'parties:read',
   'GET /parties/:id': 'parties:read',
+  // What parties owe (RAD-119): behind receivables:read, never parties:read (RC-042).
+  'GET /parties/:id/statement': 'receivables:read',
+  'GET /to-collect': 'receivables:read',
+  'POST /parties/:id/reminders': 'receivables:remind',
+  'GET /parties/:id/reminders': 'receivables:read',
   'POST /parties': 'parties:write',
   'PATCH /parties/:id': 'parties:write',
   'PUT /parties/:id/credit': 'parties:manage',
@@ -125,6 +136,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'PUT /sales/party-price-lists/:partyId': 'prices:approve',
   // Quotes and orders (RAD-112).
   'GET /sales/quotes': 'sales:read',
+  'GET /sales/quote-counts': 'sales:read',
   'GET /sales/quotes/:id': 'sales:read',
   'POST /sales/quotes': 'sales:write',
   'PUT /sales/quotes/:id': 'sales:write',
@@ -133,6 +145,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /sales/quotes/:id/accept': 'sales:write',
   'POST /sales/quotes/:id/close': 'sales:write',
   'GET /sales/orders': 'sales:read',
+  'GET /sales/order-counts': 'sales:read',
   'GET /sales/orders/:id': 'sales:read',
   'POST /sales/orders': 'sales:write',
   'PUT /sales/orders/:id': 'sales:write',
@@ -245,6 +258,10 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'platform.invite-email': 'system invites []',
   'platform.export': 'user <by input>',
   'crm.follow-ups-due': 'system follow-ups-due [leads:read]',
+  'crm.form-enquiry': 'system enquiry-form [leads:read, leads:write]',
+  'crm.google-lead': 'system google-leads [leads:read, leads:write]',
+  'crm.meta-lead': 'system meta-leads [leads:read, leads:write]',
+  'crm.whatsapp-message': 'system whatsapp [leads:read, leads:write]',
 };
 
 /** Which libraries each route's and job's own code reaches (RAD-84, M1-19, RC-153), keyed as above: the library of the
@@ -256,6 +273,8 @@ const PLATFORM = ['lib-platform'];
 const STOCK = ['lib-platform', 'lib-stock'];
 const HR = ['lib-hr', 'lib-platform'];
 const CRM = ['lib-crm', 'lib-platform'];
+// lib-crm's outside doors parse with lib-integrations (RAD-107).
+const CRM_DOORS = ['lib-crm', 'lib-integrations', 'lib-platform'];
 const SETTINGS = ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
@@ -322,6 +341,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'PUT /gst/rates': ['lib-gst', 'lib-platform'],
   'GET /parties': ['lib-accounts', 'lib-platform'],
   'GET /parties/:id': ['lib-accounts', 'lib-platform'],
+  'GET /parties/:id/statement': ['lib-accounts', 'lib-platform'],
+  'GET /to-collect': ['lib-accounts', 'lib-platform'],
+  'POST /parties/:id/reminders': ['lib-accounts', 'lib-platform'],
+  'GET /parties/:id/reminders': ['lib-accounts', 'lib-platform'],
   'POST /parties': ['lib-accounts', 'lib-platform'],
   'PATCH /parties/:id': ['lib-accounts', 'lib-platform'],
   'PUT /parties/:id/credit': ['lib-accounts', 'lib-platform'],
@@ -363,6 +386,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Quotes and orders check their party (lib-accounts) and their items' quantities (lib-stock); an order's credit and
   // price checks read its items' GST (lib-gst).
   'GET /sales/quotes': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /sales/quote-counts': ['lib-platform', 'lib-sales'],
   'GET /sales/quotes/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quotes': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'PUT /sales/quotes/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
@@ -371,6 +395,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /sales/quotes/:id/accept': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quotes/:id/close': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'GET /sales/orders': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /sales/order-counts': ['lib-platform', 'lib-sales'],
   'GET /sales/orders/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/orders': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'PUT /sales/orders/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
@@ -467,6 +492,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /leads/:id/plan': CRM,
   'POST /leads/:id/quick-reply': CRM,
   'POST /leads/:id/owner': CRM,
+  'POST /public/enquiries': CRM_DOORS,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
   'platform.outbox-cleanup': PLATFORM,
@@ -479,4 +505,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // lib-stock's entry holds its stock engine too, which posts revaluations through lib-accounts (RAD-93).
   'platform.export': ['lib-accounts', 'lib-hr', 'lib-platform', 'lib-stock'],
   'crm.follow-ups-due': CRM,
+  'crm.form-enquiry': CRM_DOORS,
+  'crm.google-lead': CRM_DOORS,
+  'crm.meta-lead': CRM_DOORS,
+  'crm.whatsapp-message': CRM_DOORS,
 };

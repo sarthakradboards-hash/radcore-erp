@@ -27,7 +27,7 @@ export {
 } from './approvals.ts';
 export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
-export { principalsOf, roleOf } from './principals.ts';
+export { isActiveUser, principalsOf, roleOf } from './principals.ts';
 export {
   defineNotification, markNotificationsRead, myNotificationsPage, notify, unreadNotifications, type NotificationKind,
 } from './notifications.ts';
@@ -64,8 +64,9 @@ export { secretsExpiryWatch, watchSecretExpiry } from './secrets-watch.ts';
 export { STUCK_AFTER_MS, watchStuckDeliveries, webhookStuckWatch } from './webhooks-watch.ts';
 export {
   defineWebhook, defineWebhookJob, takeDelivery, webhookDelivery, type Webhook, type WebhookCheck, type WebhookDelivery,
-  type WebhookVerifier,
+  type WebhookHandshake, type WebhookPrecheck, type WebhookVerifier,
 } from './webhooks.ts';
+export { storedSecret, storeSecret, type ReadOnce } from './stored-secrets.ts';
 export {
   EXPORT_GIVE_UP_MS, exportDownload, exportStatus, ExportTooLarge, type ExportRow, type ExportRows, type ExportSheet,
 } from './export/engine.ts';
