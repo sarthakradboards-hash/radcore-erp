@@ -253,10 +253,13 @@ describe.skipIf(!url)('the generic route handler', () => {
   });
 
   it('fails the run on that warning, through the tools setup (tools/vitest-setup.ts)', () => {
+    // The setup's listener, not Node's own, which prints every warning.
+    const setup = process.listeners('warning').filter((l) => String(l).includes('UndeclaredError'));
     const warning = Object.assign(new Error('undeclared_error: GET /x raised y'), { name: 'UndeclaredError' });
-    expect(() => { for (const l of process.listeners('warning')) l(warning); }).toThrow('GET /x raised y');
     const other = Object.assign(new Error('an ordinary warning'), { name: 'DeprecationWarning' });
-    expect(() => { for (const l of process.listeners('warning')) l(other); }).not.toThrow();
+    expect(setup).toHaveLength(1);
+    expect(() => { for (const l of setup) l(warning); }).toThrow('GET /x raised y');
+    expect(() => { for (const l of setup) l(other); }).not.toThrow();
   });
 
   // RC-216: matched by code, never by message text.

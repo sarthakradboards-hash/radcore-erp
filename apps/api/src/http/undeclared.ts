@@ -6,7 +6,7 @@ import { PLATFORM_ERRORS } from '@radcore/lib-common';
 import { AppError } from '@radcore/lib-platform';
 
 export type UndeclaredMode = 'answer' | 'warn';
-export const UNDECLARED = 'UndeclaredError';
+const UNDECLARED = 'UndeclaredError';
 
 /** Logs and warns of an AppError whose code is neither a platform code nor in `declared`; anything else, nothing. */
 export function warnUndeclared(err: unknown, declared: readonly string[], where: string, log: { error(m: string): void }): void {
