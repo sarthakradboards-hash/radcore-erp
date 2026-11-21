@@ -1,0 +1,15 @@
+/* The buyer's invoice page (RAD-125). Tokens only, from styles/tokens.css. A public page with no shell: its own narrow-to-wide page. */
+.public-invoice { max-inline-size: 72rem; margin-inline: auto; padding: var(--space-5) var(--space-4); display: grid; gap: var(--space-4); }
+.public-invoice h1, .public-invoice h2, .public-invoice p { margin: 0; }
+.public-invoice-parties { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.public-invoice-parties p { overflow-wrap: anywhere; }
+.public-invoice-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: 0; }
+.public-invoice-facts dt { font-weight: 600; }
+.public-invoice-facts dd { margin: 0; }
+/* The totals' rows are label and amount side by side, the amount aligned to the right. */
+.public-invoice-total { display: contents; }
+.public-invoice-total dd { text-align: end; font-variant-numeric: tabular-nums; }
+@media print {
+  .public-invoice-print, .browser-floor { display: none; }
+  .public-invoice { max-inline-size: none; padding: 0; }
+}
