@@ -108,10 +108,11 @@ UPDATE radcore.lead_enquiries e SET source_id = s.id FROM radcore.lead_sources s
 ALTER TABLE radcore.lead_enquiries ALTER COLUMN source_id SET NOT NULL;
 --> statement-breakpoint
 -- Audited in full, as RAD-109's lists are. A set-aside enquiry's phone, email and message are the outsider's, and
--- personal (RAD-40): the trail says they were written, never what they were.
+-- personal (RAD-40): the trail says they were written, never what they were. A campaign's link token is redacted as a
+-- secret is (v_schema_audit_columns): the trail needn't hold the link.
 SELECT radcore.audit_attach('lead_sources', keep => array['name', 'channel', 'door_channel', 'active', 'ignored', 'name_key']);
 --> statement-breakpoint
-SELECT radcore.audit_attach('campaigns', keep => array['name', 'source_id', 'token', 'ended_at', 'name_key']);
+SELECT radcore.audit_attach('campaigns', keep => array['name', 'source_id', 'ended_at', 'name_key'], redact => array['token']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('ad_spend', keep => array['campaign_id', 'source_id', 'from_date', 'to_date', 'amount', 'note']);
 --> statement-breakpoint
