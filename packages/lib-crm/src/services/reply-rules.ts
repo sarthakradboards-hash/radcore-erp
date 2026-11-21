@@ -7,8 +7,8 @@ const PLACEHOLDERS = ['{name}', '{first_name}', '{owner}'] as const;
 
 /**
  * The reply's text for a lead: `{name}` its name, `{first_name}` the name's first word, `{owner}` its owner's name. One
- * with nothing to fill it is left out, and the space or comma it leaves behind with it ("Hi {first_name}, …" reads
- * "Hi, …"). Anything else in braces stays as written.
+ * with nothing to fill it is left out with the space before it ("Hi {first_name}, …" reads "Hi, …"). Anything else in
+ * braces stays as written.
  */
 export function fillReply(body: string, lead: { name: string | null; owner: string | null }): string {
   const name = lead.name?.trim() ?? '';
