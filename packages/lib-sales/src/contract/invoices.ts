@@ -31,8 +31,11 @@ const posted = {
   cessPerUnitAmount: money(), lineTotal: money().nullable(), cost: cost(money().nullable()), deliveryTaxable: money().nullable(),
   deliveryGst: money().nullable(),
 };
+// A line with its item's SKU and name (RAD-125's screens), and the worst condition of the units it bills when they
+// aren't all new: read as they stand while a draft, carried once posted (the architect on RAD-112).
 const line = z.object({ id: idString(), lineNo: z.number().int().positive(), deliveryLineId: idString(), itemId: idString(),
-  qty: quantityString(), rate: unitPriceString(), discountPercent: z.string(), ...posted });
+  sku: z.string(), name: z.string(), qty: quantityString(), rate: unitPriceString(), discountPercent: z.string(), ...posted,
+  unitCondition: z.enum(['demo', 'used', 'damaged']).nullable() });
 const header = z.object({
   id: idString(), number: z.string().nullable(), partyId: idString(), partyName: z.string(), businessDate: dateString(), status,
   notes: z.string().nullable(), total: money(),

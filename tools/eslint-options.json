@@ -11,6 +11,7 @@
       "@radcore/db/sales#invoices",
       "@radcore/db/sales#salesOrders",
       "@radcore/db/sales#salesQuotes",
+      "@radcore/db/sales#testRides",
       "@radcore/db/sales#vehicleBookings"
     ],
     "exempt": {
