@@ -56,7 +56,8 @@ export async function revokeInvoiceLinkNow(ctx: Ctx, { id, linkId }: In<typeof r
 }
 
 /** POST /l/invoice (a `sales.invoice_view` link): the link's own invoice as issued, while it stands posted. */
-export async function invoiceByLink(ctx: Ctx, _input: object): Promise<Out<typeof viewInvoiceLink>> {
+// Its input is empty: the handler takes the token out, and the link alone names the record.
+export async function invoiceByLink(ctx: Ctx): Promise<Out<typeof viewInvoiceLink>> {
   const id = linkRecord(ctx, VIEW);
   const [r] = await salesTx(ctx).select().from(invoices).where(eq(invoices.id, id));
   if (r?.status !== 'posted' || r.number === null) throw new AppError('not_found', 'Not found');

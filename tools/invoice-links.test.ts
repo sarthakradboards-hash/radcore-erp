@@ -125,7 +125,7 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
     const as = await asLink(ctx, token);
     if (as === null) return 'not_found' as const;
     // A live link to an invoice no longer posted gets the same not_found as a dead link.
-    const view = await invoiceByLink(as, {}).catch((e: unknown) => {
+    const view = await invoiceByLink(as).catch((e: unknown) => {
       if (e instanceof AppError && e.code === 'not_found') return 'not_found' as const;
       throw e;
     });
@@ -158,16 +158,17 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
     const [at, other] = [await delivered(), await delivered()];
     const out = await inBooks(async (ctx) => {
       const a = await posted(ctx, at);
-      const b = await posted(ctx, other);
+      await posted(ctx, other);
       const link = await shareInvoiceLink(ctx, { id: a.id });
       const as = await asLink(ctx, link.token);
       if (as === null) throw new Error('the link did not open');
-      // The body naming B changes nothing: the read is by the link's own record.
-      const asked = await invoiceByLink(as, { id: b.id });
+      // B posted beside it changes nothing: the read is by the link's own record. Ids in the body never reach the
+      // service (link-routes.test.ts).
+      const asked = await invoiceByLink(as);
       const holder = (action: string, recordId: string): Principal => ({ kind: 'link', linkId: link.id, action, recordId, permissions: [] });
-      const refused = [await failure(invoiceByLink(await actingAs(ctx, staff), {})),
-        await failure(invoiceByLink(await actingAs(ctx, holder('sales.estimate_view', a.id)), {})),
-        await failure(invoiceByLink(await actingAs(ctx, holder(VIEW, randomUUID())), {}))];
+      const refused = [await failure(invoiceByLink(await actingAs(ctx, staff))),
+        await failure(invoiceByLink(await actingAs(ctx, holder('sales.estimate_view', a.id)))),
+        await failure(invoiceByLink(await actingAs(ctx, holder(VIEW, randomUUID()))))];
       await actingAs(ctx, staff);
       return { a: a.number, got: asked.number, refused };
     });
@@ -182,7 +183,7 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
       for (let i = 0; i < 2; i++) {
         const as = await asLink(ctx, link.token);
         if (as === null) throw new Error('the link did not open');
-        await invoiceByLink(as, {});
+        await invoiceByLink(as);
         await recordLinkAccess(as);
       }
       await actingAs(ctx, staff);
