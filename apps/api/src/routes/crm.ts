@@ -1,13 +1,17 @@
-// The crm module's routes (RAD-106, RAD-109): declarations only. Lead capture by hand or at the counter, one lead, and
-// the pipeline.
+// The crm module's routes (RAD-106, RAD-109, RAD-110): declarations only. Lead capture by hand or at the counter, one
+// lead, the pipeline, and CRM setup: lead sources and what they set aside, campaigns, ad spend and cost per lead.
 import { defineRoute } from '@radcore/lib-platform';
 import {
   addLostReason, addPlan, addQuickReply, assignLeadOwner, captureEnquiry, changeLostReason, changePlan, changeQuickReply, followUpDone,
   leadById, leadLists, listLeadsPage, moveLeadStage, putOnPlan, quickReplyText, updateLeadDetails,
+  addAdSpend, addCampaign, addLeadSource, adSpendPage, campaignsPage, changeLeadSource, costPerLeadIn, endCampaignNow, leadSourcesList,
+  setAsidePage,
 } from '@radcore/lib-crm';
 import {
   assignLead, captureLead, createLostReason, createPlan, createQuickReply, followUpLead, getLead, getLeadLists, listLeads, moveLead,
   planLead, quickReply, updateLead, updateLostReason, updatePlan, updateQuickReply,
+  costPerLead, createCampaign, createLeadSource, endCampaign, listAdSpend, listCampaigns, listLeadSources, listSetAside, recordAdSpend,
+  updateLeadSource,
 } from '@radcore/lib-crm/contract';
 
 export default [
@@ -27,4 +31,14 @@ export default [
   defineRoute(planLead, putOnPlan),
   defineRoute(quickReply, quickReplyText),
   defineRoute(assignLead, assignLeadOwner),
+  defineRoute(listLeadSources, leadSourcesList),
+  defineRoute(createLeadSource, addLeadSource),
+  defineRoute(updateLeadSource, changeLeadSource),
+  defineRoute(listSetAside, setAsidePage),
+  defineRoute(listCampaigns, campaignsPage),
+  defineRoute(createCampaign, addCampaign),
+  defineRoute(endCampaign, endCampaignNow),
+  defineRoute(listAdSpend, adSpendPage),
+  defineRoute(recordAdSpend, addAdSpend),
+  defineRoute(costPerLead, costPerLeadIn),
 ];

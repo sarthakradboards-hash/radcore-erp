@@ -519,6 +519,13 @@
       "when": 1795287303502,
       "tag": "0073_reminder_links",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795290677504,
+      "tag": "0074_crm_setup",
+      "breakpoints": true
     }
   ]
 }

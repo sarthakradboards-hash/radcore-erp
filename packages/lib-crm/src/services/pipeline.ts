@@ -10,14 +10,15 @@ import {
 } from '@radcore/db/crm';
 import { addDays, indiaDate, maskOf, normaliseEmail } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineNotification, encodeCursor, holdsKey, listScope, momentKey, notify, principalId, roleOf,
-  type Ctx, type JobContract,
+  AppError, decodeCursor, defineNotification, encodeCursor, holdsKey, listScope, momentKey, notify, principalId, principalsOf,
+  roleOf, type Ctx, type JobContract,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   assignLead, followUpLead, LEAD_STAGES, listLeads, moveLead, planLead, quickReply, updateLead,
 } from '../contract.ts';
+import { fillReply } from './reply-rules.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -136,7 +137,8 @@ export async function putOnPlan(ctx: Ctx, { id, planId }: In<typeof planLead>): 
   return { followUpOn };
 }
 
-/** POST /leads/:id/quick-reply (leads:write). The screen opens WhatsApp with it; nothing is sent from here. */
+/** POST /leads/:id/quick-reply (leads:write). The screen opens WhatsApp with it; nothing is sent from here. Its
+ * placeholders are filled for the lead (M3-06, reply-rules.ts). */
 export async function quickReplyText(ctx: Ctx, { id, replyId }: In<typeof quickReply>): Promise<Out<typeof quickReply>> {
   const lead = await leadFor(ctx, id);
   const tx = crmTx(ctx);
@@ -145,7 +147,8 @@ export async function quickReplyText(ctx: Ctx, { id, replyId }: In<typeof quickR
   if (reply === undefined) throw new AppError('unknown_reply', 'There is no such quick reply', [{ path: ['replyId'], code: 'unknown', message: 'Choose a reply' }]);
   if (lead.stage === 'new') await tx.update(leads).set({ stage: 'contacted' }).where(eq(leads.id, id));
   await tx.insert(leadActivities).values({ leadId: id, kind: 'quick_reply', note: reply.title });
-  return { text: reply.body };
+  const owner = lead.owner === null ? null : (await principalsOf(ctx, [lead.owner]))(lead.owner).displayName;
+  return { text: fillReply(reply.body, { name: lead.name, owner }) };
 }
 
 /** POST /leads/:id/owner (leads:write at `all`): hands a lead to an active person whose role sees leads, or back to no

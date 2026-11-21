@@ -7,6 +7,7 @@ import {
 import { z } from 'zod';
 
 export { googleLeadHook, metaLeadHook, submitEnquiry, whatsappHook } from './contract-doors.ts';
+export * from './contract-setup.ts';
 
 const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
@@ -23,8 +24,10 @@ export const LEAD_SOURCES = ['manual', 'walk_in', 'form', 'meta', 'google', 'wha
 export const captureLead = defineContract({
   method: 'POST', path: '/leads', auth: 'session', perm: 'leads:write', tx: write,
   input: z.object({ phone: phoneString(), name: z.string().trim().min(1).max(120).optional(), email: emailString().optional(),
-    source: z.enum(['manual', 'walk_in']) }),
-  output: z.object({ id: idString().optional(), repeat: z.boolean() }),
+    source: z.enum(['manual', 'walk_in']),
+    // A source leads:setup added for this channel, picked at capture (M3-06); else the channel's own.
+    sourceId: idString().optional() }),
+  output: z.object({ id: idString().optional(), repeat: z.boolean() }), errors: ['unknown_source'],
 });
 
 /** A lead's place in the pipeline (M3-05). Lost needs a reason; a lost lead can be moved back when they return. */
