@@ -27,7 +27,7 @@ const STAGES = [createOrder, confirmOrder, createDelivery, postDelivery, createI
 const MONEY_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_account', 'not_money_account', 'account_inactive',
   'exceeds_payment', 'exceeds_document', 'document_not_posted'] as const;
 const ERRORS = [...new Set([...STAGES.flatMap((c) => c.errors), ...MONEY_ERRORS, 'cash_over_limit', 'approval_code_required',
-  'looks_like_card_number', 'overpaid', 'no_payment_amount'])];
+  'looks_like_card_number', 'overpaid', 'no_payment_amount', 'walk_in_pays_in_full'])];
 
 /**
  * A counter sale in one save: the party (the Counter customer when none is named, below sales.b2c_details_limit), the
@@ -35,7 +35,8 @@ const ERRORS = [...new Set([...STAGES.flatMap((c) => c.errors), ...MONEY_ERRORS,
  * The invoice's ship-to is the shop, so the tax is the counter's (CA-08's default). It needs sales:write,
  * deliveries:write and invoices:write, all named when any is missing; the receipts go through lib-accounts under
  * them. A check that needs someone else's approval refuses it (`needs_override`, with its issues), and so does cash
- * past the day's limit (`cash_over_limit`, s.269ST), each with nothing saved. Paying more than the bill is `overpaid`.
+ * past the day's limit (`cash_over_limit`, s.269ST), each with nothing saved. Paying more than the bill is `overpaid`. The
+ * Counter customer never carries credit: its bill is paid in full (`walk_in_pays_in_full`).
  */
 export const createQuickBill = defineContract({
   method: 'POST', path: '/sales/quick-bills', auth: 'session', perm: 'invoices:write', tx: write,

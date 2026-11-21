@@ -149,10 +149,14 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     expect(refusals).toEqual(['approval_code_required', 'looks_like_card_number']);
   });
 
-  it('refuses an unpaid part the Counter customer has no credit for (needs_override), and paying more than the bill', async () => {
+  // The Counter customer never carries credit (the architect on RAD-115); a check's issue still refuses its bill, paid in
+  // full or not (Sarthak's hold-then-complete is the quick bill's next part).
+  it('refuses a walk-in bill not paid in full, one paid in full but sold below cost (needs_override), and paying more', async () => {
     const at = await setup({ rate: '345', gst: '18' });
-    const out = await atCounter(at, async (ctx) => [await failure(bill(ctx, at, '3', [cash('1000')])), await failure(bill(ctx, at, '3', [cash('1222')]))]);
-    expect(out).toEqual(['needs_override', 'overpaid']);
+    const cheap = await setup({ rate: '150' });
+    const out = await atCounter(at, async (ctx) => [await failure(bill(ctx, at, '3', [cash('1000')])), await failure(bill(ctx, at, '3', [cash('1222')])),
+      await failure(bill(ctx, cheap, '1', [cash('158')]))]);
+    expect(out).toEqual(['walk_in_pays_in_full', 'overpaid', 'needs_override']);
   });
 
   // s.269ST: Rs 2 lakh or more in cash from one person in a day. The Counter customer is everyone at the counter, so its

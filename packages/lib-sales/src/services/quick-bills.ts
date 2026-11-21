@@ -13,7 +13,7 @@ import type { createQuickBill } from '../contract.ts';
 import { addDelivery, postDeliveryNow } from './deliveries.ts';
 import { postInvoiceNow } from './invoice-post.ts';
 import { addInvoice } from './invoices.ts';
-import { addCounterOrder, confirmOrderNow } from './orders.ts';
+import { addCounterOrder, confirmOrderNow, getOrderById } from './orders.ts';
 import { looksLikeCardNumber } from './quick-bill-rules.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -69,7 +69,8 @@ async function receiptsOf(ctx: Ctx, payments: readonly Payment[]) {
 export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Promise<Out<typeof createQuickBill>> {
   const missing = KEYS.filter((k) => !ctx.can(k));
   if (missing.length > 0) throw new AppError('forbidden', `A quick bill needs ${missing.join(', ')}`);
-  const partyId = input.partyId ?? await systemPartyId(ctx, 'walk_in');
+  const walkIn = await systemPartyId(ctx, 'walk_in');
+  const partyId = input.partyId ?? walkIn;
   const { businessDate } = input;
   const taken = await receiptsOf(ctx, input.payments);
   // The quick bill's receipts go through lib-accounts under its own keys, not payments:write, as a booking's advance
@@ -87,6 +88,16 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
   }
   const order = await addCounterOrder(ctx, { partyId, businessDate, notes: input.notes,
     lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent })) });
+  // The Counter customer never carries credit (the architect on RAD-115): credit means a named party, so a walk-in bill
+  // is paid in full, judged on the order's total, rounded to the rupee as its invoice's will be, before any check runs.
+  // A total that can't be worked out yet (a missing GST rate) is confirming's to refuse, by name.
+  if (partyId === walkIn) {
+    const { total } = (await getOrderById(ctx, order)).amounts;
+    if (total !== null && dec(sum(receipts.map((r) => r.amount))).lt(total)) {
+      throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${total}: name the party to sell on credit`,
+        [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${total} in all, or choose a named party` }]);
+    }
+  }
   const confirmed = await confirmOrderNow(ctx, order);
   const tx = salesTx(ctx);
   const orderLines = await tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id))
