@@ -35,7 +35,9 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
     mountWebhooks(app, api.webhooks ?? [], { db: api.db, log, alert: api.alert, guards: api.guards, secrets: api.secrets });
     mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin,
       newPasswordCheck: api.newPasswordCheck, files: api.files, secrets: api.secrets, guards: api.guards,
-      alert: api.alert });
+      alert: api.alert,
+      // Production answers an undeclared code with 500 as ever; elsewhere it's also logged and warned of (RAD-134).
+      undeclared: api.undeclared ?? (config.nodeEnv === 'production' ? 'answer' : 'warn') });
   }
   return app;
 }
