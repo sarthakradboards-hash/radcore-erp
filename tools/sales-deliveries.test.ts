@@ -115,7 +115,7 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
     expect(await entryOf('deliveries', first.id)).toEqual(['gdni 30.00 0.00', 'stock 0.00 30.00']);
     const d = await run((ctx) => getDeliveryById(ctx, { id: first.id }));
     expect([d.status, d.lines.map((l) => [l.qty, l.value, l.taxable, l.gst, l.batches])]).toEqual(['posted',
-      [['1.000', '30.00', '50.00', '2.50', [{ batchId: at.batchId, qty: '1' }]]]]);
+      [['1.000', '30.00', '50.00', '2.50', [{ batchId: at.batchId, batchNo: 'B1', qty: '1' }]]]]);
     expect((await run((ctx) => getOrderById(ctx, { id: at.orderId }))).status).toBe('confirmed');
     // Only what's left of the order goes: 2 of 3.
     expect(await failure(draft(at, '3'))).toBe('over_quantity');
