@@ -4,7 +4,6 @@
 // paid stays on the party's credit, which each stage's credit check judges (an advance already lowers what's owed).
 // Like every contract file it imports only zod, lib-common and other libraries' contract entries (D5).
 import { dateString, defineContract, idString, moneyString } from '@radcore/lib-common';
-import { allocatePaymentContract, recordPaymentContract } from '@radcore/lib-accounts/contract';
 import { z } from 'zod';
 import { createDelivery, picks, postDelivery } from './deliveries.ts';
 import { confirmOrder, createOrder, lineIn } from './documents.ts';
@@ -21,10 +20,14 @@ const payment = z.discriminatedUnion('method', [
   z.object({ method: z.literal('bank'), amount: moneyString(), accountId: idString(), reference: reference().optional() }),
 ]);
 
-/** What a stage's own service can refuse, said here as it says it; and the quick bill's own. */
-const STAGES = [createOrder, confirmOrder, createDelivery, postDelivery, createInvoice, postInvoice, recordPaymentContract, allocatePaymentContract];
-const ERRORS = [...new Set([...STAGES.flatMap((c) => c.errors), 'cash_over_limit', 'approval_code_required', 'looks_like_card_number',
-  'overpaid', 'no_payment_amount'])];
+/** What a stage's own service can refuse, said here as it says it; what taking a receipt and applying it can (lib-accounts'
+ * recordPayment and allocatePayment, listed as the bookings contract lists them, so no lib-sales route reaches lib-accounts
+ * through its contract); and the quick bill's own. */
+const STAGES = [createOrder, confirmOrder, createDelivery, postDelivery, createInvoice, postInvoice];
+const MONEY_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_account', 'not_money_account', 'account_inactive',
+  'exceeds_payment', 'exceeds_document', 'document_not_posted'] as const;
+const ERRORS = [...new Set([...STAGES.flatMap((c) => c.errors), ...MONEY_ERRORS, 'cash_over_limit', 'approval_code_required',
+  'looks_like_card_number', 'overpaid', 'no_payment_amount'])];
 
 /**
  * A counter sale in one save: the party (the Counter customer when none is named, below sales.b2c_details_limit), the

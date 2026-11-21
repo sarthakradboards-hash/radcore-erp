@@ -14,7 +14,7 @@ import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import accountsRoutes from '../apps/api/src/routes/accounts.ts';
 import salesRoutes from '../apps/api/src/routes/sales.ts';
@@ -51,11 +51,7 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     return { kind: 'user', userId: randomUUID(), role: 'counter', permissions: rows.map((r) => r.permission),
       ownScope: rows.filter((r) => r.scope === 'own').map((r) => r.permission) };
   };
-  let clerk: Principal;
-  beforeAll(async () => {
-    clerk = await counter();
-  });
-  const run = <T>(fn: (ctx: Ctx) => Promise<T>, as: Principal = clerk) => runInTransaction(db, WRITE, as, randomUUID(), fn);
+  const run = <T>(fn: (ctx: Ctx) => Promise<T>, as: Principal = staff) => runInTransaction(db, WRITE, as, randomUUID(), fn);
   const failure = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? `${e.code}${e.code === 'forbidden' ? `: ${e.message}` : ''}` : String(e)));
   const rowsOf = async <T extends pg.QueryResultRow>(text: string, values: unknown[]) => (await su.query<T>(text, values)).rows;
 
@@ -72,20 +68,21 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: placeId,
         qty: q(o.stock ?? '10'), rate: unitPriceString().parse('200'), batches: [{ batchNo: 'B1', qty: q(o.stock ?? '10') }] }] });
       return { itemId, placeId };
-    }, staff);
+    });
     const listId = await priceListFrom(su, DATE, { [made.itemId]: o.rate });
     const [batch] = await rowsOf<{ id: string }>('select id from radcore.batches where item_id = $1', [made.itemId]);
     return { ...made, listId, batchId: batch?.id ?? '', rate: o.rate };
   }
   type At = Awaited<ReturnType<typeof setup>>;
-  /** In one rolled-back transaction with the company set, sold from the test's list, with any other settings given. */
+  /** In one rolled-back transaction as a counter person (or `as`), with the company set, sold from the test's list, with
+   * any other settings given. */
   async function atCounter<R>(at: At, fn: (ctx: Ctx) => Promise<R>, o: { as?: Principal; settings?: { key: string; value: unknown }[] } = {}) {
     let out: R | undefined;
     await run(async (ctx) => {
       await setCompanyProfile(ctx, COMPANY);
       out = await fn({ ...ctx, settings: new Settings([{ key: 'sales.default_price_list', value: at.listId }, ...(o.settings ?? [])]) });
       throw new RolledBack();
-    }, o.as).catch((e: unknown) => {
+    }, o.as ?? await counter()).catch((e: unknown) => {
       if (!(e instanceof RolledBack)) throw e;
     });
     return out as R;
@@ -101,7 +98,7 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
       phone: null, email: null, addressLine1: '1 Main Road', addressLine2: null, city: 'Bengaluru', pincode: '560001' });
     if (limit !== null) await setCreditTerms(ctx, { id, creditDays: 30, creditLimit: m(limit), reason: 'Test' });
     return id;
-  }, staff);
+  });
 
   // F7: 3 PADs at 345.00, delivered and invoiced in one save; 1,221.30 of lines rounds to 1,221.00, paid in cash.
   it('sells F7 to the Counter customer in one save: order, delivery, invoice and receipt, the receipt applied', async () => {
@@ -203,12 +200,13 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
       const id = async (key: string) => systemAccountId(ctx, key);
       const check = (v: string | null) => CARD_ACCOUNT.check?.(ctx, v);
       return [await check(null), await check(await id('bank')), await check(await id('card_settlements')), typeof await check(await id('sales'))];
-    }, staff);
+    });
     expect(out).toEqual([null, null, null, 'string']);
   });
 
   it('names every missing stage key at once, before anything is written', async () => {
     const at = await setup({ rate: '345' });
+    const clerk = await counter();
     const without = { ...clerk, permissions: clerk.permissions.filter((p) => p !== 'deliveries:write' && p !== 'sales:write') };
     expect(await atCounter(at, (ctx) => failure(bill(ctx, at, '1', [cash('362')])), { as: without }))
       .toBe('forbidden: A quick bill needs sales:write, deliveries:write');
@@ -218,6 +216,7 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
   // cancel none (payments:write, the architect's Q6); and the card code's refusal is the route's, by name, not a 500.
   it('refuses the counter on POST /payments and on cancelling a receipt, and answers a card with no code by name', async () => {
     const config = loadConfig(testSettings(), 'api');
+    const clerk = await counter();
     const app = createApp(config, { info: () => undefined, error: () => undefined },
       { db, authenticate: async () => clerk, routes: [...salesRoutes, ...accountsRoutes] });
     const server = await listen(app, 0, '127.0.0.1');
