@@ -14,6 +14,7 @@ import {
   cancelDeliveryNow, cancelDeliveryReturnNow,
   orderCounts, quoteCounts,
   addAdvance, addBooking, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow,
+  listTestRidesPage, recordRide, saveChecklist, scheduleRide,
 } from '@radcore/lib-sales';
 import {
   createPriceList, getPrice, getPriceList, getPriceListChanges, getPriceListVersion, listDiscountLimits, listPriceListRates, listPriceLists, priceListApproval as
@@ -30,6 +31,7 @@ import {
   countOrders, countQuotes,
   cancelDelivery, cancelDeliveryReturn,
   addBookingAdvance, cancelBooking, createBooking, getBooking, listBookings, refundBooking,
+  listTestRides, recordTestRide, saveBookingChecklist, scheduleTestRide,
 } from '@radcore/lib-sales/contract';
 
 export default [
@@ -110,4 +112,9 @@ export default [
   defineRoute(addBookingAdvance, addAdvance),
   defineRoute(cancelBooking, cancelBookingNow),
   defineRoute(refundBooking, refundBookingNow),
+  // Test rides and a delivered booking's checklist (RAD-117).
+  defineRoute(saveBookingChecklist, saveChecklist),
+  defineRoute(listTestRides, listTestRidesPage),
+  defineRoute(scheduleTestRide, scheduleRide),
+  defineRoute(recordTestRide, recordRide),
 ];

@@ -288,6 +288,8 @@ describe('the admin contracts', () => {
       'POST /files/resume/:id/download': ['download'],
       'POST /files/statement/:id/download': ['download'],
       'POST /files/import/:id/download': ['download'],
+      'POST /files/delivery-photo/:id/download': ['download'],
+      'POST /files/delivery-note/:id/download': ['download'],
       'POST /exports/:id/download': ['download'],
     });
   });
