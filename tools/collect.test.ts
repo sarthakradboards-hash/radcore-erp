@@ -168,12 +168,17 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
     expect([await remindOf(mine), await remindOf(theirs)]).toEqual(['ok', 'not_found']);
     expect(await code(run((ctx) => remindersPage(ctx, { id: theirs, filter: {}, limit: 10 }), SALES))).toBe('not_found');
     // Who manages a party is set under parties:manage, and then they see it.
-    const assign = (p: Principal) => code(run((ctx) => setCreditTerms(ctx, { id: unassigned, creditDays: null, creditLimit: null,
-      accountManager: me, reason: 'Ravi looks after this dealer' }), p));
+    const assign = (p: Principal, who = me) => code(run((ctx) => setCreditTerms(ctx, { id: unassigned, creditDays: null, creditLimit: null,
+      accountManager: who, reason: 'Ravi looks after this dealer' }), p));
     expect(await assign(SALES)).toBe('forbidden');
     const manager: Principal = { kind: 'user', userId: randomUUID(), permissions: ['parties:manage'] };
     // Only a person with an account, switched on, manages a party (the auditor on #276).
     expect(await assign(manager)).toBe('unknown_user');
+    // An account that's switched off is no manager either (the auditor's NIT on #276).
+    const off = randomUUID();
+    await owner(`insert into radcore.users (id, email, display_name, status, password_hash, role) values ($1, $2, 'Asha', 'disabled', 'x', 'sales')`,
+      [off, `${off}@example.test`]);
+    expect(await assign(manager, off)).toBe('unknown_user');
     await owner(`insert into radcore.users (id, email, display_name, status, password_hash, role) values ($1, $2, 'Ravi', 'active', 'x', 'sales')`,
       [me, `${me}@example.test`]);
     expect(await assign(manager)).toBe('ok');
