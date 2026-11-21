@@ -49,12 +49,14 @@ export type UnitEventRow = {
 export const serialKey = (serialNo: string): string => serialNo.toUpperCase().replace(/\s/g, '');
 
 /** Whether an item is serialised, and its unit with this serial as it stands, or null: for another library judging a
- * unit before it promises it (a booking, RAD-117). */
-export async function unitFor(ctx: Ctx, itemId: string, serialNo: string): Promise<{ serialised: boolean; unit: {
+ * unit before it promises it (a booking, RAD-117). With `lock`, the unit's row is held FOR UPDATE, so what's judged
+ * stays true until the promise is written (auditor-2 on #286). */
+export async function unitFor(ctx: Ctx, itemId: string, serialNo: string, o: { lock?: boolean } = {}): Promise<{ serialised: boolean; unit: {
   ownership: string; condition: string; locationId: string | null; promisedTo: string | null } | null }> {
   const [item] = await stockTx(ctx).select({ serialised: items.serialised }).from(items).where(eq(items.id, itemId)).limit(1);
-  const [unit] = await stockTx(ctx).select({ ownership: units.ownership, condition: units.condition, locationId: units.locationId,
+  const q = stockTx(ctx).select({ ownership: units.ownership, condition: units.condition, locationId: units.locationId,
     promisedTo: units.promisedTo }).from(units).where(and(eq(units.itemId, itemId), eq(units.serialKey, serialKey(serialNo)))).limit(1);
+  const [unit] = o.lock === true ? await q.for('update') : await q;
   return { serialised: item?.serialised === true, unit: unit ?? null };
 }
 

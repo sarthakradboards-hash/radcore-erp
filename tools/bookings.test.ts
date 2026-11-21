@@ -180,6 +180,19 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect(promised?.n).toBe(1);
   });
 
+  it('refuses to rewrite an order whose booking was cancelled, by name, not with a database error (auditor-2 on #286)', async () => {
+    const booked = `S-${tag()}`;
+    const at = await setup({ serials: [booked] });
+    const line = at.lines[0] ?? { orderId: '', orderLineId: '' };
+    const { id } = await book(line.orderLineId, booked, '10000');
+    await run((ctx) => cancelBookingNow(ctx, { id, businessDate: DATE, reason: 'Customer changed mind' }));
+    const rewrite = run((ctx) => changeOrder(ctx, { id: line.orderId, partyId: at.partyId, businessDate: DATE, notes: null,
+      lines: [{ itemId: at.itemId, qty: q('1'), rate: unitPriceString().parse('69000'), discountPercent: percentString({ max: '100' }).parse('0') }] }));
+    const refused = await rewrite.catch((e: unknown) => e);
+    expect([(refused as AppError).code, (refused as AppError).message])
+      .toEqual(['booking_live', 'Line 1 has a booking, so this order’s lines are fixed: make a new order for extras or another vehicle']);
+  });
+
   it('cancels with a reason: the unit is free, the lead is interested and due today, unless it has another live booking (RC-127)', async () => {
     const s = [`S-${tag()}`, `S-${tag()}`];
     const at = await setup({ serials: s, orders: 2 });
@@ -193,6 +206,22 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect(await stageOf(lead)).toEqual({ stage: 'interested', follow_up_on: DATE });
     const [note] = (await su.query<{ note: string }>("select note from radcore.lead_activities where lead_id = $1 and stage = 'interested'", [lead])).rows;
     expect(note?.note).toBe(`Booking ${second.number} cancelled: Moving to another city`);
+  });
+
+  it('cancels two bookings of one lead at once and resets the lead once; a make during a cancel leaves it converted', async () => {
+    const s = [`S-${tag()}`, `S-${tag()}`, `S-${tag()}`, `S-${tag()}`];
+    const at = await setup({ serials: s, orders: 4 });
+    const [l1, l2, l3, l4] = at.lines;
+    const both = await leadOf(staff);
+    const [a, b] = [await book(l1?.orderLineId ?? '', s[0] ?? '', '1000', { leadId: both }), await book(l2?.orderLineId ?? '', s[1] ?? '', '1000', { leadId: both })];
+    await Promise.all([a, b].map((x) => run((ctx) => cancelBookingNow(ctx, { id: x.id, businessDate: DATE, reason: 'Both at once' }))));
+    const resets = (await su.query<{ n: number }>("select count(*)::int n from radcore.lead_activities where lead_id = $1 and stage = 'interested'", [both])).rows[0];
+    expect([(await stageOf(both))?.stage, resets?.n]).toEqual(['interested', 1]);
+    const one = await leadOf(staff);
+    const only = await book(l3?.orderLineId ?? '', s[2] ?? '', '1000', { leadId: one });
+    await Promise.all([run((ctx) => cancelBookingNow(ctx, { id: only.id, businessDate: DATE, reason: 'Another on the way' })),
+      book(l4?.orderLineId ?? '', s[3] ?? '', '1000', { leadId: one })]);
+    expect((await stageOf(one))?.stage).toBe('converted');
   });
 
   it('refunds all of what’s left only with refund_full, part with refund_part, and never more than is left', async () => {

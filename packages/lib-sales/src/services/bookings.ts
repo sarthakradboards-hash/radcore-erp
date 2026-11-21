@@ -11,7 +11,7 @@
 import { after, salesOrderLines, salesOrders, salesTx, vehicleBookings } from '@radcore/db/sales';
 import { heldLeft, holdParty, holdPeriod, recordHeldReceipt, refundHeld } from '@radcore/lib-accounts';
 import { dec, roundMoney } from '@radcore/lib-common';
-import { bookingCancelled, bookingMade } from '@radcore/lib-crm';
+import { bookingCancelled, bookingMade, holdLead } from '@radcore/lib-crm';
 import {
   AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, type Ctx,
 } from '@radcore/lib-platform';
@@ -104,6 +104,9 @@ export async function addBooking(ctx: Ctx, input: In<typeof createBooking>): Pro
     .from(salesOrders).where(eq(salesOrders.id, line.orderId)).for('update');
   if (order === undefined) throw new AppError('not_found', 'There is no such order line');
   ctx.see('sales:read', { owner: order.owner });
+  // Again under the order's lock: a rewrite committed since the first read may have replaced the line (auditor-2 on #286).
+  const [still] = await tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(eq(salesOrderLines.id, input.orderLineId));
+  if (still === undefined) throw new AppError('not_found', 'There is no such order line');
   if (order.status !== 'confirmed') throw new AppError('wrong_status', `This order is ${order.status}: only a confirmed order's line is booked`);
   if (!dec(line.qty).eq(1)) {
     throw new AppError('booking_one_unit', 'A booking holds one vehicle: book a line of quantity 1',
@@ -117,7 +120,8 @@ export async function addBooking(ctx: Ctx, input: In<typeof createBooking>): Pro
   if (input.leadId !== undefined) await bookingMade(ctx, input.leadId, `Booked ${input.serialNo}`);
   await holdParty(ctx, order.partyId);
   // The unit: one a delivery would take, promised to no one, then promised to this line.
-  const { serialised, unit } = await unitFor(ctx, line.itemId, input.serialNo);
+  // Judged under the unit's own lock (§1's step 5, after the party), so a booking or move at the same time waits for it.
+  const { serialised, unit } = await unitFor(ctx, line.itemId, input.serialNo, { lock: true });
   if (!serialised) throw new AppError('not_serialised', 'Only a serialised item is booked by its unit');
   if (unit === null || unit.ownership !== 'ours' || unit.locationId === null || !['new', 'used'].includes(unit.condition)) {
     throw new AppError('unit_unavailable', `${input.serialNo} isn’t a unit we can sell`,
@@ -183,9 +187,13 @@ export async function cancelBookingNow(ctx: Ctx, { id, businessDate, reason, ref
   if (b.status !== 'booked') throw new AppError('wrong_status', `This booking is ${b.status}, so it can’t be cancelled`);
   checkDate(businessDate, today(), { date: b.businessDate, what: 'booking' });
   const tx = salesTx(ctx);
-  // The lead, right after the booking: back to interested only when this was its last live booking.
-  if (b.leadId !== null && !(await otherLiveBooking(ctx, b.leadId, id))) {
-    await bookingCancelled(ctx, b.leadId, `Booking ${b.number ?? ''} cancelled: ${reason}`, businessDate);
+  // The lead, locked right after the booking, then judged under that lock: back to interested only when this was its
+  // last live booking, so two cancels or a make at the same time take turns (the architect, auditor-2 on #286).
+  if (b.leadId !== null) {
+    await holdLead(ctx, b.leadId);
+    if (!(await otherLiveBooking(ctx, b.leadId, id))) {
+      await bookingCancelled(ctx, b.leadId, `Booking ${b.number ?? ''} cancelled: ${reason}`, businessDate);
+    }
   }
   const refunds = refund === undefined ? [] : await refundLeft(ctx, b, { ...refund, businessDate });
   await releasePromises(ctx, { sourceTable: TABLE, sourceId: id, businessDate, orderLineIds: [b.orderLineId] });

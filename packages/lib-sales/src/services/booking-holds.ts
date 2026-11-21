@@ -33,22 +33,26 @@ export async function otherLiveBooking(ctx: Ctx, leadId: string, exceptId: strin
   return other !== undefined;
 }
 
+// shortcut: changeOrder deletes and reinserts every line (new ids), and a booking names its line by id (restricting the
+// delete, cancelled or not), so any rewrite of an order that ever had a booking is refused, not only one changing the
+// booked line; upgrade when changeOrder keeps unchanged lines' ids (the architect on RAD-117, auditor-2 on #286).
 const NEXT_STEP = {
-  // shortcut: changeOrder deletes and reinserts every line (new ids) and promised_to has no foreign key, so any rewrite
-  // of a booked order is refused, not only one changing the booked line; upgrade when changeOrder keeps unchanged lines' ids.
-  rewrite: 'make a new order for extras, or cancel its booking to change the vehicle',
+  rewrite: 'make a new order for extras or another vehicle',
   cancel: 'cancel its booking first, so its advance is explained',
   close: 'cancel its booking first, so its advance is explained',
 } as const;
 
-/** Refused while a booking still holds a unit for a line of the order. Names the line, not the booking: the caller may
- * hold no bookings key. Answers nothing, or refuses. */
+/** Refused while a booking still holds a unit for a line of the order (to cancel it or close it short), or, to rewrite
+ * its lines, while any booking names one. Names the line, not the booking: the caller may hold no bookings key.
+ * Answers nothing, or refuses. */
 export async function refuseWhileBooked(ctx: Ctx, orderId: string, change: keyof typeof NEXT_STEP): Promise<void> {
   const [live] = await salesTx(ctx).select({ lineNo: salesOrderLines.lineNo }).from(vehicleBookings)
     .innerJoin(salesOrderLines, eq(salesOrderLines.id, vehicleBookings.orderLineId))
-    .where(and(eq(vehicleBookings.orderId, orderId), eq(vehicleBookings.status, 'booked'))).orderBy(asc(salesOrderLines.lineNo)).limit(1);
+    .where(and(eq(vehicleBookings.orderId, orderId), change === 'rewrite' ? undefined : eq(vehicleBookings.status, 'booked')))
+    .orderBy(asc(salesOrderLines.lineNo)).limit(1);
   if (live !== undefined) {
-    throw new AppError('booking_live', `Line ${String(live.lineNo)} has a vehicle booked on it: ${NEXT_STEP[change]}`);
+    const what = change === 'rewrite' ? 'has a booking, so this order’s lines are fixed' : 'has a vehicle booked on it';
+    throw new AppError('booking_live', `Line ${String(live.lineNo)} ${what}: ${NEXT_STEP[change]}`);
   }
 }
 
