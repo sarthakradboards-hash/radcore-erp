@@ -1,7 +1,7 @@
 'use client';
 // Orders (RAD-125 on RAD-112's contracts): what customers have ordered, newest first, a page at a time and filtered by
 // status. sales:write starts a new one; its page confirms it, closes it, or cancels it.
-import { formatDate, SALES_ORDER_STATUSES } from '@radcore/lib-common';
+import { formatDate, formatMoney, SALES_ORDER_STATUSES } from '@radcore/lib-common';
 import { listOrders } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -19,6 +19,7 @@ const columns: Column<OrderRow>[] = [
   { id: 'number', header: t('sales.number'), cell: (o) => <Link href={`/sales/orders/${o.id}`}>{numberText(o.number)}</Link> },
   { id: 'party', header: t('sales.party'), cell: (o) => o.partyName },
   { id: 'date', header: t('sales.date'), cell: (o) => formatDate(o.businessDate) },
+  { id: 'total', header: t('sales.col.total'), numeric: true, cell: (o) => (o.total === null ? '' : formatMoney(o.total)) },
   { id: 'status', header: t('sales.status'), cell: (o) => t(`sales.order.status.${o.status}`) },
 ];
 

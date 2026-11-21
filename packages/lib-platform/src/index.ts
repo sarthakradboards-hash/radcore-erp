@@ -13,7 +13,7 @@ export {
 } from './guards.ts';
 export { recordChangeReason } from './change-reasons.ts';
 export {
-  createLink, linkMaxDays, linkPrincipal, linkUrl, listLinks, recordLinkAccess, revokeLink, useLink, type NewLink,
+  createLink, linkMaxDays, linkPrincipal, linkRecord, linkUrl, listLinks, recordLinkAccess, revokeLink, useLink, type NewLink,
 } from './links.ts';
 export { recordLooks } from './looks.ts';
 export {

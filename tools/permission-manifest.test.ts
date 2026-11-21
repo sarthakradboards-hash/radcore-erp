@@ -3,6 +3,7 @@
 // adding a route without its line fails here: the sweep never reads the table from the code it checks. Each key a
 // route or job checks must also be one the permission matrix can grant (RAD-36's catalogue).
 import { loadConfig, type JobDefinition, type Route } from '@radcore/lib-platform';
+import { ANSWER_NOT_STORED_ROUTES, KEY_EXEMPT_ROUTES } from '@radcore/lib-platform/contract';
 import { createAuth } from '@radcore/lib-platform/runtime';
 import { createClientErrors } from '@radcore/lib-platform';
 import { piiPlan, type PiiPlan } from '@radcore/lib-common';
@@ -76,6 +77,13 @@ describe('the permission manifest', () => {
     const routes = await apiList();
     expect(routes.length).toBe(new Set(routes.map((r) => `${r.contract.method} ${r.contract.path}`)).size);
     expect(disagreements(await mountedRoutes(), ROUTE_CHECKS)).toEqual([]);
+  });
+
+  it("has ADR-001 §7a's fixed lists name exactly the mounted routes that declare each saved-once flag", async () => {
+    const routes = await apiList();
+    const declaring = (has: (r: Route) => boolean) => routes.filter(has).map((r) => `${r.contract.method} ${r.contract.path}`).sort();
+    expect([declaring((r) => r.contract.idempotency === 'exempt'), declaring((r) => r.contract.storesAnswer === false)])
+      .toEqual([[...KEY_EXEMPT_ROUTES].sort(), [...ANSWER_NOT_STORED_ROUTES].sort()]);
   });
 
   it('matches every job the worker runs, line for line', () => {
