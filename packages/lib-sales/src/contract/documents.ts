@@ -68,12 +68,12 @@ export const getQuote = defineContract({
 /** A new draft quote. */
 export const createQuote = defineContract({
   method: 'POST', path: '/sales/quotes', auth: 'session', perm: 'sales:write', tx: write,
-  input: quoteIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS],
+  input: quoteIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS, 'counter_customer_only'],
 });
 /** A draft quote, rewritten whole. */
 export const updateQuote = defineContract({
   method: 'PUT', path: '/sales/quotes/:id', auth: 'session', perm: 'sales:write', tx: write,
-  input: quoteIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS],
+  input: quoteIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'counter_customer_only'],
 });
 /** A draft quote, thrown away: it never had a number, so it leaves no gap. */
 export const deleteQuote = defineContract({

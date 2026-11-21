@@ -1,11 +1,20 @@
 // What quotes and orders share (M3-08, RAD-112): their party (one we sell to), their lines (items that exist, in
 // quantities their units allow), their dates (ADR-007 §4).
-import { getPartyById } from '@radcore/lib-accounts';
+import { getPartyById, systemPartyId } from '@radcore/lib-accounts';
 import { indiaDate } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
 import { batchNumbers, checkQuantity, itemLabels } from '@radcore/lib-stock';
 
 export type LineIn = { itemId: string; qty: string; rate: string; discountPercent: string };
+
+/** The Counter customer buys only through the quick bill, which bills at the counter what it delivers there (the
+ * architect on RAD-115): an order of its own, or a quote that becomes one, would wait under a party no one owns. */
+export async function refuseCounterCustomer(ctx: Ctx, partyId: string): Promise<void> {
+  if (partyId === await systemPartyId(ctx, 'walk_in')) {
+    throw new AppError('counter_customer_only', 'The Counter customer buys only through the quick bill',
+      [{ path: ['partyId'], code: 'counter_customer_only', message: 'Choose a named party, or use the quick bill' }]);
+  }
+}
 
 /** Today's date in India, the bound a document's date may not pass (§4). */
 export const today = (): string => indiaDate(new Date());

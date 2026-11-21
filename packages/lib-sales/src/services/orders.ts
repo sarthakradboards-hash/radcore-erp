@@ -3,7 +3,7 @@
 // then closed (every line delivered, or short with a reason, RC-125) or cancelled (nothing delivered, with a reason).
 // A confirmed order's lines still change, only through here, and the checks run again (§1).
 import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radcore/db/sales';
-import { holdParty, holdPeriod, systemPartyId } from '@radcore/lib-accounts';
+import { holdParty, holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
   AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
@@ -14,7 +14,7 @@ import type {
   cancelOrder, closeOrder, confirmOrder, createOrder, deleteOrder, getOrder, listOrders, requestOrderOverride, updateOrder,
 } from '../contract.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
-import { checkedLines, sellingTo, today } from './document-lines.ts';
+import { checkedLines, refuseCounterCustomer, sellingTo, today } from './document-lines.ts';
 import { amountsForRead, frozenHeader, frozenLine, type Amounts } from './document-amounts.ts';
 import { hasDeliveries, invoicedOf, netDelivered, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
@@ -118,15 +118,6 @@ export function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<t
  * function, not an option on addOrder, since a route passes its service a third argument. */
 export function addCounterOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
   return addOrderFor(ctx, input, true);
-}
-
-/** The Counter customer buys only through the quick bill, which bills at the counter what it delivers there (the
- * architect on RAD-115): an order of its own would wait undelivered under a party no one owns. */
-async function refuseCounterCustomer(ctx: Ctx, partyId: string): Promise<void> {
-  if (partyId === await systemPartyId(ctx, 'walk_in')) {
-    throw new AppError('counter_customer_only', 'The Counter customer buys only through the quick bill',
-      [{ path: ['partyId'], code: 'counter_customer_only', message: 'Choose a named party, or use the quick bill' }]);
-  }
 }
 
 async function addOrderFor(ctx: Ctx, input: In<typeof createOrder>, counter: boolean): Promise<Out<typeof createOrder>> {

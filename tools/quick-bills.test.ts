@@ -304,6 +304,10 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
       expect(await send('/sales/quick-bills', { businessDate: DATE, locationId: at.placeId, notes: null,
         lines: [{ itemId: at.itemId, qty: '1', rate: '345', discountPercent: '0', batches: [{ batchId: at.batchId, qty: '1' }], serials: [] }],
         payments: [{ method: 'card', amount: '362' }] })).toEqual([422, 'approval_code_required']);
+      // A quote, once accepted, makes an order directly, so it may not name the Counter customer either (backend-3 on #304).
+      const [walkIn] = await rowsOf<{ id: string }>("select id from radcore.parties where system_key = 'walk_in'", []);
+      expect(await send('/sales/quotes', { partyId: walkIn?.id, businessDate: DATE, validUntil: null, notes: null,
+        lines: [{ itemId: at.itemId, qty: '1', rate: '345', discountPercent: '0' }] })).toEqual([422, 'counter_customer_only']);
       expect(await send('/payments', { kind: 'receipt', partyId: randomUUID(), businessDate: DATE, amount: '1', accountId: randomUUID() }))
         .toEqual([403, 'forbidden']);
       expect(await send(`/payments/${randomUUID()}/cancel`, { businessDate: DATE, reason: 'Test' })).toEqual([403, 'forbidden']);
