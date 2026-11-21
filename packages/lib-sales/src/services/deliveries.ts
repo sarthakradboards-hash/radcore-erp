@@ -20,7 +20,7 @@ import { netDelivered, orderDelivered, picksOf, returnedOf } from './delivered.t
 import { bookingsDelivered, linesDone, lockLiveBookings } from './booking-holds.ts';
 import { checkDelivery, deliveryLinesOf, deliveryOverride, pricedLines } from './delivery-checks.ts';
 import { checkDate } from './document-rules.ts';
-import { labelled, today } from './document-lines.ts';
+import { labelled, numberedBatches, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -121,7 +121,8 @@ export async function getDeliveryById(ctx: Ctx, { id }: In<typeof getDelivery>):
   const names = await partyNames(ctx, [d.partyId]);
   const left = await leftToInvoice(ctx, lines, d.status === 'posted');
   return { ...d, status: d.status as Status, partyName: names.get(d.partyId) ?? '',
-    lines: (await labelled(ctx, lines)).map(({ picks, ...l }) => ({ ...l, ...picksOf(picks), qtyToInvoice: left.get(l.id) ?? '0' })) };
+    lines: await numberedBatches(ctx, (await labelled(ctx, lines)).map(({ picks, ...l }) => ({ ...l, ...picksOf(picks),
+      qtyToInvoice: left.get(l.id) ?? '0' }))) };
 }
 
 /** How much of each posted delivery line is still to invoice (auditor-3 on #285), worked out on read: what went, less
