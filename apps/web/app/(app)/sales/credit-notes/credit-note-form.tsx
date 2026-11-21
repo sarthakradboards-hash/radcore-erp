@@ -78,12 +78,16 @@ function Lines() {
   );
 }
 
-/** The accounts a counter refund can be paid from: active, non-control assets (cash and bank among them); the server checks it
- * is a money account. A person who can't read the chart sees no refund section: the note is written without one. */
+/** The accounts a counter refund can be paid from: Cash, Bank, and the bank accounts under Bank (what the server takes as a money
+ * account; it checks again when the note is approved). A person who can't read the chart (journal:read) is told the refund
+ * can't be offered, and the note is written without one. */
 function useRefundAccounts() {
   const q = useApiQuery(listAccounts, {});
+  if (q.error !== null) return 'hidden';
   if (q.data === undefined) return null;
-  return q.data.items.filter((a) => a.active && !a.control && a.type === 'asset').map((a) => ({ value: a.id, label: a.name }));
+  const bank = q.data.items.find((a) => a.systemKey === 'bank')?.id;
+  const money = (a: (typeof q.data.items)[number]) => a.systemKey === 'cash' || a.systemKey === 'bank' || (bank !== undefined && a.parentId === bank);
+  return q.data.items.filter((a) => a.active && money(a)).map((a) => ({ value: a.id, label: a.name }));
 }
 
 /** The form. */
@@ -97,7 +101,8 @@ export function CreditNoteForm({ labelledBy, initial, submit, onSubmit }: {
       <TextField name="businessDate" label={t('sales.date')} type="date" />
       <TextAreaField name="reason" label={t('sales.credit.form.reason')} />
       <Lines />
-      {accounts === null || accounts.length === 0 ? null : (
+      {accounts === 'hidden' ? <p>{t('sales.credit.form.refund.hidden')}</p> : null}
+      {accounts === null || accounts === 'hidden' || accounts.length === 0 ? null : (
         <fieldset>
           <legend>{t('sales.credit.form.refund')}</legend>
           <p className="kit-field-hint">{t('sales.credit.form.refund.hint')}</p>

@@ -57,6 +57,7 @@ export const creditNotes = {
   'sales.credit.form.line.invoiced': 'Invoiced taxable value {amount}',
   'sales.credit.form.refund': 'Counter refund (optional)',
   'sales.credit.form.refund.hint': 'Pay part or all of the credit back over the counter as the note is posted.',
+  'sales.credit.form.refund.hidden': 'A counter refund can’t be offered here: it needs permission to read the chart of accounts. The note is written without one.',
   'sales.credit.form.refund.amount': 'Refund amount',
   'sales.credit.form.refund.account': 'Pay it from',
   'sales.credit.form.refund.account.none': 'Choose an account',
