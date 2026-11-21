@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { deliverySchema } from './delivery-values.ts';
+import { deliverySchema, unlistedKeys } from './delivery-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const base = { orderId: id(1), locationId: id(2), businessDate: '2026-11-20', notes: '' };
@@ -27,4 +27,11 @@ it('needs an order, a place and at least one line', () => {
 it('carries the serials picked', () => {
   const out = deliverySchema.parse({ ...base, lines: [line({ qty: '2', serials: ['SN-1', 'SN-2'] })] });
   expect(out.lines[0]?.serials).toEqual(['SN-1', 'SN-2']);
+});
+
+it('finds the batch quantities a line still holds that the place doesn’t list, so each gets a box to clear (auditor-3 on #291)', () => {
+  // A draft edited after a batch ran out, or a place changed: the old keys stay in the form and would be sent.
+  expect(unlistedKeys({ [id(5)]: '2', [id(6)]: '1', unknown: '' }, [id(5)])).toEqual([id(6)]);
+  expect(unlistedKeys({ [id(5)]: '2' }, [id(5)])).toEqual([]);
+  expect(unlistedKeys({}, [id(5)])).toEqual([]);
 });

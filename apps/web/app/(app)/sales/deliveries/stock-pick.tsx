@@ -12,14 +12,18 @@ import { TextField } from '../../../../components/ui/form/fields.tsx';
 import { useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
-import type { DeliveryInput } from './delivery-values.ts';
+import { unlistedKeys, type DeliveryInput } from './delivery-values.ts';
 
 type Condition = (typeof UNIT_CONDITIONS)[number];
 
 /** The key a batch's quantity box has in the form: the batch's id, or "unknown" for goods whose batch isn't known. */
 export const batchKey = (batchId: string | null) => batchId ?? 'unknown';
 
-function Units({ index, units }: { index: number; units: readonly { serialNo: string; chassisNo: string | null; condition: Condition; heldForThis: boolean }[] }) {
+function Units({ index, units, complete }: {
+  index: number; units: readonly { serialNo: string; chassisNo: string | null; condition: Condition; heldForThis: boolean }[];
+  /** The whole list is shown (no search, no further page), so a picked unit missing from it isn't on hand here now. */
+  complete: boolean;
+}) {
   const { setValue } = useFormContext<DeliveryInput>();
   const { field } = useController<DeliveryInput, `lines.${number}.serials`>({ name: `lines.${index}.serials` });
   const picked: readonly string[] = field.value;
@@ -36,6 +40,14 @@ function Units({ index, units }: { index: number; units: readonly { serialNo: st
     <>
       <p>{t('sales.delivery.form.serials.picked', { n: String(picked.length) })}</p>
       <ul className="admin-checklist">
+        {complete ? picked.filter((s) => !units.some((u) => u.serialNo === s)).map((serialNo) => (
+          <li key={serialNo}>
+            <label className="admin-grant">
+              <input type="checkbox" checked onChange={() => toggle(serialNo)} />
+              <span>{serialNo}, {t('sales.delivery.form.notOnHand')}</span>
+            </label>
+          </li>
+        )) : null}
         {units.map((u) => {
           const other = first !== undefined && u.condition !== first && !picked.includes(u.serialNo);
           const label = [u.serialNo, u.chassisNo, t(`sales.delivery.form.condition.${u.condition}`),
@@ -60,6 +72,7 @@ export function StockPick({ index, itemId, onSplit }: { index: number; itemId: s
   const { control } = useFormContext<DeliveryInput>();
   const locationId = useWatch({ control, name: 'locationId' });
   const orderLineId = useWatch({ control, name: `lines.${index}.orderLineId` });
+  const picks = useWatch({ control, name: `lines.${index}.pick` });
   const [q, setQ] = useState('');
   const ready = locationId !== '' && itemId !== '' && orderLineId !== '';
   const stock = useApiQuery(getOnHand, {
@@ -69,6 +82,7 @@ export function StockPick({ index, itemId, onSplit }: { index: number; itemId: s
   if (stock.error !== null) return <p role="alert" className="kit-form-alert">{t('sales.delivery.form.onHand.error')}</p>;
   if (stock.data === undefined) return <p>{t('sales.delivery.form.onHand.loading')}</p>;
   const { position, batches, units } = stock.data;
+  const unlisted = unlistedKeys(picks, batches.map((b) => batchKey(b.batchId)));
   return (
     <>
       <p>{t('sales.delivery.form.onHand', { n: asWritten(position) })}</p>
@@ -84,6 +98,10 @@ export function StockPick({ index, itemId, onSplit }: { index: number; itemId: s
               label={t('sales.delivery.form.batch', { batch: name, n: asWritten(b.qty) })} />
           );
         })}
+        {unlisted.map((key) => (
+          <TextField key={key} name={`lines.${index}.pick.${key}`} inputMode="decimal" autoComplete="off"
+            label={t('sales.delivery.form.batch', { batch: t('sales.delivery.form.batch.gone'), n: '0' })} />
+        ))}
       </fieldset>
       {units === null ? null : (
         <fieldset>
@@ -93,7 +111,7 @@ export function StockPick({ index, itemId, onSplit }: { index: number; itemId: s
             {t('sales.delivery.form.serials.search')}
             <input type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" />
           </label>
-          {units.items.length === 0 ? <p>{t('sales.delivery.form.serials.none')}</p> : <Units index={index} units={units.items} />}
+          {units.items.length === 0 ? <p>{t('sales.delivery.form.serials.none')}</p> : <Units index={index} units={units.items} complete={q.trim() === '' && units.next === null} />}
           <button type="button" className="kit-button" onClick={onSplit}>{t('sales.delivery.form.serials.split')}</button>
         </fieldset>
       )}

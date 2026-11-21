@@ -49,6 +49,7 @@ function AddOrder({ append, hasLines }: { append: (lines: LineInput[]) => void; 
           <option key={o.id} value={o.id}>{t('sales.delivery.form.order.option', { number: o.number ?? '', party: o.partyName })}</option>
         ))}
       </select>
+      {orders.hasNextPage ? <button type="button" className="kit-button" onClick={orders.fetchNextPage}>{t('kit.table.more')}</button> : null}
       <button type="button" className="kit-button" disabled={order === undefined}
         onClick={() => {
           if (order === undefined) return;
@@ -63,14 +64,22 @@ function AddOrder({ append, hasLines }: { append: (lines: LineInput[]) => void; 
   );
 }
 
+/** Names the order the delivery is against once its lines are in. */
+function AgainstOrder({ id }: { id: string }) {
+  const order = useApiQuery(getOrder, { id }).data;
+  return order === undefined ? null : <p>{t('sales.delivery.form.against', { number: order.number ?? '', party: order.partyName })}</p>;
+}
+
 // One useFieldArray for the lines, shared with the order chooser: a second one on the same name wouldn't see the first's.
 function Lines() {
   const { control } = useFormContext<DeliveryInput>();
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
   const itemIds = useWatch({ control, name: 'lines' });
+  const orderId = useWatch({ control, name: 'orderId' });
   return (
     <>
       <AddOrder append={append} hasLines={fields.length > 0} />
+      {orderId !== '' && fields.length > 0 ? <AgainstOrder id={orderId} /> : null}
       {fields.map((f, i) => (
         <fieldset key={f.id}>
           <legend>{t('sales.line', { n: String(i + 1) })}: <ItemName id={f.itemId} /></legend>

@@ -36,3 +36,8 @@ export type LineInput = DeliveryInput['lines'][number];
 
 /** What a new delivery starts from: today, nothing chosen. */
 export const NEW_DELIVERY: DeliveryInput = { orderId: '', locationId: '', businessDate: indiaDate(new Date()), notes: '', lines: [] };
+
+/** The batch keys a line still holds a quantity for that the place's stock doesn't list: a batch now out of stock on an edit,
+ * or the old place's after the place was changed. The form sends every key it holds, so each gets a box to clear (RAD-125). */
+export const unlistedKeys = (pick: Readonly<Record<string, string>>, listed: readonly string[]): string[] =>
+  Object.entries(pick).filter(([key, qty]) => qty.trim() !== '' && !listed.includes(key)).map(([key]) => key);
