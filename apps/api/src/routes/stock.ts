@@ -1,12 +1,12 @@
 // lib-stock's routes (ADR-001 §6): declarations only. Items, their categories and units of measure (RAD-89), and
-// locations and their kinds' labels (RAD-92), and the books check (RAD-95).
+// locations and their kinds' labels (RAD-92), the books check (RAD-95), and stock on hand (RAD-112).
 import { defineRoute } from '@radcore/lib-platform';
 import {
   addCategory, addItem, addItemPicture, addPlace, changeItem, checkBooks, dropItemPicture, getItemById, listCategories, listItemsPage,
-  listKinds, listPlaces, listUnits, renameCategory, setKindLabel, updatePlace,
+  listKinds, listPlaces, listUnits, onHand, renameCategory, setKindLabel, updatePlace,
 } from '@radcore/lib-stock';
 import {
-  addLocation, attachItemPicture, checkBooksContract, createItem, createItemCategory, getItem, listItemCategories, listItems, listLocationKinds,
+  addLocation, attachItemPicture, checkBooksContract, createItem, createItemCategory, getItem, getOnHand, listItemCategories, listItems, listLocationKinds,
   listLocations, listUnitsOfMeasure, removeItemPicture, renameItemCategory, setLocationKindLabel, updateItem, updateLocation,
 } from '@radcore/lib-stock/contract';
 
@@ -27,4 +27,5 @@ export default [
   defineRoute(listLocations, listPlaces),
   defineRoute(addLocation, addPlace),
   defineRoute(updateLocation, updatePlace),
+  defineRoute(getOnHand, onHand),
 ];

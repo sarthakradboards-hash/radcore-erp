@@ -20,7 +20,8 @@ import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import {
-  checkHeld, checkUnits, lockUnits, serialKey, serialisedItems, writeUnitEvents, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent,
+  checkHeld, checkUnits, lockUnits, refuseDamaged, serialKey, serialisedItems, writeUnitEvents, type InUnitEvent, type MoveUnitEvent,
+  type OutUnitEvent,
   type UnitEventRow, type UnitOnLine,
 } from './units.ts';
 import { and, asc, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm';
@@ -189,6 +190,9 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const named = [...ins, ...outs, ...transfers].flatMap((l) => (l.units ?? []).map((u) => ({ itemId: l.itemId, serialNo: u.serialNo })));
   const promised = await lockUnits(ctx, named, p.endingPromisesOf ?? []);
   await checkHeld(ctx, outs);
+  // A delivery never names a damaged unit (unit_damaged): a return to the supplier may.
+  await refuseDamaged(ctx, outs.filter((o) => (o.unitEvent ?? 'delivered') === 'delivered')
+    .flatMap((o) => (o.units ?? []).map((u) => ({ itemId: o.itemId, serialNo: u.serialNo }))));
   const events: UnitEventRow[] = [];
   const lastId = () => posted.at(-1)?.id ?? '';
   const tx = stockTx(ctx);

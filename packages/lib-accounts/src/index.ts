@@ -18,7 +18,7 @@ export {
   allocatePayment, applyCredit, paidOf, reverseAllocation, reverseCreditApplication,
 } from './services/allocations.ts';
 export type { Receivable } from './rules/receivable.ts';
-export { addParty, changeParty, getPartyById, holdParty, listPartiesPage, setCreditTerms } from './services/parties.ts';
+export { addParty, changeParty, getPartyById, holdParty, listPartiesPage, partyNames, setCreditTerms } from './services/parties.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';

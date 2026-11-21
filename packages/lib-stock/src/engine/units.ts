@@ -8,8 +8,9 @@
 import { items, stockTx, unitEvents, units } from '@radcore/db/stock';
 import { holdPeriod } from '@radcore/lib-accounts';
 import { dec, type UnitCondition, type UnitEventKind } from '@radcore/lib-common';
-import { AppError, type Ctx } from '@radcore/lib-platform';
+import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, isNotNull, ne, or } from 'drizzle-orm';
+import { z } from 'zod';
 
 /** One unit on a stock line: its serial, and on goods in, which of the line's batches it came in (when the line has
  * more than one), its chassis number and its condition from QC. A move may change its condition (to `demo`, say). */
@@ -47,6 +48,8 @@ export type UnitEventRow = {
 /** A serial as the database keys it (`serial_key`): upper case, without spaces (§5). A serial is printable ASCII
  * (`ck_units_serial`), so this and the database's expression always agree. */
 export const serialKey = (serialNo: string): string => serialNo.toUpperCase().replace(/\s/g, '');
+/** A chassis number as `units.chassis_key` holds it: upper case, without spaces or hyphens. */
+export const chassisKey = (chassisNo: string): string => chassisNo.toUpperCase().replace(/[\s-]/g, '');
 
 /** Whether an item is serialised, and its unit with this serial as it stands, or null: for another library judging a
  * unit before it promises it (a booking, RAD-117). With `lock`, the unit's row is held FOR UPDATE, so what's judged
@@ -139,6 +142,23 @@ export async function releasePromises(ctx: Ctx, p: { sourceTable: string; source
   await holdPeriod(ctx, p.businessDate); // §1's step 1, as every posting
   const promised = await lockUnits(ctx, [], p.orderLineIds);
   await writeUnitEvents(ctx, p, promised.map((u) => ({ itemId: u.itemId, serialNo: u.serialNo, kind: 'released' })));
+}
+
+/** Whether a damaged unit may be sold as it is (Sarthak on RAD-112: "Setting, default off"; the architect's proposal). */
+export const SELL_DAMAGED_UNITS = defineSetting('stock.sell_damaged_units', z.boolean(), false, {
+  label: 'Sell damaged units as they are',
+  description: 'Whether a delivery may take a unit marked damaged. Off: change its condition or move it first.',
+  input: { kind: 'yes_no' },
+});
+
+/** A delivery may not name a damaged unit unless the setting allows it (the architect on RAD-112): to sell one, change
+ * its condition or move it. Checked under the units' locks, so the on-hand read's picker isn't the only guard. */
+export async function refuseDamaged(ctx: Ctx, named: readonly { itemId: string; serialNo: string }[]): Promise<void> {
+  if (named.length === 0 || ctx.settings.get(SELL_DAMAGED_UNITS)) return;
+  const [hit] = await stockTx(ctx).select({ serialNo: units.serialNo }).from(units)
+    .where(and(eq(units.condition, 'damaged'), or(...named.map((u) => and(eq(units.itemId, u.itemId), eq(units.serialKey, serialKey(u.serialNo)))))))
+    .limit(1);
+  if (hit !== undefined) throw new AppError('unit_damaged', `Unit ${hit.serialNo} is damaged: change its condition or move it before you sell it`);
 }
 
 /** Writes a document's unit events, in the order given; the trigger applies each to its unit (RA008). */

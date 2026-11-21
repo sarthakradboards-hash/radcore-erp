@@ -98,6 +98,7 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'import_files:write', module: 'Files', label: 'Upload import files' },
   // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so the keys name no records.
   { key: 'locations:read', module: 'Stock', label: 'See locations' },
+  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial' },
   { key: 'locations:write', module: 'Stock', label: 'Add and change locations, switch them off' },
   // HR (M2-14, RAD-92): the employee master. Writing it reaches HR, so it needs the second factor (D-19); reading is a
   // directory whose contact details stay masked without pii:read. Any role may be granted either (Sarthak, 15 Nov).

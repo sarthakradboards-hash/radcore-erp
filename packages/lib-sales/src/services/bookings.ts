@@ -15,13 +15,14 @@ import { bookingCancelled, bookingMade, holdLead } from '@radcore/lib-crm';
 import {
   AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, type Ctx,
 } from '@radcore/lib-platform';
-import { checkPlace, postUnitEvents, releasePromises, unitFor } from '@radcore/lib-stock';
+import { checkPlace, postUnitEvents, releasePromises, SELL_DAMAGED_UNITS, unitFor } from '@radcore/lib-stock';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   addBookingAdvance, BOOKING_STATUSES, cancelBooking, createBooking, getBooking, listBookings, refundBooking,
 } from '../contract.ts';
 import { otherLiveBooking } from './booking-holds.ts';
+import { bookable } from './booking-rules.ts';
 import { checkDate } from './document-rules.ts';
 import { today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
@@ -123,7 +124,7 @@ export async function addBooking(ctx: Ctx, input: In<typeof createBooking>): Pro
   // Judged under the unit's own lock (§1's step 5, after the party), so a booking or move at the same time waits for it.
   const { serialised, unit } = await unitFor(ctx, line.itemId, input.serialNo, { lock: true });
   if (!serialised) throw new AppError('not_serialised', 'Only a serialised item is booked by its unit');
-  if (unit === null || unit.ownership !== 'ours' || unit.locationId === null || !['new', 'used'].includes(unit.condition)) {
+  if (unit === null || unit.locationId === null || !bookable(unit, ctx.settings.get(SELL_DAMAGED_UNITS))) {
     throw new AppError('unit_unavailable', `${input.serialNo} isn’t a unit we can sell`,
       [{ path: ['serialNo'], code: 'unit_unavailable', message: 'Choose a unit of ours, new or used, at a sellable place' }]);
   }

@@ -40,6 +40,7 @@ export const ACCOUNTS_PAGES = [
 export const SALES_PAGES = [
   { href: '/sales/quotes', label: 'sales.nav.quotes', perm: 'sales:read' },
   { href: '/sales/orders', label: 'sales.nav.orders', perm: 'sales:read' },
+  { href: '/sales/invoices', label: 'sales.nav.invoices', perm: 'sales:read' },
 ] as const satisfies readonly NavPage[];
 
 export const NAV: readonly NavItem[] = [
