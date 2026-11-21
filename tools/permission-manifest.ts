@@ -125,6 +125,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'PUT /sales/party-price-lists/:partyId': 'prices:approve',
   // Quotes and orders (RAD-112).
   'GET /sales/quotes': 'sales:read',
+  'GET /sales/quote-counts': 'sales:read',
   'GET /sales/quotes/:id': 'sales:read',
   'POST /sales/quotes': 'sales:write',
   'PUT /sales/quotes/:id': 'sales:write',
@@ -133,6 +134,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /sales/quotes/:id/accept': 'sales:write',
   'POST /sales/quotes/:id/close': 'sales:write',
   'GET /sales/orders': 'sales:read',
+  'GET /sales/order-counts': 'sales:read',
   'GET /sales/orders/:id': 'sales:read',
   'POST /sales/orders': 'sales:write',
   'PUT /sales/orders/:id': 'sales:write',
@@ -362,6 +364,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Quotes and orders check their party (lib-accounts) and their items' quantities (lib-stock); an order's credit and
   // price checks read its items' GST (lib-gst).
   'GET /sales/quotes': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /sales/quote-counts': ['lib-platform', 'lib-sales'],
   'GET /sales/quotes/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quotes': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'PUT /sales/quotes/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
@@ -370,6 +373,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /sales/quotes/:id/accept': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quotes/:id/close': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'GET /sales/orders': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'GET /sales/order-counts': ['lib-platform', 'lib-sales'],
   'GET /sales/orders/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/orders': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'PUT /sales/orders/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],

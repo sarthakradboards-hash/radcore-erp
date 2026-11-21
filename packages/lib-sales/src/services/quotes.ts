@@ -11,7 +11,7 @@ import type {
   acceptQuote, closeQuote, createQuote, deleteQuote, getQuote, listQuotes, sendQuote, updateQuote,
 } from '../contract.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
-import { checkedLines, sellingTo, today } from './document-lines.ts';
+import { checkedLines, labelled, sellingTo, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
 
@@ -54,14 +54,17 @@ export async function listQuotesPage(ctx: Ctx, input: In<typeof listQuotes>): Pr
   };
 }
 
-/** GET /sales/quotes/:id (sales:read). */
+/** GET /sales/quotes/:id (sales:read). The order it became, read through the order, in the list's scope (E7). */
 export async function getQuoteById(ctx: Ctx, { id }: In<typeof getQuote>): Promise<Out<typeof getQuote>> {
   const row = await quoteOf(ctx, id, 'sales:read');
+  const [order] = await salesTx(ctx).select({ id: salesOrders.id }).from(salesOrders)
+    .where(and(eq(salesOrders.quoteId, id), listScope(ctx, 'sales:read', salesOrders.createdBy))).limit(1);
   const lines = await salesTx(ctx).select({ id: salesQuoteLines.id, lineNo: salesQuoteLines.lineNo, itemId: salesQuoteLines.itemId,
     qty: salesQuoteLines.qty, rate: salesQuoteLines.rate, discountPercent: salesQuoteLines.discountPercent }).from(salesQuoteLines)
     .where(eq(salesQuoteLines.quoteId, id)).orderBy(asc(salesQuoteLines.lineNo));
   const names = await partyNames(ctx, [row.partyId]);
-  return { ...row, status: row.status as SalesQuoteStatus, partyName: names.get(row.partyId) ?? '', lines };
+  return { ...row, status: row.status as SalesQuoteStatus, partyName: names.get(row.partyId) ?? '', orderId: order?.id ?? null,
+    lines: await labelled(ctx, lines) };
 }
 
 /** POST /sales/quotes (sales:write): a draft. */
