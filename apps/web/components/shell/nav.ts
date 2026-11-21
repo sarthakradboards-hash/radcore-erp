@@ -43,8 +43,9 @@ export const SALES_PAGES = [
   { href: '/sales/deliveries', label: 'sales.nav.deliveries', perm: 'sales:read' },
   { href: '/sales/delivery-returns', label: 'sales.nav.returns', perm: 'sales:read' },
   { href: '/sales/invoices', label: 'sales.nav.invoices', perm: 'sales:read' },
-  // Whoever may decide an override; a credit-notes-only approver reaches it from the credit notes list.
+  // Whoever may decide an override, or a credit note: one page, offered under either key (the section menu lists it once).
   { href: '/sales/approvals', label: 'sales.nav.approvals', perm: 'sales:override' },
+  { href: '/sales/approvals', label: 'sales.nav.approvals', perm: 'credit_notes:approve' },
 ] as const satisfies readonly NavPage[];
 
 export const NAV: readonly NavItem[] = [

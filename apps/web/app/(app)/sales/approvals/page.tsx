@@ -5,13 +5,14 @@
 // signed in with the second factor. A request opens its document, shows what the checks found, and approves exactly the
 // version shown or rejects it with a reason. The server refuses its own sender, an approver too new, and a document changed
 // since it was sent; the screen only words those refusals.
-import { formatMoment } from '@radcore/lib-common';
+import { formatMoment, formatMoney } from '@radcore/lib-common';
+import { listAccounts } from '@radcore/lib-accounts/contract';
 import {
   creditNoteApproval, deliveryOverrideApproval, getCreditNote, getDelivery, getInvoice, getOrder, invoiceOverrideApproval,
   listCreditNotes, listDeliveries, listInvoices, listOrders, orderOverrideApproval,
 } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { ReasonDialog } from '../../../../components/ui/dialog/reason-dialog.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
@@ -42,13 +43,33 @@ const ISSUES = ['over_limit', 'overdue', 'below_cost', 'cost_unknown', 'no_list_
 /** A code the screen has words for; one the server adds later is shown as it is sent, not as a missing string. */
 const isKnownIssue = (c: string): c is (typeof ISSUES)[number] => (ISSUES as readonly string[]).includes(c);
 
+/** What approving a credit note does with money: its total, the counter refund it pays and from which account, and whether it is late
+ * (past section 34's limit, so the GST on it is borne). Read from the note itself, since approving posts it. */
+function CreditFigures({ id }: { id: string }) {
+  const note = useApiQuery(getCreditNote, { id }).data;
+  const accounts = useApiQuery(listAccounts, {}).data?.items;
+  if (note === undefined) return null;
+  const refund = note.refund;
+  const account = refund === null ? undefined : accounts?.find((a) => a.id === refund.accountId)?.name;
+  return (
+    <dl className="admin-facts" aria-label={t('sales.approvals.credit.figures')}>
+      <dt>{t('sales.approvals.credit.total')}</dt><dd>{formatMoney(note.total)}</dd>
+      <dt>{t('sales.approvals.credit.refund.label')}</dt>
+      <dd>{refund === null ? t('sales.approvals.credit.refund.none')
+        : account === undefined ? formatMoney(refund.amount) : t('sales.approvals.credit.refund', { amount: formatMoney(refund.amount), account })}</dd>
+      {note.late ? <><dt>{t('sales.approvals.credit.late')}</dt><dd>{t('sales.approvals.credit.late.yes')}</dd></> : null}
+    </dl>
+  );
+}
+
 /** The issues an override's version names, in the screen's words (the server sends each with its own code). */
 function Issues({ version }: { version: unknown }) {
+  const headingId = useId();
   const issues = typeof version === 'object' && version !== null && 'issues' in version && Array.isArray(version.issues) ? version.issues : [];
   const codes = issues.flatMap((i: unknown) => (typeof i === 'object' && i !== null && 'code' in i && typeof i.code === 'string' ? [i.code] : []));
   return (
-    <section aria-labelledby="found">
-      <h3 id="found">{t('sales.approvals.issues')}</h3>
+    <section aria-labelledby={headingId}>
+      <h3 id={headingId}>{t('sales.approvals.issues')}</h3>
       {codes.length === 0 ? <p>{t('sales.approvals.issues.none')}</p> : (
         <ul>{codes.map((c, n) => <li key={n}>{isKnownIssue(c) ? t(`sales.approvals.issue.${c}`) : c}</li>)}</ul>
       )}
@@ -64,14 +85,15 @@ function Review({ kind, request }: { kind: Kind; request: Pending }) {
   const close = (open: boolean) => { if (!open) setActing(null); };
   const a = q.data;
   const credit = kind.key === 'credit';
+  const headingId = useId();
   if (q.error !== null) return <p role="alert" className="kit-form-alert">{t('error.title')}</p>;
   if (a === undefined) return <p>{t('loading')}</p>;
   return (
-    <section aria-labelledby="review">
-      <h2 id="review">{t('sales.approvals.heading', { who: who(a.requestedBy), when: formatMoment(a.requestedAt) })}</h2>
+    <section aria-labelledby={headingId}>
+      <h2 id={headingId}>{t('sales.approvals.heading', { who: who(a.requestedBy), when: formatMoment(a.requestedAt) })}</h2>
       <p><Link href={kind.href(a.recordId)}>{t('sales.approvals.open.doc', { doc: t(`sales.approvals.doc.${kind.key}`) })}</Link></p>
       {a.changed ? <p role="alert" className="kit-form-alert">{t('sales.approvals.changed')}</p> : null}
-      {credit ? <p>{t('sales.approvals.credit.note')}</p> : <Issues version={a.version} />}
+      {credit ? <><p>{t('sales.approvals.credit.note')}</p><CreditFigures id={a.recordId} /></> : <Issues version={a.version} />}
       {a.status !== 'pending' ? <p>{t(`sales.approvals.status.${a.status}`)}</p> : (
         <div className="kit-actions">
           {a.changed ? null : (
