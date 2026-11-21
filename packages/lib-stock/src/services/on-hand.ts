@@ -51,7 +51,8 @@ async function pickable(ctx: Ctx, input: In<typeof getOnHand>) {
   const line = input.forDocument?.split(':')[1] ?? null;
   const key = input.after === undefined ? undefined : decodeCursor(z.object({ serialKey: z.string().max(80), id: z.uuid() }), input.after);
   const rows = await stockTx(ctx).select({ id: units.id, serialNo: units.serialNo, serialKey: units.serialKey, chassisNo: units.chassisNo,
-    condition: units.condition, promisedTo: units.promisedTo }).from(units)
+    condition: units.condition, promisedTo: units.promisedTo, batchId: units.batchId, batchNo: batches.batchNo }).from(units)
+    .leftJoin(batches, eq(batches.id, units.batchId))
     .where(and(eq(units.itemId, input.itemId), eq(units.locationId, input.locationId), eq(units.ownership, 'ours'),
       inArray(units.condition, ctx.settings.get(SELL_DAMAGED_UNITS) ? [...PICKABLE, 'damaged'] : [...PICKABLE]),
       line === null ? isNull(units.promisedTo) : or(isNull(units.promisedTo), eq(units.promisedTo, line)),
@@ -61,6 +62,6 @@ async function pickable(ctx: Ctx, input: In<typeof getOnHand>) {
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
   return { items: page.map((u) => ({ unitId: u.id, serialNo: u.serialNo, chassisNo: u.chassisNo, condition: conditionOf.parse(u.condition),
-    heldForThis: line !== null && u.promisedTo === line })),
+    heldForThis: line !== null && u.promisedTo === line, batchId: u.batchId, batchNo: u.batchNo })),
     next: rows.length > input.limit && last ? encodeCursor({ serialKey: last.serialKey, id: last.id }) : null };
 }
