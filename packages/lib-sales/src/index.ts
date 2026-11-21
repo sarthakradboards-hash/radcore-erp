@@ -22,6 +22,7 @@ export {
 export { deliveryOverride } from './services/delivery-checks.ts';
 export { addInvoice, changeInvoice, dropInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
 export { cancelInvoiceNow } from './services/invoice-cancel.ts';
+export { remindWithLink } from './services/reminder-links.ts';
 export { DOCUMENT_LINK_DAYS, invoiceByLink, invoiceLinks, revokeInvoiceLinkNow, shareInvoiceLink } from './services/invoice-links.ts';
 export { addCreditNote, dropCreditNote, getCreditNoteById, listCreditNotesPage } from './services/credit-notes.ts';
 export {
