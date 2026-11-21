@@ -3,7 +3,7 @@
 // then closed (every line delivered, or short with a reason, RC-125) or cancelled (nothing delivered, with a reason).
 // A confirmed order's lines still change, only through here, and the checks run again (§1).
 import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radcore/db/sales';
-import { holdParty, holdPeriod } from '@radcore/lib-accounts';
+import { holdParty, holdPeriod, systemPartyId } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
   AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
@@ -110,8 +110,28 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promi
 }
 
 /** POST /sales/orders (sales:write): a draft. */
-export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
+export function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
+  return addOrderFor(ctx, input, false);
+}
+
+/** The quick bill's order (RAD-115), reached by no route: the only one that may be for the Counter customer. Its own
+ * function, not an option on addOrder, since a route passes its service a third argument. */
+export function addCounterOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
+  return addOrderFor(ctx, input, true);
+}
+
+/** The Counter customer buys only through the quick bill, which bills at the counter what it delivers there (the
+ * architect on RAD-115): an order of its own would wait undelivered under a party no one owns. */
+async function refuseCounterCustomer(ctx: Ctx, partyId: string): Promise<void> {
+  if (partyId === await systemPartyId(ctx, 'walk_in')) {
+    throw new AppError('counter_customer_only', 'The Counter customer buys only through the quick bill',
+      [{ path: ['partyId'], code: 'counter_customer_only', message: 'Choose a named party, or use the quick bill' }]);
+  }
+}
+
+async function addOrderFor(ctx: Ctx, input: In<typeof createOrder>, counter: boolean): Promise<Out<typeof createOrder>> {
   checkDate(input.businessDate, today());
+  if (!counter) await refuseCounterCustomer(ctx, input.partyId);
   await sellingTo(ctx, input.partyId);
   const { priceListId, lines } = await priced(ctx, input.partyId, input.businessDate, await checkedLines(ctx, input.lines));
   const tx = salesTx(ctx);
@@ -145,6 +165,7 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   if (await hasDeliveries(ctx, id)) throw new AppError('order_delivered', 'This order has deliveries, so its lines are fixed');
   // Rewriting the lines gives them new ids, so a booked line would lose its booking (RAD-117).
   await refuseWhileBooked(ctx, id, 'rewrite');
+  if (input.partyId !== now.partyId) await refuseCounterCustomer(ctx, input.partyId);
   await sellingTo(ctx, input.partyId);
   const { priceListId, lines } = await priced(ctx, input.partyId, input.businessDate, await checkedLines(ctx, input.lines));
   const tx = salesTx(ctx);

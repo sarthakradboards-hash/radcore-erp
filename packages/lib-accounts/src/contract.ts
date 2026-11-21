@@ -230,6 +230,8 @@ export const recordPaymentContract = defineContract({
     tds: moneyString().optional(), accountId: idString(), refundOf: idString().optional(),
     credit: z.object({ table: z.string().regex(/^[a-z][a-z0-9_]*$/, 'Not a document table'), id: idString() }).optional(),
     narration: z.string().trim().min(1).max(500).optional(),
+    // The money's own trail (RAD-115): a card machine's approval code, a UPI UTR, a cheque number.
+    reference: z.string().trim().min(1).max(40).optional(),
   }),
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
   errors: ['invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',

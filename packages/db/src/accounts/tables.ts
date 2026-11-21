@@ -197,6 +197,9 @@ export const parties = radcoreTable('parties', {
   creditDays: smallint(),
   creditLimit: money(),
   active: boolean().notNull().default(true),
+  // A party seeded by migration and named in code by it (ADR-006 §2), as accounts are: the Counter customer, `walk_in`
+  // (RAD-115, the architect's ruling).
+  systemKey: text().unique(),
 }, (t) => [
   uniqueIndex('ux_parties_gstin').on(t.gstin),
   trigramIndex('ix_parties_name_trgm', t.name),
@@ -209,6 +212,9 @@ export const parties = radcoreTable('parties', {
   check('ck_parties_phone', sql`${t.phone} ~ '^[+][1-9][0-9]{6,14}$'`),
   check('ck_parties_pincode', sql`${t.pincode} ~ '^[1-9][0-9]{5}$'`),
   check('ck_parties_credit_days', sql`${t.creditDays} between 0 and 365`),
+  check('ck_parties_system_key', sql`${t.systemKey} ~ '^[a-z][a-z0-9_]*$'`),
+  // A system party is one code relies on, so it's never switched off.
+  check('ck_parties_system_active', sql`${t.systemKey} is null or ${t.active}`),
 ]);
 
 /**
@@ -230,6 +236,9 @@ export const payments = radcoreTable('payments', {
   accountId: uuid().notNull().references(() => accounts.id, { onDelete: 'restrict' }),
   refundOfId: uuid().references((): AnyPgColumn => payments.id, { onDelete: 'restrict' }),
   narration: boundedText({ max: 500 }),
+  // What the money's own trail calls it, for matching it later (the bank import, M5): a card machine's approval code,
+  // a UPI UTR, a cheque number (RAD-115, the architect's ruling). Never card digits: lib-sales refuses them.
+  reference: boundedText({ max: 40 }),
   // A receipt held for a document (a booking's advance, RAD-117), named as an allocation names one: refunded only
   // through that document's service (refundHeld). lib-accounts never reads the document.
   // A refund of a credit (a credit note, RAD-114): the credit it pays back, named as a credit application names one.

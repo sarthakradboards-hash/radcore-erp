@@ -13,7 +13,7 @@ const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
 
 /** A line as sent: an item, how many, at what rate per unit before GST, less a discount. */
-const lineIn = z.object({
+export const lineIn = z.object({
   itemId: idString(), qty: quantityString(), rate: unitPriceString(), discountPercent: percentString({ max: '100' }),
 });
 /** A line's amounts (the architect on RAD-112): its GST rate in force on the document's date and that rate's source, its
@@ -132,14 +132,14 @@ export const getOrder = defineContract({
 /** A new draft order. */
 export const createOrder = defineContract({
   method: 'POST', path: '/sales/orders', auth: 'session', perm: 'sales:write', tx: write,
-  input: orderIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS],
+  input: orderIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS, 'counter_customer_only'],
 });
 /** A draft order, rewritten whole; a confirmed one's lines too, through the checks again (§1), refused if they'd need an
  * override (`change_over_checks`): only a draft gets one. */
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
   input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'change_over_checks', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete', 'version_changed',
-    'period_locked', 'year_not_open', 'booking_live'],
+    'period_locked', 'year_not_open', 'booking_live', 'counter_customer_only'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({

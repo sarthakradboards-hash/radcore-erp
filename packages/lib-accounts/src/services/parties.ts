@@ -79,6 +79,13 @@ export async function getPartyById(ctx: Ctx, { id }: In<typeof getParty>): Promi
   return answer(row);
 }
 
+/** A seeded party's id, by its system key (ADR-006 §2): the Counter customer, `walk_in` (RAD-115). */
+export async function systemPartyId(ctx: Ctx, key: string): Promise<string> {
+  const [row] = await accountsTx(ctx).select({ id: parties.id }).from(parties).where(eq(parties.systemKey, key)).limit(1);
+  if (row === undefined) throw new Error(`the system party ${key} isn't seeded`);
+  return row.id;
+}
+
 /** POST /parties. */
 export async function addParty(ctx: Ctx, input: In<typeof createParty>): Promise<Out<typeof createParty>> {
   // The contract checks these too; a service called from another library gets the same refusal, not a CHECK's.
