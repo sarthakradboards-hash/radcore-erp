@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { deliverySteps, invoiceSteps, orderSteps, quoteSteps, returnSteps } from './status.ts';
+import { creditSteps, deliverySteps, invoiceSteps, orderSteps, quoteSteps, returnSteps } from './status.ts';
 
 const keys = (steps: { key: string }[]) => steps.map((s) => s.key);
 
@@ -25,4 +25,9 @@ it('runs a delivery or a return the same way, on to Cancelled once it was cancel
   expect(keys(deliverySteps('posted'))).toEqual(['draft', 'posted']);
   expect(keys(deliverySteps('cancelled'))).toEqual(['draft', 'posted', 'cancelled']);
   expect(keys(returnSteps('cancelled'))).toEqual(['draft', 'posted', 'cancelled']);
+});
+
+it('runs a credit note like an invoice: draft, posted, and on to Cancelled once it was cancelled', () => {
+  expect(keys(creditSteps('draft'))).toEqual(['draft', 'posted']);
+  expect(keys(creditSteps('cancelled'))).toEqual(['draft', 'posted', 'cancelled']);
 });
