@@ -35,7 +35,8 @@ export default function QuotePage() {
   const send = useApiMutation(sendQuote, { invalidates: again });
   const accept = useApiMutation(acceptQuote, { invalidates: again });
   const close = useApiMutation(closeQuote, { invalidates: again });
-  const remove = useApiMutation(deleteQuote, { invalidates: again });
+  // A deleted record is gone: refetching it would be a 404, so only the list is refreshed (e2e-2 on #278).
+  const remove = useApiMutation(deleteQuote, { invalidates: [listQuotes] });
   const [dialog, setDialog] = useState<Dialogs>(null);
   const quote = q.data;
 
