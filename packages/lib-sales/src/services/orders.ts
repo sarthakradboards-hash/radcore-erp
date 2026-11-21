@@ -6,7 +6,7 @@ import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radc
 import { holdParty, holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
+  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -15,7 +15,8 @@ import type {
 } from '../contract.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
 import { checkedLines, sellingTo, today } from './document-lines.ts';
-import { hasDeliveries, orderDelivered } from './delivered.ts';
+import { amountsForRead, frozenHeader, frozenLine, type Amounts } from './document-amounts.ts';
+import { hasDeliveries, invoicedOf, netDelivered, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
 import { labelled } from './document-lines.ts';
@@ -29,13 +30,16 @@ export const ORDER_SERIES = defineSeries('sales.order', 'SO', { digits: 5, label
 
 const notFound = () => new AppError('not_found', 'There is no such order');
 const header = { id: salesOrders.id, number: salesOrders.number, partyId: salesOrders.partyId, quoteId: salesOrders.quoteId,
-  businessDate: salesOrders.businessDate, status: salesOrders.status, notes: salesOrders.notes, closeReason: salesOrders.closeReason };
+  businessDate: salesOrders.businessDate, status: salesOrders.status, notes: salesOrders.notes, closeReason: salesOrders.closeReason,
+  total: salesOrders.total };
 const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
 
 /** The order, locked when it's to be written, within the principal's scope for `permission` (else not_found), with
  * its quote's date: an order isn't dated before its quote (§4). The quote is read apart, so only the order is locked. */
 async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, overrideVersion: salesOrders.overrideVersion })
+  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, overrideVersion: salesOrders.overrideVersion,
+    stored: { placeOfSupply: salesOrders.placeOfSupply, taxable: salesOrders.taxable, cgst: salesOrders.cgst, sgst: salesOrders.sgst,
+      igst: salesOrders.igst, roundOff: salesOrders.roundOff, total: salesOrders.total } })
     .from(salesOrders).where(eq(salesOrders.id, id));
   const [row] = forUpdate ? await q.for('update') : await q;
   if (row === undefined) throw notFound();
@@ -55,6 +59,15 @@ async function priced(ctx: Ctx, partyId: string, on: string, lines: Awaited<Retu
   const priceListId = await priceListOf(ctx, partyId);
   const rates = await listRatesOf(ctx, priceListId, on, lines.map((l) => l.itemId));
   return { priceListId, lines: lines.map((l, i) => ({ ...l, listRate: rates[i]?.listRate ?? null, listVersionId: rates[i]?.listVersionId ?? null })) };
+}
+
+/** Stores each line's figures that confirming freezes (the architect on RAD-112); the header's go with its status. */
+async function freezeLines(ctx: Ctx, id: string, a: Amounts) {
+  // The lines are numbered from 1 in order (checkedLines), as the checks read them.
+  for (const [i, l] of a.lines.entries()) {
+    await salesTx(ctx).update(salesOrderLines).set(frozenLine(l))
+      .where(and(eq(salesOrderLines.orderId, id), eq(salesOrderLines.lineNo, i + 1)));
+  }
 }
 
 /** GET /sales/orders (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
@@ -79,11 +92,20 @@ export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Pr
 /** GET /sales/orders/:id (sales:read). */
 export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promise<Out<typeof getOrder>> {
   const row = await orderOf(ctx, id, 'sales:read');
-  const lines = await salesTx(ctx).select({ id: salesOrderLines.id, lineNo: salesOrderLines.lineNo, itemId: salesOrderLines.itemId,
-    qty: salesOrderLines.qty, rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent }).from(salesOrderLines)
-    .where(eq(salesOrderLines.orderId, id)).orderBy(asc(salesOrderLines.lineNo));
+  const lines = await salesTx(ctx).select().from(salesOrderLines).where(eq(salesOrderLines.orderId, id)).orderBy(asc(salesOrderLines.lineNo));
+  const worked = await amountsForRead(ctx, { ...row, ...row.stored }, lines);
+  // Each line's progress, worked out on read and never stored (the architect on RAD-112).
+  const ids = lines.map((l) => l.id);
+  const [delivered, invoiced] = [await netDelivered(ctx, ids), await invoicedOf(ctx, ids)];
   const names = await partyNames(ctx, [row.partyId]);
-  return { ...row, partyName: names.get(row.partyId) ?? '', lines: await labelled(ctx, lines) };
+  // Where its override stands (auditor-3 on #278): a request waiting, one approved for it (confirming checks it still
+  // fits), or neither. A change clears an approved one.
+  const pending = (await awaitingApproval(ctx, orderOverride, [id])).has(id);
+  const override = pending ? 'pending' as const : row.overrideVersion !== null ? 'approved' as const : 'none' as const;
+  return { ...row, partyName: names.get(row.partyId) ?? '', amounts: worked.amounts, override,
+    lines: (await labelled(ctx, worked.lines)).map((l) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: l.sku, name: l.name, qty: l.qty,
+      rate: l.rate, discountPercent: l.discountPercent, amounts: l.amounts, delivered: delivered.get(l.id) ?? '0',
+      invoiced: invoiced.get(l.id) ?? '0' })) };
 }
 
 /** POST /sales/orders (sales:write): a draft. */
@@ -100,10 +122,19 @@ export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise
 }
 
 /** PUT /sales/orders/:id (sales:write): a draft, or a confirmed order's lines through the checks again (§1). A
- * confirmed order whose new lines the checks would stop is refused (needs_override): an override is approved for a
- * draft's confirmation, so such a change is a new order. */
+ * confirmed order whose new lines the checks would stop is refused (`change_over_checks`, naming each issue): an
+ * override is approved for a draft's confirmation, so such a change is a new order (auditor-3 on #278; the architect on
+ * RAD-112). A change the checks pass still saves. */
 export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOrder>): Promise<Out<typeof updateOrder>> {
+  // A confirmed order's change is checked and its amounts stored again, as at its confirmation, so it holds the period
+  // first, as confirming does (ADR-006 §1; auditor-2 on #282): the date read unlocked, then the order locked, and it
+  // must still be the confirmed order on that date. A draft's change posts nothing and stores nothing frozen.
+  const seen = await orderOf(ctx, id, 'sales:write');
+  if (seen.status === 'confirmed') await holdPeriod(ctx, seen.businessDate);
   const now = await orderOf(ctx, id, 'sales:write', true);
+  if (now.status === 'confirmed' && (seen.status !== 'confirmed' || now.businessDate !== seen.businessDate)) {
+    throw new AppError('version_changed', 'This order changed while it was being changed: change it again');
+  }
   mayEdit('order', now.status, true);
   if (now.status === 'confirmed' && (input.partyId !== now.partyId || input.businessDate !== now.businessDate)) {
     throw new AppError('wrong_status', 'A confirmed order keeps its party and date; only its lines change');
@@ -122,7 +153,17 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   await tx.update(salesOrders).set({ overrideVersion: null }).where(eq(salesOrders.id, id));
   if (now.status === 'confirmed') {
     await holdParty(ctx, now.partyId); // ADR-006 §1's step 3, after the order and before the check
-    await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy });
+    // Its lines changed, so what it stores is worked out again for them, as at its confirmation. Every line is, at the
+    // order's own date: an unchanged line comes out the same unless lib-gst's rate for that date was corrected since.
+    const a = await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy }).catch((e: unknown) => {
+      if (!(e instanceof AppError) || e.code !== 'needs_override') throw e;
+      // The way forward (the architect on RAD-112): more goods go on a new order, through its own override; a price or
+      // discount the checks refuse means closing this one short and raising it again.
+      throw new AppError('change_over_checks', 'This order keeps its lines: these need an override, which only a draft order gets. '
+        + 'Put extra goods on a new order, or close this one short and raise it again for a new price or discount', e.issues);
+    });
+    await freezeLines(ctx, id, a);
+    await tx.update(salesOrders).set(frozenHeader(a)).where(eq(salesOrders.id, id));
   }
   return {};
 }
@@ -150,9 +191,11 @@ export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>)
   await sellingTo(ctx, now.partyId);
   // ADR-006 §1's step 3: the party, after the order, so two sales to it take turns at the credit check (ADR-007 §9).
   await holdParty(ctx, now.partyId);
-  await checkOrder(ctx, id, now);
+  // The checks run on the amounts it then stores: its credit check judges the total it's confirmed at.
+  const a = await checkOrder(ctx, id, now);
+  await freezeLines(ctx, id, a);
   const number = await nextNumber(ctx, ORDER_SERIES, now.businessDate);
-  await salesTx(ctx).update(salesOrders).set({ status: 'confirmed', number }).where(eq(salesOrders.id, id));
+  await salesTx(ctx).update(salesOrders).set({ status: 'confirmed', number, ...frozenHeader(a) }).where(eq(salesOrders.id, id));
   return { number };
 }
 
