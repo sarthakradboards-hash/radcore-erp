@@ -58,7 +58,7 @@ const invoice = piiRecord('invoices', header.extend({
 const DRAFT_ERRORS = ['date_in_future', 'date_before_source', 'invoice_too_late', 'wrong_status', 'not_on_source', 'over_quantity',
   'quantity_too_precise', 'unknown_party', 'not_a_customer', 'other_party'] as const;
 const POST_ERRORS = [...DRAFT_ERRORS, 'version_changed', 'year_not_open', 'period_locked', 'account_inactive', 'no_gst_rate',
-  'company_profile_incomplete', 'buyer_details_required', 'needs_override'] as const;
+  'company_profile_incomplete', 'buyer_details_required', 'needs_override', 'series_full'] as const;
 
 /** Invoices, newest first, a page at a time. */
 export const listInvoices = defineContract({

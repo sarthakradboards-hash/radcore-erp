@@ -19,6 +19,11 @@ import webhooks from '../apps/api/src/routes/hooks.ts';
 
 type Found = { file: string; line: number; code: string | null; text: string };
 
+/** Codes no mounted route can reach yet, each with why. The route that first reaches one declares it, and leaves here. */
+const NOT_YET_REACHED: Readonly<Record<string, string>> = {
+  transfer_same_location: 'stock transfers have no route yet: deliveries share the stock engine line check, but never transfer',
+};
+
 /** Every AppError code a source file raises: `code` null for one computed from something other than `<x>.code`. */
 export function codesIn(file: string, source: string): Found[] {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
@@ -106,7 +111,9 @@ describe('AppError codes', () => {
     const libs = readdirSync('packages').filter((p) => p.startsWith('lib-')).map((p) => join('packages', p, 'src'));
     const found = libs.flatMap(sources).flatMap((f) => codesIn(f.replaceAll('\\', '/'), readFileSync(f, 'utf8')));
     expect(found.length).toBeGreaterThan(100);
-    expect(found.filter((f) => f.code === null || !declared.has(f.code))
+    // A code waiting for its route is no longer waiting once a contract declares it.
+    expect(Object.keys(NOT_YET_REACHED).filter((c) => declared.has(c))).toEqual([]);
+    expect(found.filter((f) => f.code === null || !(declared.has(f.code) || f.code in NOT_YET_REACHED))
       .map((f) => `${f.file}:${f.line} ${f.code === null ? `computed code ${f.text}` : `${f.code} is in no contract's errors`}`)).toEqual([]);
   }, 60_000);
 });

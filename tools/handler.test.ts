@@ -66,9 +66,10 @@ describe.skipIf(!url)('the generic route handler', () => {
   });
 
   // A server with these routes, signed in as `principal` (null: signed out); each test gets its own.
-  async function serve(principal: Principal | null, addBehaviour: Behaviour, fn: (base: string, log: ReturnType<typeof logger>) => Promise<void>) {
+  async function serve(principal: Principal | null, addBehaviour: Behaviour, fn: (base: string, log: ReturnType<typeof logger>) => Promise<void>,
+    undeclared?: HandlerDeps['undeclared']) {
     const log = logger();
-    const app = createApp(config(), log, { db, authenticate: async () => principal, routes: [
+    const app = createApp(config(), log, { db, undeclared, authenticate: async () => principal, routes: [
       defineRoute(getNote, async (_ctx, { id }) => ({ noteId: id, bodyText: `note ${id}`, internal: 'dropped' })),
       defineRoute(addNote, addBehaviour),
       defineRoute(exemptSignOut, signOutService),
@@ -191,7 +192,8 @@ describe.skipIf(!url)('the generic route handler', () => {
   it('alerts on a 500 with the route template as its key, after answering, and not on a 4xx', async () => {
     const alert = vi.fn<(message: string, key?: string) => Promise<void>>(async () => undefined);
     let code = 'not_listed_anywhere';
-    const app = createApp(config(), logger(), { db, alert, authenticate: async () => user(['notes:read']), routes: [
+    // Production's answer, so the undeclared code only alerts (RAD-134 fails the run under test otherwise).
+    const app = createApp(config(), logger(), { db, alert, undeclared: 'answer', authenticate: async () => user(['notes:read']), routes: [
       defineRoute(getNote, async () => {
         throw new AppError(code, 'x');
       })] });
@@ -213,12 +215,48 @@ describe.skipIf(!url)('the generic route handler', () => {
     let code = 'not_found';
     await serve(user(['notes:write']), async () => {
       throw new AppError(code, 'That note is gone');
-    }, async (base) => {
+    }, async (base, log) => {
       expect((await post(base, { body: 'x', n: 1 })).status).toBe(404);
       code = 'not_listed_anywhere';
       const res = await post(base, { body: 'x', n: 1 });
       expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([500, 'server_error']);
-    });
+      // Production says no more than that: nothing names the code as undeclared.
+      expect(log.error.mock.calls.some(([m]) => m.startsWith('undeclared_error'))).toBe(false);
+    }, 'answer');
+  });
+
+  // RAD-134: a code the route doesn't declare still answers 500, and outside production it's logged by name.
+  it('logs a code the contract does not list as undeclared_error, with the route and the code', async () => {
+    await serve(user(['notes:write']), async () => {
+      throw new AppError('not_listed_anywhere', 'x');
+    }, async (base, log) => {
+      expect((await post(base, { body: 'x', n: 1 })).status).toBe(500);
+      expect(log.error.mock.calls.map(([m]) => m.replace(/request \S+\)/, 'request …)')).filter((m) => m.startsWith('undeclared_error')))
+        .toEqual(["undeclared_error: POST /notes raised not_listed_anywhere, which its contract doesn't declare (request …)"]);
+    }, 'log');
+  });
+
+  // Under vitest it's the default: the error is thrown outside the request, so the run fails whatever a test asserts.
+  it('fails the run under test, by default, on a code the contract does not list', async () => {
+    const theirs = process.listeners('uncaughtException');
+    process.removeAllListeners('uncaughtException');
+    let caught: unknown;
+    const heard = new Promise<void>((resolve) => process.once('uncaughtException', (e) => {
+      caught = e;
+      resolve();
+    }));
+    try {
+      await serve(user(['notes:write']), async () => {
+        throw new AppError('not_listed_anywhere', 'x');
+      }, async (base) => {
+        expect((await post(base, { body: 'x', n: 1 })).status).toBe(500);
+        await heard;
+      });
+    } finally {
+      process.removeAllListeners('uncaughtException');
+      for (const l of theirs) process.on('uncaughtException', l);
+    }
+    expect([(caught as Error).name, (caught as Error).message]).toEqual(['UndeclaredError', expect.stringContaining('POST /notes raised not_listed_anywhere')]);
   });
 
   // RC-216: matched by code, never by message text.

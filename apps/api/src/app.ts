@@ -35,7 +35,9 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
     mountWebhooks(app, api.webhooks ?? [], { db: api.db, log, alert: api.alert, guards: api.guards, secrets: api.secrets });
     mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin,
       newPasswordCheck: api.newPasswordCheck, files: api.files, secrets: api.secrets, guards: api.guards,
-      alert: api.alert });
+      alert: api.alert,
+      // Production answers it as ever; elsewhere it's logged, and under vitest the run fails (RAD-134).
+      undeclared: api.undeclared ?? (config.nodeEnv === 'production' ? 'answer' : process.env['VITEST'] === undefined ? 'log' : 'throw') });
   }
   return app;
 }
