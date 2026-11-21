@@ -4,7 +4,7 @@
 // price checks, and when they find issues the dialog names them and offers to ask for an override (someone else with
 // sales:override decides). A confirmed order is closed (short, with a reason, while lines are undelivered) or cancelled
 // (with a reason, before anything is delivered). sales:write does all of it; the server says whether it still may.
-import { formatDate } from '@radcore/lib-common';
+import { formatDate, formatMoney, stateName } from '@radcore/lib-common';
 import {
   cancelOrder, closeOrder, confirmOrder, deleteOrder, getOrder, listOrders, requestOrderOverride,
 } from '@radcore/lib-sales/contract';
@@ -23,7 +23,7 @@ import { ApiError } from '../../../../../lib/api-client.ts';
 import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
-import { LinesTable, SALES_MESSAGES } from '../../shared.tsx';
+import { AmountsSummary, LinesTable, SALES_MESSAGES } from '../../shared.tsx';
 import { orderSteps } from '../../status.ts';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
@@ -81,14 +81,22 @@ export default function OrderPage() {
       <StatusBar label={t('sales.status.step')} steps={orderSteps(order.status)} current={order.status} />
       <RelatedRecords label={t('sales.related')}
         links={order.quoteId === null ? [] : [{ label: t('sales.order.quote'), href: `/sales/quotes/${order.quoteId}` }]} />
-      <CountCards label={t('sales.counts')} cards={[{ label: t('sales.count.lines'), value: String(order.lines.length) }]} />
+      <CountCards label={t('sales.counts')} cards={[
+        { label: t('sales.count.lines'), value: String(order.lines.length) },
+        ...(order.amounts.total === null ? [] : [{ label: t('sales.amounts.total'), value: formatMoney(order.amounts.total) }]),
+      ]} />
       <dl className="admin-facts" aria-label={t('sales.facts')}>
         <dt>{t('sales.party')}</dt><dd>{order.partyName}</dd>
         <dt>{t('sales.date')}</dt><dd>{formatDate(order.businessDate)}</dd>
+        {order.amounts.placeOfSupply === null ? null : <><dt>{t('sales.amounts.placeOfSupply')}</dt><dd>{stateName(order.amounts.placeOfSupply) ?? order.amounts.placeOfSupply}</dd></>}
         <dt>{t('sales.notes')}</dt><dd>{order.notes ?? t('sales.noNotes')}</dd>
         {order.closeReason === null ? null : <><dt>{t('sales.order.closeReason')}</dt><dd>{order.closeReason}</dd></>}
       </dl>
       <LinesTable number={order.number} lines={order.lines} />
+      <AmountsSummary number={order.number} amounts={order.amounts} />
+      {order.status === 'draft' && order.override !== 'none' ? (
+        <p className="admin-notice">{t(order.override === 'pending' ? 'sales.order.override.pending' : 'sales.order.override.approved')}</p>
+      ) : null}
       {mayWrite ? (
         <div className="kit-actions">
           {order.status === 'draft' || order.status === 'confirmed' ? (
