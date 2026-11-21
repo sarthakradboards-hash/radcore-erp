@@ -71,7 +71,7 @@ export default function DeliveryReturnPage() {
         <dt>{t('sales.notes')}</dt><dd>{ret.notes ?? t('sales.noNotes')}</dd>
       </dl>
       <DocumentLines caption={ret.number === null ? t('sales.lines') : t('sales.lines.of', { number: ret.number })} lines={ret.lines} />
-      {ret.status === 'draft' ? <p>{t('sales.delivery.draftNote')}</p> : null}
+      {ret.status === 'draft' ? <p>{t('sales.return.draftNote')}</p> : null}
       <div className="kit-actions">
         {mayWrite && ret.status === 'draft' ? (
           <>

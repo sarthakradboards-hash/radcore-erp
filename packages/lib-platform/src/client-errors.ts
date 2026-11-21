@@ -19,7 +19,7 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accou
   '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/number-series', '/admin/parties', '/admin/parties/[id]',
   '/admin/permissions', '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
   '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/invite', '/kit', '/password-reset',
-  '/password-reset/new', '/sales/deliveries', '/sales/deliveries/[id]', '/sales/delivery-returns',
+  '/password-reset/new', '/sales/deliveries', '/sales/deliveries/[id]', '/sales/deliveries/[id]/edit', '/sales/deliveries/new', '/sales/delivery-returns',
   '/sales/delivery-returns/[id]', '/sales/invoices', '/sales/invoices/[id]', '/sales/invoices/[id]/edit', '/sales/invoices/new',
   '/sales/orders', '/sales/orders/[id]', '/sales/orders/[id]/edit', '/sales/orders/new', '/sales/quotes', '/sales/quotes/[id]',
   '/sales/quotes/[id]/edit', '/sales/quotes/new',

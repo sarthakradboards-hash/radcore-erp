@@ -21,7 +21,9 @@ export type ReturnRow = z.output<typeof listDeliveryReturns.output>['items'][num
 /** What the table reads of a line: a delivery's and a return's lines share it (they differ only in the line they point to). */
 type Line = Pick<Delivery['lines'][number], 'id' | 'itemId' | 'qty' | 'batches' | 'serials' | 'taxable' | 'gst' | 'value'>;
 
-/** A place by its name, from the location list (locations:read); a person who can't read it sees a plain word. */
+/** A place by its name, from the location list (locations:read); a person who can't read it sees a plain word.
+ * shortcut: only the first 200 places are searched, so a company with more shows "A place" for the rest; give the locations
+ * contract a get-by-id when one has that many (auditor-3 on #288). */
 export function PlaceName({ id }: { id: string }) {
   const places = useApiList(listLocations, { filter: {} }, { limit: 200 });
   if (places.error !== null) return t('sales.delivery.place.unknown');
