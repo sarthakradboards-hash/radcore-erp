@@ -392,7 +392,7 @@ const noTableExports = {
 
 // E7 (RAD-85, ADR-001 §6a): a module service reading a table that holds some key's records (the catalogue's
 // `records`; options.tables, '<source>#<export>') applies the record scope in the same function, the outermost one
-// around the read: `x.see(...)`, `x.can(...)` or lib-platform's `listScope(...)`. A read is the table as an argument of
+// around the read: `x.see(...)`, `x.can(...)`, or lib-platform's `listScope(...)` or `linkRecord(...)`. A read is the table as an argument of
 // `.from` or a join, imported by name (aliased or not) or through a namespace, or `.query.<table>`. It can't follow a
 // read or a check into another function, a table passed around as a value, a table reached through a relation
 // (`with:`) or a view, or whether the check names the right owner. options.exempt names single files, by their path
@@ -400,6 +400,8 @@ const noTableExports = {
 // (ADR-001 §6a); each entry is an architect's ruling, and a directory or glob matches nothing.
 const READS = new Set(['from', 'innerJoin', 'leftJoin', 'rightJoin', 'fullJoin', 'crossJoin']);
 const CHECKS = new Set(['see', 'can']);
+// lib-platform's: a list's scope, and a link route's one record (RAD-118).
+const SCOPES = new Set(['listScope', 'linkRecord']);
 const scopeOnOwnedReads = {
   meta: { type: 'problem', docs: { description: 'ADR-001 E7: a scoped read applies the record scope' }, schema: false,
     messages: { m: '[E7] {{table}} holds records a role may see only its own of: apply ctx.see, ctx.can or listScope in this function (ADR-001 §6a)' } },
@@ -441,7 +443,7 @@ const scopeOnOwnedReads = {
             }
           }
         }
-        if (c.type === 'Identifier' && c.name === 'listScope' && importSource(context, c) === '@radcore/lib-platform') checked.add(outermost(n));
+        if (c.type === 'Identifier' && SCOPES.has(c.name) && importSource(context, c) === '@radcore/lib-platform') checked.add(outermost(n));
       },
       // The relational API names the table by its key only: `tx.query.leads.findMany()`.
       MemberExpression(n) {

@@ -60,7 +60,9 @@ describe('the sign-in and own-session contracts', () => {
 
   it("lists exactly the routes that declare each saved-once flag (ADR-001 §7a's fixed lists)", () => {
     expect(declared.filter((c) => c.idempotency === 'exempt').map(route).sort()).toEqual([...KEY_EXEMPT_ROUTES].sort());
-    expect(declared.filter((c) => c.storesAnswer === false).map(route).sort()).toEqual([...ANSWER_NOT_STORED_ROUTES].sort());
+    // A module's route may be on the answer list too (RAD-118's invoice link): the permission manifest test checks the
+    // list against every route the api mounts.
+    expect(declared.filter((c) => c.storesAnswer === false).map(route).filter((r) => !ANSWER_NOT_STORED_ROUTES.some((l) => l === r))).toEqual([]);
     expect(KEY_EXEMPT_ROUTES).toHaveLength(4);
   });
 
