@@ -97,7 +97,9 @@ export const requestCreditNoteApproval = defineContract({
 /** The credit notes' approval routes (RAD-38): approving posts the note, applies it to its invoice and pays its refund. */
 export const creditNoteApproval = approvalContracts('credit-note', 'credit_notes:approve',
   [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'account_inactive', 'batches_mismatch', 'units_mismatch',
-    'serial_twice', 'not_serialised', 'credit_not_posted', 'refund_other_party', 'wrong_credit', 'unknown_account', 'not_money_account'],
+    'serial_twice', 'not_serialised', 'credit_not_posted', 'refund_other_party', 'wrong_credit', 'unknown_account', 'not_money_account',
+    // Posting draws the note's number, and goods back go through the stock engine (RAD-134).
+    'series_full', 'no_estimate', 'unit_batch'],
   CREDIT_REFUND_DB_ERRORS);
 /** Cancels a posted credit note (ADR-007 §6): its entry mirrored on the cancellation's day, goods back out again at the
  * value they came back at (RC-207). Refused while it's applied or refunded: reverse those first. */
