@@ -8,12 +8,13 @@
 //   in, never another document's row, id or field: the return types below say so;
 // - the caller has already applied ctx.see to the order, delivery or party it asks about.
 import {
-  deliveries, deliveryLines, deliveryReturnLines, deliveryReturns, invoiceLines, invoices, salesOrderLines, salesTx,
+  creditNoteLines, creditNotes, deliveries, deliveryLines, deliveryReturnLines, deliveryReturns, invoiceLines, invoices, salesOrderLines,
+  salesTx,
 } from '@radcore/db/sales';
 import { dec, roundMoney, roundQty, type Decimal, type Money, type Quantity } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';
 import { serialKey } from '@radcore/lib-stock';
-import { and, asc, eq, inArray, sum } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, sum } from 'drizzle-orm';
 
 const QTY_PLACES = 3; // a line's quantity column, numeric(18, 3)
 const asQty = (d: Decimal): Quantity => roundQty(d, QTY_PLACES);
@@ -56,8 +57,8 @@ export async function hasDeliveries(ctx: Ctx, orderId: string): Promise<boolean>
 
 /** What has gone from one of the caller's delivery lines, on posted returns and posted invoices together: how many, and
  * their shares of the line's cost, taxable value and GST, so whichever takes the last of it clears what's left
- * (ADR-006 §4); and, of the returns alone, how many of each batch the line was picked from came back, and whether
- * each of its serials did. */
+ * (ADR-006 §4); and, of the returns and credit notes' goods back, how many of each batch the line was picked from
+ * came back, and whether each of its serials did. */
 export type Returned = { qty: Quantity; value: Money; taxable: Money; gst: Money; batches: ReadonlyMap<string, Quantity>;
   serials: ReadonlyMap<string, boolean> };
 /** A picked batch's key in `Returned.batches`: its id, or 'unknown' for "batch unknown". */
@@ -76,13 +77,20 @@ export async function returnedOf(ctx: Ctx, lines: readonly { id: string; picks: 
     value: invoiceLines.cost, taxable: invoiceLines.deliveryTaxable, gst: invoiceLines.deliveryGst }).from(invoiceLines)
     .innerJoin(invoices, and(eq(invoices.id, invoiceLines.invoiceId), eq(invoices.status, 'posted')))
     .where(inArray(invoiceLines.deliveryLineId, ids));
+  // Goods back on credit notes (RAD-114) came back too, in their batches and serials, though the line stays invoiced.
+  const credited = lines.length === 0 ? [] : await salesTx(ctx).select({ line: invoiceLines.deliveryLineId, picks: creditNoteLines.picks })
+    .from(creditNoteLines)
+    .innerJoin(creditNotes, and(eq(creditNotes.id, creditNoteLines.creditNoteId), eq(creditNotes.status, 'posted')))
+    .innerJoin(invoiceLines, eq(invoiceLines.id, creditNoteLines.invoiceLineId))
+    .where(and(inArray(invoiceLines.deliveryLineId, ids), isNotNull(creditNoteLines.picks)));
   const back = new Map<string, Returned>();
   for (const line of lines) {
     const mine = rows.filter((r) => r.line === line.id);
     const gone = [...mine, ...billed.filter((r) => r.line === line.id)];
     const total = (f: (r: (typeof gone)[number]) => string | null) => gone.reduce((s, r) => s.plus(dec(f(r) ?? '0')), dec('0'));
-    const came = mine.flatMap((r) => picksOf(r.picks).batches);
-    const cameSerials = new Set(mine.flatMap((r) => picksOf(r.picks).serials.map(serialKey)));
+    const cameBack = [...mine, ...credited.filter((r) => r.line === line.id)];
+    const came = cameBack.flatMap((r) => picksOf(r.picks).batches);
+    const cameSerials = new Set(cameBack.flatMap((r) => picksOf(r.picks).serials.map(serialKey)));
     const picked = picksOf(line.picks);
     back.set(line.id, {
       qty: asQty(total((r) => r.qty)), value: roundMoney(total((r) => r.value)), taxable: roundMoney(total((r) => r.taxable)),
@@ -120,4 +128,28 @@ export async function holdDeliveriesOf(ctx: Ctx, deliveryLineIds: readonly strin
   const ids = [...new Set((await tx.select({ id: deliveryLines.deliveryId }).from(deliveryLines)
     .where(inArray(deliveryLines.id, [...deliveryLineIds]))).map((r) => r.id))];
   await tx.select({ id: deliveries.id }).from(deliveries).where(inArray(deliveries.id, ids)).orderBy(asc(deliveries.id)).for('update');
+}
+
+/** What standing credit notes have taken off each of the caller's invoice lines (RAD-114, ADR-007 §6): goods back by
+ * quantity, and every note's taxable value, tax and the cost of the goods back, for what's left of the line. */
+export type Credited = { qty: Quantity; taxable: Money; cgst: Money; sgst: Money; igst: Money; cost: Money };
+export async function creditedOf(ctx: Ctx, invoiceLineIds: readonly string[]): Promise<Map<string, Credited>> {
+  const rows = invoiceLineIds.length === 0 ? [] : await salesTx(ctx).select({ line: creditNoteLines.invoiceLineId, qty: sum(creditNoteLines.qty),
+    taxable: sum(creditNoteLines.taxable), cgst: sum(creditNoteLines.cgst), sgst: sum(creditNoteLines.sgst), igst: sum(creditNoteLines.igst),
+    cost: sum(creditNoteLines.cost) }).from(creditNoteLines)
+    .innerJoin(creditNotes, and(eq(creditNotes.id, creditNoteLines.creditNoteId), eq(creditNotes.status, 'posted')))
+    .where(inArray(creditNoteLines.invoiceLineId, [...invoiceLineIds])).groupBy(creditNoteLines.invoiceLineId);
+  const m = (v: string | null) => roundMoney(v ?? '0');
+  return new Map(invoiceLineIds.map((id) => {
+    const r = rows.find((x) => x.line === id);
+    return [id, { qty: asQty(dec(r?.qty ?? '0')), taxable: m(r?.taxable ?? null), cgst: m(r?.cgst ?? null), sgst: m(r?.sgst ?? null),
+      igst: m(r?.igst ?? null), cost: m(r?.cost ?? null) }];
+  }));
+}
+
+/** Whether a standing credit note credits the caller's invoice: it can't be cancelled then (ADR-007 §6). */
+export async function hasCreditNotes(ctx: Ctx, invoiceId: string): Promise<boolean> {
+  const [row] = await salesTx(ctx).select({ id: creditNotes.id }).from(creditNotes)
+    .where(and(eq(creditNotes.invoiceId, invoiceId), eq(creditNotes.status, 'posted'))).limit(1);
+  return row !== undefined;
 }

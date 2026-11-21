@@ -71,6 +71,8 @@ export const SYSTEM_ACCOUNTS: readonly SystemAccount[] = [
   acc('cogs', 'Cost of Goods Sold', 'expense'),
   acc('stock_adjustment', 'Stock Adjustment', 'expense'),
   acc('round_off', 'Round Off', 'expense'),
+  // Output tax a credit note can no longer cut, past section 34's limit (ADR-007 §6, F25, RAD-114).
+  acc('late_cn_gst', 'GST Borne on Late Credit Notes', 'expense'),
   acc('salaries', 'Salaries', 'expense'),
   acc('employer_pf', 'Employer PF', 'expense'),
   acc('employer_esic', 'Employer ESIC', 'expense'),
