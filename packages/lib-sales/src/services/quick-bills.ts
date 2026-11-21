@@ -96,8 +96,8 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
   if (partyId === walkIn) {
     const { total } = (await getOrderById(ctx, order)).amounts;
     if (total !== null && dec(sum(receipts.map((r) => r.amount))).lt(total)) {
-      throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${total}: name the party to sell on credit`,
-        [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${total} in all, or choose a named party` }]);
+      throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${total}: to leave a balance, add the buyer’s name and phone`,
+        [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${total} in all, or add the buyer’s name and phone` }]);
     }
   }
   const confirmed = await confirmOrderNow(ctx, order);
@@ -119,8 +119,8 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
   const paid = roundMoney(sum(receipts.map((r) => r.amount)));
   // And on the invoice's own total, which is what's owed (auditor-2 on #304): a walk-in never leaves a rupee on credit.
   if (partyId === walkIn && dec(paid).lt(posted.total)) {
-    throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${posted.total}: name the party to sell on credit`,
-      [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${posted.total} in all, or choose a named party` }]);
+    throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${posted.total}: to leave a balance, add the buyer’s name and phone`,
+      [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${posted.total} in all, or add the buyer’s name and phone` }]);
   }
   if (dec(paid).gt(posted.total)) {
     throw new AppError('overpaid', `That’s more than the bill of ${posted.total}`, [{ path: ['payments'], code: 'overpaid', message: 'Pay at most the bill' }]);
