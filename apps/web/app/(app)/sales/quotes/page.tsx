@@ -3,7 +3,7 @@
 // filtered by status. sales:write starts a new one; its page sends it, records the answer, or turns it into an order.
 import { SALES_QUOTE_STATUSES } from '@radcore/lib-common';
 import { listQuotes } from '@radcore/lib-sales/contract';
-import { formatDate } from '@radcore/lib-common';
+import { formatDate, formatMoney } from '@radcore/lib-common';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
@@ -21,6 +21,7 @@ const columns: Column<QuoteRow>[] = [
   { id: 'party', header: t('sales.party'), cell: (q) => q.partyName },
   { id: 'date', header: t('sales.date'), cell: (q) => formatDate(q.businessDate) },
   { id: 'valid', header: t('sales.quote.validUntil'), cell: (q) => (q.validUntil === null ? t('sales.quote.noValidUntil') : formatDate(q.validUntil)) },
+  { id: 'total', header: t('sales.col.total'), numeric: true, cell: (q) => (q.total === null ? '' : formatMoney(q.total)) },
   { id: 'status', header: t('sales.status'), cell: (q) => t(`sales.quote.status.${q.status}`) },
 ];
 

@@ -99,6 +99,16 @@ export async function linkPrincipal(ctx: Ctx, token: string, action: string): Pr
 }
 
 /**
+ * The one record a link route's service may read (RAD-118, ADR-001 §6a): the link's own, when the principal is a link
+ * made for exactly `action`. Anything else is not_found, so a staff request can never use it to get round its scope.
+ * E7 counts it as the read's scope check; every read must filter by the id it returns.
+ */
+export function linkRecord(ctx: Ctx, action: string): string {
+  if (ctx.principal.kind !== 'link' || ctx.principal.action !== action) throw new AppError('not_found', 'Not found');
+  return ctx.principal.recordId;
+}
+
+/**
  * Uses up one of a link's uses. The generic handler calls it for every link route (auditor on #134): in the work's own
  * transaction for a link that writes, so the use and the work commit together, and just after the read for one that
  * only reads. A service never calls it.

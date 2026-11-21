@@ -1,5 +1,5 @@
 // E7's control (RAD-85): each read of the scoped table applies the record scope in its own function.
-import { listScope, type Ctx } from '@radcore/lib-platform';
+import { linkRecord, listScope, type Ctx } from '@radcore/lib-platform';
 import { leads } from '../../../db/src/e7/tables.ts';
 type Tx = { select(): { from(t: typeof leads): { where(c: unknown): Promise<{ createdBy: string | null }[]> } } };
 
@@ -13,3 +13,8 @@ export async function mayEdit(ctx: Ctx, tx: Tx) {
   return rows.filter((r) => ctx.can('leads:write', { owner: r.createdBy ?? '' }));
 }
 export const listLeads = (ctx: Ctx, tx: Tx) => tx.select().from(leads).where(listScope(ctx, 'leads:read', leads.createdBy));
+// A link route's read of its one record (RAD-118).
+export async function leadByLink(ctx: Ctx, tx: Tx) {
+  const id = linkRecord(ctx, 'crm.lead_view');
+  return tx.select().from(leads).where(id);
+}
