@@ -66,8 +66,8 @@ export async function getQuoteById(ctx: Ctx, { id }: In<typeof getQuote>): Promi
   const worked = await amountsForRead(ctx, { ...row, ...row.stored }, lines);
   const names = await partyNames(ctx, [row.partyId]);
   return { ...row, status: row.status as SalesQuoteStatus, partyName: names.get(row.partyId) ?? '', orderId: order?.id ?? null,
-    amounts: worked.amounts, lines: (await labelled(ctx, lines)).map((l, i) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: l.sku,
-      name: l.name, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent, amounts: worked.lines[i] ?? null })) };
+    amounts: worked.amounts, lines: (await labelled(ctx, worked.lines)).map((l) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: l.sku,
+      name: l.name, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent, amounts: l.amounts })) };
 }
 
 /** POST /sales/quotes (sales:write): a draft. */

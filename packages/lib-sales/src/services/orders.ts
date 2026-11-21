@@ -6,7 +6,7 @@ import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radc
 import { holdParty, holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
+  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -98,9 +98,13 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promi
   const ids = lines.map((l) => l.id);
   const [delivered, invoiced] = [await netDelivered(ctx, ids), await invoicedOf(ctx, ids)];
   const names = await partyNames(ctx, [row.partyId]);
-  return { ...row, partyName: names.get(row.partyId) ?? '', amounts: worked.amounts,
-    lines: (await labelled(ctx, lines)).map((l, i) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: l.sku, name: l.name, qty: l.qty,
-      rate: l.rate, discountPercent: l.discountPercent, amounts: worked.lines[i] ?? null, delivered: delivered.get(l.id) ?? '0',
+  // Where its override stands (auditor-3 on #278): a request waiting, one approved for it (confirming checks it still
+  // fits), or neither. A change clears an approved one.
+  const pending = (await awaitingApproval(ctx, orderOverride, [id])).has(id);
+  const override = pending ? 'pending' as const : row.overrideVersion !== null ? 'approved' as const : 'none' as const;
+  return { ...row, partyName: names.get(row.partyId) ?? '', amounts: worked.amounts, override,
+    lines: (await labelled(ctx, worked.lines)).map((l) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: l.sku, name: l.name, qty: l.qty,
+      rate: l.rate, discountPercent: l.discountPercent, amounts: l.amounts, delivered: delivered.get(l.id) ?? '0',
       invoiced: invoiced.get(l.id) ?? '0' })) };
 }
 
@@ -118,8 +122,8 @@ export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise
 }
 
 /** PUT /sales/orders/:id (sales:write): a draft, or a confirmed order's lines through the checks again (§1). A
- * confirmed order whose new lines the checks would stop is refused (needs_override): an override is approved for a
- * draft's confirmation, so such a change is a new order. */
+ * confirmed order whose new lines the checks would stop is refused (`change_over_checks`, naming each issue): an
+ * override is approved for a draft's confirmation, so such a change is a new order (auditor-3 on #278). */
 export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOrder>): Promise<Out<typeof updateOrder>> {
   const now = await orderOf(ctx, id, 'sales:write', true);
   mayEdit('order', now.status, true);
@@ -141,7 +145,11 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   if (now.status === 'confirmed') {
     await holdParty(ctx, now.partyId); // ADR-006 §1's step 3, after the order and before the check
     // Its lines changed, so what it stores is worked out again for them, as at its confirmation.
-    const a = await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy });
+    const a = await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy }).catch((e: unknown) => {
+      if (!(e instanceof AppError) || e.code !== 'needs_override') throw e;
+      throw new AppError('change_over_checks', 'These lines need an override, which only a draft order gets: close this order short and raise a new one',
+        e.issues);
+    });
     await freezeLines(ctx, id, a);
     await tx.update(salesOrders).set(frozenHeader(a)).where(eq(salesOrders.id, id));
   }

@@ -18,12 +18,15 @@ const lineIn = z.object({
 });
 /** A line's amounts (the architect on RAD-112): its GST rate in force on the document's date and that rate's source, its
  * taxable value and tax, worked out as an invoice's. A draft's are worked out on read; a sent quote's or confirmed
- * order's are the ones stored then. None while they can't be worked out (no company profile, an item with no rate). */
-const lineAmounts = z.object({ gstRate: z.string(), gstRateSource: z.string(), taxable: moneyString(), cgst: moneyString(),
-  sgst: moneyString(), igst: moneyString(), lineTotal: moneyString() }).nullable();
-/** The document's place of supply and totals, rounded to the rupee as an invoice's; none as for its lines. */
-const amounts = z.object({ placeOfSupply: z.string(), taxable: moneyString(), cgst: moneyString(), sgst: moneyString(),
-  igst: moneyString(), roundOff: z.string(), total: moneyString() }).nullable();
+ * order's are the ones stored then. While a draft's tax can't be worked out (the company's state isn't set, or an item
+ * has no rate), only its taxable value is there. */
+const money = () => moneyString().nullable();
+const lineAmounts = z.object({ gstRate: z.string().nullable(), gstRateSource: z.string().nullable(), taxable: moneyString(), cgst: money(),
+  sgst: money(), igst: money(), lineTotal: money() });
+/** The document's place of supply and totals, rounded to the rupee as an invoice's, with `note` saying what's missing
+ * while a draft's tax can't be worked out. */
+const amounts = z.object({ placeOfSupply: z.string().nullable(), taxable: moneyString(), cgst: money(), sgst: money(), igst: money(),
+  roundOff: z.string().nullable(), total: money(), note: z.string().nullable() });
 // A line as answered, with its item's SKU and name, so a screen needn't look each item up (RAD-125), and its amounts.
 const lineOut = lineIn.extend({ id: idString(), lineNo: z.number().int().positive(), sku: z.string(), name: z.string(),
   amounts: lineAmounts });
@@ -99,12 +102,14 @@ const order = z.object({
   id: idString(), number: z.string().nullable(), partyId: idString(), partyName: z.string(), quoteId: idString().nullable(),
   businessDate: dateString(), status: z.enum(SALES_ORDER_STATUSES), notes: z.string().nullable(),
   closeReason: z.string().nullable(), amounts,
+  // Where its override of the checks stands (auditor-3 on #278): a request waiting, one approved, or neither.
+  override: z.enum(['none', 'pending', 'approved']),
   // Each line's progress (the architect on RAD-112): delivered, net of goods taken back, and invoiced on posted invoices,
   // worked out on read and never stored.
   lines: z.array(lineOut.extend({ delivered: quantityString(), invoiced: quantityString() })),
 });
 const orderIn = z.object({ partyId: idString(), businessDate: dateString(), notes: notes(), lines: lines() });
-const orderRow = order.omit({ lines: true, amounts: true }).extend({ total: moneyString().nullable() });
+const orderRow = order.omit({ lines: true, amounts: true, override: true }).extend({ total: moneyString().nullable() });
 
 /** Orders, newest first, a page at a time. `quoteId` is the orders a quote became (RAD-125's link from a quote). */
 export const listOrders = defineContract({
@@ -129,10 +134,11 @@ export const createOrder = defineContract({
   method: 'POST', path: '/sales/orders', auth: 'session', perm: 'sales:write', tx: write,
   input: orderIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS],
 });
-/** A draft order, rewritten whole; a confirmed one's lines too, through the checks again (§1). */
+/** A draft order, rewritten whole; a confirmed one's lines too, through the checks again (§1), refused if they'd need an
+ * override (`change_over_checks`): only a draft gets one. */
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
-  input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'needs_override', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete'],
+  input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'change_over_checks', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({
