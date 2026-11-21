@@ -1,7 +1,8 @@
 // lib-crm's tables (ADR-001 §3, §5). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
-import { sql } from 'drizzle-orm';
+import { isNull, sql } from 'drizzle-orm';
 import { boolean, check, date, index, primaryKey, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, money, radcoreTable } from '../columns.ts';
+import { webhookDeliveries } from '../platform/tables.ts';
 
 // The CRM's own lists, which leads:setup keeps up (M3-05, RAD-109; the architect: a list people keep up isn't a
 // setting, ADR-001 §8c). A lead names an item by id, so one in use is switched off, never deleted. Each name's key
@@ -115,4 +116,23 @@ export const leadActivities = radcoreTable('lead_activities', {
   index('ix_lead_activities_lead').on(t.leadId, t.createdAt),
   check('ck_lead_activities_kind', sql`${t.kind} in ('follow_up', 'quick_reply', 'stage')`),
   check('ck_lead_activities_stage', sql`(${t.kind} = 'stage') = (${t.stage} is not null)`),
+]);
+
+/**
+ * A Meta lead waiting for its fetch (RAD-107, the architect): Meta's webhook says only that a lead exists, and its
+ * answers come from a Graph API call, which is M7's. Each one is kept here, once per `leadgen_id`, with the delivery
+ * that named it; M7's first job fetches every row with no `fetched_at` and captures the lead. crm's own pending work,
+ * so the platform intake's delivery completes when this row is written.
+ */
+export const metaLeadWaits = radcoreTable('meta_lead_waits', {
+  leadgenId: text().primaryKey(),
+  formId: text(),
+  pageId: text(),
+  deliveryId: uuid().notNull().references(() => webhookDeliveries.id),
+  receivedAt: timestamp({ withTimezone: true }).notNull(),
+  fetchedAt: timestamp({ withTimezone: true }),
+}, (t) => [
+  index('ix_meta_lead_waits_delivery').on(t.deliveryId),
+  index('ix_meta_lead_waits_waiting').on(t.receivedAt).where(isNull(t.fetchedAt)),
+  check('ck_meta_lead_waits_leadgen_id', sql`${t.leadgenId} ~ '^[0-9]{1,30}$'`),
 ]);

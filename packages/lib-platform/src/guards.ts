@@ -22,6 +22,12 @@ export const ADDRESS_LIMITS = {
   'health': { points: 60, windowSeconds: 60, blockSeconds: 60 },
   // A page's error reports (RC-158): a page in an error loop sends a few, never hundreds.
   'client-error': { points: 30, windowSeconds: 60, blockSeconds: 60 },
+  // The public enquiry form (RAD-107, RC-054): Turnstile is the real check; this bounds a source's tries at it, and
+  // leaves room for many phones behind one mobile carrier's address.
+  'enquiry': { points: 60, windowSeconds: 600, blockSeconds: 600 },
+  // Provider webhooks (RAD-107): they send from shared ranges, so it's generous. The signature is the real check; this
+  // bounds the cost of checking before it (the architect).
+  'provider-hook': { points: 600, windowSeconds: 60, blockSeconds: 60 },
 } as const satisfies Record<string, Spec>;
 
 /** Requests per signed-in person, over every route (RC-194): a busy screen makes tens a minute, never hundreds. */

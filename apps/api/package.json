@@ -16,6 +16,7 @@
     "@radcore/lib-common": "*",
     "@radcore/lib-gst": "*",
     "@radcore/lib-crm": "*",
+    "@radcore/lib-integrations": "*",
     "@radcore/lib-hr": "*",
     "@radcore/lib-platform": "*",
     "@radcore/lib-sales": "*",

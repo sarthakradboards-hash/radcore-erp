@@ -1,6 +1,7 @@
 // Every route the api mounts (ADR-001 §6): each module's route file, then the sign-in, second-factor and password
 // routes built at start (createAuth), and the browser's error report (createClientErrors). main.ts mounts exactly this list, and the permission manifest test (RAD-37)
 // checks it against its own table.
+import type { createEnquiryForm } from '@radcore/lib-crm';
 import type { createClientErrors, Route } from '@radcore/lib-platform';
 import type { Auth } from '@radcore/lib-platform/runtime';
 import accounts from './routes/accounts.ts';
@@ -14,6 +15,8 @@ import { settingsRoutes } from './catalogue.ts';
 import stock from './routes/stock.ts';
 
 // Each module's route file (apps/api/src/routes/<module>.ts) default-exports its defineRoute list; spread them in here.
-export const apiRoutes = (auth: Pick<Auth, 'routes'>, clientErrors: ReturnType<typeof createClientErrors>): readonly Route[] =>
-  [...fileRoutes, ...platform, ...accounts, ...crm, ...gst, ...hr, ...sales, ...stock, ...auth.routes, ...clientErrors.routes,
-    ...settingsRoutes];
+// The enquiry form's route is built at start with Turnstile's client and secret (createEnquiryForm, RAD-107).
+export const apiRoutes = (auth: Pick<Auth, 'routes'>, clientErrors: ReturnType<typeof createClientErrors>,
+  enquiryForm: ReturnType<typeof createEnquiryForm>): readonly Route[] =>
+  [...fileRoutes, ...platform, ...accounts, ...crm, ...enquiryForm.routes, ...gst, ...hr, ...sales, ...stock,
+    ...auth.routes, ...clientErrors.routes, ...settingsRoutes];

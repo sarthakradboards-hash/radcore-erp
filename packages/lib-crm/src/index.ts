@@ -1,5 +1,9 @@
 // The crm module's library (ADR-001 §5): its services, which apps/api's routes/crm.ts mounts.
 export {
+  createEnquiryForm, formEnquiry, formEnquiryJob, googleLead, googleLeadJob, metaLead, metaLeadJob, metaLeadWaiting, takeFormEnquiry, turnstileBefore, whatsappMessage, type Turnstile,
+  whatsappMessageJob,
+} from './services/doors.ts';
+export {
   addLostReason, addPlan, addQuickReply, changeLostReason, changePlan, changeQuickReply, leadLists,
 } from './services/lead-lists.ts';
 export {

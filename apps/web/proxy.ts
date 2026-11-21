@@ -8,12 +8,17 @@ import { filesOrigin } from './files-origin.ts';
 // `files` is the files bucket's origin (RAD-43): uploads go there with a presigned POST (connect-src for fetch,
 // form-action for a form), and previews come from there (img-src). Exactly that origin, never a wildcard; null adds
 // nothing, so a missing setting leaves uploads blocked rather than opening anything.
-export function contentSecurityPolicy(nonce: string, dev: boolean, files: string | null = null): string {
+// `turnstile` is for the public enquiry page only (RAD-107, ADR-004 §1's "Anti-bot check" row): Cloudflare Turnstile's
+// script and frame. Every other page keeps no outside origin but the files bucket.
+export function contentSecurityPolicy(nonce: string, dev: boolean, files: string | null = null, turnstile = false): string {
   const and = files === null ? '' : ` ${files}`;
+  // Under strict-dynamic the host is ignored and the nonce loads the script; the host covers browsers without it.
+  const challenges = turnstile ? ` ${TURNSTILE_ORIGIN}` : '';
   return [
     "default-src 'self'",
     // Dev only: React rebuilds server error stacks with eval.
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}${challenges}`,
+    ...(turnstile ? [`frame-src ${TURNSTILE_ORIGIN}`] : []),
     // Dev only: hot reload injects styles without the nonce.
     `style-src 'self' ${dev ? "'unsafe-inline'" : `'nonce-${nonce}'`}`,
     // Style attributes from React style props (Radix, react-virtual) can't run script, so they are allowed. <style>
@@ -29,6 +34,12 @@ export function contentSecurityPolicy(nonce: string, dev: boolean, files: string
   ].join('; ');
 }
 
+/** Cloudflare Turnstile's origin, for the enquiry page's script and frame (RAD-107). */
+const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
+/** The public enquiry page (ui-2's, RAD-107): the one page whose CSP allows Turnstile. */
+export const ENQUIRY_PAGE = '/enquiry';
+const isEnquiryPage = (path: string) => path === ENQUIRY_PAGE || path.startsWith(`${ENQUIRY_PAGE}/`);
+
 /** A Next router prefetch: it renders no page of its own, so it gets no CSP and no asked path. */
 const isPrefetch = (request: NextRequest) =>
   request.headers.has('next-router-prefetch') || request.headers.get('purpose') === 'prefetch';
@@ -42,7 +53,8 @@ export function proxy(request: NextRequest) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
-  const csp = contentSecurityPolicy(nonce, process.env.NODE_ENV === 'development', filesOrigin(process.env));
+  const csp = contentSecurityPolicy(nonce, process.env.NODE_ENV === 'development', filesOrigin(process.env),
+    isEnquiryPage(request.nextUrl.pathname));
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('Content-Security-Policy', csp);
   // The page asked for, for the (app) layout's sign-in redirect (RAD-55). Always set here, so a value the browser sent
