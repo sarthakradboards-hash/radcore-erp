@@ -22,7 +22,7 @@ const withPassword = (u: string) => {
 
 // ADR-005 §7's append-only tables, exactly.
 const APPEND_ONLY = ['journal_entries', 'journal_lines', 'stock_movements', 'unit_events', 'batches',
-  'stock_movement_batches', 'payment_allocations', 'credit_applications', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
+  'stock_movement_batches', 'payment_allocations', 'credit_applications', 'payment_reminders', 'audit_log', 'access_log', 'event_log', 'webhook_delivery_attempts'];
 // Written only by triggers and record_access, never by an INSERT from the app.
 const NO_INSERT = ['audit_log', 'access_log', 'event_log'];
 const EVERY = 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
