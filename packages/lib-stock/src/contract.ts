@@ -203,8 +203,9 @@ export const getOnHand = defineContract({
     batches: z.array(z.object({ batchId: idString().nullable(), batchNo: z.string().nullable(), supplierName: z.string().nullable(),
       qty: quantityString({ signed: true }) })),
     // Each unit's condition, so a demo, used or (where stock.sell_damaged_units allows) damaged one is seen as such.
+    // Each unit's batch, so a serialised line's batches follow from the units picked (ui-2's delivery form).
     units: listOf(z.object({ unitId: idString(), serialNo: z.string(), chassisNo: z.string().nullable(), condition: z.enum(UNIT_CONDITIONS),
-      heldForThis: z.boolean() })).nullable(),
+      heldForThis: z.boolean(), batchId: idString().nullable(), batchNo: z.string().nullable() })).nullable(),
   }),
 });
 
