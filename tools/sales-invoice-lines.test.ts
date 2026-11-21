@@ -8,18 +8,22 @@
 //   #282). The lock is set by the superuser in a transaction that rolls back, so no other file sees it.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accounts';
-import { moneyString, percentString, quantityString, unitPriceString, type UnitCondition } from '@radcore/lib-common';
+import { moneyString, percentString, quantityString, requestFor, unitPriceString, type UnitCondition } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addDelivery, addDeliveryReturn, addInvoice, addOrder, changeOrder, confirmOrderNow, deliveryReturnCounts, getDeliveryById,
   getDeliveryReturnById, getInvoiceById, getOrderById, listToInvoicePage, postDeliveryNow, postDeliveryReturnNow, postInvoiceNow,
 } from '@radcore/lib-sales';
+import { postDelivery } from '@radcore/lib-sales/contract';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
+import { testSettings } from '@radcore/test-helpers';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { rawOf } from '../packages/db/src/tx.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
@@ -182,6 +186,30 @@ describe.skipIf(!url || !superUrl)('invoice and delivery lines', () => {
       counts: counts.byStatus, listed: listed?.lines.map((l) => [l.id === deliveryLineId, l.sku === at.sku, l.qtyToInvoice]),
     }).toEqual({ left: '1.000', labels: [true, 'Scooter', true, 'Scooter'], counts: { draft: 0, posted: 1, cancelled: 0 },
       listed: [[true, true, '1.000']] });
+  });
+
+  // auditor-2 on #289: a refusal the service raises answers by name only if its route declares it (apps/api's handler
+  // answers anything else as a 500). Over the real route, a mixed line is the business-rule 422 `mixed_condition`.
+  it('answers a mixed delivery line over the real route as 422 mixed_condition, not a 500', async () => {
+    const at = await setup({ stock: '2', conditions: ['used', 'new'] });
+    const deliveryId = await run(async (ctx) => {
+      const { id } = await addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: lines(at, '2') });
+      await confirmOrderNow(ctx, { id });
+      const orderLineId = (await getOrderById(ctx, { id })).lines[0]?.id ?? '';
+      return (await addDelivery(ctx, { orderId: id, locationId: at.placeId, businessDate: DATE, notes: null,
+        lines: [{ orderLineId, qty: q('2'), batches: [{ batchId: at.batchId, qty: q('2') }], serials: at.serials }] })).id;
+    });
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => staff, routes: salesRoutes }),
+      0, '127.0.0.1');
+    try {
+      const sent = requestFor(postDelivery, { id: deliveryId });
+      const res = await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { method: sent.method, body: sent.body ?? null,
+        headers: { 'content-type': 'application/json', origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin', 'idempotency-key': randomUUID() } });
+      expect([res.status, ((await res.json()) as { code?: string }).code]).toEqual([422, 'mixed_condition']);
+    } finally {
+      await server.stop();
+    }
   });
 
   // auditor-2 on #282: a confirmed order's change holds the period first, so with its date locked the change is refused
