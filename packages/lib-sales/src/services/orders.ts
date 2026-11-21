@@ -15,7 +15,8 @@ import type {
 } from '../contract.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
 import { checkedLines, sellingTo, today } from './document-lines.ts';
-import { hasDeliveries, orderDelivered } from './delivered.ts';
+import { amountsForRead, frozenHeader, frozenLine, type Amounts } from './document-amounts.ts';
+import { hasDeliveries, invoicedOf, netDelivered, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
 import { partyNames } from './party-names.ts';
@@ -28,13 +29,16 @@ export const ORDER_SERIES = defineSeries('sales.order', 'SO', { digits: 5, label
 
 const notFound = () => new AppError('not_found', 'There is no such order');
 const header = { id: salesOrders.id, number: salesOrders.number, partyId: salesOrders.partyId, quoteId: salesOrders.quoteId,
-  businessDate: salesOrders.businessDate, status: salesOrders.status, notes: salesOrders.notes, closeReason: salesOrders.closeReason };
+  businessDate: salesOrders.businessDate, status: salesOrders.status, notes: salesOrders.notes, closeReason: salesOrders.closeReason,
+  total: salesOrders.total };
 const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
 
 /** The order, locked when it's to be written, within the principal's scope for `permission` (else not_found), with
  * its quote's date: an order isn't dated before its quote (§4). The quote is read apart, so only the order is locked. */
 async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, overrideVersion: salesOrders.overrideVersion })
+  const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, overrideVersion: salesOrders.overrideVersion,
+    stored: { placeOfSupply: salesOrders.placeOfSupply, taxable: salesOrders.taxable, cgst: salesOrders.cgst, sgst: salesOrders.sgst,
+      igst: salesOrders.igst, roundOff: salesOrders.roundOff, total: salesOrders.total } })
     .from(salesOrders).where(eq(salesOrders.id, id));
   const [row] = forUpdate ? await q.for('update') : await q;
   if (row === undefined) throw notFound();
@@ -54,6 +58,15 @@ async function priced(ctx: Ctx, partyId: string, on: string, lines: Awaited<Retu
   const priceListId = await priceListOf(ctx, partyId);
   const rates = await listRatesOf(ctx, priceListId, on, lines.map((l) => l.itemId));
   return { priceListId, lines: lines.map((l, i) => ({ ...l, listRate: rates[i]?.listRate ?? null, listVersionId: rates[i]?.listVersionId ?? null })) };
+}
+
+/** Stores each line's figures that confirming freezes (the architect on RAD-112); the header's go with its status. */
+async function freezeLines(ctx: Ctx, id: string, a: Amounts) {
+  // The lines are numbered from 1 in order (checkedLines), as the checks read them.
+  for (const [i, l] of a.lines.entries()) {
+    await salesTx(ctx).update(salesOrderLines).set(frozenLine(l))
+      .where(and(eq(salesOrderLines.orderId, id), eq(salesOrderLines.lineNo, i + 1)));
+  }
 }
 
 /** GET /sales/orders (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
@@ -77,11 +90,15 @@ export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Pr
 /** GET /sales/orders/:id (sales:read). */
 export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promise<Out<typeof getOrder>> {
   const row = await orderOf(ctx, id, 'sales:read');
-  const lines = await salesTx(ctx).select({ id: salesOrderLines.id, lineNo: salesOrderLines.lineNo, itemId: salesOrderLines.itemId,
-    qty: salesOrderLines.qty, rate: salesOrderLines.rate, discountPercent: salesOrderLines.discountPercent }).from(salesOrderLines)
-    .where(eq(salesOrderLines.orderId, id)).orderBy(asc(salesOrderLines.lineNo));
+  const lines = await salesTx(ctx).select().from(salesOrderLines).where(eq(salesOrderLines.orderId, id)).orderBy(asc(salesOrderLines.lineNo));
+  const worked = await amountsForRead(ctx, { ...row, ...row.stored }, lines);
+  // Each line's progress, worked out on read and never stored (the architect on RAD-112).
+  const ids = lines.map((l) => l.id);
+  const [delivered, invoiced] = [await netDelivered(ctx, ids), await invoicedOf(ctx, ids)];
   const names = await partyNames(ctx, [row.partyId]);
-  return { ...row, partyName: names.get(row.partyId) ?? '', lines };
+  return { ...row, partyName: names.get(row.partyId) ?? '', amounts: worked.amounts,
+    lines: lines.map((l, i) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent,
+      amounts: worked.lines[i] ?? null, delivered: delivered.get(l.id) ?? '0', invoiced: invoiced.get(l.id) ?? '0' })) };
 }
 
 /** POST /sales/orders (sales:write): a draft. */
@@ -120,7 +137,10 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   await tx.update(salesOrders).set({ overrideVersion: null }).where(eq(salesOrders.id, id));
   if (now.status === 'confirmed') {
     await holdParty(ctx, now.partyId); // ADR-006 §1's step 3, after the order and before the check
-    await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy });
+    // Its lines changed, so what it stores is worked out again for them, as at its confirmation.
+    const a = await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy });
+    await freezeLines(ctx, id, a);
+    await tx.update(salesOrders).set(frozenHeader(a)).where(eq(salesOrders.id, id));
   }
   return {};
 }
@@ -148,9 +168,11 @@ export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>)
   await sellingTo(ctx, now.partyId);
   // ADR-006 §1's step 3: the party, after the order, so two sales to it take turns at the credit check (ADR-007 §9).
   await holdParty(ctx, now.partyId);
-  await checkOrder(ctx, id, now);
+  // The checks run on the amounts it then stores: its credit check judges the total it's confirmed at.
+  const a = await checkOrder(ctx, id, now);
+  await freezeLines(ctx, id, a);
   const number = await nextNumber(ctx, ORDER_SERIES, now.businessDate);
-  await salesTx(ctx).update(salesOrders).set({ status: 'confirmed', number }).where(eq(salesOrders.id, id));
+  await salesTx(ctx).update(salesOrders).set({ status: 'confirmed', number, ...frozenHeader(a) }).where(eq(salesOrders.id, id));
   return { number };
 }
 

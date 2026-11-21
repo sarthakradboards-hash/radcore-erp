@@ -2,11 +2,34 @@
 // (M3-09, RAD-113); price lists are in ./tables-prices.ts, credit notes in ./tables-credit.ts. SQL zone (ADR-002 §3):
 // `sql` only as a CHECK's argument or a generated column.
 import { sql } from 'drizzle-orm';
-import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { journalEntries, parties } from '../accounts/tables.ts';
 import { boundedText, id, json, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
 import { items, locations } from '../stock/tables.ts';
 import { priceLists, priceListVersions } from './tables-prices.ts';
+
+// What a quote or order freezes when it's sent or confirmed (the architect on RAD-112): each line's GST rate in force
+// on its date and that rate's source, its taxable value and tax, and the header's place of supply and totals, worked
+// out as an invoice's are (lib-gst, then invoice-rules) and never again. A draft has none: it's worked out on read.
+const frozenTotals = () => ({ placeOfSupply: text(), taxable: money(), cgst: money(), sgst: money(), igst: money(),
+  roundOff: money({ signed: true }), total: money() });
+const frozenLine = () => ({ gstRate: percent(), gstRateSource: boundedText({ max: 200 }), taxable: money(), cgst: money(),
+  sgst: money(), igst: money(), lineTotal: money() });
+type Totals = { [K in keyof ReturnType<typeof frozenTotals>]: AnyPgColumn } & { status: AnyPgColumn };
+type Line = { [K in keyof ReturnType<typeof frozenLine>]: AnyPgColumn };
+/** A header's frozen totals: all or none, none exactly while a draft, and ADR-005 §2's identity, as an invoice's. */
+const totalsChecks = (table: string, t: Totals) => [
+  check(`ck_${table}_frozen`, sql`num_nulls(${t.placeOfSupply}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst}, ${t.roundOff}, ${t.total}) in (0, 7)
+    and (${t.status} = 'draft') = (${t.total} is null) and coalesce(${t.placeOfSupply}, '00') ~ '^[0-9]{2}$'`),
+  check(`ck_${table}_identity`, sql`${t.total} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.roundOff}
+    and abs(${t.roundOff}) < 1 and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
+];
+/** A line's frozen figures: all or none, and its row identity. */
+const lineChecks = (table: string, t: Line) => [
+  check(`ck_${table}_frozen`, sql`num_nulls(${t.gstRate}, ${t.gstRateSource}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst}, ${t.lineTotal}) in (0, 7)`),
+  check(`ck_${table}_identity`, sql`${t.lineTotal} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst}
+    and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
+];
 
 /**
  * A quote (ADR-007 §1, M3-08): what we offered a party, at what rates. It posts nothing. Its service moves it:
@@ -21,7 +44,9 @@ export const salesQuotes = radcoreTable('sales_quotes', {
   validUntil: date({ mode: 'string' }),
   status: text().notNull().default('draft'),
   notes: boundedText({ max: 500 }),
+  ...frozenTotals(),
 }, (t) => [
+  ...totalsChecks('sales_quotes', t),
   index('ix_sales_quotes_party').on(t.partyId),
   index('ix_sales_quotes_date').on(t.businessDate, t.id),
   // lib-common's SALES_QUOTE_STATUSES, written out (L1); tools/sales-lists.test.ts holds them equal.
@@ -39,7 +64,9 @@ export const salesQuoteLines = radcoreTable('sales_quote_lines', {
   qty: qty({ line: true }).notNull(),
   rate: unitPrice().notNull(),
   discountPercent: percent().notNull().default('0'),
+  ...frozenLine(),
 }, (t) => [
+  ...lineChecks('sales_quote_lines', t),
   uniqueIndex('ux_sales_quote_lines_line').on(t.quoteId, t.lineNo),
   index('ix_sales_quote_lines_item').on(t.itemId),
 ]);
@@ -65,7 +92,9 @@ export const salesOrders = radcoreTable('sales_orders', {
   // The version an override of its checks was approved for (sales:override, M3-07): confirming takes it while the
   // order and its issues still hash to it.
   overrideVersion: text(),
+  ...frozenTotals(),
 }, (t) => [
+  ...totalsChecks('sales_orders', t),
   index('ix_sales_orders_price_list').on(t.priceListId),
   index('ix_sales_orders_party').on(t.partyId),
   index('ix_sales_orders_date').on(t.businessDate, t.id),
@@ -89,7 +118,9 @@ export const salesOrderLines = radcoreTable('sales_order_lines', {
   // never from input; null when the list has none (the architect on RAD-113, #256). The check takes GST out exactly.
   listRate: unitPrice(),
   listVersionId: uuid().references(() => priceListVersions.id, { onDelete: 'restrict' }),
+  ...frozenLine(),
 }, (t) => [
+  ...lineChecks('sales_order_lines', t),
   uniqueIndex('ux_sales_order_lines_line').on(t.orderId, t.lineNo),
   index('ix_sales_order_lines_list_version').on(t.listVersionId),
   index('ix_sales_order_lines_item').on(t.itemId),

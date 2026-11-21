@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type {
   acceptQuote, closeQuote, createQuote, deleteQuote, getQuote, listQuotes, sendQuote, updateQuote,
 } from '../contract.ts';
+import { amountsForRead, amountsOf, frozenHeader, frozenLine } from './document-amounts.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
 import { checkedLines, sellingTo, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
@@ -23,12 +24,14 @@ export const QUOTE_SERIES = defineSeries('sales.quote', 'QT', { digits: 5, label
 
 const notFound = () => new AppError('not_found', 'There is no such quote');
 const header = { id: salesQuotes.id, number: salesQuotes.number, partyId: salesQuotes.partyId, businessDate: salesQuotes.businessDate,
-  validUntil: salesQuotes.validUntil, status: salesQuotes.status, notes: salesQuotes.notes };
+  validUntil: salesQuotes.validUntil, status: salesQuotes.status, notes: salesQuotes.notes, total: salesQuotes.total };
 const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
 
 /** The quote, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
 async function quoteOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  const q = salesTx(ctx).select({ ...header, owner: salesQuotes.createdBy }).from(salesQuotes).where(eq(salesQuotes.id, id));
+  const q = salesTx(ctx).select({ ...header, owner: salesQuotes.createdBy, stored: { placeOfSupply: salesQuotes.placeOfSupply,
+    taxable: salesQuotes.taxable, cgst: salesQuotes.cgst, sgst: salesQuotes.sgst, igst: salesQuotes.igst, roundOff: salesQuotes.roundOff,
+    total: salesQuotes.total } }).from(salesQuotes).where(eq(salesQuotes.id, id));
   const [row] = forUpdate ? await q.for('update') : await q;
   if (row === undefined) throw notFound();
   const { owner, ...quote } = row;
@@ -57,11 +60,12 @@ export async function listQuotesPage(ctx: Ctx, input: In<typeof listQuotes>): Pr
 /** GET /sales/quotes/:id (sales:read). */
 export async function getQuoteById(ctx: Ctx, { id }: In<typeof getQuote>): Promise<Out<typeof getQuote>> {
   const row = await quoteOf(ctx, id, 'sales:read');
-  const lines = await salesTx(ctx).select({ id: salesQuoteLines.id, lineNo: salesQuoteLines.lineNo, itemId: salesQuoteLines.itemId,
-    qty: salesQuoteLines.qty, rate: salesQuoteLines.rate, discountPercent: salesQuoteLines.discountPercent }).from(salesQuoteLines)
-    .where(eq(salesQuoteLines.quoteId, id)).orderBy(asc(salesQuoteLines.lineNo));
+  const lines = await salesTx(ctx).select().from(salesQuoteLines).where(eq(salesQuoteLines.quoteId, id)).orderBy(asc(salesQuoteLines.lineNo));
+  const worked = await amountsForRead(ctx, { ...row, ...row.stored }, lines);
   const names = await partyNames(ctx, [row.partyId]);
-  return { ...row, status: row.status as SalesQuoteStatus, partyName: names.get(row.partyId) ?? '', lines };
+  return { ...row, status: row.status as SalesQuoteStatus, partyName: names.get(row.partyId) ?? '', amounts: worked.amounts,
+    lines: lines.map((l, i) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent,
+      amounts: worked.lines[i] ?? null })) };
 }
 
 /** POST /sales/quotes (sales:write): a draft. */
@@ -106,8 +110,18 @@ export async function sendQuoteNow(ctx: Ctx, { id }: In<typeof sendQuote>): Prom
   mayMove('quote', now.status, 'sent');
   checkDate(now.businessDate, today());
   await holdPeriod(ctx, now.businessDate);
+  // Its amounts are frozen as it's sent (the architect on RAD-112): what the party was offered, never worked out again.
+  const tx = salesTx(ctx);
+  const lines = await tx.select({ id: salesQuoteLines.id, itemId: salesQuoteLines.itemId, qty: salesQuoteLines.qty, rate: salesQuoteLines.rate,
+    discountPercent: salesQuoteLines.discountPercent }).from(salesQuoteLines).where(eq(salesQuoteLines.quoteId, id))
+    .orderBy(asc(salesQuoteLines.lineNo));
+  const a = await amountsOf(ctx, now.partyId, now.businessDate, lines);
+  for (const [i, l] of lines.entries()) {
+    const priced = a.lines[i];
+    if (priced !== undefined) await tx.update(salesQuoteLines).set(frozenLine(priced)).where(eq(salesQuoteLines.id, l.id));
+  }
   const number = await nextNumber(ctx, QUOTE_SERIES, now.businessDate);
-  await salesTx(ctx).update(salesQuotes).set({ status: 'sent', number }).where(eq(salesQuotes.id, id));
+  await tx.update(salesQuotes).set({ status: 'sent', number, ...frozenHeader(a) }).where(eq(salesQuotes.id, id));
   return { number };
 }
 

@@ -153,3 +153,14 @@ export async function hasCreditNotes(ctx: Ctx, invoiceId: string): Promise<boole
     .where(and(eq(creditNotes.invoiceId, invoiceId), eq(creditNotes.status, 'posted'))).limit(1);
   return row !== undefined;
 }
+
+/** Each of the caller's order lines' quantity on posted invoices (the architect on RAD-112: an order line's progress,
+ * worked out on read): its delivery lines' invoice lines, summed. */
+export async function invoicedOf(ctx: Ctx, orderLineIds: readonly string[]): Promise<Map<string, Quantity>> {
+  if (orderLineIds.length === 0) return new Map();
+  const rows = await salesTx(ctx).select({ line: deliveryLines.orderLineId, qty: sum(invoiceLines.qty) }).from(invoiceLines)
+    .innerJoin(invoices, and(eq(invoices.id, invoiceLines.invoiceId), eq(invoices.status, 'posted')))
+    .innerJoin(deliveryLines, eq(deliveryLines.id, invoiceLines.deliveryLineId))
+    .where(inArray(deliveryLines.orderLineId, [...orderLineIds])).groupBy(deliveryLines.orderLineId);
+  return new Map(orderLineIds.map((id) => [id, asQty(dec(rows.find((r) => r.line === id)?.qty ?? '0'))]));
+}
