@@ -115,7 +115,7 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
     expect(await entryOf('deliveries', first.id)).toEqual(['gdni 30.00 0.00', 'stock 0.00 30.00']);
     const d = await run((ctx) => getDeliveryById(ctx, { id: first.id }));
     expect([d.status, d.lines.map((l) => [l.qty, l.value, l.taxable, l.gst, l.batches])]).toEqual(['posted',
-      [['1.000', '30.00', '50.00', '2.50', [{ batchId: at.batchId, qty: '1' }]]]]);
+      [['1.000', '30.00', '50.00', '2.50', [{ batchId: at.batchId, batchNo: 'B1', qty: '1' }]]]]);
     expect((await run((ctx) => getOrderById(ctx, { id: at.orderId }))).status).toBe('confirmed');
     // Only what's left of the order goes: 2 of 3.
     expect(await failure(draft(at, '3'))).toBe('over_quantity');
@@ -350,6 +350,9 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
       locationId: at.placeId, qty: q('1'), rate: unitPriceString().parse('40'), batches: [{ batchNo: 'B2', qty: q('1') }] }] }));
     await run((ctx) => cancelDeliveryNow(ctx, { id, businessDate: DATE, reason: 'Wrong customer' }));
     expect(await onHand(at.itemId, at.placeId)).toEqual({ qty: '2', value: '60.00' });
-    expect((await run((ctx) => checkBooks(ctx, {}))).problems).toEqual([]);
+    // As GET /books/check reads it, read-only at repeatable read, so the books and stock are one snapshot; and only this
+    // item and place, since the check covers every item in the run, other files' included (auditor-2 on #289, RAD-76).
+    const checked = await runInTransaction(db, { readOnly: true, isolation: 'repeatable read' }, staff, randomUUID(), (ctx) => checkBooks(ctx, {}));
+    expect(checked.problems.filter((p) => p.itemId === at.itemId || p.locationId === at.placeId)).toEqual([]);
   });
 });
