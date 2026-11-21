@@ -30,7 +30,8 @@ export const scheduleTestRide = defineContract({
   output: z.object({ id: idString() }), errors: ['not_demo'],
 });
 
-/** Records how a ride went, once: its outcome is required once it's done (`wrong_status` if it's recorded already). */
+/** Records how a ride went, once: its outcome is required once it's done (`wrong_status` if it's recorded already).
+ * Before its time it can only be `cancelled` (`wrong_status` otherwise). */
 export const recordTestRide = defineContract({
   method: 'POST', path: '/sales/test-rides/:id/outcome', auth: 'session', perm: 'bookings:write', tx: write,
   input: z.object({ id: idString(), outcome, note: note().optional() }), output: z.object({}), errors: ['wrong_status'],

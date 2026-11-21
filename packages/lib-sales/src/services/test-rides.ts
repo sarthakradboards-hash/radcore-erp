@@ -49,13 +49,18 @@ export async function scheduleRide(ctx: Ctx, input: In<typeof scheduleTestRide>)
   return made;
 }
 
-/** POST /sales/test-rides/:id/outcome (bookings:write): once, when it's done. */
+/** POST /sales/test-rides/:id/outcome (bookings:write): once, when it's done; before its time, only `cancelled`. */
 export async function recordRide(ctx: Ctx, { id, outcome, note }: In<typeof recordTestRide>): Promise<Out<typeof recordTestRide>> {
   const tx = salesTx(ctx);
-  const [ride] = await tx.select({ doneAt: testRides.doneAt, owner: testRides.createdBy }).from(testRides).where(eq(testRides.id, id)).for('update');
+  const [ride] = await tx.select({ doneAt: testRides.doneAt, scheduledAt: testRides.scheduledAt, owner: testRides.createdBy }).from(testRides)
+    .where(eq(testRides.id, id)).for('update');
   if (ride === undefined) throw new AppError('not_found', 'There is no such test ride');
   ctx.see('bookings:write', { owner: ride.owner });
   if (ride.doneAt !== null) throw new AppError('wrong_status', 'This ride’s outcome is recorded already');
-  await tx.update(testRides).set({ doneAt: new Date().toISOString(), outcome, ...(note === undefined ? {} : { note }) }).where(eq(testRides.id, id));
+  const now = new Date();
+  if (outcome !== 'cancelled' && new Date(ride.scheduledAt) > now) {
+    throw new AppError('wrong_status', 'This ride hasn’t happened yet: it can only be cancelled');
+  }
+  await tx.update(testRides).set({ doneAt: now.toISOString(), outcome, ...(note === undefined ? {} : { note }) }).where(eq(testRides.id, id));
   return {};
 }

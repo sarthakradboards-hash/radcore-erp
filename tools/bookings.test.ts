@@ -182,12 +182,14 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect(await failure(ride('NO-SUCH'))).toBe('not_demo');
     // Another seller's lead, for one who sees only their own.
     expect(await failure(ride(demo, { as: person([], ['leads:read', 'bookings:write']) }))).toBe('not_found');
-    const later = await ride(demo, { at: '2026-11-16T09:00:00.000Z' });
+    // Far ahead, so it's still to come whenever the suite runs.
+    const later = await ride(demo, { at: '2099-01-01T09:00:00.000Z' });
     const first = await ride(demo);
     const again = await ride(demo);
     const record = (id: string, outcome: 'liked' | 'cancelled') => failure(run((ctx) => recordRide(ctx, { id, outcome })));
-    expect([await record(first.id, 'liked'), await record(first.id, 'cancelled'), await record(again.id, 'cancelled')])
-      .toEqual(['ok', 'wrong_status', 'ok']);
+    // A ride still to come can only be called off (auditor-2's note on #292).
+    expect([await record(first.id, 'liked'), await record(first.id, 'cancelled'), await record(again.id, 'cancelled'),
+      await record(later.id, 'liked')]).toEqual(['ok', 'wrong_status', 'ok', 'wrong_status']);
     const rides = await run((ctx) => listTestRidesPage(ctx, { filter: { leadId: lead }, limit: 10 }));
     expect(rides.items.map((r) => [r.id, r.outcome])).toEqual(expect.arrayContaining([[first.id, 'liked'], [again.id, 'cancelled']]));
     expect(rides.items.at(-1)).toMatchObject({ id: later.id, outcome: null, doneAt: null });
