@@ -1,5 +1,5 @@
 {
-  "id": "eb61bfdf-f7f9-486c-9100-5118a13db440",
+  "id": "17a499f4-850a-49e1-8933-f2390dffa309",
   "prevId": "28873051-d260-4b29-bb7a-5e623c19a35a",
   "version": "7",
   "dialect": "postgresql",
@@ -5518,7 +5518,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'sales:counter_credit') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -5605,7 +5605,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'sales:counter_credit') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
