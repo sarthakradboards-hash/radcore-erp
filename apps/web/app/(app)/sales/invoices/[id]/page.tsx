@@ -137,7 +137,8 @@ export default function InvoicePage() {
   const post = useApiMutation(postInvoice, { invalidates: again });
   const override = useApiMutation(requestInvoiceOverride, { invalidates: again });
   const cancel = useApiMutation(cancelInvoice, { invalidates: again });
-  const remove = useApiMutation(deleteInvoice, { invalidates: again });
+  // A deleted record is gone: refetching it would be a 404, so only the list is refreshed (the same rule as quotes and orders).
+  const remove = useApiMutation(deleteInvoice, { invalidates: [listInvoices] });
   const [dialog, setDialog] = useState<Dialogs>(null);
   const invoice = q.data;
 
