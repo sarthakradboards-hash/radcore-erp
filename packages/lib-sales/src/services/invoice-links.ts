@@ -76,7 +76,8 @@ export async function invoiceByLink(ctx: Ctx): Promise<Out<typeof viewInvoiceLin
       const item = items.get(l.itemId);
       return { lineNo: l.lineNo, sku: item?.sku ?? '', name: item?.name ?? '', unit: item?.unit ?? '', hsn: l.hsn, qty: l.qty, rate: l.rate,
         discountPercent: l.discountPercent, gstRate: l.gstRate, taxable: l.taxable, cgst: l.cgst, sgst: l.sgst, igst: l.igst,
-        cessAdValorem: l.cessAdValorem, cessPerUnitAmount: l.cessPerUnitAmount, lineTotal: l.lineTotal };
+        cessAdValorem: l.cessAdValorem, cessPerUnitAmount: l.cessPerUnitAmount, lineTotal: l.lineTotal,
+        unitCondition: l.unitCondition as 'demo' | 'used' | 'damaged' | null };
     }),
   };
 }

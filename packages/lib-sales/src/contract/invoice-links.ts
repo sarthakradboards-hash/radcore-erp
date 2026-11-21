@@ -39,6 +39,8 @@ const viewLine = z.object({
   lineNo: z.number().int().positive(), sku: z.string(), name: z.string(), unit: z.string(), hsn: z.string().nullable(), qty: quantityString(),
   rate: unitPriceString(), discountPercent: z.string(), gstRate: z.string().nullable(), taxable: money().nullable(), cgst: money().nullable(),
   sgst: money().nullable(), igst: money().nullable(), cessAdValorem: money(), cessPerUnitAmount: money(), lineTotal: money().nullable(),
+  // The condition its units left with when not new, so the buyer's own copy says so (the architect's ruling on RAD-112).
+  unitCondition: z.enum(['demo', 'used', 'damaged']).nullable(),
 });
 /** A posted invoice, for whoever holds its link (`sales.invoice_view`): view-only, each opening logged. */
 export const viewInvoiceLink = defineContract({
