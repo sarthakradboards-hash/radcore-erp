@@ -7,7 +7,7 @@ import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-pla
 import { and, asc, eq, gt, inArray, isNull, like, or, sum as total } from 'drizzle-orm';
 import { z } from 'zod';
 import type { getOnHand } from '../contract.ts';
-import { serialKey } from '../engine/units.ts';
+import { chassisKey, serialKey } from '../engine/units.ts';
 import { batchQuantities, netQty } from '../rules/on-hand.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -15,7 +15,6 @@ type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 // A unit in any of these can be picked; a damaged one can't (backend-3's reading on RAD-112, for the architect to confirm).
 const PICKABLE = ['new', 'demo', 'used'];
-const chassisKey = (s: string) => s.toUpperCase().replace(/[\s-]/g, '');
 const BACKSLASH = String.fromCharCode(92);
 /** A LIKE pattern for keys starting with `key`, its % and _ taken literally. */
 const prefix = (key: string) => `${[...key].map((c) => ('%_'.includes(c) || c === BACKSLASH ? BACKSLASH + c : c)).join('')}%`;

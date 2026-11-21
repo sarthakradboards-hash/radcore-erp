@@ -128,7 +128,8 @@ export async function holdParty(ctx: Ctx, partyId: string): Promise<void> {
 }
 
 /** The names of these parties, by id, for another library's screen (a batch's supplier on lib-stock's on-hand read).
- * A name isn't personal data, and an id it doesn't know is left out. */
+ * A name isn't personal data, and an id it doesn't know is left out. It checks no key: a caller answers for showing
+ * them, by its own route's key (stock:read for the on-hand read), and passes only ids its answer already holds. */
 export async function partyNames(ctx: Ctx, ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
   if (ids.length === 0) return new Map();
   const rows = await accountsTx(ctx).select({ id: parties.id, name: parties.name }).from(parties).where(inArray(parties.id, [...ids]));

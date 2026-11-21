@@ -47,6 +47,8 @@ export type UnitEventRow = {
 /** A serial as the database keys it (`serial_key`): upper case, without spaces (§5). A serial is printable ASCII
  * (`ck_units_serial`), so this and the database's expression always agree. */
 export const serialKey = (serialNo: string): string => serialNo.toUpperCase().replace(/\s/g, '');
+/** A chassis number as `units.chassis_key` holds it: upper case, without spaces or hyphens. */
+export const chassisKey = (chassisNo: string): string => chassisNo.toUpperCase().replace(/[\s-]/g, '');
 
 /** The serialised items among `itemIds`. */
 export async function serialisedItems(ctx: Ctx, itemIds: readonly string[]): Promise<Set<string>> {
