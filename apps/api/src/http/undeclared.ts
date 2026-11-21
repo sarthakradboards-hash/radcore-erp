@@ -8,9 +8,12 @@ import { AppError } from '@radcore/lib-platform';
 export type UndeclaredMode = 'answer' | 'warn';
 const UNDECLARED = 'UndeclaredError';
 
-/** Logs and warns of an AppError whose code is neither a platform code nor in `declared`; anything else, nothing. */
-export function warnUndeclared(err: unknown, declared: readonly string[], where: string, log: { error(m: string): void }): void {
-  if (!(err instanceof AppError) || err.code === 'server_error' || Object.hasOwn(PLATFORM_ERRORS, err.code) || declared.includes(err.code)) return;
+type Deps = { undeclared?: UndeclaredMode | undefined; log: { error(m: string): void } };
+
+/** In `warn` mode, logs and warns of an AppError whose code is neither a platform code nor in `declared`. */
+export function warnUndeclared({ undeclared, log }: Deps, err: unknown, declared: readonly string[], where: string): void {
+  if (undeclared !== 'warn' || !(err instanceof AppError) || err.code === 'server_error' || Object.hasOwn(PLATFORM_ERRORS, err.code)
+    || declared.includes(err.code)) return;
   const message = `undeclared_error: ${where} raised ${err.code}, which its contract doesn't declare`;
   log.error(message);
   process.emitWarning(message, UNDECLARED);

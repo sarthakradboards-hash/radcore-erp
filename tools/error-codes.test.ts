@@ -56,9 +56,23 @@ export function codesIn(file: string, source: string): Found[] {
     ts.forEachChild(n, findHelpers);
   };
   findHelpers(sf);
+  // A helper is learnt in its own file only, so one exported would hide its other files' codes (the auditor on #300).
+  const exported = new Set<string>();
+  const markExports = (n: ts.Node): void => {
+    const isExported = (d: ts.Node) => ts.canHaveModifiers(d) && (ts.getModifiers(d) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+    if (ts.isFunctionDeclaration(n) && n.name !== undefined && isExported(n)) exported.add(n.name.text);
+    if (ts.isVariableStatement(n) && isExported(n)) {
+      for (const d of n.declarationList.declarations) if (ts.isIdentifier(d.name)) exported.add(d.name.text);
+    }
+    if (ts.isExportSpecifier(n)) exported.add((n.propertyName ?? n.name).text);
+    ts.forEachChild(n, markExports);
+  };
+  markExports(sf);
   // A code as written: a literal, a re-thrown `<x>.code` (allowed, nothing to check), or computed (null).
   const codeOf = (a: ts.Expression): string | null | 'rethrown' => {
     if (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) return a.text;
+    // `e.code` passes whatever e is, a pg error's SQLSTATE too: as an AppError's code that's undeclared, so the
+    // handler's run-time check is what catches it.
     if (ts.isPropertyAccessExpression(a) && a.name.text === 'code') return 'rethrown';
     return null;
   };
@@ -78,6 +92,9 @@ export function codesIn(file: string, source: string): Found[] {
     ts.forEachChild(n, visit);
   };
   visit(sf);
+  for (const name of helpers.keys()) {
+    if (exported.has(name)) found.push({ file, line: 1, code: null, text: `${name}, a code-passing helper, exported` });
+  }
   return found;
 }
 
@@ -93,8 +110,10 @@ describe('AppError codes', () => {
       const refuse = (code: string, message: string): never => { throw new AppError(code, message); };
       function hold() { refuse('booking_live', 'Booked'); throw new AppError('unit_held', 'Held'); }
       function again(e: AppError) { throw new AppError(e.code, e.message); }
-      function odd(kind: string) { throw new AppError(\`\${kind}_gone\`, 'Gone'); }`;
-    expect(codesIn('sample.ts', sample).map((f) => [f.code, f.line])).toEqual([['booking_live', 3], ['unit_held', 3], [null, 5]]);
+      function odd(kind: string) { throw new AppError(\`\${kind}_gone\`, 'Gone'); }
+      export function refuseOut(code: string): never { throw new AppError(code, 'x'); }`;
+    expect(codesIn('sample.ts', sample).map((f) => [f.code, f.line, f.code === null ? f.text : ''])).toEqual([['booking_live', 3, ''],
+      ['unit_held', 3, ''], [null, 5, '`${kind}_gone`'], [null, 1, 'refuseOut, a code-passing helper, exported']]);
   });
 
   it('are each a platform code or declared by some mounted contract (#286\'s booking_live and unit_held)', async () => {

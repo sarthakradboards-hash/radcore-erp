@@ -356,8 +356,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           else if (change !== null) res.cookie(name, change.token, { ...COOKIE, expires: change.expires });
         }
         if (refused !== null) {
-          send(res, failureOf(refused, contract.errors, contract.dbErrors), requestId);
-          return;
+          warnUndeclared(deps, refused, contract.errors, `${route} (request ${requestId})`);
+          return send(res, failureOf(refused, contract.errors, contract.dbErrors), requestId);
         }
         // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c). A read-only
         // link spends its use here, before anything is answered: if the last use went to a request racing this one,
@@ -375,7 +375,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         res.status(200).json(output);
       } catch (err) {
         const failure = failureOf(err, contract.errors, contract.dbErrors);
-        if (deps.undeclared === 'warn') warnUndeclared(err, contract.errors, `${route} (request ${requestId})`, deps.log);
+        warnUndeclared(deps, err, contract.errors, `${route} (request ${requestId})`);
         // Ids only: never the input, the output or a value from the database (RAD-29).
         if (failure.status >= 500) deps.log.error(`${route} failed (request ${requestId})`, err);
         send(res, failure, requestId);
