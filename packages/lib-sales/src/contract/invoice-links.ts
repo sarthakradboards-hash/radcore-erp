@@ -13,7 +13,7 @@ const money = () => moneyString();
 const link = z.object({ id: idString(), expiresAt: momentString(), revokedAt: momentString().nullable(), createdAt: momentString(),
   createdBy: z.string() });
 
-/** A link to a posted invoice. Its token is in `path`'s fragment, answered this once and never stored, so the answer is
+/** A link to a posted invoice. Its token is in `path`'s fragment, shown this once (only its hash is kept), so the answer is
  * never kept for a replay: the web prefixes its own origin. */
 export const shareInvoice = defineContract({
   method: 'POST', path: '/sales/invoices/:id/links', auth: 'session', perm: 'invoices:share', tx: write, storesAnswer: false,

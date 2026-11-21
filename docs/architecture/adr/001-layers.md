@@ -304,8 +304,9 @@ Changing an owner otherwise needs the write key at `all`.
 **A forgotten scope fails lint (RAD-85, E7).** The catalogue names, for each key, the tables that hold its records
 (`records`). Any key may be granted at `own`, so a module service (`src/services/**`) that reads one of those tables
 must apply the scope in the outermost function around the read: `ctx.see`, `ctx.can`, `listScope` or `linkRecord`.
-`linkRecord(ctx, action)` is a link route's (RAD-118): it answers the link's own record when the principal is a link made
-for exactly that action, and is `not_found` for any other principal; every read must filter by the id it returns. This is a
+`linkRecord(ctx, action)` is a link route's check (RAD-118): it answers the id of the link's own record when the
+principal is a link made for exactly that action, and `not_found` for any other principal or action. Every read
+must filter by the id it returns, which E7 can't see, so a test does. This is a
 backstop to the list engine's filter and each module's own-scope tests. It can't follow a read or a check into another
 function, a table passed around as a value, a table reached through a relation (`with:`) or a view, or whether the
 check names the right owner. A service that rightly reads past the scope can't say so in a comment, since no comment
@@ -548,7 +549,7 @@ codes.
     (RAD-43), or an export's, `POST /exports/:id/download` (RAD-47). The answer is a live presigned link, and a
     stored answer must carry no tokens (RC-132);
   - making a link to a posted invoice, `POST /sales/invoices/:id/links` (RAD-118). The answer holds the link's token,
-    which is shown this once and stored nowhere.
+    which is shown this once; only its hash is kept (RAD-41).
 
   How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
