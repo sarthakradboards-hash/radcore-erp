@@ -14,7 +14,7 @@ export {
   ORDER_SERIES,
 } from './services/orders.ts';
 export { orderOverride } from './services/order-checks.ts';
-export { orderCounts, quoteCounts } from './services/document-counts.ts';
+export { deliveryReturnCounts, orderCounts, quoteCounts } from './services/document-counts.ts';
 export {
   addDelivery, askDeliveryOverride, changeDelivery, DELIVERY_SERIES, dropDelivery, getDeliveryById, listDeliveriesPage, listToInvoicePage,
   postDeliveryNow,
