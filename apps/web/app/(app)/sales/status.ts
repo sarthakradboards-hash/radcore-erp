@@ -16,6 +16,10 @@ function stepsFor(path: readonly string[], status: string, word: (status: string
 export const quoteSteps = (status: string) => stepsFor(QUOTE_PATH, status, (s) => t(`sales.quote.status.${s as 'draft'}`));
 export const orderSteps = (status: string) => stepsFor(ORDER_PATH, status, (s) => t(`sales.order.status.${s as 'draft'}`));
 
-/** An invoice's path: draft, then posted; one that was cancelled was posted first, so the bar runs on to Cancelled. */
-export const invoiceSteps = (status: string) => (status === 'cancelled' ? ['draft', 'posted', 'cancelled'] : ['draft', 'posted'])
-  .map((key) => ({ key, label: t(`sales.invoice.status.${key as 'draft'}`) }));
+/** A document that is drafted, then posted, and perhaps cancelled after it was posted: the bar runs on to Cancelled. */
+function postedSteps(status: string, word: (status: string) => string): Step[] {
+  return (status === 'cancelled' ? ['draft', 'posted', 'cancelled'] : ['draft', 'posted']).map((key) => ({ key, label: word(key) }));
+}
+export const invoiceSteps = (status: string) => postedSteps(status, (s) => t(`sales.invoice.status.${s as 'draft'}`));
+export const deliverySteps = (status: string) => postedSteps(status, (s) => t(`sales.delivery.status.${s as 'draft'}`));
+export const returnSteps = (status: string) => postedSteps(status, (s) => t(`sales.return.status.${s as 'draft'}`));
