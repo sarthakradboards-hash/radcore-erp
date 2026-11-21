@@ -18,4 +18,8 @@ describe('fillReply', () => {
   it('trims a name and an owner, and keeps anything else in braces as written', () => {
     expect(fillReply('Hi {first_name} from {owner} {team}', { name: ' Kiran Rao ', owner: ' Asha ' })).toBe('Hi Kiran from Asha {team}');
   });
+  it('never reads a filled value as a placeholder (auditor-2 on #303)', () => {
+    expect(fillReply('Hi {name} from {owner}', { name: '{owner}', owner: 'Asha' })).toBe('Hi {owner} from Asha');
+    expect(fillReply('{owner}: {name}', { name: 'Kiran', owner: '{name}' })).toBe('{name}: Kiran');
+  });
 });
