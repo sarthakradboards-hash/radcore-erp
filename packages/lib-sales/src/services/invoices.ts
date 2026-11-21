@@ -5,7 +5,7 @@
 import { after, deliveries, deliveryLines, invoiceLines, invoices, salesOrderLines, salesTx } from '@radcore/db/sales';
 import { dec, type Money } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, listScope, principalId, type Ctx } from '@radcore/lib-platform';
-import { batchNos, checkQuantity, soldCondition, soldUnits } from '@radcore/lib-stock';
+import { checkQuantity, soldCondition, soldUnits } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createInvoice, deleteInvoice, getInvoice, listInvoices, updateInvoice } from '../contract.ts';
@@ -13,7 +13,7 @@ import { picksOf, returnedOf, type Returned } from './delivered.ts';
 import { checkDate } from './document-rules.ts';
 import { invoiceOwner } from './invoice-rules.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
-import { labelled, sellingTo, today } from './document-lines.ts';
+import { labelled, numberedBatches, sellingTo, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -141,11 +141,9 @@ export async function listInvoicesPage(ctx: Ctx, input: In<typeof listInvoices>)
 async function goodsOf(ctx: Ctx, deliveryLineIds: readonly string[]) {
   const rows = deliveryLineIds.length === 0 ? [] : await salesTx(ctx).select({ id: deliveryLines.id, picks: deliveryLines.picks })
     .from(deliveryLines).where(inArray(deliveryLines.id, [...deliveryLineIds]));
-  const picked = rows.map((r) => ({ id: r.id, batches: picksOf(r.picks).batches }));
-  const nos = await batchNos(ctx, picked.flatMap((p) => p.batches.flatMap((b) => b.batchId === null ? [] : [b.batchId])));
+  const picked = await numberedBatches(ctx, rows.map((r) => ({ id: r.id, batches: picksOf(r.picks).batches })));
   const out = await soldUnits(ctx, deliveryLineIds);
-  return new Map(picked.map((p) => [p.id, { batches: p.batches.map((b) => ({ batchId: b.batchId, qty: b.qty,
-    batchNo: b.batchId === null ? null : nos.get(b.batchId) ?? null })), units: out.get(p.id) ?? [] }]));
+  return new Map(picked.map((p) => [p.id, { batches: p.batches, units: out.get(p.id) ?? [] }]));
 }
 
 /** GET /sales/invoices/:id (sales:read): with its frozen issuer and buyer, once posted. */

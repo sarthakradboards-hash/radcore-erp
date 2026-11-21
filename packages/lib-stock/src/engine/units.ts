@@ -5,7 +5,7 @@
 // promise, a condition, a chassis number, a customer's vehicle in or out of service) are `postUnitEvents`. The
 // database refuses an event its unit's state doesn't allow (RA008), and checks at commit that each movement has as
 // many units as its quantity, batch by batch (RA007); this engine answers the plain mistakes first, by name.
-import { batches, items, stockTx, unitEvents, units } from '@radcore/db/stock';
+import { items, stockTx, unitEvents, units } from '@radcore/db/stock';
 import { holdPeriod } from '@radcore/lib-accounts';
 import { dec, type UnitCondition, type UnitEventKind } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
@@ -204,13 +204,6 @@ export async function soldUnits(ctx: Ctx, saleLineIds: readonly string[]): Promi
   const out = new Map(saleLineIds.map((id) => [id, [] as { serialNo: string; batchId: string | null }[]]));
   for (const r of rows) if (r.line !== null) out.get(r.line)?.push({ serialNo: r.serialNo, batchId: r.batchId });
   return out;
-}
-
-/** Batch numbers by id, for another library showing the batches it names. An id that names no batch is left out. */
-export async function batchNos(ctx: Ctx, ids: readonly string[]): Promise<Map<string, string>> {
-  if (ids.length === 0) return new Map();
-  const rows = await stockTx(ctx).select({ id: batches.id, batchNo: batches.batchNo }).from(batches).where(inArray(batches.id, [...ids]));
-  return new Map(rows.map((r) => [r.id, r.batchNo]));
 }
 
 /** Writes a document's unit events, in the order given; the trigger applies each to its unit (RA008). */
