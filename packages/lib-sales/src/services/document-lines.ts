@@ -3,7 +3,7 @@
 import { getPartyById } from '@radcore/lib-accounts';
 import { indiaDate } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
-import { checkQuantity, itemLabels } from '@radcore/lib-stock';
+import { batchNumbers, checkQuantity, itemLabels } from '@radcore/lib-stock';
 
 export type LineIn = { itemId: string; qty: string; rate: string; discountPercent: string };
 
@@ -42,4 +42,12 @@ export async function checkedLines(ctx: Ctx, lines: readonly LineIn[]): Promise<
 export async function labelled<L extends { itemId: string }>(ctx: Ctx, lines: readonly L[]): Promise<(L & { sku: string; name: string })[]> {
   const labels = await itemLabels(ctx, lines.map((l) => l.itemId));
   return lines.map((l) => ({ ...l, sku: labels.get(l.itemId)?.sku ?? '', name: labels.get(l.itemId)?.name ?? '' }));
+}
+
+/** Each line's picked batches with their numbers (ui-2's return form, #293), read from lib-stock: "batch unknown" (a
+ * negative-stock delivery's part beyond what was on hand) has none. */
+export async function numberedBatches<L extends { batches: readonly { batchId: string | null; qty: string }[] }>(ctx: Ctx, lines: readonly L[]):
+  Promise<(L & { batches: { batchId: string | null; batchNo: string | null; qty: string }[] })[]> {
+  const numbers = await batchNumbers(ctx, [...new Set(lines.flatMap((l) => l.batches.flatMap((b) => (b.batchId === null ? [] : [b.batchId]))))]);
+  return lines.map((l) => ({ ...l, batches: l.batches.map((b) => ({ ...b, batchNo: b.batchId === null ? null : numbers.get(b.batchId) ?? null })) }));
 }

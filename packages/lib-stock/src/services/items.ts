@@ -1,6 +1,6 @@
 // Items, their categories and units of measure (M2-10, RAD-89; ADR-001 §5: lib-stock's). Every write is audited by
 // the tables' triggers. A quantity follows its item's unit (RC-162): checkQuantity is what every stock document calls.
-import { after, itemCategories, itemPictures, items, searchWords, stockMovements, stockTx, units, unitsOfMeasure } from '@radcore/db/stock';
+import { after, batches, itemCategories, itemPictures, items, searchWords, stockMovements, stockTx, units, unitsOfMeasure } from '@radcore/db/stock';
 import type { Rate } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, readyFile, viewLinks, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
@@ -135,6 +135,14 @@ export async function itemLabels(ctx: Ctx, ids: readonly string[]): Promise<Map<
   const rows = await stockTx(ctx).select({ id: items.id, sku: items.sku, name: items.name, unit: items.unit, hsn: items.hsn }).from(items)
     .where(inArray(items.id, [...ids]));
   return new Map(rows.map((r) => [r.id, { sku: r.sku, name: r.name, unit: r.unit, hsn: r.hsn }]));
+}
+
+/** Each batch's number, by id, for another library showing the batches its lines picked (lib-sales' deliveries and
+ * returns, ui-2's return form on #293). An id that names no batch is left out. */
+export async function batchNumbers(ctx: Ctx, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ id: batches.id, batchNo: batches.batchNo }).from(batches).where(inArray(batches.id, [...ids]));
+  return new Map(rows.map((r) => [r.id, r.batchNo]));
 }
 
 /** Each item's purchase price, by id, for a sale's below-cost check when nothing is on hand (RAD-111; lib-sales'
