@@ -43,6 +43,10 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
   with lines still undelivered. The undelivered quantities are released, and a reason is kept (RC-125). A posted
   delivery return that brings a line back below what was ordered reopens an order its deliveries closed
   (`closed → confirmed`), so the goods can go again; an order a person closed short stays closed (RAD-112).
+- **A quote's and an order's tax figures** (taxable value, the GST split, the total) are worked out by lib-gst as an
+  invoice's are. They're computed on read while a draft, and stored, with each line's rate and the place of supply,
+  when a quote is sent or an order confirmed, then never recomputed: the order's credit check uses that stored
+  total. An order line's delivered and invoiced quantities are read from `delivered.ts`, never stored (RAD-125).
 - **A delivery** comes from a sellable place only (`place_not_sellable`, ADR-006 §4). Selling a demo or rejected
   unit is a transfer to a sellable place first (M4-06). A delivery made against an order is owned, for record
   scope (ADR-001 §6a), by the order's owner, copied when it's made; one with no order by its maker; and a return

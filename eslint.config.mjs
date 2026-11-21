@@ -19,7 +19,9 @@ const REQUEST_CONTEXT = 'packages/db/src/request-context.ts';
 /** The calls to the database's log functions, record_event (RAD-31): `sql` only in its exported functions. */
 const LOG_WRITERS = 'packages/db/src/log-writers.ts';
 // A module's second table file is named here exactly, never by a wider glob (the architect on RAD-92).
-const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/columns.ts'];
+// A module's tables, and a second file per document family once its tables.ts would pass E2's cap (the architect on RAD-114).
+const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/sales/tables-credit.ts',
+  'packages/db/src/columns.ts'];
 // The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.
 export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${TS}`, `apps/api/src/**/*.${TS}`,
   `apps/worker/src/**/*.${TS}`, `apps/web/**/*.${TS}`];
@@ -248,7 +250,7 @@ OPTIONS['radcore/e7-scope-on-owned-reads'] = { tables: [...SCOPED_TABLES,
   // The files that rightly read past the record scope: one file each, with its reason, by an architect's ruling
   // (ADR-001 §6a). tools/eslint-options.json pins the list.
   exempt: {
-    'packages/lib-sales/src/services/delivered.ts': 'sums every posted delivery and return for a party’s credit exposure and an order’s remaining quantities, as aggregates keyed by ids the caller had in scope (the architect on RAD-112)',
+    'packages/lib-sales/src/services/delivered.ts': 'sums every posted delivery, return and credit note for a party’s credit exposure, an order’s remaining quantities and an invoice’s open credit, as aggregates keyed by ids the caller had in scope (the architect on RAD-112 and RAD-114)',
   } };
 const on = (id, options = OPTIONS[id]) => ({ [id]: ['error', options] });
 const L1_BASE = OPTIONS['radcore/no-sql'];

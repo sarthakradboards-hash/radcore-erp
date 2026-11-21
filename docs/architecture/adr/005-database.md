@@ -166,6 +166,7 @@ A back-dated document is visible as one, and the lock is checked against `busine
 - `stock_movements`, `unit_events`;
 - `batches`, `stock_movement_batches` (D-15, ADR-006 §4a);
 - `payment_allocations`, `credit_applications`;
+- `payment_reminders` (RAD-119);
 - `audit_log`, `access_log`, `event_log`;
 - `webhook_delivery_attempts`.
 

@@ -4,6 +4,7 @@
       "@radcore/db/crm#leadActivities",
       "@radcore/db/crm#leadEnquiries",
       "@radcore/db/crm#leads",
+      "@radcore/db/sales#creditNotes",
       "@radcore/db/sales#deliveries",
       "@radcore/db/sales#deliveryReturns",
       "@radcore/db/sales#invoices",
@@ -11,7 +12,7 @@
       "@radcore/db/sales#salesQuotes"
     ],
     "exempt": {
-      "packages/lib-sales/src/services/delivered.ts": "sums every posted delivery and return for a party’s credit exposure and an order’s remaining quantities, as aggregates keyed by ids the caller had in scope (the architect on RAD-112)"
+      "packages/lib-sales/src/services/delivered.ts": "sums every posted delivery, return and credit note for a party’s credit exposure, an order’s remaining quantities and an invoice’s open credit, as aggregates keyed by ids the caller had in scope (the architect on RAD-112 and RAD-114)"
     }
   },
   "radcore/no-sql": {
