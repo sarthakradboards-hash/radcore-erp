@@ -40,6 +40,13 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     igst: 'tax charged (sales:read)', cess_ad_valorem: 'tax charged (sales:read)', cess_per_unit_amount: 'tax charged (sales:read)',
     line_total: 'a selling value with tax (sales:read)', delivery_taxable: 'a selling value (sales:read)',
     delivery_gst: 'the GST on a selling value (sales:read)' },
+  // A credit note and its lines (RAD-114): what was credited and refunded, its tax and round-off (sales:read). Only a
+  // line's cost, the goods back at what they went out at, is a cost.
+  credit_notes: { refund_amount: 'a refund to the party (sales:read)', taxable: 'a selling value (sales:read)', cgst: 'tax credited (sales:read)',
+    sgst: 'tax credited (sales:read)', igst: 'tax credited (sales:read)', round_off: 'the round-off to the rupee (sales:read)',
+    total: 'what the party is credited (sales:read)' },
+  credit_note_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst_rate: 'a tax rate', cgst: 'tax credited (sales:read)',
+    sgst: 'tax credited (sales:read)', igst: 'tax credited (sales:read)', line_total: 'a selling value with tax (sales:read)' },
   // The books: who may read them is journal:read's question, which the architect is ruling on (auditor-2 on #224).
   journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)' },
 };
