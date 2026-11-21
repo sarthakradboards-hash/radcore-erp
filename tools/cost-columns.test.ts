@@ -22,10 +22,18 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   leads: { value: 'a lead’s expected deal value, what it might sell for (leads:read)', score: 'a lead’s score, 0 to 100' },
   price_list_rates: { rate: 'a selling price (prices:read)' },
   stock_movements: { qty: 'a quantity' },
-  // A quote's or order's line (RAD-112): what was offered or ordered, at its selling rate (sales:read).
-  sales_quote_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage' },
+  // A quote's and an order's amounts, frozen when sent or confirmed (RAD-112): what was offered, its tax and round-off;
+  // a line's, what was offered or ordered, at its selling rate and tax (sales:read).
+  sales_quotes: { taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)', sgst: 'tax quoted (sales:read)',
+    igst: 'tax quoted (sales:read)', round_off: 'the round-off to the rupee (sales:read)', total: 'what the party is offered (sales:read)' },
+  sales_orders: { taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)', sgst: 'tax quoted (sales:read)',
+    igst: 'tax quoted (sales:read)', round_off: 'the round-off to the rupee (sales:read)', total: 'what the party is offered (sales:read)' },
+  sales_quote_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage',
+    gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)',
+    sgst: 'tax quoted (sales:read)', igst: 'tax quoted (sales:read)', line_total: 'a selling value with tax (sales:read)' },
   sales_order_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage',
-    list_rate: 'a list price (prices:read)' },
+    list_rate: 'a list price (prices:read)', gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)',
+    sgst: 'tax quoted (sales:read)', igst: 'tax quoted (sales:read)', line_total: 'a selling value with tax (sales:read)' },
   stock_movement_batches: { qty: 'a quantity' },
   // A delivery's or return's line (RAD-112): how many went or came back, and what they sold for (sales:read).
   delivery_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst: 'the GST on a selling value (sales:read)' },

@@ -53,15 +53,6 @@ export function lineValues(l: { qty: DecimalInput; rate: DecimalInput; discountP
   return { taxable, gst: roundMoney(dec(taxable).times(dec(l.gstPercent)).div('100')) };
 }
 
-/** What a document's lines come to with GST, each line's figures rounded first. The credit check adds it to what the
- * party owes (M3-07). */
-export function totalWithGst(lines: readonly { qty: DecimalInput; rate: DecimalInput; discountPercent: DecimalInput; gstPercent: DecimalInput }[]): Money {
-  return roundMoney(lines.reduce((sum, l) => {
-    const v = lineValues(l);
-    return sum.plus(dec(v.taxable)).plus(dec(v.gst));
-  }, dec('0')));
-}
-
 /** A delivery line's share for a return of `qty` of its `lineQty` units (ADR-006 §4, RC-207): round(total × qty /
  * lineQty, 2), except that the return taking the last of the line clears what's left of it exactly, so the shares add
  * up to the line's figure. `back` is what earlier returns took: their quantity and their share of this figure.
