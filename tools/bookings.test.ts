@@ -9,13 +9,13 @@ import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accoun
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { captureEnquiry } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addBooking, addDelivery, addOrder, cancelBookingNow, cancelDeliveryNow, cancelOrderNow, changeOrder, closeOrderNow, confirmOrderNow,
   getBookingById, getOrderById, postDeliveryNow, refundBookingNow,
 } from '@radcore/lib-sales';
-import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
+import { addCategory, addItem, addPlace, postUnitEvents } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { priceListFrom } from './price-list-fixture.ts';
@@ -125,6 +125,17 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect(await failure(book(b?.orderLineId ?? '', s[1] ?? '', '0'))).toBe('advance_required');
     const two = await setup({ serials: [`S-${tag()}`], qty: '2' });
     expect(await failure(book(two.lines[0]?.orderLineId ?? '', 'X', '1000'))).toBe('booking_one_unit');
+  });
+
+  it('books a damaged unit only where stock.sell_damaged_units is on (auditor-2 on #286)', async () => {
+    const damaged = `S-${tag()}`;
+    const at = await setup({ serials: [damaged] });
+    await run((ctx) => postUnitEvents(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE,
+      changes: [{ kind: 'condition_changed', itemId: at.itemId, serialNo: damaged, condition: 'damaged' }] }));
+    // One transaction's ctx answers the setting, so the shared row is never changed under another test file.
+    const withSetting = (on: boolean) => failure(run(async (ctx) => addBooking({ ...ctx, settings: new Settings([{ key: 'stock.sell_damaged_units', value: on }]) },
+      { orderLineId: at.lines[0]?.orderLineId ?? '', serialNo: damaged, advance: { amount: m('1000'), accountId: await systemId('bank'), businessDate: DATE } })));
+    expect([await withSetting(false), await withSetting(true)]).toEqual(['unit_unavailable', 'ok']);
   });
 
   it('ends the hold when the line is delivered with another serial from another place (RC-122)', async () => {

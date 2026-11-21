@@ -3,7 +3,7 @@
 import { AppError } from '@radcore/lib-platform';
 import { describe, expect, it } from 'vitest';
 import { overDiscount } from './checks-rules.ts';
-import { checkDate, lineValues, listRateBeforeTax, mayEdit, mayMove, netRate, ORDER_MOVES, QUOTE_MOVES, shareOf, totalWithGst } from './document-rules.ts';
+import { checkDate, lineValues, listRateBeforeTax, mayEdit, mayMove, netRate, ORDER_MOVES, QUOTE_MOVES, shareOf } from './document-rules.ts';
 
 const outcome = (fn: () => unknown): string => {
   try {
@@ -56,19 +56,11 @@ describe('checkDate', () => {
   });
 });
 
-describe('netRate and totalWithGst', () => {
+describe('netRate', () => {
   it("takes a line's discount off its rate, to a rate's 6 places", () => {
     expect(netRate('61250', '0')).toBe('61250.000000');
     expect(netRate('100', '12.5')).toBe('87.500000');
     expect(netRate('10', '33.333333')).toBe('6.666667');
-  });
-  it('adds each line’s taxable value and its GST, each rounded to the paisa', () => {
-    // F6's scooter: 80,000.00 taxable at 5% is 84,000.00. A pad: 3 × 345.00 less 10% is 931.50, at 18% 167.67.
-    expect(totalWithGst([{ qty: '1', rate: '80000', discountPercent: '0', gstPercent: '5' }])).toBe('84000.00');
-    expect(totalWithGst([{ qty: '3', rate: '345', discountPercent: '10', gstPercent: '18' }])).toBe('1099.17');
-    expect(totalWithGst([{ qty: '1', rate: '0.05', discountPercent: '50', gstPercent: '18' },
-      { qty: '2', rate: '10', discountPercent: '0', gstPercent: '0' }])).toBe('20.04'); // 0.025 → 0.03, its GST 0.0054 → 0.01
-    expect(totalWithGst([])).toBe('0.00');
   });
 });
 

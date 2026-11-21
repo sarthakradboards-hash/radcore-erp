@@ -1,13 +1,16 @@
 // RAD-88 (M2-02, D-02 option A): the company profile on a real PostgreSQL. RadCore keeps one legal entity's books: the
 // database refuses a second company (RC-010), and nothing is invoiced until the GSTIN, address and state are set,
-// the state being the GSTIN's own, never a default (RC-112). The profile is one row every test would share, so each
-// test runs in a transaction that is rolled back, and leaves no company behind for another file or test.
+// the state being the GSTIN's own, never a default (RC-112). The run's one profile is committed by tools/test-database.ts
+// (the architect on RAD-112), so each test runs in a transaction that is rolled back; one that needs no profile deletes
+// it there, as the superuser, so another file never sees it gone.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { companyForInvoice, getCompanyProfile, setCompanyProfile } from '@radcore/lib-accounts';
 import { AppError, roleNeedsSecondFactor, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
+import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { rawOf } from '../packages/db/src/tx.ts';
 import { SECOND_FACTOR_KEYS } from '../packages/lib-platform/src/permissions.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -35,12 +38,23 @@ describe.skipIf(!url)('the company profile', { timeout: 30_000 }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   const db = createDatabase(pool);
   const superPool = new pg.Pool({ connectionString: superUrl, max: 1 });
+  const superDb = createDatabase(superPool);
   afterAll(async () => { await Promise.all([pool.end(), superPool.end()]); });
 
   /** Runs `fn` in a transaction that is always rolled back, and answers what it answered. */
   async function rolledBack<R>(fn: (ctx: Ctx) => Promise<R>): Promise<R> {
     let out: R | undefined;
     await runInTransaction(db, write, AS, randomUUID(), async (ctx) => {
+      out = await fn(ctx);
+      throw new RolledBack();
+    }).catch((e: unknown) => { if (!(e instanceof RolledBack)) throw e; });
+    return out as R;
+  }
+  /** As rolledBack, with the run's profile deleted first, as the superuser, so `fn` sees none. */
+  async function withoutProfile<R>(fn: (ctx: Ctx) => Promise<R>): Promise<R> {
+    let out: R | undefined;
+    await runInTransaction(superDb, write, AS, randomUUID(), async (ctx) => {
+      await rawOf(ctx.tx).execute(sql`delete from radcore.company`);
       out = await fn(ctx);
       throw new RolledBack();
     }).catch((e: unknown) => { if (!(e instanceof RolledBack)) throw e; });
@@ -67,7 +81,7 @@ describe.skipIf(!url)('the company profile', { timeout: 30_000 }, () => {
   });
 
   it('refuses to invoice before the profile is set, and has no state to fall back on (RC-112)', async () => {
-    expect(await rolledBack(async (ctx) => [await getCompanyProfile(ctx), await code(companyForInvoice(ctx))]))
+    expect(await withoutProfile(async (ctx) => [await getCompanyProfile(ctx), await code(companyForInvoice(ctx))]))
       .toEqual([{ company: null }, 'company_profile_incomplete']);
   });
 
@@ -87,11 +101,13 @@ describe.skipIf(!url)('the company profile', { timeout: 30_000 }, () => {
 
   it('refuses a second company, a made-up state or a bad GSTIN in the database itself, whoever writes', async () => {
     const c = await superPool.connect();
-    const tryInsert = async (sql: string) => {
+    const tryInsert = async (statement: string) => {
       await c.query('begin');
       try {
         await c.query("set local app.principal = 'system:test'");
-        await c.query(sql);
+        // The run's profile is committed: each attempt starts with none.
+        await c.query('delete from radcore.company');
+        await c.query(statement);
         return 'ok';
       } catch (e) {
         return (e as { constraint?: string }).constraint ?? String(e);

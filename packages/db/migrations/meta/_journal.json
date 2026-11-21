@@ -477,6 +477,20 @@
       "when": 1795271335174,
       "tag": "0067_stock_read",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1795272229138,
+      "tag": "0068_quote_order_amounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1795273097094,
+      "tag": "0069_vehicle_bookings",
+      "breakpoints": true
     }
   ]
 }

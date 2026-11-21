@@ -48,10 +48,27 @@ export async function freshDatabase(adminUrl: string): Promise<{ appUrl: string;
   };
 }
 
+/** The run's one company profile, committed (the architect on RAD-112): in Maharashtra (27), as the tests' parties
+ * mostly are. company.test.ts proves the unset profile by deleting it in a transaction that rolls back. */
+async function seedCompany(superUrl: string): Promise<void> {
+  const c = admin(superUrl);
+  await c.connect();
+  try {
+    await c.query('begin');
+    await c.query("set local app.principal = 'system:test'");
+    await c.query(`insert into radcore.company (legal_name, gstin, address_line1, city, pincode)
+      values ('Radboards Pvt Ltd', '27AAPFU0939F1ZV', 'Plot 4, Bhosari MIDC', 'Pune', '411019')`);
+    await c.query('commit');
+  } finally {
+    await c.end();
+  }
+}
+
 export default async function setup() {
   const adminUrl = process.env['TEST_DATABASE_ADMIN_URL'];
   if (!adminUrl) return undefined;
   const db = await freshDatabase(adminUrl);
+  await seedCompany(db.superUrl);
   // Workers start after global setup, so they inherit these.
   process.env['TEST_DATABASE_URL'] = db.appUrl;
   process.env['TEST_DATABASE_OWNER_URL'] = db.ownerUrl;

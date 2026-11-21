@@ -10,6 +10,7 @@ import * as platform from './platform/tables.ts';
 import * as platformSignIn from './platform/tables-sign-in.ts';
 import * as sales from './sales/tables.ts';
 import * as salesCredit from './sales/tables-credit.ts';
+import * as salesPrices from './sales/tables-prices.ts';
 import * as salesBookings from './sales/tables-bookings.ts';
 import * as stock from './stock/tables.ts';
 import { applyRequestContext, type RequestContext } from './request-context.ts';
@@ -25,11 +26,13 @@ export * from './platform/tables.ts';
 export * from './platform/tables-sign-in.ts';
 export * from './sales/tables.ts';
 export * from './sales/tables-credit.ts';
+export * from './sales/tables-prices.ts';
 export * from './sales/tables-bookings.ts';
 export * from './stock/tables.ts';
 
 /** Every module's tables and relations, as they land: the same files drizzle.config.ts lists. */
-export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...platformSignIn, ...accounts, ...crm, ...gst, ...hr, ...sales, ...salesCredit, ...salesBookings, ...stock });
+export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...platformSignIn, ...accounts, ...crm, ...gst, ...hr, ...sales,
+  ...salesCredit, ...salesPrices, ...salesBookings, ...stock });
 
 /** The Drizzle client lib-platform builds on its pool. */
 export type Database = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
