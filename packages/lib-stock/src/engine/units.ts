@@ -5,7 +5,7 @@
 // promise, a condition, a chassis number, a customer's vehicle in or out of service) are `postUnitEvents`. The
 // database refuses an event its unit's state doesn't allow (RA008), and checks at commit that each movement has as
 // many units as its quantity, batch by batch (RA007); this engine answers the plain mistakes first, by name.
-import { items, stockTx, unitEvents, units } from '@radcore/db/stock';
+import { batches, items, stockTx, unitEvents, units } from '@radcore/db/stock';
 import { holdPeriod } from '@radcore/lib-accounts';
 import { dec, type UnitCondition, type UnitEventKind } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
@@ -194,6 +194,23 @@ export async function soldCondition(ctx: Ctx, saleLineIds: readonly string[]): P
     const seen = new Set(rows.filter((r) => r.line === id).map((r) => r.condition));
     return [id, worst.find((c) => seen.has(c)) ?? null];
   }));
+}
+
+/** Each sale line's units still out with the customer, and the batch each left in: what goods back must name, since a
+ * unit's batch must match its movement's (RA008). A unit that came back has left its line. */
+export async function soldUnits(ctx: Ctx, saleLineIds: readonly string[]): Promise<Map<string, { serialNo: string; batchId: string | null }[]>> {
+  const rows = saleLineIds.length === 0 ? [] : await stockTx(ctx).select({ line: units.saleLineId, serialNo: units.serialNo,
+    batchId: units.batchId }).from(units).where(inArray(units.saleLineId, [...saleLineIds])).orderBy(asc(units.serialNo));
+  const out = new Map(saleLineIds.map((id) => [id, [] as { serialNo: string; batchId: string | null }[]]));
+  for (const r of rows) if (r.line !== null) out.get(r.line)?.push({ serialNo: r.serialNo, batchId: r.batchId });
+  return out;
+}
+
+/** Batch numbers by id, for another library showing the batches it names. An id that names no batch is left out. */
+export async function batchNos(ctx: Ctx, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ id: batches.id, batchNo: batches.batchNo }).from(batches).where(inArray(batches.id, [...ids]));
+  return new Map(rows.map((r) => [r.id, r.batchNo]));
 }
 
 /** Writes a document's unit events, in the order given; the trigger applies each to its unit (RA008). */

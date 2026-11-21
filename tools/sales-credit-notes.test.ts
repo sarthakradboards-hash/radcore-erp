@@ -325,6 +325,31 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   });
 
   // ADR-005 §2, as the superuser: a posted note's header must match its lines at commit (RA006).
+  // ui-2 on #298: an invoice line says which batches its goods left in and which units are still out, so a goods-back
+  // form can offer them; a note says where its approval stands, and its lines name their items.
+  it('shows an invoice line’s batches and units still out, a note’s approval state and its lines’ items', async () => {
+    const serial = `SN-${tag()}`;
+    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1', serials: [serial] });
+    const approver = await approverWith(['credit_notes:approve']);
+    const out = await inBooks(async (ctx) => {
+      const inv = await invoice(ctx, at);
+      const goods = async () => (await getInvoiceById(ctx, { id: inv.id })).lines[0]?.goods;
+      const before = await goods();
+      const { id } = await goodsBack(ctx, at, inv, '1', { serials: [serial] });
+      const state = async () => (await getCreditNoteById(ctx, { id })).approval;
+      const drafted = await state();
+      const asked = await askCreditNoteApproval(ctx, { id });
+      const pending = await state();
+      await decideApproval(await actingAs(ctx, approver), creditNoteApprovalSpec, asked.id, { decision: 'approve', versionHash: asked.versionHash });
+      await actingAs(ctx, ctx.principal);
+      const note = await getCreditNoteById(ctx, { id });
+      return { before, after: await goods(), states: [drafted, pending, note.approval], line: [note.lines[0]?.sku.startsWith('I-'), note.lines[0]?.name] };
+    });
+    const batches = [{ batchId: at.batchId, batchNo: 'B1', qty: '1' }];
+    expect(out).toEqual({ before: { batches, units: [{ serialNo: serial, batchId: at.batchId }] }, after: { batches, units: [] },
+      states: ['none', 'pending', 'approved'], line: [true, 'Scooter'] });
+  });
+
   it('refuses a posted note whose header doesn’t match its lines at commit', async () => {
     const at = await setup({ stock: '1', stockRate: '100', rate: '1000', sold: '1' });
     const c = await su.connect();
