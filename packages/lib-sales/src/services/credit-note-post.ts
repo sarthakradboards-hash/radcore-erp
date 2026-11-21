@@ -9,13 +9,15 @@
 import { creditNoteLines, creditNotes, salesTx } from '@radcore/db/sales';
 import { applyCredit, holdParty, holdPeriod, lockPeriod, paidOf, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundRate, type Money } from '@radcore/lib-common';
-import { AppError, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
+import {
+  AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx,
+} from '@radcore/lib-platform';
 import { checkPlace, postStock, reverseStock, type PostedMovement } from '@radcore/lib-stock';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { cancelCreditNote, requestCreditNoteApproval } from '../contract.ts';
+import type { cancelCreditNote, getCreditNote, requestCreditNoteApproval } from '../contract.ts';
 import { isLate, isMonthDay } from './credit-note-rules.ts';
-import { draftedLines, invoiceToCredit, noteFigures, noteOf, wrongNoteStatus, type NoteLineIn } from './credit-notes.ts';
+import { creditNoteShown, draftedLines, invoiceToCredit, noteFigures, noteOf, wrongNoteStatus, type NoteLineIn } from './credit-notes.ts';
 import { checkDate } from './document-rules.ts';
 import { today } from './document-lines.ts';
 import { totalsOf } from './invoice-rules.ts';
@@ -151,6 +153,14 @@ export const creditNoteApprovalSpec: ApprovalSpec<NoteVersion> = {
     // A refused note stays a draft, for its maker to throw away or send again.
   },
 };
+
+/** GET /sales/credit-notes/:id (sales:read): the note, and where its approval stands. Approving posts it, so a note past
+ * draft was approved; a draft's request is waiting or there's none. Here, beside the approval spec. */
+export async function getCreditNoteById(ctx: Ctx, input: In<typeof getCreditNote>): Promise<Out<typeof getCreditNote>> {
+  const note = await creditNoteShown(ctx, input);
+  const pending = note.status === 'draft' && (await awaitingApproval(ctx, creditNoteApprovalSpec, [note.id])).has(note.id);
+  return { ...note, approval: pending ? 'pending' : note.status === 'draft' ? 'none' : 'approved' };
+}
 
 /** POST /sales/credit-notes/:id/approval (credit_notes:write): asks someone holding credit_notes:approve to approve it. */
 export async function askCreditNoteApproval(ctx: Ctx, { id }: In<typeof requestCreditNoteApproval>): Promise<Out<typeof requestCreditNoteApproval>> {
