@@ -5,9 +5,9 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { openFinancialYear } from '@radcore/lib-accounts';
 import { quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
-import { loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
+import { loadConfig, saveSetting, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { addCategory, addItem, addPlace, onHand, postUnitEvents, type StockPosting, type UnitChange } from '@radcore/lib-stock';
+import { addCategory, addItem, addPlace, onHand, postUnitEvents, SELL_DAMAGED_UNITS, type StockPosting, type UnitChange } from '@radcore/lib-stock';
 import { getOnHand } from '@radcore/lib-stock/contract';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
@@ -101,6 +101,26 @@ describe.skipIf(!url || !superUrl)('stock on hand', { timeout: 30_000 }, () => {
     const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => String((e as { code?: string }).code ?? e));
     expect(await code(post({ outs: [{ itemId: at.itemId, locationId: at.showroom, sourceLineId: randomUUID(), qty: q('1'),
       batches: [{ batchId: lot, qty: q('1') }], units: [{ serialNo: damaged ?? '' }] }] }))).toBe('unit_damaged');
+  });
+
+  // Sarthak on RAD-112: "Setting, default off". On, a damaged unit is offered, marked so, and a delivery may take it. The
+  // setting is the company's one and only this file reads it, so it's switched on here and back off after.
+  it('offers a damaged unit, marked, and lets a delivery take it, where stock.sell_damaged_units is on', async () => {
+    const at = await setup({ serialised: true });
+    const unit = `S-${tag()}`;
+    await post({ ins: [{ itemId: at.itemId, locationId: at.showroom, qty: q('1'), rate: r('60000'), batches: [{ batchNo: 'B1', qty: q('1') }],
+      units: [{ serialNo: unit, condition: 'damaged' }] }] });
+    const lot = await lotId(at.itemId, 'B1');
+    expect((await read(at.itemId, at.showroom)).units?.items).toEqual([]);
+    await run((ctx) => saveSetting(ctx, SELL_DAMAGED_UNITS, true));
+    try {
+      expect(((await read(at.itemId, at.showroom)).units?.items ?? []).map((u) => [u.serialNo, u.condition])).toEqual([[unit, 'damaged']]);
+      await post({ outs: [{ itemId: at.itemId, locationId: at.showroom, sourceLineId: randomUUID(), qty: q('1'), batches: [{ batchId: lot, qty: q('1') }],
+        units: [{ serialNo: unit }] }] });
+      expect((await read(at.itemId, at.showroom)).position).toBe('0.000');
+    } finally {
+      await run((ctx) => saveSetting(ctx, SELL_DAMAGED_UNITS, null));
+    }
   });
 
   it('finds a unit by a prefix of its serial or its chassis number, and pages through them', async () => {

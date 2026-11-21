@@ -8,8 +8,9 @@
 import { items, stockTx, unitEvents, units } from '@radcore/db/stock';
 import { holdPeriod } from '@radcore/lib-accounts';
 import { dec, type UnitCondition, type UnitEventKind } from '@radcore/lib-common';
-import { AppError, type Ctx } from '@radcore/lib-platform';
+import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, or } from 'drizzle-orm';
+import { z } from 'zod';
 
 /** One unit on a stock line: its serial, and on goods in, which of the line's batches it came in (when the line has
  * more than one), its chassis number and its condition from QC. A move may change its condition (to `demo`, say). */
@@ -97,11 +98,17 @@ export async function lockUnits(ctx: Ctx, named: readonly { itemId: string; seri
     .orderBy(asc(units.id)).for('update');
 }
 
-/** A delivery may not name a damaged unit (the architect on RAD-112; `stock.sell_damaged_units`, proposed to Sarthak,
- * would be its switch, off by default): to sell one, change its condition or move it. Checked under the units' locks, so
- * the on-hand read's picker isn't the only guard. */
+/** Whether a damaged unit may be sold as it is (Sarthak on RAD-112: "Setting, default off"; the architect's proposal). */
+export const SELL_DAMAGED_UNITS = defineSetting('stock.sell_damaged_units', z.boolean(), false, {
+  label: 'Sell damaged units as they are',
+  description: 'Whether a delivery may take a unit marked damaged. Off: change its condition or move it first.',
+  input: { kind: 'yes_no' },
+});
+
+/** A delivery may not name a damaged unit unless the setting allows it (the architect on RAD-112): to sell one, change
+ * its condition or move it. Checked under the units' locks, so the on-hand read's picker isn't the only guard. */
 export async function refuseDamaged(ctx: Ctx, named: readonly { itemId: string; serialNo: string }[]): Promise<void> {
-  if (named.length === 0) return;
+  if (named.length === 0 || ctx.settings.get(SELL_DAMAGED_UNITS)) return;
   const [hit] = await stockTx(ctx).select({ serialNo: units.serialNo }).from(units)
     .where(and(eq(units.condition, 'damaged'), or(...named.map((u) => and(eq(units.itemId, u.itemId), eq(units.serialKey, serialKey(u.serialNo)))))))
     .limit(1);

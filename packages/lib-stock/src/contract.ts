@@ -1,7 +1,7 @@
 // lib-stock's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every contract
 // file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  cost, cursorString, dateString, defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, quantityString,
+  cost, cursorString, dateString, UNIT_CONDITIONS, defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, quantityString,
   searchText, skuString, unitPriceString,
 } from '@radcore/lib-common';
 import { z } from 'zod';
@@ -202,8 +202,8 @@ export const getOnHand = defineContract({
     position: quantityString({ signed: true }),
     batches: z.array(z.object({ batchId: idString().nullable(), batchNo: z.string().nullable(), supplierName: z.string().nullable(),
       qty: quantityString({ signed: true }) })),
-    // Each unit's condition, so a demo or used one is seen as such (the architect on RAD-112).
-    units: listOf(z.object({ unitId: idString(), serialNo: z.string(), chassisNo: z.string().nullable(), condition: z.enum(['new', 'demo', 'used']),
+    // Each unit's condition, so a demo, used or (where stock.sell_damaged_units allows) damaged one is seen as such.
+    units: listOf(z.object({ unitId: idString(), serialNo: z.string(), chassisNo: z.string().nullable(), condition: z.enum(UNIT_CONDITIONS),
       heldForThis: z.boolean() })).nullable(),
   }),
 });
