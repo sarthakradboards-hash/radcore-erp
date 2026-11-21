@@ -9,10 +9,11 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, setCompanyProfile, setCreditTerms } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, listPendingApprovals, showApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addDelivery, addDeliveryReturn, addInvoice, addOrder, addQuote, askOrderOverride, changeOrder, confirmOrderNow, getDeliveryById,
+  addDelivery, addDeliveryReturn, addInvoice, addOrder, addQuote, askInvoiceOverride, askOrderOverride, changeOrder, confirmOrderNow, getDeliveryById,
+  invoiceOverride,
   getOrderById, getQuoteById, orderOverride, postDeliveryNow, postDeliveryReturnNow, postInvoiceNow, sendQuoteNow,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
@@ -217,5 +218,29 @@ describe.skipIf(!url || !superUrl)('quote and order amounts', () => {
     const pending = await state();
     await run((ctx) => decideApproval(ctx, orderOverride, asked.id, { decision: 'approve', versionHash: asked.versionHash }), approver);
     expect([none, pending, await state()]).toEqual(['none', 'pending', 'approved']);
+  });
+
+  // e2e-2 on #285 (Part of RAD-113): the approvals list and one request's page are GETs, run read-only, so the invoice
+  // override's version reads the company profile without FOR SHARE there. Both answer the pending request.
+  it('lists and opens a pending invoice override in a read-only transaction', async () => {
+    const at = await setup();
+    const approver = await approverWith(['sales:override']);
+    const invoiceId = await run(async (ctx) => {
+      const { id } = await addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: lines(at) });
+      await confirmOrderNow(ctx, { id });
+      const orderLineId = (await getOrderById(ctx, { id })).lines[0]?.id ?? '';
+      const { id: deliveryId } = await addDelivery(ctx, { orderId: id, locationId: at.placeId, businessDate: DATE, notes: null,
+        lines: [{ orderLineId, qty: q('1'), batches: [{ batchId: at.batchId, qty: q('1') }], serials: [] }] });
+      await postDeliveryNow(ctx, { id: deliveryId });
+      const deliveryLineId = (await getDeliveryById(ctx, { id: deliveryId })).lines[0]?.id ?? '';
+      return (await addInvoice(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, shipTo: null,
+        lines: [{ deliveryLineId, qty: q('1'), rate: unitPriceString().parse('70000') }] })).id;
+    });
+    const asked = await run((ctx) => askInvoiceOverride(ctx, { id: invoiceId }));
+    const readOnly = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(db, { readOnly: true, isolation: 'read committed' }, approver,
+      randomUUID(), fn);
+    const listed = await readOnly((ctx) => listPendingApprovals(ctx, invoiceOverride, { limit: 200 }));
+    const shown = await readOnly((ctx) => showApproval(ctx, invoiceOverride, asked.id));
+    expect([listed.items.some((r) => r.id === asked.id), shown.recordId, shown.changed]).toEqual([true, invoiceId, false]);
   });
 });

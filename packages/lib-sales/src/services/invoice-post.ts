@@ -5,7 +5,7 @@
 // the entry is Dr Debtors (the total), Cr Sales and Output GST, the round-off, and Dr COGS, Cr GDNI for the goods'
 // share of what they went out at; the number (INV) is drawn last. Over the checks it needs an approved override.
 import { invoiceLines, invoices, salesTx } from '@radcore/db/sales';
-import { companyForInvoice, getPartyById, holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
+import { companyForInvoice, getCompanyProfile, getPartyById, holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, moneyString, roundMoney, type Money } from '@radcore/lib-common';
 import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, defineSeries, defineSetting, nextNumber, requestApproval, versionHash, type Ctx } from '@radcore/lib-platform';
@@ -47,6 +47,12 @@ export const B2C_DETAILS_BASIS = defineSetting('sales.b2c_details_basis', z.enum
 
 type Invoice = Awaited<ReturnType<typeof invoiceOf>>;
 type Company = Awaited<ReturnType<typeof companyForInvoice>>;
+/** The company profile read plainly, for a read-only path: the same row and the same refusal as companyForInvoice. */
+async function companyRead(ctx: Ctx): Promise<Company> {
+  const { company } = await getCompanyProfile(ctx);
+  if (company === null) throw new AppError('company_profile_incomplete', 'Set the company’s GSTIN, address and state before invoicing');
+  return company;
+}
 
 /** A party's stored value, as lib-accounts' service answers it to another service: the handler masks answers, never a
  * service's values, so a masked one here is a bug, refused rather than frozen onto an invoice. */
@@ -117,7 +123,10 @@ export const invoiceOverride = overrideApproval({
     if (inv === undefined || inv.status !== 'draft') return null;
     const asks = ctx.can('invoices:write', { owner: inv.owner });
     if (!asks && !ctx.can('sales:override', { owner: inv.owner })) return null;
-    const w = await workedOut(ctx, inv, await companyForInvoice(ctx), { forUpdate: false, permission: asks ? 'invoices:write' : 'sales:override' });
+    // The approvals list and one request's page read this in a read-only transaction (a GET), where FOR SHARE is refused
+    // (e2e-2 on #285), so only a request or decision, which locks the invoice, takes the profile FOR SHARE.
+    const company = forUpdate ? await companyForInvoice(ctx) : await companyRead(ctx);
+    const w = await workedOut(ctx, inv, company, { forUpdate: false, permission: asks ? 'invoices:write' : 'sales:override' });
     return { figures: figuresOf(inv, w.lines), sale: saleOf(inv, w.figures, w.totals.total, await deliveredNotInvoiced(ctx, inv.partyId)) };
   },
   // It records what was approved; posting the invoice is its maker's next step.
