@@ -356,7 +356,11 @@ export const invoiceLines = radcoreTable('invoice_lines', {
   cost: money(),
   deliveryTaxable: money(),
   deliveryGst: money(),
+  // The worst condition of the units it bills when not all are new, copied at posting so the buyer is told (the
+  // architect on RAD-112, with stock.sell_damaged_units).
+  unitCondition: text(),
 }, (t) => [
+  check('ck_invoice_lines_unit_condition', sql`${t.unitCondition} is null or ${t.unitCondition} in ('demo', 'used', 'damaged')`),
   uniqueIndex('ux_invoice_lines_line').on(t.invoiceId, t.lineNo),
   index('ix_invoice_lines_list_version').on(t.listVersionId),
   index('ix_invoice_lines_delivery_line').on(t.deliveryLineId),
