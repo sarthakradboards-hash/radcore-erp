@@ -18,6 +18,7 @@ import { checkedLines, sellingTo, today } from './document-lines.ts';
 import { amountsForRead, frozenHeader, frozenLine, type Amounts } from './document-amounts.ts';
 import { hasDeliveries, invoicedOf, netDelivered, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
+import { refuseWhileBooked } from './booking-holds.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
 import { labelled } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
@@ -142,6 +143,8 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   checkDate(input.businessDate, today(), fromQuote(now));
   // A delivery, even a draft, names the order's lines, so they're fixed once one exists: close the order short instead.
   if (await hasDeliveries(ctx, id)) throw new AppError('order_delivered', 'This order has deliveries, so its lines are fixed');
+  // Rewriting the lines gives them new ids, so a booked line would lose its booking (RAD-117).
+  await refuseWhileBooked(ctx, id, 'rewrite');
   await sellingTo(ctx, input.partyId);
   const { priceListId, lines } = await priced(ctx, input.partyId, input.businessDate, await checkedLines(ctx, input.lines));
   const tx = salesTx(ctx);
@@ -209,6 +212,7 @@ export async function closeOrderNow(ctx: Ctx, { id, reason }: In<typeof closeOrd
     throw new AppError('reason_required', 'Lines are still undelivered: say why the order closes short',
       [{ path: ['reason'], code: 'required', message: 'Say why, in your own words' }]);
   }
+  if (short) await refuseWhileBooked(ctx, id, 'close');
   await salesTx(ctx).update(salesOrders).set({ status: 'closed', closeReason: short ? reason ?? null : null }).where(eq(salesOrders.id, id));
   return { short };
 }
@@ -220,6 +224,7 @@ export async function cancelOrderNow(ctx: Ctx, { id, reason }: In<typeof cancelO
   if ((await orderDelivered(ctx, id)).any) {
     throw new AppError('order_delivered', 'Goods have gone on this order: close it short instead');
   }
+  await refuseWhileBooked(ctx, id, 'cancel');
   await salesTx(ctx).update(salesOrders).set({ status: 'cancelled', closeReason: reason }).where(eq(salesOrders.id, id));
   return {};
 }

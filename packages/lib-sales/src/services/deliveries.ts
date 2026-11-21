@@ -17,6 +17,7 @@ import type {
   createDelivery, deleteDelivery, getDelivery, listDeliveries, listToInvoice, postDelivery, requestDeliveryOverride, updateDelivery,
 } from '../contract.ts';
 import { netDelivered, orderDelivered, picksOf, returnedOf } from './delivered.ts';
+import { bookingsDelivered, linesDone, lockLiveBookings } from './booking-holds.ts';
 import { checkDelivery, deliveryLinesOf, deliveryOverride, pricedLines } from './delivery-checks.ts';
 import { checkDate } from './document-rules.ts';
 import { today } from './document-lines.ts';
@@ -186,13 +187,17 @@ export async function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>)
   checkDate(d.businessDate, today(), { date: order.businessDate, what: 'order' });
   await checkPlace(ctx, d.locationId, { sellable: true });
   const lines = await deliveryLinesOf(ctx, id);
+  // The documents step's last: the lines' live bookings, before the party and the units (the architect on RAD-117).
+  const booked = await lockLiveBookings(ctx, lines.map((l) => l.orderLineId));
+  const done = await linesDone(ctx, lines.map((l) => ({ orderLineId: l.orderLineId, qty: l.qty })));
   // What's left of the order is read again under its lock: another delivery may have posted since this was drafted.
   await checkedLines(ctx, d.orderId, lines.map((l) => ({ orderLineId: l.orderLineId, qty: q(l.qty), ...picksOf(l.picks) })));
   // ADR-006 §1's step 3: the party, after the documents, so two sales to it take turns at the credit check (ADR-007 §9).
   await holdParty(ctx, d.partyId);
   await checkDelivery(ctx, d, lines);
   const priced = await pricedLines(ctx, d.businessDate, lines);
-  const moved = await postStock(ctx, { sourceTable: 'deliveries', sourceId: id, businessDate: d.businessDate,
+  // The lines it finishes end their holds, whatever serial leaves (RC-122): the stock engine releases them.
+  const moved = await postStock(ctx, { sourceTable: 'deliveries', sourceId: id, businessDate: d.businessDate, endingPromisesOf: done,
     outs: lines.map((l) => {
       const picks = picksOf(l.picks);
       return { itemId: l.itemId, locationId: d.locationId, sourceLineId: l.id, qty: q(l.qty), delivery: true, orderLineId: l.orderLineId,
@@ -211,6 +216,7 @@ export async function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>)
     source: { table: 'deliveries', id }, lines: [{ account: { system: 'gdni' }, debit: cost }, ...stock] });
   const number = await nextNumber(ctx, DELIVERY_SERIES, d.businessDate);
   await tx.update(deliveries).set({ status: 'posted', number, postedEntryId: entry?.id ?? null }).where(eq(deliveries.id, id));
+  await bookingsDelivered(ctx, booked, done);
   // Every line gone: the order is closed (ADR-007 §1).
   if ((await orderDelivered(ctx, order.id)).all) await tx.update(salesOrders).set({ status: 'closed' }).where(eq(salesOrders.id, order.id));
   return { number };

@@ -20,7 +20,8 @@ import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import {
-  checkUnits, lockUnits, refuseDamaged, serialisedItems, writeUnitEvents, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent,
+  checkHeld, checkUnits, lockUnits, refuseDamaged, serialKey, serialisedItems, writeUnitEvents, type InUnitEvent, type MoveUnitEvent,
+  type OutUnitEvent,
   type UnitEventRow, type UnitOnLine,
 } from './units.ts';
 import { and, asc, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm';
@@ -69,6 +70,9 @@ export type StockPosting = {
   readonly ins?: readonly StockIn[];
   readonly outs?: readonly StockOut[];
   readonly transfers?: readonly StockTransfer[];
+  /** The order lines this posting finishes (delivered in full): every unit still promised to one is released, in the
+   * posting's own unit lock (RC-122, the architect on RAD-117). The owning library decides which lines are done. */
+  readonly endingPromisesOf?: readonly string[];
 };
 
 /** What one movement posted: the journal engine's Stock in Hand line for it comes from its item, location and value.
@@ -181,8 +185,11 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   await lockPositions(ctx, [...ins.map((l) => [l.itemId, l.locationId] as const), ...outs.map((l) => [l.itemId, l.locationId] as const),
     ...transfers.flatMap((t) => [[t.itemId, t.from] as const, [t.itemId, t.to] as const])]);
   const ids = await batchIds(ctx, ins);
-  // §1's step 4: the units the lines name, after the positions and batches.
-  await lockUnits(ctx, [...ins, ...outs, ...transfers].flatMap((l) => (l.units ?? []).map((u) => ({ itemId: l.itemId, serialNo: u.serialNo }))));
+  // §1's step 4: the units the lines name, after the positions and batches, with the units still promised to the order
+  // lines this posting finishes (a booking's, RC-122), in one id-ordered lock.
+  const named = [...ins, ...outs, ...transfers].flatMap((l) => (l.units ?? []).map((u) => ({ itemId: l.itemId, serialNo: u.serialNo })));
+  const promised = await lockUnits(ctx, named, p.endingPromisesOf ?? []);
+  await checkHeld(ctx, outs);
   // A delivery never names a damaged unit (unit_damaged): a return to the supplier may.
   await refuseDamaged(ctx, outs.filter((o) => (o.unitEvent ?? 'delivered') === 'delivered')
     .flatMap((o) => (o.units ?? []).map((u) => ({ itemId: o.itemId, serialNo: u.serialNo }))));
@@ -233,6 +240,12 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
     if (!dec(change).isZero()) {
       await write({ itemId: i.itemId, locationId: i.locationId, sourceLineId: i.sourceLineId, direction: 'revalue', qty: NO_UNITS, value: change }, []);
     }
+  }
+  // The hold ends when the line is done, whatever serial left (RC-122): each unit still promised to it, and not just
+  // delivered, is released.
+  const delivered = new Set(outs.flatMap((o) => (o.units ?? []).map((u) => `${o.itemId} ${serialKey(u.serialNo)}`)));
+  for (const u of promised) {
+    if (!delivered.has(`${u.itemId} ${serialKey(u.serialNo)}`)) events.push({ itemId: u.itemId, serialNo: u.serialNo, kind: 'released' });
   }
   await writeUnitEvents(ctx, base, events);
   const revalued = posted.filter((m) => m.direction === 'revalue');
