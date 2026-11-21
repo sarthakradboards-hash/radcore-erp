@@ -139,7 +139,7 @@ export const createOrder = defineContract({
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
   input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'change_over_checks', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete', 'version_changed',
-    'period_locked', 'year_not_open'],
+    'period_locked', 'year_not_open', 'booking_live'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({
@@ -166,10 +166,11 @@ export const orderOverrideApproval = approvalContracts('sales-order-override', '
 export const closeOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/close', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString(), reason: reason().optional() }), output: z.object({ short: z.boolean() }),
-  errors: ['wrong_status', 'reason_required'],
+  errors: ['wrong_status', 'reason_required', 'booking_live'],
 });
 /** Cancels a confirmed order nothing has been delivered on, with a reason. */
 export const cancelOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/cancel', auth: 'session', perm: 'sales:write', tx: write,
-  input: z.object({ id: idString(), reason: reason() }), output: z.object({}), errors: ['wrong_status', 'order_delivered'],
+  input: z.object({ id: idString(), reason: reason() }), output: z.object({}),
+  errors: ['wrong_status', 'order_delivered', 'booking_live'],
 });

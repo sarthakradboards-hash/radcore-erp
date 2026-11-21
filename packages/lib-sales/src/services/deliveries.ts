@@ -6,7 +6,7 @@
 // which has gone is closed. Only cancelling (M3-10, RAD-114) changes a posted one.
 import { after, deliveries, deliveryLines, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import { holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
-import { dec, quantityString, roundMoney } from '@radcore/lib-common';
+import { dec, quantityString, roundMoney, roundQty, type Quantity } from '@radcore/lib-common';
 import {
   AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
 } from '@radcore/lib-platform';
@@ -20,7 +20,7 @@ import { netDelivered, orderDelivered, picksOf, returnedOf } from './delivered.t
 import { bookingsDelivered, linesDone, lockLiveBookings } from './booking-holds.ts';
 import { checkDelivery, deliveryLinesOf, deliveryOverride, pricedLines } from './delivery-checks.ts';
 import { checkDate } from './document-rules.ts';
-import { today } from './document-lines.ts';
+import { labelled, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -119,8 +119,17 @@ export async function getDeliveryById(ctx: Ctx, { id }: In<typeof getDelivery>):
     itemId: deliveryLines.itemId, qty: deliveryLines.qty, picks: deliveryLines.picks, value: deliveryLines.value, taxable: deliveryLines.taxable,
     gst: deliveryLines.gst }).from(deliveryLines).where(eq(deliveryLines.deliveryId, id)).orderBy(asc(deliveryLines.lineNo));
   const names = await partyNames(ctx, [d.partyId]);
+  const left = await leftToInvoice(ctx, lines, d.status === 'posted');
   return { ...d, status: d.status as Status, partyName: names.get(d.partyId) ?? '',
-    lines: lines.map(({ picks, ...l }) => ({ ...l, ...picksOf(picks) })) };
+    lines: (await labelled(ctx, lines)).map(({ picks, ...l }) => ({ ...l, ...picksOf(picks), qtyToInvoice: left.get(l.id) ?? '0' })) };
+}
+
+/** How much of each posted delivery line is still to invoice (auditor-3 on #285), worked out on read: what went, less
+ * what came back and what posted invoices billed (returnedOf counts both). A draft has nothing to invoice yet. */
+async function leftToInvoice(ctx: Ctx, lines: readonly { id: string; qty: string; picks: unknown }[], posted: boolean,
+  known?: Awaited<ReturnType<typeof returnedOf>>): Promise<Map<string, Quantity>> {
+  const gone = !posted ? new Map<string, never>() : known ?? await returnedOf(ctx, lines);
+  return new Map(lines.map((l) => [l.id, posted ? roundQty(dec(l.qty).minus(dec(gone.get(l.id)?.qty ?? '0')), 3) : roundQty(dec('0'), 3)]));
 }
 
 /** POST /sales/deliveries (deliveries:write): a draft against a confirmed order, from a place. */
@@ -237,8 +246,9 @@ export async function listToInvoicePage(ctx: Ctx, input: In<typeof listToInvoice
   )).orderBy(asc(deliveries.businessDate), asc(deliveries.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const lines = page.length === 0 ? [] : await salesTx(ctx).select({ id: deliveryLines.id, deliveryId: deliveryLines.deliveryId,
-    taxable: deliveryLines.taxable, gst: deliveryLines.gst, picks: deliveryLines.picks }).from(deliveryLines)
-    .where(inArray(deliveryLines.deliveryId, page.map((p) => p.id)));
+    lineNo: deliveryLines.lineNo, itemId: deliveryLines.itemId, qty: deliveryLines.qty, taxable: deliveryLines.taxable,
+    gst: deliveryLines.gst, picks: deliveryLines.picks }).from(deliveryLines)
+    .where(inArray(deliveryLines.deliveryId, page.map((p) => p.id))).orderBy(asc(deliveryLines.lineNo));
   const back = await returnedOf(ctx, lines);
   const left = new Map<string, ReturnType<typeof dec>>();
   for (const l of lines) {
@@ -247,10 +257,15 @@ export async function listToInvoicePage(ctx: Ctx, input: In<typeof listToInvoice
     left.set(l.deliveryId, (left.get(l.deliveryId) ?? dec('0')).plus(more));
   }
   const names = await partyNames(ctx, page.map((r) => r.partyId));
+  // Each line still to invoice, by quantity, with its item (auditor-3 on #285).
+  const qtyLeft = await leftToInvoice(ctx, lines, true, back);
+  const open = (await labelled(ctx, lines)).filter((l) => dec(qtyLeft.get(l.id) ?? '0').gt(0));
   const last = page.at(-1);
   return {
     items: page.filter((r) => (left.get(r.id) ?? dec('0')).gt(0))
-      .map((r) => ({ ...r, number: r.number ?? '', partyName: names.get(r.partyId) ?? '', toInvoice: roundMoney(left.get(r.id) ?? dec('0')) })),
+      .map((r) => ({ ...r, number: r.number ?? '', partyName: names.get(r.partyId) ?? '', toInvoice: roundMoney(left.get(r.id) ?? dec('0')),
+        lines: open.filter((l) => l.deliveryId === r.id).map((l) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: l.sku, name: l.name,
+          qtyToInvoice: qtyLeft.get(l.id) ?? '0' })) })),
     next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
   };
 }

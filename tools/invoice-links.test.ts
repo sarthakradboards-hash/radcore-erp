@@ -5,7 +5,7 @@
 // handler's own part (token stripped, one not_found, noindex, the use and access_log after commit) is link-routes.test.ts's.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, setCompanyProfile, setCreditTerms } from '@radcore/lib-accounts';
-import { moneyString, percentString, piiPlan, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
+import { moneyString, percentString, piiPlan, quantityString, sightOf, unitPriceString, type UnitCondition } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import {
   AppError, linkMaxDays, linkPrincipal, loadConfig, principalId, recordLinkAccess, Settings, type Ctx, type Principal,
@@ -78,8 +78,10 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
   }
 
   /** A customer in Maharashtra with credit and an address, an item at 5% GST, a confirmed order for one at 80,000.00
-   * and its posted delivery: the delivery line an invoice bills. */
-  async function delivered() {
+   * and its posted delivery: the delivery line an invoice bills. With `condition`, the item is serialised and the unit
+   * delivered is in it. */
+  async function delivered(condition?: UnitCondition) {
+    const serial = condition === undefined ? undefined : `SN-${tag()}`;
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: ['customer'], gstin: null, pan: null, composition: false,
@@ -90,10 +92,11 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
       await putGstRate(ctx, { hsn, effectiveFrom: DATE, rate: percentString().parse('5'), source: 'Notification 1/2017-CT(R)', note: null,
         reason: 'Test' });
       const { id: itemId } = await addItem(ctx, { sku: `I-${tag()}`, name: 'Scooter', categoryId, hsn, unit: 'NOS', barcode: null,
-        serialised: false, hasChassis: false, purchasePrice: unitPriceString().parse('1') });
+        serialised: serial !== undefined, hasChassis: false, purchasePrice: unitPriceString().parse('1') });
       const { id: placeId } = await addPlace(ctx, { code: `L${tag()}`, name: `Store ${tag()}`, kind: 'store' });
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: placeId,
-        qty: q('2'), rate: unitPriceString().parse('61250'), batches: [{ batchNo: 'B1', qty: q('2') }] }] });
+        qty: q(serial === undefined ? '2' : '1'), rate: unitPriceString().parse('61250'), batches: [{ batchNo: 'B1', qty: q(serial === undefined ? '2' : '1') }],
+        ...(serial === undefined ? {} : { units: [{ serialNo: serial, condition: condition ?? 'new' }] }) }] });
       return { partyId, itemId, placeId };
     });
     await priceListFrom(su, DATE, { [made.itemId]: '80000' }, { partyId: made.partyId });
@@ -104,7 +107,7 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
       await confirmOrderNow(ctx, { id: orderId });
       const orderLineId = (await getOrderById(ctx, { id: orderId })).lines[0]?.id ?? '';
       const { id } = await addDelivery(ctx, { orderId, locationId: made.placeId, businessDate: DATE, notes: null,
-        lines: [{ orderLineId, qty: q('1'), batches: [{ batchId: batch?.id ?? '', qty: q('1') }], serials: [] }] });
+        lines: [{ orderLineId, qty: q('1'), batches: [{ batchId: batch?.id ?? '', qty: q('1') }], serials: serial === undefined ? [] : [serial] }] });
       await postDeliveryNow(ctx, { id });
       return { partyId: made.partyId, deliveryLineId: (await getDeliveryById(ctx, { id })).lines[0]?.id ?? '' };
     });
@@ -152,6 +155,21 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
     expect(out.view.lines.map((l) => [l.name, l.unit, l.qty, l.rate, l.taxable, l.lineTotal])).toEqual([['Scooter', 'NOS', '1.000', '80000.000000',
       '80000.00', '84000.00']]);
     expect(JSON.stringify(out.view)).not.toMatch(/cost|phone|email|notes|createdBy|owner/i);
+  });
+
+  // auditor-2 on #289: the buyer's own copy says what the staff's does. An ex-demo unit's line, opened by its link,
+  // shows demo; a new unit's shows none (the architect's ruling on RAD-112).
+  it('shows the buyer, by the link, the condition the units left with', async () => {
+    const out = [];
+    for (const condition of ['demo', 'new'] as const) {
+      const at = await delivered(condition);
+      out.push(await inBooks(async (ctx) => {
+        const inv = await posted(ctx, at);
+        const view = await opened(ctx, (await shareInvoiceLink(ctx, { id: inv.id })).token);
+        return view === 'not_found' ? 'not_found' : view.lines[0]?.unitCondition;
+      }));
+    }
+    expect(out).toEqual(['demo', null]);
   });
 
   it("answers only the link's own invoice, for its own action; not_found for a staff request or a link for anything else", async () => {

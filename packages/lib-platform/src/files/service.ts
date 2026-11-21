@@ -84,10 +84,16 @@ export const photoFileService = fileServices('photo');
 export const itemPictureFileService = fileServices('item_picture');
 
 /** A ready file of `kind`, for a module attaching it to its own record (item pictures, RAD-89). Another kind's id is
- * not_found; a file still checking is not_ready, and one the check refused is upload_refused, as a download says. */
-export async function readyFile(ctx: Ctx, kind: FileKind, id: string): Promise<{ id: string }> {
-  const [row] = await platformTx(ctx).select({ status: files.status }).from(files).where(and(eq(files.id, id), eq(files.kind, kind)));
-  if (row === undefined) throw new AppError('not_found', 'Not found');
+ * not_found, or with `wrongKind`, `wrong_file_kind` naming `path` (a checklist's files, RAD-117, RC-208); a file still
+ * checking is not_ready, and one the check refused is upload_refused, as a download says. */
+export async function readyFile(ctx: Ctx, kind: FileKind, id: string, o: { wrongKind?: readonly (string | number)[] } = {}):
+  Promise<{ id: string }> {
+  const [row] = await platformTx(ctx).select({ status: files.status, kind: files.kind }).from(files).where(eq(files.id, id));
+  if (row !== undefined && row.kind !== kind && o.wrongKind !== undefined) {
+    throw new AppError('wrong_file_kind', 'This file was uploaded as something else', [{ path: [...o.wrongKind], code: 'wrong_file_kind',
+      message: `Upload it as a ${kind.replaceAll('_', ' ')}` }]);
+  }
+  if (row === undefined || row.kind !== kind) throw new AppError('not_found', 'Not found');
   if (row.status === 'refused') throw new AppError('upload_refused', 'This file didn\'t pass its check (size, type or content). Upload it again');
   if (row.status !== 'ready') throw new AppError('not_ready', 'This file is still being checked. Try again in a moment');
   return { id };
@@ -108,3 +114,5 @@ export async function viewLinks(ctx: Ctx, kind: FileKind, ids: readonly string[]
 export const resumeFileService = fileServices('resume');
 export const statementFileService = fileServices('statement');
 export const importFileService = fileServices('import');
+export const deliveryPhotoFileService = fileServices('delivery_photo');
+export const deliveryNoteFileService = fileServices('delivery_note');
