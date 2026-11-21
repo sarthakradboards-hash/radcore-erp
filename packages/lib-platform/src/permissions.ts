@@ -66,6 +66,10 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // Its own key, so cancelling can be kept from the counter (the architect on RAD-113), without the second factor
   // (Sarthak, 20 Nov). Its route is RAD-114's.
   { key: 'invoices:cancel', module: 'Sales', label: 'Cancel a posted invoice', records: ['@radcore/db/sales#invoices'] },
+  // A link shows the invoice outside the app to whoever holds it, so sharing is its own key (the architect on RAD-118),
+  // without the second factor: it moves no money.
+  { key: 'invoices:share', module: 'Sales', label: 'Send a customer a link to a posted invoice, and revoke one',
+    records: ['@radcore/db/sales#invoices'] },
   // Credit notes (RAD-114, the architect's ruling): drafted at the counter too; every one approved by someone else, with
   // the second factor since it moves money (Sarthak, 20 Nov); cancelling is its own key.
   { key: 'credit_notes:write', module: 'Sales', label: 'Draft credit notes and send them for approval', records: ['@radcore/db/sales#creditNotes'] },

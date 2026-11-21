@@ -303,7 +303,9 @@ Changing an owner otherwise needs the write key at `all`.
 
 **A forgotten scope fails lint (RAD-85, E7).** The catalogue names, for each key, the tables that hold its records
 (`records`). Any key may be granted at `own`, so a module service (`src/services/**`) that reads one of those tables
-must apply the scope in the outermost function around the read: `ctx.see`, `ctx.can` or `listScope`. This is a
+must apply the scope in the outermost function around the read: `ctx.see`, `ctx.can`, `listScope` or `linkRecord`.
+`linkRecord(ctx, action)` is a link route's (RAD-118): it answers the link's own record when the principal is a link made
+for exactly that action, and is `not_found` for any other principal; every read must filter by the id it returns. This is a
 backstop to the list engine's filter and each module's own-scope tests. It can't follow a read or a check into another
 function, a table passed around as a value, a table reached through a relation (`with:`) or a view, or whether the
 check names the right owner. A service that rightly reads past the scope can't say so in a comment, since no comment
@@ -544,7 +546,9 @@ codes.
   - making new recovery codes;
   - asking for a file's download link, `POST /files/<kind>/:id/download` for photo, resume, statement and import
     (RAD-43), or an export's, `POST /exports/:id/download` (RAD-47). The answer is a live presigned link, and a
-    stored answer must carry no tokens (RC-132).
+    stored answer must carry no tokens (RC-132);
+  - making a link to a posted invoice, `POST /sales/invoices/:id/links` (RAD-118). The answer holds the link's token,
+    which is shown this once and stored nowhere.
 
   How it works:
   - Saved-once still claims the key, so a repeat can't run the work twice. It stores no answer, though, so the
@@ -841,7 +845,7 @@ config test (ADR-002) calls `calculateConfigForFile` and asserts each local rule
 | E4 | no escape hatch in libraries | on `packages/lib-*/**` and `packages/db/src/*/repo.ts`, with type information: `@typescript-eslint/no-explicit-any`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-assignment` (these typed rules aren't shared with any other E- or L-rule); plus local rule `radcore/e4-no-escape`, which bans a double cast (`x as unknown as T`), `as any`, the `Reflect` global and importing `getTableConfig` | a library casts or reflects its way past T1 (`Reflect.get(ctx.tx, '_')`), or reads table metadata |
 | E5 | no switching the type checker off | `@typescript-eslint/ban-ts-comment` at `error`, with no description allowance, over `packages/**` and `apps/**` | a `// @ts-ignore`, `// @ts-expect-error`, `// @ts-nocheck` or `// @ts-check` comment (T1 would otherwise be silenced on one line) |
 | E6 | no float maths or text comparison on money (M1-01, RC-215) | local rules `radcore/e6-branded-money` (with type information, on the TypeScript a tsconfig holds: `packages/*/src`, `packages/db/views`, `apps/api/src`, `apps/worker/src` and `apps/web`) and `radcore/e6-no-float-money` (by name, on `apps/**` and `packages/**`) | By type (M1-37): a value lib-common branded `Money`, `Rate`, `Quantity` or `Percent` (what its wire schemas parse and its rounding functions return), or a `Decimal`, whatever it's named, is an operand of `+` (unless the other side is plain text, a label), `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, a compound assignment, `++`/`--` or a unary sign; is passed to `Number()`, `parseFloat`, `parseInt` or `Math.*`, directly or spread from an array of them; is in an array handed one of those as a callback (`amounts.map(Number)`); or is compared with `===`, `!==`, `==` or `!=` to anything but `null` or `undefined`, since `"0"`, `"0.5"` and `"0.50"` are one amount (use `dec(a).eq(b)`). `Decimal#toNumber()` is the one deliberate exit, for a value that only sizes something on screen (a chart bar), never for a total, a comparison or the wire. By name, for what carries no brand (a numeric column Drizzle reads as a string): `parseFloat` or `Number.parseFloat` anywhere; or a value named like money, a rate or a quantity (`total`, `grandTotal`, `totalGST`, `unit_price`, `cgst`, `grossSalary`, `creditLimit`, and the other words in `eslint.config.mjs`) appears anywhere inside `Number()`, `Math.*` or a unary `+` or `-`; is an operand, bare or inside `?.`, `!`, `as`, `satisfies` or a spread, of `-`, `*`, `/`, `%`, `**`, a `+` that isn't joining a string, a compound assignment or `++`/`--`; is compared with `<`, `<=`, `>` or `>=`; or is compared with `===`, `!==`, `==` or `!=` to another such value; or such a name is declared with `number` anywhere in its type or a `.number()` schema anywhere in its value. Money is a decimal string on the wire (§7a), so these convert it to a float or compare it as text (`"9.00" > "10.00"`). Use lib-common: `dec(a).plus(b)`, `dec(a).gt(b)`, `dec(a).cmp(b)`, `dec(a).eq(b)` |
-| E7 | a scoped read applies the record scope (§6a, RAD-85) | local rule `radcore/e7-scope-on-owned-reads` on `packages/lib-*/src/services/**`, test files out, with the catalogue's `records` tables as its options | a function reads one of those tables (as an argument of `.from` or a join, imported by name, aliased or through a namespace, or as `.query.<table>`) and the outermost function around the read calls none of `ctx.see`, `ctx.can` or `listScope` |
+| E7 | a scoped read applies the record scope (§6a, RAD-85) | local rule `radcore/e7-scope-on-owned-reads` on `packages/lib-*/src/services/**`, test files out, with the catalogue's `records` tables as its options | a function reads one of those tables (as an argument of `.from` or a join, imported by name, aliased or through a namespace, or as `.query.<table>`) and the outermost function around the read calls none of `ctx.see`, `ctx.can`, `listScope` or `linkRecord` |
 
 **Proof.** Every rule has one violating fixture per clause, kept in `tools/boundary-fixtures/<rule>-<clause>/`, so
 D4, D5, D7, E1, E3 and E7 have one fixture for each thing they forbid. D7's fixtures include a type-only import with a
