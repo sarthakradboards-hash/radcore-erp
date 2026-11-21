@@ -79,5 +79,7 @@ export function DocumentLines({ caption, lines }: { caption: string; lines: read
 const own = (code: string): Partial<Record<string, string>> => ({ ...SALES_MESSAGES, date_before_source: code });
 export const DELIVERY_MESSAGES = own(t('sales.delivery.err.date_before_source'));
 export const DELIVERY_CANCEL_MESSAGES = own(t('sales.delivery.err.cancel_date'));
-export const RETURN_MESSAGES = own(t('sales.return.err.date_before_source'));
+// A return's own words for the two refusals that read as an invoice's in the shared ones (e2e-2 on #293).
+export const RETURN_MESSAGES = { ...own(t('sales.return.err.date_before_source')), over_quantity: t('sales.return.err.over_quantity'),
+  not_on_source: t('sales.return.err.not_on_source') };
 export const RETURN_CANCEL_MESSAGES = own(t('sales.return.err.cancel_date'));

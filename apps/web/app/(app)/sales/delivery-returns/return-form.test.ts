@@ -12,7 +12,10 @@ it('sends each batch the goods go back into with its quantity, "batch unknown" a
 });
 
 it('refuses a line that names no batch, and a quantity that isn’t one', () => {
-  expect(returnSchema.safeParse({ ...base, lines: [line({ pick: { [id(5)]: '' } })] }).success).toBe(false);
+  const none = returnSchema.safeParse({ ...base, lines: [line({ pick: { [id(5)]: '' } })] });
+  expect(none.success).toBe(false);
+  // The refusal sits on the line's quantity box, which is always drawn: the form never shows a bare path.
+  expect(!none.success && none.error.issues.some((i) => i.path.join('.') === 'lines.0.qty')).toBe(true);
   expect(returnSchema.safeParse({ ...base, lines: [line({ pick: { [id(5)]: 'one' } })] }).success).toBe(false);
 });
 

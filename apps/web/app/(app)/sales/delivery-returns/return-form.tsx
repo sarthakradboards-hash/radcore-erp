@@ -13,7 +13,8 @@ import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
-import { ItemName, SALES_MESSAGES } from '../shared.tsx';
+import { RETURN_MESSAGES } from '../deliveries/shared.tsx';
+import { ItemName } from '../shared.tsx';
 import { batchKey, returnSchema, type ReturnInput, type ReturnLineInput, type ReturnValues } from './return-values.ts';
 
 /** The places goods can go back into: active places of a kind that sells. A draft's own place is always offered, and the form
@@ -137,7 +138,7 @@ export function ReturnForm({ labelledBy, initial, submit, onSubmit }: {
   const places = usePlaces(initial.locationId);
   if (!places.ready) return <p>{t('loading')}</p>;
   return (
-    <Form aria-labelledby={labelledBy} schema={returnSchema} saved={false} messages={SALES_MESSAGES} defaultValues={initial} onSubmit={onSubmit}>
+    <Form aria-labelledby={labelledBy} schema={returnSchema} saved={false} messages={RETURN_MESSAGES} defaultValues={initial} onSubmit={onSubmit}>
       <SelectField name="locationId" label={t('sales.return.form.place')} placeholder={t('sales.return.form.place.none')} options={places.options} />
       <TextField name="businessDate" label={t('sales.date')} type="date" />
       <TextAreaField name="notes" label={t('sales.notes')} />

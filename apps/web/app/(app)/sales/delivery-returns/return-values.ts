@@ -22,7 +22,8 @@ const line = z.object({
 }).transform((l, ctx) => {
   const batches = Object.entries(l.pick).filter(([, qty]) => qty !== '').map(([key, qty]) => ({ batchId: key === 'unknown' ? null : key, qty }));
   if (batches.length === 0) {
-    ctx.addIssue({ code: 'custom', message: t('sales.return.err.pick'), path: ['pick'] });
+    // On the quantity box, a field that is always drawn: `pick` itself has no box, so the form would show it as a bare path.
+    ctx.addIssue({ code: 'custom', message: t('sales.return.err.pick'), path: ['qty'] });
     return z.NEVER;
   }
   return { deliveryLineId: l.deliveryLineId, qty: l.qty, batches, serials: l.serials };

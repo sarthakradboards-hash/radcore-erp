@@ -3,6 +3,7 @@
 import { getDeliveryReturn, listDeliveryReturns, updateDeliveryReturn } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { useMe } from '../../../../../../components/shell/session-provider.tsx';
 import { announce } from '../../../../../../components/ui/live-region.tsx';
 import { useApiMutation, useApiQuery } from '../../../../../../lib/api/query.ts';
 import { t } from '../../../../../../lib/i18n/index.ts';
@@ -13,10 +14,12 @@ import { batchKey } from '../../return-values.ts';
 export default function EditDeliveryReturnPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const mayWrite = useMe().permissions.includes('deliveries:write');
   const q = useApiQuery(getDeliveryReturn, { id });
   const update = useApiMutation(updateDeliveryReturn, { invalidates: [getDeliveryReturn, listDeliveryReturns] });
   const ret = q.data;
   const back = <p><Link href={`/sales/delivery-returns/${id}`}>{t('sales.back')}</Link></p>;
+  if (!mayWrite) return <>{back}<p role="alert" className="kit-form-alert">{t('sales.return.err.forbidden')}</p></>;
   if (q.error !== null) return <>{back}<p role="alert" className="kit-form-alert">{t('sales.missing')}</p></>;
   if (ret === undefined) return <p>{t('loading')}</p>;
   if (ret.status !== 'draft') return <>{back}<p role="alert" className="kit-form-alert">{t('sales.err.wrong_status')}</p></>;
