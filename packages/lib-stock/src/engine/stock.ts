@@ -186,7 +186,8 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   // A delivery never names a damaged unit (unit_damaged): a return to the supplier may.
   const delivered = outs.filter((o) => (o.unitEvent ?? 'delivered') === 'delivered');
   await refuseDamaged(ctx, delivered.flatMap((o) => (o.units ?? []).map((u) => ({ itemId: o.itemId, serialNo: u.serialNo }))));
-  // Each delivery line's units are of one condition, which their `delivered` events record (the architect on RAD-112).
+  // Each delivery line's units are of one condition, which their `delivered` events record (the architect on RAD-112):
+  // a snapshot of the rows lockUnits locked, never a caller's value; lib-stock alone writes unit events (D7), so no trigger.
   const conditions = await oneCondition(ctx, delivered);
   const events: UnitEventRow[] = [];
   const lastId = () => posted.at(-1)?.id ?? '';
