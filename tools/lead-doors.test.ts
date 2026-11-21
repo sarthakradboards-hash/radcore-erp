@@ -41,7 +41,8 @@ describe.skipIf(!url || !superUrl)('lead doors', { timeout: 30_000 }, () => {
   const su = new pg.Pool({ connectionString: superUrl, max: 2 });
   const db = createDatabase(pool);
   const owner = createDatabase(su);
-  const secrets = createSecrets(config().secrets);
+  // Built on each use, never in the describe body, which runs even when the suite is skipped (no test database).
+  const secretsOf = () => createSecrets(config().secrets);
   const as = <R>(p: Principal, fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, WRITE, p, randomUUID(), fn);
   /** The owner login's transaction, as tools/set-secret.ts writes. */
   const asOwner = <R>(work: (ctx: Ctx) => Promise<R>) =>
@@ -80,11 +81,11 @@ describe.skipIf(!url || !superUrl)('lead doors', { timeout: 30_000 }, () => {
   const guardsWaiting = (seconds: number): RequestGuards => ({ address: async () => seconds, person: async () => 0 });
   const log = { info: () => undefined, error: () => undefined };
   const serve = (guards: RequestGuards) => listen(createApp(config(), log,
-    { db, routes: [], webhooks, authenticate: async () => null, secrets, guards, alert }), 0, '127.0.0.1');
+    { db, routes: [], webhooks, authenticate: async () => null, secrets: secretsOf(), guards, alert }), 0, '127.0.0.1');
   beforeAll(async () => {
-    await storeSecret(asOwner, secrets, 'crm.google_lead_key', GOOGLE_KEY);
-    await storeSecret(asOwner, secrets, 'crm.meta_app_secret', META_SECRET);
-    await storeSecret(asOwner, secrets, 'crm.meta_verify_token', META_TOKEN);
+    await storeSecret(asOwner, secretsOf(), 'crm.google_lead_key', GOOGLE_KEY);
+    await storeSecret(asOwner, secretsOf(), 'crm.meta_app_secret', META_SECRET);
+    await storeSecret(asOwner, secretsOf(), 'crm.meta_verify_token', META_TOKEN);
     const server = await serve(guardsWaiting(0));
     state.stops.push(server);
     state.base = `http://127.0.0.1:${server.port}`;
@@ -98,17 +99,17 @@ describe.skipIf(!url || !superUrl)('lead doors', { timeout: 30_000 }, () => {
   it('stores an integration’s secret encrypted for its name, replaces it, and lets only the owner login write it', async () => {
     const read = <R>(work: (ctx: Ctx) => Promise<R>) => runInTransaction(db, { readOnly: true, isolation: 'read committed' }, PUBLIC,
       randomUUID(), work);
-    await storeSecret(asOwner, secrets, 'crm.test_rotation', 'first-value');
-    await storeSecret(asOwner, secrets, 'crm.test_rotation', 'second-value');
-    expect(await storedSecret(read, secrets, 'crm.test_rotation')).toBe('second-value');
-    expect(await storedSecret(read, secrets, 'crm.no_such_secret')).toBeNull();
+    await storeSecret(asOwner, secretsOf(), 'crm.test_rotation', 'first-value');
+    await storeSecret(asOwner, secretsOf(), 'crm.test_rotation', 'second-value');
+    expect(await storedSecret(read, secretsOf(), 'crm.test_rotation')).toBe('second-value');
+    expect(await storedSecret(read, secretsOf(), 'crm.no_such_secret')).toBeNull();
     // The value isn't in the table, and a ciphertext moved to another name won't decrypt.
     const [row] = await sql<{ ciphertext: string }>("select ciphertext from radcore.integration_secrets where name = 'crm.test_rotation'", []);
     expect(row?.ciphertext).not.toContain('second-value');
     await sql("insert into radcore.integration_secrets (name, ciphertext, key_id) values ('crm.test_moved', $1, 'x')",
       [row?.ciphertext]);
-    await expect(storedSecret(read, secrets, 'crm.test_moved')).rejects.toThrow();
-    await expect(storeSecret((w) => as(PUBLIC, w), secrets, 'crm.test_app_login', 'v')).rejects.toMatchObject({ cause: { code: '42501' } });
+    await expect(storedSecret(read, secretsOf(), 'crm.test_moved')).rejects.toThrow();
+    await expect(storeSecret((w) => as(PUBLIC, w), secretsOf(), 'crm.test_app_login', 'v')).rejects.toMatchObject({ cause: { code: '42501' } });
   });
 
   it('takes the form’s enquiry only past Turnstile, once per token, and makes it a lead no one owns (RC-054)', async () => {

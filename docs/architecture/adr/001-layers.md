@@ -311,7 +311,9 @@ switches a rule off (`noInlineConfig`): it is named, with its reason, in E7's op
 exemption names one file and its reason (`exempt`), and that file's functions return only aggregates keyed by ids their
 caller already had in scope, never another's rows. The first is lib-sales' `services/delivered.ts`, which sums every
 posted delivery, return and credit note for a party's credit exposure, an order's remaining quantities and an
-invoice's open credit (RAD-112, RAD-114).
+invoice's open credit (RAD-112, RAD-114). The second is lib-sales' `services/booking-holds.ts`, which locks and updates
+the live bookings of an order's lines for its delivery, cancelled delivery and changes, and tells a cancelled booking
+whether its lead has another, answering only booleans, counts and ids (RAD-117).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:

@@ -74,6 +74,14 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'credit_notes:cancel', module: 'Sales', label: 'Cancel a posted credit note', records: ['@radcore/db/sales#creditNotes'] },
   { key: 'sales:override', module: 'Sales', label: 'Approve another person’s sale over a credit limit, below cost or over a discount limit',
     secondFactor: true },
+  // Vehicle bookings (M3-13, RAD-117; ADR-007 §5): a booking holds a unit and takes its advance. Scoped by who made it.
+  // Refunding a cancelled booking's advance is keyed by how much of what's left (Sarthak, 20 Nov): all of it needs
+  // refund_full, a part refund_part; each moves money out, so each needs the second factor (D-19).
+  { key: 'bookings:read', module: 'Bookings', label: 'See vehicle bookings', records: ['@radcore/db/sales#vehicleBookings'] },
+  { key: 'bookings:write', module: 'Bookings', label: 'Book a vehicle and take its advance, and cancel a booking',
+    records: ['@radcore/db/sales#vehicleBookings'] },
+  { key: 'bookings:refund_full', module: 'Bookings', label: 'Refund all of what’s left of a cancelled booking’s advance', secondFactor: true },
+  { key: 'bookings:refund_part', module: 'Bookings', label: 'Refund part of what’s left of a cancelled booking’s advance', secondFactor: true },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },
   { key: 'pay:read', module: 'Personal data', label: 'See salaries and bank details', onlyRoles: ['admin', 'owner'], secondFactor: true },
   { key: 'photo_files:read', module: 'Files', label: 'See job photos' },
