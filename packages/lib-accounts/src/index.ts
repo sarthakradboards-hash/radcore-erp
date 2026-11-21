@@ -9,7 +9,7 @@ export {
 } from './services/journal.ts';
 export {
   cancelPayment, CASH_PAYMENT_LIMIT, CASH_RECEIPT_LIMIT, cashLimitSpec, DEFAULT_CREDIT_DAYS, heldLeft, moneyAccountRefusal, PAYMENT_SERIES, RECEIPT_SERIES,
-  recordHeldReceipt, recordPayment, refundCredit, refundHeld, systemAccountId,
+  recordCounterReceipt, recordHeldReceipt, recordPayment, refundCredit, refundHeld, systemAccountId,
   type HeldFor,
 } from './services/payments.ts';
 export { partyReceivable } from './services/receivables.ts';

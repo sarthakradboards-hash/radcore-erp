@@ -112,7 +112,7 @@ export const createParty = defineContract({
 export const updateParty = defineContract({
   method: 'PATCH', path: '/parties/:id', auth: 'session', perm: 'parties:write', tx: write,
   input: z.object(partyFields).partial().extend({ id: idString(), active: z.boolean().optional() }),
-  output: z.object({}), errors: ['gstin_taken'],
+  output: z.object({}), errors: ['gstin_taken', 'system_party'],
 });
 
 /** PUT /parties/:id/credit (parties:manage): the party's credit days and limit, null for none, with the person's
@@ -124,7 +124,7 @@ export const setPartyCredit = defineContract({
     accountManager: idString().nullable().optional(),
     reason: reason() }),
   output: z.object({}),
-  errors: ['unknown_user'],
+  errors: ['unknown_user', 'system_party'],
 });
 
 // The chart of accounts and the journal (RAD-86, M2-16's screens; ADR-006 §2, §3). The books are only posted and

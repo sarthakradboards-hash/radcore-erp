@@ -4,7 +4,9 @@
 // posted; its invoice, shipped to the shop, posted; and every receipt applied to that invoice. Any refusal on the way
 // rolls all of it back.
 import { deliveryLines, salesOrderLines, salesTx } from '@radcore/db/sales';
-import { allocatePayment, companyForInvoice, moneyAccountRefusal, recordPayment, systemAccountId, systemPartyId } from '@radcore/lib-accounts';
+import {
+  allocatePayment, companyForInvoice, moneyAccountRefusal, recordCounterReceipt, systemAccountId, systemPartyId,
+} from '@radcore/lib-accounts';
 import { dec, roundMoney, sum } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import { asc, eq } from 'drizzle-orm';
@@ -78,7 +80,7 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
   // applied to this bill's invoice below, before the save ends; and cash still within the day's limit.
   const receipts = [];
   for (const r of taken) {
-    const made = await recordPayment(ctx, { kind: 'receipt', partyId, businessDate, amount: r.amount, accountId: r.accountId,
+    const made = await recordCounterReceipt(ctx, { partyId, businessDate, amount: r.amount, accountId: r.accountId,
       narration: 'Quick bill', ...(r.reference === undefined ? {} : { reference: r.reference }) });
     if (made.status !== 'posted' || made.number === null) {
       throw new AppError('cash_over_limit', 'That’s more cash than may be taken from one person in a day (section 269ST): take the rest by UPI, card or bank',
@@ -115,6 +117,11 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
     stateCode: shop.stateCode }, lines: input.lines.map((l, i) => ({ deliveryLineId: billed[i]?.id ?? '', qty: l.qty })) });
   const posted = await postInvoiceNow(ctx, invoice);
   const paid = roundMoney(sum(receipts.map((r) => r.amount)));
+  // And on the invoice's own total, which is what's owed (auditor-2 on #304): a walk-in never leaves a rupee on credit.
+  if (partyId === walkIn && dec(paid).lt(posted.total)) {
+    throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${posted.total}: name the party to sell on credit`,
+      [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${posted.total} in all, or choose a named party` }]);
+  }
   if (dec(paid).gt(posted.total)) {
     throw new AppError('overpaid', `That’s more than the bill of ${posted.total}`, [{ path: ['payments'], code: 'overpaid', message: 'Pay at most the bill' }]);
   }

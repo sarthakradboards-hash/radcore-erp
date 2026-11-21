@@ -133,14 +133,15 @@ async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
 }
 
 /** Whether this cash, with the party's other posted cash that day, passes the day's limit (ADR-007 §8). */
-async function pastCashLimit(ctx: Ctx, p: { id: string; kind: string; partyId: string; businessDate: string; amount: Money }) {
+async function pastCashLimit(ctx: Ctx, p: { id: string; kind: string; partyId: string; businessDate: string; amount: Money }, counter: boolean) {
   const out = p.kind !== 'receipt';
   // ADR-006 §1 step 3: the party, after the payment's own row, so two cash saves for one party take turns and neither
   // sums without the other. NO KEY UPDATE: each one's insert already holds the party's KEY SHARE (the auditor on RAD-116).
   await holdParty(ctx, p.partyId);
-  // The Counter customer isn't one person: every walk-in shares it, so its cash is judged one bill at a time, never by
-  // the day (the architect on RAD-115). A quick bill takes its cash as one receipt.
-  const [party] = await accountsTx(ctx).select({ key: parties.systemKey }).from(parties).where(eq(parties.id, p.partyId)).limit(1);
+  // The Counter customer isn't one person: every walk-in shares it, so a quick bill's cash for it is judged one bill at
+  // a time, never by the day (the architect on RAD-115); a quick bill takes its cash as one receipt. Only the quick
+  // bill's own receipt is (recordCounterReceipt, auditor-2 on #304): any other sums the day, as for any party.
+  const [party] = counter ? await accountsTx(ctx).select({ key: parties.systemKey }).from(parties).where(eq(parties.id, p.partyId)).limit(1) : [];
   const cash = accountsTx(ctx).select({ id: accounts.id }).from(accounts).where(eq(accounts.systemKey, 'cash'));
   const earlier = party?.key === 'walk_in' ? [] : await accountsTx(ctx).select({ amount: payments.amount }).from(payments).where(and(eq(payments.partyId, p.partyId),
     eq(payments.businessDate, p.businessDate), eq(payments.status, 'posted'), inArray(payments.accountId, cash), ne(payments.id, p.id),
@@ -199,6 +200,15 @@ export function recordPayment(ctx: Ctx, input: In<typeof recordPaymentContract>)
   return record(ctx, input, null, null);
 }
 
+/** For lib-sales' quick bill (RAD-115), reached by no route: a counter sale's receipt, its cash for the Counter customer
+ * judged against the limit one bill at a time, since every walk-in shares that party (the architect's MUST); any other
+ * receipt, on POST /payments too, sums the party's day. Its own function, since a route passes its service a third
+ * argument. */
+export function recordCounterReceipt(ctx: Ctx, input: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'credit'>>):
+  Promise<Out<typeof recordPaymentContract>> {
+  return record(ctx, { ...input, kind: 'receipt' }, null, null, true);
+}
+
 /** For a document's own service (bookings, M3-13), reached by no route: a receipt held for `heldFor` (a booking's
  * advance), refunded then only through refundHeld. Its own function, not an option on recordPayment, since a route
  * passes its service a third argument. */
@@ -224,7 +234,7 @@ export function refundHeld(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentCon
   return record(ctx, { ...rest, kind: 'refund', refundOf: receiptId }, null, owner);
 }
 
-async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor: HeldFor | null, owner: HeldFor | null):
+async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor: HeldFor | null, owner: HeldFor | null, counter = false):
   Promise<Out<typeof recordPaymentContract>> {
   const tx = accountsTx(ctx);
   // TDS held back is optional: none when it's left out.
@@ -252,7 +262,7 @@ async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor
   // The insert locked a credit it names (check_credit_refund), so the cash limit's party lock below comes after the
   // document's, as ADR-006 §1 orders them.
   const id = row?.id ?? refuse('server_error', 'The payment was not stored');
-  if (cash && await pastCashLimit(ctx, { id, ...p })) {
+  if (cash && await pastCashLimit(ctx, { id, ...p }, counter)) {
     await requestApproval(ctx, cashLimitSpec, id);
     return { id, status: 'pending_approval', number: null };
   }

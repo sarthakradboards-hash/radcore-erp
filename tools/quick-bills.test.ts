@@ -4,7 +4,7 @@
 // for company.test.ts. The Counter customer is the seeded `walk_in` party, sold from the test's list through the
 // sales.default_price_list setting on that transaction's ctx, so its shared row never changes.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, openFinancialYear, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
+import { addParty, changeParty, openFinancialYear, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -221,6 +221,44 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     });
     // 3 × 362.25 = 1,086.75 waits as 1,087.00; with 2 invoiced, 362.25 waits as 362.00; with all, nothing.
     expect(out).toEqual(['1087.00', '362.00', '0.00']);
+  });
+
+  // auditor-2 on #304. The Counter customer's state follows the company's, so its order is taxed as its invoice: at a state
+  // left behind, 250.95 + 5% is 264 as IGST but 263 as CGST and SGST, so the order and the invoice would disagree.
+  it('keeps the Counter customer in the company’s state, so a walk-in pays the invoice’s total, never a rupee less', async () => {
+    const at = await setup({ rate: '250.95' });
+    const out = await atCounter(at, async (ctx) => {
+      await rawOf(ctx.tx).execute(sql`update radcore.parties set state_code = '29' where system_key = 'walk_in'`);
+      await setCompanyProfile(ctx, COMPANY);
+      const short = await failure(bill(ctx, at, '1', [cash('262')]));
+      const b = await bill(ctx, at, '1', [cash('263')]);
+      const inv = await getInvoiceById(ctx, { id: b.invoice.id });
+      return [short, b.total, inv.cgst, inv.igst];
+    });
+    expect(out).toEqual(['walk_in_pays_in_full', '263.00', '6.27', '0.00']);
+  });
+
+  it('keeps the Counter customer as seeded: not switched off, re-stated or given credit through the parties routes', async () => {
+    const at = await setup({ rate: '345' });
+    const [walkIn] = await rowsOf<{ id: string }>("select id from radcore.parties where system_key = 'walk_in'", []);
+    const id = walkIn?.id ?? '';
+    const out = await atCounter(at, async (ctx) => [await failure(changeParty(ctx, { id, active: false })),
+      await failure(changeParty(ctx, { id, stateCode: '29' })),
+      await failure(setCreditTerms(ctx, { id, creditDays: 30, creditLimit: m('100000'), reason: 'Test' }))], { as: staff });
+    expect(out).toEqual(['system_party', 'system_party', 'system_party']);
+  });
+
+  // The per-bill cash rule is the quick bill's own (recordCounterReceipt): a receipt for the Counter customer on
+  // POST /payments sums the day, as for any party, so two of 1.5 lakh there wait for an owner.
+  it('sums the Counter customer’s day for a receipt taken outside the quick bill', async () => {
+    const at = await setup({ rate: '345' });
+    const [walkIn] = await rowsOf<{ id: string }>("select id from radcore.parties where system_key = 'walk_in'", []);
+    const out = await atCounter(at, async (ctx) => {
+      const take = async () => (await recordPayment(ctx, { kind: 'receipt', partyId: walkIn?.id ?? '', businessDate: DATE, amount: m('150000'),
+        accountId: await systemAccountId(ctx, 'cash') })).status;
+      return [await take(), await take()];
+    }, { as: staff });
+    expect(out).toEqual(['posted', 'pending_approval']);
   });
 
   it('keeps the Counter customer to the quick bill: an order of its own is refused', async () => {

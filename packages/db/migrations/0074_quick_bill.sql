@@ -9,8 +9,8 @@ ALTER TABLE "radcore"."payments" ADD CONSTRAINT "ck_payments_reference" CHECK (c
 INSERT INTO radcore.accounts (system_key, name, type, control_kind, parent_id)
 SELECT 'card_settlements', 'Card settlements', 'asset', 'none', id FROM radcore.accounts WHERE system_key = 'bank';
 --> statement-breakpoint
--- The Counter customer (ADR-007 §7): a counter sale below sales.b2c_details_limit may go to it. Its state is the
--- company's where one is saved; invoice posting takes a walk-in's place of supply from the company either way.
+-- The Counter customer (ADR-007 §7): a counter sale below sales.b2c_details_limit may go to it. Its state never decides
+-- tax: it's the company's, set again whenever the profile is saved, and its quick bill's invoice is shipped to the shop.
 INSERT INTO radcore.parties (system_key, name, customer, state_code)
 SELECT 'walk_in', 'Counter customer', true, coalesce((SELECT state_code FROM radcore.company LIMIT 1), '27');
 --> statement-breakpoint
