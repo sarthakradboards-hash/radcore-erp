@@ -15,11 +15,19 @@ import './invoice.css';
 
 type View = NonNullable<ReturnType<typeof useApiQuery<typeof viewInvoiceLink>>['data']>;
 
-// Taking the token clears it from the address bar, so it happens once per page load and is remembered after that.
-// shortcut: one token per page load; a second link opened in the same tab without a reload reuses the first.
+// Taking the token clears it from the address bar, so it is taken once per link and remembered until another link arrives: pasting a
+// second link into the same tab changes only the fragment (no reload), and `hashchange` is how the page hears of it. A fragment
+// that holds no usable token is a bad link, not the previous invoice again.
 let taken: string | null | undefined;
-const linkToken = () => (taken === undefined ? (taken = takeLinkToken()) : taken);
-const noSubscribe = () => () => undefined;
+function linkToken(): string | null | undefined {
+  if (typeof window === 'undefined') return undefined;
+  if (taken === undefined || window.location.hash !== '') taken = takeLinkToken();
+  return taken;
+}
+const subscribe = (notify: () => void) => {
+  window.addEventListener('hashchange', notify);
+  return () => window.removeEventListener('hashchange', notify);
+};
 
 const money = (x: string | null) => (x === null ? '' : formatMoney(x));
 const address = (parts: readonly (string | null)[]) => parts.filter((p): p is string => p !== null && p !== '').join(', ');
@@ -120,7 +128,7 @@ function Invoice({ v }: { v: View }) {
 }
 
 export function InvoiceView() {
-  const token = useSyncExternalStore(noSubscribe, linkToken, () => undefined);
+  const token = useSyncExternalStore(subscribe, linkToken, () => undefined);
   // Read once: a refetch (focus, reconnect, a remount) would log another opening, and the invoice as issued doesn't change.
   const q = useApiQuery(viewInvoiceLink, { token: token ?? '' }, { enabled: typeof token === 'string', staleTime: Infinity });
   if (token === undefined) return <p role="status">{t('sales.public.loading')}</p>;
