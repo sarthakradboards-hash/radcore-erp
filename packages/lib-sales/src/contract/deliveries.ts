@@ -26,7 +26,7 @@ const lines = <T extends z.ZodType>(line: T) => z.array(line).min(1, 'Add at lea
 const DRAFT_ERRORS = ['date_in_future', 'date_before_source', 'wrong_status', 'not_on_source', 'over_quantity',
   'quantity_too_precise', 'unknown_location', 'location_inactive', 'place_not_sellable'] as const;
 const POST_ERRORS = [...DRAFT_ERRORS, 'version_changed', 'year_not_open', 'period_locked', 'account_inactive', 'no_gst_rate', 'not_enough_stock', 'qty_not_positive', 'batches_mismatch',
-  'units_mismatch', 'serial_twice', 'not_serialised', 'unit_damaged'] as const;
+  'units_mismatch', 'serial_twice', 'not_serialised', 'unit_damaged', 'mixed_condition', 'unit_held'] as const;
 
 const deliveryLineIn = z.object({ orderLineId: idString(), qty: quantityString(), ...picks });
 const delivery = z.object({
