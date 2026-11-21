@@ -367,4 +367,4 @@ export const KEY_EXEMPT_ROUTES = ['POST /sign-in', 'POST /sign-out', 'POST /sign
 export const ANSWER_NOT_STORED_ROUTES = ['POST /sign-in/second-factor/enrolment', 'POST /me/second-factor/recovery-codes',
   'POST /files/photo/:id/download',
   'POST /files/resume/:id/download', 'POST /files/statement/:id/download', 'POST /files/import/:id/download',
-  'POST /exports/:id/download'] as const;
+  'POST /exports/:id/download', 'POST /sales/invoices/:id/links'] as const;

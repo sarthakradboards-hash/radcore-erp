@@ -22,6 +22,7 @@ export {
 export { deliveryOverride } from './services/delivery-checks.ts';
 export { addInvoice, changeInvoice, dropInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
 export { cancelInvoiceNow } from './services/invoice-cancel.ts';
+export { DOCUMENT_LINK_DAYS, invoiceByLink, invoiceLinks, revokeInvoiceLinkNow, shareInvoiceLink } from './services/invoice-links.ts';
 export { addCreditNote, dropCreditNote, getCreditNoteById, listCreditNotesPage } from './services/credit-notes.ts';
 export {
   askCreditNoteApproval, cancelCreditNoteNow, CREDIT_NOTE_SERIES, CREDIT_NOTE_TAX_DEADLINE, creditNoteApprovalSpec,
@@ -47,11 +48,12 @@ import { CREDIT_NOTE_SERIES, CREDIT_NOTE_TAX_DEADLINE } from './services/credit-
 import { DELIVERY_RETURN_SERIES as returned } from './services/delivery-returns.ts';
 import { DELIVERY_SERIES as delivered } from './services/deliveries.ts';
 import { defaultDiscountLimit } from './services/discounts.ts';
+import { DOCUMENT_LINK_DAYS } from './services/invoice-links.ts';
 import { B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, INVOICE_LAG_DAYS, INVOICE_SERIES } from './services/invoice-post.ts';
 import { ORDER_SERIES as ordered } from './services/orders.ts';
 import { DEFAULT_PRICE_LIST } from './services/party-price-lists.ts';
 import { QUOTE_SERIES as quoted } from './services/quotes.ts';
 import { BOOKING_SERIES as booked } from './services/bookings.ts';
 export const settings: readonly SettingDef<unknown>[] = [defaultDiscountLimit, DEFAULT_PRICE_LIST, INVOICE_LAG_DAYS, B2C_DETAILS_LIMIT, B2C_DETAILS_BASIS,
-  CREDIT_NOTE_TAX_DEADLINE];
+  CREDIT_NOTE_TAX_DEADLINE, DOCUMENT_LINK_DAYS];
 export const series: readonly Series[] = [quoted, ordered, delivered, returned, INVOICE_SERIES, CREDIT_NOTE_SERIES, booked];

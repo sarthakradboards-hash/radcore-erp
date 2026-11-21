@@ -3,7 +3,7 @@
 // what can be done next. A draft is edited, sent (it draws its number then) or deleted; a sent quote is accepted, which
 // makes a draft order, or closed as declined or expired. sales:write does all of it; the server says whether the status
 // still allows it.
-import { dateString, formatDate, indiaDate } from '@radcore/lib-common';
+import { dateString, formatDate, formatMoney, indiaDate, stateName } from '@radcore/lib-common';
 import { acceptQuote, closeQuote, deleteQuote, getQuote, listQuotes, sendQuote } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -18,7 +18,7 @@ import { CountCards, RelatedRecords, StatusBar } from '../../../../../components
 import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
-import { LinesTable, SALES_MESSAGES } from '../../shared.tsx';
+import { AmountsSummary, LinesTable, SALES_MESSAGES } from '../../shared.tsx';
 import { quoteSteps } from '../../status.ts';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
@@ -61,14 +61,19 @@ export default function QuotePage() {
       <StatusBar label={t('sales.status.step')} steps={quoteSteps(quote.status)} current={quote.status} />
       <RelatedRecords label={t('sales.related')}
         links={quote.orderId === null ? [] : [{ label: t('sales.quote.order'), href: `/sales/orders/${quote.orderId}` }]} />
-      <CountCards label={t('sales.counts')} cards={[{ label: t('sales.count.lines'), value: String(quote.lines.length) }]} />
+      <CountCards label={t('sales.counts')} cards={[
+        { label: t('sales.count.lines'), value: String(quote.lines.length) },
+        ...(quote.amounts.total === null ? [] : [{ label: t('sales.amounts.total'), value: formatMoney(quote.amounts.total) }]),
+      ]} />
       <dl className="admin-facts" aria-label={t('sales.facts')}>
         <dt>{t('sales.party')}</dt><dd>{quote.partyName}</dd>
         <dt>{t('sales.date')}</dt><dd>{formatDate(quote.businessDate)}</dd>
+        {quote.amounts.placeOfSupply === null ? null : <><dt>{t('sales.amounts.placeOfSupply')}</dt><dd>{stateName(quote.amounts.placeOfSupply) ?? quote.amounts.placeOfSupply}</dd></>}
         <dt>{t('sales.quote.validUntil')}</dt><dd>{quote.validUntil === null ? t('sales.quote.noValidUntil') : formatDate(quote.validUntil)}</dd>
         <dt>{t('sales.notes')}</dt><dd>{quote.notes ?? t('sales.noNotes')}</dd>
       </dl>
       <LinesTable number={quote.number} lines={quote.lines} />
+      <AmountsSummary number={quote.number} amounts={quote.amounts} />
       {mayWrite ? (
         <div className="kit-actions">
           {quote.status === 'draft' ? (
