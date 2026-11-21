@@ -25,6 +25,7 @@ import {
 } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Alerter, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
+import { warnUndeclared, type UndeclaredMode } from './undeclared.ts';
 
 type Database = Parameters<typeof runInTransaction>[0];
 
@@ -48,10 +49,7 @@ export type HandlerDeps = {
   guards?: RequestGuards | undefined;
   /** Alerts on an unexpected failure, one per route and code per hour (RC-158). The api always passes it. */
   alert?: Alerter | undefined;
-  /** What to do with a business code the route doesn't declare (RAD-134), which answers 500 whatever this says:
-   * `answer` only (production); `log` it as undeclared_error too (development); or `throw` as well, on the next tick,
-   * so the run fails (under test). createApp picks it from the environment. */
-  undeclared?: 'answer' | 'log' | 'throw' | undefined;
+  undeclared?: UndeclaredMode | undefined; // An undeclared code answers 500; `warn` also logs and warns (undeclared.ts).
 };
 const READ = { readOnly: true, isolation: 'read committed' } as const;
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
@@ -132,15 +130,6 @@ function failureOf(err: unknown, declared: readonly string[], dbErrors: Contract
   if (named !== undefined) return { status: BUSINESS_RULE_STATUS, code: named.code, message: named.message, issues: [] };
   const mapped = sqlstate === undefined ? undefined : SQLSTATE[sqlstate];
   return platform(mapped ?? 'server_error');
-}
-
-/** A business code the route doesn't declare (RAD-134): failureOf answers it as server_error. */
-const undeclaredCode = (err: unknown, declared: readonly string[]): string | null =>
-  err instanceof AppError && err.code !== 'server_error' && !isPlatform(err.code) && !declared.includes(err.code) ? err.code : null;
-
-/** A route raised a code its contract doesn't declare: the run fails under test (RAD-134). */
-export class UndeclaredError extends Error {
-  override name = 'UndeclaredError';
 }
 
 /** The output broke its contract: a bug, so the transaction rolls back and the caller gets 500. */
@@ -386,13 +375,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         res.status(200).json(output);
       } catch (err) {
         const failure = failureOf(err, contract.errors, contract.dbErrors);
-        const undeclared = undeclaredCode(err, contract.errors);
-        if (undeclared !== null && (deps.undeclared ?? 'answer') !== 'answer') {
-          const message = `undeclared_error: ${route} raised ${undeclared}, which its contract doesn't declare (request ${requestId})`;
-          deps.log.error(message);
-          // On the next tick, outside the request, so the test runner reports it whatever the test asserts.
-          if (deps.undeclared === 'throw') setImmediate(() => { throw new UndeclaredError(message); });
-        }
+        if (deps.undeclared === 'warn') warnUndeclared(err, contract.errors, `${route} (request ${requestId})`, deps.log);
         // Ids only: never the input, the output or a value from the database (RAD-29).
         if (failure.status >= 500) deps.log.error(`${route} failed (request ${requestId})`, err);
         send(res, failure, requestId);

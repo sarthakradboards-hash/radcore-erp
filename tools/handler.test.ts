@@ -225,38 +225,38 @@ describe.skipIf(!url)('the generic route handler', () => {
     }, 'answer');
   });
 
-  // RAD-134: a code the route doesn't declare still answers 500, and outside production it's logged by name.
-  it('logs a code the contract does not list as undeclared_error, with the route and the code', async () => {
-    await serve(user(['notes:write']), async () => {
-      throw new AppError('not_listed_anywhere', 'x');
-    }, async (base, log) => {
-      expect((await post(base, { body: 'x', n: 1 })).status).toBe(500);
-      expect(log.error.mock.calls.map(([m]) => m.replace(/request \S+\)/, 'request …)')).filter((m) => m.startsWith('undeclared_error')))
-        .toEqual(["undeclared_error: POST /notes raised not_listed_anywhere, which its contract doesn't declare (request …)"]);
-    }, 'log');
-  });
-
-  // Under vitest it's the default: the error is thrown outside the request, so the run fails whatever a test asserts.
-  it('fails the run under test, by default, on a code the contract does not list', async () => {
-    const theirs = process.listeners('uncaughtException');
-    process.removeAllListeners('uncaughtException');
-    let caught: unknown;
-    const heard = new Promise<void>((resolve) => process.once('uncaughtException', (e) => {
-      caught = e;
+  // RAD-134: a code the route doesn't declare still answers 500, and outside production it's logged by name and warned
+  // of. The setup's listener is swapped out here, since it fails the run on that warning.
+  it('logs and warns of a code the contract does not list, by route and code, outside production', async () => {
+    const theirs = process.listeners('warning');
+    process.removeAllListeners('warning');
+    const warned: Error[] = [];
+    const heard = new Promise<void>((resolve) => process.on('warning', (w) => {
+      warned.push(w);
       resolve();
     }));
     try {
       await serve(user(['notes:write']), async () => {
         throw new AppError('not_listed_anywhere', 'x');
-      }, async (base) => {
+      }, async (base, log) => {
         expect((await post(base, { body: 'x', n: 1 })).status).toBe(500);
         await heard;
-      });
+        const said = "undeclared_error: POST /notes (request …) raised not_listed_anywhere, which its contract doesn't declare";
+        expect(log.error.mock.calls.map(([m]) => m.replace(/request \S+\)/, 'request …)')).filter((m) => m.startsWith('undeclared_error')))
+          .toEqual([said]);
+        expect(warned.map((w) => [w.name, w.message.replace(/request \S+\)/, 'request …)')])).toEqual([['UndeclaredError', said]]);
+      }, 'warn');
     } finally {
-      process.removeAllListeners('uncaughtException');
-      for (const l of theirs) process.on('uncaughtException', l);
+      process.removeAllListeners('warning');
+      for (const l of theirs) process.on('warning', l);
     }
-    expect([(caught as Error).name, (caught as Error).message]).toEqual(['UndeclaredError', expect.stringContaining('POST /notes raised not_listed_anywhere')]);
+  });
+
+  it('fails the run on that warning, through the tools setup (tools/vitest-setup.ts)', () => {
+    const warning = Object.assign(new Error('undeclared_error: GET /x raised y'), { name: 'UndeclaredError' });
+    expect(() => { for (const l of process.listeners('warning')) l(warning); }).toThrow('GET /x raised y');
+    const other = Object.assign(new Error('an ordinary warning'), { name: 'DeprecationWarning' });
+    expect(() => { for (const l of process.listeners('warning')) l(other); }).not.toThrow();
   });
 
   // RC-216: matched by code, never by message text.

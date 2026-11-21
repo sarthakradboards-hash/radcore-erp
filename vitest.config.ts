@@ -3,7 +3,8 @@ import { defineConfig } from 'vitest/config';
 // One project per workspace plus the repo-level checks in tools/. Fixtures are data, never test files.
 export default defineConfig({
   test: {
-    projects: ['packages/*', 'apps/*', { test: { name: 'tools', include: ['tools/*.test.ts'] } }],
+    // tools' setup fails the run on a route's undeclared error code (RAD-134).
+    projects: ['packages/*', 'apps/*', { test: { name: 'tools', include: ['tools/*.test.ts'], setupFiles: ['tools/vitest-setup.ts'] } }],
     // One fresh test database per run, for every project (tools/test-database.ts).
     globalSetup: ['tools/test-database.ts'],
     coverage: {

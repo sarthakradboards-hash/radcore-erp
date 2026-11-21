@@ -36,8 +36,8 @@ export function createApp(config: Config, log: Logger, api?: Api): express.Expre
     mountRoutes(app, api.routes, { db: api.db, log, authenticate: api.authenticate, publicOrigin: config.publicOrigin,
       newPasswordCheck: api.newPasswordCheck, files: api.files, secrets: api.secrets, guards: api.guards,
       alert: api.alert,
-      // Production answers it as ever; elsewhere it's logged, and under vitest the run fails (RAD-134).
-      undeclared: api.undeclared ?? (config.nodeEnv === 'production' ? 'answer' : process.env['VITEST'] === undefined ? 'log' : 'throw') });
+      // Production answers an undeclared code with 500 as ever; elsewhere it's also logged and warned of (RAD-134).
+      undeclared: api.undeclared ?? (config.nodeEnv === 'production' ? 'answer' : 'warn') });
   }
   return app;
 }
