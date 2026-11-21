@@ -9,7 +9,7 @@ import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
 import { itemLabels } from '@radcore/lib-stock';
 import { asc, eq, inArray } from 'drizzle-orm';
-import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
+import { checkSale, coveredBy, overrideApproval, type ApprovedThrough, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { deliveredNotInvoiced } from './delivered.ts';
 import { lineValues } from './document-rules.ts';
 import { toRupee } from './invoice-rules.ts';
@@ -81,13 +81,24 @@ export const deliveryOverride = overrideApproval({
   },
 });
 
+/** Whether the delivery takes every line of its order at its full quantity, and nothing else: a held quick bill's own. */
+async function wholeOrder(ctx: Ctx, d: Delivery, lines: readonly Line[]): Promise<boolean> {
+  const ordered = await salesTx(ctx).select({ id: salesOrderLines.id, qty: salesOrderLines.qty }).from(salesOrderLines)
+    .where(eq(salesOrderLines.orderId, d.orderId));
+  return ordered.length === lines.length && ordered.every((o) => lines.some((l) => l.orderLineId === o.id && dec(l.qty).eq(dec(o.qty))));
+}
+
 /**
  * Runs the delivery's credit check as it posts. With issues it's refused, `needs_override`, naming each, unless an
- * override was approved for exactly this delivery and these issues.
+ * override was approved for exactly this delivery and these issues; or, completing a held quick bill (`through`, never
+ * from a route), its order's approval covers them and this is that order's whole delivery (the architect on RAD-115).
  */
-export async function checkDelivery(ctx: Ctx, d: Delivery & { overrideVersion: string | null }, lines: readonly Line[]): Promise<void> {
-  const { issues } = await checkSale(ctx, await saleOf(ctx, d, lines));
+export async function checkDelivery(ctx: Ctx, d: Delivery & { overrideVersion: string | null }, lines: readonly Line[],
+  through?: ApprovedThrough): Promise<void> {
+  const result = await checkSale(ctx, await saleOf(ctx, d, lines));
+  const { issues } = result;
   if (issues.length === 0) return;
+  if (through !== undefined && through.orderId === d.orderId && coveredBy(through, result) && await wholeOrder(ctx, d, lines)) return;
   const version: OverrideVersion = { figures: figuresOf(d, lines), issues };
   if (d.overrideVersion !== null && d.overrideVersion === versionHash(version)) return;
   throw new AppError('needs_override', 'This delivery needs someone else to approve an override before it’s posted',

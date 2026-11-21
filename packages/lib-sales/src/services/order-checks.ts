@@ -10,6 +10,7 @@ import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } fro
 import { deliveredNotInvoiced } from './delivered.ts';
 import { amountsOf, type Amounts } from './document-amounts.ts';
 import { listRateBeforeTax, netRate } from './document-rules.ts';
+import { heldPaid } from './quick-bill-holds.ts';
 
 type Order = { partyId: string; businessDate: string; createdBy: string };
 type Line = { itemId: string; qty: string; rate: string; discountPercent: string; listRate: string | null; listTaxInclusive: boolean | null };
@@ -28,9 +29,10 @@ const figuresOf = (o: Omit<Order, 'createdBy'>, lines: readonly Line[]) =>
 /** What the order asks checkSale at confirmation: its total as worked out to be stored (the architect on RAD-112), each
  * line at its rate after discount against its stored list rate before GST at the line's rate (the architect on RAD-113),
  * from the sellable places together, since an order names no place, judged by its maker's discount limit (RAD-112). */
-async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[], a: Amounts): Promise<SaleCheck> {
+async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[], a: Amounts, paidNow?: string): Promise<SaleCheck> {
   return {
     stage: 'confirm', partyId: o.partyId, on: o.businessDate, pricedBy: o.createdBy, adds: a.totals.total,
+    ...(paidNow === undefined ? {} : { paidNow }),
     notInvoiced: await deliveredNotInvoiced(ctx, o.partyId),
     lines: lines.map((l, i) => ({ itemId: l.itemId, locationId: null, rate: netRate(l.rate, l.discountPercent),
       listRate: l.listRate === null ? null : listRateBeforeTax(l.listRate, l.listTaxInclusive === true, a.lines[i]?.gstRate ?? '0') })),
@@ -51,7 +53,10 @@ export const orderOverride = overrideApproval({
     if (order === undefined || order.status !== 'draft') return null;
     if (!ctx.can('sales:write', { owner: order.createdBy }) && !ctx.can('sales:override', { owner: order.createdBy })) return null;
     const lines = await linesOf(ctx, id);
-    return { figures: figuresOf(order, lines), sale: await saleOf(ctx, order, lines, await amountsOf(ctx, order.partyId, order.businessDate, lines)) };
+    // A held quick bill is judged with its planned payments taken, as completing it takes them first (RAD-115).
+    const paid = await heldPaid(ctx, id);
+    return { figures: figuresOf(order, lines), sale: await saleOf(ctx, order, lines, await amountsOf(ctx, order.partyId, order.businessDate, lines),
+      paid ?? undefined) };
   },
   // It records what was approved; confirming the order is its maker's next step.
   async approved(ctx, id) {
@@ -72,6 +77,13 @@ export const ISSUE_WORDS: Readonly<Record<string, string>> = {
   no_list_rate: 'This item has no price on the party’s price list to check its discount against',
   over_discount: 'This line’s discount is more than your limit',
 };
+
+/** The order's check now, as confirming it will run it: what completing a held quick bill lets its delivery and invoice
+ * through on (the issue kinds, and what's owed then). Reads only. */
+export async function orderCheckNow(ctx: Ctx, orderId: string, o: Order) {
+  const lines = await linesOf(ctx, orderId);
+  return checkSale(ctx, await saleOf(ctx, o, lines, await amountsOf(ctx, o.partyId, o.businessDate, lines)));
+}
 
 /**
  * Runs the order's checks at confirmation, on the amounts it's about to store. With issues it's refused,
