@@ -477,6 +477,13 @@
       "when": 1795271335174,
       "tag": "0067_stock_read",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1795272327400,
+      "tag": "0068_invoice_share",
+      "breakpoints": true
     }
   ]
 }
