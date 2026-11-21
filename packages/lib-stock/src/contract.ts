@@ -1,8 +1,8 @@
 // lib-stock's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every contract
 // file it imports only zod and lib-common (D5), so the browser can load it.
 import {
-  cost, dateString, defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, searchText,
-  skuString, unitPriceString,
+  cost, cursorString, dateString, defineContract, idString, listInput, listOf, LOCATION_KIND_CODES, locationKindLabel, quantityString,
+  searchText, skuString, unitPriceString,
 } from '@radcore/lib-common';
 import { z } from 'zod';
 
@@ -177,3 +177,32 @@ export const checkBooksContract = defineContract({
     check: z.enum(BOOKS_CHECKS), itemId: idString().nullable(), locationId: idString().nullable(), message: z.string(),
   })) }),
 });
+
+/**
+ * GET /stock/on-hand (stock:read; the architect on RAD-112): what's on hand of an item at a place, for the delivery and
+ * return forms. Quantities only, no cost. A convenience, never the guard: posting checks every batch and unit again
+ * (RA007, RA008).
+ * - `position`: the quantity on hand.
+ * - `batches`: each batch with stock here, with "batch unknown" its own row (`batchId` null) while it holds any.
+ * - `units`, for a serialised item: the units available to pick here, paged by serial, `q` a prefix of a serial or a
+ *   chassis number. A unit promised to another order line is left out; one promised to `forDocument`'s line is in,
+ *   marked `heldForThis`. Null for an item with no serials.
+ */
+export const getOnHand = defineContract({
+  method: 'GET', path: '/stock/on-hand', auth: 'session', perm: 'stock:read', tx: read,
+  input: z.object({
+    itemId: idString(), locationId: idString(),
+    // The order line a booking promised units to (M3-13): its own units are offered too.
+    forDocument: z.string().regex(/^sales_order_lines:[0-9a-f-]{36}$/, 'Not an order line').optional(),
+    q: z.string().trim().min(1).max(60).optional(),
+    after: cursorString().optional(),
+    limit: z.number().int().min(1).max(200),
+  }),
+  output: z.object({
+    position: quantityString({ signed: true }),
+    batches: z.array(z.object({ batchId: idString().nullable(), batchNo: z.string().nullable(), supplierName: z.string().nullable(),
+      qty: quantityString({ signed: true }) })),
+    units: listOf(z.object({ unitId: idString(), serialNo: z.string(), chassisNo: z.string().nullable(), heldForThis: z.boolean() })).nullable(),
+  }),
+});
+

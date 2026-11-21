@@ -4,6 +4,7 @@ export {
   listUnits, renameCategory,
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
+export { onHand } from './services/on-hand.ts';
 export { checkBooks } from './services/books-check.ts';
 export { averageCost } from './services/cost.ts';
 export { listKinds, setKindLabel } from './services/location-kinds.ts';

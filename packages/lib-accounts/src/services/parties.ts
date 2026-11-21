@@ -5,7 +5,7 @@
 import { accountsTx, after, parties, searchWords } from '@radcore/db/accounts';
 import { normaliseEmail, normalisePhone } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
-import { and, asc, eq, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { PARTY_KINDS, partyTaxIssues, type createParty, type getParty, type listParties, type setPartyCredit, type updateParty } from '../contract.ts';
 
@@ -126,3 +126,12 @@ export async function holdParty(ctx: Ctx, partyId: string): Promise<void> {
   const [row] = await accountsTx(ctx).select({ id: parties.id }).from(parties).where(eq(parties.id, partyId)).limit(1).for('no key update');
   if (row === undefined) throw new AppError('not_found', 'There is no such party');
 }
+
+/** The names of these parties, by id, for another library's screen (a batch's supplier on lib-stock's on-hand read).
+ * A name isn't personal data, and an id it doesn't know is left out. */
+export async function partyNames(ctx: Ctx, ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await accountsTx(ctx).select({ id: parties.id, name: parties.name }).from(parties).where(inArray(parties.id, [...ids]));
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+
