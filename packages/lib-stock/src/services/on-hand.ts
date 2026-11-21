@@ -13,8 +13,9 @@ import { batchQuantities, netQty } from '../rules/on-hand.ts';
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
-// A unit in any of these can be picked; a damaged one can't (backend-3's reading on RAD-112, for the architect to confirm).
-const PICKABLE = ['new', 'demo', 'used'];
+// A unit in any of these can be picked; a damaged one can't (the architect on RAD-112, until Sarthak rules on selling one as-is).
+const PICKABLE = ['new', 'demo', 'used'] as const;
+const pickableOf = z.enum(PICKABLE);
 const BACKSLASH = String.fromCharCode(92);
 /** A LIKE pattern for keys starting with `key`, its % and _ taken literally. */
 const prefix = (key: string) => `${[...key].map((c) => ('%_'.includes(c) || c === BACKSLASH ? BACKSLASH + c : c)).join('')}%`;
@@ -49,15 +50,16 @@ async function pickable(ctx: Ctx, input: In<typeof getOnHand>) {
   const line = input.forDocument?.split(':')[1] ?? null;
   const key = input.after === undefined ? undefined : decodeCursor(z.object({ serialKey: z.string().max(80), id: z.uuid() }), input.after);
   const rows = await stockTx(ctx).select({ id: units.id, serialNo: units.serialNo, serialKey: units.serialKey, chassisNo: units.chassisNo,
-    promisedTo: units.promisedTo }).from(units)
+    condition: units.condition, promisedTo: units.promisedTo }).from(units)
     .where(and(eq(units.itemId, input.itemId), eq(units.locationId, input.locationId), eq(units.ownership, 'ours'),
-      inArray(units.condition, PICKABLE),
+      inArray(units.condition, [...PICKABLE]),
       line === null ? isNull(units.promisedTo) : or(isNull(units.promisedTo), eq(units.promisedTo, line)),
       input.q === undefined ? undefined : or(like(units.serialKey, prefix(serialKey(input.q))), like(units.chassisKey, prefix(chassisKey(input.q)))),
       key === undefined ? undefined : or(gt(units.serialKey, key.serialKey), and(eq(units.serialKey, key.serialKey), gt(units.id, key.id)))))
     .orderBy(asc(units.serialKey), asc(units.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
-  return { items: page.map((u) => ({ unitId: u.id, serialNo: u.serialNo, chassisNo: u.chassisNo, heldForThis: line !== null && u.promisedTo === line })),
+  return { items: page.map((u) => ({ unitId: u.id, serialNo: u.serialNo, chassisNo: u.chassisNo, condition: pickableOf.parse(u.condition),
+    heldForThis: line !== null && u.promisedTo === line })),
     next: rows.length > input.limit && last ? encodeCursor({ serialKey: last.serialKey, id: last.id }) : null };
 }

@@ -202,7 +202,9 @@ export const getOnHand = defineContract({
     position: quantityString({ signed: true }),
     batches: z.array(z.object({ batchId: idString().nullable(), batchNo: z.string().nullable(), supplierName: z.string().nullable(),
       qty: quantityString({ signed: true }) })),
-    units: listOf(z.object({ unitId: idString(), serialNo: z.string(), chassisNo: z.string().nullable(), heldForThis: z.boolean() })).nullable(),
+    // Each unit's condition, so a demo or used one is seen as such (the architect on RAD-112).
+    units: listOf(z.object({ unitId: idString(), serialNo: z.string(), chassisNo: z.string().nullable(), condition: z.enum(['new', 'demo', 'used']),
+      heldForThis: z.boolean() })).nullable(),
   }),
 });
 

@@ -94,6 +94,13 @@ describe.skipIf(!url || !superUrl)('stock on hand', { timeout: 30_000 }, () => {
     expect((await units(`sales_order_lines:${myLine}`)).toSorted()).toEqual([[free, false], [mine, true]].toSorted());
     // The position counts every unit here, promised or damaged; the pick list doesn't.
     expect((await read(at.itemId, at.showroom)).position).toBe('4.000');
+    // Each unit says its condition, so a used one is picked knowingly (the architect on RAD-112).
+    await change([{ kind: 'condition_changed', itemId: at.itemId, serialNo: free ?? '', condition: 'used' }]);
+    expect(((await read(at.itemId, at.showroom)).units?.items ?? []).map((u) => [u.serialNo, u.condition])).toEqual([[free, 'used']]);
+    // A delivery naming the damaged unit is refused at posting, whatever the picker showed (unit_damaged).
+    const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => String((e as { code?: string }).code ?? e));
+    expect(await code(post({ outs: [{ itemId: at.itemId, locationId: at.showroom, sourceLineId: randomUUID(), qty: q('1'),
+      batches: [{ batchId: lot, qty: q('1') }], units: [{ serialNo: damaged ?? '' }] }] }))).toBe('unit_damaged');
   });
 
   it('finds a unit by a prefix of its serial or its chassis number, and pages through them', async () => {

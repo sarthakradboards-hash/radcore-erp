@@ -97,6 +97,17 @@ export async function lockUnits(ctx: Ctx, named: readonly { itemId: string; seri
     .orderBy(asc(units.id)).for('update');
 }
 
+/** A delivery may not name a damaged unit (the architect on RAD-112; `stock.sell_damaged_units`, proposed to Sarthak,
+ * would be its switch, off by default): to sell one, change its condition or move it. Checked under the units' locks, so
+ * the on-hand read's picker isn't the only guard. */
+export async function refuseDamaged(ctx: Ctx, named: readonly { itemId: string; serialNo: string }[]): Promise<void> {
+  if (named.length === 0) return;
+  const [hit] = await stockTx(ctx).select({ serialNo: units.serialNo }).from(units)
+    .where(and(eq(units.condition, 'damaged'), or(...named.map((u) => and(eq(units.itemId, u.itemId), eq(units.serialKey, serialKey(u.serialNo)))))))
+    .limit(1);
+  if (hit !== undefined) throw new AppError('unit_damaged', `Unit ${hit.serialNo} is damaged: change its condition or move it before you sell it`);
+}
+
 /** Writes a document's unit events, in the order given; the trigger applies each to its unit (RA008). */
 export async function writeUnitEvents(ctx: Ctx, doc: { sourceTable: string; sourceId: string; businessDate: string },
   rows: readonly UnitEventRow[]): Promise<void> {
