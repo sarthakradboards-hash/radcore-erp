@@ -3,7 +3,7 @@
 // so its unit tests reach every branch and Stryker can judge them.
 
 /** The placeholders a quick reply may use, and what fills each. */
-export const PLACEHOLDERS = ['{name}', '{first_name}', '{owner}'] as const;
+const PLACEHOLDERS = ['{name}', '{first_name}', '{owner}'] as const;
 
 /**
  * The reply's text for a lead: `{name}` its name, `{first_name}` the name's first word, `{owner}` its owner's name. One
@@ -13,7 +13,7 @@ export const PLACEHOLDERS = ['{name}', '{first_name}', '{owner}'] as const;
 export function fillReply(body: string, lead: { name: string | null; owner: string | null }): string {
   const name = lead.name?.trim() ?? '';
   const values: Record<(typeof PLACEHOLDERS)[number], string> = {
-    '{name}': name, '{first_name}': name.split(/\s+/)[0] ?? '', '{owner}': lead.owner?.trim() ?? '',
+    '{name}': name, '{first_name}': String(name.split(/\s/, 1)), '{owner}': lead.owner?.trim() ?? '',
   };
   let text = body;
   for (const p of PLACEHOLDERS) {

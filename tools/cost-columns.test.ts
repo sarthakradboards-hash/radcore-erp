@@ -55,6 +55,8 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     total: 'what the party is credited (sales:read)' },
   credit_note_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst_rate: 'a tax rate', cgst: 'tax credited (sales:read)',
     sgst: 'tax credited (sales:read)', igst: 'tax credited (sales:read)', line_total: 'a selling value with tax (sales:read)' },
+  // What marketing spent on a campaign or source (RAD-110): it feeds cost per lead only (campaigns:read), never the books.
+  ad_spend: { amount: 'marketing spend (campaigns:read)' },
   // The books: who may read them is journal:read's question, which the architect is ruling on (auditor-2 on #224).
   journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)' },
 };
