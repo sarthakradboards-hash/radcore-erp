@@ -64,6 +64,7 @@ function AddDelivery({ append }: { append: (lines: InvoiceInput['lines']) => voi
           </option>
         ))}
       </select>
+      {waiting.hasNextPage ? <button type="button" className="kit-button" onClick={waiting.fetchNextPage}>{t('kit.table.more')}</button> : null}
       <button type="button" className="kit-button" disabled={delivery === undefined}
         onClick={() => {
           if (delivery === undefined) return;
