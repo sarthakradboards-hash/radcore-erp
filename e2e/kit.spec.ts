@@ -397,6 +397,10 @@ test.describe('the search box', () => {
     release();
     await page.waitForFunction(() => Object.keys(document.querySelector('form[role="search"]') ?? {})
       .some((k) => k.startsWith('__reactFiber')));
+    // The fiber key is set while React renders, before it commits, and a click in between is dropped (it failed once in
+    // a full run: the text was kept, Show did nothing, the page never navigated). The list is fetched only after mount,
+    // so its "50 shown" says the commit is done, as open() relies on.
+    await expect(shown(page)).toHaveText('50 shown', LOAD);
     await expect(box).toHaveValue('Asha Pune');
     await page.getByRole('search').getByRole('button', { name: 'Show' }).click();
     await expect(page.locator('output[aria-label="Searched"]')).toHaveText('Asha Pune');
