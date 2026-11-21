@@ -13,6 +13,7 @@
   "dependencies": {
     "@radcore/db": "*",
     "@radcore/lib-common": "*",
+    "@radcore/lib-integrations": "*",
     "@radcore/lib-platform": "*",
     "drizzle-orm": "0.45.4",
     "zod": "4.6.7"

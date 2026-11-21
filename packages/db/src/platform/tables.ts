@@ -35,6 +35,20 @@ export const secrets = radcoreTable('secrets', {
 ]);
 
 /**
+ * An integration's secret by its name (RAD-107, the architect): a provider's webhook key, app secret or verify token,
+ * one of each, read for each request by lib-platform's storedSecret so a rotated one applies at once. Encrypted for its
+ * place (`integration_secrets`, `ciphertext`, the name), so a ciphertext copied to another name doesn't decrypt. Set
+ * with tools/set-secret.ts, by the owner login: the app login only reads it, and the read-only login can't.
+ */
+export const integrationSecrets = radcoreTable('integration_secrets', {
+  name: text().primaryKey(),
+  ciphertext: text().notNull(),
+  keyId: text().notNull(),
+}, (t) => [
+  check('ck_integration_secrets_name', sql`${t.name} ~ '^(platform|hr|gst|ops|accounts|crm|stock|payroll|purchasing|sales|service)\\.[a-z][a-z0-9_]*$'`),
+]);
+
+/**
  * Saved-once (ADR-001 §6, §7a; RAD-27, RC-132): one row per write a principal sent with an Idempotency-Key, claimed in
  * the write's own transaction under the primary key, so a second request with the same key waits for the first and
  * then replays its answer, or runs if the first rolled back.

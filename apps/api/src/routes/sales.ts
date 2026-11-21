@@ -12,6 +12,7 @@ import {
   cancelInvoiceNow, addCreditNote, askCreditNoteApproval, cancelCreditNoteNow, creditNoteApprovalSpec, dropCreditNote, getCreditNoteById,
   listCreditNotesPage,
   cancelDeliveryNow, cancelDeliveryReturnNow,
+  orderCounts, quoteCounts,
 } from '@radcore/lib-sales';
 import {
   createPriceList, getPrice, getPriceList, getPriceListChanges, getPriceListVersion, listDiscountLimits, listPriceListRates, listPriceLists, priceListApproval as
@@ -25,6 +26,7 @@ import {
   getPartyPriceList, setPartyPriceList,
   cancelInvoice, cancelCreditNote, createCreditNote, creditNoteApproval, deleteCreditNote, getCreditNote, listCreditNotes,
   requestCreditNoteApproval,
+  countOrders, countQuotes,
   cancelDelivery, cancelDeliveryReturn,
 } from '@radcore/lib-sales/contract';
 
@@ -47,6 +49,7 @@ export default [
   defineRoute(getPartyPriceList, getPartyList),
   defineRoute(setPartyPriceList, setPartyList),
   defineRoute(listQuotes, listQuotesPage),
+  defineRoute(countQuotes, quoteCounts),
   defineRoute(getQuote, getQuoteById),
   defineRoute(createQuote, addQuote),
   defineRoute(updateQuote, changeQuote),
@@ -55,6 +58,7 @@ export default [
   defineRoute(acceptQuote, acceptQuoteNow),
   defineRoute(closeQuote, closeQuoteNow),
   defineRoute(listOrders, listOrdersPage),
+  defineRoute(countOrders, orderCounts),
   defineRoute(getOrder, getOrderById),
   defineRoute(createOrder, addOrder),
   defineRoute(updateOrder, changeOrder),

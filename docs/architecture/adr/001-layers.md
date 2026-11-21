@@ -310,7 +310,8 @@ check names the right owner. A service that rightly reads past the scope can't s
 switches a rule off (`noInlineConfig`): it is named, with its reason, in E7's options, which the config test pins. Each
 exemption names one file and its reason (`exempt`), and that file's functions return only aggregates keyed by ids their
 caller already had in scope, never another's rows. The first is lib-sales' `services/delivered.ts`, which sums every
-posted delivery and return for a party's credit exposure and an order's remaining quantities (RAD-112).
+posted delivery, return and credit note for a party's credit exposure, an order's remaining quantities and an
+invoice's open credit (RAD-112, RAD-114).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:
@@ -716,6 +717,13 @@ unless:
 
 Every write to a part locks its record's row first (a trigger from `audit_attach`'s `owner`), so a save and a
 decision on one record never overlap.
+
+**A spec whose `approved` step posts declares `lockFirst`** (RAD-114). The decision runs it before it locks the
+record, so a decision takes its locks in ADR-006 §1's one order, the period before the documents. It only takes
+locks (lib-accounts' `lockPeriod`: the company profile, then the period lock, `FOR SHARE`) and refuses nothing, since
+it runs for a rejection too and before the scope check; any refusal is the posting's, in `approved`. A refund past
+the day's cash limit inside a credit note's `approved` waits as a draft for its own approval, which someone other
+than the note's approver decides.
 
 **Known limit:** an account invited before the request, possibly by the requester, can still approve. "The approver
 wasn't invited by the requester" isn't a rule, because the admin invites nearly everyone, so the admin's own
