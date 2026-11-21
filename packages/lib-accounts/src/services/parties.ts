@@ -8,6 +8,7 @@ import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-pla
 import { and, asc, eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { PARTY_KINDS, partyTaxIssues, type createParty, type getParty, type listParties, type setPartyCredit, type updateParty } from '../contract.ts';
+import { setPartyManager } from './party-managers.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -108,11 +109,14 @@ export async function changeParty(ctx: Ctx, { id, ...change }: In<typeof updateP
 }
 
 /** PUT /parties/:id/credit (parties:manage): the reason was kept by the handler before this runs. */
-export async function setCreditTerms(ctx: Ctx, { id, creditDays, creditLimit }: In<typeof setPartyCredit>): Promise<Out<typeof setPartyCredit>> {
+export async function setCreditTerms(ctx: Ctx, { id, creditDays, creditLimit, accountManager }: In<typeof setPartyCredit>):
+  Promise<Out<typeof setPartyCredit>> {
   // The route checks this key; a caller from another library is checked here too, so credit terms need it either way.
+  // So does the account manager, who then sees what the party owes at `own` (the architect on RAD-119).
   if (!ctx.can('parties:manage')) throw new AppError('forbidden', 'Setting credit terms needs parties:manage');
   const done = await accountsTx(ctx).update(parties).set({ creditDays, creditLimit }).where(eq(parties.id, id)).returning({ id: parties.id });
   if (done.length === 0) throw new AppError('not_found', 'There is no such party');
+  if (accountManager !== undefined) await setPartyManager(ctx, id, accountManager);
   return {};
 }
 

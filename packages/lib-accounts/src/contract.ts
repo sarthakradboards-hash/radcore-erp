@@ -120,8 +120,11 @@ export const updateParty = defineContract({
 export const setPartyCredit = defineContract({
   method: 'PUT', path: '/parties/:id/credit', auth: 'session', perm: 'parties:manage', tx: write,
   input: z.object({ id: idString(), creditDays: z.number().int().min(0).max(365).nullable(), creditLimit: moneyString().nullable(),
+    // Who manages the party (a person's id), or null for no one; left out, it stays as it is (RAD-119).
+    accountManager: idString().nullable().optional(),
     reason: reason() }),
   output: z.object({}),
+  errors: ['unknown_user'],
 });
 
 // The chart of accounts and the journal (RAD-86, M2-16's screens; ADR-006 §2, §3). The books are only posted and
@@ -314,3 +317,5 @@ export const reverseCreditApplicationContract = defineContract({
   errors: ['already_reversed', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
   dbErrors: { '23505:ux_credit_applications_reverses': { code: 'already_reversed', message: 'That credit application is already reversed' } },
 });
+
+export * from './contract-collect.ts';
