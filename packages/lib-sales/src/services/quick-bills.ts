@@ -5,7 +5,8 @@
 // rolls all of it back.
 import { deliveryLines, quickBillHolds, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import {
-  allocatePayment, companyForInvoice, holdPeriod, moneyAccountRefusal, recordCounterReceipt, systemAccountId, systemPartyId,
+  addParty, allocatePayment, companyForInvoice, holdPeriod, moneyAccountRefusal, partyWithPhone, recordCounterReceipt, systemAccountId,
+  systemPartyId,
 } from '@radcore/lib-accounts';
 import { dec, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, defineSetting, versionHash, type Ctx } from '@radcore/lib-platform';
@@ -14,9 +15,10 @@ import { z } from 'zod';
 import type { completeQuickBill, createQuickBill, holdQuickBill } from '../contract.ts';
 import type { ApprovedThrough } from './checks.ts';
 import { addDelivery, postDeliveryNow, postDeliveryThrough } from './deliveries.ts';
-import { postInvoiceNow, postInvoiceThrough } from './invoice-post.ts';
+import { B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, postInvoiceNow, postInvoiceThrough } from './invoice-post.ts';
+import { needsBuyerDetails } from './invoice-rules.ts';
 import { addInvoice } from './invoices.ts';
-import { orderCheckNow, orderOverride } from './order-checks.ts';
+import { heldExposure, orderCheckNow, orderOverride } from './order-checks.ts';
 import { addCounterOrder, askOrderOverride, confirmOrderNow, getOrderById } from './orders.ts';
 import { holdOf, type PlannedPayment } from './quick-bill-holds.ts';
 import { looksLikeCardNumber } from './quick-bill-rules.ts';
@@ -174,7 +176,7 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
  */
 export async function holdBillNow(ctx: Ctx, input: In<typeof holdQuickBill>): Promise<Out<typeof holdQuickBill>> {
   needKeys(ctx);
-  const partyId = input.partyId ?? await systemPartyId(ctx, 'walk_in');
+  const partyId = input.buyer === undefined ? input.partyId ?? await systemPartyId(ctx, 'walk_in') : await buyerParty(ctx, input);
   for (const [n, p] of input.payments.entries()) {
     if (!dec(p.amount).gt(0)) {
       throw new AppError('no_payment_amount', 'Each payment is more than 0', [{ path: ['payments', n, 'amount'], code: 'no_payment_amount',
@@ -187,6 +189,7 @@ export async function holdBillNow(ctx: Ctx, input: In<typeof holdQuickBill>): Pr
     : { method: p.method, amount: p.amount });
   const order = await addCounterOrder(ctx, { partyId, businessDate: input.businessDate, notes: input.notes, lines: orderLinesOf(input.lines) });
   await walkInPaysInFull(ctx, partyId, order.id, planned);
+  if (input.buyer !== undefined) await buyerDetailsFor(ctx, input.buyer, order.id);
   await salesTx(ctx).insert(quickBillHolds).values({ orderId: order.id, locationId: input.locationId, payments: planned,
     picks: input.lines.map((l, i) => ({ lineNo: i + 1, batches: l.batches, serials: l.serials })) });
   const version = await orderOverride.version(ctx, order.id, { forUpdate: false });
@@ -195,6 +198,43 @@ export async function holdBillNow(ctx: Ctx, input: In<typeof holdQuickBill>): Pr
   }
   const asked = await askOrderOverride(ctx, order);
   return { status: 'pending_override', orderId: order.id, approvalId: asked.id, versionHash: asked.versionHash };
+}
+
+/**
+ * A walk-in who leaves a balance, named (the architect's re-ruling on Sarthak's "Allow with approval"): asked for under
+ * sales:counter_credit, made under parties:write. The party with that phone is offered rather than made again; else a new
+ * customer, unregistered, in the shop's state, with no credit limit, so its unpaid part needs the ordinary approval. It's
+ * made in the hold's own transaction, so the approval names a real party.
+ */
+async function buyerParty(ctx: Ctx, input: In<typeof holdQuickBill>): Promise<string> {
+  const b = input.buyer;
+  if (b === undefined) throw new Error('buyerParty without a buyer');
+  if (input.partyId !== undefined) {
+    throw new AppError('buyer_for_walk_in_only', 'A named party is billed as itself: give a buyer only for a walk-in',
+      [{ path: ['buyer'], code: 'buyer_for_walk_in_only', message: 'Remove the buyer, or the party' }]);
+  }
+  const missing = ['sales:counter_credit', 'parties:write'].filter((k) => !ctx.can(k));
+  if (missing.length > 0) throw new AppError('forbidden', `Leaving a balance on a counter sale needs ${missing.join(', ')}`);
+  if (await partyWithPhone(ctx, b.phone) !== null) {
+    throw new AppError('buyer_has_party', 'A customer with this phone exists already: choose them, so their own limit and history apply',
+      [{ path: ['buyer', 'phone'], code: 'buyer_has_party', message: 'Choose the customer with this phone' }]);
+  }
+  const shop = await companyForInvoice(ctx);
+  const { id } = await addParty(ctx, { name: b.name, kinds: ['customer'], gstin: null, pan: null, composition: false, stateCode: shop.stateCode,
+    phone: b.phone, email: null, addressLine1: b.addressLine1 ?? null, addressLine2: null, city: b.city ?? null, pincode: b.pincode ?? null });
+  return id;
+}
+
+/** At or above sales.b2c_details_limit an unregistered buyer is named with their address (Rule 46): asked for at the
+ * hold, not left to the invoice's posting. */
+async function buyerDetailsFor(ctx: Ctx, b: NonNullable<In<typeof holdQuickBill>['buyer']>, orderId: string): Promise<void> {
+  const { amounts } = await getOrderById(ctx, { id: orderId });
+  if (amounts.total === null) return;
+  const big = needsBuyerDetails({ total: amounts.total, taxable: amounts.taxable }, ctx.settings.get(B2C_DETAILS_LIMIT), ctx.settings.get(B2C_DETAILS_BASIS));
+  if (big && (b.addressLine1 === undefined || b.city === undefined || b.pincode === undefined)) {
+    throw new AppError('buyer_details_required', 'A bill this size names its buyer: add their address, city and PIN code',
+      [{ path: ['buyer'], code: 'buyer_details_required', message: 'Add the address, city and PIN code' }]);
+  }
 }
 
 /**
@@ -216,6 +256,11 @@ export async function completeBillNow(ctx: Ctx, input: In<typeof completeQuickBi
   const hold = await holdOf(ctx, input.orderId, true);
   if (hold === null || order.status !== 'draft') throw new AppError('not_held', 'This order isn’t a quick bill held for approval');
   if (order.approved === null) throw new AppError('needs_override', 'This held bill’s override isn’t approved yet');
+  // The approval holds only for what was owed when it was given: a balance grown since is asked again (the architect).
+  const owed = await heldExposure(ctx, input.orderId);
+  if (hold.approvedAfter !== null && owed !== null && dec(owed).gt(hold.approvedAfter)) {
+    throw new AppError('version_changed', 'The party owes more than when this bill was approved: ask for its approval again');
+  }
   // The amounts are the hold's, never new ones; each card payment takes its code, in order (Q4's rules).
   let card = 0;
   const payments: Payment[] = hold.payments.map((p) => p.method === 'card'

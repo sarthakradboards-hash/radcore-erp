@@ -86,6 +86,15 @@ export async function getPartyById(ctx: Ctx, { id }: In<typeof getParty>): Promi
  * (auditor-2 on #304, RAD-115). Its state follows the company's (setCompanyProfile). */
 const systemParty = () => new AppError('system_party', 'This party is kept by RadCore itself and can’t be changed here');
 
+/** The party with this phone, as parties' phones are normalised, other than a system party; or null (RAD-115: the
+ * counter offers it rather than make another). */
+export async function partyWithPhone(ctx: Ctx, phone: string): Promise<string | null> {
+  const p = normalisePhone(phone);
+  if (p === null || p === undefined) return null;
+  const [row] = await accountsTx(ctx).select({ id: parties.id }).from(parties).where(and(eq(parties.phone, p), isNull(parties.systemKey))).limit(1);
+  return row?.id ?? null;
+}
+
 /** A seeded party's id, by its system key (ADR-006 §2): the Counter customer, `walk_in` (RAD-115). */
 export async function systemPartyId(ctx: Ctx, key: string): Promise<string> {
   const [row] = await accountsTx(ctx).select({ id: parties.id }).from(parties).where(eq(parties.systemKey, key)).limit(1);

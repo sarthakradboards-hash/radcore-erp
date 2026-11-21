@@ -10,7 +10,7 @@ import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } fro
 import { deliveredNotInvoiced } from './delivered.ts';
 import { amountsOf, type Amounts } from './document-amounts.ts';
 import { listRateBeforeTax, netRate } from './document-rules.ts';
-import { heldPaid } from './quick-bill-holds.ts';
+import { heldPaid, setApprovedAfter } from './quick-bill-holds.ts';
 
 type Order = { partyId: string; businessDate: string; createdBy: string };
 type Line = { itemId: string; qty: string; rate: string; discountPercent: string; listRate: string | null; listTaxInclusive: boolean | null };
@@ -40,28 +40,35 @@ async function saleOf(ctx: Ctx, o: Order, lines: readonly Line[], a: Amounts, pa
 }
 
 /** The override's spec, for defineApproval with approvalContracts('sales-order-override', 'sales:override'). */
+/** The order as its override judges it: its figures, and what it asks checkSale (a held quick bill's with its planned
+ * payments taken). Its maker asks (sales:write) and someone else decides (sales:override); outside both, null. */
+async function readOrder(ctx: Ctx, id: string, { forUpdate }: { forUpdate: boolean }) {
+  const q = salesTx(ctx).select({ partyId: salesOrders.partyId, businessDate: salesOrders.businessDate, status: salesOrders.status,
+    createdBy: salesOrders.createdBy })
+    .from(salesOrders).where(eq(salesOrders.id, id));
+  const [order] = forUpdate ? await q.for('update') : await q;
+  // Its maker asks (sales:write) and someone else decides (sales:override); outside both, there's no such order.
+  if (order === undefined || order.status !== 'draft') return null;
+  if (!ctx.can('sales:write', { owner: order.createdBy }) && !ctx.can('sales:override', { owner: order.createdBy })) return null;
+  const lines = await linesOf(ctx, id);
+  // A held quick bill is judged with its planned payments taken, as completing it takes them first (RAD-115).
+  const paid = await heldPaid(ctx, id);
+  return { figures: figuresOf(order, lines), sale: await saleOf(ctx, order, lines, await amountsOf(ctx, order.partyId, order.businessDate, lines),
+    paid ?? undefined) };
+}
+
 export const orderOverride = overrideApproval({
   kind: 'sales-order-override',
   table: 'sales_orders',
   parts: ['sales_order_lines'],
-  async read(ctx, id, { forUpdate }) {
-    const q = salesTx(ctx).select({ partyId: salesOrders.partyId, businessDate: salesOrders.businessDate, status: salesOrders.status,
-      createdBy: salesOrders.createdBy })
-      .from(salesOrders).where(eq(salesOrders.id, id));
-    const [order] = forUpdate ? await q.for('update') : await q;
-    // Its maker asks (sales:write) and someone else decides (sales:override); outside both, there's no such order.
-    if (order === undefined || order.status !== 'draft') return null;
-    if (!ctx.can('sales:write', { owner: order.createdBy }) && !ctx.can('sales:override', { owner: order.createdBy })) return null;
-    const lines = await linesOf(ctx, id);
-    // A held quick bill is judged with its planned payments taken, as completing it takes them first (RAD-115).
-    const paid = await heldPaid(ctx, id);
-    return { figures: figuresOf(order, lines), sale: await saleOf(ctx, order, lines, await amountsOf(ctx, order.partyId, order.businessDate, lines),
-      paid ?? undefined) };
-  },
+  read: readOrder,
   // It records what was approved; confirming the order is its maker's next step.
   async approved(ctx, id) {
     const version = await orderOverride.version(ctx, id, { forUpdate: false });
     if (version !== null) await salesTx(ctx).update(salesOrders).set({ overrideVersion: versionHash(version) }).where(eq(salesOrders.id, id));
+    // A held quick bill's approval holds only for what was owed then (the architect on RAD-115).
+    const exposure = await heldExposure(ctx, id);
+    if (exposure !== null) await setApprovedAfter(ctx, id, exposure);
   },
   async rejected() {
     // A refused override leaves the order a draft, to change or to ask again.
@@ -77,6 +84,14 @@ export const ISSUE_WORDS: Readonly<Record<string, string>> = {
   no_list_rate: 'This item has no price on the party’s price list to check its discount against',
   over_discount: 'This line’s discount is more than your limit',
 };
+
+/** What a held quick bill's party would owe, its planned payments taken: what its approval holds for. Null when the
+ * order isn't held. Reads only. */
+export async function heldExposure(ctx: Ctx, orderId: string): Promise<string | null> {
+  if (await heldPaid(ctx, orderId) === null) return null;
+  const doc = await readOrder(ctx, orderId, { forUpdate: false });
+  return doc === null ? null : (await checkSale(ctx, doc.sale)).credit.after;
+}
 
 /** The order's check now, as confirming it will run it: what completing a held quick bill lets its delivery and invoice
  * through on (the issue kinds, and what's owed then). Reads only. */

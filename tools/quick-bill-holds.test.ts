@@ -3,12 +3,15 @@
 // stock, list and named party are committed; the bill runs in one transaction that is rolled back, with the company
 // profile set there (company.test.ts needs the row unset), and the approver decides in that same transaction (actingAs).
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, openFinancialYear, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
+import {
+  addParty, openFinancialYear, partyReceivable, postEntry, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId, systemPartyId,
+  toCollectPage,
+} from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { completeBillNow, confirmOrderNow, getInvoiceById, holdBillNow, orderOverride } from '@radcore/lib-sales';
+import { askOrderOverride, completeBillNow, confirmOrderNow, getInvoiceById, holdBillNow, orderOverride } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
@@ -28,6 +31,7 @@ const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: ['it
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const m = (s: string) => moneyString().parse(s);
+const mobile = () => `9${String(randomBytes(4).readUInt32BE() % 1_000_000_000).padStart(9, '0')}`;
 const COMPANY = { legalName: 'Radboards Pvt Ltd', gstin: '27AAPFU0939F1ZV', addressLine1: 'Plot 4, Bhosari MIDC', addressLine2: null,
   city: 'Pune', pincode: '411019', reason: 'Held quick bills in a test' };
 class RolledBack extends Error {}
@@ -64,8 +68,11 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     return { kind: 'user', userId: rows[0]?.id ?? '', permissions: ['sales:override', 'sales:read'], role: 'owner' };
   };
 
-  /** A store holding 10 PADs rated 18% at 200.00 each, a list selling them at 345.00, and a customer allowed `limit`. */
-  async function setup(limit: string | null) {
+  /** A store holding 10 PADs rated 18% at 200.00 each, a list selling them at 345.00, and a customer allowed `limit`, whose
+   * phone is `phone` when given. */
+  async function setup(limit: string | null, phone?: string) {
+    // The approver first, well before any request: decideApproval compares times as milliseconds (approver_too_new).
+    const boss = await approver();
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
@@ -77,18 +84,18 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: placeId,
         qty: q('10'), rate: unitPriceString().parse('200'), batches: [{ batchNo: 'B1', qty: q('10') }] }] });
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: ['customer'], gstin: null, pan: null, composition: false,
-        stateCode: '27', phone: null, email: null, addressLine1: '1 Main Road', addressLine2: null, city: 'Pune', pincode: '411001' });
+        stateCode: '27', phone: phone ?? null, email: null, addressLine1: '1 Main Road', addressLine2: null, city: 'Pune', pincode: '411001' });
       if (limit !== null) await setCreditTerms(ctx, { id: partyId, creditDays: 30, creditLimit: m(limit), reason: 'Test' });
       return { itemId, placeId, partyId };
     });
     const listId = await priceListFrom(su, DATE, { [made.itemId]: '345' });
     const { rows: [batch] } = await su.query<{ id: string }>('select id from radcore.batches where item_id = $1', [made.itemId]);
-    return { ...made, listId, batchId: batch?.id ?? '' };
+    return { ...made, listId, batchId: batch?.id ?? '', boss };
   }
   type At = Awaited<ReturnType<typeof setup>>;
   /** In one rolled-back transaction as a counter person, with the company set and the test's list the default. */
   async function atCounter<R>(at: At, fn: (ctx: Ctx, approve: (h: { approvalId: string; versionHash: string }) => Promise<void>) => Promise<R>) {
-    const [clerk, boss] = [await counter(), await approver()];
+    const [clerk, boss] = [await counter(), at.boss];
     let out: R | undefined;
     await run(async (raw) => {
       await setCompanyProfile(raw, COMPANY);
@@ -105,7 +112,9 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     return out as R;
   }
   type Pay = Parameters<typeof holdBillNow>[1]['payments'][number];
-  const hold = (ctx: Ctx, at: At, qty: string, payments: Pay[], partyId?: string, rate = '345') => holdBillNow(ctx, { ...(partyId === undefined ? {} : { partyId }),
+  type Buyer = { name: string; phone: string };
+  const hold = (ctx: Ctx, at: At, qty: string, payments: Pay[], partyId?: string, rate = '345', buyer?: Buyer) => holdBillNow(ctx, {
+    ...(partyId === undefined ? {} : { partyId }), ...(buyer === undefined ? {} : { buyer }),
     businessDate: DATE, locationId: at.placeId, notes: null, payments, lines: [{ itemId: at.itemId, qty: q(qty), rate: unitPriceString().parse(rate),
       discountPercent: percentString({ max: '100' }).parse('0'), batches: [{ batchId: at.batchId, qty: q(qty) }], serials: [] }] });
   const complete = (ctx: Ctx, orderId: string, approvalCodes: string[] = []) => completeBillNow(ctx, { orderId, businessDate: DATE, approvalCodes });
@@ -147,5 +156,49 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     const out = await atCounter(at, async (ctx) => [await failure(hold(ctx, at, '3', [cash('1000')])),
       await failure(hold(ctx, at, '3', [cash('1221')], at.partyId))]);
     expect(out).toEqual(['walk_in_pays_in_full', 'no_override_needed']);
+  });
+  // The architect's (a): an approval holds only for what was owed then. Approved at 231.00 over a 200.00 limit, then the
+  // party owes 5,000.00 more (a test entry, Dr Debtors, Cr Sales): refused; approved again, it completes.
+  it('refuses to complete once the party owes more than when it was approved, and completes once approved again', async () => {
+    const at = await setup('200');
+    const out = await atCounter(at, async (ctx, approve) => {
+      const h = await hold(ctx, at, '1', [cash('100')], at.partyId);
+      await approve(h);
+      await postEntry(ctx, { kind: 'invoice', businessDate: DATE, source: { table: 'invoices', id: randomUUID() },
+        lines: [{ account: { system: 'debtors' }, partyId: at.partyId, debit: m('5000') }, { account: { system: 'sales' }, credit: m('5000') }] });
+      const grown = await failure(complete(ctx, h.orderId));
+      const again = await askOrderOverride(ctx, { id: h.orderId });
+      await approve({ approvalId: again.id, versionHash: again.versionHash });
+      return [grown, (await complete(ctx, h.orderId)).left];
+    });
+    expect(out).toEqual(['version_changed', '307.00']);
+  });
+
+  // The architect's re-ruling on Sarthak's "Allow with approval": a walk-in who leaves a balance is named, and the bill
+  // goes to that customer through the ordinary credit approval; the Counter customer itself never owes anything.
+  it('holds a walk-in’s balance on a new named customer, approved and completed, and on To collect; the Counter customer owes nothing', async () => {
+    const at = await setup('100000');
+    const out = await atCounter(at, async (ctx, approve) => {
+      const h = await hold(ctx, at, '1', [cash('100')], undefined, '345', { name: 'Ravi Kumar', phone: mobile() });
+      await approve(h);
+      const b = await complete(ctx, h.orderId);
+      const inv = await getInvoiceById(ctx, { id: b.invoice.id });
+      const due = await toCollectPage({ ...ctx, can: () => true }, { limit: 200, filter: {} });
+      const walkIn = await systemPartyId(ctx, 'walk_in');
+      return { left: b.left, party: inv.partyName, collect: due.items.some((i) => i.partyId === inv.partyId),
+        walkIn: (await partyReceivable(ctx, walkIn, DATE)).outstanding };
+    });
+    expect(out).toEqual({ left: '307.00', party: 'Ravi Kumar', collect: true, walkIn: '0.00' });
+  });
+
+  it('offers the customer who has the phone already, and refuses to ask without sales:counter_credit', async () => {
+    const known = mobile();
+    const at = await setup('100000', known);
+    const out = await atCounter(at, async (ctx) => {
+      const taken = await failure(hold(ctx, at, '1', [cash('100')], undefined, '345', { name: 'Someone', phone: known }));
+      const without = await actingAs(ctx, { ...ctx.principal, permissions: ctx.principal.permissions.filter((p) => p !== 'sales:counter_credit') });
+      return [taken, await failure(hold(without, at, '1', [cash('100')], undefined, '345', { name: 'Ravi', phone: mobile() }))];
+    });
+    expect(out).toEqual(['buyer_has_party', 'forbidden']);
   });
 });

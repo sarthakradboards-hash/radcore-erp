@@ -60,13 +60,21 @@ export const createQuickBill = defineContract({
  * Holds a bill that needs an approval (a discount, a price below cost, credit) for it (Sarthak: "Hold, then complete").
  * The same input as the save and the same keys. Its order is saved a draft, with its place, picks and planned payments
  * (method and amount: no card is charged yet), and its override is asked for, judged with those payments taken. A bill
- * that needs none is `no_override_needed`: save it whole. The Counter customer still pays in full.
+ * that needs none is `no_override_needed`: save it whole. The Counter customer still pays in full; to leave a balance,
+ * `buyer` names them (under sales:counter_credit and parties:write): the party with that phone is offered instead
+ * (`buyer_has_party`, to pick it), else a new customer is made, whose unpaid part is then over its (no) limit.
  */
+/** A walk-in who leaves a balance, named (the architect on Sarthak's "Allow with approval"): a name, a mobile, and an
+ * address at or above sales.b2c_details_limit (Rule 46). The phone is the party's contact only: no lead, no consent. */
+const buyer = z.object({ name: z.string().trim().min(1).max(200), phone: z.string().trim().min(1).max(20),
+  addressLine1: z.string().trim().min(1).max(200).optional(), city: z.string().trim().min(1).max(100).optional(),
+  pincode: z.string().trim().regex(/^[1-9][0-9]{5}$/, 'Six digits, not starting with 0').optional() });
+
 export const holdQuickBill = defineContract({
   method: 'POST', path: '/sales/quick-bills/hold', auth: 'session', perm: 'invoices:write', tx: write,
-  input: billIn, output: z.object({ status: z.literal('pending_override'), orderId: idString(), approvalId: idString(), versionHash: z.string() }),
+  input: billIn.extend({ buyer: buyer.optional() }), output: z.object({ status: z.literal('pending_override'), orderId: idString(), approvalId: idString(), versionHash: z.string() }),
   errors: [...new Set([...createOrder.errors, 'no_gst_rate', 'company_profile_incomplete', 'walk_in_pays_in_full', 'no_payment_amount',
-    'no_override_needed'])],
+    'no_override_needed', 'buyer_has_party', 'buyer_details_required', 'buyer_for_walk_in_only'])],
 });
 
 /**

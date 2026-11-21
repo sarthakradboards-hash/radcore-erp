@@ -19,7 +19,9 @@ export {
   allocatePayment, applyCredit, paidOf, reverseAllocation, reverseCreditApplication,
 } from './services/allocations.ts';
 export type { Receivable } from './rules/receivable.ts';
-export { addParty, changeParty, getPartyById, holdParty, listPartiesPage, partyNames, setCreditTerms, systemPartyId } from './services/parties.ts';
+export {
+  addParty, changeParty, getPartyById, holdParty, listPartiesPage, partyNames, partyWithPhone, setCreditTerms, systemPartyId,
+} from './services/parties.ts';
 
 // The kinds a sale may name, for lib-sales' sellingTo and the parties list's sellsTo filter (RAD-131).
 export { SELLS_TO_KINDS } from './contract.ts';

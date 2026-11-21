@@ -82,6 +82,8 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'credit_notes:cancel', module: 'Sales', label: 'Cancel a posted credit note', records: ['@radcore/db/sales#creditNotes'] },
   { key: 'sales:override', module: 'Sales', label: 'Approve another person’s sale over a credit limit, below cost or over a discount limit',
     secondFactor: true },
+  // Who may ask; sales:override approves (RAD-115, Sarthak's "Allow with approval"). No second factor: the approval has it.
+  { key: 'sales:counter_credit', module: 'Sales', label: 'Ask to leave a balance on a counter sale', allOnly: true },
   // Vehicle bookings (M3-13, RAD-117; ADR-007 §5): a booking holds a unit and takes its advance. Scoped by who made it.
   // Refunding a cancelled booking's advance is keyed by how much of what's left (Sarthak, 20 Nov): all of it needs
   // refund_full, a part refund_part; each moves money out, so each needs the second factor (D-19).

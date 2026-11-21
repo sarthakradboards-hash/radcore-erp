@@ -1,5 +1,5 @@
 {
-  "id": "29fc2bf6-2656-4b4b-8684-e68c7d47f5c6",
+  "id": "eb61bfdf-f7f9-486c-9100-5118a13db440",
   "prevId": "28873051-d260-4b29-bb7a-5e623c19a35a",
   "version": "7",
   "dialect": "postgresql",
@@ -14166,6 +14166,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "approved_after": {
+          "name": "approved_after",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -14245,7 +14251,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_quick_bill_holds_approved_after": {
+          "name": "ck_quick_bill_holds_approved_after",
+          "value": "\"radcore\".\"quick_bill_holds\".\"approved_after\" <> 'NaN'"
+        }
+      },
       "isRLSEnabled": false
     }
   },
