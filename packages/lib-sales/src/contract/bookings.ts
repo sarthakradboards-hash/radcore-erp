@@ -30,16 +30,22 @@ const bookingRow = z.object({
 /** Bookings, newest first, a page at a time: the principal's own at `own` scope. */
 export const listBookings = defineContract({
   method: 'GET', path: '/sales/bookings', auth: 'session', perm: 'bookings:read', tx: read,
-  input: listInput(z.object({ status: status.optional(), orderId: idString().optional(), leadId: idString().optional() })),
+  input: listInput(z.object({ status: status.optional(), orderId: idString().optional(), leadId: idString().optional(),
+    // Delivered bookings whose checklist isn't complete (RC-208, the architect).
+    checklist: z.literal('incomplete').optional() })),
   output: listOf(bookingRow),
 });
 
 /** One booking, with its advance read live from its held receipts: what it took in, and what's left of it (taken less
- * what's applied to an invoice or refunded, refunds waiting for approval included). */
+ * what's applied to an invoice or refunded, refunds waiting for approval included). `unitCondition` marks a damaged unit
+ * booked under stock.sell_damaged_units. Once delivered, its checklist, and whether it's complete (RC-208). */
 export const getBooking = defineContract({
   method: 'GET', path: '/sales/bookings/:id', auth: 'session', perm: 'bookings:read', tx: read,
   input: z.object({ id: idString() }),
-  output: bookingRow.extend({ cancelReason: z.string().nullable(), advance: z.object({ taken: moneyString(), left: moneyString() }) }),
+  output: bookingRow.extend({ cancelReason: z.string().nullable(), advance: z.object({ taken: moneyString(), left: moneyString() }),
+    unitCondition: z.string().nullable(),
+    checklist: z.object({ inspected: z.boolean(), briefed: z.boolean(), warrantyRegistered: z.boolean(), photoId: idString().nullable(),
+      noteId: idString().nullable(), complete: z.boolean() }) }),
 });
 
 /**

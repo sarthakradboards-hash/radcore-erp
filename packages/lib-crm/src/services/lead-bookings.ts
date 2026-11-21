@@ -20,6 +20,15 @@ export async function bookingMade(ctx: Ctx, leadId: string, note: string): Promi
   await tx.insert(leadActivities).values({ leadId, kind: 'stage', stage: 'converted', note });
 }
 
+/** A lead another record names (a test ride, RAD-117): one the person may read, else not_found, so no lead id is tied
+ * to a record blind. Answers nothing. */
+export async function leadOpens(ctx: Ctx, leadId: string): Promise<void> {
+  const [lead] = await crmTx(ctx).select({ owner: leads.owner }).from(leads).where(eq(leads.id, leadId));
+  if (lead === undefined || !(ctx.can('leads:read', { owner: lead.owner ?? '' }) || (lead.owner === null && ctx.can('leads:unassigned')))) {
+    throw new AppError('not_found', 'There is no such lead', [{ path: ['leadId'], code: 'unknown', message: 'Choose a lead' }]);
+  }
+}
+
 /** A lead's last live booking cancelled: back to interested, its follow-up due `on` (the cancellation's day). A system
  * move: the cancellation was keyed already (the architect). The caller judges "last live booking". */
 export async function bookingCancelled(ctx: Ctx, leadId: string, note: string, on: string): Promise<void> {
