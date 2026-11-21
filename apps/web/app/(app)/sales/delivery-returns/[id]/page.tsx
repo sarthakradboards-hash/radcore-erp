@@ -2,7 +2,7 @@
 // One delivery return (RAD-125 on RAD-112's contracts), in the record layout: where it is (the status bar), the delivery it
 // takes goods back from (a related-record button), its facts and its lines. A draft is posted (the goods come back into the
 // batches they left with) or deleted; a posted return is cancelled with a date and a reason under deliveries:cancel. A
-// return never needs an override: it only takes goods back. Its form waits for the stock-by-batch read.
+// return never needs an override: it only takes goods back.
 import { dateString, formatDate, indiaDate } from '@radcore/lib-common';
 import {
   cancelDeliveryReturn, deleteDeliveryReturn, getDeliveryReturn, listDeliveryReturns, postDeliveryReturn,
@@ -71,10 +71,10 @@ export default function DeliveryReturnPage() {
         <dt>{t('sales.notes')}</dt><dd>{ret.notes ?? t('sales.noNotes')}</dd>
       </dl>
       <DocumentLines caption={ret.number === null ? t('sales.lines') : t('sales.lines.of', { number: ret.number })} lines={ret.lines} />
-      {ret.status === 'draft' ? <p>{t('sales.delivery.draftNote')}</p> : null}
       <div className="kit-actions">
         {mayWrite && ret.status === 'draft' ? (
           <>
+            <Link className="kit-button" href={`/sales/delivery-returns/${id}/edit`}>{t('sales.return.edit')}</Link>
             <button type="button" className="kit-button kit-button-primary" onClick={open('post')}>{t('sales.return.post')}</button>
             <button type="button" className="kit-button" onClick={open('delete')}>{t('sales.delete')}</button>
           </>
