@@ -9,7 +9,7 @@ import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accoun
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { captureEnquiry } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addBooking, addDelivery, addInvoice, addOrder, cancelBookingNow, cancelDeliveryNow, cancelOrderNow, changeOrder, closeOrderNow,
@@ -17,8 +17,11 @@ import {
   recordRide, refundBookingNow, saveChecklist, scheduleRide,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace, postUnitEvents } from '@radcore/lib-stock';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -121,6 +124,19 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     }
     return id;
   };
+  /** A request through the API, so a refusal is checked as declared on its route, not answered as a 500. */
+  const http = async (method: string, path: string, body: unknown) => {
+    const config = loadConfig(testSettings(), 'api');
+    const app = createApp(config, { info: () => undefined, error: () => undefined }, { db, authenticate: async () => staff, routes: salesRoutes });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}${path}`, { method, body: JSON.stringify(body),
+        headers: { 'content-type': 'application/json', origin: config.publicOrigin, 'idempotency-key': randomUUID() } });
+      return [res.status, (await res.json() as { code?: string }).code ?? 'ok'];
+    } finally {
+      await server.stop();
+    }
+  };
 
   it('keeps a delivered booking’s checklist, each file a ready upload of its own kind; the invoice never waits for it (RC-208)', async () => {
     const booked = `S-${tag()}`;
@@ -134,7 +150,8 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect(await failure(save())).toBe('wrong_status');
     const deliveryId = await deliver(at, line, at.placeId, booked);
     // An import CSV can't stand in for the photo, nor a photo for the signed note; a file still being checked waits.
-    expect(await failure(save({ photoId: await fileOf('statement') }))).toBe('wrong_file_kind');
+    expect(await http('PUT', `/sales/bookings/${id}/checklist`, { inspected: true, briefed: true, warrantyRegistered: true,
+      photoId: await fileOf('statement'), noteId: note })).toEqual([422, 'wrong_file_kind']);
     expect(await failure(save({ noteId: photo }))).toBe('wrong_file_kind');
     expect(await failure(save({ photoId: await fileOf('delivery_photo', 'pending') }))).toBe('not_ready');
     expect(await save({ briefed: false, noteId: null })).toEqual({ complete: false });
