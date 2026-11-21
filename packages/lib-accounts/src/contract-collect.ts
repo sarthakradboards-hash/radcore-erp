@@ -46,14 +46,21 @@ export const REMINDER_CHANNELS = ['whatsapp', 'phone', 'email', 'in_person'] as 
 const reminder = owed.omit({ notOnABill: true }).extend({ id: idString(), asAt: momentString(), channel: z.enum(REMINDER_CHANNELS),
   note: z.string().nullable() });
 
+/** Why a reminder went without a link: the person may not share that invoice, or nothing owed is on an invoice. */
+export const NO_LINK_REASONS = ['no_share_key', 'not_an_invoice'] as const;
+
 /** POST /parties/:id/reminders (receivables:remind, and receivables:read, since it answers with the amounts): records a
  * reminder with what the party owes now, and answers with the text to send: the party's name and the amounts, nothing
- * of how to reach them (ADR-001 §7a). Sending it by WhatsApp waits for M7. */
+ * of how to reach them (ADR-001 §7a). Sending it by WhatsApp waits for M7.
+ * With it comes a new link to the party's oldest overdue invoice (RAD-118, the architect on RAD-119): its token is in
+ * `link.path`'s fragment, in this answer only, so the answer is never kept. apps/api mounts it on lib-sales'
+ * remindWithLink, which makes the link: lib-accounts can't reach lib-sales. */
 export const recordReminder = defineContract({
-  method: 'POST', path: '/parties/:id/reminders', auth: 'session', perm: 'receivables:remind', tx: write,
+  method: 'POST', path: '/parties/:id/reminders', auth: 'session', perm: 'receivables:remind', tx: write, storesAnswer: false,
   input: z.object({ id: idString(), channel: z.enum(REMINDER_CHANNELS), note: z.string().trim().min(1).max(500).optional() }),
-  output: reminder.extend({ text: z.string() }),
-  errors: ['nothing_owed'],
+  output: reminder.extend({ text: z.string(), link: z.object({ id: idString(), path: z.string(), expiresAt: momentString() }).nullable(),
+    noLink: z.enum(NO_LINK_REASONS).nullable() }),
+  errors: ['nothing_owed', 'wrong_status'],
 });
 
 /** GET /parties/:id/reminders (receivables:read): the party's reminders, the latest first, each with who made it. */

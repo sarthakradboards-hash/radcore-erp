@@ -367,7 +367,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /parties/:id': ['lib-accounts', 'lib-platform'],
   'GET /parties/:id/statement': ['lib-accounts', 'lib-platform'],
   'GET /to-collect': ['lib-accounts', 'lib-platform'],
-  'POST /parties/:id/reminders': ['lib-accounts', 'lib-platform'],
+  'POST /parties/:id/reminders': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'GET /parties/:id/reminders': ['lib-accounts', 'lib-platform'],
   'POST /parties': ['lib-accounts', 'lib-platform'],
   'PATCH /parties/:id': ['lib-accounts', 'lib-platform'],
