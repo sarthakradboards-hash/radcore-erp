@@ -97,10 +97,12 @@ export const requestInvoiceOverride = defineContract({
 /** The invoice overrides' approval routes (RAD-38). */
 export const invoiceOverrideApproval = approvalContracts('sales-invoice-override', 'sales:override');
 /** Cancels a posted invoice (ADR-007 §6, F10): its entry mirrored on the cancellation's day, the deliveries it billed
- * open again. Refused while payments or credits are applied to it (RC-126: receipts are never touched). */
+ * open again. Refused while payments or credits are applied to it (RC-126: receipts are never touched), or a credit
+ * note stands against it. */
 export const cancelInvoice = defineContract({
   method: 'POST', path: '/sales/invoices/:id/cancel', auth: 'session', perm: 'invoices:cancel', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),
-  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive', 'still_applied'],
+  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive', 'still_applied',
+    'credit_note_stands'],
   dbErrors: { 'RA006:document_still_applied': { code: 'still_applied', message: 'Payments or credits are still applied to this invoice: reverse them first' } },
 });

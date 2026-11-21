@@ -167,3 +167,5 @@ export * from './contract/documents.ts';
 export * from './contract/deliveries.ts';
 // Invoices (M3-09, RAD-113), in a file of their own.
 export * from './contract/invoices.ts';
+// Credit notes (M3-10, RAD-114), in a file of their own.
+export * from './contract/credit-notes.ts';

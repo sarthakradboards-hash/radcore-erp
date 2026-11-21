@@ -51,9 +51,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'prices:read', module: 'Prices', label: 'See price lists and discount limits' },
   { key: 'prices:write', module: 'Prices', label: 'Draft price lists, which price nothing until approved' },
   { key: 'prices:approve', module: 'Prices', label: 'Approve another person’s price list, and set discount limits', secondFactor: true },
-  { key: 'sales:read', module: 'Sales', label: 'See quotes, orders, deliveries, delivery returns and invoices',
+  { key: 'sales:read', module: 'Sales', label: 'See quotes, orders, deliveries, delivery returns, invoices and credit notes',
     records: ['@radcore/db/sales#salesQuotes', '@radcore/db/sales#salesOrders', '@radcore/db/sales#deliveries',
-      '@radcore/db/sales#deliveryReturns', '@radcore/db/sales#invoices'] },
+      '@radcore/db/sales#deliveryReturns', '@radcore/db/sales#invoices', '@radcore/db/sales#creditNotes'] },
   { key: 'sales:write', module: 'Sales', label: 'Draft and send quotes, and draft, confirm and close orders',
     records: ['@radcore/db/sales#salesQuotes', '@radcore/db/sales#salesOrders'] },
   { key: 'deliveries:write', module: 'Sales', label: 'Draft and post deliveries, and take delivered goods back before invoicing',
@@ -66,8 +66,12 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // Its own key, so cancelling can be kept from the counter (the architect on RAD-113), without the second factor
   // (Sarthak, 20 Nov). Its route is RAD-114's.
   { key: 'invoices:cancel', module: 'Sales', label: 'Cancel a posted invoice', records: ['@radcore/db/sales#invoices'] },
-  // Cancelling a posted credit note (RAD-114, the architect's ruling); its records join with the credit notes (PR 2).
-  { key: 'credit_notes:cancel', module: 'Sales', label: 'Cancel a posted credit note' },
+  // Credit notes (RAD-114, the architect's ruling): drafted at the counter too; every one approved by someone else, with
+  // the second factor since it moves money (Sarthak, 20 Nov); cancelling is its own key.
+  { key: 'credit_notes:write', module: 'Sales', label: 'Draft credit notes and send them for approval', records: ['@radcore/db/sales#creditNotes'] },
+  { key: 'credit_notes:approve', module: 'Sales', label: 'Approve another person’s credit note, which posts it and pays its refund',
+    secondFactor: true, records: ['@radcore/db/sales#creditNotes'] },
+  { key: 'credit_notes:cancel', module: 'Sales', label: 'Cancel a posted credit note', records: ['@radcore/db/sales#creditNotes'] },
   { key: 'sales:override', module: 'Sales', label: 'Approve another person’s sale over a credit limit, below cost or over a discount limit',
     secondFactor: true },
   { key: 'pii:read', module: 'Personal data', label: 'See personal details unmasked' },

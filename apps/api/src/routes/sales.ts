@@ -1,5 +1,5 @@
 // lib-sales's routes (ADR-001 §6): declarations only. Price lists, their approval and discount limits (RAD-98); quotes,
-// orders, deliveries and delivery returns (RAD-112); invoices (RAD-113).
+// orders, deliveries and delivery returns (RAD-112); invoices (RAD-113); credit notes (RAD-114).
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
   addList, askApproval, changeList, getChanges, getList, getVersion, listLimits, listListsPage, listRatesPage, priceListApproval,
@@ -9,7 +9,8 @@ import {
   getDeliveryById, listDeliveriesPage, listToInvoicePage, postDeliveryNow, addDeliveryReturn, changeDeliveryReturn, dropDeliveryReturn,
   getDeliveryReturnById, listDeliveryReturnsPage, postDeliveryReturnNow, addInvoice, askInvoiceOverride, changeInvoice, dropInvoice,
   getInvoiceById, invoiceOverride, listInvoicesPage, postInvoiceNow,
-  cancelInvoiceNow,
+  cancelInvoiceNow, addCreditNote, askCreditNoteApproval, cancelCreditNoteNow, creditNoteApprovalSpec, dropCreditNote, getCreditNoteById,
+  listCreditNotesPage,
   cancelDeliveryNow, cancelDeliveryReturnNow,
   orderCounts, quoteCounts,
 } from '@radcore/lib-sales';
@@ -23,7 +24,8 @@ import {
   updateDeliveryReturn, createInvoice, deleteInvoice, getInvoice, invoiceOverrideApproval, listInvoices, postInvoice,
   requestInvoiceOverride, updateInvoice,
   getPartyPriceList, setPartyPriceList,
-  cancelInvoice,
+  cancelInvoice, cancelCreditNote, createCreditNote, creditNoteApproval, deleteCreditNote, getCreditNote, listCreditNotes,
+  requestCreditNoteApproval,
   countOrders, countQuotes,
   cancelDelivery, cancelDeliveryReturn,
 } from '@radcore/lib-sales/contract';
@@ -90,6 +92,13 @@ export default [
   defineRoute(requestInvoiceOverride, askInvoiceOverride),
   ...defineApproval(invoiceOverrideApproval, invoiceOverride),
   defineRoute(cancelInvoice, cancelInvoiceNow),
+  defineRoute(listCreditNotes, listCreditNotesPage),
+  defineRoute(getCreditNote, getCreditNoteById),
+  defineRoute(createCreditNote, addCreditNote),
+  defineRoute(deleteCreditNote, dropCreditNote),
+  defineRoute(requestCreditNoteApproval, askCreditNoteApproval),
+  ...defineApproval(creditNoteApproval, creditNoteApprovalSpec),
+  defineRoute(cancelCreditNote, cancelCreditNoteNow),
   defineRoute(cancelDelivery, cancelDeliveryNow),
   defineRoute(cancelDeliveryReturn, cancelDeliveryReturnNow),
 ];
