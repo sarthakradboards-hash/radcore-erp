@@ -4,7 +4,7 @@
 // edited, posted (the checks run; when they find issues the dialog names them and offers to ask for an override) or
 // deleted. A posted invoice is cancelled with a date and a reason, which mirrors its entry and opens its deliveries for
 // invoicing again. invoices:write and invoices:cancel are the server's keys; it says whether the status still allows it.
-import { dateString, formatDate, formatMoney, indiaDate, stateName, type Masked } from '@radcore/lib-common';
+import { dateString, formatDate, formatMoney, indiaDate, isMasked, stateName, type Masked } from '@radcore/lib-common';
 import { cancelInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, requestInvoiceOverride } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -25,7 +25,7 @@ import { ConfirmDialog } from '../../../admin/shared.tsx';
 import { OverrideConfirm } from '../../override-confirm.tsx';
 import { ItemName, SALES_MESSAGES } from '../../shared.tsx';
 import { invoiceSteps } from '../../status.ts';
-import type { Invoice } from '../shared.ts';
+import { INVOICE_CANCEL_MESSAGES, INVOICE_MESSAGES, type Invoice } from '../shared.ts';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
 const cancelSchema = z.object({ businessDate: dateString(), reason: cancelInvoice.input.shape.reason });
@@ -94,6 +94,9 @@ function Lines({ i }: { i: Invoice }) {
 /** Address lines as one, each part masked on its own for a person who may not see it. */
 function Address({ parts }: { parts: readonly (string | Masked | null)[] }) {
   const shown = parts.filter((p): p is string | Masked => p !== null);
+  // The parts are masked together (one key sees them all), so a hidden address says "Hidden" once, not once per part.
+  const hidden = shown.find(isMasked);
+  if (hidden !== undefined) return <Pii value={hidden} />;
   return shown.length === 0 ? t('admin.items.none') : shown.map((p, n) => <span key={n}>{n > 0 ? ', ' : null}<Pii value={p} /></span>);
 }
 
@@ -183,7 +186,7 @@ export default function InvoicePage() {
       </div>
 
       <OverrideConfirm open={dialog === 'post'} onOpenChange={shut} title={t('sales.invoice.post.title')} body={t('sales.invoice.post.body')}
-        action={t('sales.invoice.post')} overrideBody={t('sales.invoice.override.body')} overrideAction={t('sales.invoice.override')}
+        action={t('sales.invoice.post')} messages={INVOICE_MESSAGES} overrideBody={t('sales.invoice.override.body')} overrideAction={t('sales.invoice.override')}
         onConfirm={async () => {
           const done = await post.submit({ id });
           return t('sales.invoice.posted', { number: done.number, total: formatMoney(done.total) });
@@ -196,7 +199,7 @@ export default function InvoicePage() {
 
       <Dialog open={dialog === 'cancel'} onOpenChange={shut} title={t('sales.invoice.cancel.title', { number: invoice.number ?? '' })}
         description={t('sales.invoice.cancel.body')}>
-        <Form schema={cancelSchema} saved={false} messages={SALES_MESSAGES} defaultValues={{ businessDate: indiaDate(new Date()), reason: '' }}
+        <Form schema={cancelSchema} saved={false} messages={INVOICE_CANCEL_MESSAGES} defaultValues={{ businessDate: indiaDate(new Date()), reason: '' }}
           onSubmit={async (v) => { await cancel.submit({ id, ...v }); setDialog(null); later(t('sales.invoice.cancelled')); }}>
           <TextField name="businessDate" label={t('sales.invoice.cancel.date')} type="date" />
           <TextAreaField name="reason" label={t('sales.reason')} />

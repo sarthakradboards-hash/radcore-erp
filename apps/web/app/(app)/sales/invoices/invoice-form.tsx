@@ -16,7 +16,8 @@ import { useApiList, useApiQuery, useApiSearch } from '../../../../lib/api/query
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
 import { PickedField } from '../picked-field.tsx';
-import { ItemName, SALES_MESSAGES } from '../shared.tsx';
+import { ItemName } from '../shared.tsx';
+import { INVOICE_MESSAGES } from './shared.ts';
 
 const shape = createInvoice.input.shape;
 const lineShape = shape.lines.element.shape;
@@ -103,7 +104,7 @@ export function InvoiceForm({ labelledBy, initial, party, submit, onSubmit }: {
     lines: { deliveryLineId: string; qty: string; rate?: string; discountPercent?: string }[] }) => Promise<unknown>;
 }) {
   return (
-    <Form aria-labelledby={labelledBy} schema={invoiceSchema} saved={false} messages={SALES_MESSAGES} defaultValues={initial}
+    <Form aria-labelledby={labelledBy} schema={invoiceSchema} saved={false} messages={INVOICE_MESSAGES} defaultValues={initial}
       onSubmit={(v: InvoiceValues) => onSubmit({
         partyId: v.partyId, businessDate: v.businessDate, notes: v.notes,
         // Only what the contract takes: the form also holds each line's item, to name it.

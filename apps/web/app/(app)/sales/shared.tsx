@@ -19,7 +19,7 @@ export type Line = Quote['lines'][number];
 // needs_override has no line here: its message and the issues the server names read best as it sends them.
 const CODES = ['date_in_future', 'date_before_source', 'unknown_party', 'not_a_customer', 'unknown_item', 'quantity_too_precise',
   'wrong_status', 'year_not_open', 'period_locked', 'no_gst_rate', 'order_delivered', 'reason_required', 'version_changed',
-  'invoice_too_late', 'not_on_source', 'over_quantity', 'other_party', 'account_inactive', 'company_profile_incomplete',
+  'not_on_source', 'over_quantity', 'other_party', 'account_inactive', 'company_profile_incomplete',
   'buyer_details_required', 'still_applied', 'credit_note_stands'] as const;
 /** The sales contracts' refusals in the screen's words, for Form's and ReasonDialog's `messages`. */
 export const SALES_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`sales.err.${c}`)]));

@@ -14,12 +14,15 @@ import { SALES_MESSAGES } from './shared.tsx';
 const nothing = z.object({});
 const later = (text: string) => setTimeout(() => announce(text), 0);
 
-export function OverrideConfirm({ open, onOpenChange, title, body, action, overrideBody, overrideAction, onConfirm, onAskOverride }: {
+export function OverrideConfirm({ open, onOpenChange, title, body, action, overrideBody, overrideAction, onConfirm, onAskOverride,
+  messages = SALES_MESSAGES }: {
   open: boolean; onOpenChange: (open: boolean) => void; title: string; body: string; action: string;
   overrideBody: string; overrideAction: string;
   /** Runs the action; what it returns is said to screen readers. */
   onConfirm: () => Promise<string>;
   onAskOverride: () => Promise<string>;
+  /** The screen's words for the refusals; the sales ones unless the document words a code differently. */
+  messages?: Partial<Record<string, string>>;
 }) {
   const [needsOverride, setNeedsOverride] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -33,12 +36,12 @@ export function OverrideConfirm({ open, onOpenChange, title, body, action, overr
       shut(false);
       later(said);
     } catch (e) {
-      setProblem(e instanceof ApiError ? SALES_MESSAGES[e.code] ?? e.message : t('error.title'));
+      setProblem(e instanceof ApiError ? messages[e.code] ?? e.message : t('error.title'));
     }
   };
   return (
     <Dialog open={open} onOpenChange={shut} title={title} description={body}>
-      <Form schema={nothing} saved={false} messages={SALES_MESSAGES} defaultValues={{}}
+      <Form schema={nothing} saved={false} messages={messages} defaultValues={{}}
         onSubmit={async () => {
           try {
             const said = await onConfirm();
