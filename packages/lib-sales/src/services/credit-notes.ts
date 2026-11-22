@@ -3,7 +3,7 @@
 // the draft's check and again at posting under the invoice's lock (credit-note-post.ts). Whose a note is: its invoice's
 // owner (ADR-007 §7), whoever drafts it.
 import { after, creditNoteLines, creditNotes, deliveryLines, invoiceLines, invoices, salesTx } from '@radcore/db/sales';
-import { moneyAccountRefusal, paidOf } from '@radcore/lib-accounts';
+import { creditApplicationsOf, moneyAccountRefusal, paidOf } from '@radcore/lib-accounts';
 import { dec, roundMoney, type Money } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, listScope, type Ctx } from '@radcore/lib-platform';
 import { checkPlace, checkQuantity, serialKey } from '@radcore/lib-stock';
@@ -146,7 +146,14 @@ export async function creditNoteShown(ctx: Ctx, { id }: In<typeof getCreditNote>
   const c = await noteOf(ctx, id, 'sales:read');
   const lines = await salesTx(ctx).select().from(creditNoteLines).where(eq(creditNoteLines.creditNoteId, id)).orderBy(asc(creditNoteLines.lineNo));
   const names = await partyNames(ctx, [c.partyId]);
-  return { id: c.id, number: c.number, kind: c.kind as Kind, invoiceId: c.invoiceId, partyId: c.partyId, partyName: names.get(c.partyId) ?? '',
+  // A note applies only to its own invoice (F9), so each document's number is that invoice's.
+  const applied = await creditApplicationsOf(ctx, 'credit_notes', id);
+  const [inv] = applied.length === 0 ? [] : await salesTx(ctx).select({ number: invoices.number, owner: invoices.owner }).from(invoices)
+    .where(eq(invoices.id, c.invoiceId));
+  // The note is its invoice's owner's (ADR-007 §7), so a reader who saw the note sees its invoice.
+  if (inv !== undefined) ctx.see('sales:read', { owner: inv.owner });
+  const applications = applied.map((a) => ({ ...a, documentNumber: a.documentTable === 'invoices' && a.documentId === c.invoiceId ? inv?.number ?? null : null }));
+  return { applications, id: c.id, number: c.number, kind: c.kind as Kind, invoiceId: c.invoiceId, partyId: c.partyId, partyName: names.get(c.partyId) ?? '',
     businessDate: c.businessDate, status: c.status as Status, total: c.total, locationId: c.locationId, reason: c.reason,
     refund: c.refundAmount === null || c.refundAccountId === null ? null : { amount: roundMoney(c.refundAmount), accountId: c.refundAccountId },
     late: c.late, taxable: c.taxable, cgst: c.cgst, sgst: c.sgst, igst: c.igst, roundOff: c.roundOff, amountsNote: null,

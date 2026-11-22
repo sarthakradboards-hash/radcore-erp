@@ -5,7 +5,7 @@
 // them (actingAs): the request is the maker's, the approval the approver's, as two requests would be.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addParty, allocatePayment, cashLimitSpec, journalEntryById, journalPage, openFinancialYear, paidOf, recordPayment, reverseCreditApplication,
+  addParty, allocatePayment, applyCredit, cashLimitSpec, journalEntryById, journalPage, openFinancialYear, paidOf, recordPayment, reverseCreditApplication,
   setCompanyProfile, setCreditTerms,
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
@@ -340,6 +340,30 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
     expect(cancelled).toEqual({ status: 'cancelled',
       mirror: ['Sales 0.00 80000.00', 'Output CGST 0.00 2000.00', 'Output SGST 0.00 2000.00', 'Debtors 84000.00 0.00',
         'Stock in Hand 0.00 61250.00', 'Cost of Goods Sold 61250.00 0.00'], stock: { qty: '0', value: '0.00' }, again: 'customer' });
+  });
+
+  // ui-2's "reverse the application" (RAD-114): a note lists where it's applied, each with its invoice's number and
+  // whether it's reversed. Applied as it posts, reversed, then applied again: two applications, the first reversed.
+  it('lists a note’s applications to its invoice, oldest first, each reversed or not', async () => {
+    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
+    const approver = await approverWith(['credit_notes:approve']);
+    const out = await inBooks(async (ctx) => {
+      const inv = await invoice(ctx, at);
+      const { id } = await valueOff(ctx, at, inv, '1000');
+      await approve(ctx, id, approver);
+      const posted = (await getCreditNoteById(ctx, { id })).applications;
+      await reverseCreditApplication(ctx, { id: posted[0]?.id ?? '', businessDate: DATE, reason: 'Applied in error' });
+      await applyCredit(ctx, { creditTable: 'credit_notes', creditId: id, documentTable: 'invoices', documentId: inv.id, amount: m('1050'),
+        businessDate: DATE });
+      // Both rows post in this one transaction, so share a moment: matched by id, not by order.
+      const after = (await getCreditNoteById(ctx, { id })).applications;
+      return { number: (await getInvoiceById(ctx, { id: inv.id })).number, posted: posted.map((a) => a.reversed),
+        after: after.map((a) => [a.id === posted[0]?.id, a.documentTable, a.documentId === inv.id, a.documentNumber, a.amount, a.businessDate,
+          a.reversed]).toSorted((x, y) => Number(y[0]) - Number(x[0])) };
+    });
+    expect(out.posted).toEqual([false]);
+    expect(out.after).toEqual([[true, 'invoices', true, out.number, '1050.00', DATE, true], [false, 'invoices', true, out.number, '1050.00', DATE, false]]);
+    expect(out.number?.startsWith('INV/')).toBe(true);
   });
 
   // ADR-005 §2, as the superuser: a posted note's header must match its lines at commit (RA006).

@@ -7,7 +7,7 @@ import { accountsTx, creditApplications, paymentAllocations, payments } from '@r
 import { vDocumentPaid } from '@radcore/db/views';
 import { dec, indiaDate, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import type {
   allocatePaymentContract, applyCreditContract, reverseAllocationContract, reverseCreditApplicationContract,
@@ -100,6 +100,24 @@ export async function reverseCreditApplication(ctx: Ctx, { id, businessDate }: I
     businessDate })
     .returning({ id: creditApplications.id });
   return { id: reversal?.id ?? refuse('server_error', 'The reversal was not stored') };
+}
+
+/** For a credit's owner (lib-sales for credit notes, RAD-114): the credit's applications, oldest first, each with whether
+ * a reverse row undoes it, so its screen can offer the reversal (POST /credit-applications/:id/reverse). The table isn't
+ * record-scoped: the owner has seen the credit under its own key, as with paidOf. */
+export async function creditApplicationsOf(ctx: Ctx, creditTable: string, creditId: string):
+  Promise<{ id: string; documentTable: string; documentId: string; amount: Money; businessDate: string; reversed: boolean }[]> {
+  const tx = accountsTx(ctx);
+  const applied = await tx.select({ id: creditApplications.id, documentTable: creditApplications.documentTable,
+    documentId: creditApplications.documentId, amount: creditApplications.amount, businessDate: creditApplications.businessDate })
+    .from(creditApplications)
+    .where(and(eq(creditApplications.creditTable, creditTable), eq(creditApplications.creditId, creditId), eq(creditApplications.direction, 'apply')))
+    // Oldest first: by date, then when each was posted (rows of one save share it), then id.
+    .orderBy(asc(creditApplications.businessDate), asc(creditApplications.postedAt), asc(creditApplications.id));
+  // reverses_id is unique: each apply row has at most one reversal.
+  const reversed = applied.length === 0 ? new Set<string>() : new Set((await tx.select({ of: creditApplications.reversesId })
+    .from(creditApplications).where(inArray(creditApplications.reversesId, applied.map((a) => a.id)))).map((r) => r.of));
+  return applied.map((a) => ({ ...a, amount: a.amount as Money, reversed: reversed.has(a.id) }));
 }
 
 /** For a document's owner (lib-sales for invoices): what has been paid against each of these, allocated and credited.
