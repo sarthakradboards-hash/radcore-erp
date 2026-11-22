@@ -4,11 +4,12 @@
 // and the batches and serials the goods come from) and the payments, split as the customer pays: cash, UPI, or a card by its
 // approval code alone. What the bill totals, the tax, whether it needs an approval, the day's cash limit and what is left unpaid
 // are the server's to work out and refuse; this form only fills the contract in and words what comes back.
-import { formatMoney, moneyString, sum } from '@radcore/lib-common';
-import { listMoneyAccounts, listParties } from '@radcore/lib-accounts/contract';
+import { dec, formatMoney, indiaDate, moneyString, sum } from '@radcore/lib-common';
+import { getPartyStatement, listMoneyAccounts, listParties } from '@radcore/lib-accounts/contract';
 import { getItem, listItems } from '@radcore/lib-stock/contract';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { RadioField, SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
+import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { useApiQuery, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
@@ -23,12 +24,35 @@ import { QUICK_BILL_MESSAGES } from './shared.ts';
 const useParties = (query: string) => useApiSearch(listParties, query, { params: { filter: { sellsTo: true, active: true } } });
 const useItems = (query: string) => useApiSearch(listItems, query, { params: { filter: { active: true } } });
 
-/** The named customer's box, shown when the bill is for a named customer. */
+/** What the named customer owes today, from To collect's statement (receivables:read); a person without that key sees nothing of it.
+ * What a customer may owe is the server's to judge when the bill is saved. */
+function Balance({ partyId }: { partyId: string }) {
+  const may = useMe().permissions.includes('receivables:read');
+  const today = indiaDate(new Date());
+  const owed = useApiQuery(getPartyStatement, { id: partyId, from: today, to: today }, { enabled: may && partyId !== '' }).data?.toCollect;
+  if (!may || owed === undefined) return null;
+  if (dec(owed.outstanding).lt(0)) return <p>{t('sales.quick.balance.credit', { amount: formatMoney(dec(owed.outstanding).neg().toString()) })}</p>;
+  if (!dec(owed.outstanding).gt(0)) return <p>{t('sales.quick.balance.none')}</p>;
+  return (
+    <p>
+      {t('sales.quick.balance.owes', { outstanding: formatMoney(owed.outstanding) })}
+      {dec(owed.overdue).gt(0) ? ` ${t('sales.quick.balance.overdue', { overdue: formatMoney(owed.overdue) })}` : ''}
+    </p>
+  );
+}
+
+/** The named customer's box, shown when the bill is for a named customer, with what they owe. */
 function PartyBox() {
   const { control } = useFormContext<QuickBillInput>();
   const customer = useWatch({ control, name: 'customer' });
+  const partyId = useWatch({ control, name: 'partyId' });
   if (customer !== 'named') return null;
-  return <PickedField name="partyId" label={t('sales.quick.party')} hint={t('sales.quick.party.hint')} initial={null} useSearch={useParties} optionLabel={(p) => p.name} />;
+  return (
+    <>
+      <PickedField name="partyId" label={t('sales.quick.party')} hint={t('sales.quick.party.hint')} initial={null} useSearch={useParties} optionLabel={(p) => p.name} />
+      <Balance partyId={partyId} />
+    </>
+  );
 }
 
 /** One line's item box. It names the item the line's own value holds, so it stays right when a line before it is removed. */
