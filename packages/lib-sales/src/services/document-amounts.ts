@@ -15,7 +15,9 @@ export type PricedLine = LineTax & { gstRate: string; gstRateSource: string };
 export type Amounts = { placeOfSupply: string; lines: PricedLine[]; totals: Totals };
 
 /** The document's amounts, refused while the company's profile isn't set (no state to judge the place of supply by,
- * RC-112: `company_profile_incomplete`) or a line's item has no GST rate on the date (`no_gst_rate`). */
+ * RC-112: `company_profile_incomplete`) or a line's item has no GST rate on the date (`no_gst_rate`). `shipToState`, when
+ * given, is where the goods go, which wins over the party's state as an invoice's ship-to does: the quick bill's preview
+ * passes the shop's, as its invoice is shipped there (RAD-115). Left out, the party's state decides. */
 export async function amountsOf(ctx: Ctx, partyId: string, on: string, lines: readonly Line[], shipToState?: string): Promise<Amounts> {
   const { company } = await getCompanyProfile(ctx);
   if (company === null) {
