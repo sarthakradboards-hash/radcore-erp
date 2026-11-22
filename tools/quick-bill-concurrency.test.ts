@@ -2,7 +2,8 @@
 // concurrency test: the quick bill takes every class of lock for its order, delivery, invoice and receipts first, in
 // §1's order (period, party, stock, then its series, journal first), so it never holds one while waiting on a plain
 // save that holds the next. A quick bill alongside a plain receipt, a plain delivery of the same item and a plain
-// invoice to the same party each finish (no 40P01), and the numbers they draw stay gapless.
+// invoice to the same party each finish (no 40P01), and the numbers they draw stay gapless. In a database of its own: the
+// run's rolled-back test wrappers draw several series in their files' own order, which these committed saves would meet.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
@@ -12,12 +13,12 @@ import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime'
 import { addDelivery, addInvoice, addOrder, confirmOrderNow, getDeliveryById, getOrderById, postDeliveryNow, postInvoiceNow, quickBill } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
+import { freshDatabase } from './test-database.ts';
 
-const url = process.env['TEST_DATABASE_URL'];
-const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
+const adminUrl = process.env['TEST_DATABASE_ADMIN_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156).
 const DATE = '2026-11-15';
@@ -28,17 +29,36 @@ const q = (s: string) => quantityString().parse(s);
 const m = (s: string) => moneyString().parse(s);
 const ROUNDS = 3;
 
-it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
-  expect.fail('TEST_DATABASE_URL is not set: in CI the quick bill concurrency tests must run, not skip');
+it.runIf(process.env['CI'] && !adminUrl)('has its test database in CI', () => {
+  expect.fail('TEST_DATABASE_ADMIN_URL is not set: in CI the quick bill concurrency tests must run, not skip');
 });
 
-describe.skipIf(!url || !superUrl)('a quick bill alongside plain saves', { timeout: 60_000 }, () => {
-  const pool = new pg.Pool({ connectionString: url, max: 6 });
-  const su = new pg.Pool({ connectionString: superUrl, max: 2 });
-  const db = createDatabase(pool);
+describe.skipIf(!adminUrl)('a quick bill alongside plain saves', { timeout: 60_000 }, () => {
+  let own: Awaited<ReturnType<typeof freshDatabase>>;
+  let pool: pg.Pool;
+  let su: pg.Pool;
+  let db: ReturnType<typeof createDatabase>;
+  beforeAll(async () => {
+    own = await freshDatabase(adminUrl ?? '');
+    pool = new pg.Pool({ connectionString: own.appUrl, max: 6 });
+    su = new pg.Pool({ connectionString: own.superUrl, max: 2 });
+    db = createDatabase(pool);
+    // Its company profile, as test-database.ts commits the run's.
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      await c.query(`insert into radcore.company (legal_name, gstin, address_line1, city, pincode)
+        values ('Radboards Pvt Ltd', '27AAPFU0939F1ZV', 'Plot 4, Bhosari MIDC', 'Pune', '411019')`);
+      await c.query('commit');
+    } finally {
+      c.release();
+    }
+  }, 120_000);
   afterAll(async () => {
     await pool.end();
     await su.end();
+    await own.drop();
   });
   const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(db, WRITE, staff, randomUUID(), fn);
 
