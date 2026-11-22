@@ -134,6 +134,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /sales/discount-limits': 'prices:read',
   'PUT /sales/discount-limits': 'prices:approve',
   'GET /sales/party-price-lists/:partyId': 'prices:read',
+  'GET /sales/price': 'prices:read',
   'PUT /sales/party-price-lists/:partyId': 'prices:approve',
   // Quotes and orders (RAD-112).
   'GET /sales/quotes': 'sales:read',
@@ -194,6 +195,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'DELETE /sales/invoices/:id': 'invoices:write',
   'POST /sales/invoices/:id/post': 'invoices:write',
   'POST /sales/quick-bills': 'invoices:write',
+  'POST /sales/quick-bills/hold': 'invoices:write',
+  'POST /sales/quick-bills/:orderId/complete': 'invoices:write',
   'POST /sales/quick-bills/preview': 'invoices:write',
   'POST /sales/invoices/:id/override': 'invoices:write',
   'POST /sales/invoices/:id/cancel': 'invoices:cancel',
@@ -420,6 +423,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /sales/discount-limits': ['lib-platform', 'lib-sales'],
   'PUT /sales/discount-limits': ['lib-platform', 'lib-sales'],
   'GET /sales/party-price-lists/:partyId': ['lib-accounts', 'lib-platform', 'lib-sales'],
+  'GET /sales/price': ['lib-accounts', 'lib-platform', 'lib-sales'],
   'PUT /sales/party-price-lists/:partyId': ['lib-accounts', 'lib-platform', 'lib-sales'],
   // Quotes and orders check their party (lib-accounts) and their items' quantities (lib-stock); an order's credit and
   // price checks read its items' GST (lib-gst).
@@ -480,6 +484,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'DELETE /sales/invoices/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/invoices/:id/post': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quick-bills': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/quick-bills/hold': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'POST /sales/quick-bills/:orderId/complete': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quick-bills/preview': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/invoices/:id/override': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/invoices/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],

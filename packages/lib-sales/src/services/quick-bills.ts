@@ -3,22 +3,26 @@
 // unpaid (an advance lowers the party's balance, ADR-007 §9); then the order, confirmed; its delivery from one place,
 // posted; its invoice, shipped to the shop, posted; and every receipt applied to that invoice. Any refusal on the way
 // rolls all of it back.
-import { deliveryLines, priceListVersions, salesOrderLines, salesTx } from '@radcore/db/sales';
+import { deliveryLines, priceListVersions, quickBillHolds, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import {
-  allocatePayment, companyForInvoice, getCompanyProfile, moneyAccountRefusal, recordCounterReceipt, systemAccountId, systemPartyId,
+  addParty, allocatePayment, companyForInvoice, getCompanyProfile, holdPeriod, moneyAccountRefusal, partyWithPhone, recordCounterReceipt, systemAccountId,
+  systemPartyId,
 } from '@radcore/lib-accounts';
-import { dec, looksLikeCardNumber, roundMoney, sum } from '@radcore/lib-common';
-import { AppError, defineSetting, principalId, type Ctx } from '@radcore/lib-platform';
+import { dec, looksLikeCardNumber, roundMoney, sum, type Money } from '@radcore/lib-common';
+import { AppError, defineSetting, principalId, versionHash, type Ctx } from '@radcore/lib-platform';
 import { asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { createQuickBill, previewQuickBill } from '../contract.ts';
-import { addDelivery, postDeliveryNow } from './deliveries.ts';
-import { postInvoiceNow } from './invoice-post.ts';
+import type { completeQuickBill, createQuickBill, holdQuickBill, previewQuickBill } from '../contract.ts';
+import type { ApprovedThrough } from './checks.ts';
+import { addDelivery, postDeliveryNow, postDeliveryThrough } from './deliveries.ts';
+import { B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, postInvoiceNow, postInvoiceThrough } from './invoice-post.ts';
+import { needsBuyerDetails } from './invoice-rules.ts';
 import { addInvoice } from './invoices.ts';
 import { amountsOf } from './document-amounts.ts';
 import { checkedLines, sellingTo } from './document-lines.ts';
-import { orderIssues } from './order-checks.ts';
-import { addCounterOrder, confirmOrderNow, getOrderById, priced } from './orders.ts';
+import { heldExposure, orderCheckNow, orderIssues, orderOverride } from './order-checks.ts';
+import { addCounterOrder, askOrderOverride, confirmOrderNow, getOrderById, priced } from './orders.ts';
+import { holdOf, type PlannedPayment } from './quick-bill-holds.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -69,18 +73,21 @@ async function receiptsOf(ctx: Ctx, payments: readonly Payment[]) {
   ];
 }
 
-/** POST /sales/quick-bills (invoices:write, and the stages' keys): the counter sale, whole. */
-export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Promise<Out<typeof createQuickBill>> {
+type Receipt = { id: string; number: string; amount: Money };
+type Lines = In<typeof createQuickBill>['lines'];
+
+/** Refuses a principal without every stage's key, naming them all, before anything is written (the architect). */
+function needKeys(ctx: Ctx): void {
   const missing = KEYS.filter((k) => !ctx.can(k));
   if (missing.length > 0) throw new AppError('forbidden', `A quick bill needs ${missing.join(', ')}`);
-  const walkIn = await systemPartyId(ctx, 'walk_in');
-  const partyId = input.partyId ?? walkIn;
-  const { businessDate } = input;
-  const taken = await receiptsOf(ctx, input.payments);
-  // The quick bill's receipts go through lib-accounts under its own keys, not payments:write, as a booking's advance
-  // does (the architect on RAD-115). Receipts only, never a payment out or a refund; at most the bill (`overpaid`); each
-  // applied to this bill's invoice below, before the save ends; and cash still within the day's limit.
-  const receipts = [];
+}
+
+/** The receipts, taken first. The quick bill's go through lib-accounts under its own keys, not payments:write, as a
+ * booking's advance does (the architect on RAD-115): receipts only, never a payment out or a refund; at most the bill
+ * (`overpaid`, in settle); each applied to this bill's invoice before the save ends; and cash still within the day's
+ * limit. */
+async function takeReceipts(ctx: Ctx, partyId: string, businessDate: string, taken: Awaited<ReturnType<typeof receiptsOf>>): Promise<Receipt[]> {
+  const receipts: Receipt[] = [];
   for (const r of taken) {
     const made = await recordCounterReceipt(ctx, { partyId, businessDate, amount: r.amount, accountId: r.accountId,
       narration: 'Quick bill', ...(r.reference === undefined ? {} : { reference: r.reference }) });
@@ -90,50 +97,211 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
     }
     receipts.push({ id: made.id, number: made.number, amount: r.amount });
   }
-  const order = await addCounterOrder(ctx, { partyId, businessDate, notes: input.notes,
-    lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent })) });
-  // The Counter customer never carries credit (the architect on RAD-115): credit means a named party, so a walk-in bill
-  // is paid in full, judged on the order's total, rounded to the rupee as its invoice's will be, before any check runs.
-  // A total that can't be worked out yet (a missing GST rate) is confirming's to refuse, by name.
-  if (partyId === walkIn) {
-    const { total } = (await getOrderById(ctx, order)).amounts;
-    if (total !== null && dec(sum(receipts.map((r) => r.amount))).lt(total)) {
-      throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${total}: to leave a balance, add the buyer’s name and phone`,
-        [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${total} in all, or add the buyer’s name and phone` }]);
-    }
+  return receipts;
+}
+
+/** The Counter customer never carries credit (the architect on RAD-115): credit means a named party, so a walk-in bill
+ * is paid in full, judged on the order's total, rounded to the rupee as its invoice's will be, before any check runs. A
+ * total that can't be worked out yet (a missing GST rate) is confirming's to refuse, by name. */
+async function walkInPaysInFull(ctx: Ctx, partyId: string, orderId: string, paid: readonly { amount: string }[]): Promise<void> {
+  if (partyId !== await systemPartyId(ctx, 'walk_in')) return;
+  const { total } = (await getOrderById(ctx, { id: orderId })).amounts;
+  if (total !== null && dec(sum(paid.map((p) => p.amount))).lt(total)) {
+    throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${total}: to leave a balance, add the buyer’s name and phone`,
+      [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${total} in all, or add the buyer’s name and phone` }]);
   }
-  const confirmed = await confirmOrderNow(ctx, order);
+}
+
+/** The confirmed order's whole delivery from the place, posted, and its invoice of exactly that delivery, shipped to the
+ * shop, posted: through the order's approval when completing a held bill (`through`). */
+async function deliverAndBill(ctx: Ctx, s: { orderId: string; partyId: string; businessDate: string; locationId: string; lines: Lines },
+  through?: ApprovedThrough) {
   const tx = salesTx(ctx);
-  const orderLines = await tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id))
+  const orderLines = await tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(eq(salesOrderLines.orderId, s.orderId))
     .orderBy(asc(salesOrderLines.lineNo));
-  const delivery = await addDelivery(ctx, { orderId: order.id, locationId: input.locationId, businessDate, notes: null,
-    lines: input.lines.map((l, i) => ({ orderLineId: orderLines[i]?.id ?? '', qty: l.qty, batches: l.batches, serials: l.serials })) });
-  const delivered = await postDeliveryNow(ctx, delivery);
+  const delivery = await addDelivery(ctx, { orderId: s.orderId, locationId: s.locationId, businessDate: s.businessDate, notes: null,
+    lines: s.lines.map((l, i) => ({ orderLineId: orderLines[i]?.id ?? '', qty: l.qty, batches: l.batches, serials: l.serials })) });
+  const delivered = through === undefined ? await postDeliveryNow(ctx, delivery) : await postDeliveryThrough(ctx, delivery.id, through);
   const billed = await tx.select({ id: deliveryLines.id }).from(deliveryLines)
     .where(eq(deliveryLines.deliveryId, delivery.id)).orderBy(asc(deliveryLines.lineNo));
   // Shipped to the shop: the goods are handed over at the counter, so its tax is the counter's, whoever buys (the
   // architect on RAD-115; CA-08's default until the CA answers).
   const shop = await companyForInvoice(ctx);
-  const invoice = await addInvoice(ctx, { partyId, businessDate, notes: null, shipTo: { name: shop.legalName,
-    address: [shop.addressLine1, shop.addressLine2, shop.city, shop.pincode].filter((s) => s !== null && s !== '').join(', '),
-    stateCode: shop.stateCode }, lines: input.lines.map((l, i) => ({ deliveryLineId: billed[i]?.id ?? '', qty: l.qty })) });
-  const posted = await postInvoiceNow(ctx, invoice);
+  const invoice = await addInvoice(ctx, { partyId: s.partyId, businessDate: s.businessDate, notes: null, shipTo: { name: shop.legalName,
+    address: [shop.addressLine1, shop.addressLine2, shop.city, shop.pincode].filter((x) => x !== null && x !== '').join(', '),
+    stateCode: shop.stateCode }, lines: s.lines.map((l, i) => ({ deliveryLineId: billed[i]?.id ?? '', qty: l.qty })) });
+  const posted = through === undefined ? await postInvoiceNow(ctx, invoice)
+    : await postInvoiceThrough(ctx, invoice.id, { ...through, deliveryId: delivery.id });
+  return { delivery: { id: delivery.id, number: delivered.number }, invoice: { id: invoice.id, number: posted.number }, total: posted.total };
+}
+
+/** At most the bill, and every receipt applied to this bill's invoice, so the quick bill leaves no advance standing; and a
+ * walk-in's bill paid in full on the invoice's own total, which is what's owed (auditor-2 on #304). */
+async function settle(ctx: Ctx, receipts: readonly Receipt[], s: { partyId: string; invoiceId: string; total: string; businessDate: string }) {
+  const { invoiceId, total, businessDate } = s;
   const paid = roundMoney(sum(receipts.map((r) => r.amount)));
-  // And on the invoice's own total, which is what's owed (auditor-2 on #304): a walk-in never leaves a rupee on credit.
-  if (partyId === walkIn && dec(paid).lt(posted.total)) {
-    throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${posted.total}: to leave a balance, add the buyer’s name and phone`,
-      [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${posted.total} in all, or add the buyer’s name and phone` }]);
+  if (s.partyId === await systemPartyId(ctx, 'walk_in') && dec(paid).lt(total)) {
+    throw new AppError('walk_in_pays_in_full', `The Counter customer pays the whole bill of ${total}: to leave a balance, add the buyer’s name and phone`,
+      [{ path: ['payments'], code: 'walk_in_pays_in_full', message: `Take ${total} in all, or add the buyer’s name and phone` }]);
   }
-  if (dec(paid).gt(posted.total)) {
-    throw new AppError('overpaid', `That’s more than the bill of ${posted.total}`, [{ path: ['payments'], code: 'overpaid', message: 'Pay at most the bill' }]);
+  if (dec(paid).gt(total)) {
+    throw new AppError('overpaid', `That’s more than the bill of ${total}`, [{ path: ['payments'], code: 'overpaid', message: 'Pay at most the bill' }]);
   }
-  // Every receipt applied to this bill's invoice, so the quick bill leaves no advance standing (the architect).
   for (const r of receipts) {
-    await allocatePayment(ctx, { id: r.id, businessDate, lines: [{ documentTable: 'invoices', documentId: invoice.id, amount: r.amount }] });
+    await allocatePayment(ctx, { id: r.id, businessDate, lines: [{ documentTable: 'invoices', documentId: invoiceId, amount: r.amount }] });
   }
-  return { order: { id: order.id, number: confirmed.number }, delivery: { id: delivery.id, number: delivered.number },
-    invoice: { id: invoice.id, number: posted.number }, receipts: receipts.map(({ id, number }) => ({ id, number })),
-    total: posted.total, paid, left: roundMoney(dec(posted.total).minus(paid)) };
+  return { receipts: receipts.map(({ id, number }) => ({ id, number })), paid, left: roundMoney(dec(total).minus(paid)) };
+}
+
+const orderLinesOf = (lines: Lines) => lines.map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent }));
+
+/** POST /sales/quick-bills (invoices:write, and the stages' keys): the counter sale, whole. */
+export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Promise<Out<typeof createQuickBill>> {
+  needKeys(ctx);
+  const partyId = input.partyId ?? await systemPartyId(ctx, 'walk_in');
+  const { businessDate } = input;
+  const receipts = await takeReceipts(ctx, partyId, businessDate, await receiptsOf(ctx, input.payments));
+  const order = await addCounterOrder(ctx, { partyId, businessDate, notes: input.notes, lines: orderLinesOf(input.lines) });
+  await walkInPaysInFull(ctx, partyId, order.id, receipts);
+  const confirmed = await confirmOrderNow(ctx, order);
+  const b = await deliverAndBill(ctx, { orderId: order.id, partyId, businessDate, locationId: input.locationId, lines: input.lines });
+  return { order: { id: order.id, number: confirmed.number }, delivery: b.delivery, invoice: b.invoice, total: b.total,
+    ...await settle(ctx, receipts, { partyId, invoiceId: b.invoice.id, total: b.total, businessDate }) };
+}
+
+/**
+ * POST /sales/quick-bills/hold (invoices:write, and the stages' keys): a bill that needs an approval (a discount, a
+ * price below cost, credit), held for it (Sarthak: "Hold, then complete"). Its order is saved a draft, with the place,
+ * the picks and the payments planned (method and amount: no card is charged yet), and its override is asked for,
+ * judged as completing it will be, with the planned payments taken first (`paidNow`).
+ */
+export async function holdBillNow(ctx: Ctx, input: In<typeof holdQuickBill>): Promise<Out<typeof holdQuickBill>> {
+  needKeys(ctx);
+  // The plan is checked before anything is written (auditor-2 on #318): it's kept for good once held, in the hold's row
+  // and its audit trail, so a card number can't be stored in a reference, and an account that can't take money isn't
+  // approved only to be refused at complete.
+  for (const [n, p] of input.payments.entries()) {
+    if (!dec(p.amount).gt(0)) {
+      throw new AppError('no_payment_amount', 'Each payment is more than 0', [{ path: ['payments', n, 'amount'], code: 'no_payment_amount',
+        message: 'Type what will be paid, or remove the payment' }]);
+    }
+    if (p.method !== 'bank') continue;
+    if (p.reference !== undefined && looksLikeCardNumber(p.reference)) {
+      throw new AppError('looks_like_card_number', 'That looks like a card number: a reference is a UTR or cheque number, never card digits',
+        [{ path: ['payments', n, 'reference'], code: 'looks_like_card_number', message: 'Type the UTR or cheque number' }]);
+    }
+    const refused = await moneyAccountRefusal(ctx, p.accountId);
+    if (refused !== null) {
+      throw new AppError('not_money_account', refused, [{ path: ['payments', n, 'accountId'], code: 'not_money_account', message: 'Choose Cash or a bank account' }]);
+    }
+  }
+  const partyId = input.buyer === undefined ? input.partyId ?? await systemPartyId(ctx, 'walk_in') : await buyerParty(ctx, input);
+  // A card's approval code comes when it's charged, at complete; any given now is dropped.
+  const planned: PlannedPayment[] = input.payments.map((p) => p.method === 'bank'
+    ? { method: 'bank', amount: p.amount, accountId: p.accountId, ...(p.reference === undefined ? {} : { reference: p.reference }) }
+    : { method: p.method, amount: p.amount });
+  const order = await addCounterOrder(ctx, { partyId, businessDate: input.businessDate, notes: input.notes, lines: orderLinesOf(input.lines) });
+  await walkInPaysInFull(ctx, partyId, order.id, planned);
+  if (input.buyer !== undefined) await buyerDetailsFor(ctx, input.buyer, order.id);
+  await salesTx(ctx).insert(quickBillHolds).values({ orderId: order.id, locationId: input.locationId, payments: planned,
+    picks: input.lines.map((l, i) => ({ lineNo: i + 1, batches: l.batches, serials: l.serials })) });
+  const version = await orderOverride.version(ctx, order.id, { forUpdate: false });
+  if (version === null || version.issues.length === 0) {
+    throw new AppError('no_override_needed', 'This bill needs no approval: save it as a quick bill');
+  }
+  const asked = await askOrderOverride(ctx, order);
+  return { status: 'pending_override', orderId: order.id, approvalId: asked.id, versionHash: asked.versionHash };
+}
+
+/**
+ * A walk-in who leaves a balance, named (the architect's re-ruling on Sarthak's "Allow with approval"): asked for under
+ * sales:counter_credit, made under parties:write. The party with that phone is offered rather than made again; else a new
+ * customer, unregistered, in the shop's state, with no credit limit, so its unpaid part needs the ordinary approval. It's
+ * made in the hold's own transaction, so the approval names a real party.
+ */
+async function buyerParty(ctx: Ctx, input: In<typeof holdQuickBill>): Promise<string> {
+  const b = input.buyer;
+  if (b === undefined) throw new Error('buyerParty without a buyer');
+  if (input.partyId !== undefined) {
+    throw new AppError('buyer_for_walk_in_only', 'A named party is billed as itself: give a buyer only for a walk-in',
+      [{ path: ['buyer'], code: 'buyer_for_walk_in_only', message: 'Remove the buyer, or the party' }]);
+  }
+  const missing = ['sales:counter_credit', 'parties:write'].filter((k) => !ctx.can(k));
+  if (missing.length > 0) throw new AppError('forbidden', `Leaving a balance on a counter sale needs ${missing.join(', ')}`);
+  // It can't check for a duplicate by a phone it may not see (the architect on #318).
+  if (!ctx.shows('whole', 'parties:contact')) throw new AppError('forbidden', 'Naming a buyer at the counter needs parties:contact');
+  if (await partyWithPhone(ctx, b.phone) !== null) {
+    throw new AppError('buyer_has_party', 'A customer with this phone exists already: choose them, so their own limit and history apply',
+      [{ path: ['buyer', 'phone'], code: 'buyer_has_party', message: 'Choose the customer with this phone' }]);
+  }
+  const shop = await companyForInvoice(ctx);
+  const { id } = await addParty(ctx, { name: b.name, kinds: ['customer'], gstin: null, pan: null, composition: false, stateCode: shop.stateCode,
+    phone: b.phone, email: null, addressLine1: b.addressLine1 ?? null, addressLine2: null, city: b.city ?? null, pincode: b.pincode ?? null });
+  return id;
+}
+
+/** At or above sales.b2c_details_limit an unregistered buyer is named with their address (Rule 46): asked for at the
+ * hold, not left to the invoice's posting. */
+async function buyerDetailsFor(ctx: Ctx, b: NonNullable<In<typeof holdQuickBill>['buyer']>, orderId: string): Promise<void> {
+  const { amounts } = await getOrderById(ctx, { id: orderId });
+  if (amounts.total === null) return;
+  const big = needsBuyerDetails({ total: amounts.total, taxable: amounts.taxable }, ctx.settings.get(B2C_DETAILS_LIMIT), ctx.settings.get(B2C_DETAILS_BASIS));
+  if (big && (b.addressLine1 === undefined || b.city === undefined || b.pincode === undefined)) {
+    throw new AppError('buyer_details_required', 'A bill this size names its buyer: add their address, city and PIN code',
+      [{ path: ['buyer'], code: 'buyer_details_required', message: 'Add the address, city and PIN code' }]);
+  }
+}
+
+/**
+ * POST /sales/quick-bills/:orderId/complete (invoices:write at the order's scope, and the stages' keys): a held bill
+ * whose override was approved, sold as held: the planned payments taken first, as receipts (each card with its approval
+ * code now), then the order confirmed on its approval, its whole delivery and its invoice through that approval (the
+ * architect on RAD-115). The hold is gone after, so a second complete is `not_held`.
+ */
+export async function completeBillNow(ctx: Ctx, input: In<typeof completeQuickBill>): Promise<Out<typeof completeQuickBill>> {
+  needKeys(ctx);
+  const { businessDate } = input;
+  // ADR-006 §1: the period first, then the order, locked, in the documents step; its hold with it.
+  await holdPeriod(ctx, businessDate);
+  const [order] = await salesTx(ctx).select({ partyId: salesOrders.partyId, businessDate: salesOrders.businessDate, status: salesOrders.status,
+    createdBy: salesOrders.createdBy, approved: salesOrders.overrideVersion }).from(salesOrders).where(eq(salesOrders.id, input.orderId))
+    .for('update');
+  if (order === undefined) throw new AppError('not_found', 'There is no such order');
+  ctx.see('invoices:write', { owner: order.createdBy });
+  const hold = await holdOf(ctx, input.orderId, true);
+  if (hold === null || order.status !== 'draft') throw new AppError('not_held', 'This order isn’t a quick bill held for approval');
+  if (order.approved === null) throw new AppError('needs_override', 'This held bill’s override isn’t approved yet');
+  // The approval holds only for what was owed when it was given: a balance grown since is asked again (the architect).
+  const owed = await heldExposure(ctx, input.orderId);
+  if (hold.approvedAfter !== null && owed !== null && dec(owed).gt(hold.approvedAfter)) {
+    throw new AppError('version_changed', 'The party owes more than when this bill was approved: ask for its approval again');
+  }
+  // The amounts are the hold's, never new ones; each card payment takes its code, in order (Q4's rules).
+  let card = 0;
+  const payments: Payment[] = hold.payments.map((p) => p.method === 'card'
+    ? { method: 'card', amount: p.amount as Payment['amount'], ...(input.approvalCodes[card] === undefined ? {} : { approvalCode: input.approvalCodes[card++] }) }
+    : p.method === 'bank' ? { method: 'bank', amount: p.amount as Payment['amount'], accountId: p.accountId ?? '', ...(p.reference === undefined ? {} : { reference: p.reference }) }
+      : { method: 'cash', amount: p.amount as Payment['amount'] });
+  // Every check that writes nothing first, the card codes too; then the hold goes, and the receipts are taken.
+  const taken = await receiptsOf(ctx, payments);
+  await salesTx(ctx).delete(quickBillHolds).where(eq(quickBillHolds.orderId, input.orderId));
+  const receipts = await takeReceipts(ctx, order.partyId, businessDate, taken);
+  // With the receipts taken, the bill is judged as its override was (paidNow at hold): approved on a balance that has
+  // moved since, it's refused by name, to ask again (the architect on RAD-115).
+  const version = await orderOverride.version(ctx, input.orderId, { forUpdate: false });
+  if (version !== null && version.issues.length > 0 && versionHash(version) !== order.approved) {
+    throw new AppError('version_changed', 'The party’s balance has changed since this bill was approved: ask for its approval again');
+  }
+  // What the approval covers, read as confirming will judge it, with the receipts taken: its kinds, and what's owed.
+  const now = await orderCheckNow(ctx, input.orderId, order);
+  const through: ApprovedThrough = { orderId: input.orderId, kinds: now.issues.map((i) => i.code), after: now.credit.after };
+  const confirmed = await confirmOrderNow(ctx, { id: input.orderId });
+  const picks = new Map(hold.picks.map((p) => [p.lineNo, p]));
+  const lines = (await getOrderById(ctx, { id: input.orderId })).lines.map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate,
+    discountPercent: l.discountPercent, batches: picks.get(l.lineNo)?.batches ?? [], serials: picks.get(l.lineNo)?.serials ?? [] })) as Lines;
+  const b = await deliverAndBill(ctx, { orderId: input.orderId, partyId: order.partyId, businessDate, locationId: hold.locationId, lines }, through);
+  return { order: { id: input.orderId, number: confirmed.number }, delivery: b.delivery, invoice: b.invoice, total: b.total,
+    ...await settle(ctx, receipts, { partyId: order.partyId, invoiceId: b.invoice.id, total: b.total, businessDate }) };
 }
 
 /**

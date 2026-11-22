@@ -6,11 +6,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
-import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   acceptQuoteNow, addOrder, addQuote, askOrderOverride, orderOverride, cancelOrderNow, changeOrder, changeQuote, closeOrderNow, confirmOrderNow, getOrderById, getQuoteById,
-  listOrdersPage, orderCounts, quoteCounts, sendQuoteNow,
+  listOrdersPage, orderCounts, quoteCounts, salePrice, sendQuoteNow,
 } from '@radcore/lib-sales';
 import { putGstRate } from '@radcore/lib-gst';
 import { addCategory, addItem } from '@radcore/lib-stock';
@@ -317,5 +317,20 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     expect(await code(run((ctx) => getOrderById(ctx, { id: theirs }), mine))).toBe('not_found');
     const all = await run((ctx) => listOrdersPage(ctx, { filter: { partyId: at.partyId }, limit: 50 }));
     expect(all.items.map((o) => o.id).toSorted()).toEqual([own, theirs].toSorted());
+  });
+
+  // RAD-124's counter: an item's selling rate for a party on a date, from the list and rates an order would store, or
+  // none; with no party named, the default list's. The default is set on the request, so no other file's setting counts.
+  it('answers the counter an item’s selling rate for a party, or from the default list, as an order would store it', async () => {
+    const at = await setup();
+    const offList = (await setup()).itemId;
+    const price = (itemId: string, partyId: string | undefined, fallback: string | null = null) => run((ctx) =>
+      salePrice({ ...ctx, settings: new Settings([{ key: 'sales.default_price_list', value: fallback }]) }, { itemId, partyId, on: DATE }));
+    const listed = await price(at.itemId, at.partyId);
+    expect([listed.rate, listed.taxInclusive, listed.priceListId === null, listed.versionId === null]).toEqual(['61250.000000', false, false, false]);
+    const none = { versionId: null, rate: null, taxInclusive: null };
+    expect(await price(offList, at.partyId)).toEqual({ priceListId: listed.priceListId, ...none });
+    expect(await price(at.itemId, undefined)).toEqual({ priceListId: null, ...none });
+    expect(await price(at.itemId, undefined, listed.priceListId)).toEqual(listed);
   });
 });
