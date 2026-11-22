@@ -34,27 +34,31 @@ const lines = () => z.array(lineIn).min(1, 'Add at least one line').max(200, 'At
 const header = z.object({
   id: idString(), number: z.string().nullable(), supplierId: idString(), supplierName: z.string(), businessDate: dateString(),
   expectedBy: dateString().nullable(), status, total: money(),
-  /** Whether a request for its approval is waiting (ADR-008 §5): a draft placed above its placer's limit, or a placed PO
-   * raised above what was approved. */
+  /** Whether a request for its approval is waiting (ADR-008 §5): a draft placed above its placer's limit. */
   awaitingApproval: z.boolean(),
 });
 const order = header.extend({
   notes: z.string().nullable(), amounts, lines: z.array(lineOut),
-  /** The total its approval was for, where one was needed: a change above it asks again. */
+  /** The total its approval was for, where one was needed: a change above it is refused (over_approved). */
   approvedTotal: money(),
   /** Why a person closed it with lines still to come. */
   closedReason: z.string().nullable(),
 });
-const orderIn = z.object({ supplierId: idString(), businessDate: dateString(), expectedBy: dateString().nullable(),
+const orderShape = z.object({ supplierId: idString(), businessDate: dateString(), expectedBy: dateString().nullable(),
   notes: z.string().trim().max(500).nullable(), lines: lines() });
+/** Its expected-by date, when given, isn't before its own (the auditor on #333). Applied to each input: a refined
+ * object can't be extended. */
+const expectedAfter = <T extends z.ZodType<{ businessDate: string; expectedBy: string | null }>>(s: T) =>
+  s.refine((o) => o.expectedBy === null || o.expectedBy >= o.businessDate, { path: ['expectedBy'], message: 'Expected on or after the order’s date' });
+const orderIn = expectedAfter(orderShape);
 
 // What a draft's save can refuse: its dates (ADR-008 §4), its supplier and items, and its status.
 const DRAFT_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_party', 'not_a_supplier', 'unknown_item',
   'item_inactive', 'quantity_too_precise', 'wrong_status'] as const;
 // What placing adds: the tax worked out and stored, the number drawn, and a check that the approved version still holds.
 const PLACE_ERRORS = [...DRAFT_ERRORS, 'no_gst_rate', 'company_profile_incomplete', 'version_changed', 'series_full'] as const;
-/** What placing, or changing a placed PO, answers: placed at once (with its number), or waiting for approval (with the
- * request's id and the version hash it was asked for), when its total is above the placer's limit or what was approved. */
+/** What placing answers: placed at once (with its number), or waiting for approval (with the request's id and the version
+ * hash it was asked for), when its total is above the placer's limit. */
 const placed = z.object({ status: z.enum(['placed', 'pending_approval']), number: z.string().nullable(), approvalId: idString().nullable(),
   versionHash: z.string().nullable() });
 
@@ -74,11 +78,18 @@ export const createPurchaseOrder = defineContract({
   method: 'POST', path: '/purchasing/orders', auth: 'session', perm: 'purchasing:write', tx: write,
   input: orderIn, output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS],
 });
-/** A draft rewritten whole; or a placed PO's lines, kept placed if its total stays within its placer's limit and what
- * was approved, else sent back for approval (ADR-008 §5). Lowering it needs no approval. */
+/**
+ * A draft rewritten whole; or a placed PO's lines, which stays placed. A placed PO raised above what was approved, or
+ * above its placer's limit, is refused (`over_approved`, the architect on RAD-136) and keeps its lines: more goods go on
+ * a new PO, a price rise is caught at the bill, and a rework is closing it short and raising another. Lowering it, or a
+ * change within both, saves. A placed PO keeps its supplier and date, which its number and approval were given for
+ * (`fixed_once_placed`), and no line goes below what has come in against it, nor is a received line removed
+ * (`po_received`, as a sales order's `order_delivered`; the auditor on #333).
+ */
 export const updatePurchaseOrder = defineContract({
   method: 'PUT', path: '/purchasing/orders/:id', auth: 'session', perm: 'purchasing:write', tx: write,
-  input: orderIn.extend({ id: idString() }), output: placed, errors: [...PLACE_ERRORS],
+  input: expectedAfter(orderShape.extend({ id: idString() })), output: z.object({}),
+  errors: [...DRAFT_ERRORS, 'no_gst_rate', 'company_profile_incomplete', 'over_approved', 'fixed_once_placed', 'po_received'],
 });
 /** A draft thrown away: it never had a number, and any request for its approval is closed first. */
 export const deletePurchaseOrder = defineContract({
@@ -91,9 +102,12 @@ export const placePurchaseOrder = defineContract({
   input: z.object({ id: idString() }), output: placed, errors: [...PLACE_ERRORS],
 });
 /** The purchase orders' approval routes (RAD-38): someone other than the placer, holding purchasing:approve, decides,
- * and approving places it. */
+ * and approving places it. Approving re-checks what can change while the request waits: the draft's status, its date
+ * against the year and the period lock, its tax, that its supplier and items are still switched on, and the series
+ * (the auditor on #333). */
 export const purchaseOrderApproval = approvalContracts('purchase-order', 'purchasing:approve',
-  ['wrong_status', 'no_gst_rate', 'company_profile_incomplete', 'year_not_open', 'period_locked', 'series_full']);
+  ['wrong_status', 'no_gst_rate', 'company_profile_incomplete', 'year_not_open', 'period_locked', 'series_full', 'not_a_supplier',
+    'item_inactive']);
 /** Closes a placed PO with lines still to come, with the reason (closed short). */
 export const closePurchaseOrder = defineContract({
   method: 'POST', path: '/purchasing/orders/:id/close', auth: 'session', perm: 'purchasing:write', tx: write,
@@ -115,7 +129,8 @@ export const listPurchaseOrderLimits = defineContract({
   output: z.object({ defaultMaxTotal: moneyString(), roles: z.array(z.object({ role: z.string(), maxTotal: moneyString() })) }),
 });
 /** Sets a role's PO limit, or the default when `role` is null; a null limit removes a role's own, so it takes the
- * default again. */
+ * default again (the default itself can't be removed: `default_required`). As the discount limits are set (the
+ * architect on RAD-136). */
 export const setPurchaseOrderLimit = defineContract({
   method: 'PUT', path: '/purchasing/order-limits', auth: 'session', perm: 'purchasing:approve', tx: write,
   input: z.object({ role: roleKey().nullable(), maxTotal: moneyString().nullable(), reason: reason() }), output: z.object({}),
