@@ -5,6 +5,7 @@
 import { captureLead, listLeads } from '@radcore/lib-crm/contract';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import { z } from 'zod';
 import { RadioField, TextField } from '../../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../../components/ui/form/form.tsx';
@@ -21,12 +22,14 @@ const schema = z.object({ phone: shape.phone, name: emptyIsLeftOut(shape.name), 
 
 export default function NewLeadPage() {
   const router = useRouter();
+  const mayWrite = useMe().permissions.includes('leads:write');
   const capture = useApiMutation(captureLead, { invalidates: [listLeads] });
   return (
     <>
       <p><Link href="/crm/leads">{t('crm.back')}</Link></p>
       <h1 id="new-lead">{t('crm.capture.title')}</h1>
       <p>{t('crm.capture.intro')}</p>
+      {mayWrite ? null : <p className="admin-notice">{t('crm.capture.cannot')}</p>}
       <Form aria-labelledby="new-lead" schema={schema} saved={false} messages={CRM_MESSAGES}
         defaultValues={{ phone: '', name: '', email: '', source: 'manual' }}
         onSubmit={async (v) => {
