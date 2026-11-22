@@ -19,6 +19,7 @@ import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { rawOf } from '../packages/db/src/tx.ts';
 import { mayUse } from '../packages/lib-platform/src/scope.ts';
+import { takeBooksTurn } from './books-turn.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -97,8 +98,8 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     const [clerk, boss] = [await counter(), at.boss];
     let out: R | undefined;
     await run(async (raw) => {
-      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
-      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
+      // One rolled-back books transaction at a time (RAD-76), under the committed company profile (tools/test-database.ts).
+      await takeBooksTurn(raw);
       const ctx = { ...raw, settings: new Settings([{ key: 'sales.default_price_list', value: at.listId }]) };
       const approve = async (h: { approvalId: string; versionHash: string }) => {
         await decideApproval(await actingAs(ctx, boss), orderOverride, h.approvalId, { decision: 'approve', versionHash: h.versionHash });
