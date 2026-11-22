@@ -15,7 +15,7 @@ import { ApiError } from '../../../../lib/api-client.ts';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { issueWords } from '../issue-words.ts';
-import { quickBillSchema, type QuickBillInput } from './quick-bill-values.ts';
+import { holdChoiceState, quickBillSchema, type QuickBillInput, type Refusal } from './quick-bill-values.ts';
 import { QUICK_BILL_MESSAGES } from './shared.ts';
 
 /** A value that follows another after it has stood still for `ms`: a bill is previewed when the cashier pauses, not on each key. */
@@ -66,18 +66,22 @@ export function Preview({ onFigures }: { onFigures: (figures: { total: string; l
   );
 }
 
-/** Save now, or hold for an approval and complete it later: offered when a check needs an approval (the preview's issues, or a save the
- * server refused with needs_override), and for the Counter customer when the payments leave a balance, which only a held bill with a
- * named buyer can carry (sales:counter_credit). A refused save makes holding the default. */
-export function HoldChoice({ show, refused, left }: { show: boolean; refused: boolean; left: string | null }) {
+/** Save now, or hold for an approval and complete it later: drawn when holdChoiceState says (a check needs an approval, a save was refused
+ * in a way a hold answers, or the Counter customer is left a balance by someone who may). A refusal makes hold the default; when the
+ * choice is not drawn the mode goes back to "save". */
+export function HoldChoice({ issues, refused, left }: { issues: number; refused: Refusal; left: string | null }) {
   const { control, setValue } = useFormContext<QuickBillInput>();
   const customer = useWatch({ control, name: 'customer' });
   const mayCredit = useMe().permissions.includes('sales:counter_credit');
-  useEffect(() => { if (refused) setValue('mode', 'hold'); }, [refused, setValue]);
-  const balance = customer === 'counter' && mayCredit && left !== null && dec(left).gt(0);
-  if (!show && !balance) return null;
+  const { shown, holdByDefault } = holdChoiceState({ issues, refused, counter: customer === 'counter', mayCredit, leftOver: left !== null && dec(left).gt(0) });
+  useEffect(() => {
+    if (!shown) setValue('mode', 'save');
+    else if (holdByDefault) setValue('mode', 'hold');
+  }, [shown, holdByDefault, setValue]);
+  if (!shown) return null;
+  const balanceOnly = issues === 0 && refused === null;
   return (
-    <RadioField name="mode" label={t('sales.quick.mode')} hint={t(balance && !show ? 'sales.quick.mode.hint.balance' : 'sales.quick.mode.hint')} options={[
+    <RadioField name="mode" label={t('sales.quick.mode')} hint={t(balanceOnly ? 'sales.quick.mode.hint.balance' : 'sales.quick.mode.hint')} options={[
       { value: 'save', label: t('sales.quick.mode.save') }, { value: 'hold', label: t('sales.quick.mode.hold') },
     ]} />
   );

@@ -107,3 +107,16 @@ export function rateAfterPrice(current: string, filled: string | null, listRate:
 export function rateFor(itemChanged: boolean, current: string, filled: string | null, listRate: string | null): { rate: string; filled: string | null } {
   return itemChanged ? rateAfterPrice('', null, listRate) : rateAfterPrice(current, filled, listRate);
 }
+
+/** Why a save was refused in a way a hold may answer: a check needs an approval, or the Counter customer was left a balance. */
+export type Refusal = 'override' | 'walk_in' | null;
+
+/** Whether the choice between saving and holding is drawn, and whether hold is its default. It is drawn when a check needs an approval
+ * (the preview's issues), when a save was refused for one of the two reasons, and for the Counter customer when the payments leave a
+ * balance and the person may leave one (sales:counter_credit). Hold is the default after a refusal a hold answers: a needs_override, or a
+ * walk-in balance for someone who may leave one. When it is not drawn the mode is "save", so a hold chosen earlier doesn't linger. */
+export function holdChoiceState(o: { issues: number; refused: Refusal; counter: boolean; mayCredit: boolean; leftOver: boolean }): { shown: boolean; holdByDefault: boolean } {
+  const balance = o.counter && o.mayCredit && o.leftOver;
+  const shown = o.issues > 0 || o.refused !== null || balance;
+  return { shown, holdByDefault: shown && (o.refused === 'override' || (o.refused === 'walk_in' && o.mayCredit)) };
+}

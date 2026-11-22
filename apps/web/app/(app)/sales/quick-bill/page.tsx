@@ -16,7 +16,7 @@ import { t } from '../../../../lib/i18n/index.ts';
 import { HeldBills } from './held-bills.tsx';
 import { QuickBillDone, type Sold } from './quick-bill-done.tsx';
 import { QuickBillForm } from './quick-bill-form.tsx';
-import { NEW_QUICK_BILL } from './quick-bill-values.ts';
+import { NEW_QUICK_BILL, type Refusal } from './quick-bill-values.ts';
 
 const NEEDS = ['sales:write', 'deliveries:write', 'invoices:write'] as const;
 type Figures = { total: string; left: string; issues: readonly string[] };
@@ -28,12 +28,12 @@ export default function QuickBillPage() {
   const [done, setDone] = useState<Sold | null>(null);
   // Starting another bill remounts the form, so nothing of the last one stays in it.
   const [round, setRound] = useState(0);
-  const [askToHold, setAskToHold] = useState(false);
+  const [refused, setRefused] = useState<Refusal>(null);
   const [figures, setFigures] = useState<Figures | null>(null);
   const [moved, setMoved] = useState<string | null>(null);
   const [heldNote, setHeldNote] = useState(false);
   const onFigures = useCallback((f: Figures | null) => setFigures(f), []);
-  const next = () => { setDone(null); setAskToHold(false); setFigures(null); setMoved(null); setHeldNote(false); setRound((n) => n + 1); };
+  const next = () => { setDone(null); setRefused(null); setFigures(null); setMoved(null); setHeldNote(false); setRound((n) => n + 1); };
   const missing = NEEDS.filter((k) => !permissions.includes(k));
   if (missing.length > 0) {
     return <><h1>{t('sales.quick.title')}</h1><p role="alert" className="kit-form-alert">{t('sales.quick.err.forbidden', { keys: missing.join(', ') })}</p></>;
@@ -47,7 +47,7 @@ export default function QuickBillPage() {
         <>
           {heldNote ? <p role="status" className="admin-notice">{t('sales.quick.held')}</p> : null}
           {moved === null ? null : <p role="alert" className="kit-form-alert">{t('sales.quick.preview.moved', { total: formatMoney(moved) })}</p>}
-          <QuickBillForm key={round} labelledBy="quick-bill" initial={NEW_QUICK_BILL} askToHold={askToHold} figures={figures} onFigures={onFigures}
+          <QuickBillForm key={round} labelledBy="quick-bill" initial={NEW_QUICK_BILL} refused={refused} figures={figures} onFigures={onFigures}
             onSubmit={async (v) => {
               setMoved(null);
               if (v.mode === 'hold') {
@@ -67,7 +67,8 @@ export default function QuickBillPage() {
               try {
                 completed(await save.submit(v.bill));
               } catch (e) {
-                if (e instanceof ApiError && (e.code === 'needs_override' || e.code === 'walk_in_pays_in_full')) setAskToHold(true);
+                if (e instanceof ApiError && e.code === 'needs_override') setRefused('override');
+                if (e instanceof ApiError && e.code === 'walk_in_pays_in_full') setRefused('walk_in');
                 throw e;
               }
             }} />

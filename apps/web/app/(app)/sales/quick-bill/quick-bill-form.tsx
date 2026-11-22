@@ -20,7 +20,7 @@ import { usePlaces } from '../deliveries/shared.tsx';
 import { StockPick } from '../deliveries/stock-pick.tsx';
 import { PickedField } from '../picked-field.tsx';
 import {
-  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, rateFor, type QuickBillInput, type QuickBillValues,
+  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, rateFor, type QuickBillInput, type QuickBillValues, type Refusal,
 } from './quick-bill-values.ts';
 import { BuyerBox, HoldChoice, Preview, usePartyName } from './quick-bill-extras.tsx';
 import { QUICK_BILL_MESSAGES } from './shared.ts';
@@ -189,9 +189,9 @@ function SubmitLabel() {
   return <SubmitButton>{t(mode === 'hold' ? 'sales.quick.hold' : 'sales.quick.save')}</SubmitButton>;
 }
 
-/** The form. `askToHold` is set when a save was refused for needing an approval; `figures` are the preview's, kept by the page. */
-export function QuickBillForm({ labelledBy, initial, askToHold, figures, onFigures, onSubmit }: {
-  labelledBy: string; initial: QuickBillInput; askToHold: boolean;
+/** The form. `refused` is set when a save was refused in a way a hold answers; `figures` are the preview's, kept by the page. */
+export function QuickBillForm({ labelledBy, initial, refused, figures, onFigures, onSubmit }: {
+  labelledBy: string; initial: QuickBillInput; refused: Refusal;
   figures: { total: string; left: string; issues: readonly string[] } | null;
   onFigures: (figures: { total: string; left: string; issues: readonly string[] } | null) => void;
   onSubmit: (values: QuickBillValues) => Promise<unknown>;
@@ -211,7 +211,7 @@ export function QuickBillForm({ labelledBy, initial, askToHold, figures, onFigur
       <Lines />
       <Payments />
       <Preview onFigures={onFigures} />
-      <HoldChoice show={(figures?.issues.length ?? 0) > 0} refused={askToHold} left={figures?.left ?? null} />
+      <HoldChoice issues={figures?.issues.length ?? 0} refused={refused} left={figures?.left ?? null} />
       <BuyerBox />
       <SubmitLabel />
     </Form>

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { quickBillSchema, rateAfterPrice, rateFor } from './quick-bill-values.ts';
+import { holdChoiceState, quickBillSchema, rateAfterPrice, rateFor } from './quick-bill-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const line = (over: object = {}) => ({ itemId: id(1), qty: '2', rate: '500.00', discountPercent: '0', pick: { [id(2)]: '2' }, serials: [] as string[], ...over });
@@ -72,4 +72,18 @@ it('on a hold neither asks for a card’s approval code nor sends it (the code i
   expect(quickBillSchema.parse({ ...base, mode: 'hold', payments: [card] }).bill.payments).toEqual([{ method: 'card', amount: '200' }]);
   expect(quickBillSchema.parse({ ...base, mode: 'hold', payments: [{ ...card, approvalCode: 'A1B2C3' }] }).bill.payments).toEqual([{ method: 'card', amount: '200' }]);
   expect(paths(quickBillSchema.safeParse({ ...base, mode: 'save', payments: [card] }))).toEqual(['payments.0.approvalCode']);
+});
+
+it('draws the hold choice for a check, a refusal a hold answers, or a balance left by someone who may leave one, and defaults to hold only after a refusal', () => {
+  const o = { issues: 0, refused: null, counter: true, mayCredit: true, leftOver: false } as const;
+  expect(holdChoiceState(o)).toEqual({ shown: false, holdByDefault: false });
+  expect(holdChoiceState({ ...o, issues: 1 })).toEqual({ shown: true, holdByDefault: false });
+  expect(holdChoiceState({ ...o, leftOver: true })).toEqual({ shown: true, holdByDefault: false });
+  // a balance for a named customer, or for someone who may not leave one, is not this choice's business
+  expect(holdChoiceState({ ...o, leftOver: true, counter: false }).shown).toBe(false);
+  expect(holdChoiceState({ ...o, leftOver: true, mayCredit: false }).shown).toBe(false);
+  // a refused save draws it; an override refusal defaults to hold, a walk-in one only for someone who may leave a balance
+  expect(holdChoiceState({ ...o, refused: 'override' })).toEqual({ shown: true, holdByDefault: true });
+  expect(holdChoiceState({ ...o, refused: 'walk_in' })).toEqual({ shown: true, holdByDefault: true });
+  expect(holdChoiceState({ ...o, refused: 'walk_in', mayCredit: false })).toEqual({ shown: true, holdByDefault: false });
 });
