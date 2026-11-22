@@ -7,7 +7,6 @@
 // posted. Never past what is left of the invoice: the server refuses (`exceeds_invoice`, `exceeds_credit`), and the form is
 // checked with the contract's own schema.
 import { formatMoney } from '@radcore/lib-common';
-import { listAccounts } from '@radcore/lib-accounts/contract';
 import { getInvoice, listInvoices } from '@radcore/lib-sales/contract';
 import { useState } from 'react';
 import { useController, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
@@ -16,6 +15,7 @@ import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { usePlaces } from '../deliveries/shared.tsx';
+import { useMoneyAccounts } from '../money-accounts.ts';
 import { CREDIT_MESSAGES } from './shared.tsx';
 import { asWritten } from '../../admin/decimal.ts';
 import { batchKey, creditSchema, type CreditInput, type CreditLineInput, type CreditValues } from './credit-values.ts';
@@ -143,18 +143,6 @@ function Lines() {
   );
 }
 
-/** The accounts a counter refund can be paid from: Cash, Bank, and the bank accounts under Bank (what the server takes as a money
- * account; it checks again when the note is approved). A person who can't read the chart (journal:read) is told the refund
- * can't be offered, and the note is written without one. */
-function useRefundAccounts() {
-  const q = useApiQuery(listAccounts, {});
-  if (q.error !== null) return 'hidden';
-  if (q.data === undefined) return null;
-  const bank = q.data.items.find((a) => a.systemKey === 'bank')?.id;
-  const money = (a: (typeof q.data.items)[number]) => a.systemKey === 'cash' || a.systemKey === 'bank' || (bank !== undefined && a.parentId === bank);
-  return q.data.items.filter((a) => a.active && money(a)).map((a) => ({ value: a.id, label: a.name }));
-}
-
 /** Where goods come back to: shown for goods back only. */
 function PlaceField({ options }: { options: readonly { value: string; label: string }[] }) {
   const { control } = useFormContext<CreditInput>();
@@ -168,7 +156,7 @@ function PlaceField({ options }: { options: readonly { value: string; label: str
 export function CreditNoteForm({ labelledBy, initial, submit, onSubmit }: {
   labelledBy: string; initial: CreditInput; submit: string; onSubmit: (values: CreditValues) => Promise<unknown>;
 }) {
-  const accounts = useRefundAccounts();
+  const accounts = useMoneyAccounts();
   const places = usePlaces('');
   if (!places.ready) return <p>{t('loading')}</p>;
   return (
@@ -185,8 +173,8 @@ export function CreditNoteForm({ labelledBy, initial, submit, onSubmit }: {
         <fieldset>
           <legend>{t('sales.credit.form.refund')}</legend>
           <p className="kit-field-hint">{t('sales.credit.form.refund.hint')}</p>
-          <TextField name="refundAmount" label={t('sales.credit.form.refund.amount')} inputMode="decimal" autoComplete="off" />
-          <SelectField name="refundAccountId" label={t('sales.credit.form.refund.account')} placeholder={t('sales.credit.form.refund.account.none')} options={accounts} />
+          <TextField name="refund.amount" label={t('sales.credit.form.refund.amount')} inputMode="decimal" autoComplete="off" />
+          <SelectField name="refund.accountId" label={t('sales.credit.form.refund.account')} placeholder={t('sales.credit.form.refund.account.none')} options={accounts} />
         </fieldset>
       )}
       <SubmitButton>{submit}</SubmitButton>

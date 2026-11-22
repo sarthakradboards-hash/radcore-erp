@@ -3,7 +3,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, check, date, index, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { accounts, journalEntries, parties } from '../accounts/tables.ts';
-import { boundedText, id, json, money, percent, qty, radcoreTable } from '../columns.ts';
+import { boundedText, createdMoment, id, json, money, percent, qty, radcoreTable } from '../columns.ts';
 import { items, locations } from '../stock/tables.ts';
 import { invoiceLines, invoices } from './tables.ts';
 
@@ -15,7 +15,7 @@ import { invoiceLines, invoices } from './tables.ts';
  * refund (F26) is drafted with the note, its amount and the cash or bank account, and paid as the note posts.
  */
 export const creditNotes = radcoreTable('credit_notes', {
-  id: id(),
+  id: id(), createdAt: createdMoment(),
   status: text().notNull().default('draft'),
   number: text().unique(),
   kind: text().notNull(),
@@ -53,7 +53,7 @@ export const creditNotes = radcoreTable('credit_notes', {
     and abs(${t.roundOff}) < 1 and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
   index('ix_credit_notes_invoice').on(t.invoiceId),
   index('ix_credit_notes_party_date').on(t.partyId, t.businessDate),
-  index('ix_credit_notes_date').on(t.businessDate, t.id),
+  index('ix_credit_notes_date').on(t.businessDate, t.createdAt, t.id),
   index('ix_credit_notes_owner').on(t.owner),
   index('ix_credit_notes_location').on(t.locationId),
   index('ix_credit_notes_refund_account').on(t.refundAccountId),
