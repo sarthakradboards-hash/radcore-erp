@@ -118,10 +118,12 @@ export async function deliveredNotInvoiced(ctx: Ctx, partyId: string): Promise<M
 export const rupeesOf = (values: Iterable<Decimal>): Money => roundMoney([...values].reduce((s, v) => s.plus(dec(toRupee(v))), dec('0')));
 
 /**
- * shortcut: the seeded Counter customer is never left owing (the quick bill takes it paid in full, and it can have no
- * order or delivery of its own: tools/walk-in-owes-nothing.test.ts), so its credit checks skip its whole history, which
- * every counter sale lengthens (RAD-115's save under 2 seconds; the architect's option (a)). A party that can owe still
- * reads all of it; backend's ticket makes that flat for every party, when this goes.
+ * shortcut: the skip holds only while walk_in can't carry a debit; revisit if that ever changes. The seeded Counter
+ * customer is never left owing: it's reached only through the quick bill, which takes it paid in full or names a buyer,
+ * and anything else that moves it (a return, a refund) only takes it into credit, which skipping makes stricter
+ * (tools/walk-in-owes-nothing.test.ts pins this). So its credit checks skip its whole history, which every counter sale
+ * lengthens (RAD-115's save under 2 seconds, the architect's option (a)). Other parties still read all of it until
+ * backend's ticket makes that flat.
  */
 export const counterCustomer = async (ctx: Ctx, partyId: string): Promise<boolean> => partyId === await systemPartyId(ctx, 'walk_in');
 

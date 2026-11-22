@@ -6,7 +6,7 @@
 // prefixes and no issued number changes (the architect on #171, until the CA settles the format, CA-44).
 // The draw is a document's last step, after every check has passed (ADR-006 §1's lock order), so the counter's row
 // lock is held for the shortest time; a save that rolls back gives its number back.
-import { numberCounters, platformTx, takeTurns } from '@radcore/db/platform';
+import { drawCounter, takeTurns } from '@radcore/db/platform';
 import { financialYear } from '@radcore/lib-common';
 import { z } from 'zod';
 import type { Ctx } from './ctx.ts';
@@ -71,15 +71,11 @@ export async function holdSeries(ctx: Ctx, series: readonly Series[]): Promise<v
  */
 export async function nextNumber(ctx: Ctx, series: Series, businessDate: string): Promise<string> {
   const year = financialYear(businessDate).label;
-  // The series' turn first (step 6), whether or not its counter exists yet; a save that holds it already passes.
-  await takeTurns(ctx.tx, [turnOf(series.key)]);
-  // A year's first draw inserts the counter, and the database's trigger gives it the latest prefix in series_prefixes
-  // on or before the year, else this declared one. A later draw sets `last` to itself, and the trigger makes it exactly
-  // one more and keeps the prefix (migrations 0038 and RAD-132's).
-  const [row] = await platformTx(ctx).insert(numberCounters)
-    .values({ series: series.key, financialYear: year, prefix: series.prefix })
-    .onConflictDoUpdate({ target: [numberCounters.series, numberCounters.financialYear], set: { last: numberCounters.last } })
-    .returning({ last: numberCounters.last, prefix: numberCounters.prefix });
+  // The series' turn first (step 6), whether or not its counter exists yet, in the same statement; a save that holds it
+  // already passes. A year's first draw inserts the counter, and the database's trigger gives it the latest prefix in
+  // series_prefixes on or before the year, else this declared one. A later draw sets `last` to itself, and the trigger
+  // makes it exactly one more and keeps the prefix (migrations 0038 and RAD-132's).
+  const row = await drawCounter(ctx.tx, { turn: turnOf(series.key), series: series.key, financialYear: year, prefix: series.prefix });
   if (row === undefined) throw new Error(`${series.key}: no number was drawn`);
   if (row.last > series.max) {
     throw new AppError('series_full', `This year's ${series.key} numbers have run out. Ask an admin to start a new series`);
