@@ -3,7 +3,7 @@
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
   addList, askApproval, changeList, getChanges, getList, getVersion, listLimits, listListsPage, listRatesPage, priceListApproval,
-  priceOf, putRates, setLimit, setTax, startDraft, getPartyList, setPartyList, acceptQuoteNow, addOrder, addQuote, cancelOrderNow, changeOrder, changeQuote,
+  priceOf, putRates, setLimit, setTax, startDraft, getPartyList, salePrice, setPartyList, acceptQuoteNow, addOrder, addQuote, cancelOrderNow, changeOrder, changeQuote,
   closeOrderNow, closeQuoteNow, confirmOrderNow, dropOrder, dropQuote, getOrderById, getQuoteById, listOrdersPage, listQuotesPage,
   sendQuoteNow, askOrderOverride, orderOverride, addDelivery, askDeliveryOverride, changeDelivery, deliveryOverride, dropDelivery,
   getDeliveryById, listDeliveriesPage, listToInvoicePage, postDeliveryNow, addDeliveryReturn, changeDeliveryReturn, dropDeliveryReturn,
@@ -25,7 +25,7 @@ import {
   listDeliveries, listDeliveryReturns, listToInvoice, postDelivery, postDeliveryReturn, requestDeliveryOverride, updateDelivery,
   updateDeliveryReturn, createInvoice, deleteInvoice, getInvoice, invoiceOverrideApproval, listInvoices, postInvoice,
   requestInvoiceOverride, updateInvoice,
-  getPartyPriceList, setPartyPriceList,
+  getPartyPriceList, getSalePrice, setPartyPriceList,
   cancelInvoice, listInvoiceLinks, revokeInvoiceLink, shareInvoice, viewInvoiceLink, cancelCreditNote, createCreditNote, creditNoteApproval, deleteCreditNote, getCreditNote, listCreditNotes,
   requestCreditNoteApproval,
   countDeliveryReturns, countOrders, countQuotes,
@@ -51,6 +51,7 @@ export default [
   defineRoute(listDiscountLimits, listLimits),
   defineRoute(setDiscountLimit, setLimit),
   defineRoute(getPartyPriceList, getPartyList),
+  defineRoute(getSalePrice, salePrice),
   defineRoute(setPartyPriceList, setPartyList),
   defineRoute(listQuotes, listQuotesPage),
   defineRoute(countQuotes, quoteCounts),
