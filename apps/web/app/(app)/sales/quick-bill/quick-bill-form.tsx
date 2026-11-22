@@ -15,11 +15,12 @@ import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { useApiQuery, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
+import { asPrice } from '../../admin/decimal.ts';
 import { usePlaces } from '../deliveries/shared.tsx';
 import { StockPick } from '../deliveries/stock-pick.tsx';
 import { PickedField } from '../picked-field.tsx';
 import {
-  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, type QuickBillInput, type QuickBillValues,
+  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, rateAfterPrice, type QuickBillInput, type QuickBillValues,
 } from './quick-bill-values.ts';
 import { QUICK_BILL_MESSAGES } from './shared.ts';
 
@@ -64,13 +65,19 @@ function ItemBox({ index }: { index: number }) {
   const customer = useWatch({ control, name: 'customer' });
   const partyId = useWatch({ control, name: 'partyId' });
   const on = useWatch({ control, name: 'businessDate' });
-  // The rate comes from the item's price list for this customer and day (prices:read); a person without it types the rate. A list rate
-  // that includes GST isn't put in the box, which takes the rate before GST. A rate already typed is never replaced.
+  // The rate comes from the item's price list for this customer and day (prices:read); a person without that key types the rate. A list
+  // rate that includes GST isn't put in the box, which takes the rate before GST. The box remembers what it filled in: when the list
+  // rate changes (another item, customer or day) that is replaced, but a rate someone typed is never touched.
+  const mayPrice = useMe().permissions.includes('prices:read');
   const price = useApiQuery(getSalePrice, { itemId, ...(customer === 'named' && partyId !== '' ? { partyId } : {}), on },
-    { enabled: itemId !== '' && /^\d{4}-\d{2}-\d{2}$/.test(on) }).data;
+    { enabled: mayPrice && itemId !== '' && /^\d{4}-\d{2}-\d{2}$/.test(on) }).data;
+  const listRate = price?.rate != null && price.taxInclusive === false ? asPrice(price.rate) : null;
+  const filled = useRef<string | null>(null);
   useEffect(() => {
-    if (price?.rate != null && price.taxInclusive === false && getValues(`lines.${index}.rate`) === '') setValue(`lines.${index}.rate`, price.rate);
-  }, [price, index, getValues, setValue]);
+    const next = rateAfterPrice(getValues(`lines.${index}.rate`), filled.current, listRate);
+    filled.current = next.filled;
+    if (next.rate !== getValues(`lines.${index}.rate`)) setValue(`lines.${index}.rate`, next.rate);
+  }, [listRate, index, getValues, setValue]);
   // What was picked for one item is not for another: a new item leaves no batches or serials of the old one (auditor-3 on #320). Not on
   // the first render, and kept when an earlier line is removed (this box stays with its own line, whose item is the same).
   const itemSeen = useRef(itemId);
@@ -78,6 +85,9 @@ function ItemBox({ index }: { index: number }) {
     if (itemSeen.current !== itemId) {
       setValue(`lines.${index}.pick`, {});
       setValue(`lines.${index}.serials`, []);
+      // The rate was for the old item, filled or typed: the new item's list rate (if any) fills it again.
+      setValue(`lines.${index}.rate`, '');
+      filled.current = null;
     }
     itemSeen.current = itemId;
   }, [itemId, index, setValue]);

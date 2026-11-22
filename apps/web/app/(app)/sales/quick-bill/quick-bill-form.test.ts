@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { quickBillSchema } from './quick-bill-values.ts';
+import { quickBillSchema, rateAfterPrice } from './quick-bill-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const line = (over: object = {}) => ({ itemId: id(1), qty: '2', rate: '500.00', discountPercent: '0', pick: { [id(2)]: '2' }, serials: [] as string[], ...over });
@@ -33,4 +33,14 @@ it('asks for what each payment needs, and refuses anything that reads as card di
   expect(paths(quickBillSchema.safeParse({ ...base, payments: [pay({ method: 'card', amount: '5' })] }))).toEqual(['payments.0.approvalCode']);
   expect(paths(quickBillSchema.safeParse({ ...base, payments: [pay({ method: 'card', amount: '5', approvalCode: '4111 1111 1111 1111' })] }))).toEqual(['payments.0.approvalCode']);
   expect(paths(quickBillSchema.safeParse({ ...base, payments: [pay({ method: 'upi', amount: '5', accountId: id(4), reference: '4111111111111111' })] }))).toEqual(['payments.0.reference']);
+});
+
+it('fills an empty rate box from the list, replaces what it filled when the list rate changes, and never touches a typed rate', () => {
+  expect(rateAfterPrice('', null, '500.00')).toEqual({ rate: '500.00', filled: '500.00' });
+  // filled, then the customer or day changes the list rate: the filled rate follows; with no list rate it is cleared
+  expect(rateAfterPrice('500.00', '500.00', '450.00')).toEqual({ rate: '450.00', filled: '450.00' });
+  expect(rateAfterPrice('500.00', '500.00', null)).toEqual({ rate: '', filled: null });
+  // a rate someone typed (or edited) stays
+  expect(rateAfterPrice('499.00', '500.00', '450.00')).toEqual({ rate: '499.00', filled: '500.00' });
+  expect(rateAfterPrice('499.00', null, '450.00')).toEqual({ rate: '499.00', filled: null });
 });

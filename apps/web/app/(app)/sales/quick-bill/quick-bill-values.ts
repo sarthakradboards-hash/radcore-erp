@@ -71,3 +71,10 @@ export const blankPayment = (method: (typeof PAYMENT_METHODS)[number]) => ({ met
 export const NEW_QUICK_BILL: QuickBillInput = {
   businessDate: indiaDate(new Date()), locationId: '', customer: 'counter', partyId: '', notes: '', lines: [blankLine], payments: [],
 };
+
+/** The rate box after the list rate changes (the item, the customer or the day): the rate this box filled in itself, or an empty box,
+ * takes the new list rate (none when there is none); a rate someone typed is never touched. `filled` is the rate the box put in. */
+export function rateAfterPrice(current: string, filled: string | null, listRate: string | null): { rate: string; filled: string | null } {
+  if (current !== '' && current !== filled) return { rate: current, filled };
+  return listRate === null ? { rate: '', filled: null } : { rate: listRate, filled: listRate };
+}
