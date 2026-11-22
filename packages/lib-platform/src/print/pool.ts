@@ -2,11 +2,12 @@
 // a small set of node:worker_threads threads kept warm with the PDF library and the fonts loaded. Each render has
 // PRINT_LIMITS.renderMs: past it the thread is terminated and replaced, and the caller gets server_error. Each thread's
 // heap is capped (resourceLimits), and it starts with no environment, so no credential is in reach (as the parsers').
+// Each thread runs render-thread.ts, marked with MARK so only the pool's own threads ever take its branch.
 import { Worker } from 'node:worker_threads';
 import type { Paper } from '../contract/print.ts';
 import { AppError } from '../errors.ts';
 import { PRINT_LIMITS, type PrintBlock } from './blocks.ts';
-import type { Done, Job } from './render-thread.ts';
+import { MARK, type Done, type Job } from './render-thread.ts';
 
 export type PrintPool = {
   render(blocks: readonly PrintBlock[], paper: Paper, title: string): Promise<Uint8Array>;
@@ -26,7 +27,7 @@ export function createPrintPool({ size = 2, renderMs = PRINT_LIMITS.renderMs, he
   const failed = (message: string) => new AppError('server_error', `The printout couldn't be made: ${message}`);
 
   const start = (): Thread => {
-    const worker = new Worker(entry, { env: {}, resourceLimits: { maxOldGenerationSizeMb: heapMb } });
+    const worker = new Worker(entry, { env: {}, workerData: MARK, resourceLimits: { maxOldGenerationSizeMb: heapMb } });
     // A warm thread never keeps the process from exiting.
     worker.unref();
     const t: Thread = { worker, ready: false, doing: null };

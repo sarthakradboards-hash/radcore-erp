@@ -28,6 +28,9 @@ export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${
 const DB_CLIENT = 'packages/lib-platform/src/db/client.ts';
 const OUTBOUND_CLIENT = 'packages/lib-platform/src/http/outbound.ts';
 const IMPORT_ISOLATE = 'packages/lib-platform/src/import/isolate.ts';
+// The print pool's starter and its threads' entry (RAD-120).
+const PRINT_POOL = 'packages/lib-platform/src/print/pool.ts';
+const PRINT_THREAD = 'packages/lib-platform/src/print/render-thread.ts';
 /** The one function in request-context.ts whose body may use `sql` (ADR-002 §3). */
 export const REQUEST_CONTEXT_HELPER = 'applyRequestContext';
 
@@ -41,7 +44,7 @@ export const ZONES = {
   'radcore/outbound-only': [OUTBOUND_CLIENT],
 };
 /** L8's import list lifted by one module in exactly these files, with the rest of L8 still on (ADR-002). */
-export const L8_LIFTED = { [IMPORT_ISOLATE]: ['worker_threads'] };
+export const L8_LIFTED = { [IMPORT_ISOLATE]: ['worker_threads'], [PRINT_POOL]: ['worker_threads'], [PRINT_THREAD]: ['worker_threads'] };
 /** L1's SQL zone: `sql` allowed in its positions (plus `sql` on the allowlist). L1 itself is never off. */
 export const L1_SQL_ZONE = [VIEW_FILES, ...TABLE_FILES, REQUEST_CONTEXT, LOG_WRITERS];
 const L1_ALLOW = ['and', 'or', 'not', 'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'isNull', 'isNotNull', 'inArray', 'between',
@@ -59,7 +62,7 @@ const msg = (tag, adr, text) => `[${tag}] ${text} (${adr}).`;
 const sel = (tag, adr, text) => (selector) => ({ selector, message: msg(tag, adr, text) });
 // Statement shapes, with \W+ between keywords so a comment or other separator doesn't hide them.
 const SQL_SHAPE = String.raw`/\bselect\b[\s\S]*\bfrom\b|\binsert\W+into\b|\bupdate\b[\s\S]*\bset\b|\bdelete\W+from\b|\bwith\b[\s\S]*\bas\W*\(|\b(create|alter|drop)\W+(or\W+replace\W+)?(table|view|index|trigger|function)\b|\btruncate\W+(table\b|\w+\W*$)|\bgrant\b[\s\S]*\b(on|to)\b/i`;
-const DEFINE = '/^define(Route|Webhook|WebhookJob|Job|Export|ExportJob|Import|Approval)$/';
+const DEFINE = '/^define(Route|Webhook|WebhookJob|Job|Export|ExportJob|Import|Approval|PrintRoute)$/';
 const RAW_EXEC = '/^(execute|unsafe|query)$/';
 const L8 = msg('L8', 'ADR-002', `Outside calls and module loading go through ${OUTBOUND_CLIENT}`);
 const L8_MODULES = ['undici', 'axios', 'got', 'node-fetch', 'ws', 'http', 'https', 'http2', 'net', 'tls', 'dgram',

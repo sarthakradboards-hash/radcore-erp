@@ -3,14 +3,13 @@
 // so the library never fetches anything (ADR-003 §7). Noto Sans's `latin` file has the letters and its `latin-ext`
 // file has ₹ (U+20B9), which the PDF standard fonts lack; every text falls back from one to the other.
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { Document, Font, Image, Page, renderToBuffer, Text, View } from '@react-pdf/renderer';
 import { createElement as h, type ReactElement } from 'react';
 import type { Paper } from '../contract/print.ts';
 import { PAPERS, PRINT_LIMITS, type PrintBlock } from './blocks.ts';
 
-const fontFile = (name: string) => `data:font/woff;base64,${readFileSync(createRequire(import.meta.url)
-  .resolve(`@fontsource/noto-sans/files/noto-sans-${name}.woff`)).toString('base64')}`;
+const fontFile = (name: string) =>
+  `data:font/woff;base64,${readFileSync(new URL(import.meta.resolve(`@fontsource/noto-sans/files/noto-sans-${name}.woff`))).toString('base64')}`;
 for (const [family, subset] of [['NotoSans', 'latin'], ['NotoSansExt', 'latin-ext']] as const) {
   Font.register({ family, fonts: [{ src: fontFile(`${subset}-400-normal`) }, { src: fontFile(`${subset}-700-normal`), fontWeight: 700 }] });
 }

@@ -307,7 +307,9 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c). A read-only
         // link spends its use here, before anything is answered: if the last use went to a request racing this one,
         // this one gets the same not_found, and sees nothing.
-        // A read's looks are logged the same way, before the answer goes out: no log, no answer.
+        // A read's looks are logged the same way, before the answer goes out: no log, no answer. A printout is a look
+        // at its one record (RAD-120).
+        if (contract.print !== undefined) looks.push({ table: contract.print.table, id: String((work as { id: unknown }).id) });
         if (principal?.kind === 'link' || looks.length > 0) {
           await runInTransaction(deps.db, WRITE, principal ?? PUBLIC, requestId, async (ctx) => {
             if (principal?.kind === 'link') {
@@ -317,7 +319,9 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
             await recordLooks(ctx, looks);
           });
         }
-        res.status(200).json(output);
+        // A printout is its PDF's bytes, under the no-store every answer has; anything else is JSON.
+        if (contract.print === undefined) res.status(200).json(output);
+        else res.status(200).type('application/pdf').send(Buffer.from(output as Uint8Array));
       } catch (err) {
         const failure = failureOf(err, contract.errors, contract.dbErrors);
         warnUndeclared(deps, err, contract.errors, `${route} (request ${requestId})`);

@@ -23,6 +23,10 @@ export { deliveryOverride } from './services/delivery-checks.ts';
 export { addInvoice, changeInvoice, dropInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
 export { cancelInvoiceNow } from './services/invoice-cancel.ts';
 export { remindWithLink } from './services/reminder-links.ts';
+// The printouts' templates (RAD-120), each mounted with lib-platform's definePrintRoute.
+export { challanPrint } from './print/challan.ts';
+export { invoicePrint } from './print/invoice.ts';
+export { quotePrint } from './print/quote.ts';
 export { DOCUMENT_LINK_DAYS, invoiceByLink, invoiceLinks, revokeInvoiceLinkNow, shareInvoiceLink } from './services/invoice-links.ts';
 export { addCreditNote, dropCreditNote, listCreditNotesPage } from './services/credit-notes.ts';
 export {

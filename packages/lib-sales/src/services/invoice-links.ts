@@ -61,7 +61,13 @@ export async function invoiceByLink(ctx: Ctx): Promise<Out<typeof viewInvoiceLin
   const id = linkRecord(ctx, VIEW);
   const [r] = await salesTx(ctx).select().from(invoices).where(eq(invoices.id, id));
   if (r?.status !== 'posted' || r.number === null) throw new AppError('not_found', 'Not found');
-  const lines = await salesTx(ctx).select().from(invoiceLines).where(eq(invoiceLines.invoiceId, id)).orderBy(asc(invoiceLines.lineNo));
+  return issuedInvoice(ctx, { ...r, number: r.number });
+}
+
+/** An invoice as it was issued, from its own frozen copy of the issuer and buyer: the link's view and the printout's
+ * (RAD-120). The caller has read the row within its scope, and it has a number. */
+export async function issuedInvoice(ctx: Ctx, r: typeof invoices.$inferSelect & { number: string }): Promise<Out<typeof viewInvoiceLink>> {
+  const lines = await salesTx(ctx).select().from(invoiceLines).where(eq(invoiceLines.invoiceId, r.id)).orderBy(asc(invoiceLines.lineNo));
   const items = await itemLabels(ctx, lines.map((l) => l.itemId));
   return {
     number: r.number, businessDate: r.businessDate, total: r.total as Money,

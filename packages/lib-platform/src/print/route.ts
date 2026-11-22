@@ -6,7 +6,7 @@ import { defineRoute, type Route } from '../route.ts';
 import type { PrintDef } from './blocks.ts';
 import { renderPdf } from './pool.ts';
 
-export function definePrintRoute<M>(contract: ReturnType<typeof printContract>, def: PrintDef<M>): Route {
+export function definePrintRoute<M>(contract: ReturnType<typeof printContract<string>>, def: PrintDef<M>): Route {
   return defineRoute(contract, async (_ctx, _input, { before }: { before: Uint8Array }) => before, {
     before: async ({ id, paper }, { read }) => {
       const model = await read((ctx) => def.read(ctx, id));
