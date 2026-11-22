@@ -239,6 +239,9 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
         (e: unknown) => (e instanceof AppError ? `${e.code} ${e.issues[0]?.message ?? ''}` : String(e)));
       const receipt = await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('1221'), accountId: cash });
       await allocatePayment(ctx, { id: receipt.id, businessDate: DATE, lines: [{ documentTable: 'invoices', documentId: inv.id, amount: m('1221') }] });
+      // Paid only from Cash or a bank account, said at draft: Sales isn't one.
+      const sales = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'sales'`))[0]?.id ?? '';
+      const notMoney = await failure(goodsBack(ctx, at, inv, '1', { refund: { amount: '407', accountId: sales } }));
       const tooMuch = await failure(goodsBack(ctx, at, inv, '1', { refund: { amount: '407.01', accountId: cash } }));
       const { id } = await goodsBack(ctx, at, inv, '1', { refund: { amount: '407', accountId: cash } });
       const note = await approve(ctx, id, approver);
@@ -256,10 +259,10 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       await rawOf(ctx.tx).execute(sql`set transaction read only`);
       const shown = await getCreditNoteById(ctx, { id: next.id });
       const readOnly = [shown.approval, shown.total, (await creditNoteApprovalSpec.version(ctx, next.id, { forUpdate: false }))?.amounts?.total];
-      return { unpaid, tooMuch, note: [note.taxable, note.cgst, note.roundOff, note.total], entry: await entryOf(ctx, id, DATE), readOnly,
+      return { unpaid, notMoney, tooMuch, note: [note.taxable, note.cgst, note.roundOff, note.total], entry: await entryOf(ctx, id, DATE), readOnly,
         paid: (await paidOf(ctx, 'invoices', [inv.id])).get(inv.id)?.credited, refund: refund?.status, paidOut, balance: balance?.balance };
     });
-    expect(out).toEqual({ unpaid: 'exceeds_credit 0.00 is left to refund', tooMuch: 'exceeds_credit', note: ['345.00', '31.05', '-0.10', '407.00'],
+    expect(out).toEqual({ unpaid: 'exceeds_credit 0.00 is left to refund', notMoney: 'not_money_account', tooMuch: 'exceeds_credit', note: ['345.00', '31.05', '-0.10', '407.00'],
       entry: ['Sales 345.00 0.00', 'Output CGST 31.05 0.00', 'Output SGST 31.05 0.00', 'Debtors 0.00 407.00', 'Round Off 0.00 0.10',
         'Stock in Hand 200.00 0.00', 'Cost of Goods Sold 0.00 200.00'], paid: '0.00', refund: 'posted',
       paidOut: ['Debtors 407.00 0.00', 'Cash 0.00 407.00'], balance: '0.00', readOnly: ['pending', '407.00', '407.00'] });

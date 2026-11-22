@@ -3,7 +3,7 @@
 // the draft's check and again at posting under the invoice's lock (credit-note-post.ts). Whose a note is: its invoice's
 // owner (ADR-007 §7), whoever drafts it.
 import { after, creditNoteLines, creditNotes, deliveryLines, invoiceLines, invoices, salesTx } from '@radcore/db/sales';
-import { paidOf } from '@radcore/lib-accounts';
+import { moneyAccountRefusal, paidOf } from '@radcore/lib-accounts';
 import { dec, roundMoney, type Money } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, listScope, type Ctx } from '@radcore/lib-platform';
 import { checkPlace, checkQuantity, serialKey } from '@radcore/lib-stock';
@@ -165,7 +165,12 @@ export async function addCreditNote(ctx: Ctx, input: In<typeof createCreditNote>
   const total = roundMoney(figures.reduce((s, f) => s.plus(dec(f.lineTotal)), dec('0')).toDecimalPlaces(0));
   // A counter refund only of what's left once the note settles its invoice, said to the maker now (the RAD-114 note);
   // posting checks it again under the invoice's lock.
-  if (input.refund !== null) refundRoom(total, await unpaidOf(ctx, inv), input.refund.amount);
+  if (input.refund !== null) {
+    refundRoom(total, await unpaidOf(ctx, inv), input.refund.amount);
+    // Paid from Cash or a bank account (lib-accounts' rule, which the refund's posting applies too).
+    const refused = await moneyAccountRefusal(ctx, input.refund.accountId);
+    if (refused !== null) throw new AppError('not_money_account', refused, [{ path: ['refund', 'accountId'], code: 'not_money_account', message: refused }]);
+  }
   const tx = salesTx(ctx);
   const [row] = await tx.insert(creditNotes).values({ kind: input.kind, invoiceId: inv.id, partyId: inv.partyId, owner: inv.owner,
     businessDate: input.businessDate, locationId: input.locationId, reason: input.reason, refundAmount: input.refund?.amount ?? null,

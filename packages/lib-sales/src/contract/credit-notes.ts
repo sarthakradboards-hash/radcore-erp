@@ -88,7 +88,7 @@ export const getCreditNote = defineContract({
 /** A new draft credit note against a posted invoice. */
 export const createCreditNote = defineContract({
   method: 'POST', path: '/sales/credit-notes', auth: 'session', perm: 'credit_notes:write', tx: write,
-  input: noteIn, output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS],
+  input: noteIn, output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS, 'not_money_account'],
 });
 /** A draft credit note, thrown away: it never had a number. */
 export const deleteCreditNote = defineContract({
