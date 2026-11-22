@@ -13,6 +13,7 @@ export {
   type HeldFor,
 } from './services/payments.ts';
 export { partyReceivable } from './services/receivables.ts';
+export { listMoneyAccountsNow } from './services/money-accounts.ts';
 export { partyStatement, toCollectPage } from './services/collect.ts';
 export { remind, remindersPage, type ReminderLink, type ReminderLinkFor } from './services/reminders.ts';
 export {

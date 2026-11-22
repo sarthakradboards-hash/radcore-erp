@@ -3,7 +3,7 @@
 // figures F9 (the scooter back, and its discount variant), F25 (late) and F26 (one pad of three) are reproduced exactly.
 import { AppError } from '@radcore/lib-platform';
 import { describe, expect, it } from 'vitest';
-import { creditLine, isLate, isMonthDay, taxDeadline } from './credit-note-rules.ts';
+import { creditLine, isLate, isMonthDay, refundRoom, taxDeadline } from './credit-note-rules.ts';
 
 const outcome = (fn: () => unknown): string => {
   try {
@@ -80,5 +80,19 @@ describe('the section 34 deadline (CA-10)', () => {
   it('takes the setting as a real month and day', () => {
     expect(['11-30', '02-28', '02-29', '13-01', '1-30', '11-30x', 'x11-30'].map(isMonthDay))
       .toEqual([true, true, false, false, false, false, false]);
+  });
+});
+
+describe('refundRoom', () => {
+  it('applies as much as the invoice is unpaid, and refunds no more than the rest (F9, F26)', () => {
+    expect(refundRoom('407.00', '1221.00', null)).toEqual({ applied: '407.00' });
+    expect(refundRoom('407.00', '100.00', '307')).toEqual({ applied: '100.00' });
+    expect(refundRoom('407.00', '0.00', '407')).toEqual({ applied: '0.00' });
+  });
+  it('refuses a refund past what is left once the note settles its invoice', () => {
+    expect(outcome(() => refundRoom('407.00', '100.00', '307.01'))).toBe(
+      'exceeds_credit: The refund is more than is left of the credit note once it settles its invoice / refund.amount exceeds_credit 307.00 is left to refund');
+    expect(outcome(() => refundRoom('2100.00', '2100.00', '1'))).toBe(
+      'exceeds_credit: The refund is more than is left of the credit note once it settles its invoice / refund.amount exceeds_credit 0.00 is left to refund');
   });
 });

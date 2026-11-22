@@ -8,7 +8,7 @@ import {
   addParty, allocatePayment, companyForInvoice, holdPeriod, moneyAccountRefusal, partyWithPhone, recordCounterReceipt, systemAccountId,
   systemPartyId,
 } from '@radcore/lib-accounts';
-import { dec, roundMoney, sum, type Money } from '@radcore/lib-common';
+import { dec, looksLikeCardNumber, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, defineSetting, versionHash, type Ctx } from '@radcore/lib-platform';
 import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -21,7 +21,6 @@ import { addInvoice } from './invoices.ts';
 import { heldExposure, orderCheckNow, orderOverride } from './order-checks.ts';
 import { addCounterOrder, askOrderOverride, confirmOrderNow, getOrderById } from './orders.ts';
 import { holdOf, type PlannedPayment } from './quick-bill-holds.ts';
-import { looksLikeCardNumber } from './quick-bill-rules.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
