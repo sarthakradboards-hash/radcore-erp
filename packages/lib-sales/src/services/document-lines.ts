@@ -1,6 +1,6 @@
 // What quotes and orders share (M3-08, RAD-112): their party (one we sell to), their lines (items that exist, in
 // quantities their units allow), their dates (ADR-007 §4).
-import { getPartyById } from '@radcore/lib-accounts';
+import { getPartyById, SELLS_TO_KINDS } from '@radcore/lib-accounts';
 import { indiaDate } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
 import { batchNumbers, checkQuantity, itemLabels } from '@radcore/lib-stock';
@@ -18,7 +18,7 @@ export async function sellingTo(ctx: Ctx, partyId: string): Promise<string> {
     }
     throw e;
   });
-  if (!party.active || !party.kinds.some((k) => k === 'customer' || k === 'dealer' || k === 'franchisee')) {
+  if (!party.active || !party.kinds.some((k) => (SELLS_TO_KINDS as readonly string[]).includes(k))) {
     throw new AppError('not_a_customer', `${party.name} isn’t a customer, dealer or franchisee we sell to`,
       [{ path: ['partyId'], code: 'not_a_customer', message: party.active ? 'Choose a party we sell to' : 'This party is switched off' }]);
   }

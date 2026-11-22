@@ -113,6 +113,18 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     expect(await pool.query('delete from radcore.parties where id = $1', [a.id]).then(() => 'ok', (e: { code?: string }) => e.code)).toBe('42501');
   });
 
+  // RAD-131: the sales screens' pickers offer every party a sale may name, a dealer's or franchisee's too, from the same
+  // kinds lib-sales' sellingTo accepts (SELLS_TO_KINDS); a party that only supplies us isn't one.
+  it('lists the parties a sale may name (sellsTo): customers, dealers and franchisees, never a supplier only', async () => {
+    const word = `Zs${letters(6)}`;
+    const made = [];
+    for (const kinds of [['customer'], ['dealer'], ['franchisee'], ['supplier'], ['supplier', 'dealer']]) {
+      made.push((await add({ name: `${word} ${kinds.join(' ')}`, kinds })).id);
+    }
+    const found = (await run((ctx) => listPartiesPage(ctx, { filter: { search: word, sellsTo: true }, limit: 10 }))).items.map((p) => p.id);
+    expect(found.toSorted()).toEqual([made[0], made[1], made[2], made[4]].toSorted());
+  });
+
   it('masks a party’s phone, email and address without pii:read or parties:contact over the real route, and logs a look with either', async () => {
     const { id } = await add();
     const user = (permissions: string[]): Principal => ({ kind: 'user', userId: randomUUID(), permissions: ['parties:read', ...permissions] });

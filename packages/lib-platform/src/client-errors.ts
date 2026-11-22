@@ -23,7 +23,7 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accou
   '/sales/deliveries/[id]/edit', '/sales/deliveries/new', '/sales/delivery-returns',
   '/sales/delivery-returns/[id]', '/sales/delivery-returns/[id]/edit', '/sales/delivery-returns/new', '/sales/invoices', '/sales/invoices/[id]', '/sales/invoices/[id]/edit', '/sales/invoices/new',
   '/sales/orders', '/sales/orders/[id]', '/sales/orders/[id]/edit', '/sales/orders/new', '/sales/quotes', '/sales/quotes/[id]',
-  '/sales/quotes/[id]/edit', '/sales/quotes/new',
+  '/sales/quotes/[id]/edit', '/sales/quotes/new', '/sales/test-rides', '/sales/test-rides/new',
   '/sign-in'] as const;
 
 /** The error classes an alert may name; any other is counted as `Error`. */

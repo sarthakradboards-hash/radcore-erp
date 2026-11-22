@@ -39,6 +39,8 @@ export const setCompany = defineContract({
 
 // Parties (M2-11, RAD-90): everyone RadCore sells to or buys from.
 export const PARTY_KINDS = ['customer', 'dealer', 'franchisee', 'supplier'] as const;
+/** The kinds we sell to: a party of any of them may be on a quote, order, delivery or invoice (lib-sales' sellingTo). */
+export const SELLS_TO_KINDS = ['customer', 'dealer', 'franchisee'] as const satisfies readonly (typeof PARTY_KINDS)[number][];
 const partyKinds = () => z.array(z.enum(PARTY_KINDS)).min(1, 'Choose at least one kind').max(4)
   .refine((k) => new Set(k).size === k.length, 'Each kind once');
 
@@ -89,7 +91,9 @@ const party = piiRecord('parties', z.object({
 /** GET /parties (parties:read): by name, a page at a time, searched by name or GSTIN, filtered by kind and active. */
 export const listParties = defineContract({
   method: 'GET', path: '/parties', auth: 'session', perm: 'parties:read', tx: read,
-  input: listInput(z.object({ search: searchText().optional(), kind: z.enum(PARTY_KINDS).optional(), active: z.boolean().optional() })),
+  input: listInput(z.object({ search: searchText().optional(), kind: z.enum(PARTY_KINDS).optional(), active: z.boolean().optional(),
+    // The parties a sale may name (SELLS_TO_KINDS): for the sales screens' pickers, a dealer or franchisee too (RAD-131).
+    sellsTo: z.literal(true).optional() })),
   output: listOf(party),
 });
 
