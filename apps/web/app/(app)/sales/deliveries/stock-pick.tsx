@@ -35,7 +35,7 @@ function Units({ index, units, complete }: {
   const toggle = (serialNo: string) => {
     const next = picked.includes(serialNo) ? picked.filter((s) => s !== serialNo) : [...picked, serialNo];
     field.onChange(next);
-    if (next.length === 0) return;
+    if (next.length === 0) { setValue(`lines.${index}.pick`, {}); return; }
     setValue(`lines.${index}.qty`, String(next.length));
     // Each unit is taken from its own batch, so the batch boxes follow what is ticked. shortcut: only when every ticked unit's
     // batch is known (one saved in a draft and not listed now leaves the boxes as they are), when a draft's own units are listed too.
@@ -97,7 +97,7 @@ export function StockPick({ index, itemId, onSplit }: { index: number; itemId: s
           <legend>{t('sales.delivery.form.batches')}</legend>
           {keys.map((key) => (
             <TextField key={key} name={`lines.${index}.pick.${key}`} inputMode="decimal" autoComplete="off"
-              label={key === 'unknown' ? t('sales.delivery.form.batch.byHand.unknown') : t('sales.delivery.form.batch.byHand')} />
+              label={key === 'unknown' ? t('sales.delivery.form.batch.byHand.unknown') : t('sales.delivery.form.batch.byHand', { n: String(keys.filter((k) => k !== 'unknown').indexOf(key) + 1) })} />
           ))}
         </fieldset>
       </>

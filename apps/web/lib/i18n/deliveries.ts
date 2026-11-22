@@ -91,7 +91,7 @@ export const deliveries = {
   'sales.delivery.form.onHand': 'On hand here: {n}',
   'sales.delivery.form.onHand.loading': 'Checking what is on hand…',
   'sales.delivery.form.onHand.error': 'What is on hand couldn’t be read. You can still write how many come from each batch by hand; serials can’t be picked until it can.',
-  'sales.delivery.form.batch.byHand': 'Quantity from a batch already on this line',
+  'sales.delivery.form.batch.byHand': 'Quantity from batch {n} already on this line',
   'sales.delivery.form.batch.byHand.unknown': 'Quantity from a batch unknown',
   'sales.delivery.form.onHand.place': 'Choose a place to see what is on hand.',
   'sales.delivery.form.batches': 'Take from these batches',
