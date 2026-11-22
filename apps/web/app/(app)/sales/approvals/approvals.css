@@ -1,0 +1,2 @@
+/* A link alone in a table cell is a target of its own: at least 24 px tall (axe target-size, e2e-playwright on #299). */
+.sales-approvals-link { display: inline-block; min-height: 24px; line-height: 24px; }
