@@ -248,13 +248,20 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
         .map((l) => `${l.account.name} ${l.debit} ${l.credit}`);
       const [balance] = await rows<{ balance: string }>(ctx, sql`select (coalesce(sum(debit), 0) - coalesce(sum(credit), 0))::numeric(18, 2)::text
         as balance from radcore.journal_lines where party_id = ${at.partyId}`);
-      return { unpaid, tooMuch, note: [note.taxable, note.cgst, note.roundOff, note.total], entry: await entryOf(ctx, id, DATE),
+      // auditor-2 on #306: GET /sales/credit-notes/:id runs read-only, so a pending note's amounts, and its approval's
+      // version, are read here with the transaction switched to read only: a lock creeping into them would fail.
+      const next = await goodsBack(ctx, at, inv, '1');
+      await askCreditNoteApproval(ctx, { id: next.id });
+      await rawOf(ctx.tx).execute(sql`set transaction read only`);
+      const shown = await getCreditNoteById(ctx, { id: next.id });
+      const readOnly = [shown.approval, shown.total, (await creditNoteApprovalSpec.version(ctx, next.id, { forUpdate: false }))?.amounts?.total];
+      return { unpaid, tooMuch, note: [note.taxable, note.cgst, note.roundOff, note.total], entry: await entryOf(ctx, id, DATE), readOnly,
         paid: (await paidOf(ctx, 'invoices', [inv.id])).get(inv.id)?.credited, refund: refund?.status, paidOut, balance: balance?.balance };
     });
     expect(out).toEqual({ unpaid: 'exceeds_credit 0.00 is left to refund', tooMuch: 'exceeds_credit', note: ['345.00', '31.05', '-0.10', '407.00'],
       entry: ['Sales 345.00 0.00', 'Output CGST 31.05 0.00', 'Output SGST 31.05 0.00', 'Debtors 0.00 407.00', 'Round Off 0.00 0.10',
         'Stock in Hand 200.00 0.00', 'Cost of Goods Sold 0.00 200.00'], paid: '0.00', refund: 'posted',
-      paidOut: ['Debtors 407.00 0.00', 'Cash 0.00 407.00'], balance: '0.00' });
+      paidOut: ['Debtors 407.00 0.00', 'Cash 0.00 407.00'], balance: '0.00', readOnly: ['pending', '407.00', '407.00'] });
   });
 
   // F26 past the day's cash limit (the architect on RAD-114): the note posts, and its cash refund stays a draft with its
