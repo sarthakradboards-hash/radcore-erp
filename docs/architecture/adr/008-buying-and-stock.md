@@ -59,8 +59,8 @@ Every table above that posts attaches #185's two generic guards in its own migra
   moves draft → posted and posted → cancelled;
 - `guard_document_line(<lines table>, <parent column>, 'draft')` on its lines.
 
-`purchase_orders` has the moves draft → placed, placed → closed, and draft or placed → cancelled, and its lines change
-only through its service (§5). While a document is a draft, anything on it changes. Its posting update sets
+`purchase_orders` has the moves draft → placed, placed → closed, and draft or placed → cancelled, and its lines
+change only through its service (§5). While a document is a draft, anything on it changes. Its posting update sets
 everything posting writes, and from then on only cancelling changes it.
 
 ### 3. Numbers (M2-04)
@@ -301,8 +301,8 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
   - **What it accounts for** is at most what each challan line sent, less what earlier receipts accounted for
     (`over_challan`). A challan is closed when everything it sent is accounted for, and can be cancelled only while no
     receipt answers it.
-- **The charge** accrues to Job Work Charges to be Billed. **The job worker's bill** is a purchase bill (§7) whose lines
-  name the receipt's charges. It clears the accrual, with any difference by ADR-006 §4's rule, under the same
+- **The charge** accrues to Job Work Charges to be Billed. **The job worker's bill** is a purchase bill (§7) whose
+  lines name the receipt's charges. It clears the accrual, with any difference by ADR-006 §4's rule, under the same
   tolerance.
 - **Section 143:** inputs not back within a year are a deemed supply. The job work list shows each open challan's age
   and flags those past `stock.job_work_return_days` (365). What tax then falls due is CA-51's question.
@@ -314,11 +314,16 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
 Every save here takes ADR-006 §1's one order:
 1. the company profile and period lock rows, `FOR SHARE` (a posting approval's `lockFirst`);
 2. the documents, in **one order by table whichever is being saved:** `purchase_orders`, `goods_receipts`,
-   `purchase_bills`, `supplier_returns`; then `job_work_challans`, `job_work_receipts`; each table's rows by id
-   (ADR-005 §7a: by table, never by id across tables). The service reads the draft unlocked to learn its sources,
-   locks them all in that order, then checks the draft's status again. So a receipt locks its PO, then itself; a bill
-   its POs, receipts, then itself; a return its receipts, bills, then itself, and two of them never wait on each
-   other in a circle;
+   `supplier_returns`, `purchase_bills`; then `job_work_challans`, `job_work_receipts`; each table's rows by id
+   (ADR-005 §7a: by table, never by id across tables).
+   - **Returns before bills** is ADR-005 §7a's credits-first rule: a return's billed part is a payable credit applied
+     to its bill (§8), and the credit-application trigger locks the credit, then the charge. So the return's own
+     posting, a later credit application, and the reversal before a return is cancelled all take the return, then
+     the bill.
+   - The service reads the draft unlocked to learn its sources, locks them all in that order, then checks the
+     draft's status again. So a receipt locks its PO, then itself; a bill its POs and receipts, then itself; a
+     return its receipts, itself, then their bills. No two saves wait on each other in a circle.
+   - **Transfers, counts and adjustments** touch no other document, so each locks only itself, after these.
 3. no party lock: no check here counts a supplier's balance. A payment to one takes its own, at payment (ADR-007 §8);
 4. the stock positions, then new batch rows, in §4a's order;
 5. the units, by id;
@@ -351,6 +356,10 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
   `supplier_returns` in its `records`, owned by `created_by`. `stock:read` gains the stock documents
   (`stock_transfers`, `stock_counts`, `stock_adjustments`, `job_work_challans`, `job_work_receipts`). The ledgers stay
   out of every `records` (ADR-006 §1).
+- **Who reads stock documents, on purpose:** `stock:read` is already granted to the counter and sales, for picking
+  stock, so they can read transfers, counts, adjustments and job work too. That's intended: where stock went is
+  useful to them. The documents' values are `cost()`, masked without `cost:read`. An admin who wants counts kept to
+  stores narrows `stock:read` on the roles screen.
 - **None needs the second factor:** none moves money (D-19). A bill creates a payable, and paying it is M3-12's.
 - **None is `allOnly`,** so the role-scope CHECK doesn't change.
 - **The owner** reads and approves, and makes no day-to-day documents, as the role says.
@@ -370,6 +379,14 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
 - **Two writers never share a tables file.** Purchasing's tables split by family (`tables-orders.ts`,
   `tables-receipts.ts`, `tables-bills.ts`, `tables-returns.ts`), and stock's add `tables-moves.ts` (M4-06) and
   `tables-job-work.ts` (M4-07). Each is named in `TABLE_FILES` and the rest of the list in RAD-92's ruling.
+- **Contracts and services split the same way,** as lib-sales does. lib-purchasing gets `contract/orders.ts`,
+  `contract/receipts.ts`, `contract/bills.ts` and `contract/returns.ts`, and `services/` files to match. lib-stock
+  gets `contract/moves.ts` (M4-06) and `contract/job-work.ts` (M4-07). Each ticket writes only its own files.
+  `contract.ts` and `index.ts` only gain that ticket's export lines.
+- **The shared registries are append-only lists:** lib-platform's `permissions.ts` and the permission manifest,
+  lib-common's `STATE_TRANSITIONS`, `TABLE_FILES`, and E7's options. Each ticket only adds its own rows. When two
+  PRs both add, the later one merges dev in and keeps both sides, as the merges since #294 have done. No ticket
+  edits or reorders another's rows.
 - **Migration numbers** come from the coordinator.
 - **ADR-006's rows stay as they are.** Where this ADR adds a rule, the ticket that builds it adds its test against
   ADR-006's figures.
