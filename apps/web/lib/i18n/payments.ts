@@ -43,6 +43,7 @@ export const payments = {
   'books.pay.allocate.entered': 'Applied so far: {entered} of {amount}.',
   'books.pay.allocate.date': 'Applied on',
   'books.pay.allocate.save': 'Apply it',
+  'books.pay.allocate.err.read': 'The customer’s open bills couldn’t be read. Try again in a moment, or apply the receipt later.',
   'books.pay.allocate.err.none': 'Enter an amount against at least one bill',
   'books.pay.allocate.err.amount': 'Enter an amount more than zero, with up to 2 decimals',
   'books.pay.allocate.done': 'Applied to {n} bill(s).',

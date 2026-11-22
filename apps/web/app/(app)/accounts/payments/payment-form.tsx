@@ -24,7 +24,7 @@ export const PAYMENT_MESSAGES: Partial<Record<string, string>> = {
 
 // A receipt is from a customer (or a dealer or franchisee we sell to), a payment to a supplier.
 const useCustomers = (query: string) => useApiSearch(listParties, query, { params: { filter: { sellsTo: true, active: true } } });
-const useSuppliers = (query: string) => useApiSearch(listParties, query, { params: { filter: { kind: 'supplier', active: true } } });
+const useSuppliers = (query: string) => useApiSearch(listParties, query, { params: { filter: { buysFrom: true, active: true } } });
 
 /** The party's box: customers for a receipt, suppliers for a payment. Changing what it is empties the party, who may not fit. */
 function PartyBox() {

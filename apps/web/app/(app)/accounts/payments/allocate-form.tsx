@@ -29,7 +29,8 @@ export function AllocateForm({ paymentId, partyId, amount, onDone }: { paymentId
   const statement = useApiQuery(getPartyStatement, { id: partyId, from: today, to: today }, { enabled: may });
   const allocate = useApiMutation(allocatePaymentContract);
   if (!may) return <p>{t('books.pay.allocate.hidden')}</p>;
-  if (statement.data === undefined) return <p>{statement.error === null ? t('loading') : t('books.pay.allocate.none')}</p>;
+  if (statement.error !== null) return <p role="alert" className="kit-form-alert">{t('books.pay.allocate.err.read')}</p>;
+  if (statement.data === undefined) return <p>{t('loading')}</p>;
   const bills = statement.data.openBills.filter((b) => dec(b.open).gt(0));
   if (bills.length === 0) return <p>{t('books.pay.allocate.none')}</p>;
   return (
