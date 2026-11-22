@@ -6,7 +6,7 @@ import { t } from '../../../lib/i18n/index.ts';
 export type Stage = (typeof LEAD_STAGES)[number];
 
 const CODES = ['unknown_source', 'lead_taken', 'unknown_reason', 'wrong_stage', 'unknown_plan', 'unknown_reply', 'unknown_person',
-  'owner_cannot_see_leads', 'forbidden'] as const;
+  'owner_cannot_see_leads', 'forbidden', 'name_taken', 'source_not_ignorable'] as const;
 /** The CRM contracts' refusals in the screen's words, for Form's `messages`. */
 export const CRM_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`crm.err.${c}`)]));
 
