@@ -160,8 +160,8 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     const at = await setup({ rate: '345', gst: '18' });
     const cheap = await setup({ rate: '150' });
     const out = await atCounter(at, async (ctx) => [await failure(bill(ctx, at, '3', [cash('1000')])), await failure(bill(ctx, at, '3', [cash('1222')])),
-      await failure(bill(ctx, cheap, '1', [cash('158')]))]);
-    expect(out).toEqual(['walk_in_pays_in_full', 'overpaid', 'needs_override']);
+      await bill(ctx, cheap, '1', [cash('158')]).then(() => 'ok', (e: unknown) => (e instanceof AppError ? `${e.code}: ${e.message}` : String(e)))]);
+    expect(out).toEqual(['walk_in_pays_in_full', 'overpaid', 'needs_override: This bill needs someone else’s approval for an override; hold it to ask for one']);
   });
 
   // s.269ST: Rs 2 lakh or more in cash from one person in a day. The Counter customer is everyone at the counter, so its
