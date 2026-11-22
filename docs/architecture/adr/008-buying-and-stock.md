@@ -116,8 +116,8 @@ the document it comes from (`date_before_source`):
     places it.
   - **The limit is dynamic:** `purchase_order_limits (role, max_total)` gives a role its own limit, edited by admin,
     and a role without a row takes `purchasing.order_limit_default`. **Its default is 0, so every PO is approved,**
-    as the discount limit's is (D-21, 18 Nov), until Sarthak or an admin sets one. That default is Sarthak's to
-    confirm.
+    as the discount limit's is (D-21, 18 Nov), until an admin sets one. Sarthak confirmed it (22 Nov, "0 — every PO
+    approved").
   - Placing posts nothing, so the spec has no `lockFirst`. Its version is the PO's own lines and total.
 - **A placed PO changes** only through its service. The approved total is recorded by the approval's `approved` step,
   outside the version hash. An edit that raises the total above the placer's limit, or above that approved total,
