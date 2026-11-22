@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid,
   type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { boundedText, id, money, radcoreTable, trigramIndex } from '../columns.ts';
+import { publicLinks } from '../platform/tables.ts';
 
 /**
  * The company (M2-02, RAD-88; D-02 option A): RadCore keeps the books of one legal entity. The table holds one row at
@@ -288,10 +289,12 @@ export const paymentReminders = radcoreTable('payment_reminders', {
   oldestDue: date({ mode: 'string' }),
   channel: text().notNull(),
   note: boundedText({ max: 500 }),
-  linkId: uuid(),
+  // The link sent with it (RAD-118): its id only, never its token.
+  linkId: uuid().references(() => publicLinks.id, { onDelete: 'restrict' }),
 }, (t) => [
   check('ck_payment_reminders_channel', sql`${t.channel} in ('whatsapp', 'phone', 'email', 'in_person')`),
   index('ix_payment_reminders_party').on(t.partyId, t.asAt),
+  index('ix_payment_reminders_link').on(t.linkId),
 ]);
 
 /**

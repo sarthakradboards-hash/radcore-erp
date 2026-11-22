@@ -85,10 +85,10 @@ export default function DeliveryPage() {
         <dt>{t('sales.notes')}</dt><dd>{delivery.notes ?? t('sales.noNotes')}</dd>
       </dl>
       <DocumentLines caption={delivery.number === null ? t('sales.lines') : t('sales.lines.of', { number: delivery.number })} lines={delivery.lines} />
-      {delivery.status === 'draft' ? <p>{t('sales.delivery.draftNote')}</p> : null}
       <div className="kit-actions">
         {mayWrite && delivery.status === 'draft' ? (
           <>
+            <Link className="kit-button" href={`/sales/deliveries/${id}/edit`}>{t('sales.delivery.edit')}</Link>
             <button type="button" className="kit-button kit-button-primary" onClick={open('post')}>{t('sales.delivery.post')}</button>
             <button type="button" className="kit-button" onClick={open('delete')}>{t('sales.delete')}</button>
           </>

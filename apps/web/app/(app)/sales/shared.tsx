@@ -21,7 +21,7 @@ const CODES = ['date_in_future', 'date_before_source', 'unknown_party', 'not_a_c
   'not_on_source', 'over_quantity', 'other_party', 'account_inactive', 'company_profile_incomplete',
   'buyer_details_required', 'still_applied', 'credit_note_stands', 'change_over_checks', 'unknown_location', 'location_inactive',
   'place_not_sellable', 'not_enough_stock', 'qty_not_positive', 'batches_mismatch', 'units_mismatch', 'serial_twice', 'not_serialised',
-  'delivery_in_use', 'already_reversed', 'not_reversible', 'booking_live'] as const;
+  'delivery_in_use', 'already_reversed', 'not_reversible', 'unit_held', 'mixed_condition', 'unit_damaged', 'booking_live'] as const;
 /** The sales contracts' refusals in the screen's words, for Form's and ReasonDialog's `messages`. */
 export const SALES_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`sales.err.${c}`)]));
 

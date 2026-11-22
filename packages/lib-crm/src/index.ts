@@ -11,5 +11,5 @@ export {
   tellFollowUpsDue, updateLeadDetails,
 } from './services/pipeline.ts';
 export { captureEnquiry, leadById, repeatEnquiry, type Capture } from './services/leads.ts';
-export { bookingCancelled, bookingMade } from './services/lead-bookings.ts';
+export { bookingCancelled, bookingMade, leadOpens } from './services/lead-bookings.ts';
 export { holdLead } from './services/lead-locks.ts';
