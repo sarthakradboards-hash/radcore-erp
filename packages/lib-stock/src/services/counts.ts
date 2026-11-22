@@ -41,7 +41,7 @@ async function countOf(ctx: Ctx, id: string, permission: string, forUpdate = fal
 }
 
 /** Lines for the same item and batch, summed into one, their serials together (RC-123); a serial twice is refused. */
-export function mergeLines(lines: CountIn['lines']): Line[] {
+function mergeLines(lines: CountIn['lines']): Line[] {
   const merged = new Map<string, Line>();
   for (const l of lines) {
     const k = keyOf(l.itemId, l.batchId);
