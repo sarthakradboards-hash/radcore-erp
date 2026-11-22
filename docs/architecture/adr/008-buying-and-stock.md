@@ -118,11 +118,21 @@ the document it comes from (`date_before_source`):
     and a role without a row takes `purchasing.order_limit_default`. **Its default is 0, so every PO is approved,**
     as the discount limit's is (D-21, 18 Nov), until an admin sets one. Sarthak confirmed it (22 Nov, "0 — every PO
     approved").
-  - Placing posts nothing, so the spec has no `lockFirst`. Its version is the PO's own lines and total.
+  - Placing posts nothing, but `approved` checks the PO's date against the open year and the period lock, so the
+    spec declares `lockFirst` (`lockPeriod`), as ADR-001 §8b asks of any spec whose `approved` takes the period lock
+    (RAD-136). Its version is the PO's own lines and total.
 - **A placed PO changes** only through its service. The approved total is recorded by the approval's `approved` step,
-  outside the version hash. An edit that raises the total above the placer's limit, or above that approved total,
-  goes back for approval, as RAD-135 rules for credit: an approval holds only for what it approved. Lowering it, or
-  closing short, needs no approval.
+  outside the version hash, so an approval holds only for what it approved, as RAD-135 rules for credit:
+  - an edit that raises the total above **the higher of the editor's role limit and that approved total** is
+    **refused** (`over_approved`, RAD-136), and the PO keeps its lines. It's the editor's limit, not the original
+    placer's, since the spend is committed by whoever edits: a role with a low limit can't raise a manager's PO up
+    to the manager's limit. There's no pending revision: it would be a second copy of
+    the lines, kept in step with receipts posting meanwhile, as sales' `change_over_checks` refuses (ADR-007 §1). The
+    message says the way forward: more goods go on a new PO, a higher price is caught at the bill (§7's tolerance),
+    and a rework is a close-short and a new PO;
+  - a placed PO's supplier and date are fixed (`fixed_once_placed`), and no line goes below what's been received
+    against it (`po_received`);
+  - lowering a quantity or rate, closing short, and any edit within both limits save at once.
 - **Receiving more than ordered is refused** (`over_ordered`). Extra goods need a PO line of their own; there's no
   quantity tolerance.
 - The PO prints on A4 through RAD-120's engine (M4-01). It isn't a tax document, so personal fields print as the
