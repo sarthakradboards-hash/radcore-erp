@@ -6,16 +6,16 @@
 // The overrides are decided through the route the approvals screen will call (RAD-125, #299), until that screen is on dev.
 import { randomUUID } from 'node:crypto';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import { indiaDate } from '@radcore/lib-common';
 import { expect, expectAccessible, test } from './fixtures.ts';
 import { stateFor } from './people.ts';
-import { openYearFor, receiveStock, sellFromPriceList } from './seed-stock.ts';
+import { openYearFor, receiveStock } from './seed-stock.ts';
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
 // The credit stop is a 422 the journey expects, and the checks that need an override answer it again until someone decides.
 test.use({ expectedStatuses: [422] });
 
-const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const today = () => indiaDate(new Date());
 const enc = (o: unknown) => encodeURIComponent(JSON.stringify(o));
 const u = randomUUID().slice(0, 6).toUpperCase();
 
@@ -83,13 +83,24 @@ test.beforeAll(async ({ browser, baseURL }) => {
     const place = { code: `DEAL-${u}`, name: `Dealer store ${u}`, kind: 'store' };
     const { id: placeId } = await api<{ id: string }>(r, 'post', '/stock/locations', place);
     run.placeName = place.name;
-    const batches = await receiveStock(ITEMS.map((i) => ({ itemId: i.id, qty: '100', rate: '1000' })), placeId, daysAgo(5));
+    const batches = await receiveStock(ITEMS.map((i) => ({ itemId: i.id, qty: '100', rate: '1000' })), placeId, today());
     for (const it of ITEMS) it.batchId = batches[it.id]!;
     const dealer = await api<{ id: string }>(r, 'post', '/parties', { name: DEALER.name, kinds: ['customer', 'dealer'], gstin: null, pan: null, composition: false,
       stateCode: DEALER.state, phone: null, email: null, addressLine1: `${u} Industrial Estate`, addressLine2: null, city: 'Bengaluru', pincode: '560001' });
     run.dealerId = dealer.id;
     await api(r, 'put', `/parties/${dealer.id}/credit`, { id: dealer.id, creditDays: 30, creditLimit: CREDIT_LIMIT, reason: 'E2E: the dealer’s terms' });
-    await sellFromPriceList(dealer.id, daysAgo(30), Object.fromEntries(ITEMS.map((i) => [i.id, i.rate])));
+    // The dealer's price list, made the way the app makes one: a list and its rates drafted, sent for approval, approved by a second
+    // person (the owner), and set as the dealer's own. It comes into force today, the day it is approved, and the journey sells today.
+    const list = await api<{ id: string; draftId: string }>(r, 'post', '/price-lists', { name: `Dealer list ${u}`, taxInclusive: false });
+    await api(r, 'put', `/price-lists/versions/${list.draftId}/rates`, { id: list.draftId, rates: ITEMS.map((i) => ({ itemId: i.id, rate: i.rate })) });
+    await api(r, 'post', `/price-lists/versions/${list.draftId}/approval`, { id: list.draftId });
+    const owner = await browser.newContext({ storageState: stateFor('owner'), baseURL: baseURL! });
+    try {
+      await decide(owner.request, 'price-list', list.draftId);
+      await api(owner.request, 'put', `/sales/party-price-lists/${dealer.id}`, { partyId: dealer.id, priceListId: list.id, reason: 'E2E: the dealer’s price list' });
+    } finally {
+      await owner.close();
+    }
   } finally {
     await admin.close();
   }

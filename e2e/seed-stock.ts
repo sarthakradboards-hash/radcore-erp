@@ -1,18 +1,17 @@
 // Stock for a journey (RAD-131). The API has no stock-in route yet, so goods are received through the real stock engine, as the
-// app's own login, the way the repo's database tests do (tools/stock-posting.ts); the batch ids are read back as the owner. A
-// price list for a party is written the way tools/price-list-fixture.ts does: approving a version through the service puts it in
-// force from today, which a dated journey can't use.
+// app's own login, the way the repo's database tests do (tools/stock-posting.ts); the batch ids are read back as the owner. The
+// financial year is opened by the real service, in the same way.
 import { randomUUID } from 'node:crypto';
+import { openFinancialYear } from '@radcore/lib-accounts';
 import { quantityString, unitPriceString } from '@radcore/lib-common';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
-import { priceListFrom } from '../tools/price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from '../tools/stock-posting.ts';
 
 const APP_URL = process.env['E2E_DATABASE_URL'] ?? 'postgres://radcore_app@127.0.0.1:5432/radcore_e2e';
 const SEED_URL = process.env['E2E_SEED_DATABASE_URL'] ?? 'postgres://radcore@127.0.0.1:5432/radcore_e2e';
 
-/** Receives `qty` of each item into the place as one batch "B1" on `businessDate`, and answers each item's batch id. */
+/** Receives `qty` of each item into the place as one batch "B1" on `businessDate` (a date in a year that is open), and answers each item's batch id. */
 export async function receiveStock(items: { itemId: string; qty: string; rate: string }[], locationId: string, businessDate: string): Promise<Record<string, string>> {
   const app = new pg.Pool({ connectionString: APP_URL, max: 1 });
   const su = new pg.Pool({ connectionString: SEED_URL, max: 1 });
@@ -32,27 +31,13 @@ export async function receiveStock(items: { itemId: string; qty: string; rate: s
   }
 }
 
-/** A price list in force from `from`, with these rates (item id to rate), that the party is sold from. */
-export async function sellFromPriceList(partyId: string, from: string, rates: Record<string, string>): Promise<void> {
-  const su = new pg.Pool({ connectionString: SEED_URL, max: 1 });
-  try {
-    await priceListFrom(su, from, rates, { partyId });
-  } finally {
-    await su.end();
-  }
-}
-
-/** Opens the financial year `date` falls in (April to March), as the owner; once open it stays open, so a rerun finds it. */
+/** Opens the financial year `date` falls in, through the real service as the app's own login; opening one already open does nothing. */
 export async function openYearFor(date: string): Promise<void> {
-  const su = new pg.Client({ connectionString: SEED_URL });
-  await su.connect();
+  const app = new pg.Pool({ connectionString: APP_URL, max: 1 });
   try {
-    await su.query('begin');
-    await su.query("select set_config('app.principal', 'system:e2e-seed', true)");
-    const start = Number(date.slice(5, 7)) >= 4 ? `${date.slice(0, 4)}-04-01` : `${Number(date.slice(0, 4)) - 1}-04-01`;
-    await su.query('insert into radcore.financial_years (start) values ($1) on conflict do nothing', [start]);
-    await su.query('commit');
+    await runInTransaction(createDatabase(app), { readOnly: false, isolation: 'read committed' }, { kind: 'system', name: 'e2e-seed-stock', permissions: [] }, randomUUID(),
+      (ctx) => openFinancialYear(ctx, date));
   } finally {
-    await su.end();
+    await app.end();
   }
 }
