@@ -61,6 +61,11 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     const batches = (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1 order by batch_no', [made.itemId])).rows;
     return { ...made, batchId: batches[0]?.id ?? '', batchIds: batches.map((b) => b.id) };
   }
+  /** A count's moment: just after the item's last movement so far, from the database's own record (RC-156: a test never
+   * reads the run date), to the millisecond, so a movement posted later falls after it. */
+  const countedAfter = async (itemId: string) => (await pool.query<{ at: string }>(`select to_char((date_trunc('milliseconds', max(posted_at))
+    + interval '1 millisecond') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as at from radcore.stock_movements where item_id = $1`,
+  [itemId])).rows[0]?.at ?? '';
   const onHand = async (itemId: string, locationId: string) => (await pool.query<{ qty: string; value: string }>(`select
     coalesce(sum(case direction when 'in' then qty when 'out' then -qty else 0 end), 0)::numeric(18, 0)::text as qty,
     coalesce(sum(case direction when 'out' then -value else value end), 0)::numeric(18, 2)::text as value
@@ -139,7 +144,7 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     const boss = await approver();
     const at = await setup(['store'], { stock: '7', rate: '200' });
     const [showroom] = at.places as [string];
-    const countedAt = new Date().toISOString();
+    const countedAt = await countedAfter(at.itemId);
     const { id } = await run((ctx) => addCount(ctx, { locationId: showroom, countedAt, businessDate: DATE, reason: 'Month end',
       lines: [{ itemId: at.itemId, batchId: at.batchId, qty: q('4'), serials: [] }, { itemId: at.itemId, batchId: at.batchId, qty: q('2'), serials: [] }] }));
     const drafted = await run((ctx) => getCountById(ctx, { id }));
@@ -188,9 +193,10 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     const at = await setup(['stores'], { stock: '6', rate: '200', batches: [{ batchNo: 'L1', qty: '5' }, { batchNo: 'L2', qty: '1' }] });
     const [stores] = at.places as [string];
     const [l1, l2] = at.batchIds as [string, string];
-    const unknown = await code(run((ctx) => addCount(ctx, { locationId: stores, countedAt: new Date().toISOString(), businessDate: DATE, reason: 'Test',
+    const countedAt = await countedAfter(at.itemId);
+    const unknown = await code(run((ctx) => addCount(ctx, { locationId: stores, countedAt, businessDate: DATE, reason: 'Test',
       lines: [{ itemId: at.itemId, batchId: null, qty: q('6'), serials: [] }] })));
-    const { id } = await run((ctx) => addCount(ctx, { locationId: stores, countedAt: new Date().toISOString(),
+    const { id } = await run((ctx) => addCount(ctx, { locationId: stores, countedAt,
       businessDate: DATE, reason: 'Labels mixed up', lines: [{ itemId: at.itemId, batchId: l2, qty: q('6'), serials: [] }] }));
     const drafted = await run((ctx) => getCountById(ctx, { id }));
     await decide(countApprovalSpec, boss, await run((ctx) => askCountApproval(ctx, { id })));
@@ -206,7 +212,8 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     const serials = [`S-${tag()}`, `S-${tag()}`];
     const at = await setup(['store'], { stock: '2', rate: '61250', serials });
     const [store] = at.places as [string];
-    const { id } = await run((ctx) => addCount(ctx, { locationId: store, countedAt: new Date().toISOString(), businessDate: DATE,
+    const countedAt = await countedAfter(at.itemId);
+    const { id } = await run((ctx) => addCount(ctx, { locationId: store, countedAt, businessDate: DATE,
       reason: 'Month end', lines: [{ itemId: at.itemId, batchId: at.batchId, qty: q('1'), serials: [serials[0] ?? ''] }] }));
     await decide(countApprovalSpec, boss, await run((ctx) => askCountApproval(ctx, { id })));
     const units = (await pool.query<{ serial_no: string; ownership: string }>('select serial_no, ownership from radcore.units where item_id = $1 order by serial_no',
