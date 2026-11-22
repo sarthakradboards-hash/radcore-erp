@@ -526,6 +526,13 @@
       "when": 1795290586485,
       "tag": "0074_quick_bill",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795337882108,
+      "tag": "0075_sales_list_order",
+      "breakpoints": true
     }
   ]
 }

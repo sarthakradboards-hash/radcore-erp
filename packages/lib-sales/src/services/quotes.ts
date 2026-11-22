@@ -4,7 +4,7 @@
 import { after, salesOrderLines, salesOrders, salesQuoteLines, salesQuotes, salesTx } from '@radcore/db/sales';
 import { holdPeriod } from '@radcore/lib-accounts';
 import type { SalesQuoteStatus } from '@radcore/lib-common';
-import { AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, type Ctx } from '@radcore/lib-platform';
+import { AppError, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
@@ -25,7 +25,8 @@ export const QUOTE_SERIES = defineSeries('sales.quote', 'QT', { digits: 5, label
 const notFound = () => new AppError('not_found', 'There is no such quote');
 const header = { id: salesQuotes.id, number: salesQuotes.number, partyId: salesQuotes.partyId, businessDate: salesQuotes.businessDate,
   validUntil: salesQuotes.validUntil, status: salesQuotes.status, notes: salesQuotes.notes, total: salesQuotes.total };
-const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+// Newest first: by date, then the moment each was made, then id (e2e-2: same-day ones were in id order, so random).
+const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 
 /** The quote, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
 async function quoteOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
@@ -42,18 +43,18 @@ async function quoteOf(ctx: Ctx, id: string, permission: string, forUpdate = fal
 /** GET /sales/quotes (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listQuotesPage(ctx: Ctx, input: In<typeof listQuotes>): Promise<Out<typeof listQuotes>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
-  const rows = await salesTx(ctx).select(header).from(salesQuotes).where(and(
+  const rows = await salesTx(ctx).select({ ...header, createdAt: salesQuotes.createdAt }).from(salesQuotes).where(and(
     input.filter.status === undefined ? undefined : eq(salesQuotes.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(salesQuotes.partyId, input.filter.partyId),
     listScope(ctx, 'sales:read', salesQuotes.createdBy),
-    after([salesQuotes.businessDate, salesQuotes.id], key && [key.date, key.id], 'desc'),
-  )).orderBy(desc(salesQuotes.businessDate), desc(salesQuotes.id)).limit(input.limit + 1);
+    after([salesQuotes.businessDate, salesQuotes.createdAt, salesQuotes.id], key && [key.date, key.at, key.id], 'desc'),
+  )).orderBy(desc(salesQuotes.businessDate), desc(salesQuotes.createdAt), desc(salesQuotes.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ ...r, status: r.status as SalesQuoteStatus, partyName: names.get(r.partyId) ?? '' })),
-    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
 
