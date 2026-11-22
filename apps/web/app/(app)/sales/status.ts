@@ -20,6 +20,7 @@ export const orderSteps = (status: string) => stepsFor(ORDER_PATH, status, (s) =
 function postedSteps(status: string, word: (status: string) => string): Step[] {
   return (status === 'cancelled' ? ['draft', 'posted', 'cancelled'] : ['draft', 'posted']).map((key) => ({ key, label: word(key) }));
 }
+export const creditSteps = (status: string) => postedSteps(status, (s) => t(`sales.credit.status.${s as 'draft'}`));
 export const invoiceSteps = (status: string) => postedSteps(status, (s) => t(`sales.invoice.status.${s as 'draft'}`));
 export const deliverySteps = (status: string) => postedSteps(status, (s) => t(`sales.delivery.status.${s as 'draft'}`));
 export const returnSteps = (status: string) => postedSteps(status, (s) => t(`sales.return.status.${s as 'draft'}`));

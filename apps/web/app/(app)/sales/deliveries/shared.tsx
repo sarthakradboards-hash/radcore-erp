@@ -12,16 +12,18 @@ import { useApiList } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import '../../../../components/ui/table/table.css';
 import { asWritten } from '../../admin/decimal.ts';
-import { ItemName, SALES_MESSAGES } from '../shared.tsx';
+import { SALES_MESSAGES } from '../shared.tsx';
 
 export const STATUSES = ['draft', 'posted', 'cancelled'] as const;
 export type DeliveryRow = z.output<typeof listDeliveries.output>['items'][number];
 type Delivery = z.output<typeof getDelivery.output>;
 export type ReturnRow = z.output<typeof listDeliveryReturns.output>['items'][number];
 /** What the table reads of a line: a delivery's and a return's lines share it (they differ only in the line they point to). */
-type Line = Pick<Delivery['lines'][number], 'id' | 'itemId' | 'qty' | 'batches' | 'serials' | 'taxable' | 'gst' | 'value'>;
+type Line = Pick<Delivery['lines'][number], 'id' | 'name' | 'sku' | 'qty' | 'batches' | 'serials' | 'taxable' | 'gst' | 'value'>;
 
-/** A place by its name, from the location list (locations:read); a person who can't read it sees a plain word. */
+/** A place by its name, from the location list (locations:read); a person who can't read it sees a plain word.
+ * shortcut: only the first 200 places are searched, so a company with more shows "A place" for the rest; give the locations
+ * contract a get-by-id when one has that many (auditor-3 on #288). */
 export function PlaceName({ id }: { id: string }) {
   const places = useApiList(listLocations, { filter: {} }, { limit: 200 });
   if (places.error !== null) return t('sales.delivery.place.unknown');
@@ -59,7 +61,7 @@ export function DocumentLines({ caption, lines }: { caption: string; lines: read
           <tbody>
             {lines.map((l) => (
               <tr key={l.id}>
-                <td><ItemName id={l.itemId} /></td>
+                <td>{l.name} ({l.sku})</td>
                 <td className="kit-numeric">{asWritten(l.qty)}</td>
                 <td>{batchesText(l)}</td>
                 <td>{l.serials.length === 0 ? t('sales.delivery.noSerials') : t('sales.delivery.serials', { n: String(l.serials.length) })}</td>
@@ -77,7 +79,11 @@ export function DocumentLines({ caption, lines }: { caption: string; lines: read
 
 /** The date refusal means something different on each document and on a cancellation, so each says its own (see the invoice's). */
 const own = (code: string): Partial<Record<string, string>> => ({ ...SALES_MESSAGES, date_before_source: code });
-export const DELIVERY_MESSAGES = own(t('sales.delivery.err.date_before_source'));
+// A delivery's own words for the two refusals that read as an invoice's in the shared ones (e2e-2 on #293).
+export const DELIVERY_MESSAGES = { ...own(t('sales.delivery.err.date_before_source')), over_quantity: t('sales.delivery.err.over_quantity'),
+  not_on_source: t('sales.delivery.err.not_on_source') };
 export const DELIVERY_CANCEL_MESSAGES = own(t('sales.delivery.err.cancel_date'));
-export const RETURN_MESSAGES = own(t('sales.return.err.date_before_source'));
+// A return's own words for the two refusals that read as an invoice's in the shared ones (e2e-2 on #293).
+export const RETURN_MESSAGES = { ...own(t('sales.return.err.date_before_source')), over_quantity: t('sales.return.err.over_quantity'),
+  not_on_source: t('sales.return.err.not_on_source') };
 export const RETURN_CANCEL_MESSAGES = own(t('sales.return.err.cancel_date'));

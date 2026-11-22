@@ -1,11 +1,12 @@
 'use client';
 // Delivery returns (RAD-125 on RAD-112's contracts): goods that came back from a customer before they were invoiced, newest
-// first, a page at a time and filtered by status. A draft is posted or deleted from its page; its form waits, like a
-// delivery's, for the read of stock by batch.
+// first, a page at a time and filtered by status. deliveries:write writes a new one from a posted delivery; a draft is edited,
+// posted or deleted from its page.
 import { formatDate } from '@radcore/lib-common';
 import { listDeliveryReturns } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useState } from 'react';
+import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
@@ -23,6 +24,7 @@ const columns: Column<ReturnRow>[] = [
 ];
 
 export default function DeliveryReturnsPage() {
+  const mayWrite = useMe().permissions.includes('deliveries:write');
   const [show, setShow] = useState<Show>('all');
   const list = useApiList(listDeliveryReturns, { filter: show === 'all' ? {} : { status: show } });
   return (
@@ -34,6 +36,7 @@ export default function DeliveryReturnsPage() {
           { value: 'all', label: t('sales.all') },
           ...STATUSES.map((s) => ({ value: s, label: t(`sales.return.status.${s}`) })),
         ]} />
+        {mayWrite ? <Link className="kit-button kit-button-primary" href="/sales/delivery-returns/new">{t('sales.returns.new')}</Link> : null}
       </div>
       <DataTable caption={t('sales.returns.title')} columns={columns} rowKey={(r) => r.id} list={list} empty={t('sales.returns.empty')} />
     </>

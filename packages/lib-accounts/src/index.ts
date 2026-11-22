@@ -21,6 +21,9 @@ export {
 export type { Receivable } from './rules/receivable.ts';
 export { addParty, changeParty, getPartyById, holdParty, listPartiesPage, partyNames, setCreditTerms, systemPartyId } from './services/parties.ts';
 
+// The kinds a sale may name, for lib-sales' sellingTo and the parties list's sellsTo filter (RAD-131).
+export { SELLS_TO_KINDS } from './contract.ts';
+
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
 import { JOURNAL_SERIES as journal } from './services/journal.ts';
