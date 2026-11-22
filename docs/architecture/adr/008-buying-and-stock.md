@@ -408,8 +408,8 @@ Beyond each document's own happy path and ADR-006's figures:
   - F13 and F14;
   - rejects to a sellable place are refused `needs_qc`, and pass as a re-inspection under `inward:qc`;
   - a transfer undone, and refused once the goods have moved on;
-  - with `stock.franchisee_transfer_approval` on, a transfer into a franchisee's store waits for another person, while one
-    to any other place posts at once; with it off, both post;
+  - with `stock.franchisee_transfer_approval` on, a transfer into a franchisee's store waits for another person,
+    while one to any other place posts at once; with it off, both post;
   - a count listing an item twice merges into one line (RC-123);
   - a sale between `counted_at` and the approval is neither missed nor counted twice;
   - nothing posts until another person approves;
