@@ -34,6 +34,11 @@ async function upload(kind: Kind, file: File): Promise<string> {
   return id;
 }
 
+/** What a refused download says: these are not the upload's words ("choose another" makes no sense here). */
+const DOWNLOAD_MESSAGES: Partial<Record<string, string>> = {
+  not_ready: t('sales.booking.checklist.download.err.not_ready'), upload_refused: t('sales.booking.checklist.download.err.refused'),
+};
+
 /** A saved file's download: a short-lived link from the server, followed in this tab (a new tab opened after the wait would be
  * blocked as a pop-up). A refusal is said, not lost. */
 function DownloadButton({ kind, id, label }: { kind: Kind; id: string; label: string }) {
@@ -44,7 +49,7 @@ function DownloadButton({ kind, id, label }: { kind: Kind; id: string; label: st
         onClick={() => {
           setProblem('');
           callContract(kind.downloadLink, { id }, { idempotencyKey: crypto.randomUUID() }).then(({ url }) => window.location.assign(url)).catch((e: unknown) => {
-            setProblem(e instanceof ApiError ? (BOOKING_MESSAGES[e.code] ?? e.envelope.message) : t('sales.booking.checklist.err.offline'));
+            setProblem(e instanceof ApiError ? (DOWNLOAD_MESSAGES[e.code] ?? e.envelope.message) : t('sales.booking.checklist.err.offline'));
           });
         }}>
         {t('sales.booking.checklist.file.download')}
