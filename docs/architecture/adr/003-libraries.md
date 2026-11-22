@@ -73,7 +73,8 @@ exceptions in §5. All were checked on npm on 6 Nov 2026, and OSV showed no advi
 | Text encoding detection | chardet | 2.2.0 | MIT | UTF-8 only (RC-117). Decoding is `TextDecoder` (§1), not iconv-lite |
 | Excel read and write | read-excel-file, write-excel-file | 9.3.12, 4.1.1 | MIT | hand-written `lib/xlsx.ts` writer, and no Excel import at all (RC-117) |
 | PDF read (bank statements) | unpdf | 1.9.1 | MIT | same library (2.x is too new). It **bundles pdf.js** (`pdfjs-dist` ~6.4.299) inside `dist/`, where audit and licence checks can't see it. That bundled version is recorded here, and pdf.js advisories are watched by version. Runs with `isEvalSupported: false` and the limits in §7 |
-| PDF write (invoice, challan, receipt) | @react-pdf/renderer | 4.9.0 | MIT | browser print only (RC-152). Runs in the worker. Images and fonts only from Buffers (§7) |
+| PDF write (invoice, challan, receipt) | @react-pdf/renderer | 4.9.0 | MIT | browser print only (RC-152). Runs in `api`, in a `node:worker_threads` pool off the event loop, within §7's limits; batches, if any, in `worker`. Images and fonts only from Buffers (§7) |
+| Font for printed PDFs | @fontsource/noto-sans | 5.3.0 | OFL-1.1 | none: the PDF standard fonts have no ₹ (U+20B9). Its `latin` and `latin-ext` files are registered as Buffers (§7). A font licence, not code, so it has a row in §4's exceptions (RAD-120) |
 | Mail (IMAP) | imapflow | 2.8.0 | MIT | same. Its own connection is a named exception (§7) |
 | Mail parsing | mailparser | 3.12.2 | MIT | same. Text and attachments only; mail HTML is never rendered |
 | Mail sender check (DKIM, DMARC) | mailauth | 8.0.4 | MIT | the hand-split `Authentication-Results` header and substring sender match (RC-144). DNS through a resolver with timeouts (§7) |
@@ -173,6 +174,8 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   | `@img/sharp-libvips-*` (via next's optional sharp) | LGPL-3.0-or-later | an unmodified, dynamically linked prebuilt binary. It is never loaded, because image optimisation is off (§2), and the image ships its licence notice. **Confirm with Sarthak.** The alternative is a build that leaves it out |
   | `@img/sharp-win32-*`, `@img/sharp-wasm32` (same `sharp`, bundling libvips) | `Apache-2.0 AND LGPL-3.0-or-later` (wasm32 adds `AND MIT`); chosen: all of them apply | the same libvips binary as the row above, so it stands or falls with it. Added by RAD-13 from the real lockfile |
   | `language-subtag-registry` (via eslint-config-next's eslint-plugin-jsx-a11y) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
+  | `@fontsource/noto-sans` (§2's font row) | OFL-1.1 | a font licence: the font files are bundled and embedded in PDFs, which OFL-1.1 allows; no code (RAD-120) |
+  | `png-js` (via @react-pdf/renderer's image) | none declared; its LICENSE file is MIT | its `package.json` has no `license` field, but the package's LICENSE file is MIT (Devon Govett, react-pdf's author). Checked by the architect on RAD-120 |
 
 - **Maintenance:** a release in the last 12 months, or a stated reason in its row (decimal.js, pino-http, cmdk and
   eslint-plugin-drizzle carry one). It must have no open advisory without a fix (C5). Its install scripts, if any,
@@ -251,6 +254,8 @@ that opens a connection or fetches something is named here with its rule:
 | imapflow | connects to the statements mailbox | the host is set by an admin, checked against the global-unicast rule before connecting, TLS only, with connection and idle timeouts |
 | mailauth | DNS lookups on the sender's domain | a `node:dns` `Resolver` with a timeout and a limited number of tries, passed in as its resolver |
 | @react-pdf/renderer | would fetch `<Image src>` and `Font.register` URLs | images and fonts are passed **only as Buffers** read from the file store or bundled with the app. Our `PdfImage` wrapper accepts a Buffer only, and no template uses a URL |
+
+**Printing** (RAD-120): a document is at most 50 pages, rendered in 10 seconds, in a thread of at most 256 MB.
 
 **Parser limits** (M1-28, untrusted files):
 - **Imports:**
