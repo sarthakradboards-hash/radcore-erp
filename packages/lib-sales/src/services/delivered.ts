@@ -11,10 +11,11 @@ import {
   creditNoteLines, creditNotes, deliveries, deliveryLines, deliveryReturnLines, deliveryReturns, invoiceLines, invoices, salesOrderLines,
   salesTx,
 } from '@radcore/db/sales';
+import { vDeliveryLeft } from '@radcore/db/views';
 import { dec, roundMoney, roundQty, type Decimal, type Money, type Quantity } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';
 import { serialKey } from '@radcore/lib-stock';
-import { and, asc, eq, inArray, isNotNull, sum } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, ne, sum } from 'drizzle-orm';
 import { toRupee } from './invoice-rules.ts';
 
 const QTY_PLACES = 3; // a line's quantity column, numeric(18, 3)
@@ -116,22 +117,13 @@ export async function deliveredNotInvoiced(ctx: Ctx, partyId: string): Promise<M
  * rounded bill leaves nothing over, and one invoiced whole leaves exactly 0 (the architect on RAD-115). */
 export const rupeesOf = (values: Iterable<Decimal>): Money => roundMoney([...values].reduce((s, v) => s.plus(dec(toRupee(v))), dec('0')));
 
-/** Each of the party's posted deliveries' value still to invoice, at selling value with GST, unrounded, by delivery. */
+/** Each of the party's posted deliveries' value still to invoice, at selling value with GST, unrounded, by delivery:
+ * only those with something left (v_delivery_left, M3-33), so a long history reads its open deliveries alone. One with
+ * nothing left would add 0, to the rupee too, so leaving it out changes no total. */
 export async function notInvoicedLeft(ctx: Ctx, partyId: string): Promise<Map<string, Decimal>> {
-  const tx = salesTx(ctx);
-  const out = await tx.select({ id: deliveries.id, taxable: sum(deliveryLines.taxable), gst: sum(deliveryLines.gst) }).from(deliveryLines)
-    .innerJoin(deliveries, and(eq(deliveries.id, deliveryLines.deliveryId), eq(deliveries.status, 'posted'), eq(deliveries.partyId, partyId)))
-    .groupBy(deliveries.id);
-  const back = await tx.select({ id: deliveryReturns.deliveryId, taxable: sum(deliveryReturnLines.taxable), gst: sum(deliveryReturnLines.gst) })
-    .from(deliveryReturnLines).innerJoin(deliveryReturns, and(eq(deliveryReturns.id, deliveryReturnLines.returnId),
-      eq(deliveryReturns.status, 'posted'), eq(deliveryReturns.partyId, partyId))).groupBy(deliveryReturns.deliveryId);
-  const billed = await tx.select({ id: deliveryLines.deliveryId, taxable: sum(invoiceLines.deliveryTaxable), gst: sum(invoiceLines.deliveryGst) })
-    .from(invoiceLines).innerJoin(invoices, and(eq(invoices.id, invoiceLines.invoiceId), eq(invoices.status, 'posted'), eq(invoices.partyId, partyId)))
-    .innerJoin(deliveryLines, eq(deliveryLines.id, invoiceLines.deliveryLineId)).groupBy(deliveryLines.deliveryId);
-  const value = (r: { taxable: string | null; gst: string | null }) => dec(r.taxable ?? '0').plus(dec(r.gst ?? '0'));
-  const left = new Map(out.map((r) => [r.id, value(r)]));
-  for (const r of [...back, ...billed]) left.set(r.id, (left.get(r.id) ?? dec('0')).minus(value(r)));
-  return left;
+  const rows = await salesTx(ctx).select({ id: vDeliveryLeft.deliveryId, left: vDeliveryLeft.left }).from(vDeliveryLeft)
+    .where(and(eq(vDeliveryLeft.partyId, partyId), ne(vDeliveryLeft.left, '0')));
+  return new Map(rows.map((r) => [r.id ?? '', dec(r.left ?? '0')]));
 }
 
 /** Locks the deliveries of the caller's delivery lines, FOR UPDATE in id order, answering nothing: an invoice's
