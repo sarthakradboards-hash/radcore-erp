@@ -309,10 +309,10 @@ one transaction, never a copy of it, so any refusal on the way rolls all of it b
   lib-accounts' route-less `recordCounterReceipt`, not `payments:write`: receipts only, never a payment out or a
   refund, at most the bill (`overpaid`), and each applied to the bill's invoice before the save ends.
 - **The order of the save.** First every lock for the whole bill, by ADR-006 §1: the period, a held bill's order
-  and its hold (at complete), the party, the stock positions and units, then every series it draws, journal first.
-  Then the receipts; the order, confirmed; its whole
-  delivery from one place, posted; its invoice of exactly that delivery, posted; and each receipt applied to it. The
-  receipts come first so that each stage's credit check sees only what's left unpaid (§9).
+  and its hold (at complete), the party, the stock positions and units, then every series it draws, in that
+  section's series order. Then the receipts; the order, confirmed; its whole delivery from one place, posted; its
+  invoice of exactly that delivery, posted; and each receipt applied to it. The receipts come first so that each
+  stage's credit check sees only what's left unpaid (§9).
 - **Payments.** Cash is one receipt into the `cash` account. A card payment goes to `sales.card_account`, an active
   cash or bank account; unset, it's the seeded **Card settlements** account, which a manual journal empties into the
   bank, with the machine's fee as an expense. A card records only the machine's approval code, in
