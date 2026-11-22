@@ -4,7 +4,7 @@
 import { sql } from 'drizzle-orm';
 import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { journalEntries, parties } from '../accounts/tables.ts';
-import { boundedText, id, json, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
+import { boundedText, createdMoment, id, json, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
 import { items, locations } from '../stock/tables.ts';
 import { priceLists, priceListVersions } from './tables-prices.ts';
 
@@ -37,7 +37,7 @@ const lineChecks = (table: string, t: Line) => [
  * has no number, so thrown-away drafts leave no gaps (§3).
  */
 export const salesQuotes = radcoreTable('sales_quotes', {
-  id: id(),
+  id: id(), createdAt: createdMoment(),
   number: text().unique(),
   partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
   businessDate: date({ mode: 'string' }).notNull(),
@@ -48,7 +48,7 @@ export const salesQuotes = radcoreTable('sales_quotes', {
 }, (t) => [
   ...totalsChecks('sales_quotes', t),
   index('ix_sales_quotes_party').on(t.partyId),
-  index('ix_sales_quotes_date').on(t.businessDate, t.id),
+  index('ix_sales_quotes_date').on(t.businessDate, t.createdAt, t.id),
   // lib-common's SALES_QUOTE_STATUSES, written out (L1); tools/sales-lists.test.ts holds them equal.
   check('ck_sales_quotes_status', sql`${t.status} in ('draft', 'sent', 'accepted', 'declined', 'expired')`),
   check('ck_sales_quotes_number', sql`(${t.status} = 'draft') = (${t.number} is null)`),
@@ -78,7 +78,7 @@ export const salesQuoteLines = radcoreTable('sales_quote_lines', {
  * which releases them and keeps the reason (RC-125). A quote makes at most one order.
  */
 export const salesOrders = radcoreTable('sales_orders', {
-  id: id(),
+  id: id(), createdAt: createdMoment(),
   number: text().unique(),
   partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
   // The price list it was made from (its party's, else the default), copied when it's made (RAD-113).
@@ -97,7 +97,7 @@ export const salesOrders = radcoreTable('sales_orders', {
   ...totalsChecks('sales_orders', t),
   index('ix_sales_orders_price_list').on(t.priceListId),
   index('ix_sales_orders_party').on(t.partyId),
-  index('ix_sales_orders_date').on(t.businessDate, t.id),
+  index('ix_sales_orders_date').on(t.businessDate, t.createdAt, t.id),
   // lib-common's SALES_ORDER_STATUSES, written out (L1); tools/sales-lists.test.ts holds them equal.
   check('ck_sales_orders_status', sql`${t.status} in ('draft', 'confirmed', 'closed', 'cancelled')`),
   check('ck_sales_orders_number', sql`(${t.status} = 'draft') = (${t.number} is null)`),
@@ -133,7 +133,7 @@ export const salesOrderLines = radcoreTable('sales_order_lines', {
  * event; it sets the number (DC), drawn last, and the entry. Only cancelling (M3-10) changes a posted one.
  */
 export const deliveries = radcoreTable('deliveries', {
-  id: id(),
+  id: id(), createdAt: createdMoment(),
   status: text().notNull().default('draft'),
   number: text().unique(),
   orderId: uuid().notNull().references(() => salesOrders.id, { onDelete: 'restrict' }),
@@ -161,7 +161,7 @@ export const deliveries = radcoreTable('deliveries', {
   index('ix_deliveries_location').on(t.locationId),
   index('ix_deliveries_posted_entry').on(t.postedEntryId),
   index('ix_deliveries_cancel_entry').on(t.cancelEntryId),
-  index('ix_deliveries_date').on(t.businessDate, t.id),
+  index('ix_deliveries_date').on(t.businessDate, t.createdAt, t.id),
   index('ix_deliveries_owner').on(t.owner),
 ]);
 
@@ -197,7 +197,7 @@ export const deliveryLines = radcoreTable('delivery_lines', {
  * `delivery_return`); it sets the number (DR), drawn last.
  */
 export const deliveryReturns = radcoreTable('delivery_returns', {
-  id: id(),
+  id: id(), createdAt: createdMoment(),
   status: text().notNull().default('draft'),
   number: text().unique(),
   deliveryId: uuid().notNull().references(() => deliveries.id, { onDelete: 'restrict' }),
@@ -222,7 +222,7 @@ export const deliveryReturns = radcoreTable('delivery_returns', {
   index('ix_delivery_returns_location').on(t.locationId),
   index('ix_delivery_returns_posted_entry').on(t.postedEntryId),
   index('ix_delivery_returns_cancel_entry').on(t.cancelEntryId),
-  index('ix_delivery_returns_date').on(t.businessDate, t.id),
+  index('ix_delivery_returns_date').on(t.businessDate, t.createdAt, t.id),
   index('ix_delivery_returns_owner').on(t.owner),
 ]);
 
@@ -255,7 +255,7 @@ export const deliveryReturnLines = radcoreTable('delivery_return_lines', {
  * the party's Debtors line, gross of GST and cess, after round-off: what receipts are allocated against (RAD-116).
  */
 export const invoices = radcoreTable('invoices', {
-  id: id(),
+  id: id(), createdAt: createdMoment(),
   status: text().notNull().default('draft'),
   number: text().unique(),
   partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
@@ -316,7 +316,7 @@ export const invoices = radcoreTable('invoices', {
   index('ix_invoices_party_date').on(t.partyId, t.businessDate),
   index('ix_invoices_posted_entry').on(t.postedEntryId),
   index('ix_invoices_cancel_entry').on(t.cancelEntryId),
-  index('ix_invoices_date').on(t.businessDate, t.id),
+  index('ix_invoices_date').on(t.businessDate, t.createdAt, t.id),
   index('ix_invoices_owner').on(t.owner),
   index('ix_invoices_price_list').on(t.priceListId),
 ]);

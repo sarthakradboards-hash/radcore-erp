@@ -160,6 +160,15 @@ export const setPartyPriceList = defineContract({
   input: z.object({ partyId: idString(), priceListId: idString().nullable(), reason: reason() }), output: z.object({}),
   errors: ['unknown_party', 'unknown_price_list'],
 });
+/** An item's selling rate on a date (RAD-124's counter): the party's list, or the default with no party named, and its
+ * rate that day, as a quote or bill would store it. Null when there's no list or no rate (a line's no_list_rate). Never
+ * cost. */
+export const getSalePrice = defineContract({
+  method: 'GET', path: '/sales/price', auth: 'session', perm: 'prices:read', tx: read,
+  input: z.object({ itemId: idString(), partyId: idString().optional(), on: dateString() }),
+  output: z.object({ priceListId: idString().nullable(), versionId: idString().nullable(), rate: unitPriceString().nullable(),
+    taxInclusive: z.boolean().nullable() }),
+});
 
 // Quotes and orders (M3-08, RAD-112), in a file of their own.
 export * from './contract/documents.ts';

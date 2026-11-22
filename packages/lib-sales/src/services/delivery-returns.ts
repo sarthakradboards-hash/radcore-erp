@@ -7,7 +7,7 @@
 import { after, deliveries, deliveryLines, deliveryReturnLines, deliveryReturns, salesOrders, salesTx } from '@radcore/db/sales';
 import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundRate } from '@radcore/lib-common';
-import { AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, type Ctx } from '@radcore/lib-platform';
+import { AppError, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, type Ctx } from '@radcore/lib-platform';
 import { checkPlace, checkQuantity, postStock, serialKey } from '@radcore/lib-stock';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -30,7 +30,8 @@ export const DELIVERY_RETURN_SERIES = defineSeries('sales.delivery_return', 'DR'
 const header = { id: deliveryReturns.id, number: deliveryReturns.number, deliveryId: deliveryReturns.deliveryId,
   partyId: deliveryReturns.partyId, locationId: deliveryReturns.locationId, businessDate: deliveryReturns.businessDate,
   status: deliveryReturns.status, notes: deliveryReturns.notes };
-const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+// Newest first: by date, then the moment each was made, then id (e2e-2: same-day ones were in id order, so random).
+const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 const q = (s: string) => quantityString().parse(s);
 const wrongStatus = (status: string, what = 'changed') => new AppError('wrong_status', `This return is ${status}, so it can’t be ${what}`);
 const notOnSource = (path: (string | number)[], message: string) =>
@@ -114,18 +115,18 @@ async function checkedLines(ctx: Ctx, deliveryId: string, lines: readonly LineIn
 /** GET /sales/delivery-returns (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listDeliveryReturnsPage(ctx: Ctx, input: In<typeof listDeliveryReturns>): Promise<Out<typeof listDeliveryReturns>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
-  const rows = await salesTx(ctx).select(header).from(deliveryReturns).where(and(
+  const rows = await salesTx(ctx).select({ ...header, createdAt: deliveryReturns.createdAt }).from(deliveryReturns).where(and(
     input.filter.status === undefined ? undefined : eq(deliveryReturns.status, input.filter.status),
     input.filter.deliveryId === undefined ? undefined : eq(deliveryReturns.deliveryId, input.filter.deliveryId),
     listScope(ctx, 'sales:read', deliveryReturns.owner),
-    after([deliveryReturns.businessDate, deliveryReturns.id], key && [key.date, key.id], 'desc'),
-  )).orderBy(desc(deliveryReturns.businessDate), desc(deliveryReturns.id)).limit(input.limit + 1);
+    after([deliveryReturns.businessDate, deliveryReturns.createdAt, deliveryReturns.id], key && [key.date, key.at, key.id], 'desc'),
+  )).orderBy(desc(deliveryReturns.businessDate), desc(deliveryReturns.createdAt), desc(deliveryReturns.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ ...r, status: r.status as Status, partyName: names.get(r.partyId) ?? '' })),
-    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
 

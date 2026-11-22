@@ -6,7 +6,7 @@ import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radc
 import { holdParty, holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
+  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -19,6 +19,7 @@ import { amountsForRead, frozenHeader, frozenLine, type Amounts } from './docume
 import { hasDeliveries, invoicedOf, netDelivered, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
 import { refuseWhileBooked } from './booking-holds.ts';
+import { holdOf } from './quick-bill-holds.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
 import { labelled } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
@@ -33,7 +34,8 @@ const notFound = () => new AppError('not_found', 'There is no such order');
 const header = { id: salesOrders.id, number: salesOrders.number, partyId: salesOrders.partyId, quoteId: salesOrders.quoteId,
   businessDate: salesOrders.businessDate, status: salesOrders.status, notes: salesOrders.notes, closeReason: salesOrders.closeReason,
   total: salesOrders.total };
-const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+// Newest first: by date, then the moment each was made, then id (e2e-2: same-day ones were in id order, so random).
+const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 
 /** The order, locked when it's to be written, within the principal's scope for `permission` (else not_found), with
  * its quote's date: an order isn't dated before its quote (§4). The quote is read apart, so only the order is locked. */
@@ -74,19 +76,19 @@ async function freezeLines(ctx: Ctx, id: string, a: Amounts) {
 /** GET /sales/orders (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Promise<Out<typeof listOrders>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
-  const rows = await salesTx(ctx).select(header).from(salesOrders).where(and(
+  const rows = await salesTx(ctx).select({ ...header, createdAt: salesOrders.createdAt }).from(salesOrders).where(and(
     input.filter.status === undefined ? undefined : eq(salesOrders.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(salesOrders.partyId, input.filter.partyId),
     input.filter.quoteId === undefined ? undefined : eq(salesOrders.quoteId, input.filter.quoteId),
     listScope(ctx, 'sales:read', salesOrders.createdBy),
-    after([salesOrders.businessDate, salesOrders.id], key && [key.date, key.id], 'desc'),
-  )).orderBy(desc(salesOrders.businessDate), desc(salesOrders.id)).limit(input.limit + 1);
+    after([salesOrders.businessDate, salesOrders.createdAt, salesOrders.id], key && [key.date, key.at, key.id], 'desc'),
+  )).orderBy(desc(salesOrders.businessDate), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ ...r, status: r.status as SalesOrderStatus, partyName: names.get(r.partyId) ?? '' })),
-    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
 
@@ -120,6 +122,14 @@ export function addCounterOrder(ctx: Ctx, input: In<typeof createOrder>): Promis
   return addOrderFor(ctx, input, true);
 }
 
+async function refuseWhileHeld(ctx: Ctx, id: string, what: string): Promise<void> {
+  // A held quick bill is confirmed only by completing it, which takes its planned payments first: its override was
+  // approved on them, so confirming or changing it here would sell on that approval without them (RAD-115).
+  if (await holdOf(ctx, id) !== null) {
+    throw new AppError('quick_bill_held', `This order is a quick bill held for approval: complete it through the quick bill, or delete it, rather than ${what} it`);
+  }
+}
+
 async function addOrderFor(ctx: Ctx, input: In<typeof createOrder>, counter: boolean): Promise<Out<typeof createOrder>> {
   checkDate(input.businessDate, today());
   if (!counter) await refuseCounterCustomer(ctx, input.partyId);
@@ -148,6 +158,7 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
     throw new AppError('version_changed', 'This order changed while it was being changed: change it again');
   }
   mayEdit('order', now.status, true);
+  await refuseWhileHeld(ctx, id, 'change');
   if (now.status === 'confirmed' && (input.partyId !== now.partyId || input.businessDate !== now.businessDate)) {
     throw new AppError('wrong_status', 'A confirmed order keeps its party and date; only its lines change');
   }
@@ -202,6 +213,7 @@ export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>)
   const now = await orderOf(ctx, id, 'sales:write', true);
   if (now.businessDate !== held) throw new AppError('version_changed', 'This order changed while it was being confirmed: confirm it again');
   mayMove('order', now.status, 'confirmed');
+  await refuseWhileHeld(ctx, id, 'confirm');
   checkDate(now.businessDate, today(), fromQuote(now));
   await sellingTo(ctx, now.partyId);
   // ADR-006 §1's step 3: the party, after the order, so two sales to it take turns at the credit check (ADR-007 §9).

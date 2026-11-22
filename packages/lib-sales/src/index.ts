@@ -3,7 +3,7 @@ export {
   checkSale, overrideApproval, type OverrideVersion, type SaleCheck, type SaleCheckResult, type SaleLine, type SaleStage,
 } from './services/checks.ts';
 export { discountAllowed, discountLimitFor, listLimits, setLimit } from './services/discounts.ts';
-export { DEFAULT_PRICE_LIST, getPartyList, setPartyList } from './services/party-price-lists.ts';
+export { DEFAULT_PRICE_LIST, getPartyList, salePrice, setPartyList } from './services/party-price-lists.ts';
 export { getChanges, listRatesPage } from './services/price-list-views.ts';
 export {
   addList, askApproval, changeList, getList, getVersion, listListsPage, priceFor, priceListApproval, priceOf, putRates, setTax,
@@ -48,7 +48,7 @@ export {
   addAdvance, addBooking, BOOKING_SERIES, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow, saveChecklist,
 } from './services/bookings.ts';
 export { listTestRidesPage, recordRide, scheduleRide } from './services/test-rides.ts';
-export { CARD_ACCOUNT, quickBill } from './services/quick-bills.ts';
+export { CARD_ACCOUNT, completeBillNow, holdBillNow, quickBill } from './services/quick-bills.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';

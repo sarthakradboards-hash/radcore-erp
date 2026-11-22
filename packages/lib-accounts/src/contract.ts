@@ -93,7 +93,10 @@ export const listParties = defineContract({
   method: 'GET', path: '/parties', auth: 'session', perm: 'parties:read', tx: read,
   input: listInput(z.object({ search: searchText().optional(), kind: z.enum(PARTY_KINDS).optional(), active: z.boolean().optional(),
     // The parties a sale may name (SELLS_TO_KINDS): for the sales screens' pickers, a dealer or franchisee too (RAD-131).
-    sellsTo: z.literal(true).optional() })),
+    sellsTo: z.literal(true).optional(),
+    // The parties with this phone, matched exactly once normalised: only for someone who sees phones (parties:contact,
+    // RAD-103's rule), so the counter can pick the customer a quick bill's buyer already is (the architect on #318).
+    phone: z.string().trim().min(1).max(20).optional() })),
   output: listOf(party),
 });
 

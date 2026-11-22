@@ -3,9 +3,9 @@
 // the draft's check and again at posting under the invoice's lock (credit-note-post.ts). Whose a note is: its invoice's
 // owner (ADR-007 §7), whoever drafts it.
 import { after, creditNoteLines, creditNotes, deliveryLines, invoiceLines, invoices, salesTx } from '@radcore/db/sales';
-import { moneyAccountRefusal, paidOf } from '@radcore/lib-accounts';
+import { creditApplicationsOf, moneyAccountRefusal, paidOf } from '@radcore/lib-accounts';
 import { dec, roundMoney, type Money } from '@radcore/lib-common';
-import { AppError, decodeCursor, encodeCursor, listScope, type Ctx } from '@radcore/lib-platform';
+import { AppError, decodeCursor, encodeCursor, listScope, momentKey, type Ctx } from '@radcore/lib-platform';
 import { checkPlace, checkQuantity, serialKey } from '@radcore/lib-stock';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -26,7 +26,8 @@ export type NoteLineIn = { invoiceLineId: string; qty?: string | undefined; taxa
 
 const header = { id: creditNotes.id, number: creditNotes.number, kind: creditNotes.kind, invoiceId: creditNotes.invoiceId,
   partyId: creditNotes.partyId, businessDate: creditNotes.businessDate, status: creditNotes.status, total: creditNotes.total };
-const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+// Newest first: by date, then the moment each was made, then id (e2e-2: same-day ones were in id order, so random).
+const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 export const wrongNoteStatus = (status: string, what = 'changed') =>
   new AppError('wrong_status', `This credit note is ${status}, so it can’t be ${what}`);
 const notOnSource = (path: (string | number)[], message: string) =>
@@ -126,18 +127,18 @@ export async function noteFigures(ctx: Ctx, inv: Invoice, kind: Kind, lines: rea
 /** GET /sales/credit-notes (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listCreditNotesPage(ctx: Ctx, input: In<typeof listCreditNotes>): Promise<Out<typeof listCreditNotes>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
-  const rows = await salesTx(ctx).select(header).from(creditNotes).where(and(
+  const rows = await salesTx(ctx).select({ ...header, createdAt: creditNotes.createdAt }).from(creditNotes).where(and(
     input.filter.status === undefined ? undefined : eq(creditNotes.status, input.filter.status),
     input.filter.invoiceId === undefined ? undefined : eq(creditNotes.invoiceId, input.filter.invoiceId),
     listScope(ctx, 'sales:read', creditNotes.owner),
-    after([creditNotes.businessDate, creditNotes.id], key && [key.date, key.id], 'desc'),
-  )).orderBy(desc(creditNotes.businessDate), desc(creditNotes.id)).limit(input.limit + 1);
+    after([creditNotes.businessDate, creditNotes.createdAt, creditNotes.id], key && [key.date, key.at, key.id], 'desc'),
+  )).orderBy(desc(creditNotes.businessDate), desc(creditNotes.createdAt), desc(creditNotes.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ ...r, kind: r.kind as Kind, status: r.status as Status, partyName: names.get(r.partyId) ?? '' })),
-    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
 
@@ -146,7 +147,14 @@ export async function creditNoteShown(ctx: Ctx, { id }: In<typeof getCreditNote>
   const c = await noteOf(ctx, id, 'sales:read');
   const lines = await salesTx(ctx).select().from(creditNoteLines).where(eq(creditNoteLines.creditNoteId, id)).orderBy(asc(creditNoteLines.lineNo));
   const names = await partyNames(ctx, [c.partyId]);
-  return { id: c.id, number: c.number, kind: c.kind as Kind, invoiceId: c.invoiceId, partyId: c.partyId, partyName: names.get(c.partyId) ?? '',
+  // A note applies only to its own invoice (F9), so each document's number is that invoice's.
+  const applied = await creditApplicationsOf(ctx, 'credit_notes', id);
+  const [inv] = applied.length === 0 ? [] : await salesTx(ctx).select({ number: invoices.number, owner: invoices.owner }).from(invoices)
+    .where(eq(invoices.id, c.invoiceId));
+  // The note is its invoice's owner's (ADR-007 §7), so a reader who saw the note sees its invoice.
+  if (inv !== undefined) ctx.see('sales:read', { owner: inv.owner });
+  const applications = applied.map((a) => ({ ...a, documentNumber: a.documentTable === 'invoices' && a.documentId === c.invoiceId ? inv?.number ?? null : null }));
+  return { applications, id: c.id, number: c.number, kind: c.kind as Kind, invoiceId: c.invoiceId, partyId: c.partyId, partyName: names.get(c.partyId) ?? '',
     businessDate: c.businessDate, status: c.status as Status, total: c.total, locationId: c.locationId, reason: c.reason,
     refund: c.refundAmount === null || c.refundAccountId === null ? null : { amount: roundMoney(c.refundAmount), accountId: c.refundAccountId },
     late: c.late, taxable: c.taxable, cgst: c.cgst, sgst: c.sgst, igst: c.igst, roundOff: c.roundOff, amountsNote: null,

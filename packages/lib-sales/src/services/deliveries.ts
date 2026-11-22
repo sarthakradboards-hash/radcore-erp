@@ -8,7 +8,7 @@ import { after, deliveries, deliveryLines, salesOrderLines, salesOrders, salesTx
 import { holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundQty, type Quantity } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
+  AppError, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, type Ctx,
 } from '@radcore/lib-platform';
 import { checkPlace, checkQuantity, postStock } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
@@ -18,6 +18,7 @@ import type {
 } from '../contract.ts';
 import { netDelivered, orderDelivered, picksOf, returnedOf } from './delivered.ts';
 import { bookingsDelivered, linesDone, lockLiveBookings } from './booking-holds.ts';
+import type { ApprovedThrough } from './checks.ts';
 import { checkDelivery, deliveryLinesOf, deliveryOverride, pricedLines } from './delivery-checks.ts';
 import { checkDate } from './document-rules.ts';
 import { labelled, numberedBatches, today } from './document-lines.ts';
@@ -33,7 +34,8 @@ export const DELIVERY_SERIES = defineSeries('sales.delivery', 'DC', { digits: 5,
 
 const header = { id: deliveries.id, number: deliveries.number, orderId: deliveries.orderId, partyId: deliveries.partyId,
   locationId: deliveries.locationId, businessDate: deliveries.businessDate, status: deliveries.status, notes: deliveries.notes };
-const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+// Newest first: by date, then the moment each was made, then id (e2e-2: same-day ones were in id order, so random).
+const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 const q = (s: string) => quantityString().parse(s);
 const wrongStatus = (status: string) => new AppError('wrong_status', `This delivery is ${status}, so it can’t be changed`);
 
@@ -95,19 +97,19 @@ async function checkedLines(ctx: Ctx, orderId: string, lines: readonly LineIn[])
 /** GET /sales/deliveries (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listDeliveriesPage(ctx: Ctx, input: In<typeof listDeliveries>): Promise<Out<typeof listDeliveries>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
-  const rows = await salesTx(ctx).select(header).from(deliveries).where(and(
+  const rows = await salesTx(ctx).select({ ...header, createdAt: deliveries.createdAt }).from(deliveries).where(and(
     input.filter.status === undefined ? undefined : eq(deliveries.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(deliveries.partyId, input.filter.partyId),
     input.filter.orderId === undefined ? undefined : eq(deliveries.orderId, input.filter.orderId),
     listScope(ctx, 'sales:read', deliveries.owner),
-    after([deliveries.businessDate, deliveries.id], key && [key.date, key.id], 'desc'),
-  )).orderBy(desc(deliveries.businessDate), desc(deliveries.id)).limit(input.limit + 1);
+    after([deliveries.businessDate, deliveries.createdAt, deliveries.id], key && [key.date, key.at, key.id], 'desc'),
+  )).orderBy(desc(deliveries.businessDate), desc(deliveries.createdAt), desc(deliveries.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ ...r, status: r.status as Status, partyName: names.get(r.partyId) ?? '' })),
-    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
 
@@ -184,7 +186,17 @@ export async function askDeliveryOverride(ctx: Ctx, { id }: In<typeof requestDel
  * POST /sales/deliveries/:id/post (deliveries:write). In ADR-006 §1's order: the period lock, the delivery, its order,
  * then the stock engine's positions, batches and units; the entry and the number last, once every check has passed.
  */
-export async function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>): Promise<Out<typeof postDelivery>> {
+export function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>): Promise<Out<typeof postDelivery>> {
+  return postDeliveryFor(ctx, id);
+}
+
+/** A held quick bill's delivery, posted as it's completed (RAD-115), reached by no route: its order's approved override
+ * covers its check (checkDelivery's `through`). Its own function, since a route passes its service a third argument. */
+export function postDeliveryThrough(ctx: Ctx, id: string, through: ApprovedThrough): Promise<Out<typeof postDelivery>> {
+  return postDeliveryFor(ctx, id, through);
+}
+
+async function postDeliveryFor(ctx: Ctx, id: string, through?: ApprovedThrough): Promise<Out<typeof postDelivery>> {
   const tx = salesTx(ctx);
   // Its date first, unlocked, for the period lock; then the delivery, locked, still on that date: a change committed in
   // between could have moved it to a period not held (auditor-2 on #247).
@@ -204,7 +216,7 @@ export async function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>)
   await checkedLines(ctx, d.orderId, lines.map((l) => ({ orderLineId: l.orderLineId, qty: q(l.qty), ...picksOf(l.picks) })));
   // ADR-006 §1's step 3: the party, after the documents, so two sales to it take turns at the credit check (ADR-007 §9).
   await holdParty(ctx, d.partyId);
-  await checkDelivery(ctx, d, lines);
+  await checkDelivery(ctx, d, lines, through);
   const priced = await pricedLines(ctx, d.businessDate, lines);
   // The lines it finishes end their holds, whatever serial leaves (RC-122): the stock engine releases them.
   const moved = await postStock(ctx, { sourceTable: 'deliveries', sourceId: id, businessDate: d.businessDate, endingPromisesOf: done,
