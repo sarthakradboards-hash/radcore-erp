@@ -282,6 +282,8 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
       (raw) => previewBill({ ...raw, settings: new Settings([{ key: 'sales.default_price_list', value: at.listId }]) }, input([cash('362')], partyId)));
     const out = await atCounter(at, async (ctx) => {
       // The rows this transaction wrote, by their xmin: other files commit orders and numbers meanwhile (read committed).
+      // It counts only this transaction's own inserts and updates: a row written in a savepoint carries a subtransaction's
+      // xid, and a delete leaves xmin as it was, so the read-only preview above is what guards "writes nothing".
       const count = async () => (await rawOf(ctx.tx).execute(sql`with me as (select pg_current_xact_id_if_assigned()::text::xid as x)
         select (select count(*) from radcore.sales_orders, me where xmin = me.x)::int as o,
         (select count(*) from radcore.payments, me where xmin = me.x)::int as p,
