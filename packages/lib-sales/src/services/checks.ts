@@ -130,7 +130,10 @@ export function overrideApproval(o: Readonly<{
       if (doc === null) return null;
       return { figures: doc.figures, issues: (await checkSale(ctx, doc.sale)).issues };
     },
-    /** What approving records on the document: the version's hash, and what the party would owe after it (RAD-135). */
+    /** What approving records on the document: the version's hash, and what the party would owe after it (RAD-135).
+     * shortcut: the figure is the decision's, worked out as it's decided, not the one the approver was shown, so a
+     * balance grown in between is recorded at the larger figure (a small window; the architect on #338). Upgrade by
+     * passing the shown figure on decide. */
     async judged(ctx, id) {
       const doc = await o.read(ctx, id, { forUpdate: false });
       if (doc === null) return null;
