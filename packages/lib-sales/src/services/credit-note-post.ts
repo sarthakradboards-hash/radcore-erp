@@ -7,8 +7,8 @@
 // their units `returned` (RC-128). The note then applies to its invoice, as far as the invoice is unpaid, and pays the
 // counter refund drafted with it (F26).
 import { creditNoteLines, creditNotes, salesTx } from '@radcore/db/sales';
-import { applyCredit, holdParty, holdPeriod, lockPeriod, paidOf, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
-import { dec, quantityString, roundMoney, roundRate, type Money } from '@radcore/lib-common';
+import { applyCredit, holdParty, holdPeriod, lockPeriod, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
+import { dec, quantityString, roundMoney, roundRate } from '@radcore/lib-common';
 import {
   AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx,
 } from '@radcore/lib-platform';
@@ -16,8 +16,8 @@ import { checkPlace, postStock, reverseStock, type PostedMovement } from '@radco
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelCreditNote, getCreditNote, requestCreditNoteApproval } from '../contract.ts';
-import { isLate, isMonthDay } from './credit-note-rules.ts';
-import { creditNoteShown, draftedLines, invoiceToCredit, noteFigures, noteOf, wrongNoteStatus, type NoteLineIn } from './credit-notes.ts';
+import { isLate, isMonthDay, refundRoom } from './credit-note-rules.ts';
+import { creditNoteShown, draftedLines, invoiceToCredit, noteFigures, noteOf, unpaidOf, wrongNoteStatus, type NoteLineIn } from './credit-notes.ts';
 import { checkDate } from './document-rules.ts';
 import { today } from './document-lines.ts';
 import { totalsOf } from './invoice-rules.ts';
@@ -104,15 +104,10 @@ async function postNote(ctx: Ctx, id: string): Promise<void> {
   await tx.update(creditNotes).set({ status: 'posted', number, postedEntryId: entry.id, late, taxable: totals.taxable, cgst: totals.cgst,
     sgst: totals.sgst, igst: totals.igst, roundOff: totals.roundOff, total: totals.total }).where(eq(creditNotes.id, id));
   // It settles its invoice as far as the invoice is unpaid (F9); what's left of it is the customer's, to refund (F26).
-  const unpaid = roundMoney(dec(inv.total).minus(dec((await paidOf(ctx, 'invoices', [inv.id])).get(inv.id)?.paid ?? '0')));
-  const applied: Money = dec(unpaid).lt(dec(totals.total)) ? unpaid : totals.total;
+  const { applied } = refundRoom(totals.total, await unpaidOf(ctx, inv), note.refundAmount);
   if (dec(applied).gt(0)) {
     await applyCredit(ctx, { creditTable: 'credit_notes', creditId: id, documentTable: 'invoices', documentId: inv.id, amount: applied,
       businessDate: note.businessDate });
-  }
-  if (note.refundAmount !== null && dec(note.refundAmount).gt(dec(totals.total).minus(dec(applied)))) {
-    throw new AppError('exceeds_credit', 'The refund is more than is left of the credit note once it settles its invoice',
-      [{ path: ['refund', 'amount'], code: 'exceeds_credit', message: `${roundMoney(dec(totals.total).minus(dec(applied)))} is left to refund` }]);
   }
   // A counter refund (F26), part of what was approved, in the same save: the refund's insert locks the note, then the
   // cash limit takes the party (ADR-006 §1). Cash past the day's limit stays a draft with its own cash-limit request,
@@ -158,8 +153,33 @@ export const creditNoteApprovalSpec: ApprovalSpec<NoteVersion> = {
  * draft was approved; a draft's request is waiting or there's none. Here, beside the approval spec. */
 export async function getCreditNoteById(ctx: Ctx, input: In<typeof getCreditNote>): Promise<Out<typeof getCreditNote>> {
   const note = await creditNoteShown(ctx, input);
-  const pending = note.status === 'draft' && (await awaitingApproval(ctx, creditNoteApprovalSpec, [note.id])).has(note.id);
-  return { ...note, approval: pending ? 'pending' : note.status === 'draft' ? 'none' : 'approved' };
+  if (note.status !== 'draft') return { ...note, approval: 'approved' };
+  const pending = (await awaitingApproval(ctx, creditNoteApprovalSpec, [note.id])).has(note.id);
+  return { ...await draftShown(ctx, note), approval: pending ? 'pending' : 'none' };
+}
+
+type Shown = Awaited<ReturnType<typeof creditNoteShown>>;
+/** A draft's amounts as posting would work them now, so its approver sees the money (e2e-playwright on #299: a pending
+ * note answered 0.00); a posted note's are the ones it stored. While its invoice or lines refuse it, as posting then
+ * would, the amounts stay blank and `amountsNote` says why. */
+async function draftShown(ctx: Ctx, note: Shown): Promise<Shown> {
+  const worked = await (async () => {
+    const inv = await invoiceToCredit(ctx, note.invoiceId, 'sales:read');
+    return { inv, figures: await noteFigures(ctx, inv, note.kind, await draftedLines(ctx, note.id)) };
+  })().catch((e: unknown) => {
+    if (e instanceof AppError) return e;
+    throw e;
+  });
+  if (worked instanceof AppError) return { ...note, amountsNote: worked.message };
+  const t = totalsOf(worked.figures);
+  const byLine = new Map(worked.figures.map((f) => [f.lineNo, f]));
+  return { ...note, taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, roundOff: t.roundOff, total: t.total,
+    late: isLate(note.businessDate, worked.inv.businessDate, ctx.settings.get(CREDIT_NOTE_TAX_DEADLINE)),
+    lines: note.lines.map((l) => {
+      const f = byLine.get(l.lineNo);
+      return f === undefined ? l : { ...l, taxable: f.taxable, gstRate: f.gstRate, gstRateSource: f.gstRateSource, cgst: f.cgst, sgst: f.sgst,
+        igst: f.igst, lineTotal: f.lineTotal, cost: f.cost };
+    }) };
 }
 
 /** POST /sales/credit-notes/:id/approval (credit_notes:write): asks someone holding credit_notes:approve to approve it. */

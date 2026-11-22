@@ -190,15 +190,20 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       const entry = await entryOf(ctx, id, DATE);
       // 79,000.00 of taxable value is left: 79,000.01 is refused; all of it clears the tax left too, and then nothing is.
       const over = await failure(valueOff(ctx, at, inv, '79000.01'));
+      const stale = await valueOff(ctx, at, inv, '500');
       const rest = await valueOff(ctx, at, inv, '79000');
       await approve(ctx, rest.id, approver);
+      // The draft of 500.00 no longer fits what's left: its read says why, and its amounts stay blank.
+      const staleShown = await getCreditNoteById(ctx, { id: stale.id });
       const more = await failure(valueOff(ctx, at, inv, '0.01'));
       // Two of the one scooter can't come back.
       const two = await failure(goodsBack(ctx, at, inv, '2'));
-      return { entry, over, rest: (await getCreditNoteById(ctx, { id: rest.id })).total, more, two, stock: await onHand(ctx, at) };
+      return { entry, over, rest: (await getCreditNoteById(ctx, { id: rest.id })).total, more, two, stock: await onHand(ctx, at),
+        stale: [staleShown.total, staleShown.lines[0]?.lineTotal, staleShown.amountsNote] };
     });
     expect(out).toEqual({ entry: ['Sales 1000.00 0.00', 'Output CGST 25.00 0.00', 'Output SGST 25.00 0.00', 'Debtors 0.00 1050.00'],
-      over: 'exceeds_invoice', rest: '82950.00', more: 'exceeds_invoice', two: 'exceeds_invoice', stock: { qty: '0', value: '0.00' } });
+      over: 'exceeds_invoice', rest: '82950.00', more: 'exceeds_invoice', two: 'exceeds_invoice', stock: { qty: '0', value: '0.00' },
+      stale: ['0.00', null, 'A credit note can’t exceed what’s left of its invoice'] });
   });
 
   // F25, CA-10: an invoice of FY 2025-26, deadline 30 November 2026 by default. With the setting earlier, the same note
@@ -229,6 +234,9 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const cash = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'cash'`))[0]?.id ?? '';
+      // The RAD-114 note: while the invoice is unpaid, the note settles it and nothing is left to refund, said at draft.
+      const unpaid = await goodsBack(ctx, at, inv, '1', { refund: { amount: '1', accountId: cash } }).then(() => 'ok',
+        (e: unknown) => (e instanceof AppError ? `${e.code} ${e.issues[0]?.message ?? ''}` : String(e)));
       const receipt = await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('1221'), accountId: cash });
       await allocatePayment(ctx, { id: receipt.id, businessDate: DATE, lines: [{ documentTable: 'invoices', documentId: inv.id, amount: m('1221') }] });
       const tooMuch = await failure(goodsBack(ctx, at, inv, '1', { refund: { amount: '407.01', accountId: cash } }));
@@ -241,10 +249,10 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
         .map((l) => `${l.account.name} ${l.debit} ${l.credit}`);
       const [balance] = await rows<{ balance: string }>(ctx, sql`select (coalesce(sum(debit), 0) - coalesce(sum(credit), 0))::numeric(18, 2)::text
         as balance from radcore.journal_lines where party_id = ${at.partyId}`);
-      return { tooMuch, note: [note.taxable, note.cgst, note.roundOff, note.total], entry: await entryOf(ctx, id, DATE),
+      return { unpaid, tooMuch, note: [note.taxable, note.cgst, note.roundOff, note.total], entry: await entryOf(ctx, id, DATE),
         paid: (await paidOf(ctx, 'invoices', [inv.id])).get(inv.id)?.credited, refund: refund?.status, paidOut, balance: balance?.balance };
     });
-    expect(out).toEqual({ tooMuch: 'exceeds_credit', note: ['345.00', '31.05', '-0.10', '407.00'],
+    expect(out).toEqual({ unpaid: 'exceeds_credit 0.00 is left to refund', tooMuch: 'exceeds_credit', note: ['345.00', '31.05', '-0.10', '407.00'],
       entry: ['Sales 345.00 0.00', 'Output CGST 31.05 0.00', 'Output SGST 31.05 0.00', 'Debtors 0.00 407.00', 'Round Off 0.00 0.10',
         'Stock in Hand 200.00 0.00', 'Cost of Goods Sold 0.00 200.00'], paid: '0.00', refund: 'posted',
       paidOut: ['Debtors 407.00 0.00', 'Cash 0.00 407.00'], balance: '0.00' });
@@ -336,18 +344,24 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       const goods = async () => (await getInvoiceById(ctx, { id: inv.id })).lines[0]?.goods;
       const before = await goods();
       const { id } = await goodsBack(ctx, at, inv, '1', { serials: [serial] });
-      const state = async () => (await getCreditNoteById(ctx, { id })).approval;
+      // e2e-playwright on #299: a draft's and a pending note's amounts are worked out on read, not 0.00 until it posts.
+      const state = async () => {
+        const n = await getCreditNoteById(ctx, { id });
+        return [n.approval, n.total, n.cgst, n.lines[0]?.lineTotal, n.lines[0]?.cost, n.amountsNote];
+      };
       const drafted = await state();
       const asked = await askCreditNoteApproval(ctx, { id });
       const pending = await state();
       await decideApproval(await actingAs(ctx, approver), creditNoteApprovalSpec, asked.id, { decision: 'approve', versionHash: asked.versionHash });
       await actingAs(ctx, ctx.principal);
       const note = await getCreditNoteById(ctx, { id });
-      return { before, after: await goods(), states: [drafted, pending, note.approval], line: [note.lines[0]?.sku.startsWith('I-'), note.lines[0]?.name] };
+      return { before, after: await goods(), states: [drafted, pending, [note.approval, note.total, note.cgst, note.lines[0]?.lineTotal,
+        note.lines[0]?.cost, note.amountsNote]], line: [note.lines[0]?.sku.startsWith('I-'), note.lines[0]?.name] };
     });
     const batches = [{ batchId: at.batchId, batchNo: 'B1', qty: '1' }];
     expect(out).toEqual({ before: { batches, units: [{ serialNo: serial, batchId: at.batchId }] }, after: { batches, units: [] },
-      states: ['none', 'pending', 'approved'], line: [true, 'Scooter'] });
+      states: [['none', '84000.00', '2000.00', '84000.00', '61250.00', null], ['pending', '84000.00', '2000.00', '84000.00', '61250.00', null],
+        ['approved', '84000.00', '2000.00', '84000.00', '61250.00', null]], line: [true, 'Scooter'] });
   });
 
   it('refuses a posted note whose header doesn’t match its lines at commit', async () => {
