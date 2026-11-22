@@ -26,6 +26,7 @@ import { PlaceName } from '../../deliveries/shared.tsx';
 import { AmountsSummary } from '../../shared.tsx';
 import { creditSteps } from '../../status.ts';
 import { CREDIT_CANCEL_MESSAGES, CREDIT_MESSAGES, type CreditNote } from '../shared.tsx';
+import { Applications } from './applications.tsx';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
 const cancelSchema = z.object({ businessDate: dateString(), reason: cancelCreditNote.input.shape.reason });
@@ -128,6 +129,7 @@ export default function CreditNotePage() {
         <AmountsSummary number={note.number} amounts={{ placeOfSupply: null, taxable: note.taxable, cgst: note.cgst, sgst: note.sgst, igst: note.igst,
           roundOff: note.roundOff, total: note.total, note: null }} />
       ) : <p>{t('sales.invoice.notPosted')}</p>}
+      {worked ? <Applications applications={note.applications} /> : null}
       {note.status === 'draft' ? <p>{t('sales.credit.draftNote')}</p> : null}
       {note.status === 'draft' && note.approval === 'pending' ? <p className="admin-notice">{t('sales.credit.pending')}</p> : null}
       <div className="kit-actions">
