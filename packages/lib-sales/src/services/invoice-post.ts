@@ -6,7 +6,7 @@
 // share of what they went out at; the number (INV) is drawn last. Over the checks it needs an approved override.
 import { invoiceLines, invoices, salesTx } from '@radcore/db/sales';
 import { companyForInvoice, getCompanyProfile, getPartyById, holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
-import { dec, moneyString, roundMoney, type Money } from '@radcore/lib-common';
+import { dec, moneyString, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
 import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, defineSeries, defineSetting, nextNumber, requestApproval, versionHash, type Ctx } from '@radcore/lib-platform';
 import { itemLabels, soldCondition } from '@radcore/lib-stock';
@@ -14,7 +14,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { postInvoice, requestInvoiceOverride } from '../contract.ts';
 import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
-import { deliveredNotInvoiced } from './delivered.ts';
+import { notInvoicedLeft, rupeesOf } from './delivered.ts';
 import { checkDate, listRateBeforeTax, netRate, shareOf } from './document-rules.ts';
 import { sellingTo, today } from './document-lines.ts';
 import { checkInvoiceDate, lineTax, needsBuyerDetails, placeOfSupply, totalsOf, type LineTax } from './invoice-rules.ts';
@@ -84,10 +84,14 @@ const figuresOf = (inv: Invoice, lines: readonly CheckedLine[]) => ({ partyId: i
     discountPercent: l.discountPercent })) });
 
 /** What the invoice asks checkSale (ADR-007 §9): what it adds beyond the deliveries it bills, which delivered-not-
- * invoiced already counts; and a price check only on a line whose rate or discount isn't its order line's, its
- * discount measured from the list's rate (the architect on RAD-113). */
-function saleOf(inv: Invoice, lines: readonly Priced[], total: Money, notInvoiced: Money): SaleCheck {
-  const replaced = lines.reduce((s, l) => s.plus(dec(l.deliveryTaxable)).plus(dec(l.deliveryGst)), dec('0'));
+ * invoiced already counts, each delivery to the rupee (`left`, the party's deliveries' values still to invoice), so it
+ * replaces exactly what billing them takes off that figure (the architect on RAD-115); and a price check only on a line
+ * whose rate or discount isn't its order line's, its discount measured from the list's rate (the architect on RAD-113). */
+function saleOf(inv: Invoice, lines: readonly Priced[], total: Money, left: ReadonlyMap<string, Decimal>): SaleCheck {
+  const after = new Map(left);
+  for (const l of lines) after.set(l.delivery.id, (after.get(l.delivery.id) ?? dec('0')).minus(dec(l.deliveryTaxable)).minus(dec(l.deliveryGst)));
+  const notInvoiced = rupeesOf(left.values());
+  const replaced = dec(notInvoiced).minus(dec(rupeesOf(after.values())));
   return {
     stage: 'invoice', partyId: inv.partyId, on: inv.businessDate, pricedBy: inv.createdBy, notInvoiced,
     adds: roundMoney(dec(total).minus(replaced)),
@@ -127,7 +131,7 @@ export const invoiceOverride = overrideApproval({
     // (e2e-2 on #285), so only a request or decision, which locks the invoice, takes the profile FOR SHARE.
     const company = forUpdate ? await companyForInvoice(ctx) : await companyRead(ctx);
     const w = await workedOut(ctx, inv, company, { forUpdate: false, permission: asks ? 'invoices:write' : 'sales:override' });
-    return { figures: figuresOf(inv, w.lines), sale: saleOf(inv, w.figures, w.totals.total, await deliveredNotInvoiced(ctx, inv.partyId)) };
+    return { figures: figuresOf(inv, w.lines), sale: saleOf(inv, w.figures, w.totals.total, await notInvoicedLeft(ctx, inv.partyId)) };
   },
   // It records what was approved; posting the invoice is its maker's next step.
   async approved(ctx, id) {
@@ -188,7 +192,7 @@ export async function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): 
   }
   // ADR-006 §1's step 3: the party, after the documents, so two sales to it take turns at the credit check (ADR-007 §9).
   await holdParty(ctx, inv.partyId);
-  const { issues } = await checkSale(ctx, saleOf(inv, w.figures, w.totals.total, await deliveredNotInvoiced(ctx, inv.partyId)));
+  const { issues } = await checkSale(ctx, saleOf(inv, w.figures, w.totals.total, await notInvoicedLeft(ctx, inv.partyId)));
   if (issues.length > 0) {
     const version: OverrideVersion = { figures: figuresOf(inv, w.lines), issues };
     if (inv.overrideVersion === null || inv.overrideVersion !== versionHash(version)) {

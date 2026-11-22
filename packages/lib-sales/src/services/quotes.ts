@@ -12,7 +12,7 @@ import type {
 } from '../contract.ts';
 import { amountsForRead, amountsOf, frozenHeader, frozenLine } from './document-amounts.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
-import { checkedLines, labelled, sellingTo, today } from './document-lines.ts';
+import { checkedLines, labelled, refuseCounterCustomer, sellingTo, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
 
@@ -73,6 +73,7 @@ export async function getQuoteById(ctx: Ctx, { id }: In<typeof getQuote>): Promi
 /** POST /sales/quotes (sales:write): a draft. */
 export async function addQuote(ctx: Ctx, input: In<typeof createQuote>): Promise<Out<typeof createQuote>> {
   checkDate(input.businessDate, today());
+  await refuseCounterCustomer(ctx, input.partyId);
   await sellingTo(ctx, input.partyId);
   const lines = await checkedLines(ctx, input.lines);
   const tx = salesTx(ctx);
@@ -88,6 +89,7 @@ export async function changeQuote(ctx: Ctx, { id, ...input }: In<typeof updateQu
   const now = await quoteOf(ctx, id, 'sales:write', true);
   mayEdit('quote', now.status);
   checkDate(input.businessDate, today());
+  await refuseCounterCustomer(ctx, input.partyId);
   await sellingTo(ctx, input.partyId);
   const lines = await checkedLines(ctx, input.lines);
   const tx = salesTx(ctx);

@@ -42,6 +42,8 @@ const acc = (key: string, name: string, type: AccountType, control: ControlKind 
 export const SYSTEM_ACCOUNTS: readonly SystemAccount[] = [
   acc('cash', 'Cash', 'asset'),
   acc('bank', 'Bank', 'asset'),
+  // Under Bank: the card machine's money until a journal moves it to the bank (RAD-115, Sarthak's card answer).
+  acc('card_settlements', 'Card settlements', 'asset'),
   acc('debtors', 'Debtors', 'asset', 'party'),
   acc('stock', 'Stock in Hand', 'asset', 'stock'),
   acc('gdni', 'Goods Delivered Not Invoiced', 'asset', 'gdni'),

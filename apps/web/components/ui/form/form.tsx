@@ -107,10 +107,10 @@ function FormAlert() {
 }
 
 /** The submit button. Disabled while the save is in flight, so a second press can't send it twice. */
-export function SubmitButton({ children }: { children: ReactNode }) {
+export function SubmitButton({ children, disabled = false }: { children: ReactNode; disabled?: boolean }) {
   const { formState: { isSubmitting } } = useFormContext();
   return (
-    <button type="submit" className="kit-button kit-button-primary" disabled={isSubmitting} aria-busy={isSubmitting}>
+    <button type="submit" className="kit-button kit-button-primary" disabled={isSubmitting || disabled} aria-busy={isSubmitting}>
       {children}
     </button>
   );

@@ -116,7 +116,7 @@ export const createParty = defineContract({
 export const updateParty = defineContract({
   method: 'PATCH', path: '/parties/:id', auth: 'session', perm: 'parties:write', tx: write,
   input: z.object(partyFields).partial().extend({ id: idString(), active: z.boolean().optional() }),
-  output: z.object({}), errors: ['gstin_taken'],
+  output: z.object({}), errors: ['gstin_taken', 'system_party'],
 });
 
 /** PUT /parties/:id/credit (parties:manage): the party's credit days and limit, null for none, with the person's
@@ -128,7 +128,7 @@ export const setPartyCredit = defineContract({
     accountManager: idString().nullable().optional(),
     reason: reason() }),
   output: z.object({}),
-  errors: ['unknown_user'],
+  errors: ['unknown_user', 'system_party'],
 });
 
 // The chart of accounts and the journal (RAD-86, M2-16's screens; ADR-006 §2, §3). The books are only posted and
@@ -234,6 +234,8 @@ export const recordPaymentContract = defineContract({
     tds: moneyString().optional(), accountId: idString(), refundOf: idString().optional(),
     credit: z.object({ table: z.string().regex(/^[a-z][a-z0-9_]*$/, 'Not a document table'), id: idString() }).optional(),
     narration: z.string().trim().min(1).max(500).optional(),
+    // The money's own trail (RAD-115): a card machine's approval code, a UPI UTR, a cheque number.
+    reference: z.string().trim().min(1).max(40).optional(),
   }),
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
   errors: ['invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',

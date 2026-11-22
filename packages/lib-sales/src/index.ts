@@ -47,6 +47,7 @@ export {
   addAdvance, addBooking, BOOKING_SERIES, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow, saveChecklist,
 } from './services/bookings.ts';
 export { listTestRidesPage, recordRide, scheduleRide } from './services/test-rides.ts';
+export { CARD_ACCOUNT, quickBill } from './services/quick-bills.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
@@ -60,6 +61,7 @@ import { ORDER_SERIES as ordered } from './services/orders.ts';
 import { DEFAULT_PRICE_LIST } from './services/party-price-lists.ts';
 import { QUOTE_SERIES as quoted } from './services/quotes.ts';
 import { BOOKING_SERIES as booked } from './services/bookings.ts';
+import { CARD_ACCOUNT } from './services/quick-bills.ts';
 export const settings: readonly SettingDef<unknown>[] = [defaultDiscountLimit, DEFAULT_PRICE_LIST, INVOICE_LAG_DAYS, B2C_DETAILS_LIMIT, B2C_DETAILS_BASIS,
-  CREDIT_NOTE_TAX_DEADLINE, DOCUMENT_LINK_DAYS];
+  CREDIT_NOTE_TAX_DEADLINE, DOCUMENT_LINK_DAYS, CARD_ACCOUNT];
 export const series: readonly Series[] = [quoted, ordered, delivered, returned, INVOICE_SERIES, CREDIT_NOTE_SERIES, booked];
