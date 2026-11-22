@@ -36,6 +36,7 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     list_rate: 'a list price (prices:read)', gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)',
     sgst: 'tax quoted (sales:read)', igst: 'tax quoted (sales:read)', line_total: 'a selling value with tax (sales:read)' },
   stock_movement_batches: { qty: 'a quantity' },
+  deliveries: { override_after: 'what the party would owe when its override was approved (sales:override)' },
   // A delivery's or return's line (RAD-112): how many went or came back, and what they sold for (sales:read).
   delivery_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst: 'the GST on a selling value (sales:read)' },
   delivery_return_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst: 'the GST on a selling value (sales:read)' },
