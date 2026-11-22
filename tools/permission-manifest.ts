@@ -270,6 +270,16 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /leads/:id/plan': 'leads:write',
   'POST /leads/:id/quick-reply': 'leads:write',
   'POST /leads/:id/owner': 'leads:write',
+  'GET /crm/lead-sources': 'leads:setup',
+  'POST /crm/lead-sources': 'leads:setup',
+  'PUT /crm/lead-sources/:id': 'leads:setup',
+  'GET /crm/set-aside': 'leads:setup',
+  'GET /crm/campaigns': 'campaigns:read',
+  'POST /crm/campaigns': 'campaigns:write',
+  'POST /crm/campaigns/:id/end': 'campaigns:write',
+  'GET /crm/ad-spend': 'campaigns:read',
+  'POST /crm/ad-spend': 'campaigns:write',
+  'GET /crm/cost-per-lead': 'campaigns:read',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -547,6 +557,16 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /leads/:id/plan': CRM,
   'POST /leads/:id/quick-reply': CRM,
   'POST /leads/:id/owner': CRM,
+  'GET /crm/lead-sources': CRM,
+  'POST /crm/lead-sources': CRM,
+  'PUT /crm/lead-sources/:id': CRM,
+  'GET /crm/set-aside': CRM,
+  'GET /crm/campaigns': CRM,
+  'POST /crm/campaigns': CRM,
+  'POST /crm/campaigns/:id/end': CRM,
+  'GET /crm/ad-spend': CRM,
+  'POST /crm/ad-spend': CRM,
+  'GET /crm/cost-per-lead': CRM,
   'POST /public/enquiries': CRM_DOORS,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,

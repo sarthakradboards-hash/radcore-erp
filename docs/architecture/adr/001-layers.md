@@ -317,7 +317,9 @@ posted delivery, return and credit note for a party's credit exposure, an order'
 invoice's open credit (RAD-112, RAD-114). The second is lib-sales' `services/booking-holds.ts`, which locks and updates
 the live bookings of an order's lines for its delivery, cancelled delivery and changes, and tells a cancelled booking
 whether its lead has another, answering only booleans, counts and ids (RAD-117). The third is lib-crm's
-`services/lead-locks.ts`, which locks a booking's lead for its cancellation and answers nothing (RAD-117).
+`services/lead-locks.ts`, which locks a booking's lead for its cancellation and answers nothing (RAD-117). The fourth is
+lib-crm's `services/enquiry-counts.ts`, which counts a campaign's or source's enquiries over a date range for cost per
+lead, answering only counts (RAD-110).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:

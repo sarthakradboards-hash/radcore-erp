@@ -127,7 +127,11 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // owns, and acting on one takes it. A scope on it means nothing, so it's all-only.
   { key: 'leads:unassigned', module: 'Leads', label: 'See and take unassigned leads', allOnly: true },
   // The CRM's own lists (the architect on RAD-109): kept up by marketing as they work, so no second factor.
-  { key: 'leads:setup', module: 'Leads', label: 'Set up lost reasons, follow-up plans and quick replies' },
+  { key: 'leads:setup', module: 'Leads', label: 'Set up lead sources, lost reasons, follow-up plans and quick replies' },
+  // Campaigns and ad spend (M3-06, RAD-110; the architect): apart from leads:setup, since ad spend is money, so cost per
+  // lead can be seen without editing spend. Campaigns are no one's records, so both are all-only; no second factor.
+  { key: 'campaigns:read', module: 'Leads', label: 'See campaigns, ad spend and cost per lead', allOnly: true },
+  { key: 'campaigns:write', module: 'Leads', label: 'Make and end campaigns, and record ad spend', allOnly: true },
 ].map((p) => Object.freeze(p)));
 
 /**
