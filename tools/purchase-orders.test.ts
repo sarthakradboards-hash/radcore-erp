@@ -213,6 +213,36 @@ describe.skipIf(!url || !superUrl)('purchase orders', () => {
     expect(await code(run((ctx) => placeOrder(ctx, { id }), maker))).toBe('item_inactive');
   });
 
+  // The architect on RAD-136 (18:05): approving takes the period's locks before the engine locks the PO (lockFirst), so
+  // a decision waiting behind a period-lock move holds no PO row a receipt of it might want: ADR-006 §1's order.
+  it('takes the period’s locks before the PO’s when a decision waits behind a period-lock move', async () => {
+    const at = await setup();
+    const maker = await placer();
+    const checker = await approver();
+    const { id } = await draft(at, maker);
+    const asked = await run((ctx) => placeOrder(ctx, { id }), maker);
+    const mover = new pg.Client({ connectionString: superUrl });
+    await mover.connect();
+    try {
+      await mover.query('begin');
+      await mover.query('select id from radcore.company for update');
+      const pid = (await mover.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid ?? 0;
+      const deciding = approve(asked, checker);
+      // A row lock's wait shows as one on its holder, so: someone blocked by the mover.
+      const waiting = async () => (await su.query<{ n: number }>(`select count(*)::int as n from pg_stat_activity
+        where $1 = any(pg_blocking_pids(pid))`, [pid])).rows[0]?.n ?? 0;
+      while ((await waiting()) === 0);
+      // The decision waits on the period, holding no lock on the PO yet.
+      const free = await su.query('select id from radcore.purchase_orders where id = $1 for update nowait', [id]);
+      expect(free.rowCount).toBe(1);
+      await mover.query('commit');
+      await deciding;
+    } finally {
+      await mover.end();
+    }
+    expect((await run((ctx) => getOrderById(ctx, { id }), maker)).status).toBe('placed');
+  });
+
   it('closes a pending draft’s request as superseded when the draft is deleted', async () => {
     const at = await setup();
     const maker = await placer();
