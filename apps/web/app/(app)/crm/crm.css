@@ -1,0 +1,6 @@
+/* The CRM screens (RAD-122): a lead's enquiries and timeline, and a quick reply's text. Text from outside (an
+   enquiry's message) keeps its line breaks and is never markup. */
+.crm-list { list-style: none; padding: 0; margin: 0 0 var(--space-4); }
+.crm-list > li { padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.crm-list-head { margin: 0; font-weight: 600; }
+.crm-message, .crm-reply-text { margin: 0.25rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
