@@ -29,7 +29,7 @@ const poSchema = z.object({
   notes: emptyIsNull(shape.notes),
   lines: z.array(line).min(1, t('purchases.lines.min')).max(200, t('purchases.lines.max')),
 }).refine((o) => o.expectedBy === null || o.expectedBy >= o.businessDate, {
-  path: ['expectedBy'], error: t('purchases.order.expectedBy.hint'),
+  path: ['expectedBy'], error: t('purchases.order.expectedBy.bad'),
 });
 export type PoValues = z.output<typeof poSchema>;
 export type PoInput = z.input<typeof poSchema>;
