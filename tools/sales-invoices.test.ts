@@ -21,6 +21,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { takeBooksTurn } from './books-turn.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
+import { sql } from 'drizzle-orm';
+import { rawOf } from '../packages/db/src/tx.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -136,6 +138,10 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
   it('posts F6: Debtors 84,000.00 against Sales and CGST and SGST, and the cost from GDNI to COGS, frozen once posted', async () => {
     const at = await setup({ stock: '4', stockRate: '61250', ordered: '1', rate: '80000', delivered: '1' });
     const out = await inBooks(async (ctx) => {
+      // The company row first, as it will be rewritten below: ADR-006 §1's order, company before the counters posting
+      // draws. Taken after them, it waited on any other test holding it FOR SHARE while that test waited on these
+      // counters (RAD-76, auditor-2 on #335).
+      await rawOf(ctx.tx).execute(sql`select id from radcore.company for update`);
       const posted = await post(ctx, at, '1');
       const entry = await entryOf(ctx, posted.id);
       await setCompanyProfile(ctx, { ...COMPANY, legalName: 'Radboards Mobility Pvt Ltd', city: 'Mumbai', pincode: '400001' });
