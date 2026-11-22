@@ -5,7 +5,7 @@
 import { accountsTx, after, parties, searchWords } from '@radcore/db/accounts';
 import { normaliseEmail, normalisePhone } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
-import { and, asc, eq, inArray, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { PARTY_KINDS, partyTaxIssues, SELLS_TO_KINDS, type createParty, type getParty, type listParties, type setPartyCredit, type updateParty } from '../contract.ts';
 import { setPartyManager } from './party-managers.ts';
@@ -63,7 +63,9 @@ export async function listPartiesPage(ctx: Ctx, input: In<typeof listParties>): 
     .where(and(
       words === undefined ? undefined : or(words, eq(parties.gstin, (search ?? '').trim().toUpperCase())),
       kind === undefined ? undefined : eq(parties[kind], true),
-      sellsTo === undefined ? undefined : or(...SELLS_TO_KINDS.map((k) => eq(parties[k], true))),
+      // A system party (the Counter customer) isn't one to pick: quotes and orders refuse it, the quick bill names it
+      // itself (auditor-2 on #311 and #304).
+      sellsTo === undefined ? undefined : and(or(...SELLS_TO_KINDS.map((k) => eq(parties[k], true))), isNull(parties.systemKey)),
       active === undefined ? undefined : eq(parties.active, active),
       after([parties.name, parties.id], key && [key.name, key.id], 'asc'),
     ))
@@ -78,6 +80,17 @@ export async function getPartyById(ctx: Ctx, { id }: In<typeof getParty>): Promi
   const [row] = await accountsTx(ctx).select(columns).from(parties).where(eq(parties.id, id)).limit(1);
   if (row === undefined) throw new AppError('not_found', 'There is no such party');
   return answer(row);
+}
+
+/** A seeded party (the Counter customer) is code's, kept as seeded: never switched off, re-stated or given credit by hand
+ * (auditor-2 on #304, RAD-115). Its state follows the company's (setCompanyProfile). */
+const systemParty = () => new AppError('system_party', 'This party is kept by RadCore itself and can’t be changed here');
+
+/** A seeded party's id, by its system key (ADR-006 §2): the Counter customer, `walk_in` (RAD-115). */
+export async function systemPartyId(ctx: Ctx, key: string): Promise<string> {
+  const [row] = await accountsTx(ctx).select({ id: parties.id }).from(parties).where(eq(parties.systemKey, key)).limit(1);
+  if (row === undefined) throw new Error(`the system party ${key} isn't seeded`);
+  return row.id;
 }
 
 /** POST /parties. */
@@ -98,9 +111,10 @@ export async function addParty(ctx: Ctx, input: In<typeof createParty>): Promise
  * auditor on #260). */
 export async function changeParty(ctx: Ctx, { id, ...change }: In<typeof updateParty>): Promise<Out<typeof updateParty>> {
   const tx = accountsTx(ctx);
-  const [now] = await tx.select({ gstin: parties.gstin, pan: parties.pan, stateCode: parties.stateCode, composition: parties.composition })
-    .from(parties).where(eq(parties.id, id)).limit(1).for(change.gstin === undefined ? 'no key update' : 'update');
+  const [now] = await tx.select({ gstin: parties.gstin, pan: parties.pan, stateCode: parties.stateCode, composition: parties.composition,
+    systemKey: parties.systemKey }).from(parties).where(eq(parties.id, id)).limit(1).for(change.gstin === undefined ? 'no key update' : 'update');
   if (now === undefined) throw new AppError('not_found', 'There is no such party');
+  if (now.systemKey !== null) throw systemParty();
   const issues = partyTaxIssues({ gstin: change.gstin === undefined ? now.gstin : change.gstin, pan: change.pan === undefined ? now.pan : change.pan,
     stateCode: change.stateCode ?? now.stateCode, composition: change.composition ?? now.composition });
   if (issues.length > 0) throw new AppError('invalid_input', 'Check the party’s GSTIN, PAN and state', issues);
@@ -115,8 +129,10 @@ export async function setCreditTerms(ctx: Ctx, { id, creditDays, creditLimit, ac
   // The route checks this key; a caller from another library is checked here too, so credit terms need it either way.
   // So does the account manager, who then sees what the party owes at `own` (the architect on RAD-119).
   if (!ctx.can('parties:manage')) throw new AppError('forbidden', 'Setting credit terms needs parties:manage');
-  const done = await accountsTx(ctx).update(parties).set({ creditDays, creditLimit }).where(eq(parties.id, id)).returning({ id: parties.id });
+  const done = await accountsTx(ctx).update(parties).set({ creditDays, creditLimit }).where(eq(parties.id, id))
+    .returning({ id: parties.id, systemKey: parties.systemKey });
   if (done.length === 0) throw new AppError('not_found', 'There is no such party');
+  if (done[0]?.systemKey !== null) throw systemParty();
   if (accountManager !== undefined) await setPartyManager(ctx, id, accountManager);
   return {};
 }

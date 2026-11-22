@@ -14,7 +14,7 @@ import type {
   cancelOrder, closeOrder, confirmOrder, createOrder, deleteOrder, getOrder, listOrders, requestOrderOverride, updateOrder,
 } from '../contract.ts';
 import { checkDate, mayEdit, mayMove } from './document-rules.ts';
-import { checkedLines, sellingTo, today } from './document-lines.ts';
+import { checkedLines, refuseCounterCustomer, sellingTo, today } from './document-lines.ts';
 import { amountsForRead, frozenHeader, frozenLine, type Amounts } from './document-amounts.ts';
 import { hasDeliveries, invoicedOf, netDelivered, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
@@ -110,8 +110,19 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getOrder>): Promi
 }
 
 /** POST /sales/orders (sales:write): a draft. */
-export async function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
+export function addOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
+  return addOrderFor(ctx, input, false);
+}
+
+/** The quick bill's order (RAD-115), reached by no route: the only one that may be for the Counter customer. Its own
+ * function, not an option on addOrder, since a route passes its service a third argument. */
+export function addCounterOrder(ctx: Ctx, input: In<typeof createOrder>): Promise<Out<typeof createOrder>> {
+  return addOrderFor(ctx, input, true);
+}
+
+async function addOrderFor(ctx: Ctx, input: In<typeof createOrder>, counter: boolean): Promise<Out<typeof createOrder>> {
   checkDate(input.businessDate, today());
+  if (!counter) await refuseCounterCustomer(ctx, input.partyId);
   await sellingTo(ctx, input.partyId);
   const { priceListId, lines } = await priced(ctx, input.partyId, input.businessDate, await checkedLines(ctx, input.lines));
   const tx = salesTx(ctx);
@@ -145,6 +156,7 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   if (await hasDeliveries(ctx, id)) throw new AppError('order_delivered', 'This order has deliveries, so its lines are fixed');
   // Rewriting the lines gives them new ids, so a booked line would lose its booking (RAD-117).
   await refuseWhileBooked(ctx, id, 'rewrite');
+  if (input.partyId !== now.partyId) await refuseCounterCustomer(ctx, input.partyId);
   await sellingTo(ctx, input.partyId);
   const { priceListId, lines } = await priced(ctx, input.partyId, input.businessDate, await checkedLines(ctx, input.lines));
   const tx = salesTx(ctx);

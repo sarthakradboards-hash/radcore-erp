@@ -2,8 +2,9 @@
 // is set as a whole, and the database refuses a second (accounts.company's id is fixed at 1, RC-010). Invoicing asks
 // companyForInvoice first, so nothing is invoiced before the GSTIN, address and state are set, and the state is
 // always the GSTIN's own: there is no default to fall back on (RC-112).
-import { accountsTx, company } from '@radcore/db/accounts';
+import { accountsTx, company, parties } from '@radcore/db/accounts';
 import { AppError, type Ctx } from '@radcore/lib-platform';
+import { eq } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { getCompany, setCompany } from '../contract.ts';
 
@@ -29,6 +30,9 @@ export async function setCompanyProfile(ctx: Ctx, input: z.output<typeof setComp
   const [row] = await accountsTx(ctx).insert(company).values({ id: ONE, ...values })
     .onConflictDoUpdate({ target: company.id, set: values }).returning({ stateCode: company.stateCode });
   if (row === undefined) throw new Error('The company profile was not saved');
+  // The Counter customer buys at the shop, so its state is the company's: its quick bill's order is then taxed as its
+  // invoice, shipped to the shop, is (auditor-2 on #304, RAD-115).
+  await accountsTx(ctx).update(parties).set({ stateCode: row.stateCode }).where(eq(parties.systemKey, 'walk_in'));
   return { stateCode: row.stateCode };
 }
 

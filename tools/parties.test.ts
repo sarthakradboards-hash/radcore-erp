@@ -124,6 +124,10 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     }
     const found = (await run((ctx) => listPartiesPage(ctx, { filter: { search: word, sellsTo: true }, limit: 10 }))).items.map((p) => p.id);
     expect(found.toSorted()).toEqual([made[0], made[1], made[2], made[4]].toSorted());
+    // The Counter customer is a customer, but not one to pick: ordinary quotes and orders refuse it (RAD-115).
+    const counter = async (filter: Record<string, unknown>) => (await run((ctx) => listPartiesPage(ctx, { filter: { search: 'Counter customer',
+      ...filter }, limit: 50 }))).items.filter((p) => p.name === 'Counter customer').length;
+    expect([await counter({ kind: 'customer' }), await counter({ sellsTo: true })]).toEqual([1, 0]);
   });
 
   it('masks a party’s phone, email and address without pii:read or parties:contact over the real route, and logs a look with either', async () => {
