@@ -22,6 +22,7 @@ import { createApp, listen } from '../apps/api/src/app.ts';
 import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { rawOf } from '../packages/db/src/tx.ts';
 import { mayUse } from '../packages/lib-platform/src/scope.ts';
+import { takeBooksTurn } from './books-turn.ts';
 import { postedDelivery } from './delivered-fixture.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -61,8 +62,8 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
   async function inBooks<R>(fn: (ctx: Ctx) => Promise<R>): Promise<R> {
     let out: R | undefined;
     await run(async (ctx) => {
-      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
-      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
+      // One rolled-back books transaction at a time (RAD-76), under the committed company profile (tools/test-database.ts).
+      await takeBooksTurn(ctx);
       out = await fn(ctx);
       throw new RolledBack();
     }).catch((e: unknown) => {

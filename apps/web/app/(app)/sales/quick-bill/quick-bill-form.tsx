@@ -20,8 +20,9 @@ import { usePlaces } from '../deliveries/shared.tsx';
 import { StockPick } from '../deliveries/stock-pick.tsx';
 import { PickedField } from '../picked-field.tsx';
 import {
-  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, rateFor, type QuickBillInput, type QuickBillValues,
+  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, rateFor, type QuickBillInput, type QuickBillValues, type Refusal,
 } from './quick-bill-values.ts';
+import { BuyerBox, HoldChoice, Preview, usePartyName } from './quick-bill-extras.tsx';
 import { QUICK_BILL_MESSAGES } from './shared.ts';
 
 const useParties = (query: string) => useApiSearch(listParties, query, { params: { filter: { sellsTo: true, active: true } } });
@@ -49,10 +50,12 @@ function PartyBox() {
   const { control } = useFormContext<QuickBillInput>();
   const customer = useWatch({ control, name: 'customer' });
   const partyId = useWatch({ control, name: 'partyId' });
+  // A customer chosen for the buyer (their phone matched) is named here, so the picker shows them before anything is typed.
+  const chosen = usePartyName(partyId);
   if (customer !== 'named') return null;
   return (
     <>
-      <PickedField name="partyId" label={t('sales.quick.party')} hint={t('sales.quick.party.hint')} initial={null} useSearch={useParties} optionLabel={(p) => p.name} />
+      <PickedField name="partyId" label={t('sales.quick.party')} hint={t('sales.quick.party.hint')} initial={chosen} useSearch={useParties} optionLabel={(p) => p.name} />
       <Balance partyId={partyId} />
     </>
   );
@@ -144,6 +147,7 @@ function Payments() {
   const { fields, append, remove } = useFieldArray({ control, name: 'payments' });
   const payments = useWatch({ control, name: 'payments' });
   const accounts = useUpiAccounts();
+  const hold = useWatch({ control, name: 'mode' }) === 'hold';
   return (
     <fieldset>
       <legend>{t('sales.quick.payments')}</legend>
@@ -160,7 +164,7 @@ function Payments() {
                 <TextField name={`payments.${i}.reference`} label={t('sales.quick.payment.reference')} autoComplete="off" />
               </>
             ) : null}
-            {method === 'card' ? (
+            {method === 'card' && !hold ? (
               <TextField name={`payments.${i}.approvalCode`} label={t('sales.quick.payment.approval')} hint={t('sales.quick.payment.approval.hint')} autoComplete="off" />
             ) : null}
             <button type="button" className="kit-button" onClick={() => remove(i)}>{t('sales.quick.payment.remove', { n: String(i + 1) })}</button>
@@ -178,9 +182,19 @@ function Payments() {
   );
 }
 
-/** The form. */
-export function QuickBillForm({ labelledBy, initial, onSubmit }: {
-  labelledBy: string; initial: QuickBillInput; onSubmit: (values: QuickBillValues) => Promise<unknown>;
+/** The save button says what it does: the bill is saved, or held for an approval. */
+function SubmitLabel() {
+  const { control } = useFormContext<QuickBillInput>();
+  const mode = useWatch({ control, name: 'mode' });
+  return <SubmitButton>{t(mode === 'hold' ? 'sales.quick.hold' : 'sales.quick.save')}</SubmitButton>;
+}
+
+/** The form. `refused` is set when a save was refused in a way a hold answers; `figures` are the preview's, kept by the page. */
+export function QuickBillForm({ labelledBy, initial, refused, figures, onFigures, onSubmit }: {
+  labelledBy: string; initial: QuickBillInput; refused: Refusal;
+  figures: { total: string; left: string; issues: readonly string[] } | null;
+  onFigures: (figures: { total: string; left: string; issues: readonly string[] } | null) => void;
+  onSubmit: (values: QuickBillValues) => Promise<unknown>;
 }) {
   const places = usePlaces('');
   // A select's chosen value is lost if its options arrive after it, so the form waits for the places.
@@ -196,7 +210,10 @@ export function QuickBillForm({ labelledBy, initial, onSubmit }: {
       <TextAreaField name="notes" label={t('sales.quick.notes')} />
       <Lines />
       <Payments />
-      <SubmitButton>{t('sales.quick.save')}</SubmitButton>
+      <Preview onFigures={onFigures} />
+      <HoldChoice issues={figures?.issues.length ?? 0} refused={refused} left={figures?.left ?? null} />
+      <BuyerBox />
+      <SubmitLabel />
     </Form>
   );
 }

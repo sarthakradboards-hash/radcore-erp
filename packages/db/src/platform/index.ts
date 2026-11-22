@@ -8,6 +8,7 @@ export * from './tables.ts';
 export * from './tables-sign-in.ts';
 export { auditLog, eventLog } from './logs.ts';
 export { after, onIndiaDays, searchWords } from '../lists.ts';
+export { drawCounter, takeTurns } from '../locks.ts';
 
 /** platform's module transaction: `platformTx(ctx)` reads, and writes only, platform's own tables (ADR-002 §4). */
 export const platformTx = moduleTx({ ...tables, ...signInTables });
