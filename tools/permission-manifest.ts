@@ -488,7 +488,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /sales/quick-bills/hold': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quick-bills/:orderId/complete': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quick-bills/preview': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
-  'GET /sales/quick-bills/held': ['lib-accounts', 'lib-platform', 'lib-sales'],
+  'GET /sales/quick-bills/held': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/invoices/:id/override': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/invoices/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/invoices/:id/links': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
