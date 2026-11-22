@@ -11,7 +11,7 @@ export type BookingRow = z.output<typeof listBookings.output>['items'][number];
  * account of "this invoice", a date before a source) said for a booking, and the booking's own. */
 export const BOOKING_MESSAGES: Partial<Record<string, string>> = {
   ...SALES_MESSAGES,
-  ...Object.fromEntries(['booking_one_unit', 'unit_unavailable', 'line_booked', 'advance_required', 'exceeds_receipt', 'series_full', 'wrong_file_kind', 'not_ready', 'upload_refused']
+  ...Object.fromEntries(['booking_one_unit', 'unit_unavailable', 'line_booked', 'advance_required', 'series_full', 'wrong_file_kind', 'not_ready', 'upload_refused']
     .map((c) => [c, t(`sales.err.${c as 'line_booked'}`)])),
   unit_held: t('sales.booking.err.unit_held'),
   forbidden: t('sales.booking.err.forbidden'),

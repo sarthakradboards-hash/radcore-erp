@@ -34,19 +34,29 @@ async function upload(kind: Kind, file: File): Promise<string> {
   return id;
 }
 
-/** A saved file's download: a short-lived link from the server, opened in a new tab. */
+/** A saved file's download: a short-lived link from the server, followed in this tab (a new tab opened after the wait would be
+ * blocked as a pop-up). A refusal is said, not lost. */
 function DownloadButton({ kind, id, label }: { kind: Kind; id: string; label: string }) {
+  const [problem, setProblem] = useState('');
   return (
-    <button type="button" className="kit-button" aria-label={`${t('sales.booking.checklist.file.download')}: ${label}`}
-      onClick={() => void callContract(kind.downloadLink, { id }, { idempotencyKey: crypto.randomUUID() }).then(({ url }) => window.open(url, '_blank', 'noopener'))}>
-      {t('sales.booking.checklist.file.download')}
-    </button>
+    <>
+      <button type="button" className="kit-button" aria-label={`${t('sales.booking.checklist.file.download')}: ${label}`}
+        onClick={() => {
+          setProblem('');
+          callContract(kind.downloadLink, { id }, { idempotencyKey: crypto.randomUUID() }).then(({ url }) => window.location.assign(url)).catch((e: unknown) => {
+            setProblem(e instanceof ApiError ? (BOOKING_MESSAGES[e.code] ?? e.envelope.message) : t('sales.booking.checklist.err.offline'));
+          });
+        }}>
+        {t('sales.booking.checklist.file.download')}
+      </button>
+      {problem === '' ? null : <span role="alert" className="kit-form-alert">{problem}</span>}
+    </>
   );
 }
 
 /** One file of the checklist: what is attached, a download of what is saved, and a box to send a new one. */
-function FileBox({ name, kind, saved, label, hint }: {
-  name: 'photoId' | 'noteId'; kind: Kind; saved: string | null; label: string; hint: string;
+function FileBox({ name, kind, saved, label, hint, onBusy }: {
+  name: 'photoId' | 'noteId'; kind: Kind; saved: string | null; label: string; hint: string; onBusy: (delta: 1 | -1) => void;
 }) {
   useFieldName(name);
   const { field } = useController<{ photoId: string | null; noteId: string | null }, typeof name>({ name });
@@ -54,12 +64,15 @@ function FileBox({ name, kind, saved, label, hint }: {
   const types = kind.startUpload.input.shape.contentType.options.join(',');
   const send = async (file: File) => {
     setState({ said: t('sales.booking.checklist.file.uploading'), problem: '' });
+    onBusy(1);
     try {
       field.onChange(await upload(kind, file));
       setState({ said: '', problem: '' });
     } catch (e) {
       setState({ said: '', problem: e instanceof BucketRefused ? t('sales.booking.checklist.err.bucket')
         : e instanceof ApiError ? (BOOKING_MESSAGES[e.code] ?? e.envelope.issues[0]?.message ?? e.envelope.message) : t('sales.booking.checklist.err.offline') });
+    } finally {
+      onBusy(-1);
     }
   };
   const value: string | null = field.value;
@@ -123,6 +136,9 @@ function ReadOnly({ checklist }: { checklist: ChecklistState }) {
 
 export function Checklist({ id, checklist, mayWrite }: { id: string; checklist: ChecklistState; mayWrite: boolean }) {
   const client = useQueryClient();
+  // Saving waits for a file being sent: the file's id only arrives when it is, and saving before would leave it out.
+  const [uploading, setUploading] = useState(0);
+  const onBusy = (delta: 1 | -1) => setUploading((n) => n + delta);
   const heading = (
     <>
       <h2 id="checklist-title">{t('sales.booking.checklist.title')}</h2>
@@ -145,10 +161,10 @@ export function Checklist({ id, checklist, mayWrite }: { id: string; checklist: 
         <CheckboxField name="briefed" label={t('sales.booking.checklist.briefed')} />
         <CheckboxField name="warrantyRegistered" label={t('sales.booking.checklist.warranty')} />
         <FileBox name="photoId" kind={deliveryPhotoFiles} saved={checklist.photoId} label={t('sales.booking.checklist.photo')}
-          hint={t('sales.booking.checklist.file.hint.photo')} />
+          hint={t('sales.booking.checklist.file.hint.photo')} onBusy={onBusy} />
         <FileBox name="noteId" kind={deliveryNoteFiles} saved={checklist.noteId} label={t('sales.booking.checklist.note')}
-          hint={t('sales.booking.checklist.file.hint.note')} />
-        <SubmitButton>{t('sales.booking.checklist.save')}</SubmitButton>
+          hint={t('sales.booking.checklist.file.hint.note')} onBusy={onBusy} />
+        <SubmitButton disabled={uploading > 0}>{t('sales.booking.checklist.save')}</SubmitButton>
       </Form>
     </section>
   );
