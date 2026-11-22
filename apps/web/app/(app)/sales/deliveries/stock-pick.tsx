@@ -12,7 +12,7 @@ import { TextField } from '../../../../components/ui/form/fields.tsx';
 import { useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
-import { unlistedKeys, type DeliveryInput } from './delivery-values.ts';
+import { countByBatch, pickAfter, unlistedKeys, type DeliveryInput } from './delivery-values.ts';
 
 type Condition = (typeof UNIT_CONDITIONS)[number];
 
@@ -20,21 +20,30 @@ type Condition = (typeof UNIT_CONDITIONS)[number];
 export const batchKey = (batchId: string | null) => batchId ?? 'unknown';
 
 function Units({ index, units, complete }: {
-  index: number; units: readonly { serialNo: string; chassisNo: string | null; condition: Condition; heldForThis: boolean }[];
+  index: number;
+  units: readonly { serialNo: string; chassisNo: string | null; condition: Condition; heldForThis: boolean; batchId: string | null }[];
   /** The whole list is shown (no search, no further page), so a picked unit missing from it isn't on hand here now. */
   complete: boolean;
 }) {
-  const { setValue } = useFormContext<DeliveryInput>();
+  const { setValue, getValues } = useFormContext<DeliveryInput>();
   const { field } = useController<DeliveryInput, `lines.${number}.serials`>({ name: `lines.${index}.serials` });
   const picked: readonly string[] = field.value;
-  // A picked unit's condition, kept while the list is narrowed by a search and it scrolls out of view.
-  const [known] = useState(() => new Map<string, Condition>());
-  for (const u of units) known.set(u.serialNo, u.condition);
-  const first = picked.map((s) => known.get(s)).find((c) => c !== undefined);
+  // A picked unit's condition and batch, kept while the list is narrowed by a search and it scrolls out of view.
+  const [known] = useState(() => new Map<string, { condition: Condition; batchId: string | null }>());
+  for (const u of units) known.set(u.serialNo, { condition: u.condition, batchId: u.batchId });
+  const first = picked.map((s) => known.get(s)?.condition).find((c) => c !== undefined);
   const toggle = (serialNo: string) => {
     const next = picked.includes(serialNo) ? picked.filter((s) => s !== serialNo) : [...picked, serialNo];
     field.onChange(next);
-    if (next.length > 0) setValue(`lines.${index}.qty`, String(next.length));
+    const setPick = (counts: Record<string, string>) => setValue(`lines.${index}.pick`, pickAfter(getValues(`lines.${index}.pick`), counts));
+    if (next.length === 0) { setPick({}); return; }
+    setValue(`lines.${index}.qty`, String(next.length));
+    // Each unit is taken from its own batch, so the batch boxes follow what is ticked. shortcut: only when every ticked unit's
+    // batch is known (one saved in a draft and not listed now leaves the boxes as they are), when a draft's own units are listed too.
+    const batchOf = next.map((s) => known.get(s));
+    if (batchOf.every((k) => k !== undefined)) {
+      setPick(countByBatch(batchOf.map((k) => k.batchId)));
+    }
   };
   return (
     <>
@@ -79,7 +88,22 @@ export function StockPick({ index, itemId, onSplit }: { index: number; itemId: s
     itemId, locationId, forDocument: `sales_order_lines:${orderLineId}`, ...(q.trim() === '' ? {} : { q: q.trim() }), limit: 200,
   }, { enabled: ready });
   if (locationId === '') return <p>{t('sales.delivery.form.onHand.place')}</p>;
-  if (stock.error !== null) return <p role="alert" className="kit-form-alert">{t('sales.delivery.form.onHand.error')}</p>;
+  if (stock.error !== null) {
+    // The read failed: the batches can still be written by hand, one box for goods of no known batch and one for each already held.
+    const keys = Object.keys(picks).includes('unknown') ? Object.keys(picks) : ['unknown', ...Object.keys(picks)];
+    return (
+      <>
+        <p role="alert" className="kit-form-alert">{t('sales.delivery.form.onHand.error')}</p>
+        <fieldset>
+          <legend>{t('sales.delivery.form.batches')}</legend>
+          {keys.map((key) => (
+            <TextField key={key} name={`lines.${index}.pick.${key}`} inputMode="decimal" autoComplete="off"
+              label={key === 'unknown' ? t('sales.delivery.form.batch.byHand.unknown') : t('sales.delivery.form.batch.byHand', { n: String(keys.filter((k) => k !== 'unknown').indexOf(key) + 1) })} />
+          ))}
+        </fieldset>
+      </>
+    );
+  }
   if (stock.data === undefined) return <p>{t('sales.delivery.form.onHand.loading')}</p>;
   const { position, batches, units } = stock.data;
   const unlisted = unlistedKeys(picks, batches.map((b) => batchKey(b.batchId)));
