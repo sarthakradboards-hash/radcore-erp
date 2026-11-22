@@ -164,10 +164,11 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
     await expect(draw(s, '2026-11-14')).rejects.toMatchObject({ code: 'series_full' });
   });
 
-  // ADR-006 §1 step 6 (the architect on RAD-115): the journal's series first, then the rest by key, each once.
-  it('orders series turns with the journal first, then by key', () => {
-    expect(seriesOrder(['sales.order', 'sales.invoice', 'accounts.receipt', 'accounts.journal', 'sales.delivery', 'sales.invoice']))
-      .toEqual(['accounts.journal', 'accounts.receipt', 'sales.delivery', 'sales.invoice', 'sales.order']);
+  // ADR-006 §1 step 6 (the architect on RAD-115): the series that post no entry (quote, then order), the journal, then
+  // the rest by key, each once. A test that confirms an order and then posts, in one transaction, keeps it.
+  it('orders series turns: quote and order, the journal, then the rest by key', () => {
+    expect(seriesOrder(['sales.order', 'sales.invoice', 'accounts.receipt', 'accounts.journal', 'sales.delivery', 'sales.invoice', 'sales.quote']))
+      .toEqual(['sales.quote', 'sales.order', 'accounts.journal', 'accounts.receipt', 'sales.delivery', 'sales.invoice']);
   });
 
   /** Another transaction holding `key`'s turn until `fn` has run against it: `fn` gets whether the app's waiting save

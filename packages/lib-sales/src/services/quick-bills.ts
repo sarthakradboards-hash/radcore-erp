@@ -159,7 +159,7 @@ const orderLinesOf = (lines: Lines) => lines.map((l) => ({ itemId: l.itemId, qty
 /**
  * ADR-006 §1 for a save that posts several documents (the architect on RAD-115): before the first posts, every class of
  * lock for all of them, in §1's order. That's the period, then the caller's documents (a held bill's order and hold), the
- * party, the stock positions and units of every line, and then every series it draws, journal first. So it never holds
+ * party, the stock positions and units of every line, and then every series it draws, in seriesOrder. So it never holds
  * one while waiting on a plain receipt, delivery or invoice that holds the next; each posting re-takes them for free.
  */
 async function holdBill(ctx: Ctx, partyId: string, businessDate: string, locationId: string,
