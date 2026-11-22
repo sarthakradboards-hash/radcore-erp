@@ -484,7 +484,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /sales/invoices/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/invoices': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
   'PUT /sales/invoices/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
-  'DELETE /sales/invoices/:id': ['lib-accounts', 'lib-platform', 'lib-sales', 'lib-stock'],
+  'DELETE /sales/invoices/:id': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/invoices/:id/post': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quick-bills': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],
   'POST /sales/quick-bills/hold': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-sales', 'lib-stock'],

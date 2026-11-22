@@ -13,6 +13,7 @@ import { AppError, decideApproval, saveSetting, type Ctx, type Principal } from 
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addDelivery, addDeliveryReturn, addOrder, cancelDeliveryNow, cancelDeliveryReturnNow, askDeliveryOverride, cancelOrderNow, changeOrder, closeOrderNow, confirmOrderNow, deliveryOverride,
+  dropDelivery,
   getDeliveryById, getOrderById, listDeliveriesPage, listToInvoicePage, postDeliveryNow, postDeliveryReturnNow,
 } from '@radcore/lib-sales';
 import { NEGATIVE_STOCK, addCategory, addItem, addPlace, checkBooks } from '@radcore/lib-stock';
@@ -191,6 +192,20 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
       maker))).toBe('own_request');
     await run((ctx) => decideApproval(ctx, deliveryOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), approver);
     expect((await run((ctx) => postDeliveryNow(ctx, { id }), maker)).number).toMatch(/^DC\//);
+  });
+
+  // The architect on RAD-114: a draft delivery thrown away closes its pending override request, superseded.
+  it('closes a draft delivery’s pending override as superseded when the draft is thrown away', async () => {
+    const at = await setup({ stock: '2', rate: '30', ordered: '2' });
+    await run((ctx) => setCreditTerms(ctx, { id: at.partyId, creditDays: 30, creditLimit: moneyString().parse('0'), reason: 'No credit' }));
+    const maker = await newUser(KEYS);
+    const approver = await newUser(['sales:override']);
+    const { id } = await draft(at, '1', [], maker);
+    const request = await run((ctx) => askDeliveryOverride(ctx, { id }), maker);
+    await run((ctx) => dropDelivery(ctx, { id }), maker);
+    expect(await failure(run((ctx) => decideApproval(ctx, deliveryOverride, request.id, { decision: 'approve', versionHash: request.versionHash }),
+      approver))).toBe('not_pending');
+    expect((await su.query<{ status: string }>('select status from radcore.approvals where id = $1', [request.id])).rows[0]?.status).toBe('superseded');
   });
 
   // ADR-006 §5: a serialised unit leaves on its delivery line with `delivered`, and comes back with `delivery_returned`.
