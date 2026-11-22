@@ -28,13 +28,13 @@ export const creditSchema = z.object({
   businessDate: shape.businessDate,
   reason: shape.reason,
   locationId: z.string(),
-  refundAmount: amountBox,
-  refundAccountId: z.string(),
+  // Nested like the contract's, so the server's refusals at refund.amount and refund.accountId land on these boxes.
+  refund: z.object({ amount: amountBox, accountId: z.string() }),
   lines: z.array(line).min(1, t('sales.credit.form.lines.none')).max(200, t('sales.lines.max')),
 }).transform((v, ctx) => {
-  const named = [v.refundAmount !== '', v.refundAccountId !== ''];
-  if (named[0] !== named[1]) ctx.addIssue({ code: 'custom', message: t('sales.credit.err.refund'), path: [named[0] ? 'refundAccountId' : 'refundAmount'] });
-  const refund = named[0] && named[1] ? { amount: moneyString().parse(v.refundAmount), accountId: v.refundAccountId } : null;
+  const named = [v.refund.amount !== '', v.refund.accountId !== ''];
+  if (named[0] !== named[1]) ctx.addIssue({ code: 'custom', message: t('sales.credit.err.refund'), path: ['refund', named[0] ? 'accountId' : 'amount'] });
+  const refund = named[0] && named[1] ? { amount: moneyString().parse(v.refund.amount), accountId: v.refund.accountId } : null;
   if (v.kind === 'value') {
     const lines = v.lines.filter((l) => l.taxable !== '').map((l) => ({ invoiceLineId: l.invoiceLineId, taxable: moneyString().parse(l.taxable) }));
     if (lines.length === 0) ctx.addIssue({ code: 'custom', message: t('sales.credit.err.nothing'), path: ['lines'] });
@@ -58,5 +58,5 @@ export type CreditValues = z.output<typeof creditSchema>;
 export type CreditLineInput = CreditInput['lines'][number];
 
 /** What a new credit note starts from: a value credit, today, nothing chosen. */
-export const NEW_CREDIT: CreditInput = { invoiceId: '', kind: 'value', businessDate: indiaDate(new Date()), reason: '', locationId: '', refundAmount: '',
-  refundAccountId: '', lines: [] };
+export const NEW_CREDIT: CreditInput = { invoiceId: '', kind: 'value', businessDate: indiaDate(new Date()), reason: '', locationId: '',
+  refund: { amount: '', accountId: '' }, lines: [] };
