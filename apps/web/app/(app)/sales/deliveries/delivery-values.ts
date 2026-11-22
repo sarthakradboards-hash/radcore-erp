@@ -42,3 +42,10 @@ export const NEW_DELIVERY: DeliveryInput = { orderId: '', locationId: '', busine
  * or the old place's after the place was changed. The form sends every key it holds, so each gets a box to clear (RAD-125). */
 export const unlistedKeys = (pick: Readonly<Record<string, string>>, listed: readonly string[]): string[] =>
   Object.entries(pick).filter(([key, qty]) => qty.trim() !== '' && !listed.includes(key)).map(([key]) => key);
+
+/** How many of the ticked units come from each batch, as the batch boxes' values; a unit of no known batch counts under "unknown". */
+export const countByBatch = (batchIds: readonly (string | null)[]): Record<string, string> => {
+  const counts: Record<string, number> = {};
+  for (const b of batchIds) counts[b ?? 'unknown'] = (counts[b ?? 'unknown'] ?? 0) + 1;
+  return Object.fromEntries(Object.entries(counts).map(([k, n]) => [k, String(n)]));
+};
