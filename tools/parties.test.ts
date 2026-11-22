@@ -39,7 +39,6 @@ it('marks parties:manage as needing the second factor, and parties:contact as al
   // and sales:counter_credit (RAD-115) have no scope to give.
   expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'money_accounts:read', 'sales:counter_credit',
     'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write']);
-    'leads:unassigned', 'campaigns:read', 'campaigns:write']);
 });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
