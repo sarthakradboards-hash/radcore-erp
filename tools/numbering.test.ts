@@ -170,7 +170,7 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
     expect(seriesOrder(['sales.order', 'sales.invoice', 'accounts.receipt', 'accounts.journal', 'sales.delivery', 'sales.invoice', 'sales.quote']))
       .toEqual(['sales.quote', 'sales.order', 'accounts.journal', 'accounts.receipt', 'sales.delivery', 'sales.invoice']);
     // A series not named in the list, a purchase order's included, sorts after the journal by key (the architect).
-    expect(seriesOrder(['purchasing.order', 'accounts.journal', 'accounts.asset'])).toEqual(['accounts.journal', 'accounts.asset', 'purchasing.order']);
+    expect(seriesOrder(['purchasing.order', 'accounts.journal', 'accounts.contra'])).toEqual(['accounts.journal', 'accounts.contra', 'purchasing.order']);
   });
 
   /** Another transaction holding `key`'s turn until `fn` has run against it: `fn` gets whether the app's waiting save

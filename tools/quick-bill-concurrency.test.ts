@@ -1,6 +1,6 @@
 // ADR-006 §1 for a save that posts several documents (the architect on RAD-115), on PostgreSQL 16 as M2-05's
 // concurrency test: the quick bill takes every class of lock for its order, delivery, invoice and receipts first, in
-// §1's order (period, party, stock, then its series, journal first), so it never holds one while waiting on a plain
+// §1's order (period, party, stock, then its series in seriesOrder), so it never holds one while waiting on a plain
 // save that holds the next. A quick bill alongside a plain receipt, a plain delivery of the same item and a plain
 // invoice to the same party each finish (no 40P01), and the numbers they draw stay gapless. In a database of its own: the
 // run's rolled-back test wrappers draw several series in their files' own order, which these committed saves would meet.
@@ -34,14 +34,15 @@ it.runIf(process.env['CI'] && !adminUrl)('has its test database in CI', () => {
 });
 
 describe.skipIf(!adminUrl)('a quick bill alongside plain saves', { timeout: 60_000 }, () => {
-  let own: Awaited<ReturnType<typeof freshDatabase>>;
+  let own: Awaited<ReturnType<typeof freshDatabase>> | undefined;
   let pool: pg.Pool;
   let su: pg.Pool;
   let db: ReturnType<typeof createDatabase>;
   beforeAll(async () => {
-    own = await freshDatabase(adminUrl ?? '');
-    pool = new pg.Pool({ connectionString: own.appUrl, max: 6 });
-    su = new pg.Pool({ connectionString: own.superUrl, max: 2 });
+    const made = await freshDatabase(adminUrl ?? '');
+    own = made;
+    pool = new pg.Pool({ connectionString: made.appUrl, max: 6 });
+    su = new pg.Pool({ connectionString: made.superUrl, max: 2 });
     db = createDatabase(pool);
     // Its company profile, as test-database.ts commits the run's.
     const c = await su.connect();
@@ -56,6 +57,8 @@ describe.skipIf(!adminUrl)('a quick bill alongside plain saves', { timeout: 60_0
     }
   }, 120_000);
   afterAll(async () => {
+    // Nothing to close if the database was never made, so beforeAll's own error is the one reported.
+    if (own === undefined) return;
     await pool.end();
     await su.end();
     await own.drop();
