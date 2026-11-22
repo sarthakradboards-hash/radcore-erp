@@ -205,10 +205,10 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
         if (page.next === null) break;
         after = page.next;
       }
-      return { mine: seen.filter((id) => held.includes(id)), repeats: seen.length - new Set(seen).size };
+      return { held, mine: seen.filter((id) => held.includes(id)), repeats: seen.length - new Set(seen).size };
     });
-    expect([out.mine.toSorted(), out.repeats]).toEqual([[...out.mine].toSorted(), 0]);
-    expect(out.mine).toHaveLength(2);
+    // Both holds come back, each once (auditor-2 on #325).
+    expect([out.mine.toSorted(), out.repeats]).toEqual([out.held.toSorted(), 0]);
   });
 
   it('refuses a walk-in hold short of the bill, and a hold of a bill that needs no approval', async () => {

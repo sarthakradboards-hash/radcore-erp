@@ -202,7 +202,7 @@ export async function changeInvoice(ctx: Ctx, { id, ...input }: In<typeof update
   const lines = await checkedLines(ctx, input.partyId, input.lines, { priceListId, on: input.businessDate });
   const tx = salesTx(ctx);
   await tx.update(invoices).set({ partyId: input.partyId, businessDate: input.businessDate, notes: input.notes, ...shipToColumns(input.shipTo),
-    owner: ownerOf(ctx, lines), priceListId, overrideVersion: null }).where(eq(invoices.id, id));
+    owner: ownerOf(ctx, lines), priceListId, overrideVersion: null, overrideAfter: null }).where(eq(invoices.id, id));
   await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id));
   await tx.insert(invoiceLines).values(stored(lines).map((l) => ({ ...l, invoiceId: id })));
   return {};

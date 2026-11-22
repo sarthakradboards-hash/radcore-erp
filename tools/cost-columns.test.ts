@@ -13,7 +13,6 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   discount_limits: { max_percent: 'a role’s discount limit, a percentage (prices:read)' },
   gst_rates: { rate: 'a tax rate' },
   payment_allocations: { amount: 'money applied to a document (payments:write)' },
-  quick_bill_holds: { approved_after: 'what a party would owe when its held bill was approved (sales:override)' },
   payment_reminders: { outstanding: 'what a party owed when reminded (receivables:read)', overdue: 'what of it was overdue (receivables:read)' },
   credit_applications: { amount: 'a credit applied to a document (payments:write)' },
   // tools/allocations-routes.test.ts's fixture document, there only while that file runs.
@@ -28,7 +27,8 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   sales_quotes: { taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)', sgst: 'tax quoted (sales:read)',
     igst: 'tax quoted (sales:read)', round_off: 'the round-off to the rupee (sales:read)', total: 'what the party is offered (sales:read)' },
   sales_orders: { taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)', sgst: 'tax quoted (sales:read)',
-    igst: 'tax quoted (sales:read)', round_off: 'the round-off to the rupee (sales:read)', total: 'what the party is offered (sales:read)' },
+    igst: 'tax quoted (sales:read)', round_off: 'the round-off to the rupee (sales:read)', total: 'what the party is offered (sales:read)',
+    override_after: 'what the party would owe when its override was approved (sales:override)' },
   sales_quote_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage',
     gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)',
     sgst: 'tax quoted (sales:read)', igst: 'tax quoted (sales:read)', line_total: 'a selling value with tax (sales:read)' },
@@ -42,7 +42,7 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   // An invoice and its lines (RAD-113): what was billed, its tax and round-off (sales:read). Only a line's cost is a cost.
   invoices: { taxable: 'a selling value (sales:read)', cgst: 'tax charged (sales:read)', sgst: 'tax charged (sales:read)',
     igst: 'tax charged (sales:read)', cess: 'tax charged (sales:read)', round_off: 'the round-off to the rupee (sales:read)',
-    total: 'what the party owes on it (sales:read)' },
+    total: 'what the party owes on it (sales:read)', override_after: 'what the party would owe when its override was approved (sales:override)' },
   invoice_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage',
     list_rate: 'a list price (prices:read)',
     gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax charged (sales:read)', sgst: 'tax charged (sales:read)',

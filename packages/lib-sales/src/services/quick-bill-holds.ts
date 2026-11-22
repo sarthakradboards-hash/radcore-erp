@@ -9,19 +9,14 @@ import { eq } from 'drizzle-orm';
 export type PlannedPayment = { method: 'cash' | 'card' | 'bank'; amount: string; accountId?: string; reference?: string };
 /** Each order line's batches and serials, by its line number. */
 type HeldPicks = { lineNo: number; batches: { batchId: string | null; qty: string }[]; serials: string[] }[];
-export type Hold = { orderId: string; locationId: string; payments: PlannedPayment[]; picks: HeldPicks; approvedAfter: string | null };
+export type Hold = { orderId: string; locationId: string; payments: PlannedPayment[]; picks: HeldPicks };
 
 /** The order's hold, or null when it isn't one; locked when it's to be completed. */
 export async function holdOf(ctx: Ctx, orderId: string, forUpdate = false): Promise<Hold | null> {
   const q = salesTx(ctx).select().from(quickBillHolds).where(eq(quickBillHolds.orderId, orderId));
   const [row] = forUpdate ? await q.for('update') : await q;
   return row === undefined ? null : { orderId: row.orderId, locationId: row.locationId, payments: row.payments as PlannedPayment[],
-    picks: row.picks as HeldPicks, approvedAfter: row.approvedAfter };
-}
-
-/** Records what the party would owe, as its override is approved (order-checks' approved()). */
-export async function setApprovedAfter(ctx: Ctx, orderId: string, after: string): Promise<void> {
-  await salesTx(ctx).update(quickBillHolds).set({ approvedAfter: after }).where(eq(quickBillHolds.orderId, orderId));
+    picks: row.picks as HeldPicks };
 }
 
 /** What a held order's planned payments come to: what its override's check takes off the exposure (`paidNow`). */

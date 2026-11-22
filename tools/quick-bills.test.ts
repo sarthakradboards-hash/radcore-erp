@@ -280,8 +280,11 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     const readOnly = await runInTransaction(db, { readOnly: true, isolation: 'read committed' }, await counter(), randomUUID(),
       (raw) => previewBill({ ...raw, settings: new Settings([{ key: 'sales.default_price_list', value: at.listId }]) }, input([cash('362')], partyId)));
     const out = await atCounter(at, async (ctx) => {
-      const count = async () => (await rawOf(ctx.tx).execute(sql`select (select count(*) from radcore.sales_orders)::int as o,
-        (select count(*) from radcore.payments)::int as p, (select coalesce(sum(last), 0) from radcore.number_counters)::int as n`) as unknown as {
+      // The rows this transaction wrote, by their xmin: other files commit orders and numbers meanwhile (read committed).
+      const count = async () => (await rawOf(ctx.tx).execute(sql`with me as (select pg_current_xact_id_if_assigned()::text::xid as x)
+        select (select count(*) from radcore.sales_orders, me where xmin = me.x)::int as o,
+        (select count(*) from radcore.payments, me where xmin = me.x)::int as p,
+        (select count(*) from radcore.number_counters, me where xmin = me.x)::int as n`) as unknown as {
         rows: { o: number; p: number; n: number }[] }).rows[0];
       const before = await count();
       const seen = await previewBill(ctx, input([cash('362')], partyId));
@@ -295,7 +298,7 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     // 345.00 + 2.5% CGST (8.63) + 2.5% SGST (8.63) is 362.26, billed as 362.00.
     expect(out.preview).toEqual(['362.00', '-0.26', '8.63', '0.00', '0.00', []]);
     expect(out.posted).toBe('362.00');
-    expect(out.written).toEqual(out.before);
+    expect([out.before, out.written]).toEqual([{ o: 0, p: 0, n: 0 }, { o: 0, p: 0, n: 0 }]);
     expect([readOnly.total, readOnly.issues]).toEqual(['362.00', []]);
     // A named party with no credit paying short is over its limit, named, and no figure of it answered.
     expect(out.short).toEqual(['over_limit']);
