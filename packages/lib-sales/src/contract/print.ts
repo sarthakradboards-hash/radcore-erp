@@ -8,5 +8,8 @@ import { printContract } from '@radcore/lib-platform/contract';
 export const printInvoice = printContract('/sales/invoices/:id/pdf', 'sales:read', 'invoices', ['wrong_status']);
 /** A posted delivery's challan (Rule 55); a draft has no number yet (wrong_status). */
 export const printChallan = printContract('/sales/deliveries/:id/pdf', 'sales:read', 'deliveries', ['wrong_status']);
+/** A posted receipt, under its own key (the architect on RAD-120): no balance on it. A draft, a payment out or a refund
+ * is not_found. */
+export const printReceipt = printContract('/sales/receipts/:id/pdf', 'receipts:print', 'payments');
 /** A quote, a draft one marked as a draft. */
 export const printQuote = printContract('/sales/quotes/:id/pdf', 'sales:read', 'sales_quotes');

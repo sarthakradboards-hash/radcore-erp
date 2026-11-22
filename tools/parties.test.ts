@@ -36,7 +36,8 @@ const fields = (o: Record<string, unknown> = {}) => ({
 it('marks parties:manage as needing the second factor, and parties:contact as all-scope only without it', () => {
   expect([SECOND_FACTOR_KEYS.includes('parties:manage'), SECOND_FACTOR_KEYS.includes('parties:contact')]).toEqual([true, false]);
   // leads:contact (RAD-106) is all-only for the same reason, and leads:unassigned (RAD-109) has no scope to give.
-  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'leads:contact', 'leads:unassigned']);
+  // receipts:print (RAD-120) has no records to scope.
+  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'receipts:print', 'leads:contact', 'leads:unassigned']);
 });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {

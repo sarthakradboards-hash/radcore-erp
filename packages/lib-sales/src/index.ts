@@ -27,6 +27,7 @@ export { remindWithLink } from './services/reminder-links.ts';
 export { challanPrint } from './print/challan.ts';
 export { invoicePrint } from './print/invoice.ts';
 export { quotePrint } from './print/quote.ts';
+export { receiptPrint } from './print/receipt.ts';
 export { DOCUMENT_LINK_DAYS, invoiceByLink, invoiceLinks, revokeInvoiceLinkNow, shareInvoiceLink } from './services/invoice-links.ts';
 export { addCreditNote, dropCreditNote, listCreditNotesPage } from './services/credit-notes.ts';
 export {

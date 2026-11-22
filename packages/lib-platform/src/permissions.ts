@@ -45,6 +45,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'accounts:write', module: 'Journal', label: 'Change the chart of accounts: codes, and switching accounts off and on' },
   { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
+  // One posted receipt, printed by its id (the architect on RAD-120): no balance on it, so not receivables:read; all-only,
+  // since payments isn't a scoped table.
+  { key: 'receipts:print', module: 'Payments', label: 'Print customer receipts', allOnly: true },
   { key: 'receivables:read', module: 'Payments', label: 'See what each party owes: statements and the To collect list',
     records: ['@radcore/db/accounts#partyManagers'] },
   { key: 'receivables:remind', module: 'Payments', label: 'Record a reminder to a party of what they owe (with receivables:read)',

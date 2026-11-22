@@ -3,11 +3,11 @@
 // wrong_status; the key and the record scope hold; a draft quote prints. The invoice's template is checked in a
 // transaction that's rolled back, since its company profile must stay unset for company.test.ts.
 import { randomUUID } from 'node:crypto';
-import { setCompanyProfile } from '@radcore/lib-accounts';
-import { percentString, quantityString, unitPriceString } from '@radcore/lib-common';
+import { recordPayment, setCompanyProfile, systemAccountId } from '@radcore/lib-accounts';
+import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { createPrintPool, createSecrets, loadConfig, type Ctx, type PrintBlock, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { addInvoice, addQuote, invoicePrint, postInvoiceNow } from '@radcore/lib-sales';
+import { addInvoice, addQuote, invoicePrint, postInvoiceNow, receiptPrint } from '@radcore/lib-sales';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -21,7 +21,7 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156).
 const DATE = '2026-11-15';
 const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'parties:write', 'parties:manage', 'items:write',
-  'locations:write', 'gst:write', 'company:write', 'cost:read'];
+  'locations:write', 'gst:write', 'company:write', 'cost:read', 'payments:write'];
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
 const q = (s: string) => quantityString().parse(s);
 const COMPANY = { legalName: 'Radboards Pvt Ltd', gstin: '27AAPFU0939F1ZV', addressLine1: 'Plot 4, Bhosari MIDC', addressLine2: null,
@@ -87,6 +87,29 @@ describe.skipIf(!url || !superUrl)('sales printouts', () => {
       lines: [{ itemId: at.itemId, qty: q('2'), rate: unitPriceString().parse('80000'), discountPercent: percentString({ max: '100' }).parse('0') }] }));
     const res = await print(staff, `/sales/quotes/${id}/pdf`, 'a4');
     expect([res.status, res.type, res.bytes.subarray(0, 5).toString()]).toEqual([200, 'application/pdf', '%PDF-']);
+  }, 60_000);
+
+  // The architect's ruling: one posted receipt under receipts:print, with no balance on it; a draft and a payment out
+  // are not_found; without the key, forbidden.
+  it('prints a posted receipt under receipts:print alone, with no balance; a draft or a payment out is not_found', async () => {
+    const at = await postedDelivery(run, su, DATE);
+    const pay = (kind: 'receipt' | 'payment', amount: string) => run(async (ctx) => recordPayment(ctx, { kind, partyId: at.partyId,
+      businessDate: DATE, amount: moneyString().parse(amount), accountId: await systemAccountId(ctx, 'cash'), reference: 'UTR 4431' }));
+    const posted = await pay('receipt', '500.00');
+    // Past the day's cash limit, so it waits as a draft for an owner (s.269ST).
+    const draft = await pay('receipt', '250000.00');
+    const out = await pay('payment', '100.00');
+    expect([posted.status, draft.status, out.status]).toEqual(['posted', 'pending_approval', 'posted']);
+    const counter: Principal = { kind: 'user', userId: randomUUID(), permissions: ['receipts:print'] };
+    const res = await print(counter, `/sales/receipts/${posted.id}/pdf`, 'thermal80');
+    expect([res.status, res.type, res.bytes.subarray(0, 5).toString()]).toEqual([200, 'application/pdf', '%PDF-']);
+    expect(await accessRows('payments', posted.id)).toEqual([{ created_by: `user:${counter.userId}` }]);
+    const m = await run((ctx) => receiptPrint.read(ctx, posted.id));
+    expect(Object.keys(m).sort()).toEqual(['account', 'amount', 'appliedTo', 'businessDate', 'company', 'number', 'partyName', 'reference', 'tds']);
+    expect([m.amount, m.reference, m.account]).toEqual(['500.00', 'UTR 4431', 'Cash']);
+    const codes = [(await print(counter, `/sales/receipts/${draft.id}/pdf`, 'a4')).code, (await print(counter, `/sales/receipts/${out.id}/pdf`, 'a4')).code,
+      (await print({ ...counter, permissions: ['sales:read'] }, `/sales/receipts/${posted.id}/pdf`, 'a4')).code];
+    expect(codes).toEqual(['not_found', 'not_found', 'forbidden']);
   }, 60_000);
 
   it('lays out every Rule 46 particular on the invoice, as issued, and renders it on both papers', async () => {
