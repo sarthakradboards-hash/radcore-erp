@@ -13,7 +13,7 @@ const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
 
 /** A line as sent: an item, how many, at what rate per unit before GST, less a discount. */
-const lineIn = z.object({
+export const lineIn = z.object({
   itemId: idString(), qty: quantityString(), rate: unitPriceString(), discountPercent: percentString({ max: '100' }),
 });
 /** A line's amounts (the architect on RAD-112): its GST rate in force on the document's date and that rate's source, its
@@ -68,12 +68,12 @@ export const getQuote = defineContract({
 /** A new draft quote. */
 export const createQuote = defineContract({
   method: 'POST', path: '/sales/quotes', auth: 'session', perm: 'sales:write', tx: write,
-  input: quoteIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS],
+  input: quoteIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS, 'counter_customer_only'],
 });
 /** A draft quote, rewritten whole. */
 export const updateQuote = defineContract({
   method: 'PUT', path: '/sales/quotes/:id', auth: 'session', perm: 'sales:write', tx: write,
-  input: quoteIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS],
+  input: quoteIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'counter_customer_only'],
 });
 /** A draft quote, thrown away: it never had a number, so it leaves no gap. */
 export const deleteQuote = defineContract({
@@ -84,7 +84,7 @@ export const deleteQuote = defineContract({
 export const sendQuote = defineContract({
   method: 'POST', path: '/sales/quotes/:id/send', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }),
-  errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'company_profile_incomplete', 'no_gst_rate'],
+  errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'company_profile_incomplete', 'no_gst_rate', 'series_full'],
 });
 /** The party accepted a sent quote: it makes a draft order with its lines, dated `businessDate` (not before the quote). */
 export const acceptQuote = defineContract({
@@ -132,14 +132,14 @@ export const getOrder = defineContract({
 /** A new draft order. */
 export const createOrder = defineContract({
   method: 'POST', path: '/sales/orders', auth: 'session', perm: 'sales:write', tx: write,
-  input: orderIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS],
+  input: orderIn, output: z.object({ id: idString() }), errors: [...DOCUMENT_ERRORS, 'counter_customer_only'],
 });
 /** A draft order, rewritten whole; a confirmed one's lines too, through the checks again (§1), refused if they'd need an
  * override (`change_over_checks`): only a draft gets one. */
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
   input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'change_over_checks', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete', 'version_changed',
-    'period_locked', 'year_not_open', 'booking_live'],
+    'period_locked', 'year_not_open', 'booking_live', 'counter_customer_only'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({
@@ -152,7 +152,7 @@ export const confirmOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/confirm', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }),
   errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'needs_override', 'no_gst_rate', 'version_changed',
-    'company_profile_incomplete'],
+    'company_profile_incomplete', 'series_full'],
 });
 /** Asks for an override of a draft order's issues: someone holding sales:override approves it (RAD-38). */
 export const requestOrderOverride = defineContract({

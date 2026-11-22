@@ -19,8 +19,9 @@ const money = z.object({ amount: moneyString(), accountId: idString(), businessD
 const payment = z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() });
 
 // What taking or paying back money can refuse (lib-accounts' recordPayment), beyond a booking's own.
+// Each records a payment, which draws a number (series_full, RAD-134).
 const MONEY_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_account', 'not_money_account', 'account_inactive',
-  'exceeds_receipt', 'date_before_source'] as const;
+  'exceeds_receipt', 'date_before_source', 'series_full'] as const;
 
 const bookingRow = z.object({
   id: idString(), number: z.string().nullable(), orderId: idString(), orderLineId: idString(), partyId: idString(), partyName: z.string(),

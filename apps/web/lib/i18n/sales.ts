@@ -129,6 +129,7 @@ export const sales = {
   'sales.col.total': 'Total',
   'sales.order.override.pending': 'An override has been asked for. It’s waiting for someone who may approve overrides to decide.',
   'sales.order.override.approved': 'An override was approved. Confirm the order now.',
+  'sales.err.booking_live': 'A vehicle booking is still live on this order, so it can’t be changed, closed or cancelled. End or cancel the booking first.',
   'sales.err.change_over_checks': 'This change would need an override, and a confirmed order can’t get one. Change the lines to stay within the checks, or cancel the order and write a new one.',
   'sales.err.date_in_future': 'The date can’t be after today.',
   'sales.err.date_before_source': 'The order can’t be dated before its quote.',

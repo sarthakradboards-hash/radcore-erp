@@ -15,6 +15,7 @@ import { dec, roundMoney, roundQty, type Decimal, type Money, type Quantity } fr
 import type { Ctx } from '@radcore/lib-platform';
 import { serialKey } from '@radcore/lib-stock';
 import { and, asc, eq, inArray, isNotNull, sum } from 'drizzle-orm';
+import { toRupee } from './invoice-rules.ts';
 
 const QTY_PLACES = 3; // a line's quantity column, numeric(18, 3)
 const asQty = (d: Decimal): Quantity => roundQty(d, QTY_PLACES);
@@ -108,16 +109,29 @@ export async function returnedOf(ctx: Ctx, lines: readonly { id: string; picks: 
  * once): its posted deliveries' lines less what's been taken back and what's been invoiced.
  */
 export async function deliveredNotInvoiced(ctx: Ctx, partyId: string): Promise<Money> {
+  return rupeesOf((await notInvoicedLeft(ctx, partyId)).values());
+}
+
+/** Each delivery's part to the rupee, as its invoice will round it, summed: so a delivery paid for in advance at its
+ * rounded bill leaves nothing over, and one invoiced whole leaves exactly 0 (the architect on RAD-115). */
+export const rupeesOf = (values: Iterable<Decimal>): Money => roundMoney([...values].reduce((s, v) => s.plus(dec(toRupee(v))), dec('0')));
+
+/** Each of the party's posted deliveries' value still to invoice, at selling value with GST, unrounded, by delivery. */
+export async function notInvoicedLeft(ctx: Ctx, partyId: string): Promise<Map<string, Decimal>> {
   const tx = salesTx(ctx);
-  const [out] = await tx.select({ taxable: sum(deliveryLines.taxable), gst: sum(deliveryLines.gst) }).from(deliveryLines)
-    .innerJoin(deliveries, and(eq(deliveries.id, deliveryLines.deliveryId), eq(deliveries.status, 'posted'), eq(deliveries.partyId, partyId)));
-  const [back] = await tx.select({ taxable: sum(deliveryReturnLines.taxable), gst: sum(deliveryReturnLines.gst) }).from(deliveryReturnLines)
-    .innerJoin(deliveryReturns, and(eq(deliveryReturns.id, deliveryReturnLines.returnId), eq(deliveryReturns.status, 'posted'),
-      eq(deliveryReturns.partyId, partyId)));
-  const [billed] = await tx.select({ taxable: sum(invoiceLines.deliveryTaxable), gst: sum(invoiceLines.deliveryGst) }).from(invoiceLines)
-    .innerJoin(invoices, and(eq(invoices.id, invoiceLines.invoiceId), eq(invoices.status, 'posted'), eq(invoices.partyId, partyId)));
-  const total = (r: { taxable: string | null; gst: string | null } | undefined) => dec(r?.taxable ?? '0').plus(dec(r?.gst ?? '0'));
-  return roundMoney(total(out).minus(total(back)).minus(total(billed)));
+  const out = await tx.select({ id: deliveries.id, taxable: sum(deliveryLines.taxable), gst: sum(deliveryLines.gst) }).from(deliveryLines)
+    .innerJoin(deliveries, and(eq(deliveries.id, deliveryLines.deliveryId), eq(deliveries.status, 'posted'), eq(deliveries.partyId, partyId)))
+    .groupBy(deliveries.id);
+  const back = await tx.select({ id: deliveryReturns.deliveryId, taxable: sum(deliveryReturnLines.taxable), gst: sum(deliveryReturnLines.gst) })
+    .from(deliveryReturnLines).innerJoin(deliveryReturns, and(eq(deliveryReturns.id, deliveryReturnLines.returnId),
+      eq(deliveryReturns.status, 'posted'), eq(deliveryReturns.partyId, partyId))).groupBy(deliveryReturns.deliveryId);
+  const billed = await tx.select({ id: deliveryLines.deliveryId, taxable: sum(invoiceLines.deliveryTaxable), gst: sum(invoiceLines.deliveryGst) })
+    .from(invoiceLines).innerJoin(invoices, and(eq(invoices.id, invoiceLines.invoiceId), eq(invoices.status, 'posted'), eq(invoices.partyId, partyId)))
+    .innerJoin(deliveryLines, eq(deliveryLines.id, invoiceLines.deliveryLineId)).groupBy(deliveryLines.deliveryId);
+  const value = (r: { taxable: string | null; gst: string | null }) => dec(r.taxable ?? '0').plus(dec(r.gst ?? '0'));
+  const left = new Map(out.map((r) => [r.id, value(r)]));
+  for (const r of [...back, ...billed]) left.set(r.id, (left.get(r.id) ?? dec('0')).minus(value(r)));
+  return left;
 }
 
 /** Locks the deliveries of the caller's delivery lines, FOR UPDATE in id order, answering nothing: an invoice's

@@ -2,7 +2,7 @@
 // posted in the same save, through the journal engine, then numbered last (ADR-006 §1): RV for a receipt, PV for a
 // payment or refund. Cash past a day's limit (RC-114, CA-24) stays a draft and asks an owner, through defineApproval;
 // the approval posts it. A posted one is cancelled only by a mirror entry dated the cancellation's day (ADR-007 §6).
-import { accounts, accountsTx, payments } from '@radcore/db/accounts';
+import { accounts, accountsTx, parties, payments } from '@radcore/db/accounts';
 import { dec, indiaDate, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
   from '@radcore/lib-platform';
@@ -53,6 +53,22 @@ async function moneyAccount(ctx: Ctx, id: string): Promise<{ cash: boolean }> {
   if (a.key === 'cash' || a.key === 'bank') return { cash: a.key === 'cash' };
   const [parent] = a.parentId === null ? [] : await tx.select({ key: accounts.systemKey }).from(accounts).where(eq(accounts.id, a.parentId)).limit(1);
   return parent?.key === 'bank' ? { cash: false } : refuse('not_money_account', 'Take or pay money through Cash or a bank account');
+}
+
+/** Why an account can't take or pay money (not Cash, Bank or under Bank, or switched off), or null when it can: for a
+ * setting that names one (lib-sales' sales.card_account, RAD-115). */
+export async function moneyAccountRefusal(ctx: Ctx, id: string): Promise<string | null> {
+  return moneyAccount(ctx, id).then(() => null, (e: unknown) => {
+    if (e instanceof AppError) return e.message;
+    throw e;
+  });
+}
+
+/** A seeded account's id, by its system key (ADR-006 §2): `cash`, `card_settlements` (RAD-115). */
+export async function systemAccountId(ctx: Ctx, key: string): Promise<string> {
+  const [a] = await accountsTx(ctx).select({ id: accounts.id }).from(accounts).where(eq(accounts.systemKey, key)).limit(1);
+  if (a === undefined) throw new Error(`the system account ${key} isn't seeded`);
+  return a.id;
 }
 
 /** The lines a payment posts (ADR-006 §6): its party's Debtors or Creditors line carries the whole amount, gross of TDS. */
@@ -117,13 +133,17 @@ async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
 }
 
 /** Whether this cash, with the party's other posted cash that day, passes the day's limit (ADR-007 §8). */
-async function pastCashLimit(ctx: Ctx, p: { id: string; kind: string; partyId: string; businessDate: string; amount: Money }) {
+async function pastCashLimit(ctx: Ctx, p: { id: string; kind: string; partyId: string; businessDate: string; amount: Money }, counter: boolean) {
   const out = p.kind !== 'receipt';
   // ADR-006 §1 step 3: the party, after the payment's own row, so two cash saves for one party take turns and neither
   // sums without the other. NO KEY UPDATE: each one's insert already holds the party's KEY SHARE (the auditor on RAD-116).
   await holdParty(ctx, p.partyId);
+  // The Counter customer isn't one person: every walk-in shares it, so a quick bill's cash for it is judged one bill at
+  // a time, never by the day (the architect on RAD-115); a quick bill takes its cash as one receipt. Only the quick
+  // bill's own receipt is (recordCounterReceipt, auditor-2 on #304): any other sums the day, as for any party.
+  const [party] = counter ? await accountsTx(ctx).select({ key: parties.systemKey }).from(parties).where(eq(parties.id, p.partyId)).limit(1) : [];
   const cash = accountsTx(ctx).select({ id: accounts.id }).from(accounts).where(eq(accounts.systemKey, 'cash'));
-  const earlier = await accountsTx(ctx).select({ amount: payments.amount }).from(payments).where(and(eq(payments.partyId, p.partyId),
+  const earlier = party?.key === 'walk_in' ? [] : await accountsTx(ctx).select({ amount: payments.amount }).from(payments).where(and(eq(payments.partyId, p.partyId),
     eq(payments.businessDate, p.businessDate), eq(payments.status, 'posted'), inArray(payments.accountId, cash), ne(payments.id, p.id),
     out ? inArray(payments.kind, ['payment', 'refund']) : eq(payments.kind, 'receipt')));
   const total = sum([...earlier.map((e) => e.amount), p.amount]);
@@ -180,6 +200,15 @@ export function recordPayment(ctx: Ctx, input: In<typeof recordPaymentContract>)
   return record(ctx, input, null, null);
 }
 
+/** For lib-sales' quick bill (RAD-115), reached by no route: a counter sale's receipt, its cash for the Counter customer
+ * judged against the limit one bill at a time, since every walk-in shares that party (the architect's MUST); any other
+ * receipt, on POST /payments too, sums the party's day. Its own function, since a route passes its service a third
+ * argument. */
+export function recordCounterReceipt(ctx: Ctx, input: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'credit'>>):
+  Promise<Out<typeof recordPaymentContract>> {
+  return record(ctx, { ...input, kind: 'receipt' }, null, null, true);
+}
+
 /** For a document's own service (bookings, M3-13), reached by no route: a receipt held for `heldFor` (a booking's
  * advance), refunded then only through refundHeld. Its own function, not an option on recordPayment, since a route
  * passes its service a third argument. */
@@ -205,7 +234,7 @@ export function refundHeld(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentCon
   return record(ctx, { ...rest, kind: 'refund', refundOf: receiptId }, null, owner);
 }
 
-async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor: HeldFor | null, owner: HeldFor | null):
+async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor: HeldFor | null, owner: HeldFor | null, counter = false):
   Promise<Out<typeof recordPaymentContract>> {
   const tx = accountsTx(ctx);
   // TDS held back is optional: none when it's left out.
@@ -229,11 +258,11 @@ async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor
   const { cash } = await moneyAccount(ctx, p.accountId);
   const [row] = await tx.insert(payments).values({ kind: p.kind, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount, tds: p.tds,
     accountId: p.accountId, refundOfId: p.refundOf ?? null, creditTable: p.credit?.table ?? null, creditId: p.credit?.id ?? null,
-    narration: p.narration ?? null, heldForTable: heldFor?.table ?? null, heldForId: heldFor?.id ?? null }).returning({ id: payments.id });
+    narration: p.narration ?? null, reference: p.reference ?? null, heldForTable: heldFor?.table ?? null, heldForId: heldFor?.id ?? null }).returning({ id: payments.id });
   // The insert locked a credit it names (check_credit_refund), so the cash limit's party lock below comes after the
   // document's, as ADR-006 §1 orders them.
   const id = row?.id ?? refuse('server_error', 'The payment was not stored');
-  if (cash && await pastCashLimit(ctx, { id, ...p })) {
+  if (cash && await pastCashLimit(ctx, { id, ...p }, counter)) {
     await requestApproval(ctx, cashLimitSpec, id);
     return { id, status: 'pending_approval', number: null };
   }

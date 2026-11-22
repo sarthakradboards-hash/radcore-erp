@@ -10,7 +10,7 @@ import {
 } from '@radcore/db/crm';
 import { addDays, indiaDate, maskOf, normaliseEmail } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineNotification, encodeCursor, holdsKey, listScope, momentKey, notify, principalId, principalsOf,
+  AppError, decodeCursor, defineNotification, encodeCursor, holdsKey, isoMoment, listScope, momentKey, notify, principalId, principalsOf,
   roleOf, type Ctx, type JobContract,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, type SQL } from 'drizzle-orm';
@@ -44,7 +44,8 @@ export async function listLeadsPage(ctx: Ctx, input: In<typeof listLeads>): Prom
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
   return {
-    items: page.map((r) => ({ ...r, phone: maskOf(r.phone, 'last4'), stage: r.stage as Stage })),
+    // The column is read as PostgreSQL's text, kept so for the page key's microseconds; the answer is an ISO moment.
+    items: page.map((r) => ({ ...r, phone: maskOf(r.phone, 'last4'), stage: r.stage as Stage, lastEnquiryAt: isoMoment(r.lastEnquiryAt) })),
     next: rows.length > input.limit && last ? encodeCursor({ at: last.lastEnquiryAt, id: last.id }) : null,
   };
 }

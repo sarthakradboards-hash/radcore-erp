@@ -20,6 +20,10 @@ export const orderSteps = (status: string) => stepsFor(ORDER_PATH, status, (s) =
 function postedSteps(status: string, word: (status: string) => string): Step[] {
   return (status === 'cancelled' ? ['draft', 'posted', 'cancelled'] : ['draft', 'posted']).map((key) => ({ key, label: word(key) }));
 }
+/** A booking runs from booked to delivered, or ends cancelled. */
+export const bookingSteps = (status: string) => (status === 'cancelled' ? ['booked', 'cancelled'] : ['booked', 'delivered'])
+  .map((key) => ({ key, label: t(`sales.booking.status.${key as 'booked'}`) }));
+export const creditSteps = (status: string) => postedSteps(status, (s) => t(`sales.credit.status.${s as 'draft'}`));
 export const invoiceSteps = (status: string) => postedSteps(status, (s) => t(`sales.invoice.status.${s as 'draft'}`));
 export const deliverySteps = (status: string) => postedSteps(status, (s) => t(`sales.delivery.status.${s as 'draft'}`));
 export const returnSteps = (status: string) => postedSteps(status, (s) => t(`sales.return.status.${s as 'draft'}`));

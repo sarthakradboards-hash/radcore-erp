@@ -14,6 +14,7 @@ export const INVOICE_MESSAGES: Partial<Record<string, string>> = {
   ...SALES_MESSAGES,
   date_before_source: t('sales.invoice.err.date_before_source'),
   invoice_too_late: t('sales.invoice.err.invoice_too_late'),
+  company_profile_incomplete: t('sales.invoice.err.company_profile_incomplete'),
 };
 export const INVOICE_CANCEL_MESSAGES: Partial<Record<string, string>> = {
   ...SALES_MESSAGES, date_before_source: t('sales.invoice.err.cancel_date'),

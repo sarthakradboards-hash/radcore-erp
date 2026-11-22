@@ -1,5 +1,5 @@
 {
-  "id": "23152ffb-cefc-4f94-a33f-61f123606601",
+  "id": "28873051-d260-4b29-bb7a-5e623c19a35a",
   "prevId": "2ed8ae21-a368-4828-94d6-8d2f6df290ae",
   "version": "7",
   "dialect": "postgresql",
@@ -1405,6 +1405,12 @@
           "notNull": true,
           "default": true
         },
+        "system_key": {
+          "name": "system_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1469,7 +1475,15 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "parties_systemKey_unique": {
+          "name": "parties_systemKey_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "system_key"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "ck_parties_name": {
@@ -1531,6 +1545,14 @@
         "ck_parties_credit_days": {
           "name": "ck_parties_credit_days",
           "value": "\"radcore\".\"parties\".\"credit_days\" between 0 and 365"
+        },
+        "ck_parties_system_key": {
+          "name": "ck_parties_system_key",
+          "value": "\"radcore\".\"parties\".\"system_key\" ~ '^[a-z][a-z0-9_]*$'"
+        },
+        "ck_parties_system_active": {
+          "name": "ck_parties_system_active",
+          "value": "\"radcore\".\"parties\".\"system_key\" is null or \"radcore\".\"parties\".\"active\""
         }
       },
       "isRLSEnabled": false
@@ -2165,6 +2187,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "reference": {
+          "name": "reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "credit_table": {
           "name": "credit_table",
           "type": "text",
@@ -2469,6 +2497,10 @@
           "name": "ck_payments_narration",
           "value": "char_length(\"radcore\".\"payments\".\"narration\") <= 500"
         },
+        "ck_payments_reference": {
+          "name": "ck_payments_reference",
+          "value": "char_length(\"radcore\".\"payments\".\"reference\") <= 40"
+        },
         "ck_payments_cancel_reason": {
           "name": "ck_payments_cancel_reason",
           "value": "char_length(\"radcore\".\"payments\".\"cancel_reason\") <= 500"
@@ -2683,328 +2715,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "radcore.ad_spend": {
-      "name": "ad_spend",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "from_date": {
-          "name": "from_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "to_date": {
-          "name": "to_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ix_ad_spend_campaign": {
-          "name": "ix_ad_spend_campaign",
-          "columns": [
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "from_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_ad_spend_source": {
-          "name": "ix_ad_spend_source",
-          "columns": [
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "from_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "ad_spend_campaign_id_campaigns_id_fk": {
-          "name": "ad_spend_campaign_id_campaigns_id_fk",
-          "tableFrom": "ad_spend",
-          "tableTo": "campaigns",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "campaign_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "ad_spend_source_id_lead_sources_id_fk": {
-          "name": "ad_spend_source_id_lead_sources_id_fk",
-          "tableFrom": "ad_spend",
-          "tableTo": "lead_sources",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_ad_spend_amount": {
-          "name": "ck_ad_spend_amount",
-          "value": "\"radcore\".\"ad_spend\".\"amount\" >= 0 and \"radcore\".\"ad_spend\".\"amount\" <> 'NaN'"
-        },
-        "ck_ad_spend_note": {
-          "name": "ck_ad_spend_note",
-          "value": "char_length(\"radcore\".\"ad_spend\".\"note\") <= 200"
-        },
-        "ck_ad_spend_one": {
-          "name": "ck_ad_spend_one",
-          "value": "(\"radcore\".\"ad_spend\".\"campaign_id\" is null) <> (\"radcore\".\"ad_spend\".\"source_id\" is null)"
-        },
-        "ck_ad_spend_range": {
-          "name": "ck_ad_spend_range",
-          "value": "\"radcore\".\"ad_spend\".\"to_date\" >= \"radcore\".\"ad_spend\".\"from_date\""
-        },
-        "ck_ad_spend_positive": {
-          "name": "ck_ad_spend_positive",
-          "value": "\"radcore\".\"ad_spend\".\"amount\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.campaigns": {
-      "name": "campaigns",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name_key": {
-          "name": "name_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
-            "type": "stored"
-          }
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token": {
-          "name": "token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ended_at": {
-          "name": "ended_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_campaigns_name_key": {
-          "name": "ux_campaigns_name_key",
-          "columns": [
-            {
-              "expression": "name_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_campaigns_source": {
-          "name": "ix_campaigns_source",
-          "columns": [
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "campaigns_source_id_lead_sources_id_fk": {
-          "name": "campaigns_source_id_lead_sources_id_fk",
-          "tableFrom": "campaigns",
-          "tableTo": "lead_sources",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "campaigns_token_unique": {
-          "name": "campaigns_token_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_campaigns_name": {
-          "name": "ck_campaigns_name",
-          "value": "char_length(\"radcore\".\"campaigns\".\"name\") <= 80"
-        },
-        "ck_campaigns_token": {
-          "name": "ck_campaigns_token",
-          "value": "\"radcore\".\"campaigns\".\"token\" ~ '^[A-Za-z0-9_-]{22}$'"
-        }
-      },
       "isRLSEnabled": false
     },
     "radcore.follow_up_plan_steps": {
@@ -3345,18 +3055,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "message": {
           "name": "message",
           "type": "text",
@@ -3419,48 +3117,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "ix_lead_enquiries_source": {
-          "name": "ix_lead_enquiries_source",
-          "columns": [
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "received_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_lead_enquiries_campaign": {
-          "name": "ix_lead_enquiries_campaign",
-          "columns": [
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "received_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -3476,34 +3132,6 @@
             "id"
           ],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "lead_enquiries_source_id_lead_sources_id_fk": {
-          "name": "lead_enquiries_source_id_lead_sources_id_fk",
-          "tableFrom": "lead_enquiries",
-          "tableTo": "lead_sources",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "lead_enquiries_campaign_id_campaigns_id_fk": {
-          "name": "lead_enquiries_campaign_id_campaigns_id_fk",
-          "tableFrom": "lead_enquiries",
-          "tableTo": "campaigns",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "campaign_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -3610,329 +3238,6 @@
         "ck_lead_lost_reasons_label": {
           "name": "ck_lead_lost_reasons_label",
           "value": "char_length(\"radcore\".\"lead_lost_reasons\".\"label\") <= 80"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.lead_set_asides": {
-      "name": "lead_set_asides",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phone": {
-          "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "message": {
-          "name": "message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "received_at": {
-          "name": "received_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ix_lead_set_asides_received": {
-          "name": "ix_lead_set_asides_received",
-          "columns": [
-            {
-              "expression": "received_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_lead_set_asides_source": {
-          "name": "ix_lead_set_asides_source",
-          "columns": [
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_lead_set_asides_campaign": {
-          "name": "ix_lead_set_asides_campaign",
-          "columns": [
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "lead_set_asides_source_id_lead_sources_id_fk": {
-          "name": "lead_set_asides_source_id_lead_sources_id_fk",
-          "tableFrom": "lead_set_asides",
-          "tableTo": "lead_sources",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "lead_set_asides_campaign_id_campaigns_id_fk": {
-          "name": "lead_set_asides_campaign_id_campaigns_id_fk",
-          "tableFrom": "lead_set_asides",
-          "tableTo": "campaigns",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "campaign_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_lead_set_asides_name": {
-          "name": "ck_lead_set_asides_name",
-          "value": "char_length(\"radcore\".\"lead_set_asides\".\"name\") <= 120"
-        },
-        "ck_lead_set_asides_email": {
-          "name": "ck_lead_set_asides_email",
-          "value": "char_length(\"radcore\".\"lead_set_asides\".\"email\") <= 254"
-        },
-        "ck_lead_set_asides_message": {
-          "name": "ck_lead_set_asides_message",
-          "value": "char_length(\"radcore\".\"lead_set_asides\".\"message\") <= 2000"
-        },
-        "ck_lead_set_asides_phone": {
-          "name": "ck_lead_set_asides_phone",
-          "value": "\"radcore\".\"lead_set_asides\".\"phone\" ~ '^[+][1-9][0-9]{6,14}$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.lead_sources": {
-      "name": "lead_sources",
-      "schema": "radcore",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name_key": {
-          "name": "name_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
-            "type": "stored"
-          }
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "door_channel": {
-          "name": "door_channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "ignored": {
-          "name": "ignored",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        }
-      },
-      "indexes": {
-        "ux_lead_sources_name_key": {
-          "name": "ux_lead_sources_name_key",
-          "columns": [
-            {
-              "expression": "name_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "lead_sources_doorChannel_unique": {
-          "name": "lead_sources_doorChannel_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "door_channel"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_lead_sources_name": {
-          "name": "ck_lead_sources_name",
-          "value": "char_length(\"radcore\".\"lead_sources\".\"name\") <= 80"
-        },
-        "ck_lead_sources_channel": {
-          "name": "ck_lead_sources_channel",
-          "value": "\"radcore\".\"lead_sources\".\"channel\" in ('manual', 'walk_in', 'form', 'meta', 'google', 'whatsapp', 'qr')"
-        },
-        "ck_lead_sources_door": {
-          "name": "ck_lead_sources_door",
-          "value": "\"radcore\".\"lead_sources\".\"door_channel\" is null or \"radcore\".\"lead_sources\".\"door_channel\" = \"radcore\".\"lead_sources\".\"channel\""
-        },
-        "ck_lead_sources_added": {
-          "name": "ck_lead_sources_added",
-          "value": "\"radcore\".\"lead_sources\".\"door_channel\" is not null or \"radcore\".\"lead_sources\".\"channel\" in ('manual', 'walk_in')"
-        },
-        "ck_lead_sources_ignorable": {
-          "name": "ck_lead_sources_ignorable",
-          "value": "not \"radcore\".\"lead_sources\".\"ignored\" or \"radcore\".\"lead_sources\".\"channel\" in ('form', 'meta', 'google', 'whatsapp', 'qr')"
         }
       },
       "isRLSEnabled": false
@@ -6213,7 +5518,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -6300,7 +5605,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
