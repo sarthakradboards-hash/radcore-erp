@@ -29,22 +29,24 @@ const line = z.object({
 export const PAYMENT_METHODS = ['cash', 'upi', 'card'] as const;
 const payment = z.object({
   method: z.enum(PAYMENT_METHODS), amount: z.string().trim(), accountId: z.string(), reference: z.string().trim(), approvalCode: z.string().trim(),
-}).transform((p, ctx) => {
+});
+type PaymentBox = z.output<typeof payment>;
+
+/** One payment as the contract takes it, with its issues at the boxes. A held bill's card carries no approval code yet: the machine's
+ * code is given when the bill is completed, so a hold neither asks for it nor sends it. */
+function mapPayment(p: PaymentBox, i: number, hold: boolean, ctx: z.RefinementCtx) {
+  const at = (field: string, message: string) => ctx.addIssue({ code: 'custom', message, path: ['payments', i, field] });
   const amount = moneyString().safeParse(p.amount);
-  if (!amount.success) ctx.addIssue({ code: 'custom', message: t('sales.quick.err.amount'), path: ['amount'] });
-  if (p.method === 'upi' && p.accountId === '') ctx.addIssue({ code: 'custom', message: t('sales.quick.err.account'), path: ['accountId'] });
-  if (p.method === 'upi' && p.reference !== '' && looksLikeCardNumber(p.reference)) {
-    ctx.addIssue({ code: 'custom', message: t('sales.quick.err.card.digits'), path: ['reference'] });
-  }
-  if (p.method === 'card' && p.approvalCode === '') ctx.addIssue({ code: 'custom', message: t('sales.quick.err.approval'), path: ['approvalCode'] });
-  if (p.method === 'card' && p.approvalCode !== '' && looksLikeCardNumber(p.approvalCode)) {
-    ctx.addIssue({ code: 'custom', message: t('sales.quick.err.card.digits'), path: ['approvalCode'] });
-  }
+  if (!amount.success) at('amount', t('sales.quick.err.amount'));
+  if (p.method === 'upi' && p.accountId === '') at('accountId', t('sales.quick.err.account'));
+  if (p.method === 'upi' && p.reference !== '' && looksLikeCardNumber(p.reference)) at('reference', t('sales.quick.err.card.digits'));
+  if (p.method === 'card' && !hold && p.approvalCode === '') at('approvalCode', t('sales.quick.err.approval'));
+  if (p.method === 'card' && !hold && p.approvalCode !== '' && looksLikeCardNumber(p.approvalCode)) at('approvalCode', t('sales.quick.err.card.digits'));
   if (!amount.success) return z.NEVER;
   if (p.method === 'cash') return { method: 'cash' as const, amount: amount.data };
-  if (p.method === 'card') return { method: 'card' as const, amount: amount.data, approvalCode: p.approvalCode };
+  if (p.method === 'card') return { method: 'card' as const, amount: amount.data, ...(hold ? {} : { approvalCode: p.approvalCode }) };
   return { method: 'bank' as const, amount: amount.data, accountId: p.accountId, ...(p.reference === '' ? {} : { reference: p.reference }) };
-});
+}
 
 const buyerShape = holdQuickBill.input.shape.buyer.unwrap().shape;
 /** A walk-in who leaves a balance (a hold, under sales:counter_credit): a name and a mobile, and the address a bill above the B2C limit
@@ -66,7 +68,7 @@ export const quickBillSchema = z.object({
   if (v.customer === 'named' && v.partyId === '') ctx.addIssue({ code: 'custom', message: t('sales.quick.err.party'), path: ['partyId'] });
   const bill = {
     ...(v.customer === 'named' ? { partyId: v.partyId } : {}), businessDate: v.businessDate, locationId: v.locationId, notes: v.notes, lines: v.lines,
-    payments: v.payments,
+    payments: v.payments.map((p, i) => mapPayment(p, i, v.mode === 'hold', ctx)),
   };
   const b = v.buyer;
   const named = v.mode === 'hold' && v.customer === 'counter' && (b.name !== '' || b.phone !== '');

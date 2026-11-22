@@ -147,6 +147,7 @@ function Payments() {
   const { fields, append, remove } = useFieldArray({ control, name: 'payments' });
   const payments = useWatch({ control, name: 'payments' });
   const accounts = useUpiAccounts();
+  const hold = useWatch({ control, name: 'mode' }) === 'hold';
   return (
     <fieldset>
       <legend>{t('sales.quick.payments')}</legend>
@@ -163,7 +164,7 @@ function Payments() {
                 <TextField name={`payments.${i}.reference`} label={t('sales.quick.payment.reference')} autoComplete="off" />
               </>
             ) : null}
-            {method === 'card' ? (
+            {method === 'card' && !hold ? (
               <TextField name={`payments.${i}.approvalCode`} label={t('sales.quick.payment.approval')} hint={t('sales.quick.payment.approval.hint')} autoComplete="off" />
             ) : null}
             <button type="button" className="kit-button" onClick={() => remove(i)}>{t('sales.quick.payment.remove', { n: String(i + 1) })}</button>
@@ -210,7 +211,7 @@ export function QuickBillForm({ labelledBy, initial, askToHold, figures, onFigur
       <Lines />
       <Payments />
       <Preview onFigures={onFigures} />
-      <HoldChoice show={askToHold || (figures?.issues.length ?? 0) > 0} />
+      <HoldChoice show={(figures?.issues.length ?? 0) > 0} refused={askToHold} left={figures?.left ?? null} />
       <BuyerBox />
       <SubmitLabel />
     </Form>

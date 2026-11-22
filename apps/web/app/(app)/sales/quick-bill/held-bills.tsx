@@ -4,8 +4,8 @@
 // payments are taken (each card with its approval code from the machine), then the order, its delivery and its invoice go through on
 // the approval. One that is not going ahead is discarded, which is deleting its draft order and takes the hold with it. Whether the
 // approval still fits (the balance moved) and whether the bill is still held are the server's to say; the screen words the refusals.
-import { formatMoment, formatMoney, indiaDate, looksLikeCardNumber } from '@radcore/lib-common';
-import { completeQuickBill, deleteOrder, listHeldQuickBills } from '@radcore/lib-sales/contract';
+import { dateString, formatMoment, formatMoney, indiaDate, looksLikeCardNumber } from '@radcore/lib-common';
+import { completeQuickBill, deleteOrder, listHeldQuickBills, listInvoices } from '@radcore/lib-sales/contract';
 import { useState } from 'react';
 import { z } from 'zod';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
@@ -31,10 +31,10 @@ const planned = (h: Held) => (h.payments.length === 0 ? t('sales.held.payments.n
 
 /** The dialog that completes an approved held bill: a date, and the machine's approval code for each planned card payment, in order. */
 function Complete({ held, onClose, onDone }: { held: Held; onClose: () => void; onDone: (sold: Sold) => void }) {
-  const complete = useApiMutation(completeQuickBill, { invalidates: [listHeldQuickBills] });
+  const complete = useApiMutation(completeQuickBill, { invalidates: [listHeldQuickBills, listInvoices] });
   const cards = held.payments.filter((p) => p.method === 'card');
   const schema = z.object({
-    businessDate: z.string().min(1),
+    businessDate: dateString(),
     codes: z.array(z.string().trim().min(1, t('sales.quick.err.approval')).refine((c) => !looksLikeCardNumber(c), t('sales.quick.err.card.digits'))),
   });
   return (

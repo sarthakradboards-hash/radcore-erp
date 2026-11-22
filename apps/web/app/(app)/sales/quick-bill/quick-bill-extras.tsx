@@ -4,7 +4,7 @@
 // walk-in who leaves a balance (a name and mobile, and the address a big bill needs), under sales:counter_credit. Nothing is worked
 // out here: the total, the tax, the round-off, what the payments leave and which checks need an approval are the preview's; whether a
 // hold may be made, and a buyer's phone matching a customer already, are the server's refusals, worded.
-import { formatMoney } from '@radcore/lib-common';
+import { dec, formatMoney } from '@radcore/lib-common';
 import { listParties, getParty } from '@radcore/lib-accounts/contract';
 import { previewQuickBill } from '@radcore/lib-sales/contract';
 import { useEffect, useMemo, useState } from 'react';
@@ -34,7 +34,8 @@ export function Preview({ onFigures }: { onFigures: (figures: { total: string; l
   const { control } = useFormContext<QuickBillInput>();
   const values = useWatch({ control });
   // Only a bill that is complete enough to send is previewed; the same checks as the save, the contract's own.
-  const parsed = useMemo(() => quickBillSchema.safeParse({ ...values, mode: 'save' }), [values]);
+  // (A hold's card has no approval code yet, so the mode is the form's own; the buyer is not part of the figures.)
+  const parsed = useMemo(() => quickBillSchema.safeParse({ ...values, buyer: { name: '', phone: '', addressLine1: '', city: '', pincode: '' } }), [values]);
   const bill = parsed.success ? parsed.data.bill : null;
   const settled = useDebounced(bill === null ? null : JSON.stringify(bill), 600);
   const input = settled === null ? null : (JSON.parse(settled) as NonNullable<typeof bill>);
@@ -66,11 +67,17 @@ export function Preview({ onFigures }: { onFigures: (figures: { total: string; l
 }
 
 /** Save now, or hold for an approval and complete it later: offered when a check needs an approval (the preview's issues, or a save the
- * server refused with needs_override). */
-export function HoldChoice({ show }: { show: boolean }) {
-  if (!show) return null;
+ * server refused with needs_override), and for the Counter customer when the payments leave a balance, which only a held bill with a
+ * named buyer can carry (sales:counter_credit). A refused save makes holding the default. */
+export function HoldChoice({ show, refused, left }: { show: boolean; refused: boolean; left: string | null }) {
+  const { control, setValue } = useFormContext<QuickBillInput>();
+  const customer = useWatch({ control, name: 'customer' });
+  const mayCredit = useMe().permissions.includes('sales:counter_credit');
+  useEffect(() => { if (refused) setValue('mode', 'hold'); }, [refused, setValue]);
+  const balance = customer === 'counter' && mayCredit && left !== null && dec(left).gt(0);
+  if (!show && !balance) return null;
   return (
-    <RadioField name="mode" label={t('sales.quick.mode')} hint={t('sales.quick.mode.hint')} options={[
+    <RadioField name="mode" label={t('sales.quick.mode')} hint={t(balance && !show ? 'sales.quick.mode.hint.balance' : 'sales.quick.mode.hint')} options={[
       { value: 'save', label: t('sales.quick.mode.save') }, { value: 'hold', label: t('sales.quick.mode.hold') },
     ]} />
   );

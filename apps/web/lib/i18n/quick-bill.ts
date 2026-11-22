@@ -80,6 +80,7 @@ export const quickBill = {
   'sales.quick.preview.moved': 'The total changed to {total} since you last looked. Check it, then save again.',
   'sales.quick.mode': 'This bill needs an approval',
   'sales.quick.mode.hint': 'Save it as it is (the server will refuse it if a check needs approval), or hold it: someone who may approve is asked, and you complete it once they do.',
+  'sales.quick.mode.hint.balance': 'The payments leave a balance. The Counter customer pays in full, so hold the bill and name the customer who will owe it.',
   'sales.quick.mode.save': 'Save it now',
   'sales.quick.mode.hold': 'Hold it for approval, then complete',
   'sales.quick.hold': 'Hold for approval',

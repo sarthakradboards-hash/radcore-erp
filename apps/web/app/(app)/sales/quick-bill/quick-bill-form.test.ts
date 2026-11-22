@@ -66,3 +66,10 @@ it('sends a held bill with its buyer only on a hold for the Counter customer, an
   expect(paths(quickBillSchema.safeParse({ ...base, mode: 'hold', buyer: { ...noBuyer, name: 'Asha' } }))).toEqual(['buyer.phone']);
   expect(paths(quickBillSchema.safeParse({ ...base, mode: 'hold', buyer: { ...buyer, pincode: '012345' } }))).toEqual(['buyer.pincode']);
 });
+
+it('on a hold neither asks for a card’s approval code nor sends it (the code is given when the bill is completed)', () => {
+  const card = pay({ method: 'card', amount: '200' });
+  expect(quickBillSchema.parse({ ...base, mode: 'hold', payments: [card] }).bill.payments).toEqual([{ method: 'card', amount: '200' }]);
+  expect(quickBillSchema.parse({ ...base, mode: 'hold', payments: [{ ...card, approvalCode: 'A1B2C3' }] }).bill.payments).toEqual([{ method: 'card', amount: '200' }]);
+  expect(paths(quickBillSchema.safeParse({ ...base, mode: 'save', payments: [card] }))).toEqual(['payments.0.approvalCode']);
+});

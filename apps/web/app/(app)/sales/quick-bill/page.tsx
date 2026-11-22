@@ -67,7 +67,7 @@ export default function QuickBillPage() {
               try {
                 completed(await save.submit(v.bill));
               } catch (e) {
-                if (e instanceof ApiError && e.code === 'needs_override') setAskToHold(true);
+                if (e instanceof ApiError && (e.code === 'needs_override' || e.code === 'walk_in_pays_in_full')) setAskToHold(true);
                 throw e;
               }
             }} />
