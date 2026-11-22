@@ -12,13 +12,14 @@ const keyOf = (method: string, path: string) => routes.find((c) => c.method === 
 describe('the stock moves contracts', () => {
   it('read under stock:read, move under stock:move, count under stock:count, and approve or cancel under stock:approve', () => {
     expect(routes.filter((c) => c.method === 'GET' && !c.path.startsWith('/approvals/')).every((c) => c.perm === 'stock:read')).toBe(true);
-    expect([keyOf('POST', '/stock/transfers'), keyOf('POST', '/stock/transfers/:id/cancel')]).toEqual(['stock:move', 'stock:move']);
+    expect(['POST /stock/transfers', 'POST /stock/transfers/:id/cancel', 'DELETE /stock/transfers/:id', 'POST /stock/transfers/:id/approval']
+      .map((r) => keyOf(...(r.split(' ') as [string, string])))).toEqual(Array(4).fill('stock:move'));
     expect(['POST /stock/counts', 'PUT /stock/counts/:id', 'DELETE /stock/counts/:id', 'POST /stock/counts/:id/approval',
       'POST /stock/adjustments', 'PUT /stock/adjustments/:id', 'DELETE /stock/adjustments/:id', 'POST /stock/adjustments/:id/approval']
       .map((r) => keyOf(...(r.split(' ') as [string, string])))).toEqual(Array(8).fill('stock:count'));
     expect([keyOf('POST', '/stock/counts/:id/cancel'), keyOf('POST', '/stock/adjustments/:id/cancel'),
-      keyOf('POST', '/approvals/stock-count/:id/decision'), keyOf('POST', '/approvals/stock-adjustment/:id/decision')])
-      .toEqual(Array(4).fill('stock:approve'));
+      keyOf('POST', '/approvals/stock-count/:id/decision'), keyOf('POST', '/approvals/stock-adjustment/:id/decision'),
+      keyOf('POST', '/approvals/stock-transfer/:id/decision')]).toEqual(Array(5).fill('stock:approve'));
     expect(routes.every((c) => c.tx.readOnly === (c.method === 'GET'))).toBe(true);
   });
 
@@ -35,6 +36,9 @@ describe('the stock moves contracts', () => {
     expect(moves.createStockTransfer.input.safeParse(transfer).success).toBe(true);
     expect(moves.createStockTransfer.input.safeParse({ ...transfer, reason: ' ' }).success).toBe(false);
     expect(moves.createStockTransfer.input.safeParse({ ...transfer, lines: [] }).success).toBe(false);
+    // Posted at once with its number, or a draft waiting for approval into a franchisee's place (Sarthak's setting).
+    expect([moves.createStockTransfer.output.safeParse({ id, number: 'ST/26-27/00001' }).success,
+      moves.createStockTransfer.output.safeParse({ id, number: null }).success]).toEqual([true, true]);
     const count = { locationId: id, countedAt: '2026-11-15T08:30:00Z', businessDate: '2026-11-15', reason: 'Month end',
       lines: [{ itemId: id, batchId: null, qty: '2', serials: [] }] };
     expect(moves.createStockCount.input.safeParse(count).success).toBe(true);

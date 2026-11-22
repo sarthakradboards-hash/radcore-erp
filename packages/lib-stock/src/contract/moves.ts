@@ -1,5 +1,7 @@
 // Stock transfers, counts and adjustments (M4-06, RAD-141; ADR-008 §9, §10, §12, §13; ADR-006 §6, F13, F14, F21),
-// re-exported by ../contract.ts. A transfer moves goods between two places and posts at once (no approval); a count
+// re-exported by ../contract.ts. A transfer moves goods between two places and posts at once, except one into a
+// franchisee's place while `stock.franchisee_transfer_approval` is on (Sarthak, off by default): that one waits as a
+// draft for someone else's approval (stock:approve), and approving posts it. A count
 // records what was found at a place as at a moment, and an adjustment a one-off in or out with a reason, and both post
 // only when someone else approves (stock:approve). Every one is cancelled by its mirror, never deleted once posted.
 // Like every contract file it imports only zod, lib-common and other libraries' contract entries (D5).
@@ -43,6 +45,8 @@ const transferHeader = z.object({
   requalified: z.enum(['new', 'used']).nullable(),
 });
 const transfer = transferHeader.extend({
+  // Where its approval stands: only a transfer into a franchisee's place, while the setting is on, ever has one.
+  approval: z.enum(['none', 'pending', 'approved']),
   lines: z.array(z.object({ ...lineOut, qty: quantityString(), batches: batchesOut, serials: z.array(z.string()),
     value: cost(money().nullable()) })),
 });
@@ -60,17 +64,31 @@ export const getStockTransfer = defineContract({
 });
 /**
  * Moves goods from one place to another, posted at once with its number (§9, F13): the batches and serials named go
- * out and come in under the same batches. Refused to the same place (`transfer_same_location`), out of `rejected` to a
- * sellable place unless it's a re-inspection under inward:qc (`needs_qc`), and to or from a job work place
- * (`use_job_work`, §11).
+ * out and come in under the same batches. Into a franchisee's place while `stock.franchisee_transfer_approval` is on,
+ * it's kept as a draft instead (`number` null) for its maker to send for approval. Refused to the same place
+ * (`transfer_same_location`), out of `rejected` to a sellable place unless it's a re-inspection under inward:qc
+ * (`needs_qc`), and to or from a job work place (`use_job_work`, §11).
  */
 export const createStockTransfer = defineContract({
   method: 'POST', path: '/stock/transfers', auth: 'session', perm: 'stock:move', tx: write,
   input: z.object({ fromId: idString(), toId: idString(), businessDate: dateString(), reason: reason(),
     requalified: z.enum(['new', 'used']).nullable(), lines: lines(moveLineIn) }),
-  output: z.object({ id: idString(), number: z.string() }),
+  output: z.object({ id: idString(), number: z.string().nullable() }),
   errors: ['transfer_same_location', 'needs_qc', 'use_job_work', ...LINE_ERRORS, ...POSTING_ERRORS],
 });
+/** A draft transfer waiting for approval, thrown away; its pending request is closed with it (withdrawPending). */
+export const deleteStockTransfer = defineContract({
+  method: 'DELETE', path: '/stock/transfers/:id', auth: 'session', perm: 'stock:move', tx: write,
+  input: z.object({ id: idString() }), output: z.object({}), errors: ['wrong_status'],
+});
+/** Sends a draft transfer into a franchisee's place for approval by someone else (Sarthak's setting). */
+export const requestStockTransferApproval = defineContract({
+  method: 'POST', path: '/stock/transfers/:id/approval', auth: 'session', perm: 'stock:move', tx: write,
+  input: z.object({ id: idString() }), output: z.object({ id: idString(), versionHash: z.string() }), errors: ['wrong_status'],
+});
+/** The transfer approval routes (RAD-38): approving posts it, as creating one does when no approval is needed. */
+export const stockTransferApproval = approvalContracts('stock-transfer', 'stock:approve',
+  ['wrong_status', 'transfer_same_location', 'needs_qc', 'use_job_work', 'location_inactive', ...POSTING_ERRORS]);
 /** Undoes a posted transfer (RC-124): its mirror at the same values, dated the cancellation's day; refused once the
  * goods have left where it put them, or a unit on it has moved since (`goods_moved_on`). */
 export const cancelStockTransfer = defineContract({
