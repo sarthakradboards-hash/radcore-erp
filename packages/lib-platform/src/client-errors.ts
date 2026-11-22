@@ -22,7 +22,7 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accou
   '/password-reset/new', '/sales/bookings', '/sales/bookings/[id]', '/sales/bookings/new', '/sales/credit-notes', '/sales/credit-notes/[id]', '/sales/credit-notes/new', '/sales/deliveries', '/sales/deliveries/[id]',
   '/sales/deliveries/[id]/edit', '/sales/deliveries/new', '/sales/delivery-returns',
   '/sales/delivery-returns/[id]', '/sales/delivery-returns/[id]/edit', '/sales/delivery-returns/new', '/sales/invoices', '/sales/invoices/[id]', '/sales/invoices/[id]/edit', '/sales/invoices/new',
-  '/sales/orders', '/sales/orders/[id]', '/sales/orders/[id]/edit', '/sales/orders/new', '/sales/quotes', '/sales/quotes/[id]',
+  '/sales/orders', '/sales/orders/[id]', '/sales/orders/[id]/edit', '/sales/orders/new', '/sales/quick-bill', '/sales/quotes', '/sales/quotes/[id]',
   '/sales/quotes/[id]/edit', '/sales/quotes/new', '/sales/test-rides', '/sales/test-rides/new',
   '/sign-in'] as const;
 

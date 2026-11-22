@@ -63,7 +63,7 @@ it('shows Accounts on journal:read, opening the journal, and marks it current on
 it('shows Sales on sales:read, opening quotes, and marks it current on its pages only (RAD-125)', () => {
   expect(SALES_PAGES.map((p) => [p.href, p.perm])).toEqual([['/sales/quotes', 'sales:read'], ['/sales/orders', 'sales:read'], ['/sales/deliveries', 'sales:read'],
     ['/sales/delivery-returns', 'sales:read'], ['/sales/invoices', 'sales:read'],
-    ['/sales/credit-notes', 'sales:read'], ['/sales/test-rides', 'bookings:read'], ['/sales/bookings', 'bookings:read']]);
+    ['/sales/credit-notes', 'sales:read'], ['/sales/quick-bill', 'invoices:write'], ['/sales/test-rides', 'bookings:read'], ['/sales/bookings', 'bookings:read']]);
   const sales = menuFor(NAV, ['sales:read']).find((e) => e.label === 'nav.sales');
   expect(sales?.href).toBe('/sales/quotes');
   expect(menuFor(NAV, ['journal:read']).some((e) => e.label === 'nav.sales')).toBe(false);
