@@ -37,10 +37,14 @@ export const CREDIT_NOTE_TAX_DEADLINE = defineSetting('sales.credit_note_tax_dea
     input: { kind: 'text' },
   });
 
-/** What the approver sees and approves: the note as drafted, never figures worked from other notes, which change. */
+/** What the approver sees and approves: the note as drafted, and the amounts it will post, worked out as posting works
+ * them (the architect on RAD-114, (a)). Another note posting on the invoice can change them (a goods-back share of
+ * what's left, or tax capped at what's left), and then the decision answers version_changed: the approver looks again
+ * at the money that will post. `amounts` is null while the invoice or lines refuse the note, as posting would. */
 type NoteVersion = { invoiceId: string; kind: string; businessDate: string; locationId: string | null; reason: string;
   refund: { amount: string; accountId: string } | null;
-  lines: { invoiceLineId: string; qty: string | null; taxable: string | null; batches: { batchId: string | null; qty: string }[]; serials: string[] }[] };
+  lines: { invoiceLineId: string; qty: string | null; taxable: string | null; batches: { batchId: string | null; qty: string }[]; serials: string[] }[];
+  amounts: { taxable: string; cgst: string; sgst: string; igst: string; total: string; late: boolean } | null };
 
 /** The entry (ADR-006 §6, F9, F25, F26). Lines of 0 are left out. */
 function entryLines(partyId: string, t: ReturnType<typeof totalsOf>, late: boolean, moved: readonly PostedMovement[]): JournalLine[] {
@@ -135,11 +139,17 @@ export const creditNoteApprovalSpec: ApprovalSpec<NoteVersion> = {
     if (note === undefined || (!ctx.can('credit_notes:write', { owner: note.owner }) && !ctx.can('credit_notes:approve', { owner: note.owner }))) {
       return null;
     }
+    // Whichever of the two keys the reader holds: the note is its invoice's owner's, so either sees the invoice, and the
+    // amounts never depend on who reads them. With forUpdate the invoice is locked after the note, as posting locks it.
+    const as = ctx.can('credit_notes:approve', { owner: note.owner }) ? 'credit_notes:approve' : 'credit_notes:write';
+    const w = await worked(ctx, note, as, forUpdate);
     return { invoiceId: note.invoiceId, kind: note.kind, businessDate: note.businessDate, locationId: note.locationId, reason: note.reason,
       refund: note.refundAmount === null || note.refundAccountId === null ? null
         : { amount: roundMoney(note.refundAmount), accountId: note.refundAccountId },
       lines: (await draftedLines(ctx, id)).map((l: NoteLineIn) => ({ invoiceLineId: l.invoiceLineId, qty: l.qty ?? null,
-        taxable: l.taxable ?? null, batches: l.batches ?? [], serials: l.serials ?? [] })) };
+        taxable: l.taxable ?? null, batches: l.batches ?? [], serials: l.serials ?? [] })),
+      amounts: w instanceof AppError ? null : { taxable: w.totals.taxable, cgst: w.totals.cgst, sgst: w.totals.sgst, igst: w.totals.igst,
+        total: w.totals.total, late: w.late } };
   },
   async approved(ctx, id) {
     await postNote(ctx, id);
@@ -158,23 +168,29 @@ export async function getCreditNoteById(ctx: Ctx, input: In<typeof getCreditNote
   return { ...await draftShown(ctx, note), approval: pending ? 'pending' : 'none' };
 }
 
+/** A draft's figures as posting works them: its lines', their totals, and whether it's late; or the refusal posting
+ * would give. The invoice is locked with `forUpdate`. */
+async function worked(ctx: Ctx, note: { id: string; invoiceId: string; kind: string; businessDate: string }, permission: string, forUpdate = false) {
+  try {
+    const inv = await invoiceToCredit(ctx, note.invoiceId, permission, forUpdate);
+    const figures = await noteFigures(ctx, inv, note.kind as Kind, await draftedLines(ctx, note.id));
+    return { figures, totals: totalsOf(figures), late: isLate(note.businessDate, inv.businessDate, ctx.settings.get(CREDIT_NOTE_TAX_DEADLINE)) };
+  } catch (e) {
+    if (e instanceof AppError) return e;
+    throw e;
+  }
+}
+
 type Shown = Awaited<ReturnType<typeof creditNoteShown>>;
 /** A draft's amounts as posting would work them now, so its approver sees the money (e2e-playwright on #299: a pending
  * note answered 0.00); a posted note's are the ones it stored. While its invoice or lines refuse it, as posting then
  * would, the amounts stay blank and `amountsNote` says why. */
 async function draftShown(ctx: Ctx, note: Shown): Promise<Shown> {
-  const worked = await (async () => {
-    const inv = await invoiceToCredit(ctx, note.invoiceId, 'sales:read');
-    return { inv, figures: await noteFigures(ctx, inv, note.kind, await draftedLines(ctx, note.id)) };
-  })().catch((e: unknown) => {
-    if (e instanceof AppError) return e;
-    throw e;
-  });
-  if (worked instanceof AppError) return { ...note, amountsNote: worked.message };
-  const t = totalsOf(worked.figures);
-  const byLine = new Map(worked.figures.map((f) => [f.lineNo, f]));
-  return { ...note, taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, roundOff: t.roundOff, total: t.total,
-    late: isLate(note.businessDate, worked.inv.businessDate, ctx.settings.get(CREDIT_NOTE_TAX_DEADLINE)),
+  const w = await worked(ctx, note, 'sales:read');
+  if (w instanceof AppError) return { ...note, amountsNote: w.message };
+  const t = w.totals;
+  const byLine = new Map(w.figures.map((f) => [f.lineNo, f]));
+  return { ...note, taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, roundOff: t.roundOff, total: t.total, late: w.late,
     lines: note.lines.map((l) => {
       const f = byLine.get(l.lineNo);
       return f === undefined ? l : { ...l, taxable: f.taxable, gstRate: f.gstRate, gstRateSource: f.gstRateSource, cgst: f.cgst, sgst: f.sgst,

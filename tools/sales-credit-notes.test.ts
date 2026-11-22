@@ -193,8 +193,7 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       const stale = await valueOff(ctx, at, inv, '500');
       const rest = await valueOff(ctx, at, inv, '79000');
       await approve(ctx, rest.id, approver);
-      // The draft of 500.00 no longer fits what's left: its read says why, and its amounts stay blank.
-      const staleShown = await getCreditNoteById(ctx, { id: stale.id });
+      const staleShown = await getCreditNoteById(ctx, { id: stale.id }); // no longer fits what's left: blank, and why
       const more = await failure(valueOff(ctx, at, inv, '0.01'));
       // Two of the one scooter can't come back.
       const two = await failure(goodsBack(ctx, at, inv, '2'));
@@ -352,16 +351,25 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       const drafted = await state();
       const asked = await askCreditNoteApproval(ctx, { id });
       const pending = await state();
-      await decideApproval(await actingAs(ctx, approver), creditNoteApprovalSpec, asked.id, { decision: 'approve', versionHash: asked.versionHash });
+      // The architect on RAD-114, (a): the version holds the amounts that will post. A discount posting while this note
+      // waits changes its share of what's left, so its decision answers version_changed; asked again, it's approved.
+      const versioned = (await creditNoteApprovalSpec.version(ctx, id, { forUpdate: false }))?.amounts;
+      await approve(ctx, (await valueOff(ctx, at, inv, '1000')).id, approver);
+      const changed = await failure(decideApproval(await actingAs(ctx, approver), creditNoteApprovalSpec, asked.id,
+        { decision: 'approve', versionHash: asked.versionHash }));
+      await actingAs(ctx, ctx.principal);
+      const again = await askCreditNoteApproval(ctx, { id });
+      await decideApproval(await actingAs(ctx, approver), creditNoteApprovalSpec, again.id, { decision: 'approve', versionHash: again.versionHash });
       await actingAs(ctx, ctx.principal);
       const note = await getCreditNoteById(ctx, { id });
-      return { before, after: await goods(), states: [drafted, pending, [note.approval, note.total, note.cgst, note.lines[0]?.lineTotal,
+      return { before, after: await goods(), versioned, changed, states: [drafted, pending, [note.approval, note.total, note.cgst, note.lines[0]?.lineTotal,
         note.lines[0]?.cost, note.amountsNote]], line: [note.lines[0]?.sku.startsWith('I-'), note.lines[0]?.name] };
     });
     const batches = [{ batchId: at.batchId, batchNo: 'B1', qty: '1' }];
     expect(out).toEqual({ before: { batches, units: [{ serialNo: serial, batchId: at.batchId }] }, after: { batches, units: [] },
+      versioned: { taxable: '80000.00', cgst: '2000.00', sgst: '2000.00', igst: '0.00', total: '84000.00', late: false }, changed: 'version_changed',
       states: [['none', '84000.00', '2000.00', '84000.00', '61250.00', null], ['pending', '84000.00', '2000.00', '84000.00', '61250.00', null],
-        ['approved', '84000.00', '2000.00', '84000.00', '61250.00', null]], line: [true, 'Scooter'] });
+        ['approved', '82950.00', '1975.00', '82950.00', '61250.00', null]], line: [true, 'Scooter'] });
   });
 
   it('refuses a posted note whose header doesn’t match its lines at commit', async () => {
