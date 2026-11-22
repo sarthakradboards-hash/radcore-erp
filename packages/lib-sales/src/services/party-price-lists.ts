@@ -8,7 +8,7 @@ import type { Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { getPartyPriceList, setPartyPriceList } from '../contract.ts';
+import type { getPartyPriceList, getSalePrice, setPartyPriceList } from '../contract.ts';
 import { getPartyById } from '@radcore/lib-accounts';
 import { priceFor } from './price-lists.ts';
 
@@ -35,9 +35,14 @@ export async function getPartyList(ctx: Ctx, { partyId }: In<typeof getPartyPric
   const tx = salesTx(ctx);
   const [own] = await tx.select({ id: partyPriceLists.priceListId }).from(partyPriceLists).where(eq(partyPriceLists.partyId, partyId));
   if (own !== undefined) return { priceListId: own.id, own: true };
+  return { priceListId: await defaultListOf(ctx), own: false };
+}
+
+/** The default list, or none while it's unset or switched off since it was chosen. */
+async function defaultListOf(ctx: Ctx): Promise<string | null> {
   const fallback = ctx.settings.get(DEFAULT_PRICE_LIST);
-  const [list] = fallback === null ? [] : await tx.select({ active: priceLists.active }).from(priceLists).where(eq(priceLists.id, fallback));
-  return { priceListId: list?.active === true ? fallback : null, own: false };
+  const [list] = fallback === null ? [] : await salesTx(ctx).select({ active: priceLists.active }).from(priceLists).where(eq(priceLists.id, fallback));
+  return list?.active === true ? fallback : null;
 }
 
 /** PUT /sales/party-price-lists/:partyId (prices:approve): the party's own list, or none (null) to take the default.
@@ -64,6 +69,15 @@ export async function setPartyList(ctx: Ctx, { partyId, priceListId }: In<typeof
 /** The list a new document for the party copies: its own, else the default, else none. */
 export async function priceListOf(ctx: Ctx, partyId: string): Promise<string | null> {
   return (await getPartyList(ctx, { partyId })).priceListId;
+}
+
+/** GET /sales/price (prices:read): the rate a quote or bill for the party (or anyone, with none named) would store for
+ * the item on the date, from the same list and rates, so the counter shows what the bill will take. Nothing of cost. */
+export async function salePrice(ctx: Ctx, { itemId, partyId, on }: In<typeof getSalePrice>): Promise<Out<typeof getSalePrice>> {
+  const priceListId = partyId === undefined ? await defaultListOf(ctx) : await priceListOf(ctx, partyId);
+  const [r] = await listRatesOf(ctx, priceListId, on, [itemId]);
+  const priced = r !== undefined && r.listRate !== null;
+  return { priceListId, versionId: priced ? r.listVersionId : null, rate: priced ? r.listRate : null, taxInclusive: priced ? r.listTaxInclusive : null };
 }
 
 /** A line's list rate, as its version prices it, the version, and whether that version's rates include GST. */

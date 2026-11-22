@@ -134,6 +134,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /sales/discount-limits': 'prices:read',
   'PUT /sales/discount-limits': 'prices:approve',
   'GET /sales/party-price-lists/:partyId': 'prices:read',
+  'GET /sales/price': 'prices:read',
   'PUT /sales/party-price-lists/:partyId': 'prices:approve',
   // Quotes and orders (RAD-112).
   'GET /sales/quotes': 'sales:read',
@@ -419,6 +420,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /sales/discount-limits': ['lib-platform', 'lib-sales'],
   'PUT /sales/discount-limits': ['lib-platform', 'lib-sales'],
   'GET /sales/party-price-lists/:partyId': ['lib-accounts', 'lib-platform', 'lib-sales'],
+  'GET /sales/price': ['lib-accounts', 'lib-platform', 'lib-sales'],
   'PUT /sales/party-price-lists/:partyId': ['lib-accounts', 'lib-platform', 'lib-sales'],
   // Quotes and orders check their party (lib-accounts) and their items' quantities (lib-stock); an order's credit and
   // price checks read its items' GST (lib-gst).
