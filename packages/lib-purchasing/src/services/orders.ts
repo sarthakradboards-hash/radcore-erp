@@ -25,6 +25,7 @@ type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 type Status = 'draft' | 'placed' | 'closed' | 'cancelled';
 type LineIn = { itemId: string; qty: string; rate: string };
 type Row = typeof purchaseOrders.$inferSelect;
+type LineAmounts = Out<typeof getPurchaseOrder>['lines'][number]['amounts'];
 
 /** The PO series (ADR-008 §3): PO/YY-YY/NNNNN, drawn as the last step of placing. */
 export const ORDER_SERIES = defineSeries('purchasing.order', 'PO', { digits: 5, label: 'Purchase orders' });
@@ -136,7 +137,9 @@ export const orderApproval: ApprovalSpec<Version> = {
     const q = purchasingTx(ctx).select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1);
     const [o] = forUpdate ? await q.for('update') : await q;
     // Its maker asks (purchasing:write) and someone else decides (purchasing:approve); outside both, there's no such PO.
-    if (o === undefined || o.status !== 'draft') return null;
+    // Its status isn't part of it: approving places it, which changes no figure approved (ADR-001 §8b), and approved()
+    // refuses one no longer a draft.
+    if (o === undefined) return null;
     if (!ctx.can('purchasing:write', { owner: o.createdBy }) && !ctx.can('purchasing:approve', { owner: o.createdBy })) return null;
     const lines = (await linesOf(ctx, id)).map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate }));
     // It refuses nothing: the approver's queue reads it for every request, and approving re-checks (approved()). A total
@@ -163,7 +166,11 @@ async function place(ctx: Ctx, o: Row, approved: boolean): Promise<string> {
   const lines = await linesOf(ctx, o.id);
   await checkLines(ctx, lines);
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, lines);
-  await writeLines(ctx, o.id, lines, amounts.lines);
+  // Each line keeps its id; its tax is stored beside it (the lines are numbered from 1 in order, as linesOf reads them).
+  for (const [i, l] of amounts.lines.entries()) {
+    await purchasingTx(ctx).update(purchaseOrderLines).set(frozenLine(l))
+      .where(and(eq(purchaseOrderLines.orderId, o.id), eq(purchaseOrderLines.lineNo, i + 1)));
+  }
   const number = await nextNumber(ctx, ORDER_SERIES, o.businessDate);
   await purchasingTx(ctx).update(purchaseOrders).set({ ...frozenHeader(amounts), status: 'placed', number,
     ...(approved ? { approvedTotal: amounts.totals.total } : {}) }).where(eq(purchaseOrders.id, o.id));
@@ -202,7 +209,7 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getPurchaseOrder>
   const labels = await itemLabels(ctx, lines.map((l) => l.itemId));
   const none = { cgst: null, sgst: null, igst: null };
   let header: Out<typeof getPurchaseOrder>['amounts'];
-  let lineAmounts: Out<typeof getPurchaseOrder>['lines'][number]['amounts'][];
+  let lineAmounts: LineAmounts[];
   if (o.status === 'draft') {
     const worked = await amountsOf(ctx, supplier.stateCode, o.businessDate, lines).catch((e: unknown) => {
       if (e instanceof AppError && (e.code === 'company_profile_incomplete' || e.code === 'no_gst_rate')) return e;
@@ -266,14 +273,16 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updatePu
       [{ path: [input.supplierId !== o.partyId ? 'supplierId' : 'businessDate'], code: 'fixed_once_placed', message: 'This can’t change once placed' }]);
   }
   // shortcut: nothing can be received until M4-02's goods receipts exist, so no line is below what has come in
-  // (po_received); M4-02 checks each line's new quantity against its received quantity here.
+  // (po_received); M4-02 checks each line's new quantity against its received quantity here. Its lines are written afresh,
+  // with new ids, which M4-02 changes to an update by line once a receipt line points at one.
   const supplier = await buyingFrom(ctx, o.partyId);
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, input.lines);
   const now = dec(o.total ?? '0');
   const next = dec(amounts.totals.total);
-  // A raise past the placer's limit, or past what an approval was given for, is refused; lowering it, or keeping its total
-  // within both, saves (the architect on RAD-136).
-  if (next.gt(now) && (next.gt(dec(await orderLimitOf(ctx))) || (o.approvedTotal !== null && next.gt(dec(o.approvedTotal))))) {
+  // A raise past what its approval was given for, or past the placer's limit where it needed none, is refused; lowering
+  // it, or a change within that bound, saves (the architect on RAD-136).
+  const bound = o.approvedTotal ?? await orderLimitOf(ctx);
+  if (next.gt(now) && next.gt(dec(bound))) {
     throw new AppError('over_approved', 'This raises the purchase order past what was approved: put the extra goods on a new purchase order',
       [{ path: ['lines'], code: 'over_approved', message: `The total would be ${amounts.totals.total}` }]);
   }

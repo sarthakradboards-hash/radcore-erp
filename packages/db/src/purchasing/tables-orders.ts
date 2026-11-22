@@ -33,13 +33,16 @@ export const purchaseOrders = radcoreTable('purchase_orders', {
   approvedTotal: money(),
   ...frozenTotals(),
 }, (t) => [
+  // A draft's totals are worked out on read and a placed one's stored; a cancelled one keeps what it had.
   check('ck_purchase_orders_frozen', sql`num_nulls(${t.placeOfSupply}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst}, ${t.roundOff}, ${t.total}) in (0, 7)
-    and (${t.status} = 'draft') = (${t.total} is null) and coalesce(${t.placeOfSupply}, '00') ~ '^[0-9]{2}$'`),
+    and case ${t.status} when 'draft' then ${t.total} is null when 'cancelled' then true else ${t.total} is not null end and coalesce(${t.placeOfSupply}, '00') ~ '^[0-9]{2}$'`),
   check('ck_purchase_orders_identity', sql`${t.total} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.roundOff}
     and abs(${t.roundOff}) < 1 and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
   // lib-common's PURCHASE_ORDER_STATUSES, written out (L1); tools/purchase-orders.test.ts holds them equal.
   check('ck_purchase_orders_status', sql`${t.status} in ('draft', 'placed', 'closed', 'cancelled')`),
-  check('ck_purchase_orders_number', sql`(${t.status} = 'draft') = (${t.number} is null)`),
+  // A draft has no number and a placed one has; a cancelled one keeps whichever it had.
+  check('ck_purchase_orders_number', sql`case ${t.status} when 'draft' then ${t.number} is null when 'cancelled' then true
+    else ${t.number} is not null end`),
   check('ck_purchase_orders_reason', sql`${t.closeReason} is null or ${t.status} in ('closed', 'cancelled')`),
   check('ck_purchase_orders_cancel_reason', sql`${t.status} <> 'cancelled' or ${t.closeReason} is not null`),
   check('ck_purchase_orders_expected', sql`${t.expectedBy} is null or ${t.expectedBy} >= ${t.businessDate}`),
