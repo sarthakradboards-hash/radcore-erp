@@ -229,9 +229,9 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
   });
 
   // ADR-006 §1, the architect on RAD-141: an adjustment takes its stock, then the journal's and SA's turns, then its number
-  // (a found unit's batch). Two adjustments at once, one with a found unit and one without, and an adjustment beside a
-  // delivery of the same item, all finish: no 40P01.
-  it('posts two adjustments at once, and one beside a delivery of the same item, with no deadlock', async () => {
+  // (a found unit's batch). Two adjustments at once, one with a found unit and one without, and an adjustment beside
+  // another save taking the same item out (a unit back to its supplier, which needs no sale line), all finish: no 40P01.
+  it('posts two adjustments at once, and one beside another goods-out of the same item, with no deadlock', async () => {
     const boss = await approver();
     const serials = [`S-${tag()}`, `S-${tag()}`, `S-${tag()}`];
     const at = await setup(['store'], { stock: '3', rate: '61250', serials });
@@ -248,7 +248,7 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
     const c = await ask((await found(`N-${tag()}`)).id);
     const beside = await Promise.all([code(decide(adjustmentApprovalSpec, boss, c)), code(run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE,
       sourceId: randomUUID(), businessDate: DATE, outs: [{ itemId: at.itemId, locationId: store, qty: q('1'), batches: [{ batchId: at.batchId, qty: q('1') }],
-        units: [{ serialNo: serials[1] ?? '' }], unitEvent: 'delivered' }] })))]);
+        units: [{ serialNo: serials[1] ?? '' }], unitEvent: 'returned_to_supplier' }] })))]);
     expect([both, beside, await onHand(at.itemId, store)]).toEqual([['ok', 'ok'], ['ok', 'ok'], { qty: '3', value: '183750.00' }]);
   });
 
