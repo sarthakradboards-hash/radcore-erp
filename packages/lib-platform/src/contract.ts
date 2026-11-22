@@ -373,4 +373,4 @@ export const ANSWER_NOT_STORED_ROUTES = ['POST /sign-in/second-factor/enrolment'
   'POST /files/photo/:id/download',
   'POST /files/resume/:id/download', 'POST /files/statement/:id/download', 'POST /files/import/:id/download',
   'POST /files/delivery-photo/:id/download', 'POST /files/delivery-note/:id/download',
-  'POST /exports/:id/download', 'POST /sales/invoices/:id/links'] as const;
+  'POST /exports/:id/download', 'POST /sales/invoices/:id/links', 'POST /parties/:id/reminders'] as const;

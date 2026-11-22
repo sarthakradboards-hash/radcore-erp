@@ -1,11 +1,12 @@
 'use client';
 // Deliveries (RAD-125 on RAD-112's contracts): goods that went out against an order, newest first, a page at a time and
-// filtered by status. There is no "new" here yet: a delivery's lines name the batches and serials the goods come from, and
-// the form waits for the read of stock on hand by batch (RAD-112's follow-up). A draft is posted or deleted from its page.
+// filtered by status. deliveries:write writes a new one, naming the batches and serials the goods come from (#280's read of
+// stock on hand); a draft is edited, posted or deleted from its page.
 import { formatDate } from '@radcore/lib-common';
 import { listDeliveries } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useState } from 'react';
+import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
@@ -23,6 +24,7 @@ const columns: Column<DeliveryRow>[] = [
 ];
 
 export default function DeliveriesPage() {
+  const mayWrite = useMe().permissions.includes('deliveries:write');
   const [show, setShow] = useState<Show>('all');
   const list = useApiList(listDeliveries, { filter: show === 'all' ? {} : { status: show } });
   return (
@@ -34,6 +36,7 @@ export default function DeliveriesPage() {
           { value: 'all', label: t('sales.all') },
           ...STATUSES.map((s) => ({ value: s, label: t(`sales.delivery.status.${s}`) })),
         ]} />
+        {mayWrite ? <Link className="kit-button kit-button-primary" href="/sales/deliveries/new">{t('sales.deliveries.new')}</Link> : null}
       </div>
       <DataTable caption={t('sales.deliveries.title')} columns={columns} rowKey={(d) => d.id} list={list} empty={t('sales.deliveries.empty')} />
     </>

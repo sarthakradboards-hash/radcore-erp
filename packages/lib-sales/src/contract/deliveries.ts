@@ -17,6 +17,8 @@ const picks = {
   batches: z.array(z.object({ batchId: idString().nullable(), qty: quantityString() })).min(1, 'Pick the batches').max(50),
   serials: z.array(z.string().trim().min(1).max(60)).max(1000),
 };
+/** A line's batches as answered, each with its number ("batch unknown" has none), for a screen to name them (#293). */
+const numbered = { batches: z.array(z.object({ batchId: idString().nullable(), batchNo: z.string().nullable(), qty: quantityString() })) };
 /** What posting wrote: the cost it went out at (cost(), RC-164) and what it sold for, before and with GST. */
 const posted = { value: cost(moneyString().nullable()), taxable: moneyString().nullable(), gst: moneyString().nullable() };
 const notes = () => z.string().trim().max(500).nullable();
@@ -26,7 +28,9 @@ const lines = <T extends z.ZodType>(line: T) => z.array(line).min(1, 'Add at lea
 const DRAFT_ERRORS = ['date_in_future', 'date_before_source', 'wrong_status', 'not_on_source', 'over_quantity',
   'quantity_too_precise', 'unknown_location', 'location_inactive', 'place_not_sellable'] as const;
 const POST_ERRORS = [...DRAFT_ERRORS, 'version_changed', 'year_not_open', 'period_locked', 'account_inactive', 'no_gst_rate', 'not_enough_stock', 'qty_not_positive', 'batches_mismatch',
-  'units_mismatch', 'serial_twice', 'not_serialised', 'unit_damaged', 'mixed_condition', 'unit_held'] as const;
+  'units_mismatch', 'serial_twice', 'not_serialised', 'unit_damaged', 'mixed_condition', 'unit_held',
+  // Posting draws its number, and its stock goes through the engine's valuation and units (RAD-134).
+  'series_full', 'no_estimate', 'unit_batch'] as const;
 
 const deliveryLineIn = z.object({ orderLineId: idString(), qty: quantityString(), ...picks });
 const delivery = z.object({
@@ -34,7 +38,7 @@ const delivery = z.object({
   locationId: idString(), businessDate: dateString(), status, notes: z.string().nullable(),
   // Each line's quantity still to invoice, posted lines' only, worked out on read (auditor-3 on #285).
   lines: z.array(deliveryLineIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(),
-    name: z.string(), ...posted, qtyToInvoice: quantityString() })),
+    name: z.string(), ...posted, ...numbered, qtyToInvoice: quantityString() })),
 });
 const deliveryIn = z.object({ orderId: idString(), locationId: idString(), businessDate: dateString(), notes: notes(),
   lines: lines(deliveryLineIn) });
@@ -96,7 +100,7 @@ const deliveryReturn = z.object({
   locationId: idString(), businessDate: dateString(), status, notes: z.string().nullable(),
   // Each line with its item's SKU and name (auditor-3 on #288).
   lines: z.array(returnLineIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(),
-    name: z.string(), ...posted })),
+    name: z.string(), ...posted, ...numbered })),
 });
 const returnIn = z.object({ deliveryId: idString(), locationId: idString(), businessDate: dateString(), notes: notes(),
   lines: lines(returnLineIn) });

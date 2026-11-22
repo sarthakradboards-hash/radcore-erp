@@ -1,0 +1,2 @@
+ALTER TABLE "radcore"."payment_reminders" ADD CONSTRAINT "payment_reminders_link_id_public_links_id_fk" FOREIGN KEY ("link_id") REFERENCES "radcore"."public_links"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "ix_payment_reminders_link" ON "radcore"."payment_reminders" USING btree ("link_id");

@@ -196,6 +196,16 @@ export async function soldCondition(ctx: Ctx, saleLineIds: readonly string[]): P
   }));
 }
 
+/** Each sale line's units still out with the customer, and the batch each left in: what goods back must name, since a
+ * unit's batch must match its movement's (RA008). A unit that came back has left its line. */
+export async function soldUnits(ctx: Ctx, saleLineIds: readonly string[]): Promise<Map<string, { serialNo: string; batchId: string | null }[]>> {
+  const rows = saleLineIds.length === 0 ? [] : await stockTx(ctx).select({ line: units.saleLineId, serialNo: units.serialNo,
+    batchId: units.batchId }).from(units).where(inArray(units.saleLineId, [...saleLineIds])).orderBy(asc(units.serialNo));
+  const out = new Map(saleLineIds.map((id) => [id, [] as { serialNo: string; batchId: string | null }[]]));
+  for (const r of rows) if (r.line !== null) out.get(r.line)?.push({ serialNo: r.serialNo, batchId: r.batchId });
+  return out;
+}
+
 /** Writes a document's unit events, in the order given; the trigger applies each to its unit (RA008). */
 export async function writeUnitEvents(ctx: Ctx, doc: { sourceTable: string; sourceId: string; businessDate: string },
   rows: readonly UnitEventRow[]): Promise<void> {
