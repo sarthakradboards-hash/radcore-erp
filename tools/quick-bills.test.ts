@@ -23,6 +23,7 @@ import accountsRoutes from '../apps/api/src/routes/accounts.ts';
 import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { rawOf } from '../packages/db/src/tx.ts';
 import { deliveredNotInvoiced } from '../packages/lib-sales/src/services/delivered.ts';
+import { takeBooksTurn } from './books-turn.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -83,8 +84,8 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
   async function atCounter<R>(at: At, fn: (ctx: Ctx) => Promise<R>, o: { as?: Principal; settings?: { key: string; value: unknown }[] } = {}) {
     let out: R | undefined;
     await run(async (ctx) => {
-      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
-      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
+      // One rolled-back books transaction at a time (RAD-76), under the committed company profile (tools/test-database.ts).
+      await takeBooksTurn(ctx);
       out = await fn({ ...ctx, settings: new Settings([{ key: 'sales.default_price_list', value: at.listId }, ...(o.settings ?? [])]) });
       throw new RolledBack();
     }, o.as ?? await counter()).catch((e: unknown) => {

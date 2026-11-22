@@ -18,6 +18,7 @@ import {
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { takeBooksTurn } from './books-turn.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -51,8 +52,8 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
   async function inBooks<R>(fn: (ctx: Ctx) => Promise<R>, as: Principal = staff): Promise<R> {
     let out: R | undefined;
     await run(async (ctx) => {
-      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
-      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
+      // One rolled-back books transaction at a time (RAD-76), under the committed company profile (tools/test-database.ts).
+      await takeBooksTurn(ctx);
       out = await fn(ctx);
       throw new RolledBack();
     }, as).catch((e: unknown) => {
