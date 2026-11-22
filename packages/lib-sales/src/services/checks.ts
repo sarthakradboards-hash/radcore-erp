@@ -16,6 +16,7 @@ import { averageCost, purchasePrices } from '@radcore/lib-stock';
 import type { z } from 'zod';
 import type { saleCheck } from '../contract/checks.ts';
 import { costResult, creditResult, discountPercent, issuesOf, noListRate, overDiscount, type CheckIssue } from './checks-rules.ts';
+import { counterCustomer } from './delivered.ts';
 import { discountLimitOf } from './discounts.ts';
 
 /** The stages a sale is checked at (RC-061). */
@@ -61,7 +62,8 @@ export type SaleCheckResult = z.input<typeof saleCheck>;
 /** Checks a sale at one stage. It reads, and changes nothing. */
 export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult> {
   const party = await getPartyById(ctx, { id: s.partyId });
-  const owed = await partyReceivable(ctx, s.partyId, s.on);
+  // The Counter customer owes nothing, so its history isn't read (delivered.ts's counterCustomer says why).
+  const owed = await counterCustomer(ctx, s.partyId) ? { outstanding: '0.00', oldestUnpaid: null } : await partyReceivable(ctx, s.partyId, s.on);
   const notInvoiced = dec(s.notInvoiced ?? '0').toFixed(2);
   const outstanding = dec(owed.outstanding).minus(dec(s.paidNow ?? '0')).toFixed(2);
   const credit = creditResult({ limit: party.creditLimit, outstanding, notInvoiced, adds: s.adds,

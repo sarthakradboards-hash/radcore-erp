@@ -12,6 +12,7 @@ import {
   salesTx,
 } from '@radcore/db/sales';
 import { dec, roundMoney, roundQty, type Decimal, type Money, type Quantity } from '@radcore/lib-common';
+import { systemPartyId } from '@radcore/lib-accounts';
 import type { Ctx } from '@radcore/lib-platform';
 import { serialKey } from '@radcore/lib-stock';
 import { and, asc, eq, inArray, isNotNull, sum } from 'drizzle-orm';
@@ -116,8 +117,17 @@ export async function deliveredNotInvoiced(ctx: Ctx, partyId: string): Promise<M
  * rounded bill leaves nothing over, and one invoiced whole leaves exactly 0 (the architect on RAD-115). */
 export const rupeesOf = (values: Iterable<Decimal>): Money => roundMoney([...values].reduce((s, v) => s.plus(dec(toRupee(v))), dec('0')));
 
+/**
+ * shortcut: the seeded Counter customer is never left owing (the quick bill takes it paid in full, and it can have no
+ * order or delivery of its own: tools/walk-in-owes-nothing.test.ts), so its credit checks skip its whole history, which
+ * every counter sale lengthens (RAD-115's save under 2 seconds; the architect's option (a)). A party that can owe still
+ * reads all of it; backend's ticket makes that flat for every party, when this goes.
+ */
+export const counterCustomer = async (ctx: Ctx, partyId: string): Promise<boolean> => partyId === await systemPartyId(ctx, 'walk_in');
+
 /** Each of the party's posted deliveries' value still to invoice, at selling value with GST, unrounded, by delivery. */
 export async function notInvoicedLeft(ctx: Ctx, partyId: string): Promise<Map<string, Decimal>> {
+  if (await counterCustomer(ctx, partyId)) return new Map();
   const tx = salesTx(ctx);
   const out = await tx.select({ id: deliveries.id, taxable: sum(deliveryLines.taxable), gst: sum(deliveryLines.gst) }).from(deliveryLines)
     .innerJoin(deliveries, and(eq(deliveries.id, deliveryLines.deliveryId), eq(deliveries.status, 'posted'), eq(deliveries.partyId, partyId)))
