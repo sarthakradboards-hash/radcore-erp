@@ -63,6 +63,7 @@ export const creditNotes = {
   'sales.credit.form.batch.no': 'batch {no}',
   'sales.credit.form.batch.unknown': 'batch unknown',
   'sales.credit.err.qty': 'Enter a quantity with up to 3 decimals',
+  'sales.credit.err.batches_mismatch': 'The batches must add up to the quantity',
   'sales.credit.err.pick': 'Say how many go back into which batch',
   'sales.credit.err.place': 'Choose where the goods come back to',
   'sales.credit.err.nothing.goods': 'Type a quantity on at least one line',

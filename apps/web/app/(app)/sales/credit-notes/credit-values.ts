@@ -2,7 +2,7 @@
 // invoice line it names) or goods back (a quantity, the batches they come back into and, for a serialised item, the serials, to
 // a place), and an optional counter refund. The batches and units on offer are the invoice line's own (`goods`): the batches its
 // goods left in and its units still out, each with the batch it left in.
-import { indiaDate, moneyString, quantityString } from '@radcore/lib-common';
+import { indiaDate, moneyString, quantityString, sum } from '@radcore/lib-common';
 import { createCreditNote } from '@radcore/lib-sales/contract';
 import { z } from 'zod';
 import { t } from '../../../../lib/i18n/index.ts';
@@ -47,6 +47,8 @@ export const creditSchema = z.object({
       .map(([key, qty]) => ({ batchId: key === 'unknown' ? null : key, qty: quantityString().parse(qty) }));
     // On the quantity box, a field that is always drawn: `pick` itself has no box.
     if (batches.length === 0) ctx.addIssue({ code: 'custom', message: t('sales.credit.err.pick'), path: ['lines', i, 'qty'] });
+    // The batches must add up to the quantity, as the hint says; the server checks again, but only at approval.
+    else if (!sum(batches.map((b) => b.qty)).eq(l.qty)) ctx.addIssue({ code: 'custom', message: t('sales.credit.err.batches_mismatch'), path: ['lines', i, 'qty'] });
     return [{ invoiceLineId: l.invoiceLineId, qty: quantityString().parse(l.qty), batches, ...(l.serials.length === 0 ? {} : { serials: l.serials }) }];
   });
   if (lines.length === 0) ctx.addIssue({ code: 'custom', message: t('sales.credit.err.nothing.goods'), path: ['lines'] });
