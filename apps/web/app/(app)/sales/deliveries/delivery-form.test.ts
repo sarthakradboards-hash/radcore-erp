@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
-import { deliverySchema, unlistedKeys } from './delivery-values.ts';
+import { countByBatch, deliverySchema, pickAfter, unlistedKeys } from './delivery-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const base = { orderId: id(1), locationId: id(2), businessDate: '2026-11-20', notes: '' };
-const line = (over: object) => ({ orderLineId: id(3), itemId: id(4), qty: '2', pick: { [id(5)]: '2' }, serials: [] as string[], ...over });
+const line = (over: object) => ({ orderLineId: id(3), itemId: id(4), label: 'Helmet (H-1)', qty: '2', pick: { [id(5)]: '2' }, serials: [] as string[], ...over });
 
 it('sends each batch with a quantity, "batch unknown" as a null batch, and leaves the empty boxes out', () => {
   const out = deliverySchema.parse({ ...base, lines: [line({ qty: '3', pick: { [id(5)]: '2', unknown: '1', [id(6)]: '' } })] });
@@ -36,4 +36,13 @@ it('finds the batch quantities a line still holds that the place doesn’t list,
   expect(unlistedKeys({ [id(5)]: '2', [id(6)]: '1', unknown: '' }, [id(5)])).toEqual([id(6)]);
   expect(unlistedKeys({ [id(5)]: '2' }, [id(5)])).toEqual([]);
   expect(unlistedKeys({}, [id(5)])).toEqual([]);
+});
+
+it('counts the ticked units by their batch, a unit of no known batch under "unknown"', () => {
+  expect(countByBatch([id(5), id(5), null, id(6)])).toEqual({ [id(5)]: '2', unknown: '1', [id(6)]: '1' });
+});
+
+it('empties the boxes a new tick no longer fills, so none shows an old number', () => {
+  expect(pickAfter({ [id(5)]: '2', [id(6)]: '1' }, { [id(6)]: '1' })).toEqual({ [id(5)]: '', [id(6)]: '1' });
+  expect(pickAfter({ [id(5)]: '2' }, {})).toEqual({ [id(5)]: '' });
 });

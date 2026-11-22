@@ -8,11 +8,14 @@ import {
   listLeadsPage, moveLeadStage, putOnPlan, quickReplyText, tellFollowUpsDue, updateLeadDetails,
 } from '@radcore/lib-crm';
 import { listLeads } from '@radcore/lib-crm/contract';
-import { addDays, moneyString, piiPlan } from '@radcore/lib-common';
-import { myNotificationsPage, type Ctx, type Principal } from '@radcore/lib-platform';
+import { addDays, moneyString, piiPlan, requestFor } from '@radcore/lib-common';
+import { loadConfig, myNotificationsPage, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import crmRoutes from '../apps/api/src/routes/crm.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -77,6 +80,25 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
   const timeline = async (id: string) => (await owner<{ kind: string; stage: string | null; note: string | null }>(
     'select kind, stage, note from radcore.lead_activities where lead_id = $1 order by created_at, kind', [id]));
   const inbox = (p: Principal) => as(p, (ctx) => myNotificationsPage(ctx, { limit: 50, filter: {} })).then((n) => n.items.map((i) => i.text));
+
+  // e2e-2 on dev: GET /leads answered 500 once a lead existed, since the list passed the column's PostgreSQL text
+  // ("2026-11-22 05:16:33.76+00") where the contract wants an ISO moment. Through the handler, which checks the answer.
+  it('answers GET /leads over the API with each lead’s last enquiry as an ISO moment', async () => {
+    const asha = sales(await person());
+    const id = await newLead(asha, 'Moment', new Date(`${TODAY}T05:16:33.760Z`));
+    const config = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(config, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => asha, routes: crmRoutes }),
+      0, '127.0.0.1');
+    try {
+      const sent = requestFor(listLeads, { limit: 50, filter: {} });
+      const res = await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { method: sent.method,
+        headers: { origin: config.publicOrigin, 'sec-fetch-site': 'same-origin' } });
+      const body = await res.json() as { items?: { id: string; lastEnquiryAt: string }[] };
+      expect([res.status, body.items?.find((l) => l.id === id)?.lastEnquiryAt]).toEqual([200, `${TODAY}T05:16:33.760Z`]);
+    } finally {
+      await server.stop();
+    }
+  });
 
   it('lists only the person’s own leads, a page at a time, with each number masked to its last 4 (RC-041)', async () => {
     const [ashaId, raviId] = [await person(), await person()];

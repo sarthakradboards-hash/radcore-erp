@@ -43,6 +43,9 @@ export const SALES_PAGES = [
   { href: '/sales/deliveries', label: 'sales.nav.deliveries', perm: 'sales:read' },
   { href: '/sales/delivery-returns', label: 'sales.nav.returns', perm: 'sales:read' },
   { href: '/sales/invoices', label: 'sales.nav.invoices', perm: 'sales:read' },
+  { href: '/sales/credit-notes', label: 'sales.nav.credits', perm: 'sales:read' },
+  { href: '/sales/test-rides', label: 'sales.nav.rides', perm: 'bookings:read' },
+  { href: '/sales/bookings', label: 'sales.nav.bookings', perm: 'bookings:read' },
 ] as const satisfies readonly NavPage[];
 
 export const NAV: readonly NavItem[] = [

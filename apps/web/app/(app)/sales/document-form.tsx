@@ -39,7 +39,7 @@ const blankLine = { itemId: '', qty: '1', rate: '', discountPercent: '0' };
 /** What a new document starts from: today, one empty line. */
 export const NEW_DOCUMENT: DocumentInput = { partyId: '', businessDate: indiaDate(new Date()), validUntil: '', notes: '', lines: [blankLine] };
 
-const useParties = (query: string) => useApiSearch(listParties, query, { params: { filter: { kind: 'customer', active: true } } });
+const useParties = (query: string) => useApiSearch(listParties, query, { params: { filter: { sellsTo: true, active: true } } });
 const useItems = (query: string) => useApiSearch(listItems, query, { params: { filter: { active: true } } });
 
 /** One line's item box. It names the item the line's own value holds, so it stays right when a line before it is removed. */

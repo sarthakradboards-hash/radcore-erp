@@ -25,6 +25,10 @@ export function placeOfSupply(companyState: string, buyerState: string, shipToSt
   return { state, intraState: state === companyState };
 }
 
+/** An amount rounded to the rupee, half up, as an invoice's total is (ADR-005 §2, F7); a delivery's value is counted
+ * the same way in the credit check, so a bill paid in full isn't over by its round-off (the architect on RAD-115). */
+export const toRupee = (x: DecimalInput): Money => roundMoney(dec(x).toDecimalPlaces(0));
+
 /** The invoice's totals (ADR-005 §2, F7): its lines' sums, and the total rounded to the rupee, half up, so the
  * round-off, total less the lines, is always under 1 either way. */
 export type Totals = { taxable: Money; cgst: Money; sgst: Money; igst: Money; linesTotal: Money; roundOff: Money; total: Money };
@@ -32,7 +36,7 @@ export type Totals = { taxable: Money; cgst: Money; sgst: Money; igst: Money; li
 export function totalsOf(lines: readonly LineTax[]): Totals {
   const add = (pick: (l: LineTax) => Money) => roundMoney(lines.reduce((s, l) => s.plus(dec(pick(l))), dec('0')));
   const linesTotal = add((l) => l.lineTotal);
-  const total = roundMoney(dec(linesTotal).toDecimalPlaces(0));
+  const total = toRupee(linesTotal);
   return { taxable: add((l) => l.taxable), cgst: add((l) => l.cgst), sgst: add((l) => l.sgst), igst: add((l) => l.igst), linesTotal,
     roundOff: roundMoney(dec(total).minus(dec(linesTotal))), total };
 }

@@ -6,7 +6,7 @@
 // deliveries:cancel, while nothing on it is invoiced or taken back. Its form waits for the stock-by-batch read.
 import { dateString, formatDate, indiaDate } from '@radcore/lib-common';
 import {
-  cancelDelivery, deleteDelivery, getDelivery, listDeliveries, listDeliveryReturns, postDelivery, requestDeliveryOverride,
+  cancelDelivery, countDeliveryReturns, deleteDelivery, getDelivery, listDeliveries, listDeliveryReturns, postDelivery, requestDeliveryOverride,
 } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -38,6 +38,8 @@ export default function DeliveryPage() {
   const mayCancel = permissions.includes('deliveries:cancel');
   const q = useApiQuery(getDelivery, { id });
   const returns = useApiList(listDeliveryReturns, { filter: { deliveryId: id } });
+  // The count comes from the server's own count, never from adding up the page of links above (RC-176).
+  const counts = useApiQuery(countDeliveryReturns, { deliveryId: id });
   const again = [getDelivery, listDeliveries];
   const post = useApiMutation(postDelivery, { invalidates: again });
   const override = useApiMutation(requestDeliveryOverride, { invalidates: again });
@@ -73,7 +75,8 @@ export default function DeliveryPage() {
       ]} />
       <CountCards label={t('sales.counts')} cards={[
         { label: t('sales.count.lines'), value: String(delivery.lines.length) },
-        ...(returns.isPending ? [] : [{ label: t('sales.delivery.returns.count'), value: String(taken.length) }]),
+        ...Object.entries(counts.data?.byStatus ?? {}).filter(([, n]) => n > 0)
+          .map(([status, n]) => ({ label: `${t('sales.delivery.returns.count')}: ${t(`sales.return.status.${status as 'draft'}`)}`, value: String(n) })),
       ]} />
       <dl className="admin-facts" aria-label={t('sales.facts')}>
         <dt>{t('sales.party')}</dt><dd>{delivery.partyName}</dd>

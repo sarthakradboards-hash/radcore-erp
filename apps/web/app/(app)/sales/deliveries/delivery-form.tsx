@@ -6,7 +6,6 @@
 // with the contract's own schema, and what the picker shows is a convenience posting checks again.
 import { dec } from '@radcore/lib-common';
 import { getOrder, listOrders } from '@radcore/lib-sales/contract';
-import { listLocationKinds, listLocations } from '@radcore/lib-stock/contract';
 import { useState } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
@@ -14,22 +13,9 @@ import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
-import { ItemName } from '../shared.tsx';
-import { DELIVERY_MESSAGES } from './shared.tsx';
+import { DELIVERY_MESSAGES, usePlaces } from './shared.tsx';
 import { deliverySchema, type DeliveryInput, type DeliveryValues, type LineInput } from './delivery-values.ts';
 import { StockPick } from './stock-pick.tsx';
-
-/** The places goods can be delivered from: active places of a kind that sells. A person who can't read the kinds (or the
- * places) is offered what they can, and the server refuses a place that isn't one. */
-function usePlaces(current: string) {
-  const kinds = useApiQuery(listLocationKinds, {});
-  const places = useApiList(listLocations, { filter: { status: 'active' } }, { limit: 200 });
-  const sells = new Set(kinds.data?.kinds.filter((k) => k.sellable).map((k) => k.kind));
-  const options = places.items.filter((l) => kinds.data === undefined || sells.has(l.kind)).map((l) => ({ value: l.id, label: l.name }));
-  // A draft's place is offered even if it can't be listed now (switched off, or hidden from this person), so it isn't lost.
-  if (current !== '' && !options.some((o) => o.value === current)) options.push({ value: current, label: t('sales.delivery.place.unknown') });
-  return { options, ready: !places.isPending && !kinds.isPending };
-}
 
 /** Brings an order's lines in: a choice among the confirmed orders, and the button that adds its lines still to deliver. */
 function AddOrder({ append, hasLines }: { append: (lines: LineInput[]) => void; hasLines: boolean }) {
@@ -57,7 +43,7 @@ function AddOrder({ append, hasLines }: { append: (lines: LineInput[]) => void; 
           setValue('orderId', order.id);
           // What is left to deliver starts the quantity; it is only a suggestion, and the server holds the limit.
           append(order.lines.filter((l) => dec(l.qty).gt(l.delivered)).map((l) => ({
-            orderLineId: l.id, itemId: l.itemId, qty: asWritten(dec(l.qty).minus(l.delivered).toString()), pick: {}, serials: [],
+            orderLineId: l.id, itemId: l.itemId, label: `${l.name} (${l.sku})`, qty: asWritten(dec(l.qty).minus(l.delivered).toString()), pick: {}, serials: [],
           })));
           setOrderId('');
         }}>{t('sales.delivery.form.order.add')}</button>
@@ -83,10 +69,10 @@ function Lines() {
       {orderId !== '' && fields.length > 0 ? <AgainstOrder id={orderId} /> : null}
       {fields.map((f, i) => (
         <fieldset key={f.id}>
-          <legend>{t('sales.line', { n: String(i + 1) })}: <ItemName id={f.itemId} /></legend>
+          <legend>{t('sales.line', { n: String(i + 1) })}: {f.label}</legend>
           <TextField name={`lines.${i}.qty`} label={t('sales.delivery.form.line.qty')} inputMode="decimal" autoComplete="off" />
           <StockPick index={i} itemId={itemIds[i]?.itemId ?? f.itemId}
-            onSplit={() => append({ orderLineId: f.orderLineId, itemId: f.itemId, qty: '', pick: {}, serials: [] })} />
+            onSplit={() => append({ orderLineId: f.orderLineId, itemId: f.itemId, label: f.label, qty: '', pick: {}, serials: [] })} />
           <button type="button" className="kit-button" onClick={() => remove(i)}>{t('sales.delivery.form.remove', { n: String(i + 1) })}</button>
         </fieldset>
       ))}
