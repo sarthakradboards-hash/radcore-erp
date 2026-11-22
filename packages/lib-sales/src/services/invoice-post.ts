@@ -8,11 +8,11 @@ import { deliveryLines, invoiceLines, invoices, salesTx } from '@radcore/db/sale
 import { companyForInvoice, getCompanyProfile, getPartyById, holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, moneyString, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
 import { gstRateFor } from '@radcore/lib-gst';
-import { AppError, defineSeries, defineSetting, nextNumber, requestApproval, versionHash, type Ctx } from '@radcore/lib-platform';
+import { AppError, defineSeries, defineSetting, nextNumber, requestApproval, versionHash, withdrawPending, type Ctx } from '@radcore/lib-platform';
 import { itemLabels, soldCondition } from '@radcore/lib-stock';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { postInvoice, requestInvoiceOverride } from '../contract.ts';
+import type { deleteInvoice, postInvoice, requestInvoiceOverride } from '../contract.ts';
 import { checkSale, coveredBy, overrideApproval, type ApprovedThrough, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { notInvoicedLeft, rupeesOf } from './delivered.ts';
 import { checkDate, listRateBeforeTax, netRate, shareOf } from './document-rules.ts';
@@ -56,7 +56,7 @@ async function companyRead(ctx: Ctx): Promise<Company> {
 
 /** A party's stored value, as lib-accounts' service answers it to another service: the handler masks answers, never a
  * service's values, so a masked one here is a bug, refused rather than frozen onto an invoice. */
-function plain(v: string | { masked: string } | null): string | null {
+export function plain(v: string | { masked: string } | null): string | null {
   if (v !== null && typeof v === 'object') throw new Error('a party’s stored detail came back masked');
   return v;
 }
@@ -249,4 +249,14 @@ async function postInvoiceFor(ctx: Ctx, id: string, through?: ApprovedThrough): 
     taxable: w.totals.taxable, cgst: w.totals.cgst, sgst: w.totals.sgst, igst: w.totals.igst, roundOff: w.totals.roundOff,
     total: w.totals.total }).where(eq(invoices.id, id));
   return { number, total: w.totals.total };
+}
+
+/** DELETE /sales/invoices/:id (invoices:write): a draft only; it never had a number. */
+export async function dropInvoice(ctx: Ctx, { id }: In<typeof deleteInvoice>): Promise<Out<typeof deleteInvoice>> {
+  const now = await invoiceOf(ctx, id, 'invoices:write', true);
+  if (now.status !== 'draft') throw wrongStatus(now.status);
+  // A pending override request goes with it, superseded (the architect on RAD-114).
+  await withdrawPending(ctx, invoiceOverride, id);
+  await salesTx(ctx).delete(invoices).where(eq(invoices.id, id));
+  return {};
 }

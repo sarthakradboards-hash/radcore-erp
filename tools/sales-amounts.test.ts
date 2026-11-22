@@ -12,7 +12,7 @@ import { putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, listPendingApprovals, showApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addDelivery, addDeliveryReturn, addInvoice, addOrder, addQuote, askInvoiceOverride, askOrderOverride, changeOrder, confirmOrderNow, getDeliveryById,
+  addDelivery, addDeliveryReturn, addInvoice, addOrder, addQuote, askInvoiceOverride, askOrderOverride, changeOrder, confirmOrderNow, dropInvoice, getDeliveryById,
   invoiceOverride,
   getOrderById, getQuoteById, orderOverride, postDeliveryNow, postDeliveryReturnNow, postInvoiceNow, sendQuoteNow,
 } from '@radcore/lib-sales';
@@ -242,5 +242,10 @@ describe.skipIf(!url || !superUrl)('quote and order amounts', () => {
     const listed = await readOnly((ctx) => listPendingApprovals(ctx, invoiceOverride, { limit: 200 }));
     const shown = await readOnly((ctx) => showApproval(ctx, invoiceOverride, asked.id));
     expect([listed.items.some((r) => r.id === asked.id), shown.recordId, shown.changed]).toEqual([true, invoiceId, false]);
+    // The architect on RAD-114: the draft thrown away closes the request, superseded; deciding it answers not_pending.
+    await run((ctx) => dropInvoice(ctx, { id: invoiceId }));
+    expect(await failure(run((ctx) => decideApproval(ctx, invoiceOverride, asked.id, { decision: 'approve', versionHash: asked.versionHash }),
+      approver))).toBe('not_pending');
+    expect((await su.query<{ status: string }>('select status from radcore.approvals where id = $1', [asked.id])).rows[0]?.status).toBe('superseded');
   });
 });

@@ -10,6 +10,7 @@ import hr from './routes/hr.ts';
 import fileRoutes from './routes/files.ts';
 import gst from './routes/gst.ts';
 import platform from './routes/platform.ts';
+import print from './routes/print.ts';
 import sales from './routes/sales.ts';
 import { settingsRoutes } from './catalogue.ts';
 import stock from './routes/stock.ts';
@@ -18,5 +19,5 @@ import stock from './routes/stock.ts';
 // The enquiry form's route is built at start with Turnstile's client and secret (createEnquiryForm, RAD-107).
 export const apiRoutes = (auth: Pick<Auth, 'routes'>, clientErrors: ReturnType<typeof createClientErrors>,
   enquiryForm: ReturnType<typeof createEnquiryForm>): readonly Route[] =>
-  [...fileRoutes, ...platform, ...accounts, ...crm, ...enquiryForm.routes, ...gst, ...hr, ...sales, ...stock,
+  [...fileRoutes, ...platform, ...accounts, ...crm, ...enquiryForm.routes, ...gst, ...hr, ...sales, ...print, ...stock,
     ...auth.routes, ...clientErrors.routes, ...settingsRoutes];

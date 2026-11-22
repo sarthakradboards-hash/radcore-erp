@@ -8,7 +8,7 @@ import { after, deliveries, deliveryLines, salesOrderLines, salesOrders, salesTx
 import { holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundQty, type Quantity } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, type Ctx,
+  AppError, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, withdrawPending, type Ctx,
 } from '@radcore/lib-platform';
 import { checkPlace, checkQuantity, postStock } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
@@ -170,6 +170,8 @@ export async function changeDelivery(ctx: Ctx, { id, ...input }: In<typeof updat
 export async function dropDelivery(ctx: Ctx, { id }: In<typeof deleteDelivery>): Promise<Out<typeof deleteDelivery>> {
   const now = await deliveryOf(ctx, id, 'deliveries:write', true);
   if (now.status !== 'draft') throw wrongStatus(now.status);
+  // A pending override request goes with it, superseded (the architect on RAD-114).
+  await withdrawPending(ctx, deliveryOverride, id);
   await salesTx(ctx).delete(deliveries).where(eq(deliveries.id, id));
   return {};
 }

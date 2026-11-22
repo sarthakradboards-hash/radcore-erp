@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { creditSchema } from './credit-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-const base = { invoiceId: id(1), kind: 'value', businessDate: '2026-11-20', reason: 'Returned unused', locationId: '', refundAmount: '', refundAccountId: '' };
+const base = { invoiceId: id(1), kind: 'value', businessDate: '2026-11-20', reason: 'Returned unused', locationId: '', refund: { amount: '', accountId: '' } };
 const line = (over: object) => ({ invoiceLineId: id(2), itemId: id(3), label: 'Fan (FAN-1200)', invoiced: '1850.50', taxable: '100.00', qty: '', pick: {}, serials: [] as string[], ...over });
 
 it('credits the lines that have a taxable value, leaves the empty ones out, and writes a value credit with no place or refund', () => {
@@ -19,10 +19,13 @@ it('needs at least one credited line, an invoice and a reason, and an amount tha
 });
 
 it('takes a counter refund with both its amount and its account, or neither', () => {
-  const both = creditSchema.parse({ ...base, refundAmount: '50.00', refundAccountId: id(9), lines: [line({})] });
+  const both = creditSchema.parse({ ...base, refund: { amount: '50.00', accountId: id(9) }, lines: [line({})] });
   expect(both.refund).toEqual({ amount: '50.00', accountId: id(9) });
-  expect(creditSchema.safeParse({ ...base, refundAmount: '50.00', lines: [line({})] }).success).toBe(false);
-  expect(creditSchema.safeParse({ ...base, refundAccountId: id(9), lines: [line({})] }).success).toBe(false);
+  expect(creditSchema.safeParse({ ...base, refund: { amount: '50.00', accountId: '' }, lines: [line({})] }).success).toBe(false);
+  expect(creditSchema.safeParse({ ...base, refund: { amount: '', accountId: id(9) }, lines: [line({})] }).success).toBe(false);
+  // The issue is at refund.amount / refund.accountId, where the server's own refusals land too (exceeds_credit, not_money_account).
+  const missing = creditSchema.safeParse({ ...base, refund: { amount: '50.00', accountId: '' }, lines: [line({})] });
+  expect(missing.success ? [] : missing.error.issues.map((i) => i.path.join('.'))).toEqual(['refund.accountId']);
 });
 
 const goods = { ...base, kind: 'goods', locationId: id(8) };
@@ -47,4 +50,11 @@ it('needs a place for goods back, and a batch for each line that comes back, ref
   expect(none.success).toBe(false);
   expect(!none.success && none.error.issues.some((i) => i.path.join('.') === 'lines.0.qty')).toBe(true);
   expect(creditSchema.safeParse({ ...goods, lines: [line({ taxable: '', qty: '' })] }).success).toBe(false);
+});
+
+it('refuses batches that do not add up to the quantity, on the quantity box', () => {
+  const goods = (qty: string, pick: Record<string, string>) => creditSchema.safeParse({ ...base, kind: 'goods', locationId: id(8), lines: [line({ taxable: '', qty, pick })] });
+  expect(goods('2', { [id(5)]: '2' }).success).toBe(true);
+  const bad = goods('3', { [id(5)]: '2' });
+  expect(bad.success ? [] : bad.error.issues.map((i) => i.path.join('.'))).toEqual(['lines.0.qty']);
 });
