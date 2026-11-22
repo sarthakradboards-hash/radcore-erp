@@ -14,7 +14,7 @@ export default function NewBookingPage() {
   const router = useRouter();
   const mayWrite = useMe().permissions.includes('bookings:write');
   const create = useApiMutation(createBooking, { invalidates: [listBookings] });
-  if (!mayWrite) return <><p><Link href="/sales/bookings">{t('sales.back')}</Link></p><p role="alert" className="kit-form-alert">{t('sales.booking.err.forbidden')}</p></>;
+  if (!mayWrite) return <><p><Link href="/sales/bookings">{t('sales.back')}</Link></p><p role="alert" className="kit-form-alert">{t('sales.booking.err.noWrite')}</p></>;
   return (
     <>
       <p><Link href="/sales/bookings">{t('sales.back')}</Link></p>
