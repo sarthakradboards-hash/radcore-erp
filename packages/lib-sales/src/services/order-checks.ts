@@ -8,6 +8,7 @@ import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
 import { asc, eq } from 'drizzle-orm';
 import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { deliveredNotInvoiced } from './delivered.ts';
+import { dec } from '@radcore/lib-common';
 import { amountsOf, type Amounts } from './document-amounts.ts';
 import { listRateBeforeTax, netRate } from './document-rules.ts';
 
@@ -72,6 +73,14 @@ export const ISSUE_WORDS: Readonly<Record<string, string>> = {
   no_list_rate: 'This item has no price on the party’s price list to check its discount against',
   over_discount: 'This line’s discount is more than your limit',
 };
+
+/** For a quick bill's preview (RAD-115, the architect): the issue codes confirming these lines would raise, as the
+ * save would judge them with its receipts taken first (what's paid off what the order adds). Reads only, and answers
+ * codes only, never a cost or a balance. */
+export async function orderIssues(ctx: Ctx, o: Order, lines: readonly Line[], paid: string): Promise<string[]> {
+  const sale = await saleOf(ctx, o, lines, await amountsOf(ctx, o.partyId, o.businessDate, lines));
+  return (await checkSale(ctx, { ...sale, adds: dec(sale.adds).minus(dec(paid)).toFixed(2) })).issues.map((i) => i.code);
+}
 
 /**
  * Runs the order's checks at confirmation, on the amounts it's about to store. With issues it's refused,

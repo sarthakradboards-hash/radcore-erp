@@ -11,7 +11,7 @@ import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radco
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addDelivery, addInvoice, addOrder, CARD_ACCOUNT, confirmOrderNow, getDeliveryById, getInvoiceById, getOrderById, postDeliveryNow, postInvoiceNow,
-  quickBill,
+  previewBill, quickBill,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
@@ -263,6 +263,35 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
       return [await take(), await take()];
     }, { as: staff });
     expect(out).toEqual(['posted', 'pending_approval']);
+  });
+
+  // The architect on RAD-115: the counter sees what the bill comes to before it's saved, the same figure the invoice
+  // posts, with nothing written and only the codes of any check, never a cost or a balance.
+  it('previews the posted total, writes nothing, and names an over-limit check by its code alone', async () => {
+    const at = await setup({ rate: '345' });
+    const partyId = await named('29', '100000');
+    const out = await atCounter(at, async (ctx) => {
+      const input = (payments: Pay[], party?: string) => ({ ...(party === undefined ? {} : { partyId: party }), businessDate: DATE, locationId: at.placeId,
+        notes: null, payments, lines: [{ itemId: at.itemId, qty: q('1'), rate: unitPriceString().parse('345'),
+          discountPercent: percentString({ max: '100' }).parse('0'), batches: [{ batchId: at.batchId, qty: q('1') }], serials: [] }] });
+      const count = async () => (await rawOf(ctx.tx).execute(sql`select (select count(*) from radcore.sales_orders)::int as o,
+        (select count(*) from radcore.payments)::int as p, (select coalesce(sum(last), 0) from radcore.number_counters)::int as n`) as unknown as {
+        rows: { o: number; p: number; n: number }[] }).rows[0];
+      const before = await count();
+      const seen = await previewBill(ctx, input([cash('362')], partyId));
+      const short = await previewBill(ctx, input([cash('100')]));
+      const after = await count();
+      const bill = await quickBill(ctx, input([cash('362')], partyId));
+      return { preview: [seen.total, seen.roundOff, seen.cgst, seen.igst, seen.left, seen.issues], posted: bill.total, written: after,
+        before, short: short.issues, shortKeys: Object.keys(short).toSorted() };
+    });
+    // 345.00 + 2.5% CGST (8.63) + 2.5% SGST (8.63) is 362.26, billed as 362.00.
+    expect(out.preview).toEqual(['362.00', '-0.26', '8.63', '0.00', '0.00', []]);
+    expect(out.posted).toBe('362.00');
+    expect(out.written).toEqual(out.before);
+    // The Counter customer has no credit: a short payment is over its limit, named, and no figure of it answered.
+    expect(out.short).toEqual(['over_limit']);
+    expect(out.shortKeys).toEqual(['cgst', 'igst', 'issues', 'left', 'lines', 'paid', 'placeOfSupply', 'roundOff', 'sgst', 'taxable', 'total']);
   });
 
   it('keeps the Counter customer to the quick bill: an order of its own is refused', async () => {

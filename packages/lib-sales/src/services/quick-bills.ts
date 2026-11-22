@@ -3,19 +3,22 @@
 // unpaid (an advance lowers the party's balance, ADR-007 §9); then the order, confirmed; its delivery from one place,
 // posted; its invoice, shipped to the shop, posted; and every receipt applied to that invoice. Any refusal on the way
 // rolls all of it back.
-import { deliveryLines, salesOrderLines, salesTx } from '@radcore/db/sales';
+import { deliveryLines, priceListVersions, salesOrderLines, salesTx } from '@radcore/db/sales';
 import {
-  allocatePayment, companyForInvoice, moneyAccountRefusal, recordCounterReceipt, systemAccountId, systemPartyId,
+  allocatePayment, companyForInvoice, getCompanyProfile, moneyAccountRefusal, recordCounterReceipt, systemAccountId, systemPartyId,
 } from '@radcore/lib-accounts';
 import { dec, looksLikeCardNumber, roundMoney, sum } from '@radcore/lib-common';
-import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
-import { asc, eq } from 'drizzle-orm';
+import { AppError, defineSetting, principalId, type Ctx } from '@radcore/lib-platform';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { createQuickBill } from '../contract.ts';
+import type { createQuickBill, previewQuickBill } from '../contract.ts';
 import { addDelivery, postDeliveryNow } from './deliveries.ts';
 import { postInvoiceNow } from './invoice-post.ts';
 import { addInvoice } from './invoices.ts';
-import { addCounterOrder, confirmOrderNow, getOrderById } from './orders.ts';
+import { amountsOf } from './document-amounts.ts';
+import { checkedLines, sellingTo } from './document-lines.ts';
+import { orderIssues } from './order-checks.ts';
+import { addCounterOrder, confirmOrderNow, getOrderById, priced } from './orders.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -131,4 +134,30 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
   return { order: { id: order.id, number: confirmed.number }, delivery: { id: delivery.id, number: delivered.number },
     invoice: { id: invoice.id, number: posted.number }, receipts: receipts.map(({ id, number }) => ({ id, number })),
     total: posted.total, paid, left: roundMoney(dec(posted.total).minus(paid)) };
+}
+
+/**
+ * POST /sales/quick-bills/preview (invoices:write): what the bill would come to, before it's saved (the architect on
+ * RAD-115). Its lines priced as the save prices them (the party's list), taxed by lib-gst at the shop, as the save's
+ * invoice is shipped there, and rounded as an invoice is (totalsOf), so this total is the posted one; what the payments
+ * leave; and the codes of the checks confirming it would raise, judged with the payments taken. Read only: no number,
+ * no lock, no write, no approval asked, no party made; and no cost or balance answered, only the codes.
+ */
+export async function previewBill(ctx: Ctx, input: In<typeof previewQuickBill>): Promise<Out<typeof previewQuickBill>> {
+  const partyId = input.partyId ?? await systemPartyId(ctx, 'walk_in');
+  await sellingTo(ctx, partyId);
+  const checked = await checkedLines(ctx, input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent })));
+  const { lines } = await priced(ctx, partyId, input.businessDate, checked);
+  // Shipped to the shop, as the save's invoice is: its state, read without a lock (the save's posting takes one).
+  const { company } = await getCompanyProfile(ctx);
+  const a = await amountsOf(ctx, partyId, input.businessDate, lines, company?.stateCode);
+  const paid = roundMoney(sum(input.payments.map((p) => p.amount)));
+  const versionIds = [...new Set(lines.flatMap((l) => (l.listVersionId === null ? [] : [l.listVersionId])))];
+  const inclusive = new Map(versionIds.length === 0 ? [] : (await salesTx(ctx).select({ id: priceListVersions.id, taxInclusive: priceListVersions.taxInclusive })
+    .from(priceListVersions).where(inArray(priceListVersions.id, versionIds))).map((v) => [v.id, v.taxInclusive]));
+  const issues = await orderIssues(ctx, { partyId, businessDate: input.businessDate, createdBy: principalId(ctx.principal) },
+    lines.map((l) => ({ ...l, listTaxInclusive: l.listVersionId === null ? null : inclusive.get(l.listVersionId) ?? null })), paid);
+  return { lines: a.lines.map((l, i) => ({ itemId: lines[i]?.itemId ?? '', gstRate: l.gstRate, taxable: l.taxable, cgst: l.cgst, sgst: l.sgst,
+    igst: l.igst, lineTotal: l.lineTotal })), placeOfSupply: a.placeOfSupply, taxable: a.totals.taxable, cgst: a.totals.cgst, sgst: a.totals.sgst,
+    igst: a.totals.igst, roundOff: a.totals.roundOff, total: a.totals.total, paid, left: roundMoney(dec(a.totals.total).minus(paid)), issues };
 }

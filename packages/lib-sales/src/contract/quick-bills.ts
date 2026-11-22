@@ -53,3 +53,22 @@ export const createQuickBill = defineContract({
   errors: ERRORS,
   dbErrors: Object.assign({}, ...STAGES.map((c) => c.dbErrors)) as Record<string, { code: (typeof ERRORS)[number]; message: string }>,
 });
+
+/**
+ * What a quick bill would come to, before it's saved (the architect on RAD-115): each line's tax and total, taxed at the
+ * shop as its invoice will be, the round-off and the total, what the payments leave, and the codes of the checks that
+ * would need an approval. Read only: no number is taken, nothing is locked or written, and no figure of cost or
+ * balance is answered, only the codes. The same pricing, lib-gst and round-off as the save, so this total is the
+ * invoice's.
+ */
+export const previewQuickBill = defineContract({
+  method: 'POST', path: '/sales/quick-bills/preview', auth: 'session', perm: 'invoices:write', tx: { readOnly: true, isolation: 'read committed' },
+  input: createQuickBill.input,
+  output: z.object({
+    lines: z.array(z.object({ itemId: idString(), gstRate: z.string(), taxable: moneyString(), cgst: moneyString(), sgst: moneyString(),
+      igst: moneyString(), lineTotal: moneyString() })),
+    placeOfSupply: z.string(), taxable: moneyString(), cgst: moneyString(), sgst: moneyString(), igst: moneyString(), roundOff: z.string(),
+    total: moneyString(), paid: moneyString(), left: moneyString(), issues: z.array(z.string()),
+  }),
+  errors: [...new Set([...createOrder.errors, 'no_gst_rate', 'company_profile_incomplete'])],
+});
