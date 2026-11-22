@@ -3,6 +3,7 @@ import { admin } from './admin.ts';
 import { books } from './books.ts';
 import { core, t } from './index.ts';
 import { deliveries } from './deliveries.ts';
+import { testRides } from './test-rides.ts';
 import { creditNotes } from './credit-notes.ts';
 import { invoices } from './invoices.ts';
 import { kit } from './kit.ts';
@@ -18,7 +19,7 @@ it('fills placeholders and leaves an unknown one visible', () => {
 });
 
 it('keeps each catalogue under its own prefix, so no key replaces another', () => {
-  const catalogues = { core, admin, masters, books, sales, invoices, deliveries, creditNotes, kit };
+  const catalogues = { core, admin, masters, books, sales, invoices, deliveries, creditNotes, testRides, kit };
   const seen = new Map<string, string>();
   for (const [name, catalogue] of Object.entries(catalogues)) {
     for (const key of Object.keys(catalogue)) {
@@ -33,6 +34,7 @@ it('keeps each catalogue under its own prefix, so no key replaces another', () =
   expect(Object.keys(sales).every((k) => k.startsWith('sales.'))).toBe(true);
   expect(Object.keys(invoices).every((k) => k.startsWith('sales.'))).toBe(true);
   expect(Object.keys(creditNotes).every((k) => k.startsWith('sales.'))).toBe(true);
+  expect(Object.keys(testRides).every((k) => k.startsWith('sales.'))).toBe(true);
   expect(Object.keys(deliveries).every((k) => k.startsWith('sales.'))).toBe(true);
   expect(Object.keys(core).some((k) => k.startsWith('admin.') || k.startsWith('books.') || k.startsWith('kit.'))).toBe(false);
 });
