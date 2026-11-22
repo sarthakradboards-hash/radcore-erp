@@ -533,6 +533,13 @@
       "when": 1795337021699,
       "tag": "0075_crm_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795337620069,
+      "tag": "0076_money_accounts",
+      "breakpoints": true
     }
   ]
 }
