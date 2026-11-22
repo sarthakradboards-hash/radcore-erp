@@ -67,6 +67,7 @@ export const bookings = {
   'sales.booking.cancel.left': 'Left of the advance: {amount}.',
   'sales.booking.cancel.none.left': 'Nothing is left of the advance to pay back.',
   'sales.booking.refund.choice': 'What to pay back now',
+  'sales.booking.refund.none': 'Pay back nothing now: the advance stays as the customer’s credit',
   'sales.booking.refund.full': 'Pay back all that is left',
   'sales.booking.refund.part': 'Pay back part of it',
   'sales.booking.refund.amount': 'Amount to pay back',

@@ -46,16 +46,22 @@ const needsRefundParts = (v: { choice: Choice; amount: string; accountId: string
 };
 
 /** The refund's own fields: the choice (when there is one to make), the amount for a part, and the account to pay from. */
-function RefundFields({ choices, accounts }: { choices: readonly Exclude<Choice, 'none'>[]; accounts: ReturnType<typeof useMoneyAccounts> }) {
+function RefundFields({ choices, accounts, withNone }: {
+  choices: readonly Exclude<Choice, 'none'>[]; accounts: ReturnType<typeof useMoneyAccounts>;
+  /** Cancelling may pay back nothing now (the advance stays as credit); paying back what is held after it may not. */
+  withNone: boolean;
+}) {
   const { control } = useFormContext<{ choice: Choice }>();
   const choice = useWatch({ control, name: 'choice' });
   if (choices.length === 0) return <p>{accounts === 'hidden' ? t('sales.booking.refund.hidden') : t('sales.booking.cancel.nothing')}</p>;
   return (
     <>
       <RadioField name="choice" label={t('sales.booking.refund.choice')}
-        options={choices.map((c) => ({ value: c, label: t(`sales.booking.refund.${c}`) }))} />
+        options={[...(withNone ? ['none' as const] : []), ...choices].map((c) => ({ value: c, label: t(`sales.booking.refund.${c}`) }))} />
       {choice === 'part' ? <TextField name="amount" label={t('sales.booking.refund.amount')} inputMode="decimal" autoComplete="off" /> : null}
-      <SelectField name="accountId" label={t('sales.booking.refund.account')} placeholder={t('sales.booking.refund.account.none')} options={accounts === 'hidden' ? [] : accounts ?? []} />
+      {choice === 'none' ? null : (
+        <SelectField name="accountId" label={t('sales.booking.refund.account')} placeholder={t('sales.booking.refund.account.none')} options={accounts === 'hidden' ? [] : accounts ?? []} />
+      )}
     </>
   );
 }
@@ -70,7 +76,8 @@ export function CancelBooking({ id, number, left, open, onOpenChange }: {
   const accounts = useMoneyAccounts();
   const choices = useRefundChoices(left, accounts);
   const cancel = useApiMutation(cancelBooking, { invalidates: [getBooking, listBookings] });
-  const first: Choice = choices[0] ?? 'none';
+  // A key holder's default is to pay nothing back now: no money moves unless they choose it.
+  const first: Choice = 'none';
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={t('sales.booking.cancel.title', { number })} description={t('sales.booking.cancel.body')}>
       <Form schema={cancelSchema} saved={false} messages={BOOKING_MESSAGES}
@@ -86,7 +93,7 @@ export function CancelBooking({ id, number, left, open, onOpenChange }: {
         <TextField name="businessDate" label={t('sales.booking.cancel.date')} type="date" />
         <TextAreaField name="reason" label={t('sales.booking.cancel.reason')} />
         <p>{dec(left).gt(0) ? t('sales.booking.cancel.left', { amount: formatMoney(left) }) : t('sales.booking.cancel.none.left')}</p>
-        <RefundFields choices={choices} accounts={accounts} />
+        <RefundFields choices={choices} accounts={accounts} withNone />
         <div className="kit-actions">
           <CloseButton>{t('sales.cancel')}</CloseButton>
           <SubmitButton>{t('sales.booking.cancel')}</SubmitButton>
@@ -116,7 +123,7 @@ export function RefundHeld({ id, left, open, onOpenChange }: { id: string; left:
         }}>
         <TextField name="businessDate" label={t('sales.booking.refund.later.date')} type="date" />
         <p>{t('sales.booking.cancel.left', { amount: formatMoney(left) })}</p>
-        <RefundFields choices={choices} accounts={accounts} />
+        <RefundFields choices={choices} accounts={accounts} withNone={false} />
         <div className="kit-actions">
           <CloseButton>{t('sales.cancel')}</CloseButton>
           {choices.length === 0 ? null : <SubmitButton>{t('sales.booking.refund.later')}</SubmitButton>}
