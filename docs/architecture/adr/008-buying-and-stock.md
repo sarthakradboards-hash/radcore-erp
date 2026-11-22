@@ -108,7 +108,8 @@ the document it comes from (`date_before_source`):
   When they come, the party gains a country, and a PO from a foreign party becomes an import then.
 - **Lines** are an item, a quantity and a rate before tax. The tax figures are worked out by lib-gst as a sale's are
   (place of supply from the supplier's state against ours), computed on read while a draft and stored when placed.
-- **Placing.** The PO's total (with tax) is compared with the placer's role limit:
+- **Placing.** The PO's total with GST, the figure it shows and what will be paid, is compared with the placer's role
+  limit. Whether the limit should be on the taxable value instead is Sarthak's to say; it's one comparison either way:
   - **within it,** the PO is placed at once and takes its number;
   - **above it,** placing requests approval through `defineApproval`, kind `purchase-order`, under
     `purchasing:approve`. The PO stays a draft while the request is pending, and the approval's `approved` step
@@ -234,12 +235,19 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
 - **Rejected stock can't go back to selling without QC (RC-124).** A transfer out of a `rejected` location to a
   sellable one is refused (`needs_qc`), unless it's a **re-inspection**:
   - a transfer marked `requalified`, under `inward:qc`, the key that does QC at receipt, with a reason;
-  - its serialised units take the condition the inspection found, `new` or `used`, by `condition_changed`.
+  - its serialised units take the condition the inspection found, `new` or `used`, by `condition_changed`;
+  - M4-06 ships the refusal. M4-02, which brings `inward:qc`, adds the re-inspection, so until then rejects can't go
+    back at all.
 - **Job work locations** are reached only by job work's own documents (§11): a plain transfer to or from one is
   refused (`use_job_work`).
 - **A transfer can be undone (RC-124).** Cancelling it mirrors it at the same values, dated the cancellation's day.
   It's refused if the goods are no longer where it put them, or a unit on it has moved since (`goods_moved_on`).
-- **No approval.** Plan flow 7 asks a reason of a transfer and an approval of counts and adjustments only.
+- **No approval.** Plan flow 7 asks a reason of a transfer and an approval of counts and adjustments only. If Sarthak
+  wants transfers into some kinds of place approved (a franchisee's store, say), that's a setting naming those kinds,
+  empty by default, through the same approval as a count. Nothing is built for it until he asks.
+- **What posts** is one `stock_transfer` entry with a Stock in Hand line for each location (ADR-006 §6, F13). It's one
+  account, but its lines carry the location, so books by place agree with stock by place (ADR-006 §7). The total
+  doesn't move.
 
 ### 10. Counts and adjustments (M4-06, RC-123)
 
@@ -253,15 +261,18 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
     neither missed nor counted twice.
   - **A serial found here but booked at another location** is refused (`serial_elsewhere`): it's a transfer, not a
     gain here and a loss there.
+  - **A serial the books don't know** is refused (`serial_unknown`). It comes in through its goods receipt, or through
+    an approved adjustment that names its serial and, where the item needs one, its chassis number, so no unit
+    skips those checks.
 - **An adjustment** is a one-off in or out with a reason: goods damaged, lost or found.
 - **Both change nothing until approved (flow 7):** `defineApproval`, kinds `stock-count` and `stock-adjustment`, under
   `stock:approve`, by someone other than the person who counted. The approver sees the differences and their values.
   Its `approved` step posts, so the spec declares `lockFirst`.
 - **What posts** is ADR-006 §6's row and F14:
   - a shortage goes out at the location's average, and a gain comes in at it, or at the item's last `in` rate where
-    the location holds none;
-  - a serialised shortage is `scrapped`, and a serial found that the books don't hold is `received`, with the count's
-    number as its batch;
+    the location holds none, against ADR-006 §2's existing `stock_adjustment` account;
+  - a serialised shortage is written off as lost, `scrapped`. An adjustment's own serialised gain is `received`, with
+    the adjustment's number as its batch;
   - a difference between batches alone moves the quantity between them, at the same value, with no entry (F21).
 - **Cancelling** a posted count or adjustment mirrors it, under `stock:approve`, with a reason.
 
@@ -344,7 +355,7 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
 | Ticket | Session | Tables, settings and rows its migration adds |
 |---|---|---|
 | M4-01 | backend | `purchase_orders`, lines, `purchase_order_limits`; `purchasing.order_limit_default`; the `purchasing.order` series; the purchasing keys |
-| M4-02 | backend-3 | `goods_receipts`, lines; the `purchasing.receipt` series; `inward:write`, `inward:qc` |
+| M4-02 | backend-3 | `goods_receipts`, lines; the `purchasing.receipt` series; `inward:write`, `inward:qc`; the re-inspection transfer (§9) |
 | M4-03 | backend | `purchase_bills`, lines, the duplicate index; the `purchase_bill` file kind; `purchasing.bill_tolerance_pct`; the `purchasing.bill` series; the `allocatable_documents` row; `bills:write`, `bills:approve` |
 | M4-05 | backend-3 | `supplier_returns`, lines; the `purchasing.return` and `purchasing.debit_note` series; the `allocatable_documents` row; `supplier_returns:write` |
 | M4-06 | backend-3 | `stock_transfers`, `stock_counts`, `stock_adjustments` and their lines; their three series; `stock:move`, `stock:count`, `stock:approve`; `stock:read`'s new records |
