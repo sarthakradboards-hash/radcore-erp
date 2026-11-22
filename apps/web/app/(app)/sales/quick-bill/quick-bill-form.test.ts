@@ -3,18 +3,19 @@ import { quickBillSchema, rateAfterPrice, rateFor } from './quick-bill-values.ts
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const line = (over: object = {}) => ({ itemId: id(1), qty: '2', rate: '500.00', discountPercent: '0', pick: { [id(2)]: '2' }, serials: [] as string[], ...over });
-const base = { businessDate: '2026-11-22', locationId: id(3), customer: 'counter', partyId: '', notes: '', lines: [line()], payments: [] as object[] };
+const noBuyer = { name: '', phone: '', addressLine1: '', city: '', pincode: '' };
+const base = { mode: 'save', buyer: noBuyer, businessDate: '2026-11-22', locationId: id(3), customer: 'counter', partyId: '', notes: '', lines: [line()], payments: [] as object[] };
 const pay = (over: object) => ({ method: 'cash', amount: '', accountId: '', reference: '', approvalCode: '', ...over });
 const paths = (r: ReturnType<typeof quickBillSchema.safeParse>) => (r.success ? [] : r.error.issues.map((i) => i.path.join('.')));
 
 it('sends the Counter customer as no party, and a named one with its id', () => {
-  expect(quickBillSchema.parse(base)).not.toHaveProperty('partyId');
-  expect(quickBillSchema.parse({ ...base, customer: 'named', partyId: id(9) })).toHaveProperty('partyId', id(9));
+  expect(quickBillSchema.parse(base).bill).not.toHaveProperty('partyId');
+  expect(quickBillSchema.parse({ ...base, customer: 'named', partyId: id(9) }).bill).toHaveProperty('partyId', id(9));
   expect(paths(quickBillSchema.safeParse({ ...base, customer: 'named' }))).toEqual(['partyId']);
 });
 
 it('sends each line with its batches, and refuses a line with none on its quantity box', () => {
-  expect(quickBillSchema.parse(base).lines[0]).toEqual({ itemId: id(1), qty: '2', rate: '500.00', discountPercent: '0', batches: [{ batchId: id(2), qty: '2' }], serials: [] });
+  expect(quickBillSchema.parse(base).bill.lines[0]).toEqual({ itemId: id(1), qty: '2', rate: '500.00', discountPercent: '0', batches: [{ batchId: id(2), qty: '2' }], serials: [] });
   expect(paths(quickBillSchema.safeParse({ ...base, lines: [line({ pick: {} })] }))).toEqual(['lines.0.qty']);
 });
 
@@ -22,7 +23,7 @@ it('sends cash, UPI as a bank payment with its account and reference, and a card
   const out = quickBillSchema.parse({ ...base, payments: [
     pay({ amount: '300' }), pay({ method: 'upi', amount: '500', accountId: id(4), reference: 'UTR123' }), pay({ method: 'card', amount: '200', approvalCode: 'A1B2C3' }),
   ] });
-  expect(out.payments).toEqual([
+  expect(out.bill.payments).toEqual([
     { method: 'cash', amount: '300' }, { method: 'bank', amount: '500', accountId: id(4), reference: 'UTR123' }, { method: 'card', amount: '200', approvalCode: 'A1B2C3' },
   ]);
 });
@@ -52,4 +53,16 @@ it('starts a new item from an empty box and fills its list rate at once, also wh
   expect(rateFor(true, '499.00', null, null)).toEqual({ rate: '', filled: null });
   // the same item: a typed rate stays
   expect(rateFor(false, '499.00', '500.00', '800.00')).toEqual({ rate: '499.00', filled: '500.00' });
+});
+
+it('sends a held bill with its buyer only on a hold for the Counter customer, and asks for both a name and a mobile', () => {
+  const buyer = { ...noBuyer, name: 'Asha', phone: '98765 43210', pincode: '400001' };
+  expect(quickBillSchema.parse({ ...base, mode: 'hold', buyer })).toMatchObject({ mode: 'hold', buyer: { name: 'Asha', phone: '98765 43210', pincode: '400001' } });
+  // an empty buyer is no buyer: the Counter customer pays in full
+  expect(quickBillSchema.parse({ ...base, mode: 'hold' })).not.toHaveProperty('buyer');
+  // a save, or a named customer, never carries one
+  expect(quickBillSchema.parse({ ...base, buyer })).not.toHaveProperty('buyer');
+  expect(quickBillSchema.parse({ ...base, mode: 'hold', customer: 'named', partyId: id(9), buyer })).not.toHaveProperty('buyer');
+  expect(paths(quickBillSchema.safeParse({ ...base, mode: 'hold', buyer: { ...noBuyer, name: 'Asha' } }))).toEqual(['buyer.phone']);
+  expect(paths(quickBillSchema.safeParse({ ...base, mode: 'hold', buyer: { ...buyer, pincode: '012345' } }))).toEqual(['buyer.pincode']);
 });

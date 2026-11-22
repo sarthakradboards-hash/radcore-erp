@@ -1,59 +1,79 @@
 'use client';
-// The counter quick bill (RAD-124 on RAD-115's contract): a sale in one save. It needs sales:write, deliveries:write and invoices:write
-// (the server names any that is missing); the screen checks the three and says which are not held. When it is saved the page
-// shows what the server worked out: the invoice, the total, what was paid and what is left unpaid, and the receipts.
-import { formatMoney } from '@radcore/lib-common';
-import { createQuickBill, listInvoices } from '@radcore/lib-sales/contract';
-import Link from 'next/link';
-import { useState } from 'react';
-import type { z } from 'zod';
+// The counter quick bill (RAD-124 on RAD-115's contracts): a sale in one save, or held for an approval and completed once it is
+// given. It needs sales:write, deliveries:write and invoices:write (the server names any that is missing); the screen checks the three
+// and says which are not held. While the bill is made up the server's preview shows its total, what the payments leave and which
+// checks need an approval; once more right before the save, and if the total moved since the cashier looked, the save waits for them to
+// look again. A bill a check refuses (needs_override) can be held; held bills are listed below to complete or discard. When a bill is
+// saved or completed the page shows what the server worked out.
+import { holdQuickBill, createQuickBill, listHeldQuickBills, listInvoices, previewQuickBill } from '@radcore/lib-sales/contract';
+import { useCallback, useState } from 'react';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { announce } from '../../../../components/ui/live-region.tsx';
+import { ApiError, callContract } from '../../../../lib/api-client.ts';
 import { useApiMutation } from '../../../../lib/api/query.ts';
+import { dec, formatMoney } from '@radcore/lib-common';
 import { t } from '../../../../lib/i18n/index.ts';
+import { HeldBills } from './held-bills.tsx';
+import { QuickBillDone, type Sold } from './quick-bill-done.tsx';
 import { QuickBillForm } from './quick-bill-form.tsx';
 import { NEW_QUICK_BILL } from './quick-bill-values.ts';
 
 const NEEDS = ['sales:write', 'deliveries:write', 'invoices:write'] as const;
-type Sold = z.output<typeof createQuickBill.output>;
+type Figures = { total: string; left: string; issues: readonly string[] };
 
 export default function QuickBillPage() {
   const { permissions } = useMe();
   const save = useApiMutation(createQuickBill, { invalidates: [listInvoices] });
+  const hold = useApiMutation(holdQuickBill, { invalidates: [listHeldQuickBills] });
   const [done, setDone] = useState<Sold | null>(null);
   // Starting another bill remounts the form, so nothing of the last one stays in it.
   const [round, setRound] = useState(0);
+  const [askToHold, setAskToHold] = useState(false);
+  const [figures, setFigures] = useState<Figures | null>(null);
+  const [moved, setMoved] = useState<string | null>(null);
+  const [heldNote, setHeldNote] = useState(false);
+  const onFigures = useCallback((f: Figures | null) => setFigures(f), []);
+  const next = () => { setDone(null); setAskToHold(false); setFigures(null); setMoved(null); setHeldNote(false); setRound((n) => n + 1); };
   const missing = NEEDS.filter((k) => !permissions.includes(k));
   if (missing.length > 0) {
     return <><h1>{t('sales.quick.title')}</h1><p role="alert" className="kit-form-alert">{t('sales.quick.err.forbidden', { keys: missing.join(', ') })}</p></>;
   }
+  const completed = (sold: Sold) => { setDone(sold); setTimeout(() => announce(t('sales.quick.saved', { number: sold.invoice.number })), 0); };
   return (
     <>
       <h1 id="quick-bill">{t('sales.quick.title')}</h1>
       <p>{t('sales.quick.intro')}</p>
       {done === null ? (
-        <QuickBillForm key={round} labelledBy="quick-bill" initial={NEW_QUICK_BILL}
-          onSubmit={async (v) => {
-            const sold = await save.submit(v);
-            setDone(sold);
-            setTimeout(() => announce(t('sales.quick.saved', { number: sold.invoice.number })), 0);
-          }} />
-      ) : (
-        <section aria-labelledby="quick-done">
-          <h2 id="quick-done">{t('sales.quick.done.title', { number: done.invoice.number })}</h2>
-          <dl className="admin-facts">
-            <dt>{t('sales.quick.done.total')}</dt><dd>{formatMoney(done.total)}</dd>
-            <dt>{t('sales.quick.done.paid')}</dt><dd>{formatMoney(done.paid)}</dd>
-            <dt>{t('sales.quick.done.left')}</dt><dd>{formatMoney(done.left)}</dd>
-            <dt>{t('sales.quick.done.receipts')}</dt><dd>{done.receipts.map((r) => r.number).join(', ')}</dd>
-          </dl>
-          <div className="kit-actions">
-            <Link className="kit-button" href={`/sales/invoices/${done.invoice.id}`}>{t('sales.quick.done.invoice')}</Link>
-            <Link className="kit-button" href={`/sales/deliveries/${done.delivery.id}`}>{t('sales.quick.done.delivery')}</Link>
-            <button type="button" className="kit-button kit-button-primary" onClick={() => { setDone(null); setRound((n) => n + 1); }}>{t('sales.quick.done.next')}</button>
-          </div>
-        </section>
-      )}
+        <>
+          {heldNote ? <p role="status" className="admin-notice">{t('sales.quick.held')}</p> : null}
+          {moved === null ? null : <p role="alert" className="kit-form-alert">{t('sales.quick.preview.moved', { total: formatMoney(moved) })}</p>}
+          <QuickBillForm key={round} labelledBy="quick-bill" initial={NEW_QUICK_BILL} askToHold={askToHold} figures={figures} onFigures={onFigures}
+            onSubmit={async (v) => {
+              setMoved(null);
+              if (v.mode === 'hold') {
+                await hold.submit({ ...v.bill, ...(v.buyer === undefined ? {} : { buyer: v.buyer }) });
+                next();
+                setHeldNote(true);
+                setTimeout(() => announce(t('sales.quick.held')), 0);
+                return;
+              }
+              // Once more before the save: if the total is not what the cashier was looking at, they look again first.
+              const fresh = await callContract(previewQuickBill, v.bill, { idempotencyKey: crypto.randomUUID() });
+              if (figures !== null && !dec(fresh.total).eq(figures.total)) {
+                setFigures({ total: fresh.total, left: fresh.left, issues: fresh.issues });
+                setMoved(fresh.total);
+                return;
+              }
+              try {
+                completed(await save.submit(v.bill));
+              } catch (e) {
+                if (e instanceof ApiError && e.code === 'needs_override') setAskToHold(true);
+                throw e;
+              }
+            }} />
+        </>
+      ) : <QuickBillDone sold={done} onNext={next} />}
+      <HeldBills onCompleted={completed} />
     </>
   );
 }

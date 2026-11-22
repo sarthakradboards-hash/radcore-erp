@@ -4,7 +4,7 @@
 // (a bank payment into an account, with its reference) or a card (by the machine's approval code alone: card digits are refused
 // here as the server refuses them). The checks are the contract's own; the tax, the total and what is left are the server's.
 import { indiaDate, looksLikeCardNumber, moneyString, quantityString } from '@radcore/lib-common';
-import { createQuickBill } from '@radcore/lib-sales/contract';
+import { createQuickBill, holdQuickBill } from '@radcore/lib-sales/contract';
 import { z } from 'zod';
 import { t } from '../../../../lib/i18n/index.ts';
 
@@ -46,20 +46,40 @@ const payment = z.object({
   return { method: 'bank' as const, amount: amount.data, accountId: p.accountId, ...(p.reference === '' ? {} : { reference: p.reference }) };
 });
 
+const buyerShape = holdQuickBill.input.shape.buyer.unwrap().shape;
+/** A walk-in who leaves a balance (a hold, under sales:counter_credit): a name and a mobile, and the address a bill above the B2C limit
+ * needs. Every box is text here; the pincode is checked with the contract's own rule, the rest when the hold is made. */
+const buyerBox = z.object({ name: z.string().trim(), phone: z.string().trim(), addressLine1: z.string().trim(), city: z.string().trim(), pincode: z.string().trim() });
+
 export const quickBillSchema = z.object({
+  /** "save": the bill whole; "hold": held for an approval and completed once it is given. */
+  mode: z.enum(['save', 'hold']),
   businessDate: shape.businessDate,
   locationId: z.string().min(1, t('sales.quick.err.place')).pipe(shape.locationId),
   customer: z.enum(['counter', 'named']),
   partyId: z.string(),
+  buyer: buyerBox,
   notes: z.string().trim().transform((s) => (s === '' ? null : s)).pipe(shape.notes),
   lines: z.array(line).min(1, t('sales.quick.line.none')).max(200, t('sales.lines.max')),
   payments: z.array(payment).max(10),
 }).transform((v, ctx) => {
   if (v.customer === 'named' && v.partyId === '') ctx.addIssue({ code: 'custom', message: t('sales.quick.err.party'), path: ['partyId'] });
-  return {
+  const bill = {
     ...(v.customer === 'named' ? { partyId: v.partyId } : {}), businessDate: v.businessDate, locationId: v.locationId, notes: v.notes, lines: v.lines,
     payments: v.payments,
   };
+  const b = v.buyer;
+  const named = v.mode === 'hold' && v.customer === 'counter' && (b.name !== '' || b.phone !== '');
+  if (named && b.name === '') ctx.addIssue({ code: 'custom', message: t('sales.quick.err.buyer.name'), path: ['buyer', 'name'] });
+  if (named && b.phone === '') ctx.addIssue({ code: 'custom', message: t('sales.quick.err.buyer.phone'), path: ['buyer', 'phone'] });
+  if (named && b.pincode !== '' && !buyerShape.pincode.safeParse(b.pincode).success) {
+    ctx.addIssue({ code: 'custom', message: t('sales.quick.err.buyer.pincode'), path: ['buyer', 'pincode'] });
+  }
+  const buyer = named ? {
+    name: b.name, phone: b.phone, ...(b.addressLine1 === '' ? {} : { addressLine1: b.addressLine1 }), ...(b.city === '' ? {} : { city: b.city }),
+    ...(b.pincode === '' ? {} : { pincode: b.pincode }),
+  } : undefined;
+  return { mode: v.mode, bill, ...(buyer === undefined ? {} : { buyer }) };
 });
 export type QuickBillInput = z.input<typeof quickBillSchema>;
 export type QuickBillValues = z.output<typeof quickBillSchema>;
@@ -69,7 +89,8 @@ export const blankPayment = (method: (typeof PAYMENT_METHODS)[number]) => ({ met
 
 /** What a new bill starts from: today, the Counter customer, one empty line, no payment. */
 export const NEW_QUICK_BILL: QuickBillInput = {
-  businessDate: indiaDate(new Date()), locationId: '', customer: 'counter', partyId: '', notes: '', lines: [blankLine], payments: [],
+  mode: 'save', businessDate: indiaDate(new Date()), locationId: '', customer: 'counter', partyId: '',
+  buyer: { name: '', phone: '', addressLine1: '', city: '', pincode: '' }, notes: '', lines: [blankLine], payments: [],
 };
 
 /** The rate box after the list rate changes (the item, the customer or the day): the rate this box filled in itself, or an empty box,
