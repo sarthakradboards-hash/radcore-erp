@@ -174,6 +174,8 @@ export async function addAdvance(ctx: Ctx, { id, ...advance }: In<typeof addBook
   await holdPeriod(ctx, advance.businessDate);
   const b = await bookingOf(ctx, id, 'bookings:write', true);
   if (b.status !== 'booked') throw new AppError('wrong_status', `This booking is ${b.status}: an advance is taken on a live booking`);
+  // Not before the booking it's for (the architect on RAD-117), by the shared rule (date_before_source).
+  checkDate(advance.businessDate, today(), { date: b.businessDate, what: 'booking' });
   return recordHeldReceipt(ctx, { partyId: b.partyId, ...advance }, heldFor(id));
 }
 

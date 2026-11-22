@@ -55,6 +55,9 @@ const note = header.extend({
   // Where its approval stands (ui-2 on #298, like the order's override): a request waiting, approved (approving posts
   // it, so a posted or cancelled note was), or neither (a draft not sent, or one whose request was declined or expired).
   approval: z.enum(['none', 'pending', 'approved']),
+  // A draft's amounts are worked out on read, as posting would (e2e-playwright on #299); while its invoice or lines
+  // refuse it, they're blank and this says why. Null once posted, when they're the stored ones.
+  amountsNote: z.string().nullable(),
 });
 
 // The refusals a draft shares: its invoice, its date, its lines and its place.
@@ -85,7 +88,7 @@ export const getCreditNote = defineContract({
 /** A new draft credit note against a posted invoice. */
 export const createCreditNote = defineContract({
   method: 'POST', path: '/sales/credit-notes', auth: 'session', perm: 'credit_notes:write', tx: write,
-  input: noteIn, output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS],
+  input: noteIn, output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS, 'not_money_account'],
 });
 /** A draft credit note, thrown away: it never had a number. */
 export const deleteCreditNote = defineContract({

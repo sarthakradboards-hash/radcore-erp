@@ -63,3 +63,18 @@ export function taxDeadline(invoiceDate: string, monthDay: string): string {
 
 /** Whether a note dated `noteDate` is past its invoice's deadline, so its tax goes to `late_cn_gst` (F25). */
 export const isLate = (noteDate: string, invoiceDate: string, monthDay: string): boolean => noteDate > taxDeadline(invoiceDate, monthDay);
+
+/**
+ * What a note applies to its invoice as it posts (F9): as much of its total as the invoice is unpaid; the rest is the
+ * customer's, for a counter refund (F26), which may not be more (`exceeds_credit`). Checked at draft, so the maker is
+ * told (the RAD-114 note), and again as it posts, under the invoice's lock.
+ */
+export function refundRoom(total: DecimalInput, unpaid: DecimalInput, refund: DecimalInput | null): { applied: Money } {
+  const applied = roundMoney(dec(unpaid).lt(dec(total)) ? unpaid : total);
+  const left = roundMoney(dec(total).minus(dec(applied)));
+  if (refund !== null && dec(refund).gt(dec(left))) {
+    throw new AppError('exceeds_credit', 'The refund is more than is left of the credit note once it settles its invoice',
+      [{ path: ['refund', 'amount'], code: 'exceeds_credit', message: `${left} is left to refund` }]);
+  }
+  return { applied };
+}

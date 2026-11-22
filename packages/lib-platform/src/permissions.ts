@@ -43,6 +43,8 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'parties:contact', module: 'Parties', label: 'See customers’ and suppliers’ contact details', allOnly: true, unmasks: true },
   { key: 'parties:manage', module: 'Parties', label: 'Set a party’s credit days and credit limit', secondFactor: true },
   { key: 'accounts:write', module: 'Journal', label: 'Change the chart of accounts: codes, and switching accounts off and on' },
+  // The accounts a payment may name, for a screen's picker (RAD-116, the architect): no balance, so no second factor.
+  { key: 'money_accounts:read', module: 'Payments', label: 'See the cash and bank accounts a payment may use', allOnly: true },
   { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
   // One posted receipt, printed by its id (the architect on RAD-120): no balance on it, so not receivables:read; all-only,

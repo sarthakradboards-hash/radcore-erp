@@ -12,7 +12,7 @@ import { putGstRate } from '@radcore/lib-gst';
 import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addBooking, addDelivery, addInvoice, addOrder, cancelBookingNow, cancelDeliveryNow, cancelOrderNow, changeOrder, closeOrderNow,
+  addAdvance, addBooking, addDelivery, addInvoice, addOrder, cancelBookingNow, cancelDeliveryNow, cancelOrderNow, changeOrder, closeOrderNow,
   confirmOrderNow, getBookingById, getDeliveryById, getOrderById, listBookingsPage, listTestRidesPage, postDeliveryNow, postInvoiceNow,
   recordRide, refundBookingNow, saveChecklist, scheduleRide,
 } from '@radcore/lib-sales';
@@ -217,6 +217,9 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect([made.number, made.receipt.status]).toEqual([expect.stringMatching(/^BK\//) as unknown, 'posted']);
     expect(await unit(s[0] ?? '')).toEqual({ promised_to: a?.orderLineId, ownership: 'ours' });
     expect((await run((ctx) => getBookingById(ctx, { id: made.id }))).advance).toEqual({ taken: '25000.00', left: '25000.00' });
+    // Another advance may not be dated before its booking (the architect on RAD-117).
+    expect(await failure(run(async (ctx) => addAdvance(ctx, { id: made.id, amount: m('1000'), accountId: await systemId('bank'),
+      businessDate: '2026-11-14' })))).toBe('date_before_source');
     expect((await stageOf(lead))?.stage).toBe('converted');
     // The same line again, the same unit for another line, a unit that isn't there, and no advance.
     expect(await failure(book(a?.orderLineId ?? '', s[1] ?? '', '1000'))).toBe('line_booked');

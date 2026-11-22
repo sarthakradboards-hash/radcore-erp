@@ -3,13 +3,14 @@
 // payment or refund. Cash past a day's limit (RC-114, CA-24) stays a draft and asks an owner, through defineApproval;
 // the approval posts it. A posted one is cancelled only by a mirror entry dated the cancellation's day (ADR-007 §6).
 import { accounts, accountsTx, parties, payments } from '@radcore/db/accounts';
-import { dec, indiaDate, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
+import { dec, indiaDate, looksLikeCardNumber, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
   from '@radcore/lib-platform';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelPaymentContract, recordPaymentContract } from '../contract.ts';
 import { paymentUsed } from './allocations.ts';
+import { takesMoney } from './money-accounts.ts';
 import { holdPeriod, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { holdParty } from './parties.ts';
 
@@ -50,9 +51,10 @@ async function moneyAccount(ctx: Ctx, id: string): Promise<{ cash: boolean }> {
   if (a === undefined) return refuse('unknown_account', 'There’s no such account');
   // The engine would refuse it too (RA009); said here by name, before anything is written (the auditor on #234).
   if (!a.active) refuse('account_inactive', 'This account is switched off: switch it on, or use another');
-  if (a.key === 'cash' || a.key === 'bank') return { cash: a.key === 'cash' };
   const [parent] = a.parentId === null ? [] : await tx.select({ key: accounts.systemKey }).from(accounts).where(eq(accounts.id, a.parentId)).limit(1);
-  return parent?.key === 'bank' ? { cash: false } : refuse('not_money_account', 'Take or pay money through Cash or a bank account');
+  // The one rule GET /money-accounts lists by (money-accounts.ts).
+  return takesMoney({ key: a.key, parentKey: parent?.key ?? null }) ? { cash: a.key === 'cash' }
+    : refuse('not_money_account', 'Take or pay money through Cash or a bank account');
 }
 
 /** Why an account can't take or pay money (not Cash, Bank or under Bank, or switched off), or null when it can: for a
@@ -242,6 +244,11 @@ async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor
   if (!dec(p.tds).lt(p.amount)) refuse('invalid_tds', 'TDS held back is less than the amount');
   if (p.kind === 'refund' && dec(p.tds).gt(0)) refuse('invalid_tds', 'A refund holds no TDS');
   if (p.businessDate > today()) refuse('date_in_future', 'The date is after today');
+  // Never card digits (Sarthak on RAD-115), wherever a reference comes from, POST /payments too (backend on #304).
+  if (p.reference !== undefined && looksLikeCardNumber(p.reference)) {
+    throw new AppError('looks_like_card_number', 'That looks like a card number: a reference is an approval code, UTR or cheque number, never card digits',
+      [{ path: ['reference'], code: 'looks_like_card_number', message: 'Type the approval code, UTR or cheque number' }]);
+  }
   // The period lock FOR SHARE first (ADR-006 §1), with year_not_open and period_locked by name.
   await holdPeriod(ctx, p.businessDate);
   if (p.kind === 'refund') {
