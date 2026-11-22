@@ -70,7 +70,8 @@ SQL is written only in the SQL zone, which is inside `packages/db` and reviewed 
 **Where `sql` may appear, by position (L1).** Inside the zone, a `sql` template may appear only:
 - as the argument of `check()`, `.default()`, `.generatedAlwaysAs()` or `pgView(...).as()`;
 - inside the body of the request-context helper;
-- inside the body of an exported function of `log-writers.ts` or `locks.ts`, which may export nothing else that holds `sql`.
+- inside the body of an exported function of `log-writers.ts` or `locks.ts`, which may export nothing else that
+  holds `sql`.
 
 It may not appear anywhere else, even in a zone file. So no zone file can export an SQL value of its own for a
 repository to reuse.
