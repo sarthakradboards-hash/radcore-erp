@@ -5,7 +5,7 @@
 // signed in with the second factor. A request opens its document, shows what the checks found, and approves exactly the
 // version shown or rejects it with a reason. The server refuses its own sender, an approver too new, and a document changed
 // since it was sent; the screen only words those refusals.
-import { formatMoment, formatMoney } from '@radcore/lib-common';
+import { dec, formatMoment, formatMoney } from '@radcore/lib-common';
 import { listAccounts } from '@radcore/lib-accounts/contract';
 import {
   creditNoteApproval, deliveryOverrideApproval, getCreditNote, getDelivery, getInvoice, getOrder, invoiceOverrideApproval,
@@ -52,9 +52,20 @@ function CreditFigures({ id }: { id: string }) {
   if (note === undefined) return null;
   const refund = note.refund;
   const account = refund === null ? undefined : accounts?.find((a) => a.id === refund.accountId)?.name;
+  // The server works a note's tax and total out when it is posted, so before then its total reads 0.00: the lines' own taxable
+  // values are shown (a goods-back note has none yet) and the screen says the rest comes at posting (e2e-playwright on #299).
+  const worked = note.status !== 'draft';
+  const lineValues = note.lines.map((l) => l.taxable);
+  const total = worked ? <><dt>{t('sales.approvals.credit.total')}</dt><dd>{formatMoney(note.total)}</dd></> : (
+    <>
+      {lineValues.every((v) => v !== null) ? <><dt>{t('sales.approvals.credit.taxable')}</dt>
+        <dd>{formatMoney(lineValues.reduce((sum, v) => sum.plus(v), dec('0')).toString())}</dd></> : null}
+      <dt>{t('sales.approvals.credit.total')}</dt><dd>{t('sales.approvals.credit.total.later')}</dd>
+    </>
+  );
   return (
     <dl className="admin-facts" aria-label={t('sales.approvals.credit.figures')}>
-      <dt>{t('sales.approvals.credit.total')}</dt><dd>{formatMoney(note.total)}</dd>
+      {total}
       <dt>{t('sales.approvals.credit.refund.label')}</dt>
       <dd>{refund === null ? t('sales.approvals.credit.refund.none')
         : account === undefined ? formatMoney(refund.amount) : t('sales.approvals.credit.refund', { amount: formatMoney(refund.amount), account })}</dd>
