@@ -261,6 +261,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     const mover = await su.connect();
     try {
       await mover.query('begin');
+      // ADR-006 §1's order, as holdPeriod takes it: the company row, then the period lock (RAD-76).
+      await mover.query('select id from radcore.company for share');
       await mover.query('select id from radcore.period_lock where id = 1 for update');
       const confirming = runInTransaction(createDatabase(own), WRITE, staff, randomUUID(), (ctx) => confirmOrderNow(ctx, { id }))
         .then((r) => r.number, (e: unknown) => String(e));

@@ -6,7 +6,7 @@
 // The run's company profile is committed (tools/test-database.ts); the case with none deletes it, as the superuser, in a
 // transaction that rolls back.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, openFinancialYear, setCompanyProfile, setCreditTerms } from '@radcore/lib-accounts';
+import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, listPendingApprovals, showApproval, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -35,8 +35,6 @@ const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 // The company, in Maharashtra (27).
-const COMPANY = { legalName: 'Radboards Pvt Ltd', gstin: '27AAPFU0939F1ZV', addressLine1: 'Plot 4, Bhosari MIDC', addressLine2: null,
-  city: 'Pune', pincode: '411019', reason: 'Amounts in a test' };
 class RolledBack extends Error {}
 
 describe.skipIf(!url || !superUrl)('quote and order amounts', () => {
@@ -72,7 +70,8 @@ describe.skipIf(!url || !superUrl)('quote and order amounts', () => {
   async function inBooks<R>(fn: (ctx: Ctx) => Promise<R>): Promise<R> {
     let out: R | undefined;
     await run(async (ctx) => {
-      await setCompanyProfile(ctx, COMPANY);
+      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
+      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
       out = await fn(ctx);
       throw new RolledBack();
     }).catch((e: unknown) => {

@@ -55,6 +55,8 @@ describe.skipIf(!url || !superUrl)('an approval that posts', { timeout: 30_000 }
       // Someone moving the period lock: FOR UPDATE on its row, held.
       await mover.query('begin');
       await mover.query("set local app.principal = 'system:test'");
+      // ADR-006 §1's order, as holdPeriod takes it: the company row, then the period lock (RAD-76).
+      await mover.query('select id from radcore.company for share');
       await mover.query('select id from radcore.period_lock where id = 1 for update');
       const pid = (await mover.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]?.pid;
       const owner: Principal = { kind: 'user', userId: ownerId, permissions: ['payments:approve'] };
