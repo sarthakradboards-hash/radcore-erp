@@ -41,6 +41,8 @@ export const setCompany = defineContract({
 export const PARTY_KINDS = ['customer', 'dealer', 'franchisee', 'supplier'] as const;
 /** The kinds we sell to: a party of any of them may be on a quote, order, delivery or invoice (lib-sales' sellingTo). */
 export const SELLS_TO_KINDS = ['customer', 'dealer', 'franchisee'] as const satisfies readonly (typeof PARTY_KINDS)[number][];
+/** The kinds we buy from: a party of any of them may be on a purchase order, receipt or bill (ADR-008 §5, RAD-136). */
+export const BUYS_FROM_KINDS = ['supplier'] as const satisfies readonly (typeof PARTY_KINDS)[number][];
 const partyKinds = () => z.array(z.enum(PARTY_KINDS)).min(1, 'Choose at least one kind').max(4)
   .refine((k) => new Set(k).size === k.length, 'Each kind once');
 
@@ -94,6 +96,8 @@ export const listParties = defineContract({
   input: listInput(z.object({ search: searchText().optional(), kind: z.enum(PARTY_KINDS).optional(), active: z.boolean().optional(),
     // The parties a sale may name (SELLS_TO_KINDS): for the sales screens' pickers, a dealer or franchisee too (RAD-131).
     sellsTo: z.literal(true).optional(),
+    // The parties a purchase may name (BUYS_FROM_KINDS): for the purchasing screens' supplier picker (RAD-136).
+    buysFrom: z.literal(true).optional(),
     // The parties with this phone, matched exactly once normalised: only for someone who sees phones (parties:contact,
     // RAD-103's rule), so the counter can pick the customer a quick bill's buyer already is (the architect on #318).
     phone: z.string().trim().min(1).max(20).optional() })),

@@ -132,6 +132,20 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     expect([await counter({ kind: 'customer' }), await counter({ sellsTo: true })]).toEqual([1, 0]);
   });
 
+  // RAD-136: the purchasing screens' supplier picker offers every party a purchase may name (BUYS_FROM_KINDS), a dealer
+  // who also supplies us too; a party we only sell to isn't one, nor the Counter customer.
+  it('lists the parties a purchase may name (buysFrom): suppliers, a dealer who supplies too, never a customer only', async () => {
+    const word = `Zb${letters(6)}`;
+    const made = [];
+    for (const kinds of [['customer'], ['dealer'], ['supplier'], ['supplier', 'dealer']]) {
+      made.push((await add({ name: `${word} ${kinds.join(' ')}`, kinds })).id);
+    }
+    const found = (await run((ctx) => listPartiesPage(ctx, { filter: { search: word, buysFrom: true }, limit: 10 }))).items.map((p) => p.id);
+    expect(found.toSorted()).toEqual([made[2], made[3]].toSorted());
+    const counter = (await run((ctx) => listPartiesPage(ctx, { filter: { search: 'Counter customer', buysFrom: true }, limit: 50 }))).items;
+    expect(counter.filter((p) => p.name === 'Counter customer')).toEqual([]);
+  });
+
   // The counter picks the customer a quick bill's buyer already is (the architect on #318): by phone, exactly, for
   // someone who sees phones (RAD-103's rule), else refused, naming parties:contact.
   it('finds every party with a phone for someone who sees phones, and refuses the filter to anyone else', async () => {
