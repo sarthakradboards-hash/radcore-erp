@@ -1,12 +1,11 @@
 // RAD-114 PR 2 (M3-10; ADR-007 §6; ADR-006 §4, §6, F9, F25, F26; RC-126, RC-128, RC-207; CA-10) on a real
 // PostgreSQL, as the runtime login: credit notes. Each test's deliveries are committed; its invoices and notes post
-// inside one transaction that is rolled back, with the company profile set there, since the one company row must stay
-// unset for company.test.ts. Every note is approved by someone else, whose decision runs in that same transaction as
+// inside one transaction that is rolled back, under the committed company profile
+// (tools/test-database.ts) and never rewrites it. Every note is approved by someone else, whose decision runs in that same transaction as
 // them (actingAs): the request is the maker's, the approval the approver's, as two requests would be.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addParty, allocatePayment, applyCredit, cashLimitSpec, journalEntryById, journalPage, openFinancialYear, paidOf, recordPayment, reverseCreditApplication,
-  setCompanyProfile, setCreditTerms,
+  addParty, allocatePayment, applyCredit, cashLimitSpec, journalEntryById, journalPage, openFinancialYear, paidOf, recordPayment, reverseCreditApplication, setCreditTerms,
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
@@ -37,8 +36,6 @@ const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const m = (s: string) => moneyString().parse(s);
-const COMPANY = { legalName: 'Radboards Pvt Ltd', gstin: '27AAPFU0939F1ZV', addressLine1: 'Plot 4, Bhosari MIDC', addressLine2: null,
-  city: 'Pune', pincode: '411019', reason: 'Credit notes in a test' };
 class RolledBack extends Error {}
 
 /** The same transaction, acting as `p`: its key checks, and the principal the audit trail records. Test-only. */
@@ -65,7 +62,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   async function inBooks<R>(fn: (ctx: Ctx) => Promise<R>): Promise<R> {
     let out: R | undefined;
     await run(async (ctx) => {
-      await setCompanyProfile(ctx, COMPANY);
+      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
+      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
       out = await fn(ctx);
       throw new RolledBack();
     }).catch((e: unknown) => {
@@ -73,7 +71,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
     });
     return out as R;
   }
-  // The approver: a person whose account is committed before any request they decide (approver_too_new).
+  // The approver: a person whose account is committed before any request they decide (approver_too_new), so each test
+  // makes its approvers first, before its setup's committed work (RAD-76).
   const approverWith = async (permissions: string[]): Promise<Principal> => {
     const { rows: made } = await pool.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
       insert into radcore.users (email, display_name, role) select $1, 'Approver', 'accounts' from p returning id`,
@@ -158,10 +157,10 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   // The note is approved by someone else, posts Dr Sales and Output GST, Cr Debtors, Dr Stock, Cr COGS, and settles
   // the invoice.
   it('takes F9’s scooter back at the value it went out at, approved by someone else, and settles the invoice', async () => {
+    const approver = await approverWith(['credit_notes:approve']);
     const at = await setup({ stock: '2', stockRate: '61250', rate: '80000', sold: '1' });
     await run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId: at.itemId,
       locationId: at.placeId, qty: q('2'), rate: unitPriceString().parse('62375'), batches: [{ batchNo: 'B2', qty: q('2') }] }] }));
-    const approver = await approverWith(['credit_notes:approve']);
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const { id } = await goodsBack(ctx, at, inv, '1');
@@ -182,8 +181,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
 
   // F9's variant and ADR-007 §6's cap: a value-only discount, with no movement; then no more than is left of the line.
   it('credits a discount with no movement, and never more than is left of the invoice line', async () => {
-    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
     const approver = await approverWith(['credit_notes:approve']);
+    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const { id } = await valueOff(ctx, at, inv, '1000');
@@ -209,8 +208,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   // F25, CA-10: an invoice of FY 2025-26, deadline 30 November 2026 by default. With the setting earlier, the same note
   // is late and its tax goes to GST Borne on Late Credit Notes; Output GST isn't touched.
   it('posts a note past section 34’s limit to GST Borne on Late Credit Notes (F25)', async () => {
-    const at = await setup({ on: '2026-03-10', stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
     const approver = await approverWith(['credit_notes:approve']);
+    const at = await setup({ on: '2026-03-10', stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const inTime = await valueOff(ctx, at, inv, '1000', DATE);
@@ -229,8 +228,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   // refund drafted with the note is paid in the same save: Dr Debtors, Cr Cash, the customer's balance 0.00. A refund
   // past what's left is refused.
   it('takes one pad of three back at its share, rounds F26’s total to 407.00, and refunds it in cash in the same save', async () => {
-    const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
     const approver = await approverWith(['credit_notes:approve']);
+    const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const cash = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'cash'`))[0]?.id ?? '';
@@ -271,9 +270,9 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   // F26 past the day's cash limit (the architect on RAD-114): the note posts, and its cash refund stays a draft with its
   // own cash-limit request, made in the approval's save by the note's approver, so someone else approves the cash.
   it('posts the note and leaves a cash refund past the day’s limit waiting for someone else’s cash-limit approval', async () => {
-    const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
     const approver = await approverWith(['credit_notes:approve', 'payments:approve']);
     const owner = await approverWith(['payments:approve']);
+    const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const cash = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'cash'`))[0]?.id ?? '';
@@ -300,8 +299,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   // note's cancellation sends it out again at the value it came back at, and is refused while the note is applied.
   it('clears a returned unit’s sale, and cancels the note only once its application is reversed, the goods out again', async () => {
     const serial = `SN-${tag()}`;
-    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1', serials: [serial] });
     const approver = await approverWith(['credit_notes:approve']);
+    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1', serials: [serial] });
     const unit = async (ctx: Ctx) => (await rows<{ ownership: string; sale: string | null }>(ctx, sql`select ownership, sale_line_id as sale
       from radcore.units where item_id = ${at.itemId}`))[0];
     /** The invoice, and the unit back on an approved goods-back note: the note's id. */
@@ -345,8 +344,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   // ui-2's "reverse the application" (RAD-114): a note lists where it's applied, each with its invoice's number and
   // whether it's reversed. Applied as it posts, reversed, then applied again: two applications, the first reversed.
   it('lists a note’s applications to its invoice, oldest first, each reversed or not', async () => {
-    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
     const approver = await approverWith(['credit_notes:approve']);
+    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const { id } = await valueOff(ctx, at, inv, '1000');
@@ -371,8 +370,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   // form can offer them; a note says where its approval stands, and its lines name their items.
   it('shows an invoice line’s batches and units still out, a note’s approval state and its lines’ items', async () => {
     const serial = `SN-${tag()}`;
-    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1', serials: [serial] });
     const approver = await approverWith(['credit_notes:approve']);
+    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1', serials: [serial] });
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const goods = async () => (await getInvoiceById(ctx, { id: inv.id })).lines[0]?.goods;

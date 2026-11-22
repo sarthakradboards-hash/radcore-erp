@@ -1,10 +1,10 @@
 // RAD-118 (M3-14; ADR-001 §6a, §7a; RC-047) on a real PostgreSQL, as the runtime login: a posted invoice shared by a
 // link, under invoices:share. Each test's delivery is committed; its invoice posts inside one transaction that is
-// rolled back, with the company profile set there, since the one company row must stay unset for company.test.ts. The
+// rolled back, under the committed company profile (tools/test-database.ts) and never rewrites it. The
 // link's holder opens it in that same transaction (asLink), as the generic handler would after linkPrincipal; the
 // handler's own part (token stripped, one not_found, noindex, the use and access_log after commit) is link-routes.test.ts's.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, openFinancialYear, setCompanyProfile, setCreditTerms } from '@radcore/lib-accounts';
+import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accounts';
 import { moneyString, percentString, piiPlan, quantityString, sightOf, unitPriceString, type UnitCondition } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import {
@@ -40,8 +40,6 @@ const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write',
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
-const COMPANY = { legalName: 'Radboards Pvt Ltd', gstin: '27AAPFU0939F1ZV', addressLine1: 'Plot 4, Bhosari MIDC', addressLine2: null,
-  city: 'Pune', pincode: '411019', reason: 'Invoice links in a test' };
 class RolledBack extends Error {}
 
 /** The same transaction, acting as `p`: its key checks, and the principal the audit trail records. Test-only. */
@@ -68,7 +66,8 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
   async function inBooks<R>(fn: (ctx: Ctx) => Promise<R>): Promise<R> {
     let out: R | undefined;
     await run(async (ctx) => {
-      await setCompanyProfile(ctx, COMPANY);
+      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
+      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
       out = await fn(ctx);
       throw new RolledBack();
     }).catch((e: unknown) => {

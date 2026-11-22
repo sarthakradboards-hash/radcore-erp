@@ -224,6 +224,8 @@ describe.skipIf(!url || !superUrl)('invoice and delivery lines', () => {
     await run((ctx) => confirmOrderNow(ctx, { id: orderId }));
     let refused = '';
     await runInTransaction(superDb, WRITE, staff, randomUUID(), async (ctx) => {
+      // ADR-006 §1's order, as holdPeriod takes it: the company row, then the period lock (RAD-76: the other way round deadlocked).
+      await rawOf(ctx.tx).execute(sql`select id from radcore.company for share`);
       await rawOf(ctx.tx).execute(sql`update radcore.period_lock set locked_through = ${DATE}`);
       refused = await failure(changeOrder(ctx, { id: orderId, partyId: at.partyId, businessDate: DATE, notes: null, lines: lines(at, '3') }));
       throw new RolledBack();

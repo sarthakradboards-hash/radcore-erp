@@ -4,8 +4,7 @@
 // profile set there (company.test.ts needs the row unset), and the approver decides in that same transaction (actingAs).
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addParty, openFinancialYear, partyReceivable, postEntry, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId, systemPartyId,
-  toCollectPage,
+  addParty, openFinancialYear, partyReceivable, postEntry, recordPayment, setCreditTerms, systemAccountId, systemPartyId, toCollectPage,
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
@@ -32,8 +31,6 @@ const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const m = (s: string) => moneyString().parse(s);
 const mobile = () => `9${String(randomBytes(4).readUInt32BE() % 1_000_000_000).padStart(9, '0')}`;
-const COMPANY = { legalName: 'Radboards Pvt Ltd', gstin: '27AAPFU0939F1ZV', addressLine1: 'Plot 4, Bhosari MIDC', addressLine2: null,
-  city: 'Pune', pincode: '411019', reason: 'Held quick bills in a test' };
 class RolledBack extends Error {}
 
 /** The same transaction, acting as `p`: its key checks, and the principal the audit trail records. Test-only. */
@@ -98,7 +95,8 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     const [clerk, boss] = [await counter(), at.boss];
     let out: R | undefined;
     await run(async (raw) => {
-      await setCompanyProfile(raw, COMPANY);
+      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
+      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
       const ctx = { ...raw, settings: new Settings([{ key: 'sales.default_price_list', value: at.listId }]) };
       const approve = async (h: { approvalId: string; versionHash: string }) => {
         await decideApproval(await actingAs(ctx, boss), orderOverride, h.approvalId, { decision: 'approve', versionHash: h.versionHash });
