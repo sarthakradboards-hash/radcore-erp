@@ -4,7 +4,7 @@
 // makes a draft order, or closed as declined or expired. sales:write does all of it; the server says whether the status
 // still allows it.
 import { dateString, formatDate, formatMoney, indiaDate, stateName } from '@radcore/lib-common';
-import { acceptQuote, closeQuote, deleteQuote, getQuote, listQuotes, sendQuote } from '@radcore/lib-sales/contract';
+import { acceptQuote, closeQuote, deleteQuote, getQuote, listQuotes, printQuote, sendQuote } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -20,6 +20,7 @@ import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
 import { AmountsSummary, LinesTable, SALES_MESSAGES } from '../../shared.tsx';
 import { quoteSteps } from '../../status.ts';
+import { PrintButtons } from '../../print-buttons.tsx';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
 const acceptSchema = z.object({ businessDate: dateString() });
@@ -76,6 +77,7 @@ export default function QuotePage() {
       <AmountsSummary number={quote.number} amounts={quote.amounts} />
       {mayWrite ? (
         <div className="kit-actions">
+        <PrintButtons contract={printQuote} id={id} />
           {quote.status === 'draft' ? (
             <>
               <Link className="kit-button" href={`/sales/quotes/${id}/edit`}>{t('sales.edit')}</Link>

@@ -1,9 +1,9 @@
 // RC-186, web side: the form's submit goes through createClient, which checks the input with the contract's own
 // schema, so a bad GSTIN is refused with the same issue as the API (apps/api/src/gstin-proof.test.ts) and never sent.
-import { defineContract, gstinString, listInput, listOf } from '@radcore/lib-common';
+import { defineContract, gstinString, listInput, listOf, pdfBytes } from '@radcore/lib-common';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { z } from 'zod';
-import { ApiError, callContract, createClient, type Client, type ReadOptions, type WriteOptions } from './api-client';
+import { ApiError, callContract, callPdf, createClient, type Client, type ReadOptions, type WriteOptions } from './api-client';
 
 const Party = z.object({ id: z.string(), name: z.string() });
 const contracts = {
@@ -136,5 +136,29 @@ describe('a key-exempt write', () => {
     const keyless = api.createParty as (input: unknown) => Promise<unknown>; // as plain JavaScript would call it
     await expect(keyless({ name: 'A', gstin: '27AAPFU0939F1ZV' })).rejects.toMatchObject({ code: 'idempotency_key_required' });
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('callPdf (RAD-120)', () => {
+  const print = defineContract({
+    method: 'GET', path: '/sales/invoices/:id/pdf', auth: 'session', perm: 'sales:read', tx: { readOnly: true, isolation: 'read committed' },
+    print: { table: 'invoices' }, input: z.object({ id: z.uuid(), paper: z.enum(['a4', 'thermal80']) }), output: pdfBytes(), errors: ['too_large'],
+  });
+  const id = crypto.randomUUID();
+
+  it('asks for the PDF with the paper in the input and answers it as a Blob', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response('%PDF-1.4', { status: 200, headers: { 'content-type': 'application/pdf' } }));
+    const pdf = await callPdf(print, { id, paper: 'thermal80' }, { fetch });
+    expect(pdf).toBeInstanceOf(Blob);
+    expect(await pdf.text()).toBe('%PDF-1.4');
+    const url = new URL(String(fetch.mock.calls[0]?.[0]), 'http://x');
+    expect(url.pathname).toBe(`/api/sales/invoices/${id}/pdf`);
+    expect(JSON.parse(url.searchParams.get('input') ?? '{}')).toEqual({ paper: 'thermal80' });
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', headers: { accept: 'application/pdf' } });
+  });
+
+  it('turns a refusal, which is still JSON, into an ApiError', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => reply(409, { code: 'too_large', message: 'Too long', issues: [], requestId: 'r' }));
+    await expect(callPdf(print, { id, paper: 'a4' }, { fetch })).rejects.toMatchObject({ status: 409, code: 'too_large' });
   });
 });

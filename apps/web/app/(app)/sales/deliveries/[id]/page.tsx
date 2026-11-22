@@ -6,7 +6,7 @@
 // deliveries:cancel, while nothing on it is invoiced or taken back. Its form waits for the stock-by-batch read.
 import { dateString, formatDate, indiaDate } from '@radcore/lib-common';
 import {
-  cancelDelivery, countDeliveryReturns, deleteDelivery, getDelivery, listDeliveries, listDeliveryReturns, postDelivery, requestDeliveryOverride,
+  cancelDelivery, countDeliveryReturns, deleteDelivery, getDelivery, listDeliveries, listDeliveryReturns, postDelivery, printChallan, requestDeliveryOverride,
 } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -25,6 +25,7 @@ import { OverrideConfirm } from '../../override-confirm.tsx';
 import { SALES_MESSAGES } from '../../shared.tsx';
 import { deliverySteps } from '../../status.ts';
 import { DELIVERY_CANCEL_MESSAGES, DELIVERY_MESSAGES, DocumentLines, PlaceName } from '../shared.tsx';
+import { PrintButtons } from '../../print-buttons.tsx';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
 const cancelSchema = z.object({ businessDate: dateString(), reason: cancelDelivery.input.shape.reason });
@@ -86,6 +87,7 @@ export default function DeliveryPage() {
       </dl>
       <DocumentLines caption={delivery.number === null ? t('sales.lines') : t('sales.lines.of', { number: delivery.number })} lines={delivery.lines} />
       <div className="kit-actions">
+        {delivery.status !== 'draft' ? <PrintButtons contract={printChallan} id={id} /> : null}
         {mayWrite && delivery.status === 'draft' ? (
           <>
             <Link className="kit-button" href={`/sales/deliveries/${id}/edit`}>{t('sales.delivery.edit')}</Link>
