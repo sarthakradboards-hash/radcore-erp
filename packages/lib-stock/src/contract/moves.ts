@@ -41,8 +41,6 @@ const CANCEL_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', '
 const transferHeader = z.object({
   id: idString(), number: z.string().nullable(), fromId: idString(), fromName: z.string(), toId: idString(), toName: z.string(),
   businessDate: dateString(), status, reason: z.string(),
-  // A re-inspection out of `rejected` (§9): the condition its serialised units were found in; null for any other transfer.
-  requalified: z.enum(['new', 'used']).nullable(),
 });
 const transfer = transferHeader.extend({
   // Where its approval stands: only a transfer into a franchisee's place, while the setting is on, ever has one.
@@ -64,16 +62,18 @@ export const getStockTransfer = defineContract({
 });
 /**
  * Moves goods from one place to another, posted at once with its number (§9, F13): the batches and serials named go
- * out and come in under the same batches. Into a franchisee's place while `stock.franchisee_transfer_approval` is on,
- * it's kept as a draft instead (`number` null) for its maker to send for approval. Refused to the same place
- * (`transfer_same_location`), out of `rejected` to a sellable place unless it's a re-inspection under inward:qc
- * (`needs_qc`), and to or from a job work place (`use_job_work`, §11).
+ * out and come in under the same batches. Into a franchisee's place while `stock.franchisee_transfer_approval` is on
+ * (Sarthak, default off), it's kept as a draft instead and sent for someone else's approval in the same save: `number`
+ * null, and `approval` the request to decide. Refused to the same place (`transfer_same_location`), out of `rejected`
+ * to a sellable place (`needs_qc`: M4-02's re-inspection under inward:qc is the only way back), and to or from a job
+ * work place (`use_job_work`, §11).
  */
 export const createStockTransfer = defineContract({
   method: 'POST', path: '/stock/transfers', auth: 'session', perm: 'stock:move', tx: write,
-  input: z.object({ fromId: idString(), toId: idString(), businessDate: dateString(), reason: reason(),
-    requalified: z.enum(['new', 'used']).nullable(), lines: lines(moveLineIn) }),
-  output: z.object({ id: idString(), number: z.string().nullable() }),
+  input: z.object({ fromId: idString(), toId: idString(), businessDate: dateString(), reason: reason(), lines: lines(moveLineIn) }),
+  // Posted: its number, and no approval. Waiting: no number, and the approval request it waits on.
+  output: z.object({ id: idString(), number: z.string().nullable(),
+    approval: z.object({ id: idString(), versionHash: z.string() }).nullable() }),
   errors: ['transfer_same_location', 'needs_qc', 'use_job_work', ...LINE_ERRORS, ...POSTING_ERRORS],
 });
 /** A draft transfer waiting for approval, thrown away; its pending request is closed with it (withdrawPending). */
@@ -81,7 +81,7 @@ export const deleteStockTransfer = defineContract({
   method: 'DELETE', path: '/stock/transfers/:id', auth: 'session', perm: 'stock:move', tx: write,
   input: z.object({ id: idString() }), output: z.object({}), errors: ['wrong_status'],
 });
-/** Sends a draft transfer into a franchisee's place for approval by someone else (Sarthak's setting). */
+/** Sends a waiting transfer for approval again, after a refusal or a change (its first request is made as it's saved). */
 export const requestStockTransferApproval = defineContract({
   method: 'POST', path: '/stock/transfers/:id/approval', auth: 'session', perm: 'stock:move', tx: write,
   input: z.object({ id: idString() }), output: z.object({ id: idString(), versionHash: z.string() }), errors: ['wrong_status'],
@@ -115,7 +115,9 @@ const countIn = z.object({
   lines: lines(z.object({ itemId: idString(), batchId: idString().nullable(), qty: quantityString(), serials: serialsIn })),
 });
 // A count's lines: a batch of another item, a serial counted twice or booked at another place (§10), a moment ahead.
-const COUNT_ERRORS = [...LINE_ERRORS, 'unknown_batch', 'serial_twice', 'not_serialised', 'serial_elsewhere', 'counted_in_future'] as const;
+// A serial the books don't know comes in through its receipt or an approved adjustment, never a count (`serial_unknown`).
+const COUNT_ERRORS = [...LINE_ERRORS, 'unknown_batch', 'serial_twice', 'not_serialised', 'serial_elsewhere', 'serial_unknown',
+  'counted_in_future'] as const;
 
 /** Stock counts, newest first, a page at a time. */
 export const listStockCounts = defineContract({
@@ -147,11 +149,11 @@ export const deleteStockCount = defineContract({
 export const requestStockCountApproval = defineContract({
   method: 'POST', path: '/stock/counts/:id/approval', auth: 'session', perm: 'stock:count', tx: write,
   input: z.object({ id: idString() }), output: z.object({ id: idString(), versionHash: z.string() }),
-  errors: ['wrong_status', 'serial_elsewhere', 'counted_in_future'],
+  errors: ['wrong_status', 'serial_elsewhere', 'serial_unknown', 'counted_in_future'],
 });
 /** The count approval routes (RAD-38): approving posts the differences (F14, F21). */
 export const stockCountApproval = approvalContracts('stock-count', 'stock:approve',
-  ['wrong_status', 'serial_elsewhere', ...POSTING_ERRORS]);
+  ['wrong_status', 'serial_elsewhere', 'serial_unknown', ...POSTING_ERRORS]);
 /** Cancels a posted count: its mirror, dated the cancellation's day. */
 export const cancelStockCount = defineContract({
   method: 'POST', path: '/stock/counts/:id/cancel', auth: 'session', perm: 'stock:approve', tx: write,
@@ -166,16 +168,22 @@ const adjustmentHeader = z.object({
 });
 const adjustment = adjustmentHeader.extend({
   reason: z.string(), approval,
-  lines: z.array(z.object({ ...lineOut, direction, qty: quantityString(), batches: batchesOut, serials: z.array(z.string()),
+  lines: z.array(z.object({ ...lineOut, direction, qty: quantityString(), batches: batchesOut,
+    serials: z.array(z.object({ serialNo: z.string(), chassisNo: z.string().nullable() })),
     // For a serialised unit coming in: the condition it's found in.
     condition: z.enum(UNIT_CONDITIONS).nullable(), value: cost(money().nullable()) })),
 });
-/** Goods damaged, lost (`out`) or found (`in`), with a reason. A found serialised unit names its condition. */
+/** Goods damaged, lost (`out`) or found (`in`), with a reason. A found serialised unit names its serial, its condition
+ * and, where the item keeps one (F22), its chassis number (§10); one going out names its serial alone. */
 const adjustmentIn = z.object({
   locationId: idString(), businessDate: dateString(), reason: reason(),
-  lines: lines(moveLineIn.extend({ direction, condition: z.enum(UNIT_CONDITIONS).nullable() })),
+  lines: lines(moveLineIn.extend({ direction, condition: z.enum(UNIT_CONDITIONS).nullable(),
+    serials: z.array(z.object({ serialNo: z.string().trim().min(1).max(60), chassisNo: z.string().trim().min(1).max(40).nullable() }))
+      .max(1000) })),
 });
-const ADJUSTMENT_ERRORS = [...LINE_ERRORS, 'unknown_batch', 'serial_twice', 'not_serialised', 'serial_elsewhere'] as const;
+// A found unit's chassis number: needed where the item keeps one, refused where it doesn't (F22).
+const ADJUSTMENT_ERRORS = [...LINE_ERRORS, 'unknown_batch', 'serial_twice', 'not_serialised', 'serial_elsewhere', 'chassis_required',
+  'chassis_not_allowed'] as const;
 
 /** Stock adjustments, newest first, a page at a time. */
 export const listStockAdjustments = defineContract({

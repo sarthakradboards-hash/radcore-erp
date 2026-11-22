@@ -26,22 +26,28 @@ describe('the stock moves contracts', () => {
   it('declare a transfer’s refusals on the route that makes it (RAD-134), and the undo’s on its cancel', () => {
     expect(moves.createStockTransfer.errors).toEqual(expect.arrayContaining(['transfer_same_location', 'needs_qc', 'use_job_work']));
     expect(moves.cancelStockTransfer.errors).toContain('goods_moved_on');
-    expect(moves.createStockCount.errors).toEqual(expect.arrayContaining(['serial_elsewhere', 'counted_in_future']));
+    expect(moves.createStockCount.errors).toEqual(expect.arrayContaining(['serial_elsewhere', 'serial_unknown', 'counted_in_future']));
+    expect(moves.requestStockCountApproval.errors).toContain('serial_unknown');
+    expect(moves.createStockAdjustment.errors).toEqual(expect.arrayContaining(['chassis_required', 'chassis_not_allowed']));
   });
 
   it('take a transfer only with a reason and a line, and a count at a moment', () => {
     const id = '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01';
     const line = { itemId: id, qty: '1', batches: [{ batchId: null, qty: '1' }], serials: [] };
-    const transfer = { fromId: id, toId: id, businessDate: '2026-11-15', reason: 'To the floor', requalified: null, lines: [line] };
+    const transfer = { fromId: id, toId: id, businessDate: '2026-11-15', reason: 'To the floor', lines: [line] };
     expect(moves.createStockTransfer.input.safeParse(transfer).success).toBe(true);
     expect(moves.createStockTransfer.input.safeParse({ ...transfer, reason: ' ' }).success).toBe(false);
     expect(moves.createStockTransfer.input.safeParse({ ...transfer, lines: [] }).success).toBe(false);
     // Posted at once with its number, or a draft waiting for approval into a franchisee's place (Sarthak's setting).
-    expect([moves.createStockTransfer.output.safeParse({ id, number: 'ST/26-27/00001' }).success,
-      moves.createStockTransfer.output.safeParse({ id, number: null }).success]).toEqual([true, true]);
+    expect([moves.createStockTransfer.output.safeParse({ id, number: 'ST/26-27/00001', approval: null }).success,
+      moves.createStockTransfer.output.safeParse({ id, number: null, approval: { id, versionHash: 'a'.repeat(64) } }).success])
+      .toEqual([true, true]);
     const count = { locationId: id, countedAt: '2026-11-15T08:30:00Z', businessDate: '2026-11-15', reason: 'Month end',
       lines: [{ itemId: id, batchId: null, qty: '2', serials: [] }] };
     expect(moves.createStockCount.input.safeParse(count).success).toBe(true);
     expect(moves.createStockCount.input.safeParse({ ...count, countedAt: '2026-11-15' }).success).toBe(false);
+    const found = { locationId: id, businessDate: '2026-11-15', reason: 'Found in the bay', lines: [{ itemId: id, qty: '1', direction: 'in',
+      condition: 'new', batches: [{ batchId: null, qty: '1' }], serials: [{ serialNo: 'SN-1', chassisNo: 'MD2A11CZ5PCA12345' }] }] };
+    expect(moves.createStockAdjustment.input.safeParse(found).success).toBe(true);
   });
 });
