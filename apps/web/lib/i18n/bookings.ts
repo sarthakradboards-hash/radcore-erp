@@ -26,7 +26,7 @@ export const bookings = {
   'sales.booking.advance.amount': 'Amount',
   'sales.booking.advance.account': 'Paid into',
   'sales.booking.advance.account.none': 'Choose an account',
-  'sales.booking.advance.account.hidden': 'The accounts can’t be offered here: it needs permission to read the chart of accounts.',
+  'sales.booking.advance.account.hidden': 'Taking an advance needs permission to see the accounts it is paid into (the chart of accounts), which you don’t have. Ask someone who does, or an owner.',
   'sales.booking.advance.date': 'Date received',
   'sales.booking.advance.taken': 'Advance taken, receipt {number}',
   'sales.booking.advance.waiting': 'Advance taken: the receipt is waiting for an owner’s approval',
@@ -67,6 +67,7 @@ export const bookings = {
   'sales.err.advance_required': 'A booking takes an advance of more than zero.',
   'sales.err.exceeds_receipt': 'The amount is more than what is held for this booking.',
   'sales.err.series_full': 'The receipt numbers have run out; ask an admin.',
+  'sales.booking.err.place_not_sellable': 'That unit is at a place that doesn’t sell, so it can’t be booked.',
   'sales.booking.err.account_inactive': 'The account has been switched off. Choose another.',
   'sales.booking.err.date_before_source': 'The date can’t be before the booking.',
 } as const;

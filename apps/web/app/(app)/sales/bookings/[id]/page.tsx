@@ -75,12 +75,14 @@ export default function BookingPage() {
       {booking.unitCondition === 'damaged' ? <p>{t('sales.booking.damaged')}</p> : null}
       <div className="kit-actions">
         {mayWrite && booking.status === 'booked' ? (
-          <button type="button" className="kit-button" onClick={() => setDialog(true)}>{t('sales.booking.advance.add')}</button>
+          accounts === 'hidden' ? <p>{t('sales.booking.advance.account.hidden')}</p> : (
+            <button type="button" className="kit-button" onClick={() => setDialog(true)}>{t('sales.booking.advance.add')}</button>
+          )
         ) : null}
       </div>
 
       <Dialog open={dialog} onOpenChange={setDialog} title={t('sales.booking.advance.title')} description={t('sales.booking.advance.body')}>
-        {accounts === 'hidden' ? <p>{t('sales.booking.advance.account.hidden')}</p> : (
+        {accounts === 'hidden' ? null : (
           <Form schema={advanceSchema} saved={false} messages={BOOKING_MESSAGES} defaultValues={{ amount: '', accountId: '', businessDate: indiaDate(new Date()) }}
             onSubmit={async (v) => {
               const receipt = await add.submit({ id, ...v });

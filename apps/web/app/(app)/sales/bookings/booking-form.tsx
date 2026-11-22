@@ -23,7 +23,8 @@ function Units({ itemId, orderLineId }: { itemId: string; orderLineId: string })
   const places = usePlaces('');
   const [place, setPlace] = useState('');
   const stock = useApiQuery(getOnHand, { itemId, locationId: place, forDocument: `sales_order_lines:${orderLineId}`, limit: 200 }, { enabled: place !== '' });
-  const units = stock.data?.units?.items ?? [];
+  // A demo unit goes on test rides, not on a booking (new or used units are bookable): the server decides, this just doesn't offer it.
+  const units = (stock.data?.units?.items ?? []).filter((u) => u.condition !== 'demo');
   return (
     <>
       <TextField name="serialNo" label={t('sales.booking.form.serial')} hint={t('sales.booking.form.serial.hint')} autoComplete="off" />
@@ -113,12 +114,12 @@ export function BookingForm({ labelledBy, initial, submit, onSubmit }: {
         <legend>{t('sales.booking.form.advance')}</legend>
         <p className="kit-field-hint">{t('sales.booking.form.advance.hint')}</p>
         <TextField name="amount" label={t('sales.booking.advance.amount')} inputMode="decimal" autoComplete="off" />
-        {accounts === 'hidden' ? <p>{t('sales.booking.advance.account.hidden')}</p> : (
+        {accounts === 'hidden' ? <p role="alert" className="kit-form-alert">{t('sales.booking.advance.account.hidden')}</p> : (
           <SelectField name="accountId" label={t('sales.booking.advance.account')} placeholder={t('sales.booking.advance.account.none')} options={accounts ?? []} />
         )}
         <TextField name="businessDate" label={t('sales.booking.advance.date')} type="date" />
       </fieldset>
-      <SubmitButton>{submit}</SubmitButton>
+      {accounts === 'hidden' ? null : <SubmitButton>{submit}</SubmitButton>}
     </Form>
   );
 }

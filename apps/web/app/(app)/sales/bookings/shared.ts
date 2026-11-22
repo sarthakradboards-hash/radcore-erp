@@ -14,6 +14,7 @@ export const BOOKING_MESSAGES: Partial<Record<string, string>> = {
   ...Object.fromEntries(['booking_one_unit', 'unit_unavailable', 'line_booked', 'advance_required', 'exceeds_receipt', 'series_full']
     .map((c) => [c, t(`sales.err.${c as 'line_booked'}`)])),
   unit_held: t('sales.booking.err.unit_held'),
+  place_not_sellable: t('sales.booking.err.place_not_sellable'),
   account_inactive: t('sales.booking.err.account_inactive'),
   date_before_source: t('sales.booking.err.date_before_source'),
 };
