@@ -18,6 +18,7 @@
     "packages/lib-sales/src/services/checks-rules.ts",
     "packages/lib-sales/src/services/document-rules.ts",
     "packages/lib-sales/src/services/invoice-rules.ts",
+    "packages/lib-gst/src/rules/tax.ts",
     "packages/lib-sales/src/services/credit-note-rules.ts",
     "packages/lib-crm/src/services/reply-rules.ts"
   ],
