@@ -26,6 +26,7 @@ export const quickBill = {
   'sales.quick.line.item.none': 'Choose an item',
   'sales.quick.line.qty': 'Quantity',
   'sales.quick.line.rate': 'Rate before GST',
+  'sales.quick.line.rate.inclusive': 'This item’s list rate includes GST, so type the rate before GST.',
   'sales.quick.line.discount': 'Discount %',
   'sales.quick.line.add': 'Add a line',
   'sales.quick.line.remove': 'Remove line {n}',

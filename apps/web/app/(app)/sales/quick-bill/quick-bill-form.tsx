@@ -6,6 +6,7 @@
 // are the server's to work out and refuse; this form only fills the contract in and words what comes back.
 import { dec, formatMoney, indiaDate, moneyString, sum } from '@radcore/lib-common';
 import { getPartyStatement, listMoneyAccounts, listParties } from '@radcore/lib-accounts/contract';
+import { getSalePrice } from '@radcore/lib-sales/contract';
 import { getItem, listItems } from '@radcore/lib-stock/contract';
 import { useEffect, useRef } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
@@ -58,8 +59,18 @@ function PartyBox() {
 
 /** One line's item box. It names the item the line's own value holds, so it stays right when a line before it is removed. */
 function ItemBox({ index }: { index: number }) {
-  const { control, setValue } = useFormContext<QuickBillInput>();
+  const { control, setValue, getValues } = useFormContext<QuickBillInput>();
   const itemId = useWatch({ control, name: `lines.${index}.itemId` });
+  const customer = useWatch({ control, name: 'customer' });
+  const partyId = useWatch({ control, name: 'partyId' });
+  const on = useWatch({ control, name: 'businessDate' });
+  // The rate comes from the item's price list for this customer and day (prices:read); a person without it types the rate. A list rate
+  // that includes GST isn't put in the box, which takes the rate before GST. A rate already typed is never replaced.
+  const price = useApiQuery(getSalePrice, { itemId, ...(customer === 'named' && partyId !== '' ? { partyId } : {}), on },
+    { enabled: itemId !== '' && /^\d{4}-\d{2}-\d{2}$/.test(on) }).data;
+  useEffect(() => {
+    if (price?.rate != null && price.taxInclusive === false && getValues(`lines.${index}.rate`) === '') setValue(`lines.${index}.rate`, price.rate);
+  }, [price, index, getValues, setValue]);
   // What was picked for one item is not for another: a new item leaves no batches or serials of the old one (auditor-3 on #320). Not on
   // the first render, and kept when an earlier line is removed (this box stays with its own line, whose item is the same).
   const itemSeen = useRef(itemId);
@@ -72,8 +83,11 @@ function ItemBox({ index }: { index: number }) {
   }, [itemId, index, setValue]);
   const item = useApiQuery(getItem, { id: itemId }, { enabled: itemId !== '' }).data ?? null;
   return (
-    <PickedField name={`lines.${index}.itemId`} label={t('sales.quick.line.item')} hint={t('sales.quick.line.item.hint')} initial={item}
-      useSearch={useItems} optionLabel={(i) => i.name} optionDetail={(i) => i.sku} />
+    <>
+      <PickedField name={`lines.${index}.itemId`} label={t('sales.quick.line.item')} hint={t('sales.quick.line.item.hint')} initial={item}
+        useSearch={useItems} optionLabel={(i) => i.name} optionDetail={(i) => i.sku} />
+      {price?.taxInclusive === true ? <p>{t('sales.quick.line.rate.inclusive')}</p> : null}
+    </>
   );
 }
 
