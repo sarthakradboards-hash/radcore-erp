@@ -22,18 +22,19 @@ export default function LeadPage() {
   const me = useMe();
   const mayWrite = me.permissions.includes('leads:write');
   const q = useApiQuery(getLead, { id });
-  const lists = useApiQuery(getLeadLists, {}).data;
+  const listsQ = useApiQuery(getLeadLists, {});
+  const lists = listsQ.data;
   const [dialog, setDialog] = useState<Dialogs>(null);
   const enquiriesId = useId();
   const timelineId = useId();
   const lead = q.data;
 
-  if (q.error !== null) {
+  if (q.error !== null || listsQ.error !== null) {
     return (
       <>
         <p><Link href="/crm/leads">{t('crm.back')}</Link></p>
         <div role="alert" className="kit-form-alert">
-          {t('crm.missing')} <button type="button" className="kit-button" onClick={() => void q.refetch()}>{t('error.retry')}</button>
+          {t('crm.missing')} <button type="button" className="kit-button" onClick={() => { void q.refetch(); void listsQ.refetch(); }}>{t('error.retry')}</button>
         </div>
       </>
     );

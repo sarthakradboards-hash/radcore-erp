@@ -141,7 +141,9 @@ export function ReplyDialog({ id, lists, open, onOpenChange }: { id: string; lis
           {/* The server's text, shown as text: a reply's body is never markup. */}
           <p className="crm-reply-text">{text}</p>
           <button type="button" className="kit-button"
-            onClick={() => void navigator.clipboard.writeText(text).then(() => announce(t('crm.reply.copied')))}>{t('crm.reply.copy')}</button>
+            onClick={() => void navigator.clipboard.writeText(text).then(() => announce(t('crm.reply.copied')), () => announce(t('crm.reply.copyFailed')))}>
+            {t('crm.reply.copy')}
+          </button>
         </section>
       )}
       <div className="kit-actions"><CloseButton>{t('crm.cancel')}</CloseButton></div>

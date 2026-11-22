@@ -51,6 +51,7 @@ export const crm = {
   'crm.capture.source.manual': 'By phone, message or a referral',
   'crm.capture.source.walk_in': 'Walked in',
   'crm.capture.save': 'Add the lead',
+  'crm.capture.cannot': 'Your role can’t add leads, so saving this will be refused. Ask your admin if you need to.',
   'crm.capture.added': 'Lead added',
   'crm.capture.joined': 'That number already has a lead. The enquiry joined it, and its follow-up is now today.',
   'crm.capture.joinedHidden': 'That number already has a lead that isn’t yours to open. The enquiry joined it, and its owner has been told.',
@@ -128,6 +129,7 @@ export const crm = {
   'crm.reply.text': 'The text',
   'crm.reply.copy': 'Copy the text',
   'crm.reply.copied': 'Copied',
+  'crm.reply.copyFailed': 'Couldn’t copy. Select the text and copy it yourself.',
   'crm.reply.noneActive': 'There are no quick replies yet.',
 
   'crm.edit.title': 'Edit details',
