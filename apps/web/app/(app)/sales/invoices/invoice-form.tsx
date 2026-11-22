@@ -6,17 +6,16 @@
 // say; the form is checked with the contract's own schema.
 import { listParties } from '@radcore/lib-accounts/contract';
 import { formatDate, formatMoney, indiaDate } from '@radcore/lib-common';
-import { createInvoice, getDelivery, listToInvoice } from '@radcore/lib-sales/contract';
+import { createInvoice, listToInvoice } from '@radcore/lib-sales/contract';
 import { useState } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
-import { useApiList, useApiQuery, useApiSearch } from '../../../../lib/api/query.ts';
+import { useApiList, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
 import { PickedField } from '../picked-field.tsx';
-import { ItemName } from '../shared.tsx';
 import { INVOICE_MESSAGES } from './shared.ts';
 
 const shape = createInvoice.input.shape;
@@ -27,7 +26,7 @@ const emptyIsMissing = <T extends z.ZodType<unknown, string | undefined>>(inner:
   z.string().trim().transform((s) => (s === '' ? undefined : s)).pipe(inner);
 
 const line = z.object({
-  deliveryLineId: lineShape.deliveryLineId, itemId: z.string(), qty: lineShape.qty,
+  deliveryLineId: lineShape.deliveryLineId, itemId: z.string(), label: z.string(), qty: lineShape.qty,
   rate: emptyIsMissing(lineShape.rate), discountPercent: emptyIsMissing(lineShape.discountPercent),
 });
 const invoiceSchema = z.object({
@@ -49,7 +48,8 @@ function AddDelivery({ append }: { append: (lines: InvoiceInput['lines']) => voi
   const partyId = useWatch({ control, name: 'partyId' });
   const [deliveryId, setDeliveryId] = useState('');
   const waiting = useApiList(listToInvoice, { filter: { partyId } }, { enabled: partyId !== '' });
-  const delivery = useApiQuery(getDelivery, { id: deliveryId }, { enabled: deliveryId !== '' }).data;
+  // The delivery's lines still to invoice come with the list, each with the quantity left and its item.
+  const delivery = waiting.items.find((d) => d.id === deliveryId);
   if (partyId === '') return null;
   if (waiting.items.length === 0) return <p>{waiting.isPending ? t('loading') : t('sales.invoice.delivery.none.left')}</p>;
   return (
@@ -68,7 +68,9 @@ function AddDelivery({ append }: { append: (lines: InvoiceInput['lines']) => voi
       <button type="button" className="kit-button" disabled={delivery === undefined}
         onClick={() => {
           if (delivery === undefined) return;
-          append(delivery.lines.map((l) => ({ deliveryLineId: l.id, itemId: l.itemId, qty: asWritten(l.qty), rate: '', discountPercent: '' })));
+          append(delivery.lines.map((l) => ({
+            deliveryLineId: l.id, itemId: l.itemId, label: `${l.name} (${l.sku})`, qty: asWritten(l.qtyToInvoice), rate: '', discountPercent: '',
+          })));
           setDeliveryId('');
         }}>{t('sales.invoice.delivery.add')}</button>
     </div>
@@ -84,7 +86,7 @@ function Lines() {
       <AddDelivery append={append} />
       {fields.map((f, i) => (
         <fieldset key={f.id}>
-          <legend>{t('sales.line', { n: String(i + 1) })}: <ItemName id={f.itemId} /></legend>
+          <legend>{t('sales.line', { n: String(i + 1) })}: {f.label}</legend>
           <TextField name={`lines.${i}.qty`} label={t('sales.invoice.line.qty')} inputMode="decimal" autoComplete="off" />
           <TextField name={`lines.${i}.rate`} label={t('sales.invoice.line.rate')} hint={t('sales.invoice.line.rate.hint')}
             inputMode="decimal" autoComplete="off" />

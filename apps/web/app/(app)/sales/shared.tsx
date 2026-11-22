@@ -3,11 +3,9 @@
 // words, and a document's lines as a table. The server holds every rule (credit, price, status, dates); the screens only
 // draw what it sends and word what it refuses.
 import { formatMoney } from '@radcore/lib-common';
-import { getItem } from '@radcore/lib-stock/contract';
 import type { getQuote, listOrders, listQuotes } from '@radcore/lib-sales/contract';
 import { Fragment, useId } from 'react';
 import type { z } from 'zod';
-import { useApiQuery } from '../../../lib/api/query.ts';
 import { t } from '../../../lib/i18n/index.ts';
 import '../../../components/ui/table/table.css';
 import { asPrice, asWritten } from '../admin/decimal.ts';
@@ -23,19 +21,12 @@ const CODES = ['date_in_future', 'date_before_source', 'unknown_party', 'not_a_c
   'not_on_source', 'over_quantity', 'other_party', 'account_inactive', 'company_profile_incomplete',
   'buyer_details_required', 'still_applied', 'credit_note_stands', 'change_over_checks', 'unknown_location', 'location_inactive',
   'place_not_sellable', 'not_enough_stock', 'qty_not_positive', 'batches_mismatch', 'units_mismatch', 'serial_twice', 'not_serialised',
-  'delivery_in_use', 'already_reversed', 'not_reversible', 'unit_held', 'mixed_condition', 'unit_damaged'] as const;
+  'delivery_in_use', 'already_reversed', 'not_reversible', 'unit_held', 'mixed_condition', 'unit_damaged', 'booking_live'] as const;
 /** The sales contracts' refusals in the screen's words, for Form's and ReasonDialog's `messages`. */
 export const SALES_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`sales.err.${c}`)]));
 
 /** A document's number, or "Draft" while it has none. */
 export const numberText = (number: string | null) => number ?? t('sales.draft');
-
-/** An item by its name and SKU, read from the item list; a role that can't read items sees a plain word. */
-export function ItemName({ id }: { id: string }) {
-  const q = useApiQuery(getItem, { id });
-  if (q.error !== null) return t('sales.line.unknownItem');
-  return q.data === undefined ? t('loading') : `${q.data.name} (${q.data.sku})`;
-}
 
 /** A line as the table reads it: its amounts, and for an order's line how much has been delivered and invoiced. */
 type TableLine = Line & { delivered?: string; invoiced?: string };

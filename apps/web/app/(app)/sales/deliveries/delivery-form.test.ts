@@ -3,7 +3,7 @@ import { deliverySchema, unlistedKeys } from './delivery-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const base = { orderId: id(1), locationId: id(2), businessDate: '2026-11-20', notes: '' };
-const line = (over: object) => ({ orderLineId: id(3), itemId: id(4), qty: '2', pick: { [id(5)]: '2' }, serials: [] as string[], ...over });
+const line = (over: object) => ({ orderLineId: id(3), itemId: id(4), label: 'Helmet (H-1)', qty: '2', pick: { [id(5)]: '2' }, serials: [] as string[], ...over });
 
 it('sends each batch with a quantity, "batch unknown" as a null batch, and leaves the empty boxes out', () => {
   const out = deliverySchema.parse({ ...base, lines: [line({ qty: '3', pick: { [id(5)]: '2', unknown: '1', [id(6)]: '' } })] });

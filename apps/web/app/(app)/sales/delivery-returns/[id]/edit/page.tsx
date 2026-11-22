@@ -30,7 +30,7 @@ export default function EditDeliveryReturnPage() {
       <ReturnForm labelledBy="edit-return" submit={t('sales.return.save')}
         initial={{ deliveryId: ret.deliveryId, locationId: ret.locationId, businessDate: ret.businessDate, notes: ret.notes ?? '',
           lines: ret.lines.map((l) => ({
-            deliveryLineId: l.deliveryLineId, itemId: l.itemId, qty: asWritten(l.qty), serials: [...l.serials],
+            deliveryLineId: l.deliveryLineId, itemId: l.itemId, label: `${l.name} (${l.sku})`, qty: asWritten(l.qty), serials: [...l.serials],
             pick: Object.fromEntries(l.batches.map((b) => [batchKey(b.batchId), asWritten(b.qty)])),
           })) }}
         onSubmit={async (v) => {

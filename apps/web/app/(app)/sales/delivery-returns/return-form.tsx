@@ -14,7 +14,6 @@ import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
 import { RETURN_MESSAGES } from '../deliveries/shared.tsx';
-import { ItemName } from '../shared.tsx';
 import { batchKey, returnSchema, type ReturnInput, type ReturnLineInput, type ReturnValues } from './return-values.ts';
 
 /** The places goods can go back into: active places of a kind that sells. A draft's own place is always offered, and the form
@@ -52,7 +51,7 @@ function AddDelivery({ append, hasLines }: { append: (lines: ReturnLineInput[]) 
         onClick={() => {
           if (delivery === undefined) return;
           setValue('deliveryId', delivery.id);
-          append(delivery.lines.map((l) => ({ deliveryLineId: l.id, itemId: l.itemId, qty: '', pick: {}, serials: [] })));
+          append(delivery.lines.map((l) => ({ deliveryLineId: l.id, itemId: l.itemId, label: `${l.name} (${l.sku})`, qty: '', pick: {}, serials: [] })));
           setDeliveryId('');
         }}>{t('sales.return.form.delivery.add')}</button>
     </div>
@@ -121,7 +120,7 @@ function Lines() {
       <AddDelivery append={append} hasLines={fields.length > 0} />
       {fields.map((f, i) => (
         <fieldset key={f.id}>
-          <legend>{t('sales.line', { n: String(i + 1) })}: <ItemName id={f.itemId} /></legend>
+          <legend>{t('sales.line', { n: String(i + 1) })}: {f.label}</legend>
           <TextField name={`lines.${i}.qty`} label={t('sales.return.form.line.qty')} inputMode="decimal" autoComplete="off" />
           <Picks index={i} deliveryId={deliveryId} deliveryLineId={f.deliveryLineId} />
           <button type="button" className="kit-button" onClick={() => remove(i)}>{t('sales.return.form.remove', { n: String(i + 1) })}</button>
