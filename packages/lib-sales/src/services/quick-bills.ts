@@ -323,8 +323,12 @@ export async function previewBill(ctx: Ctx, input: In<typeof previewQuickBill>):
   const versionIds = [...new Set(lines.flatMap((l) => (l.listVersionId === null ? [] : [l.listVersionId])))];
   const inclusive = new Map(versionIds.length === 0 ? [] : (await salesTx(ctx).select({ id: priceListVersions.id, taxInclusive: priceListVersions.taxInclusive })
     .from(priceListVersions).where(inArray(priceListVersions.id, versionIds))).map((v) => [v.id, v.taxInclusive]));
-  const issues = await orderIssues(ctx, { partyId, businessDate: input.businessDate, createdBy: principalId(ctx.principal) },
+  const found = await orderIssues(ctx, { partyId, businessDate: input.businessDate, createdBy: principalId(ctx.principal) },
     lines.map((l) => ({ ...l, listTaxInclusive: l.listVersionId === null ? null : inclusive.get(l.listVersionId) ?? null })), paid);
+  // The Counter customer never carries credit, so a short walk-in is asked for the rest, or for the buyer, as the save and
+  // the hold refuse it, never told it's over a limit no approval can lift (auditor-2 on #325).
+  const short = partyId === await systemPartyId(ctx, 'walk_in') && dec(paid).lt(a.totals.total);
+  const issues = short ? ['walk_in_pays_in_full', ...found.filter((c) => c !== 'over_limit' && c !== 'overdue')] : found;
   return { lines: a.lines.map((l, i) => ({ itemId: lines[i]?.itemId ?? '', gstRate: l.gstRate, taxable: l.taxable, cgst: l.cgst, sgst: l.sgst,
     igst: l.igst, lineTotal: l.lineTotal })), placeOfSupply: a.placeOfSupply, taxable: a.totals.taxable, cgst: a.totals.cgst, sgst: a.totals.sgst,
     igst: a.totals.igst, roundOff: a.totals.roundOff, total: a.totals.total, paid, left: roundMoney(dec(a.totals.total).minus(paid)), issues };

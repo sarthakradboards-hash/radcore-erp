@@ -4,7 +4,7 @@
 // /sales/orders/:id), which takes its hold with it.
 import { after, quickBillHolds, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import { roundMoney } from '@radcore/lib-common';
-import { awaitingApproval, decodeCursor, encodeCursor, listScope, principalsOf, type Ctx } from '@radcore/lib-platform';
+import { awaitingApproval, decodeCursor, encodeCursor, isoMoment, listScope, momentKey, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { and, asc, count, inArray, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { listHeldQuickBills } from '../contract.ts';
@@ -15,7 +15,7 @@ import type { PlannedPayment } from './quick-bill-holds.ts';
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
-const PAGE_KEY = z.object({ at: z.iso.datetime({ offset: true }), id: z.uuid() });
+const PAGE_KEY = z.object({ at: momentKey(), id: z.uuid() });
 
 /** GET /sales/quick-bills/held (invoices:write): oldest first, a page at a time, the reader's own at `own` scope. */
 export async function heldBillsPage(ctx: Ctx, input: In<typeof listHeldQuickBills>): Promise<Out<typeof listHeldQuickBills>> {
@@ -24,7 +24,7 @@ export async function heldBillsPage(ctx: Ctx, input: In<typeof listHeldQuickBill
     by: quickBillHolds.createdBy, partyId: salesOrders.partyId, approved: salesOrders.overrideVersion })
     .from(quickBillHolds).innerJoin(salesOrders, eq(salesOrders.id, quickBillHolds.orderId)).where(and(
       listScope(ctx, 'invoices:write', salesOrders.createdBy),
-      after([quickBillHolds.createdAt, quickBillHolds.orderId], key && [new Date(key.at), key.id], 'asc'),
+      after([quickBillHolds.createdAt, quickBillHolds.orderId], key && [key.at, key.id], 'asc'),
     )).orderBy(asc(quickBillHolds.createdAt), asc(quickBillHolds.orderId)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const ids = page.map((r) => r.orderId);
@@ -41,7 +41,7 @@ export async function heldBillsPage(ctx: Ctx, input: In<typeof listHeldQuickBill
       // A held bill always asked: waiting while its request is, approved once its order carries the approval, else
       // turned down (rejected, or gone stale and not asked again).
       approval: waiting.has(r.orderId) ? 'waiting' as const : r.approved !== null ? 'approved' as const : 'rejected' as const,
-      heldBy: who(r.by), heldAt: r.at.toISOString() })),
-    next: rows.length > input.limit && last ? encodeCursor({ at: last.at.toISOString(), id: last.orderId }) : null,
+      heldBy: who(r.by), heldAt: isoMoment(r.at) })),
+    next: rows.length > input.limit && last ? encodeCursor({ at: last.at, id: last.orderId }) : null,
   };
 }

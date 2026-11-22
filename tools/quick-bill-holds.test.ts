@@ -193,6 +193,26 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
       seenByOther: false, seenAtAll: true, before: true, holds: 0, after: false });
   });
 
+  // auditor-2 on #325: the held list pages on created_at's microseconds, so a page's last bill never comes back on the
+  // next. Two holds in one transaction share their moment, and the order id breaks the tie.
+  it('pages the held bills one at a time with no bill twice', async () => {
+    const at = await setup('200');
+    const out = await atCounter(at, async (ctx) => {
+      const held = [(await hold(ctx, at, '1', [cash('100')], at.partyId)).orderId, (await hold(ctx, at, '1', [cash('100')], at.partyId)).orderId];
+      const seen: string[] = [];
+      let after: string | undefined;
+      for (let n = 0; n < 50; n += 1) {
+        const page = await heldBillsPage(ctx, { limit: 1, filter: {}, ...(after === undefined ? {} : { after }) });
+        seen.push(...page.items.map((b) => b.orderId));
+        if (page.next === null) break;
+        after = page.next;
+      }
+      return { mine: seen.filter((id) => held.includes(id)), repeats: seen.length - new Set(seen).size };
+    });
+    expect([out.mine.toSorted(), out.repeats]).toEqual([[...out.mine].toSorted(), 0]);
+    expect(out.mine).toHaveLength(2);
+  });
+
   it('refuses a walk-in hold short of the bill, and a hold of a bill that needs no approval', async () => {
     const at = await setup('100000');
     const out = await atCounter(at, async (ctx) => [await failure(hold(ctx, at, '3', [cash('1000')])),
