@@ -39,7 +39,10 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
 
 - **Quotes and orders post nothing,** so they carry no ledger guard. Their services move their states, and a CHECK
   holds the status values. A confirmed order's lines change only through the order service, which runs M3-07's
-  checks again. An order is **closed** when every line is delivered, or **closed short** when a person closes it
+  checks again. **An edit those checks would refuse is refused** (`change_over_checks`, naming each issue, RAD-112),
+  and the order keeps its lines; an edit that passes saves at once. There's no pending copy of the lines: more goods
+  go on a new order through an override, and a refused price or discount means closing short (with a reason) and
+  raising a new order. An order is **closed** when every line is delivered, or **closed short** when a person closes it
   with lines still undelivered. The undelivered quantities are released, and a reason is kept (RC-125). A posted
   delivery return that brings a line back below what was ordered reopens an order its deliveries closed
   (`closed → confirmed`), so the goods can go again; an order a person closed short stays closed (RAD-112).
@@ -47,6 +50,8 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
   invoice's are. They're computed on read while a draft, and stored, with each line's rate and the place of supply,
   when a quote is sent or an order confirmed, then never recomputed: the order's credit check uses that stored
   total. An order line's delivered and invoiced quantities are read from `delivered.ts`, never stored (RAD-125).
+  Sending a quote or confirming an order is refused while the company profile has no state
+  (`company_profile_incomplete`), since the place of supply needs it (RAD-112).
 - **A delivery** comes from a sellable place only (`place_not_sellable`, ADR-006 §4). Selling a demo or rejected
   unit is a transfer to a sellable place first (M4-06). A delivery made against an order is owned, for record
   scope (ADR-001 §6a), by the order's owner, copied when it's made; one with no order by its maker; and a return
@@ -273,6 +278,21 @@ locking its own documents and before the check, so two sales to one party can't 
 - **One version for everyone.** An override approves the document's figures and the issues found. Nothing in them
   depends on who reads them, so the maker, the approver and whoever confirms or posts see the same issues. An
   edit, or a limit changed while a request waits, makes the request stale, and the maker asks again.
+
+### 10. Invoice links and payment reminders (M3-14, M3-15)
+
+- **An invoice link** (RAD-118) is made, listed and revoked under `invoices:share`, a key of its own, scoped as
+  invoices are. Its defaults are admin, owner and accounts at `all`, and sales and counter at `own`; it needs no
+  second factor. Revoking reaches any link on an invoice the person may share.
+  - Only a posted invoice is shared. A cancelled invoice's link answers as an expired one does.
+  - The link shows the invoice as issued, buyer's name, address, state and GSTIN in full (Rule 46), from its frozen
+    copy. It shows no phone, email, note or cost, and reads through `linkRecord` (ADR-001 §6a).
+  - Estimate links are M6-14's, with their approval step.
+- **A payment reminder** (RAD-119) carries one link, to the party's oldest overdue invoice (Sarthak, 21 Nov), made
+  fresh for each reminder.
+  - A sender without `invoices:share` on that invoice still sends the reminder, with no link (`noLink:
+    'no_share_key'`). So does one whose oldest bill isn't an invoice (`not_an_invoice`).
+  - The token is only in the answer (ADR-001 §7a), never in `payment_reminders` or its audit rows.
 
 ## Consequences
 

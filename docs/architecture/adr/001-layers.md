@@ -598,6 +598,12 @@ always six bullets, so it doesn't give away the length.
 - A notification's text (RAD-121) is built with the viewer's keys but a sight that shows nothing: it describes only
   records the viewer may see, every personal field in it is masked (an identifier keeps its last 4), and it logs no
   look. The record's own page shows the field, and logs the look there.
+- **A printout (RAD-120) prints what its document is for:**
+  - **a statutory document** (the tax invoice under Rule 46; the delivery challan and job-work challan under Rule 55;
+    credit and debit notes) prints the particulars the law requires in full, whoever prints it: name, address,
+    state and GSTIN, never a phone or email. It writes a look at the party, as an unmasked screen view does;
+  - **any other printout** (a quote, a purchase order) shows personal fields as the screen would (`ctx.shows`);
+  - **a receipt** (`receipts:print`, `allOnly`) shows the party's name only, and no balance.
 - The generic handler masks after the output check and before saved-once keeps the answer, so a stored answer never
   holds what its principal couldn't see.
 - A service asks `ctx.shows(kind, seenWith?)` before it searches or sorts by a personal field. It's the same answer

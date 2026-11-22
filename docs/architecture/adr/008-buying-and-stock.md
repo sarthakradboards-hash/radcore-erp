@@ -120,9 +120,15 @@ the document it comes from (`date_before_source`):
     approved").
   - Placing posts nothing, so the spec has no `lockFirst`. Its version is the PO's own lines and total.
 - **A placed PO changes** only through its service. The approved total is recorded by the approval's `approved` step,
-  outside the version hash. An edit that raises the total above the placer's limit, or above that approved total,
-  goes back for approval, as RAD-135 rules for credit: an approval holds only for what it approved. Lowering it, or
-  closing short, needs no approval.
+  outside the version hash, so an approval holds only for what it approved, as RAD-135 rules for credit:
+  - an edit that raises the total above the placer's limit, or above that approved total, is **refused**
+    (`over_approved`, RAD-136), and the PO keeps its lines. There's no pending revision: it would be a second copy of
+    the lines, kept in step with receipts posting meanwhile, as sales' `change_over_checks` refuses (ADR-007 §1). The
+    message says the way forward: more goods go on a new PO, a higher price is caught at the bill (§7's tolerance),
+    and a rework is a close-short and a new PO;
+  - a placed PO's supplier and date are fixed (`fixed_once_placed`), and no line goes below what's been received
+    against it (`po_received`);
+  - lowering a quantity or rate, closing short, and any edit within both limits save at once.
 - **Receiving more than ordered is refused** (`over_ordered`). Extra goods need a PO line of their own; there's no
   quantity tolerance.
 - The PO prints on A4 through RAD-120's engine (M4-01). It isn't a tax document, so personal fields print as the
