@@ -145,6 +145,7 @@ export const crm = {
 
   'crm.err.unknown_source': 'That source isn’t in use any more. Choose another.',
   'crm.err.lead_taken': 'Someone else took this lead first. It’s theirs now.',
+  'crm.err.lead_gone': 'Someone else took this lead first, so it’s no longer yours to open. Go back to the leads.',
   'crm.err.unknown_reason': 'That reason isn’t in use any more. Choose another.',
   'crm.err.wrong_stage': 'A converted or lost lead takes no follow-ups. Move it back to a stage first.',
   'crm.err.unknown_plan': 'That plan isn’t in use any more. Choose another.',

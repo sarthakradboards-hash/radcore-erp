@@ -15,7 +15,7 @@ import { Form, SubmitButton } from '../../../../../components/ui/form/form.tsx';
 import { announce } from '../../../../../components/ui/live-region.tsx';
 import { useApiMutation } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
-import { CRM_MESSAGES, stageName } from '../../shared.ts';
+import { LEAD_MESSAGES, stageName } from '../../shared.ts';
 
 type Lead = z.output<typeof getLead.output>;
 type Lists = z.output<typeof getLeadLists.output>;
@@ -46,7 +46,7 @@ export function FollowUpDialog({ id, open, onOpenChange }: { id: string } & Open
   const followUp = useApiMutation(followUpLead, { invalidates: refresh });
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={t('crm.followUp.title')} description={t('crm.followUp.body')}>
-      <Form schema={followUpSchema} saved={false} messages={CRM_MESSAGES} defaultValues={{ note: '', nextOn: '' }}
+      <Form schema={followUpSchema} saved={false} messages={LEAD_MESSAGES} defaultValues={{ note: '', nextOn: '' }}
         onSubmit={async (v) => {
           const { followUpOn } = await followUp.submit({ id, ...v });
           onOpenChange(false);
@@ -78,7 +78,7 @@ export function MoveDialog({ lead, lists, open, onOpenChange }: { lead: Lead; li
   const move = useApiMutation(moveLead, { invalidates: refresh });
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={t('crm.move.title')} description={t('crm.move.body')}>
-      <Form schema={moveSchema} saved={false} messages={CRM_MESSAGES} defaultValues={{ stage: lead.stage, lostReasonId: '', note: '' }}
+      <Form schema={moveSchema} saved={false} messages={LEAD_MESSAGES} defaultValues={{ stage: lead.stage, lostReasonId: '', note: '' }}
         onSubmit={async (v) => {
           await move.submit({ id: lead.id, ...v });
           onOpenChange(false);
@@ -99,7 +99,7 @@ export function PlanDialog({ lead, lists, open, onOpenChange }: { lead: Lead; li
   const plan = useApiMutation(planLead, { invalidates: refresh });
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={t('crm.planDialog.title')} description={t('crm.planDialog.body')}>
-      <Form schema={planSchema} saved={false} messages={CRM_MESSAGES} defaultValues={{ planId: lead.planId ?? '' }}
+      <Form schema={planSchema} saved={false} messages={LEAD_MESSAGES} defaultValues={{ planId: lead.planId ?? '' }}
         onSubmit={async (v) => {
           const { followUpOn } = await plan.submit({ id: lead.id, ...v });
           onOpenChange(false);
@@ -129,7 +129,7 @@ export function ReplyDialog({ id, lists, open, onOpenChange }: { id: string; lis
   return (
     <Dialog open={open} onOpenChange={shut} title={t('crm.reply.title')} description={t('crm.reply.body')}>
       {active.length === 0 ? <p>{t('crm.reply.noneActive')}</p> : (
-        <Form schema={replySchema} saved={false} messages={CRM_MESSAGES} defaultValues={{ replyId: '' }}
+        <Form schema={replySchema} saved={false} messages={LEAD_MESSAGES} defaultValues={{ replyId: '' }}
           onSubmit={async (v) => { setText((await reply.submit({ id, ...v })).text); }}>
           <SelectField name="replyId" label={t('crm.reply.pick')} placeholder={t('crm.reply.pick')}
             options={active.map((r) => ({ value: r.id, label: r.title }))} />
@@ -169,7 +169,7 @@ export function EditDialog({ lead, open, onOpenChange }: { lead: Lead } & Open) 
   const hidden = isMasked(lead.email);
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={t('crm.edit.title')}>
-      <Form schema={editSchema} saved={false} messages={CRM_MESSAGES}
+      <Form schema={editSchema} saved={false} messages={LEAD_MESSAGES}
         defaultValues={{ name: lead.name ?? '', email: lead.email ?? '', value: lead.value ?? '',
           score: lead.score === null ? '' : String(lead.score), notes: lead.notes ?? '', followUpOn: lead.followUpOn ?? '',
           // A masked email holds the server's { masked }, which MaskedField shows and the form never sends (as the party form).
@@ -202,7 +202,7 @@ export function AssignDialog({ id, meId, open, onOpenChange }: { id: string; meI
   const assign = useApiMutation(assignLead, { invalidates: refresh });
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={t('crm.assign.title')} description={t('crm.assign.body')}>
-      <Form schema={assignSchema} saved={false} messages={CRM_MESSAGES} defaultValues={{ to: 'me' }}
+      <Form schema={assignSchema} saved={false} messages={LEAD_MESSAGES} defaultValues={{ to: 'me' }}
         onSubmit={async (v) => {
           await assign.submit({ id, owner: v.to === 'me' ? meId : null });
           onOpenChange(false);
