@@ -27,8 +27,6 @@ export const approvals = {
   'sales.approvals.credit.note': 'Open the credit note and read it, then decide. Approving posts it, applies it to its invoice and pays any counter refund.',
   'sales.approvals.credit.figures': 'What approving it does',
   'sales.approvals.credit.total': 'Credit total',
-  'sales.approvals.credit.taxable': 'Taxable value of its lines',
-  'sales.approvals.credit.total.later': 'The tax and the total are worked out when it is posted',
   'sales.approvals.credit.refund': '{amount}, paid from {account}',
   'sales.approvals.credit.refund.label': 'Counter refund',
   'sales.approvals.credit.refund.none': 'None',
