@@ -7,7 +7,7 @@ import { normaliseEmail, normalisePhone } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
-import { PARTY_KINDS, partyTaxIssues, SELLS_TO_KINDS, type createParty, type getParty, type listParties, type setPartyCredit, type updateParty } from '../contract.ts';
+import { BUYS_FROM_KINDS, PARTY_KINDS, partyTaxIssues, SELLS_TO_KINDS, type createParty, type getParty, type listParties, type setPartyCredit, type updateParty } from '../contract.ts';
 import { setPartyManager } from './party-managers.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -57,7 +57,7 @@ async function gstinOnce<T>(write: Promise<T>): Promise<T> {
 /** GET /parties: by name, then id, so a page key is unique and paging never skips or repeats. */
 export async function listPartiesPage(ctx: Ctx, input: In<typeof listParties>): Promise<Out<typeof listParties>> {
   const key = input.after === undefined ? undefined : decodeCursor(z.object({ name: z.string().max(200), id: z.uuid() }), input.after);
-  const { search, kind, active, sellsTo, phone } = input.filter;
+  const { search, kind, active, sellsTo, buysFrom, phone } = input.filter;
   // A phone is pii(): someone who sees it masked can't find people by it (RAD-103).
   if (phone !== undefined && !ctx.shows('whole', 'parties:contact')) {
     throw new AppError('forbidden', 'Finding parties by phone needs parties:contact');
@@ -74,6 +74,7 @@ export async function listPartiesPage(ctx: Ctx, input: In<typeof listParties>): 
       // itself (auditor-2 on #311 and #304).
       byPhone === undefined ? undefined : eq(parties.phone, byPhone),
       sellsTo === undefined ? undefined : and(or(...SELLS_TO_KINDS.map((k) => eq(parties[k], true))), isNull(parties.systemKey)),
+      buysFrom === undefined ? undefined : and(or(...BUYS_FROM_KINDS.map((k) => eq(parties[k], true))), isNull(parties.systemKey)),
       active === undefined ? undefined : eq(parties.active, active),
       after([parties.name, parties.id], key && [key.name, key.id], 'asc'),
     ))

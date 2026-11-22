@@ -144,4 +144,10 @@ export const sales = {
   'sales.err.order_delivered': 'Something has already been delivered on this order, so it can’t be cancelled or have those lines changed.',
   'sales.err.reason_required': 'Give a reason: lines are still undelivered.',
   'sales.err.version_changed': 'The order changed after the issues were found. Reload it and try again.',
+  'sales.print.a4': 'Print (A4)',
+  'sales.print.thermal80': 'Print (80 mm roll)',
+  'sales.print.err': 'The printout couldn’t be made. Try again in a moment.',
+  'sales.print.err.blocked': 'Your browser blocked the new tab for the printout. Allow pop-ups for this site and try again.',
+  'sales.print.err.too_large': 'This document is too long to print (over 50 pages).',
+  'sales.print.err.not_ready': 'A draft has no number yet, so it can’t be printed.',
 } as const;
