@@ -12,7 +12,7 @@ import { TextField } from '../../../../components/ui/form/fields.tsx';
 import { useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
-import { countByBatch, unlistedKeys, type DeliveryInput } from './delivery-values.ts';
+import { countByBatch, pickAfter, unlistedKeys, type DeliveryInput } from './delivery-values.ts';
 
 type Condition = (typeof UNIT_CONDITIONS)[number];
 
@@ -25,7 +25,7 @@ function Units({ index, units, complete }: {
   /** The whole list is shown (no search, no further page), so a picked unit missing from it isn't on hand here now. */
   complete: boolean;
 }) {
-  const { setValue } = useFormContext<DeliveryInput>();
+  const { setValue, getValues } = useFormContext<DeliveryInput>();
   const { field } = useController<DeliveryInput, `lines.${number}.serials`>({ name: `lines.${index}.serials` });
   const picked: readonly string[] = field.value;
   // A picked unit's condition and batch, kept while the list is narrowed by a search and it scrolls out of view.
@@ -35,13 +35,14 @@ function Units({ index, units, complete }: {
   const toggle = (serialNo: string) => {
     const next = picked.includes(serialNo) ? picked.filter((s) => s !== serialNo) : [...picked, serialNo];
     field.onChange(next);
-    if (next.length === 0) { setValue(`lines.${index}.pick`, {}); return; }
+    const setPick = (counts: Record<string, string>) => setValue(`lines.${index}.pick`, pickAfter(getValues(`lines.${index}.pick`), counts));
+    if (next.length === 0) { setPick({}); return; }
     setValue(`lines.${index}.qty`, String(next.length));
     // Each unit is taken from its own batch, so the batch boxes follow what is ticked. shortcut: only when every ticked unit's
     // batch is known (one saved in a draft and not listed now leaves the boxes as they are), when a draft's own units are listed too.
     const batchOf = next.map((s) => known.get(s));
     if (batchOf.every((k) => k !== undefined)) {
-      setValue(`lines.${index}.pick`, countByBatch(batchOf.map((k) => k.batchId)));
+      setPick(countByBatch(batchOf.map((k) => k.batchId)));
     }
   };
   return (

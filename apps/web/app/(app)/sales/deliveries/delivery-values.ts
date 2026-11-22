@@ -49,3 +49,8 @@ export const countByBatch = (batchIds: readonly (string | null)[]): Record<strin
   for (const b of batchIds) counts[b ?? 'unknown'] = (counts[b ?? 'unknown'] ?? 0) + 1;
   return Object.fromEntries(Object.entries(counts).map(([k, n]) => [k, String(n)]));
 };
+
+/** The pick after ticking: the new counts, and every box that held a quantity before emptied (setValue on an object leaves the
+ * boxes missing from it showing their old number; an empty box is left out of what is sent). */
+export const pickAfter = (current: Readonly<Record<string, string>>, counts: Readonly<Record<string, string>>): Record<string, string> =>
+  ({ ...Object.fromEntries(Object.keys(current).map((k) => [k, ''])), ...counts });
