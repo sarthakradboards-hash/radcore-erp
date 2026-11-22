@@ -44,6 +44,7 @@ export const bookings = {
   'sales.booking.form.line.none': 'Choose a line',
   'sales.booking.form.line.option': '{name} ({sku})',
   'sales.booking.form.line.empty': 'This order has no line of quantity 1: a booking holds one unit.',
+  'sales.booking.form.against': 'Booking a unit for order {number}, {party}',
   'sales.booking.form.serial': 'Serial number of the unit',
   'sales.booking.form.serial.hint': 'Type it, or pick one of the units at a place below.',
   'sales.booking.form.place': 'See the units at',

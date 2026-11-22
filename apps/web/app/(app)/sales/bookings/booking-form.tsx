@@ -6,7 +6,7 @@
 import { dec } from '@radcore/lib-common';
 import { getOrder, listOrders } from '@radcore/lib-sales/contract';
 import { getOnHand } from '@radcore/lib-stock/contract';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { SelectField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
@@ -59,9 +59,16 @@ function Units({ itemId, orderLineId }: { itemId: string; orderLineId: string })
 
 /** The order and its line: the line is the form's value; the order only narrows the choice. */
 function OrderLine() {
-  const { control } = useFormContext<BookingInput>();
+  const { control, setValue } = useFormContext<BookingInput>();
   const orderLineId = useWatch({ control, name: 'orderLineId' });
   const [orderId, setOrderId] = useState('');
+  // A line, and the unit chosen for it, belong to one order and one line: changing either leaves nothing of the old choice, or Save
+  // would book the old line while the screen shows the new one (auditor-3 on #308).
+  const lineSeen = useRef(orderLineId);
+  useEffect(() => {
+    if (lineSeen.current !== orderLineId) setValue('serialNo', '');
+    lineSeen.current = orderLineId;
+  }, [orderLineId, setValue]);
   const orders = useApiList(listOrders, { filter: { status: 'confirmed' } });
   const order = useApiQuery(getOrder, { id: orderId }, { enabled: orderId !== '' }).data;
   // A booking holds one unit: only a line of quantity 1 can be booked.
@@ -72,7 +79,7 @@ function OrderLine() {
       <div className="kit-field">
         <label htmlFor="booking-order">{t('sales.booking.form.order')}</label>
         <p className="kit-field-hint">{t('sales.booking.form.order.hint')}</p>
-        <select id="booking-order" value={orderId} onChange={(e) => setOrderId(e.target.value)}>
+        <select id="booking-order" value={orderId} onChange={(e) => { setOrderId(e.target.value); setValue('orderLineId', ''); setValue('serialNo', ''); }}>
           <option value="">{t('sales.booking.form.order.none')}</option>
           {orders.items.map((o) => (
             <option key={o.id} value={o.id}>{t('sales.booking.form.order.option', { number: o.number ?? '', party: o.partyName })}</option>
@@ -85,6 +92,9 @@ function OrderLine() {
       {lines.length === 0 ? null : (
         <SelectField name="orderLineId" label={t('sales.booking.form.line')} placeholder={t('sales.booking.form.line.none')}
           options={lines.map((l) => ({ value: l.id, label: t('sales.booking.form.line.option', { name: l.name, sku: l.sku }) }))} />
+      )}
+      {order === undefined || itemId === undefined ? null : (
+        <p>{t('sales.booking.form.against', { number: order.number ?? '', party: order.partyName })}</p>
       )}
       {itemId === undefined ? null : <Units itemId={itemId} orderLineId={orderLineId} />}
     </>
