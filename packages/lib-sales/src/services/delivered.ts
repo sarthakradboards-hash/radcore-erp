@@ -13,6 +13,7 @@ import {
 } from '@radcore/db/sales';
 import { vDeliveryLeft } from '@radcore/db/views';
 import { dec, roundMoney, roundQty, type Decimal, type Money, type Quantity } from '@radcore/lib-common';
+import { systemPartyId } from '@radcore/lib-accounts';
 import type { Ctx } from '@radcore/lib-platform';
 import { serialKey } from '@radcore/lib-stock';
 import { and, asc, eq, inArray, isNotNull, ne, sum } from 'drizzle-orm';
@@ -117,10 +118,21 @@ export async function deliveredNotInvoiced(ctx: Ctx, partyId: string): Promise<M
  * rounded bill leaves nothing over, and one invoiced whole leaves exactly 0 (the architect on RAD-115). */
 export const rupeesOf = (values: Iterable<Decimal>): Money => roundMoney([...values].reduce((s, v) => s.plus(dec(toRupee(v))), dec('0')));
 
+/**
+ * shortcut: the skip holds only while walk_in can't carry a debit; revisit if that ever changes. The seeded Counter
+ * customer is never left owing: it's reached only through the quick bill, which takes it paid in full or names a buyer,
+ * and anything else that moves it (a return, a refund) only takes it into credit, which skipping makes stricter
+ * (tools/quick-bills.test.ts pins this). So its credit checks skip its whole history, which every counter sale
+ * lengthens (RAD-115's save under 2 seconds, the architect's option (a)). Other parties read only their open
+ * deliveries (M3-33, below).
+ */
+export const counterCustomer = async (ctx: Ctx, partyId: string): Promise<boolean> => partyId === await systemPartyId(ctx, 'walk_in');
+
 /** Each of the party's posted deliveries' value still to invoice, at selling value with GST, unrounded, by delivery:
  * only those with something left (v_delivery_left, M3-33), so a long history reads its open deliveries alone. One with
  * nothing left would add 0, to the rupee too, so leaving it out changes no total. */
 export async function notInvoicedLeft(ctx: Ctx, partyId: string): Promise<Map<string, Decimal>> {
+  if (await counterCustomer(ctx, partyId)) return new Map();
   const rows = await salesTx(ctx).select({ id: vDeliveryLeft.deliveryId, left: vDeliveryLeft.left }).from(vDeliveryLeft)
     .where(and(eq(vDeliveryLeft.partyId, partyId), ne(vDeliveryLeft.left, '0')));
   return new Map(rows.map((r) => [r.id ?? '', dec(r.left ?? '0')]));

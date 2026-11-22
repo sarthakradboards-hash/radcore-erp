@@ -99,6 +99,16 @@ async function lockPositions(ctx: Ctx, pairs: readonly (readonly [string, string
     .orderBy(asc(stockPositions.itemId), asc(stockPositions.locationId)).for('update');
 }
 
+/**
+ * A save that posts several documents takes the stock locks of all of them up front (ADR-006 §1 for combined saves, the
+ * architect on RAD-115): the positions of every line in `(item_id, location_id)` order, then the units it names, by id.
+ * Its postings then take them again for free, and nothing is taken out of order.
+ */
+export async function holdStock(ctx: Ctx, lines: readonly { itemId: string; locationId: string; serials?: readonly string[] }[]): Promise<void> {
+  await lockPositions(ctx, lines.map((l) => [l.itemId, l.locationId] as const));
+  await lockUnits(ctx, lines.flatMap((l) => (l.serials ?? []).map((serialNo) => ({ itemId: l.itemId, serialNo }))));
+}
+
 /** The new batches a posting's goods-in name, created after the position locks in `(item_id, batch_key)` order
  * (§4a; every supplier is null until parties land), and every batch's id, by item and key. */
 async function batchIds(ctx: Ctx, ins: readonly StockIn[]): Promise<Map<string, string>> {
