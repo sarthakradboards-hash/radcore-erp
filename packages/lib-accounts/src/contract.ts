@@ -39,6 +39,8 @@ export const setCompany = defineContract({
 
 // Parties (M2-11, RAD-90): everyone RadCore sells to or buys from.
 export const PARTY_KINDS = ['customer', 'dealer', 'franchisee', 'supplier'] as const;
+/** The kinds we sell to: a party of any of them may be on a quote, order, delivery or invoice (lib-sales' sellingTo). */
+export const SELLS_TO_KINDS = ['customer', 'dealer', 'franchisee'] as const satisfies readonly (typeof PARTY_KINDS)[number][];
 const partyKinds = () => z.array(z.enum(PARTY_KINDS)).min(1, 'Choose at least one kind').max(4)
   .refine((k) => new Set(k).size === k.length, 'Each kind once');
 
@@ -89,7 +91,9 @@ const party = piiRecord('parties', z.object({
 /** GET /parties (parties:read): by name, a page at a time, searched by name or GSTIN, filtered by kind and active. */
 export const listParties = defineContract({
   method: 'GET', path: '/parties', auth: 'session', perm: 'parties:read', tx: read,
-  input: listInput(z.object({ search: searchText().optional(), kind: z.enum(PARTY_KINDS).optional(), active: z.boolean().optional() })),
+  input: listInput(z.object({ search: searchText().optional(), kind: z.enum(PARTY_KINDS).optional(), active: z.boolean().optional(),
+    // The parties a sale may name (SELLS_TO_KINDS): for the sales screens' pickers, a dealer or franchisee too (RAD-131).
+    sellsTo: z.literal(true).optional() })),
   output: listOf(party),
 });
 
@@ -112,7 +116,7 @@ export const createParty = defineContract({
 export const updateParty = defineContract({
   method: 'PATCH', path: '/parties/:id', auth: 'session', perm: 'parties:write', tx: write,
   input: z.object(partyFields).partial().extend({ id: idString(), active: z.boolean().optional() }),
-  output: z.object({}), errors: ['gstin_taken'],
+  output: z.object({}), errors: ['gstin_taken', 'system_party'],
 });
 
 /** PUT /parties/:id/credit (parties:manage): the party's credit days and limit, null for none, with the person's
@@ -124,7 +128,7 @@ export const setPartyCredit = defineContract({
     accountManager: idString().nullable().optional(),
     reason: reason() }),
   output: z.object({}),
-  errors: ['unknown_user'],
+  errors: ['unknown_user', 'system_party'],
 });
 
 // The chart of accounts and the journal (RAD-86, M2-16's screens; ADR-006 §2, §3). The books are only posted and
@@ -230,6 +234,8 @@ export const recordPaymentContract = defineContract({
     tds: moneyString().optional(), accountId: idString(), refundOf: idString().optional(),
     credit: z.object({ table: z.string().regex(/^[a-z][a-z0-9_]*$/, 'Not a document table'), id: idString() }).optional(),
     narration: z.string().trim().min(1).max(500).optional(),
+    // The money's own trail (RAD-115): a card machine's approval code, a UPI UTR, a cheque number.
+    reference: z.string().trim().min(1).max(40).optional(),
   }),
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
   errors: ['invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',

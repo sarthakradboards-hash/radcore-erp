@@ -4,11 +4,11 @@
 // goods came from; what posting wrote (the cost it went out at, what it sold for, the GST) is empty on a draft.
 import { formatMoney, isMasked, type Masked } from '@radcore/lib-common';
 import type { getDelivery, listDeliveries, listDeliveryReturns } from '@radcore/lib-sales/contract';
-import { listLocations } from '@radcore/lib-stock/contract';
+import { listLocationKinds, listLocations } from '@radcore/lib-stock/contract';
 import { useId } from 'react';
 import type { z } from 'zod';
 import { Pii } from '../../../../components/ui/masked.tsx';
-import { useApiList } from '../../../../lib/api/query.ts';
+import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import '../../../../components/ui/table/table.css';
 import { asWritten } from '../../admin/decimal.ts';
@@ -28,6 +28,18 @@ export function PlaceName({ id }: { id: string }) {
   const places = useApiList(listLocations, { filter: {} }, { limit: 200 });
   if (places.error !== null) return t('sales.delivery.place.unknown');
   return places.items.find((l) => l.id === id)?.name ?? (places.isPending ? t('loading') : t('sales.delivery.place.unknown'));
+}
+
+/** The places goods can be delivered from: active places of a kind that sells. A person who can't read the kinds (or the
+ * places) is offered what they can, and the server refuses a place that isn't one. */
+export function usePlaces(current: string) {
+  const kinds = useApiQuery(listLocationKinds, {});
+  const places = useApiList(listLocations, { filter: { status: 'active' } }, { limit: 200 });
+  const sells = new Set(kinds.data?.kinds.filter((k) => k.sellable).map((k) => k.kind));
+  const options = places.items.filter((l) => kinds.data === undefined || sells.has(l.kind)).map((l) => ({ value: l.id, label: l.name }));
+  // A draft's place is offered even if it can't be listed now (switched off, or hidden from this person), so it isn't lost.
+  if (current !== '' && !options.some((o) => o.value === current)) options.push({ value: current, label: t('sales.delivery.place.unknown') });
+  return { options, ready: !places.isPending && !kinds.isPending };
 }
 
 /** A money figure from posting: empty on a draft, a mask when the person may not see a cost. */

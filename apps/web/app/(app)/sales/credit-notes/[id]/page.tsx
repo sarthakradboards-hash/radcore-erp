@@ -25,7 +25,7 @@ import { ConfirmDialog } from '../../../admin/shared.tsx';
 import { PlaceName } from '../../deliveries/shared.tsx';
 import { AmountsSummary } from '../../shared.tsx';
 import { creditSteps } from '../../status.ts';
-import { CREDIT_CANCEL_MESSAGES, CREDIT_MESSAGES, CreditItem, type CreditNote } from '../shared.tsx';
+import { CREDIT_CANCEL_MESSAGES, CREDIT_MESSAGES, type CreditNote } from '../shared.tsx';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
 const cancelSchema = z.object({ businessDate: dateString(), reason: cancelCreditNote.input.shape.reason });
@@ -56,7 +56,7 @@ function Lines({ c }: { c: CreditNote }) {
           <tbody>
             {c.lines.map((l) => (
               <tr key={l.id}>
-                <td><CreditItem id={l.itemId} /></td>
+                <td>{l.name} ({l.sku})</td>
                 {goods ? <td className="kit-numeric">{l.qty === null ? '' : asWritten(l.qty)}</td> : null}
                 <td className="kit-numeric">{money(l.taxable)}</td>
                 <td className="kit-numeric">{money(l.cgst)}</td>
@@ -120,7 +120,7 @@ export default function CreditNotePage() {
         {note.locationId === null ? null : <><dt>{t('sales.credit.place')}</dt><dd><PlaceName id={note.locationId} /></dd></>}
         <dt>{t('sales.credit.reason')}</dt><dd>{note.reason}</dd>
         <dt>{t('sales.credit.refund')}</dt>
-        <dd>{note.refund === null ? t('sales.credit.refund.none') : t('sales.credit.refund.amount', { amount: formatMoney(note.refund.amount) })}</dd>
+        <dd>{note.refund === null ? t('sales.credit.refund.none') : t(worked ? 'sales.credit.refund.paid' : 'sales.credit.refund.amount', { amount: formatMoney(note.refund.amount) })}</dd>
         {note.late ? <><dt>{t('sales.credit.late')}</dt><dd>{t('sales.credit.late.yes')}</dd></> : null}
       </dl>
       <Lines c={note} />
@@ -129,10 +129,11 @@ export default function CreditNotePage() {
           roundOff: note.roundOff, total: note.total, note: null }} />
       ) : <p>{t('sales.invoice.notPosted')}</p>}
       {note.status === 'draft' ? <p>{t('sales.credit.draftNote')}</p> : null}
+      {note.status === 'draft' && note.approval === 'pending' ? <p className="admin-notice">{t('sales.credit.pending')}</p> : null}
       <div className="kit-actions">
         {mayWrite && note.status === 'draft' ? (
           <>
-            <button type="button" className="kit-button kit-button-primary" onClick={open('send')}>{t('sales.credit.send')}</button>
+            {note.approval === 'none' ? <button type="button" className="kit-button kit-button-primary" onClick={open('send')}>{t('sales.credit.send')}</button> : null}
             <button type="button" className="kit-button" onClick={open('delete')}>{t('sales.delete')}</button>
           </>
         ) : null}

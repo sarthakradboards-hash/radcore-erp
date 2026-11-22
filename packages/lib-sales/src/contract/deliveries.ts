@@ -13,7 +13,7 @@ const status = z.enum(['draft', 'posted', 'cancelled']);
 
 /** What the person picked for a line: its batches (null for "batch unknown", a negative-stock delivery's part beyond
  * what's on hand) and, for a serialised item, a serial number per unit. */
-const picks = {
+export const picks = {
   batches: z.array(z.object({ batchId: idString().nullable(), qty: quantityString() })).min(1, 'Pick the batches').max(50),
   serials: z.array(z.string().trim().min(1).max(60)).max(1000),
 };

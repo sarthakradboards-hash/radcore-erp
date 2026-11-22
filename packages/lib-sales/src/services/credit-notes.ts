@@ -3,13 +3,14 @@
 // the draft's check and again at posting under the invoice's lock (credit-note-post.ts). Whose a note is: its invoice's
 // owner (ADR-007 §7), whoever drafts it.
 import { after, creditNoteLines, creditNotes, deliveryLines, invoiceLines, invoices, salesTx } from '@radcore/db/sales';
-import { dec, roundMoney } from '@radcore/lib-common';
+import { moneyAccountRefusal, paidOf } from '@radcore/lib-accounts';
+import { dec, roundMoney, type Money } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, listScope, type Ctx } from '@radcore/lib-platform';
 import { checkPlace, checkQuantity, serialKey } from '@radcore/lib-stock';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createCreditNote, deleteCreditNote, getCreditNote, listCreditNotes } from '../contract.ts';
-import { creditLine, type CreditFigures } from './credit-note-rules.ts';
+import { creditLine, refundRoom, type CreditFigures } from './credit-note-rules.ts';
 import { creditedOf, pickedBatchKey, picksOf, returnedOf, type Picks } from './delivered.ts';
 import { checkDate } from './document-rules.ts';
 import { labelled, today } from './document-lines.ts';
@@ -57,6 +58,11 @@ export async function invoiceToCredit(ctx: Ctx, invoiceId: string, permission: s
   return inv;
 }
 type Invoice = Awaited<ReturnType<typeof invoiceToCredit>>;
+
+/** What's still unpaid of the invoice: its total less what's been paid or credited against it. */
+export async function unpaidOf(ctx: Ctx, inv: Invoice): Promise<Money> {
+  return roundMoney(dec(inv.total).minus(dec((await paidOf(ctx, 'invoices', [inv.id])).get(inv.id)?.paid ?? '0')));
+}
 
 /** Goods back come in batches and serials the invoice line's delivery took, that haven't come back yet. */
 async function checkPicks(ctx: Ctx, deliveryLineId: string, l: NoteLineIn, n: number): Promise<void> {
@@ -143,7 +149,7 @@ export async function creditNoteShown(ctx: Ctx, { id }: In<typeof getCreditNote>
   return { id: c.id, number: c.number, kind: c.kind as Kind, invoiceId: c.invoiceId, partyId: c.partyId, partyName: names.get(c.partyId) ?? '',
     businessDate: c.businessDate, status: c.status as Status, total: c.total, locationId: c.locationId, reason: c.reason,
     refund: c.refundAmount === null || c.refundAccountId === null ? null : { amount: roundMoney(c.refundAmount), accountId: c.refundAccountId },
-    late: c.late, taxable: c.taxable, cgst: c.cgst, sgst: c.sgst, igst: c.igst, roundOff: c.roundOff,
+    late: c.late, taxable: c.taxable, cgst: c.cgst, sgst: c.sgst, igst: c.igst, roundOff: c.roundOff, amountsNote: null,
     lines: (await labelled(ctx, lines)).map((l) => ({ id: l.id, lineNo: l.lineNo, invoiceLineId: l.invoiceLineId, itemId: l.itemId,
       sku: l.sku, name: l.name, qty: l.qty, taxable: l.taxable,
       gstRate: l.gstRate, gstRateSource: l.gstRateSource, cgst: l.cgst, sgst: l.sgst, igst: l.igst, lineTotal: l.lineTotal, cost: l.cost,
@@ -157,9 +163,13 @@ export async function addCreditNote(ctx: Ctx, input: In<typeof createCreditNote>
   if (input.locationId !== null) await checkPlace(ctx, input.locationId);
   const figures = await noteFigures(ctx, inv, input.kind, input.lines);
   const total = roundMoney(figures.reduce((s, f) => s.plus(dec(f.lineTotal)), dec('0')).toDecimalPlaces(0));
-  if (input.refund !== null && dec(input.refund.amount).gt(total)) {
-    throw new AppError('exceeds_credit', 'A refund can’t be more than the credit note',
-      [{ path: ['refund', 'amount'], code: 'exceeds_credit', message: `The note comes to ${total}` }]);
+  // A counter refund only of what's left once the note settles its invoice, said to the maker now (the RAD-114 note);
+  // posting checks it again under the invoice's lock.
+  if (input.refund !== null) {
+    refundRoom(total, await unpaidOf(ctx, inv), input.refund.amount);
+    // Paid from Cash or a bank account (lib-accounts' rule, which the refund's posting applies too).
+    const refused = await moneyAccountRefusal(ctx, input.refund.accountId);
+    if (refused !== null) throw new AppError('not_money_account', refused, [{ path: ['refund', 'accountId'], code: 'not_money_account', message: refused }]);
   }
   const tx = salesTx(ctx);
   const [row] = await tx.insert(creditNotes).values({ kind: input.kind, invoiceId: inv.id, partyId: inv.partyId, owner: inv.owner,

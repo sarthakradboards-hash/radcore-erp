@@ -519,6 +519,20 @@
       "when": 1795287303502,
       "tag": "0073_reminder_links",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795290586485,
+      "tag": "0074_quick_bill",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795337021699,
+      "tag": "0075_crm_setup",
+      "breakpoints": true
     }
   ]
 }

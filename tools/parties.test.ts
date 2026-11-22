@@ -36,7 +36,8 @@ const fields = (o: Record<string, unknown> = {}) => ({
 it('marks parties:manage as needing the second factor, and parties:contact as all-scope only without it', () => {
   expect([SECOND_FACTOR_KEYS.includes('parties:manage'), SECOND_FACTOR_KEYS.includes('parties:contact')]).toEqual([true, false]);
   // leads:contact (RAD-106) is all-only for the same reason, and leads:unassigned (RAD-109) has no scope to give.
-  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'leads:contact', 'leads:unassigned']);
+  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'leads:contact', 'leads:unassigned',
+    'campaigns:read', 'campaigns:write']);
 });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
@@ -111,6 +112,22 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     await run((ctx) => changeParty(ctx, { id: a.id, active: false }));
     expect(await find({ search: word, active: true })).toEqual([b.id]);
     expect(await pool.query('delete from radcore.parties where id = $1', [a.id]).then(() => 'ok', (e: { code?: string }) => e.code)).toBe('42501');
+  });
+
+  // RAD-131: the sales screens' pickers offer every party a sale may name, a dealer's or franchisee's too, from the same
+  // kinds lib-sales' sellingTo accepts (SELLS_TO_KINDS); a party that only supplies us isn't one.
+  it('lists the parties a sale may name (sellsTo): customers, dealers and franchisees, never a supplier only', async () => {
+    const word = `Zs${letters(6)}`;
+    const made = [];
+    for (const kinds of [['customer'], ['dealer'], ['franchisee'], ['supplier'], ['supplier', 'dealer']]) {
+      made.push((await add({ name: `${word} ${kinds.join(' ')}`, kinds })).id);
+    }
+    const found = (await run((ctx) => listPartiesPage(ctx, { filter: { search: word, sellsTo: true }, limit: 10 }))).items.map((p) => p.id);
+    expect(found.toSorted()).toEqual([made[0], made[1], made[2], made[4]].toSorted());
+    // The Counter customer is a customer, but not one to pick: ordinary quotes and orders refuse it (RAD-115).
+    const counter = async (filter: Record<string, unknown>) => (await run((ctx) => listPartiesPage(ctx, { filter: { search: 'Counter customer',
+      ...filter }, limit: 50 }))).items.filter((p) => p.name === 'Counter customer').length;
+    expect([await counter({ kind: 'customer' }), await counter({ sellsTo: true })]).toEqual([1, 0]);
   });
 
   it('masks a party’s phone, email and address without pii:read or parties:contact over the real route, and logs a look with either', async () => {

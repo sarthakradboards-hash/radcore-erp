@@ -3,6 +3,7 @@
 import { createCreditNote, listCreditNotes } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import { announce } from '../../../../../components/ui/live-region.tsx';
 import { useApiMutation } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
@@ -11,7 +12,10 @@ import { NEW_CREDIT } from '../credit-values.ts';
 
 export default function NewCreditNotePage() {
   const router = useRouter();
+  const mayWrite = useMe().permissions.includes('credit_notes:write');
   const create = useApiMutation(createCreditNote, { invalidates: [listCreditNotes] });
+  // A reader would get the form and a 403 on saving, so they get the refusal instead (e2e-playwright on #298).
+  if (!mayWrite) return <><p><Link href="/sales/credit-notes">{t('sales.back')}</Link></p><p role="alert" className="kit-form-alert">{t('sales.credit.err.forbidden')}</p></>;
   return (
     <>
       <p><Link href="/sales/credit-notes">{t('sales.back')}</Link></p>

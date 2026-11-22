@@ -10,10 +10,10 @@
 // architect on RAD-106).
 // A person who holds leads:unassigned (D-11) also opens the leads no one owns, and their repeat enquiry on one takes it;
 // a form or a platform never does (the architect on RAD-109).
-import { crmTx, leadActivities, leadEnquiries, leads } from '@radcore/db/crm';
+import { campaigns, crmTx, leadActivities, leadEnquiries, leadSetAsides, leadSources, leads } from '@radcore/db/crm';
 import { indiaDate, maskOf, normaliseEmail, normalisePhone } from '@radcore/lib-common';
 import { AppError, defineNotification, notify, principalId, principalsOf, type Ctx } from '@radcore/lib-platform';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { getLead, LEAD_SOURCES, LEAD_STAGES } from '../contract.ts';
 
@@ -34,7 +34,34 @@ export type Capture = Readonly<{
   message?: string | undefined;
   /** When it arrived; now unless a door stored it first (M3-03's webhooks). */
   receivedAt?: Date | undefined;
+  /** A source a person picked at capture by hand or at the counter (M3-06): one leads:setup added, of that channel. */
+  sourceId?: string | undefined;
+  /** The campaign token the form came with (a campaign's link or QR code, M3-06): an unknown or ended one tags nothing. */
+  campaign?: string | undefined;
 }>;
+
+/** The source and campaign an enquiry counts under (M3-06, the architect): a live campaign's, from its token; else the
+ * source a person picked; else its door's own, seeded one. */
+async function sourceOf(ctx: Ctx, c: Capture): Promise<{ id: string; channel: string; ignored: boolean; campaignId: string | null }> {
+  const tx = crmTx(ctx);
+  const columns = { id: leadSources.id, channel: leadSources.channel, ignored: leadSources.ignored };
+  if (c.campaign !== undefined) {
+    const [hit] = await tx.select({ ...columns, campaignId: campaigns.id, endedAt: campaigns.endedAt }).from(campaigns)
+      .innerJoin(leadSources, eq(leadSources.id, campaigns.sourceId)).where(eq(campaigns.token, c.campaign));
+    if (hit !== undefined && hit.endedAt === null) return { id: hit.id, channel: hit.channel, ignored: hit.ignored, campaignId: hit.campaignId };
+  }
+  if (c.sourceId !== undefined) {
+    const [picked] = await tx.select(columns).from(leadSources)
+      .where(and(eq(leadSources.id, c.sourceId), eq(leadSources.channel, c.source), eq(leadSources.active, true)));
+    if (picked === undefined) {
+      throw new AppError('unknown_source', 'There is no such source', [{ path: ['sourceId'], code: 'unknown', message: 'Choose a source' }]);
+    }
+    return { ...picked, campaignId: null };
+  }
+  const [door] = await tx.select(columns).from(leadSources).where(eq(leadSources.doorChannel, c.source));
+  if (door === undefined) throw new Error(`the ${c.source} door has no source: the migration seeds one per door`);
+  return { ...door, campaignId: null };
+}
 
 /** A repeat enquiry, to the lead's owner: the lead's name, else its phone's last four digits, whoever views it. The
  * whole number shows only on the lead itself, where the look is logged (ADR-005 §7c; auditor-2 on #241). */
@@ -54,6 +81,14 @@ export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id?: strin
   const phone = normalisePhone(c.phone);
   if (phone === undefined) throw new AppError('invalid_input', 'Enter a valid phone number', [{ path: ['phone'], code: 'invalid', message: 'Enter a valid phone number' }]);
   const receivedAt = c.receivedAt ?? new Date();
+  const source = await sourceOf(ctx, c);
+  const message = c.message === undefined ? null : [...c.message].slice(0, MESSAGE_MAX).join('');
+  // An ignored source's enquiry is stored and set aside: no lead, no join to the number's lead, no one told (RC-212).
+  if (source.ignored) {
+    await crmTx(ctx).insert(leadSetAsides).values({ sourceId: source.id, campaignId: source.campaignId, phone, name: c.name ?? null,
+      email: c.email === undefined ? null : normaliseEmail(c.email), message, receivedAt });
+    return { repeat: false };
+  }
   const on = indiaDate(receivedAt);
   // A person who takes a new enquiry owns it; a form or platform's lead waits unowned (M3-05 assigns it).
   const me = ctx.principal.kind === 'user' ? principalId(ctx.principal) : null;
@@ -75,8 +110,8 @@ export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id?: strin
     id = lead.id;
     owner = takes ? me : lead.owner;
   }
-  const message = c.message === undefined ? null : [...c.message].slice(0, MESSAGE_MAX).join('');
-  await tx.insert(leadEnquiries).values({ leadId: id, source: c.source, message, receivedAt });
+  await tx.insert(leadEnquiries).values({ leadId: id, source: source.channel, sourceId: source.id, campaignId: source.campaignId, message,
+    receivedAt });
   const repeat = made === undefined;
   const opens = ctx.can('leads:read', { owner: owner ?? '' }) || (owner === null && ctx.can('leads:unassigned'));
   return opens ? { id, repeat } : { repeat };
