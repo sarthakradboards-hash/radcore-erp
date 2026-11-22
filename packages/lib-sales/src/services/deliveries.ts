@@ -18,6 +18,7 @@ import type {
 } from '../contract.ts';
 import { netDelivered, orderDelivered, picksOf, returnedOf } from './delivered.ts';
 import { bookingsDelivered, linesDone, lockLiveBookings } from './booking-holds.ts';
+import type { ApprovedThrough } from './checks.ts';
 import { checkDelivery, deliveryLinesOf, deliveryOverride, pricedLines } from './delivery-checks.ts';
 import { checkDate } from './document-rules.ts';
 import { labelled, numberedBatches, today } from './document-lines.ts';
@@ -185,7 +186,17 @@ export async function askDeliveryOverride(ctx: Ctx, { id }: In<typeof requestDel
  * POST /sales/deliveries/:id/post (deliveries:write). In ADR-006 §1's order: the period lock, the delivery, its order,
  * then the stock engine's positions, batches and units; the entry and the number last, once every check has passed.
  */
-export async function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>): Promise<Out<typeof postDelivery>> {
+export function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>): Promise<Out<typeof postDelivery>> {
+  return postDeliveryFor(ctx, id);
+}
+
+/** A held quick bill's delivery, posted as it's completed (RAD-115), reached by no route: its order's approved override
+ * covers its check (checkDelivery's `through`). Its own function, since a route passes its service a third argument. */
+export function postDeliveryThrough(ctx: Ctx, id: string, through: ApprovedThrough): Promise<Out<typeof postDelivery>> {
+  return postDeliveryFor(ctx, id, through);
+}
+
+async function postDeliveryFor(ctx: Ctx, id: string, through?: ApprovedThrough): Promise<Out<typeof postDelivery>> {
   const tx = salesTx(ctx);
   // Its date first, unlocked, for the period lock; then the delivery, locked, still on that date: a change committed in
   // between could have moved it to a period not held (auditor-2 on #247).
@@ -205,7 +216,7 @@ export async function postDeliveryNow(ctx: Ctx, { id }: In<typeof postDelivery>)
   await checkedLines(ctx, d.orderId, lines.map((l) => ({ orderLineId: l.orderLineId, qty: q(l.qty), ...picksOf(l.picks) })));
   // ADR-006 §1's step 3: the party, after the documents, so two sales to it take turns at the credit check (ADR-007 §9).
   await holdParty(ctx, d.partyId);
-  await checkDelivery(ctx, d, lines);
+  await checkDelivery(ctx, d, lines, through);
   const priced = await pricedLines(ctx, d.businessDate, lines);
   // The lines it finishes end their holds, whatever serial leaves (RC-122): the stock engine releases them.
   const moved = await postStock(ctx, { sourceTable: 'deliveries', sourceId: id, businessDate: d.businessDate, endingPromisesOf: done,

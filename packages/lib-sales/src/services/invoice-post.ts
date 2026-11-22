@@ -4,7 +4,7 @@
 // frozen onto it with the buyer's details; each line copies the GST rate in force on its date and that rate's source;
 // the entry is Dr Debtors (the total), Cr Sales and Output GST, the round-off, and Dr COGS, Cr GDNI for the goods'
 // share of what they went out at; the number (INV) is drawn last. Over the checks it needs an approved override.
-import { invoiceLines, invoices, salesTx } from '@radcore/db/sales';
+import { deliveryLines, invoiceLines, invoices, salesTx } from '@radcore/db/sales';
 import { companyForInvoice, getCompanyProfile, getPartyById, holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, moneyString, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
 import { gstRateFor } from '@radcore/lib-gst';
@@ -13,7 +13,7 @@ import { itemLabels, soldCondition } from '@radcore/lib-stock';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { postInvoice, requestInvoiceOverride } from '../contract.ts';
-import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
+import { checkSale, coveredBy, overrideApproval, type ApprovedThrough, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { notInvoicedLeft, rupeesOf } from './delivered.ts';
 import { checkDate, listRateBeforeTax, netRate, shareOf } from './document-rules.ts';
 import { sellingTo, today } from './document-lines.ts';
@@ -168,7 +168,26 @@ function entryLines(partyId: string, t: ReturnType<typeof totalsOf>, cost: Money
 }
 
 /** POST /sales/invoices/:id/post (invoices:write). */
-export async function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): Promise<Out<typeof postInvoice>> {
+export function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): Promise<Out<typeof postInvoice>> {
+  return postInvoiceFor(ctx, id);
+}
+
+/** A held quick bill's invoice, posted as it's completed (RAD-115), reached by no route: its order's approved override
+ * covers its check when it bills exactly that bill's delivery, whole. Its own function, since a route passes its service
+ * a third argument. */
+export function postInvoiceThrough(ctx: Ctx, id: string, through: ApprovedThrough): Promise<Out<typeof postInvoice>> {
+  return postInvoiceFor(ctx, id, through);
+}
+
+/** Whether the invoice bills every line of the one delivery `through` names, each in full: the held bill's own. */
+async function wholeDelivery(ctx: Ctx, lines: readonly { deliveryLineId: string; qty: string; delivery: { id: string }; sent: { qty: string } }[],
+  deliveryId: string | undefined): Promise<boolean> {
+  if (deliveryId === undefined || !lines.every((l) => l.delivery.id === deliveryId && dec(l.qty).eq(dec(l.sent.qty)))) return false;
+  const all = await salesTx(ctx).select({ id: deliveryLines.id }).from(deliveryLines).where(eq(deliveryLines.deliveryId, deliveryId));
+  return all.length === lines.length;
+}
+
+async function postInvoiceFor(ctx: Ctx, id: string, through?: ApprovedThrough): Promise<Out<typeof postInvoice>> {
   const tx = salesTx(ctx);
   // Its date first, unlocked, for the period lock; then the invoice, locked, still on that date.
   const held = (await invoiceOf(ctx, id, 'invoices:write')).businessDate;
@@ -192,8 +211,11 @@ export async function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): 
   }
   // ADR-006 §1's step 3: the party, after the documents, so two sales to it take turns at the credit check (ADR-007 §9).
   await holdParty(ctx, inv.partyId);
-  const { issues } = await checkSale(ctx, saleOf(inv, w.figures, w.totals.total, await notInvoicedLeft(ctx, inv.partyId)));
-  if (issues.length > 0) {
+  const result = await checkSale(ctx, saleOf(inv, w.figures, w.totals.total, await notInvoicedLeft(ctx, inv.partyId)));
+  const { issues } = result;
+  // Completing a held quick bill, its order's approval covers these issues for exactly that bill's delivery (RAD-115).
+  const covered = through !== undefined && coveredBy(through, result) && await wholeDelivery(ctx, w.lines, through.deliveryId);
+  if (issues.length > 0 && !covered) {
     const version: OverrideVersion = { figures: figuresOf(inv, w.lines), issues };
     if (inv.overrideVersion === null || inv.overrideVersion !== versionHash(version)) {
       throw new AppError('needs_override', 'This invoice needs someone else to approve an override before it’s posted',

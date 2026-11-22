@@ -45,6 +45,9 @@ export type SaleCheck = Readonly<{
   adds: DecimalInput;
   /** Delivered to the party and not yet billed: the stage passes delivered.ts's deliveredNotInvoiced. */
   notInvoiced?: DecimalInput;
+  /** A held quick bill's planned payments, not yet taken, off what's owed, so its override is judged as completing it
+   * will be, with its receipts taken first (the architect on RAD-115). Only the hold's override passes it. */
+  paidNow?: DecimalInput;
   lines: readonly SaleLine[];
   /** Who priced it: the document's maker (its created_by, "user:<id>"). Its discounts are judged by their role's limit,
    * never the reader's, so the maker, an override's approver and whoever confirms or posts it see the same issues
@@ -60,7 +63,8 @@ export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult
   const party = await getPartyById(ctx, { id: s.partyId });
   const owed = await partyReceivable(ctx, s.partyId, s.on);
   const notInvoiced = dec(s.notInvoiced ?? '0').toFixed(2);
-  const credit = creditResult({ limit: party.creditLimit, outstanding: owed.outstanding, notInvoiced, adds: s.adds,
+  const outstanding = dec(owed.outstanding).minus(dec(s.paidNow ?? '0')).toFixed(2);
+  const credit = creditResult({ limit: party.creditLimit, outstanding, notInvoiced, adds: s.adds,
     creditDays: party.creditDays ?? ctx.settings.get(DEFAULT_CREDIT_DAYS), oldestUnpaid: owed.oldestUnpaid, on: s.on });
   const priced = s.lines.filter((l) => l.rate !== null);
   const limit = priced.length === 0 ? '0' : await discountLimitOf(ctx, await roleOf(ctx, s.pricedBy));
@@ -76,7 +80,7 @@ export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult
   });
   return {
     stage: s.stage,
-    credit: { limit: party.creditLimit, outstanding: owed.outstanding, notInvoiced, adds: dec(s.adds).toFixed(2) as Money,
+    credit: { limit: party.creditLimit, outstanding, notInvoiced, adds: dec(s.adds).toFixed(2) as Money,
       after: credit.after, overLimit: credit.overLimit, overdue: credit.overdue, oldestUnpaid: owed.oldestUnpaid },
     lines,
     // A priced line with no list rate needs approval too (the architect's #256), as one with no cost does.
@@ -84,6 +88,18 @@ export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult
       noListRate: noListRate(s.lines[i]?.rate ?? null, s.lines[i]?.listRate ?? null), overDiscount: l.overDiscount }))),
   };
 }
+
+/**
+ * What a held quick bill's approved order override lets its own delivery and invoice through on, in completing it (the
+ * architect on RAD-115): the order, the kinds of issue approved, and what was owed then. Library-only, never from a
+ * route's input. A stage passes only with issues of those kinds and no more owed; the stage checks it's that order's
+ * whole delivery, or the invoice of exactly that delivery.
+ */
+export type ApprovedThrough = Readonly<{ orderId: string; deliveryId?: string; kinds: readonly string[]; after: DecimalInput }>;
+
+/** Whether a stage's check is covered by the order's approval: issues of approved kinds only, and owed no more. */
+export const coveredBy = (through: ApprovedThrough, r: SaleCheckResult): boolean =>
+  r.issues.every((i) => through.kinds.includes(i.code)) && dec(r.credit.after).lte(dec(through.after));
 
 /** What an override's approver approves, by its hash: the document's own figures, and the issues it overrides. No
  * balance or cost goes in, so the version doesn't move while it's decided, and an approver without cost:read can still

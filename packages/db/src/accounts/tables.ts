@@ -202,6 +202,8 @@ export const parties = radcoreTable('parties', {
   systemKey: text().unique(),
 }, (t) => [
   uniqueIndex('ux_parties_gstin').on(t.gstin),
+  // The counter's look-up by phone (GET /parties' filter.phone, RAD-115).
+  index('ix_parties_phone').on(t.phone),
   trigramIndex('ix_parties_name_trgm', t.name),
   check('ck_parties_kinds', sql`${t.customer} or ${t.dealer} or ${t.franchisee} or ${t.supplier}`),
   check('ck_parties_gstin', sql`${t.gstin} ~ '^[0-9]{2}[A-Z]{3}[PCHFATBLJG][A-Z][0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$'`),

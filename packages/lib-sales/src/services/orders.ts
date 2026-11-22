@@ -19,6 +19,7 @@ import { amountsForRead, frozenHeader, frozenLine, type Amounts } from './docume
 import { hasDeliveries, invoicedOf, netDelivered, orderDelivered } from './delivered.ts';
 import { checkOrder, orderOverride } from './order-checks.ts';
 import { refuseWhileBooked } from './booking-holds.ts';
+import { holdOf } from './quick-bill-holds.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
 import { labelled } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
@@ -121,6 +122,14 @@ export function addCounterOrder(ctx: Ctx, input: In<typeof createOrder>): Promis
   return addOrderFor(ctx, input, true);
 }
 
+async function refuseWhileHeld(ctx: Ctx, id: string, what: string): Promise<void> {
+  // A held quick bill is confirmed only by completing it, which takes its planned payments first: its override was
+  // approved on them, so confirming or changing it here would sell on that approval without them (RAD-115).
+  if (await holdOf(ctx, id) !== null) {
+    throw new AppError('quick_bill_held', `This order is a quick bill held for approval: complete it through the quick bill, or delete it, rather than ${what} it`);
+  }
+}
+
 async function addOrderFor(ctx: Ctx, input: In<typeof createOrder>, counter: boolean): Promise<Out<typeof createOrder>> {
   checkDate(input.businessDate, today());
   if (!counter) await refuseCounterCustomer(ctx, input.partyId);
@@ -149,6 +158,7 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
     throw new AppError('version_changed', 'This order changed while it was being changed: change it again');
   }
   mayEdit('order', now.status, true);
+  await refuseWhileHeld(ctx, id, 'change');
   if (now.status === 'confirmed' && (input.partyId !== now.partyId || input.businessDate !== now.businessDate)) {
     throw new AppError('wrong_status', 'A confirmed order keeps its party and date; only its lines change');
   }
@@ -203,6 +213,7 @@ export async function confirmOrderNow(ctx: Ctx, { id }: In<typeof confirmOrder>)
   const now = await orderOf(ctx, id, 'sales:write', true);
   if (now.businessDate !== held) throw new AppError('version_changed', 'This order changed while it was being confirmed: confirm it again');
   mayMove('order', now.status, 'confirmed');
+  await refuseWhileHeld(ctx, id, 'confirm');
   checkDate(now.businessDate, today(), fromQuote(now));
   await sellingTo(ctx, now.partyId);
   // ADR-006 §1's step 3: the party, after the order, so two sales to it take turns at the credit check (ADR-007 §9).
