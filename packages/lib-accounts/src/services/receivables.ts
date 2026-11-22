@@ -41,7 +41,8 @@ export async function partyReceivable(ctx: Ctx, partyId: string, on: string): Pr
       newer = newer.plus(dec(bill.debit));
       if (newer.gte(unpaid)) return { outstanding, oldestUnpaid: bill.businessDate };
     }
-    // The bills sum to more than is unpaid (credits are never negative), so the last page always answers.
-    if (bills.length < PAGE) return { outstanding, oldestUnpaid: bills.at(-1)?.businessDate ?? null };
+    // The bills sum to more than is unpaid (credits are never negative), so a bill above always answers before the last
+    // page ends (the auditor on #342): running out means the sums and the bills disagree.
+    if (bills.length < PAGE) throw new Error(`party ${partyId}: its unpaid ${unpaid.toFixed(2)} is more than its bills`);
   }
 }
