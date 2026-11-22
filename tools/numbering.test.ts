@@ -3,10 +3,10 @@
 // that rolls back gives its number back; concurrent saves take turns and never share or skip one; and the database,
 // not the app, decides the next number. Each test uses its own series, since the database is shared.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { defineSeries, nextNumber, type Principal } from '@radcore/lib-platform';
+import { defineSeries, holdSeries, nextNumber, seriesOrder, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -30,7 +30,7 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
       return query(...args);
     };
   });
-  const admin = new pg.Pool({ connectionString: superUrl, max: 1 });
+  const admin = new pg.Pool({ connectionString: superUrl, max: 2 });
   const db = createDatabase(pool);
   afterAll(async () => {
     await pool.end();
@@ -162,5 +162,51 @@ describe.skipIf(!url || !superUrl)('numbering', () => {
     await asAdmin(`set local session_replication_role = replica;
       update radcore.number_counters set last = ${String(s.max)} where series = '${s.key}'`);
     await expect(draw(s, '2026-11-14')).rejects.toMatchObject({ code: 'series_full' });
+  });
+
+  // ADR-006 §1 step 6 (the architect on RAD-115): the journal's series first, then the rest by key, each once.
+  it('orders series turns with the journal first, then by key', () => {
+    expect(seriesOrder(['sales.order', 'sales.invoice', 'accounts.receipt', 'accounts.journal', 'sales.delivery', 'sales.invoice']))
+      .toEqual(['accounts.journal', 'accounts.receipt', 'sales.delivery', 'sales.invoice', 'sales.order']);
+  });
+
+  /** Another transaction holding `key`'s turn until `fn` has run against it: `fn` gets whether the app's waiting save
+   * holds the turn of `held` meanwhile. */
+  async function whileHeld(key: string, save: () => Promise<unknown>, held?: string) {
+    const blocker = await admin.connect();
+    try {
+      await blocker.query('begin');
+      await blocker.query("select pg_advisory_xact_lock(hashtextextended('numbering.' || $1, 0))", [key]);
+      const pid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
+      const saved = save();
+      const waiter = async () => (await admin.query<{ pid: number }>('select pid from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
+        [pid])).rows[0]?.pid;
+      await vi.waitFor(async () => expect(await waiter()).toBeDefined(), { timeout: 10_000 });
+      // The waiting save's granted advisory locks, as each key's 64-bit hash split into pg_locks' two halves.
+      const holds = held === undefined ? null : (await admin.query<{ n: number }>(`select count(*)::int as n from pg_locks,
+        (select hashtextextended('numbering.' || $2, 0) as h) k where locktype = 'advisory' and granted and pid = $1
+        and classid::bigint = (k.h >> 32) & 4294967295 and objid::bigint = k.h & 4294967295`, [await waiter(), held])).rows[0]?.n === 1;
+      await blocker.query('commit');
+      await saved;
+      return holds;
+    } finally {
+      blocker.release();
+    }
+  }
+
+  it('waits at a draw for its series’ turn, held by another save', async () => {
+    const s = series();
+    expect(await whileHeld(s.key, () => draw(s, '2026-11-14'))).toBeNull();
+    expect(await draw(s, '2026-11-14')).toBe('TS/26-27/00002');
+  });
+
+  it('takes holdSeries’ turns in key order however they are given, so it waits at the later one holding the earlier', async () => {
+    const [a, b] = [series(), series()].toSorted((x, y) => (x.key < y.key ? -1 : 1));
+    if (a === undefined || b === undefined) throw new Error('two series');
+    const hold = () => runInTransaction(db, write, staff, randomUUID(), async (ctx) => {
+      await holdSeries(ctx, [b, a]);
+      return nextNumber(ctx, b, '2026-11-14');
+    });
+    expect(await whileHeld(b.key, hold, a.key)).toBe(true);
   });
 });

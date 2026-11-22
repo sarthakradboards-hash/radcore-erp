@@ -5,23 +5,24 @@
 // rolls all of it back.
 import { deliveryLines, priceListVersions, quickBillHolds, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import {
-  addParty, allocatePayment, companyForInvoice, getCompanyProfile, holdPeriod, moneyAccountRefusal, partyWithPhone, recordCounterReceipt, systemAccountId,
-  systemPartyId,
+  addParty, allocatePayment, companyForInvoice, getCompanyProfile, holdParty, holdPeriod, JOURNAL_SERIES, moneyAccountRefusal, partyWithPhone, RECEIPT_SERIES,
+  recordCounterReceipt, systemAccountId, systemPartyId,
 } from '@radcore/lib-accounts';
 import { dec, looksLikeCardNumber, roundMoney, sum, type Money } from '@radcore/lib-common';
-import { AppError, defineSetting, principalId, versionHash, type Ctx } from '@radcore/lib-platform';
+import { AppError, defineSetting, holdSeries, principalId, versionHash, type Ctx } from '@radcore/lib-platform';
+import { holdStock } from '@radcore/lib-stock';
 import { asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { completeQuickBill, createQuickBill, holdQuickBill, previewQuickBill } from '../contract.ts';
 import type { ApprovedThrough } from './checks.ts';
-import { addDelivery, postDeliveryNow, postDeliveryThrough } from './deliveries.ts';
-import { B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, postInvoiceNow, postInvoiceThrough } from './invoice-post.ts';
+import { addDelivery, DELIVERY_SERIES, postDeliveryNow, postDeliveryThrough } from './deliveries.ts';
+import { B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, INVOICE_SERIES, postInvoiceNow, postInvoiceThrough } from './invoice-post.ts';
 import { needsBuyerDetails } from './invoice-rules.ts';
 import { addInvoice } from './invoices.ts';
 import { amountsOf } from './document-amounts.ts';
 import { checkedLines, sellingTo } from './document-lines.ts';
 import { heldExposure, orderCheckNow, orderIssues, orderOverride } from './order-checks.ts';
-import { addCounterOrder, askOrderOverride, confirmOrderNow, getOrderById, priced } from './orders.ts';
+import { addCounterOrder, askOrderOverride, confirmOrderNow, getOrderById, ORDER_SERIES, priced } from './orders.ts';
 import { holdOf, type PlannedPayment } from './quick-bill-holds.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -155,11 +156,26 @@ async function settle(ctx: Ctx, receipts: readonly Receipt[], s: { partyId: stri
 
 const orderLinesOf = (lines: Lines) => lines.map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate, discountPercent: l.discountPercent }));
 
+/**
+ * ADR-006 §1 for a save that posts several documents (the architect on RAD-115): before the first posts, every class of
+ * lock for all of them, in §1's order. That's the period, then the caller's documents (a held bill's order and hold), the
+ * party, the stock positions and units of every line, and then every series it draws, journal first. So it never holds
+ * one while waiting on a plain receipt, delivery or invoice that holds the next; each posting re-takes them for free.
+ */
+async function holdBill(ctx: Ctx, partyId: string, businessDate: string, locationId: string,
+  lines: readonly { itemId: string; serials: readonly string[] }[]): Promise<void> {
+  await holdPeriod(ctx, businessDate);
+  await holdParty(ctx, partyId);
+  await holdStock(ctx, lines.map((l) => ({ itemId: l.itemId, locationId, serials: l.serials })));
+  await holdSeries(ctx, [JOURNAL_SERIES, RECEIPT_SERIES, ORDER_SERIES, DELIVERY_SERIES, INVOICE_SERIES]);
+}
+
 /** POST /sales/quick-bills (invoices:write, and the stages' keys): the counter sale, whole. */
 export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Promise<Out<typeof createQuickBill>> {
   needKeys(ctx);
   const partyId = input.partyId ?? await systemPartyId(ctx, 'walk_in');
   const { businessDate } = input;
+  await holdBill(ctx, partyId, businessDate, input.locationId, input.lines);
   const receipts = await takeReceipts(ctx, partyId, businessDate, await receiptsOf(ctx, input.payments));
   const order = await addCounterOrder(ctx, { partyId, businessDate, notes: input.notes, lines: orderLinesOf(input.lines) });
   await walkInPaysInFull(ctx, partyId, order.id, receipts);
@@ -277,6 +293,11 @@ export async function completeBillNow(ctx: Ctx, input: In<typeof completeQuickBi
   const hold = await holdOf(ctx, input.orderId, true);
   if (hold === null || order.status !== 'draft') throw new AppError('not_held', 'This order isn’t a quick bill held for approval');
   if (order.approved === null) throw new AppError('needs_override', 'This held bill’s override isn’t approved yet');
+  // After the order and its hold, the rest of §1's locks for the whole bill, before its balance is judged.
+  const picked = new Map(hold.picks.map((p) => [p.lineNo, p.serials]));
+  const items = await salesTx(ctx).select({ itemId: salesOrderLines.itemId, lineNo: salesOrderLines.lineNo }).from(salesOrderLines)
+    .where(eq(salesOrderLines.orderId, input.orderId));
+  await holdBill(ctx, order.partyId, businessDate, hold.locationId, items.map((l) => ({ itemId: l.itemId, serials: picked.get(l.lineNo) ?? [] })));
   // The approval holds only for what was owed when it was given, on its order (the architect on RAD-135): a balance grown
   // since is asked again, before anything is written.
   const owed = await heldExposure(ctx, input.orderId);
