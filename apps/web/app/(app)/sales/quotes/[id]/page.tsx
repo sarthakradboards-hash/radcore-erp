@@ -75,9 +75,9 @@ export default function QuotePage() {
       </dl>
       <LinesTable number={quote.number} lines={quote.lines} />
       <AmountsSummary number={quote.number} amounts={quote.amounts} />
+      <div className="kit-actions"><PrintButtons contract={printQuote} id={id} /></div>
       {mayWrite ? (
         <div className="kit-actions">
-        <PrintButtons contract={printQuote} id={id} />
           {quote.status === 'draft' ? (
             <>
               <Link className="kit-button" href={`/sales/quotes/${id}/edit`}>{t('sales.edit')}</Link>

@@ -8,6 +8,10 @@ import { useState } from 'react';
 import { useMe } from '../../../components/shell/session-provider.tsx';
 import { ApiError, callPdf } from '../../../lib/api-client.ts';
 import { t } from '../../../lib/i18n/index.ts';
+import { noteSignedOut } from '../../../lib/session/signed-out.ts';
+
+/** How long the PDF's address lives: the tab has read it by then, and a printout is not kept in memory for the life of the page. */
+const REVOKE_AFTER_MS = 60_000;
 
 export function PrintButtons({ contract, id }: { contract: Contract; id: string }) {
   const { permissions } = useMe();
@@ -17,14 +21,17 @@ export function PrintButtons({ contract, id }: { contract: Contract; id: string 
   const print = async (paper: Paper) => {
     setProblem('');
     const tab = window.open('', '_blank');
+    if (tab === null) { setProblem(t('sales.print.err.blocked')); return; }
+    tab.opener = null; // the printout's tab has no hold on this one
     setBusy(paper);
     try {
       const pdf = await callPdf(contract, { id, paper });
       const url = URL.createObjectURL(pdf);
-      if (tab === null) window.location.assign(url);
-      else tab.location.href = url;
+      tab.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS);
     } catch (e) {
-      tab?.close();
+      tab.close();
+      noteSignedOut(e); // a signed-out session opens the sign-in dialog, as any other read does
       setProblem(e instanceof ApiError && e.code === 'too_large' ? t('sales.print.err.too_large')
         : e instanceof ApiError && e.code === 'wrong_status' ? t('sales.print.err.not_ready') : t('sales.print.err'));
     } finally {
