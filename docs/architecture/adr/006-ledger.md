@@ -66,9 +66,9 @@ half covers every sum and comparison in them, and they round half up, as lib-com
    `(item_id, supplier_id, batch_key)` order (§4a);
 5. the units, `ORDER BY id FOR UPDATE` (§5);
 6. the numbering series (M2-04), last. A number is drawn only once every check has passed, and the series row is
-   held for the shortest time. A save draws its series in one order: those that post no entry first, in the order
-   every flow draws them (`sales.quote`, then `sales.order`), then the journal (`accounts.journal`), then the rest in
-   ascending key order; each draw takes its series' turn first, a transaction advisory lock (lib-platform's
+   held for the shortest time. A save draws its series in one order: `sales.quote`, then `sales.order`, which number
+   documents that post no entry; then the journal series (`accounts.journal`); then any other, in ascending key order.
+   Each draw takes its series' turn first, a transaction advisory lock (lib-platform's
    `nextNumber`), since a year's first number creates the counter row, which can't be locked before it exists. A save
    that posts several documents takes each class of lock for all of them first, in this order, its series last:
    in the same order (`holdSeries`, with lib-stock's `holdStock` for steps 4 and 5; the architect on RAD-115).

@@ -43,8 +43,9 @@ export const formatNumber = (series: Series, prefix: string, year: string, n: nu
   `${prefix}/${year.slice(2)}/${String(n).padStart(series.digits, '0')}`;
 
 // ADR-006 §1 step 6 (the architect on RAD-115): every save draws its series in one order, so two saves never wait on each
-// other's series the opposite way round. The series that post no entry come first, as every flow draws them before any
-// posting (a quote, then its order confirmed); then the journal, which nearly every posting draws; then the rest by key. Each draw takes its series' turn
+// other's series the opposite way round: sales.quote, then sales.order (named, not a class: they number documents that
+// post no entry, and every flow draws them before posting), then the journal, then any other by key. A series added later
+// sorts after the journal unless it's named here. Each draw takes its series' turn
 // first; a save that posts several documents takes all of its series' turns up front, through holdSeries. The turn is an
 // advisory lock, not the counter's row, which a year's first number creates: locking it would mean drawing one.
 const FIRST = ['sales.quote', 'sales.order', 'accounts.journal'];
