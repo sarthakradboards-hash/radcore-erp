@@ -9,7 +9,7 @@ import {
   AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, principalId, requestApproval,
   withdrawPending, type ApprovalSpec, type Ctx,
 } from '@radcore/lib-platform';
-import { and, asc, desc, eq, inArray, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   cancelStockCount, createStockCount, deleteStockCount, getStockCount, listStockCounts, requestStockCountApproval, updateStockCount,
@@ -117,6 +117,20 @@ async function workedLines(ctx: Ctx, c: { id: string; locationId: string; counte
   });
 }
 
+/** The count's lines, and for each item counted, every batch the books hold at the place as at `countedAt` that the
+ * count doesn't list, found 0 (auditor-2 on #339): what isn't counted wasn't found, so a difference between batches
+ * alone moves the quantity between them (F21) instead of booking stock twice. */
+async function withUnlisted(ctx: Ctx, locationId: string, countedAt: string, lines: readonly Line[]): Promise<Line[]> {
+  const listed = new Set(lines.map((l) => keyOf(l.itemId, l.batchId)));
+  const extra: Line[] = [];
+  for (const [k, qty] of await bookOf(ctx, locationId, countedAt, lines)) {
+    if (listed.has(k) || dec(qty).isZero()) continue;
+    const [itemId = '', batchId = ''] = k.split(' ');
+    extra.push({ itemId, batchId: batchId === '' ? null : batchId, found: '0.000', serials: [] });
+  }
+  return [...lines, ...extra];
+}
+
 async function writeLines(ctx: Ctx, countId: string, lines: readonly Line[]): Promise<void> {
   await stockTx(ctx).insert(stockCountLines).values(lines.map((l, n) => ({ countId, lineNo: n + 1, itemId: l.itemId, batchId: l.batchId,
     found: l.found, serials: l.serials })));
@@ -124,7 +138,7 @@ async function writeLines(ctx: Ctx, countId: string, lines: readonly Line[]): Pr
 
 /** POST /stock/counts (stock:count): a draft, its lines merged. */
 export async function addCount(ctx: Ctx, input: In<typeof createStockCount>): Promise<Out<typeof createStockCount>> {
-  const lines = await checkCount(ctx, input);
+  const lines = await withUnlisted(ctx, input.locationId, input.countedAt, await checkCount(ctx, input));
   const [row] = await stockTx(ctx).insert(stockCounts).values({ locationId: input.locationId, countedAt: input.countedAt,
     businessDate: input.businessDate, reason: input.reason }).returning({ id: stockCounts.id });
   if (row === undefined) throw new Error('the insert returned no row');
@@ -136,7 +150,7 @@ export async function addCount(ctx: Ctx, input: In<typeof createStockCount>): Pr
 export async function changeCount(ctx: Ctx, { id, ...input }: In<typeof updateStockCount>): Promise<Out<typeof updateStockCount>> {
   const now = await countOf(ctx, id, 'stock:count', true);
   if (now.status !== 'draft') throw wrongStatus(now.status, 'changed');
-  const lines = await checkCount(ctx, input);
+  const lines = await withUnlisted(ctx, input.locationId, input.countedAt, await checkCount(ctx, input));
   const tx = stockTx(ctx);
   await tx.delete(stockCountLines).where(eq(stockCountLines.countId, id));
   await tx.update(stockCounts).set({ locationId: input.locationId, countedAt: input.countedAt, businessDate: input.businessDate,
@@ -166,10 +180,12 @@ async function postCount(ctx: Ctx, id: string): Promise<void> {
   const outs = [];
   for (const w of worked.filter((x) => dec(x.difference).isNegative())) {
     const qty = roundQty(dec(w.difference).neg(), 3);
-    // A serialised shortage names the units the books hold here that weren't found: written off, `scrapped`.
-    const found = new Set(w.line.serials.map(serialKey));
+    // A serialised shortage names the units the books hold here in this line's batch that weren't found anywhere on the
+    // count: written off, `scrapped` (auditor-2 on #339).
+    const found = new Set(worked.filter((x) => x.row.itemId === w.row.itemId).flatMap((x) => x.line.serials.map(serialKey)));
     const held = (await tx.select({ serialNo: units.serialNo, key: units.serialKey }).from(units).where(and(eq(units.itemId, w.row.itemId),
-      eq(units.locationId, c.locationId), eq(units.ownership, 'ours'))).orderBy(asc(units.id))).filter((u) => !found.has(u.key));
+      eq(units.locationId, c.locationId), eq(units.ownership, 'ours'), w.row.batchId === null ? isNull(units.batchId) : eq(units.batchId, w.row.batchId)))
+      .orderBy(asc(units.id))).filter((u) => !found.has(u.key));
     const serials: string[] = [];
     for (const u of held) if (dec(String(serials.length)).lt(dec(qty))) serials.push(u.serialNo);
     outs.push({ lineId: w.row.id, itemId: w.row.itemId, qty, batches: [{ batchId: w.row.batchId, qty }], serials });

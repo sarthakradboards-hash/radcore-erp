@@ -10,7 +10,7 @@ import {
   AppError, awaitingApproval, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, nextNumber,
   principalId, requestApproval, withdrawPending, type ApprovalSpec, type Ctx,
 } from '@radcore/lib-platform';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   cancelStockTransfer, createStockTransfer, deleteStockTransfer, getStockTransfer, listStockTransfers, requestStockTransferApproval,
@@ -192,7 +192,8 @@ export async function listTransfersPage(ctx: Ctx, input: In<typeof listStockTran
   const f = input.filter;
   const rows = await stockTx(ctx).select(header).from(stockTransfers).where(and(
     f.status === undefined ? undefined : eq(stockTransfers.status, f.status),
-    f.locationId === undefined ? undefined : eq(stockTransfers.fromId, f.locationId),
+    // A place's transfers, out of it or into it (auditor-2 on #339).
+    f.locationId === undefined ? undefined : or(eq(stockTransfers.fromId, f.locationId), eq(stockTransfers.toId, f.locationId)),
     listScope(ctx, 'stock:read', stockTransfers.createdBy),
     after([stockTransfers.businessDate, stockTransfers.createdAt, stockTransfers.id], key && [key.date, key.at, key.id], 'desc'),
   )).orderBy(desc(stockTransfers.businessDate), desc(stockTransfers.createdAt), desc(stockTransfers.id)).limit(input.limit + 1);

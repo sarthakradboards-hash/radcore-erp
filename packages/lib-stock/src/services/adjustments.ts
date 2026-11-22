@@ -124,8 +124,9 @@ async function linesOf(ctx: Ctx, id: string) {
 }
 
 /** Posts an approved adjustment (F14), its lines judged again (the item's chassis flag may have changed). A found
- * serialised unit takes the adjustment's number as its batch, so that number is drawn before its stock in that case:
- * nothing that holds positions draws SA, so no cycle can form. Otherwise the number is drawn last (ADR-006 §1). */
+ * serialised unit takes the adjustment's number as its batch (§10), so every adjustment draws its number at one point,
+ * after the period and before its stock: two adjustments then take SA, then positions, in the same order and never
+ * wait on each other in a circle (auditor-2 on #339). Nothing else draws SA. */
 async function postAdjustment(ctx: Ctx, id: string): Promise<void> {
   const tx = stockTx(ctx);
   const [a] = await tx.select().from(stockAdjustments).where(eq(stockAdjustments.id, id)).for('update');
@@ -134,16 +135,14 @@ async function postAdjustment(ctx: Ctx, id: string): Promise<void> {
   await holdPeriod(ctx, a.businessDate);
   const lines = await linesOf(ctx, id);
   await checkAdjustment(ctx, { locationId: a.locationId, lines: lines.map((l) => l.line) });
-  const foundUnits = lines.some((l) => l.line.direction === 'in' && l.line.serials.length > 0);
-  const early = foundUnits ? await nextNumber(ctx, ADJUSTMENT_SERIES, a.businessDate) : null;
+  const number = await nextNumber(ctx, ADJUSTMENT_SERIES, a.businessDate);
   const { values, entryId } = await postDifferences(ctx, { sourceTable: 'stock_adjustments', sourceId: id, businessDate: a.businessDate,
-    locationId: a.locationId, kind: 'stock_adjustment', batchNo: early ?? '',
+    locationId: a.locationId, kind: 'stock_adjustment', batchNo: number,
     outs: lines.filter((l) => l.line.direction === 'out').map((l) => ({ lineId: l.row.id, itemId: l.line.itemId, qty: l.line.qty,
       batches: l.line.batches, serials: l.line.serials.map((s) => s.serialNo) })),
     ins: lines.filter((l) => l.line.direction === 'in').map((l) => ({ lineId: l.row.id, itemId: l.line.itemId, qty: l.line.qty,
       batches: l.line.batches, units: l.line.serials.map((s) => ({ serialNo: s.serialNo, chassisNo: s.chassisNo, condition: l.line.condition })) })) });
   for (const l of lines) await tx.update(stockAdjustmentLines).set({ value: values.get(l.row.id) ?? '0.00' }).where(eq(stockAdjustmentLines.id, l.row.id));
-  const number = early ?? await nextNumber(ctx, ADJUSTMENT_SERIES, a.businessDate);
   await tx.update(stockAdjustments).set({ status: 'posted', number, postedEntryId: entryId }).where(eq(stockAdjustments.id, id));
 }
 

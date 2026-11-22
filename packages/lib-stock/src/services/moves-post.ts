@@ -35,14 +35,29 @@ export async function postDifferences(ctx: Ctx, p: { sourceTable: string; source
   const outs: StockOut[] = p.outs.map((o) => ({ itemId: o.itemId, locationId: p.locationId, sourceLineId: o.lineId, qty: q(o.qty),
     batches: o.batches.map((b) => ({ batchId: b.batchId, qty: q(b.qty) })), units: o.serials.map((serialNo) => ({ serialNo })),
     unitEvent: 'scrapped' as const }));
+  // The shortages go out first, so an item whose gains match its shortages (a difference between batches alone, F21)
+  // brings them in at exactly the value that went out, and its entry nets to nothing.
+  const movedOut = outs.length === 0 ? [] : await postStock(ctx, { sourceTable: p.sourceTable, sourceId: p.sourceId, businessDate: p.businessDate, outs });
+  const outOf = (itemId: string) => movedOut.filter((m) => m.itemId === itemId && m.direction === 'out');
   const ins: StockIn[] = [];
   for (const i of p.ins) {
+    const sameItem = p.ins.filter((x) => x.itemId === i.itemId);
+    const outQty = p.outs.filter((o) => o.itemId === i.itemId).reduce((t, o) => t.plus(dec(o.qty)), dec('0'));
+    const inQty = sameItem.reduce((t, x) => t.plus(dec(x.qty)), dec('0'));
+    const outValue = outOf(i.itemId).reduce((t, m) => t.plus(dec(m.value)), dec('0'));
+    // Between batches alone: each gain takes its share of what went out, the last the remainder, so the sum is exact.
+    const share = (): Money => {
+      const before = sameItem.slice(0, sameItem.indexOf(i)).reduce((t, x) => t.plus(roundMoney(outValue.times(dec(x.qty)).div(inQty))), dec('0'));
+      return sameItem.at(-1) === i ? roundMoney(outValue.minus(before)) : roundMoney(outValue.times(dec(i.qty)).div(inQty));
+    };
+    const moves = outQty.eq(inQty) && i.units.length === 0;
     ins.push({ itemId: i.itemId, locationId: p.locationId, sourceLineId: i.lineId, qty: q(i.qty), rate: await gainRate(ctx, i.itemId, p.locationId),
+      ...(moves ? { value: share() } : {}),
       batches: i.units.length > 0 ? [{ batchNo: p.batchNo, qty: q(i.qty) }] : i.batches.map((b) => ({ batchId: b.batchId, qty: q(b.qty) })),
       units: i.units.map((u) => ({ serialNo: u.serialNo, batchNo: p.batchNo, ...(u.chassisNo === null ? {} : { chassisNo: u.chassisNo }),
         ...(u.condition === null ? {} : { condition: u.condition }) })), unitEvent: 'received' as const });
   }
-  const moved = await postStock(ctx, { sourceTable: p.sourceTable, sourceId: p.sourceId, businessDate: p.businessDate, outs, ins });
+  const moved = [...movedOut, ...(ins.length === 0 ? [] : await postStock(ctx, { sourceTable: p.sourceTable, sourceId: p.sourceId, businessDate: p.businessDate, ins }))];
   // The engine posts the outs, then the ins, each in the order given.
   const lineIds = [...p.outs.map((o) => o.lineId), ...p.ins.map((i) => i.lineId)];
   const values = new Map<string, Money>();

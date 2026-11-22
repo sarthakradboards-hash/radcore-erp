@@ -44,7 +44,7 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
 
   /** An item (serialised with `serials`) and places of these kinds, with `stock` of it in the first at `rate`, in batch B1. */
   async function setup(kinds: ('stores' | 'store' | 'demo' | 'rejected' | 'franchisee' | 'job_work')[], o: { stock: string; rate: string; serials?: string[] }) {
-    return run(async (ctx) => {
+    const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
       const { id: itemId } = await addItem(ctx, { sku: `M-${tag()}`, name: 'Scooter', categoryId, hsn: '8711', unit: 'NOS', barcode: null,
@@ -54,9 +54,11 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: places[0] ?? '',
         qty: q(o.stock), rate: unitPriceString().parse(o.rate), batches: [{ batchNo: 'B1', qty: q(o.stock) }],
         ...(o.serials === undefined ? {} : { units: o.serials.map((serialNo) => ({ serialNo })) }) }] });
-      const [batch] = (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1', [itemId])).rows;
-      return { itemId, places, batchId: batch?.id ?? '' };
+      return { itemId, places };
     });
+    // Its batch, read once the setup has committed.
+    const [batch] = (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1', [made.itemId])).rows;
+    return { ...made, batchId: batch?.id ?? '' };
   }
   const onHand = async (itemId: string, locationId: string) => (await pool.query<{ qty: string; value: string }>(`select
     coalesce(sum(case direction when 'in' then qty when 'out' then -qty else 0 end), 0)::numeric(18, 0)::text as qty,
@@ -119,12 +121,16 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
       lines: [line(at.itemId, '1', at.batchId)] }), staff, new Settings([{ key: 'stock.franchisee_transfer_approval', value: on }]));
     const off = await send(false);
     const waiting = await send(true);
+    // With the setting on, a transfer to any other place still posts at once (§15).
+    const [, , other] = (await setup(['stores', 'franchisee', 'store'], { stock: '1', rate: '100' })).places;
+    const plain = await run((ctx) => addTransfer(ctx, { fromId: stores, toId: other ?? '', businessDate: DATE, reason: 'To the floor',
+      lines: [line(at.itemId, '1', at.batchId)] }), staff, new Settings([{ key: 'stock.franchisee_transfer_approval', value: true }]));
     const before = await onHand(at.itemId, franchisee);
     const own = await code(decide(transferApprovalSpec, staff, waiting.approval ?? { id: '', versionHash: '' }));
     await decide(transferApprovalSpec, boss, waiting.approval ?? { id: '', versionHash: '' });
     const after = await run((ctx) => getTransferById(ctx, { id: waiting.id }));
-    expect([off.number?.startsWith('ST/'), off.approval, waiting.number, before, own, after.status, after.number?.startsWith('ST/')])
-      .toEqual([true, null, null, { qty: '1', value: '100.00' }, 'own_request', 'posted', true]);
+    expect([off.number?.startsWith('ST/'), off.approval, waiting.number, before, own, after.status, after.number?.startsWith('ST/'),
+      plain.number?.startsWith('ST/'), plain.approval]).toEqual([true, null, null, { qty: '1', value: '100.00' }, 'own_request', 'posted', true, true, null]);
   });
 
   // F14, RC-123: a count lists the pads twice (two shelves); they're one line; nothing posts until someone else approves.
@@ -171,5 +177,36 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     await decide(adjustmentApprovalSpec, boss, asked);
     expect([before, await onHand(at.itemId, store)]).toEqual([{ qty: '2', value: '300.00' }, { qty: '3', value: '450.00' }]);
     expect(await entryOf(id, 'stock_adjustment')).toEqual(['Stock in Hand 150.00 0.00', 'Stock Adjustment 0.00 150.00']);
+  });
+
+  // F21 (auditor-2 on #339): the books hold 5 in batch L1, and the count finds 5 with the batch unknown. The unlisted L1 is
+  // found 0, so the 5 move from L1 to "batch unknown" at the same value, with no entry and nothing gained.
+  it('moves a difference between batches alone at the same value, with no entry (F21)', async () => {
+    const boss = await approver();
+    const at = await setup(['stores'], { stock: '5', rate: '200' });
+    const [stores] = at.places as [string];
+    const { id } = await run((ctx) => addCount(ctx, { locationId: stores, countedAt: new Date(Date.UTC(2026, 10, 15, 10)).toISOString(),
+      businessDate: DATE, reason: 'Batch labels lost', lines: [{ itemId: at.itemId, batchId: null, qty: q('5'), serials: [] }] }));
+    const drafted = await run((ctx) => getCountById(ctx, { id }));
+    await decide(countApprovalSpec, boss, await run((ctx) => askCountApproval(ctx, { id })));
+    const entries = (await pool.query<{ n: number }>("select count(*)::int as n from radcore.journal_entries where source_id = $1", [id])).rows[0]?.n;
+    expect(drafted.lines.map((l) => [l.batchId, l.found, l.book, l.difference])).toEqual([[null, '5.000', '0.000', '5.000'], [at.batchId, '0.000', '5.000', '-5.000']]);
+    expect([entries, await onHand(at.itemId, stores)]).toEqual([0, { qty: '5', value: '1000.00' }]);
+  });
+
+  // §10 (auditor-2 on #339): a serialised shortage writes off, `scrapped`, a unit of the line's batch that wasn't found.
+  it('writes off a serialised unit the count didn’t find, from the line’s batch, scrapped', async () => {
+    const boss = await approver();
+    const serials = [`S-${tag()}`, `S-${tag()}`];
+    const at = await setup(['store'], { stock: '2', rate: '61250', serials });
+    const [store] = at.places as [string];
+    const { id } = await run((ctx) => addCount(ctx, { locationId: store, countedAt: new Date(Date.UTC(2026, 10, 15, 10)).toISOString(), businessDate: DATE,
+      reason: 'Month end', lines: [{ itemId: at.itemId, batchId: at.batchId, qty: q('1'), serials: [serials[0] ?? ''] }] }));
+    await decide(countApprovalSpec, boss, await run((ctx) => askCountApproval(ctx, { id })));
+    const units = (await pool.query<{ serial_no: string; ownership: string }>('select serial_no, ownership from radcore.units where item_id = $1 order by serial_no',
+      [at.itemId])).rows;
+    expect(units.toSorted((a, b) => (a.serial_no < b.serial_no ? -1 : 1))).toEqual(
+      [{ serial_no: serials[0], ownership: 'ours' }, { serial_no: serials[1], ownership: 'gone' }].toSorted((a, b) => ((a.serial_no ?? '') < (b.serial_no ?? '') ? -1 : 1)));
+    expect(await entryOf(id, 'stock_adjustment')).toEqual(['Stock in Hand 0.00 61250.00', 'Stock Adjustment 61250.00 0.00']);
   });
 });
