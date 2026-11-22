@@ -19,10 +19,12 @@ export const ORDER_LIMIT_DEFAULT = defineSetting<string>('purchasing.order_limit
   input: { kind: 'money' },
 });
 
-/** The placer's limit: their role's own, else the default. A job or a person with no role has the default. */
-export async function orderLimitOf(ctx: Ctx): Promise<Money> {
-  const role = ctx.principal.kind === 'user' ? ctx.principal.role : undefined;
-  const [own] = role === undefined ? [] : await purchasingTx(ctx).select({ maxTotal: purchaseOrderLimits.maxTotal })
+/** The principal's role, the one their limit is read by: a job or a person with no role has none. */
+export const roleOf = (ctx: Ctx): string | null => (ctx.principal.kind === 'user' ? ctx.principal.role ?? null : null);
+
+/** A role's limit: its own, else the default. No role (a job, or a person with none) has the default. */
+export async function orderLimitOf(ctx: Ctx, role: string | null = roleOf(ctx)): Promise<Money> {
+  const [own] = role === null ? [] : await purchasingTx(ctx).select({ maxTotal: purchaseOrderLimits.maxTotal })
     .from(purchaseOrderLimits).where(eq(purchaseOrderLimits.role, role));
   return (own?.maxTotal ?? ctx.settings.get(ORDER_LIMIT_DEFAULT)) as Money;
 }

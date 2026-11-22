@@ -79,10 +79,10 @@ export const createPurchaseOrder = defineContract({
   input: orderIn, output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS],
 });
 /**
- * A draft rewritten whole; or a placed PO's lines, which stays placed. A placed PO raised above what was approved, or
- * above its placer's limit, is refused (`over_approved`, the architect on RAD-136) and keeps its lines: more goods go on
+ * A draft rewritten whole; or a placed PO's lines, which stays placed. A placed PO raised above both what was approved
+ * and its placer's limit is refused (`over_approved`, the architect on RAD-136) and keeps its lines: more goods go on
  * a new PO, a price rise is caught at the bill, and a rework is closing it short and raising another. Lowering it, or a
- * change within both, saves. A placed PO keeps its supplier and date, which its number and approval were given for
+ * change within the higher of the two, saves. A placed PO keeps its supplier and date, which its number and approval were given for
  * (`fixed_once_placed`), and no line goes below what has come in against it, nor is a received line removed
  * (`po_received`, as a sales order's `order_delivered`; the auditor on #333).
  */

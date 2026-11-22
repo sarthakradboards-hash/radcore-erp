@@ -55,6 +55,7 @@ CREATE TABLE "radcore"."purchase_orders" (
 	"notes" text,
 	"close_reason" text,
 	"approved_total" numeric(18, 2),
+	"placed_by_role" text,
 	"place_of_supply" text,
 	"taxable" numeric(18, 2),
 	"cgst" numeric(18, 2),
@@ -96,7 +97,7 @@ CREATE INDEX "ix_purchase_orders_date" ON "radcore"."purchase_orders" USING btre
 -- (ADR-001 §8b): their audit rows carry the PO's id, so maker-checker finds everyone who changed it since its approval
 -- was asked for (RC-037).
 SELECT radcore.audit_attach('purchase_orders', keep => array['number', 'party_id', 'business_date', 'expected_by', 'status', 'notes',
-  'close_reason', 'approved_total', 'place_of_supply', 'taxable', 'cgst', 'sgst', 'igst', 'round_off', 'total']);
+  'close_reason', 'approved_total', 'placed_by_role', 'place_of_supply', 'taxable', 'cgst', 'sgst', 'igst', 'round_off', 'total']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('purchase_order_lines', keep => array['order_id', 'line_no', 'item_id', 'qty', 'rate', 'gst_rate',
   'gst_rate_source', 'taxable', 'cgst', 'sgst', 'igst', 'line_total'],

@@ -1,5 +1,5 @@
 {
-  "id": "bb92da9c-08ca-4b2c-b8f2-aac795d9eb45",
+  "id": "0b05ef77-8853-4608-9768-e3d697976064",
   "prevId": "fdd60a14-8f88-4b33-8e33-882dc613ed3e",
   "version": "7",
   "dialect": "postgresql",
@@ -15426,6 +15426,12 @@
         "approved_total": {
           "name": "approved_total",
           "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "placed_by_role": {
+          "name": "placed_by_role",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

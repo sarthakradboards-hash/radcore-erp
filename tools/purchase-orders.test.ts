@@ -148,6 +148,21 @@ describe.skipIf(!url || !superUrl)('purchase orders', () => {
     expect((await run((ctx) => getOrderById(ctx, { id }), maker)).total).toBe('105000.00');
   });
 
+  it('bounds an approved PO’s raise by the placer’s limit where it’s higher than what was approved (the architect on RAD-136)', async () => {
+    const at = await setup();
+    const limited = await role('100000');
+    const maker = await newUser(KEYS, limited);
+    const checker = await approver();
+    const { id } = await draft(at, maker);
+    await approve(await run((ctx) => placeOrder(ctx, { id }), maker), checker);
+    // Approved at 1,05,000.00; the placer's limit is then raised to 2,00,000.00, so 1,57,500.00 saves and 2,10,000.00 doesn't.
+    await su.query(`with p as (select set_config('app.principal', 'system:test', true))
+      update radcore.purchase_order_limits set max_total = 200000 from p where role = $1`, [limited]);
+    await change(id, at, maker, '3');
+    expect((await run((ctx) => getOrderById(ctx, { id }), maker)).total).toBe('157500.00');
+    expect(await code(change(id, at, maker, '4'))).toBe('over_approved');
+  });
+
   it('refuses raising a PO placed without approval past its placer’s limit', async () => {
     const at = await setup();
     const maker = await placer('200000');
@@ -155,6 +170,9 @@ describe.skipIf(!url || !superUrl)('purchase orders', () => {
     await run((ctx) => placeOrder(ctx, { id }), maker);
     await change(id, at, maker, '3');
     expect(await code(change(id, at, maker, '4'))).toBe('over_approved');
+    // Judged by the placer's limit, whoever changes it: an editor with a higher one doesn't lift it (the auditor on #340).
+    const editor = await placer('1000000');
+    expect(await code(change(id, at, editor, '4'))).toBe('over_approved');
   });
 
   it('keeps a placed PO’s supplier and date (fixed_once_placed), and refuses one we don’t buy from', async () => {

@@ -31,6 +31,8 @@ export const purchaseOrders = radcoreTable('purchase_orders', {
   // Why it was closed with lines still to come, or cancelled; null otherwise.
   closeReason: boundedText({ max: 500 }),
   approvedTotal: money(),
+  // The role its placer placed it under (a role key, or null for none), whose limit bounds a later raise (ADR-008 §5).
+  placedByRole: text(),
   ...frozenTotals(),
 }, (t) => [
   // A draft's totals are worked out on read and a placed one's stored; a cancelled one keeps what it had.

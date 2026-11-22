@@ -4,7 +4,7 @@
 // it. A placed PO's lines may change, but a raise past what was approved or the placer's limit is refused
 // (over_approved, the architect on RAD-136). It posts nothing to the books.
 import { after, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
-import { BUYS_FROM_KINDS, getCompanyProfile, getPartyById, holdPeriod } from '@radcore/lib-accounts';
+import { BUYS_FROM_KINDS, getCompanyProfile, getPartyById, holdPeriod, lockPeriod } from '@radcore/lib-accounts';
 import { dec, indiaDate, type Money } from '@radcore/lib-common';
 import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax, type Totals } from '@radcore/lib-gst';
 import {
@@ -18,7 +18,7 @@ import type {
   cancelPurchaseOrder, closePurchaseOrder, createPurchaseOrder, deletePurchaseOrder, getPurchaseOrder, listPurchaseOrders, placePurchaseOrder,
   updatePurchaseOrder,
 } from '../contract.ts';
-import { orderLimitOf } from './order-limits.ts';
+import { orderLimitOf, roleOf } from './order-limits.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -148,8 +148,11 @@ export const orderApproval: ApprovalSpec<Version> = {
     const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, lines).catch(() => null);
     return { supplierId: o.partyId, businessDate: o.businessDate, lines, total: amounts?.totals.total ?? null };
   },
-  // The engine has locked the PO. The period's re-check takes it FOR SHARE after that, against ADR-006 §1's order, but
-  // nothing that locks the period FOR UPDATE then locks a PO, so no two saves wait on each other in a circle.
+  // The period's locks first, before the engine locks the PO (ADR-006 §1, the auditor on #340), refusing nothing: a
+  // reject goes through whatever the period says, and approved() checks the date under the same locks.
+  async lockFirst(ctx) {
+    await lockPeriod(ctx);
+  },
   async approved(ctx, id) {
     await place(ctx, await orderOf(ctx, id, 'purchasing:approve', true), true);
   },
@@ -190,6 +193,8 @@ export async function listOrdersPage(ctx: Ctx, input: In<typeof listPurchaseOrde
   )).orderBy(desc(purchaseOrders.businessDate), desc(purchaseOrders.createdAt), desc(purchaseOrders.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = new Map<string, string>();
+  // shortcut: one read per distinct supplier on the page, as lib-sales' partyNames; a batched reader joins lib-accounts
+  // if pages grow.
   for (const id of new Set(page.map((r) => r.partyId))) names.set(id, (await getPartyById(ctx, { id })).name);
   const waiting = await awaitingApproval(ctx, orderApproval, page.map((r) => r.id));
   const last = page.at(-1);
@@ -279,10 +284,12 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updatePu
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, input.lines);
   const now = dec(o.total ?? '0');
   const next = dec(amounts.totals.total);
-  // A raise past what its approval was given for, or past the placer's limit where it needed none, is refused; lowering
-  // it, or a change within that bound, saves (the architect on RAD-136).
-  const bound = o.approvedTotal ?? await orderLimitOf(ctx);
-  if (next.gt(now) && next.gt(dec(bound))) {
+  // A raise is bounded by whichever is higher, the placer's limit or what an approval was given for: past both, it's
+  // refused; lowering it, or a change within that, saves (the architect on RAD-136).
+  // The placer's limit, by the role they placed it under, not the editor's (ADR-008 §5, the auditor on #340).
+  const limit = dec(await orderLimitOf(ctx, o.placedByRole));
+  const bound = o.approvedTotal === null || limit.gt(dec(o.approvedTotal)) ? limit : dec(o.approvedTotal);
+  if (next.gt(now) && next.gt(bound)) {
     throw new AppError('over_approved', 'This raises the purchase order past what was approved: put the extra goods on a new purchase order',
       [{ path: ['lines'], code: 'over_approved', message: `The total would be ${amounts.totals.total}` }]);
   }
@@ -313,6 +320,8 @@ export async function placeOrder(ctx: Ctx, { id }: In<typeof placePurchaseOrder>
   const lines = await linesOf(ctx, id);
   await checkLines(ctx, lines);
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, lines);
+  // Who places it, by their role: a later change is judged by their limit, whoever makes it.
+  await purchasingTx(ctx).update(purchaseOrders).set({ placedByRole: roleOf(ctx) }).where(eq(purchaseOrders.id, id));
   if (dec(amounts.totals.total).lte(dec(await orderLimitOf(ctx)))) {
     return { status: 'placed', number: await place(ctx, o, false), approvalId: null, versionHash: null };
   }
