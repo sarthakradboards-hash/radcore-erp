@@ -4,14 +4,15 @@
 // profile set there (company.test.ts needs the row unset), and the approver decides in that same transaction (actingAs).
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addParty, openFinancialYear, partyReceivable, postEntry, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId, systemPartyId,
-  toCollectPage,
+  addParty, openFinancialYear, partyReceivable, postEntry, recordPayment, setCreditTerms, systemAccountId, systemPartyId, toCollectPage,
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, decideApproval, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, listPendingApprovals, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { askOrderOverride, completeBillNow, confirmOrderNow, getInvoiceById, holdBillNow, orderOverride } from '@radcore/lib-sales';
+import {
+  askOrderOverride, completeBillNow, confirmOrderNow, dropOrder, getInvoiceById, heldBillsPage, holdBillNow, orderOverride,
+} from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
@@ -32,8 +33,6 @@ const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const m = (s: string) => moneyString().parse(s);
 const mobile = () => `9${String(randomBytes(4).readUInt32BE() % 1_000_000_000).padStart(9, '0')}`;
-const COMPANY = { legalName: 'Radboards Pvt Ltd', gstin: '27AAPFU0939F1ZV', addressLine1: 'Plot 4, Bhosari MIDC', addressLine2: null,
-  city: 'Pune', pincode: '411019', reason: 'Held quick bills in a test' };
 class RolledBack extends Error {}
 
 /** The same transaction, acting as `p`: its key checks, and the principal the audit trail records. Test-only. */
@@ -98,7 +97,8 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     const [clerk, boss] = [await counter(), at.boss];
     let out: R | undefined;
     await run(async (raw) => {
-      await setCompanyProfile(raw, COMPANY);
+      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
+      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
       const ctx = { ...raw, settings: new Settings([{ key: 'sales.default_price_list', value: at.listId }]) };
       const approve = async (h: { approvalId: string; versionHash: string }) => {
         await decideApproval(await actingAs(ctx, boss), orderOverride, h.approvalId, { decision: 'approve', versionHash: h.versionHash });
@@ -164,6 +164,51 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
       return [card, sales, rows.rows[0]?.n];
     });
     expect(out).toEqual(['looks_like_card_number', 'not_money_account', 0]);
+  });
+
+  // RC-190's hold and recall (the architect on RAD-115): the till finds its held bills, at the order's scope; a list
+  // shows no payment's reference; and deleting the draft order throws the hold away, its request with it.
+  it('lists held bills at the order’s scope with no reference, and deleting the order drops the hold and its request', async () => {
+    const at = await setup('200');
+    const out = await atCounter(at, async (ctx) => {
+      const h = await hold(ctx, at, '1', [{ method: 'bank', amount: m('100'), accountId: await systemAccountId(ctx, 'bank'), reference: 'UTR123456' }], at.partyId);
+      const mine = (await heldBillsPage(ctx, { limit: 200, filter: {} })).items.find((b) => b.orderId === h.orderId);
+      const me = ctx.principal as Extract<Principal, { kind: 'user' }>;
+      const other = await actingAs(ctx, { ...me, userId: randomUUID(), ownScope: ['invoices:write'] });
+      const seenByOther = (await heldBillsPage(other, { limit: 200, filter: {} })).items.some((b) => b.orderId === h.orderId);
+      const whole = await actingAs(ctx, { ...me, userId: randomUUID() });
+      const seenAtAll = (await heldBillsPage(whole, { limit: 200, filter: {} })).items.some((b) => b.orderId === h.orderId);
+      await actingAs(ctx, ctx.principal);
+      const queued = async () => (await listPendingApprovals(await actingAs(ctx, at.boss), orderOverride, { limit: 200 })).items.some((a) => a.recordId === h.orderId);
+      const before = await queued();
+      await actingAs(ctx, ctx.principal);
+      await dropOrder(ctx, { id: h.orderId });
+      const holds = await rawOf(ctx.tx).execute(sql`select count(*)::int as n from radcore.quick_bill_holds where order_id = ${h.orderId}`) as unknown as { rows: { n: number }[] };
+      return { mine: mine && { payments: mine.payments, approval: mine.approval, items: mine.items, party: mine.partyId === at.partyId },
+        seenByOther, seenAtAll, before, holds: holds.rows[0]?.n, after: await queued() };
+    });
+    expect(out).toEqual({ mine: { payments: [{ method: 'bank', amount: '100.00' }], approval: 'waiting', items: 1, party: true },
+      seenByOther: false, seenAtAll: true, before: true, holds: 0, after: false });
+  });
+
+  // auditor-2 on #325: the held list pages on created_at's microseconds, so a page's last bill never comes back on the
+  // next. Two holds in one transaction share their moment, and the order id breaks the tie.
+  it('pages the held bills one at a time with no bill twice', async () => {
+    const at = await setup('200');
+    const out = await atCounter(at, async (ctx) => {
+      const held = [(await hold(ctx, at, '1', [cash('100')], at.partyId)).orderId, (await hold(ctx, at, '1', [cash('100')], at.partyId)).orderId];
+      const seen: string[] = [];
+      let after: string | undefined;
+      for (let n = 0; n < 50; n += 1) {
+        const page = await heldBillsPage(ctx, { limit: 1, filter: {}, ...(after === undefined ? {} : { after }) });
+        seen.push(...page.items.map((b) => b.orderId));
+        if (page.next === null) break;
+        after = page.next;
+      }
+      return { mine: seen.filter((id) => held.includes(id)), repeats: seen.length - new Set(seen).size };
+    });
+    expect([out.mine.toSorted(), out.repeats]).toEqual([[...out.mine].toSorted(), 0]);
+    expect(out.mine).toHaveLength(2);
   });
 
   it('refuses a walk-in hold short of the bill, and a hold of a bill that needs no approval', async () => {

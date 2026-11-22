@@ -15,14 +15,16 @@ export type PricedLine = LineTax & { gstRate: string; gstRateSource: string };
 export type Amounts = { placeOfSupply: string; lines: PricedLine[]; totals: Totals };
 
 /** The document's amounts, refused while the company's profile isn't set (no state to judge the place of supply by,
- * RC-112: `company_profile_incomplete`) or a line's item has no GST rate on the date (`no_gst_rate`). */
-export async function amountsOf(ctx: Ctx, partyId: string, on: string, lines: readonly Line[]): Promise<Amounts> {
+ * RC-112: `company_profile_incomplete`) or a line's item has no GST rate on the date (`no_gst_rate`). `shipToState`, when
+ * given, is where the goods go, which wins over the party's state as an invoice's ship-to does: the quick bill's preview
+ * passes the shop's, as its invoice is shipped there (RAD-115). Left out, the party's state decides. */
+export async function amountsOf(ctx: Ctx, partyId: string, on: string, lines: readonly Line[], shipToState?: string): Promise<Amounts> {
   const { company } = await getCompanyProfile(ctx);
   if (company === null) {
     throw new AppError('company_profile_incomplete', 'Set the company’s GSTIN, address and state before sending a quote or confirming an order');
   }
   const party = await getPartyById(ctx, { id: partyId });
-  const place = placeOfSupply(company.stateCode, party.stateCode, null);
+  const place = placeOfSupply(company.stateCode, party.stateCode, shipToState ?? null);
   const labels = await itemLabels(ctx, lines.map((l) => l.itemId));
   const priced: PricedLine[] = [];
   for (const [n, l] of lines.entries()) {

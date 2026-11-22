@@ -74,13 +74,21 @@ export async function requestApproval<V extends ApprovalVersion>(ctx: Ctx, spec:
   const version = await spec.version(ctx, recordId, { forUpdate: true });
   if (version === null) throw notFound();
   const hash = versionHash(version);
-  const tx = platformTx(ctx);
-  await tx.update(approvals).set({ status: 'superseded', decidedAt: new Date() })
-    .where(and(eq(approvals.kind, spec.kind), eq(approvals.recordId, recordId), isNull(approvals.decidedAt)));
-  const [row] = await tx.insert(approvals)
+  await withdrawPending(ctx, spec, recordId);
+  const [row] = await platformTx(ctx).insert(approvals)
     .values({ kind: spec.kind, recordId, versionDigest: hash, requestedBy: principalId(ctx.principal) }).returning({ id: approvals.id });
   if (row === undefined) throw new Error('the approval request was not stored');
   return { id: row.id, versionHash: hash };
+}
+
+/**
+ * Closes the record's pending request, if any, as superseded: a new request replaces it (requestApproval), or its maker
+ * throws the draft away (the architect on RAD-114), so no request is left waiting on a record that's gone. Its decision
+ * then answers not_pending. The caller holds the record's lock.
+ */
+export async function withdrawPending<V extends ApprovalVersion>(ctx: Ctx, spec: ApprovalSpec<V>, recordId: string): Promise<void> {
+  await platformTx(ctx).update(approvals).set({ status: 'superseded', decidedAt: new Date() })
+    .where(and(eq(approvals.kind, spec.kind), eq(approvals.recordId, recordId), isNull(approvals.decidedAt)));
 }
 
 type Status = 'pending' | 'approved' | 'rejected' | 'superseded';
@@ -143,7 +151,7 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
   if (ctx.principal.kind !== 'user') throw new AppError('forbidden', 'Only a person can decide an approval');
   const me = principalId(ctx.principal);
   const tx = platformTx(ctx);
-  const [found] = await tx.select({ recordId: approvals.recordId }).from(approvals)
+  const [found] = await tx.select({ recordId: approvals.recordId, decidedAt: approvals.decidedAt }).from(approvals)
     .where(and(eq(approvals.id, id), eq(approvals.kind, spec.kind)));
   if (found === undefined) throw notFound();
   // What the spec locks first (the period, for a posting: ADR-006 §1), then the record, locked, then the request:
@@ -151,7 +159,8 @@ export async function decideApproval<V extends ApprovalVersion>(ctx: Ctx, spec: 
   // deadlock (auditor). Outside the approver's scope the record is not found, for either decision.
   await spec.lockFirst?.(ctx, found.recordId);
   const version = await spec.version(ctx, found.recordId, { forUpdate: true });
-  if (version === null) throw notFound();
+  // A request closed with its record (a draft thrown away, withdrawPending) is not pending, not missing.
+  if (version === null) throw found.decidedAt === null ? notFound() : notPending();
   // The request locked too, so two people deciding at once are taken one after the other: the second finds it decided.
   const [request] = await tx.select({ recordId: approvals.recordId, versionHash: approvals.versionDigest,
     requestedBy: approvals.requestedBy, requestedAt: approvals.createdAt, decidedAt: approvals.decidedAt })

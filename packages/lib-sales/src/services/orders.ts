@@ -6,7 +6,8 @@ import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radc
 import { holdParty, holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, type Ctx,
+  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, withdrawPending,
+  type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -58,7 +59,8 @@ const fromQuote = (o: { quoteDate: string | null }) => (o.quoteDate === null ? u
 
 /** The order's list (its party's, else the default) and each line with that list's rate for its item on the order's
  * date, filled here and never from input (the architect on RAD-113). */
-async function priced(ctx: Ctx, partyId: string, on: string, lines: Awaited<ReturnType<typeof checkedLines>>) {
+/** Each line's list rate and version from the party's list on `on`, as an order prices them (the quick bill's preview too). */
+export async function priced(ctx: Ctx, partyId: string, on: string, lines: Awaited<ReturnType<typeof checkedLines>>) {
   const priceListId = await priceListOf(ctx, partyId);
   const rates = await listRatesOf(ctx, priceListId, on, lines.map((l) => l.itemId));
   return { priceListId, lines: lines.map((l, i) => ({ ...l, listRate: rates[i]?.listRate ?? null, listVersionId: rates[i]?.listVersionId ?? null })) };
@@ -198,6 +200,8 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
 export async function dropOrder(ctx: Ctx, { id }: In<typeof deleteOrder>): Promise<Out<typeof deleteOrder>> {
   const now = await orderOf(ctx, id, 'sales:write', true);
   mayEdit('order', now.status);
+  // A pending override request goes with it, superseded (the architect on RAD-114).
+  await withdrawPending(ctx, orderOverride, id);
   await salesTx(ctx).delete(salesOrders).where(eq(salesOrders.id, id));
   return {};
 }

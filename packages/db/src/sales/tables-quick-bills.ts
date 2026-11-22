@@ -1,7 +1,7 @@
 // lib-sales's held quick bills (M3-11, RAD-115; the architect's ruling on "hold, then complete"), beside ./tables.ts,
 // which is at E2's size limit. SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { index, json, uuid } from 'drizzle-orm/pg-core';
-import { money, radcoreTable } from '../columns.ts';
+import { createdMoment, money, radcoreTable } from '../columns.ts';
 import { locations } from '../stock/tables.ts';
 import { salesOrders } from './tables.ts';
 
@@ -19,4 +19,6 @@ export const quickBillHolds = radcoreTable('quick_bill_holds', {
   // What the party would owe with the planned payments taken, when its override was approved (the architect on RAD-115):
   // completing it refuses a balance grown past this. Written by approved(), refreshed by a re-approval; kept out of the hash.
   approvedAfter: money({ signed: true }),
+  // As PostgreSQL's text, so the held list's page key keeps its microseconds (auditor-2 on #325, as #316).
+  createdAt: createdMoment(),
 }, (t) => [index('ix_quick_bill_holds_location').on(t.locationId)]);

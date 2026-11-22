@@ -9,7 +9,7 @@ import { moneyString, percentString, quantityString, unitPriceString } from '@ra
 import { AppError, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  acceptQuoteNow, addOrder, addQuote, askOrderOverride, orderOverride, cancelOrderNow, changeOrder, changeQuote, closeOrderNow, confirmOrderNow, getOrderById, getQuoteById,
+  acceptQuoteNow, addOrder, addQuote, askOrderOverride, orderOverride, cancelOrderNow, dropOrder, changeOrder, changeQuote, closeOrderNow, confirmOrderNow, getOrderById, getQuoteById,
   listOrdersPage, orderCounts, quoteCounts, salePrice, sendQuoteNow,
 } from '@radcore/lib-sales';
 import { putGstRate } from '@radcore/lib-gst';
@@ -160,6 +160,21 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     expect((await run((ctx) => confirmOrderNow(ctx, { id }), maker)).number).toMatch(/^SO\//);
   });
 
+  // The architect on RAD-114: a draft thrown away takes its pending override request with it, superseded, so the
+  // request never points at nothing; deciding it then answers not_pending.
+  it('closes a draft order’s pending override as superseded when the draft is thrown away', async () => {
+    const at = await setup();
+    await run((ctx) => setCreditTerms(ctx, { id: at.partyId, creditDays: null, creditLimit: moneyString().parse('0'), reason: 'No credit' }));
+    const maker = await newUser(KEYS);
+    const approver = await newUser(['sales:override']);
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), maker);
+    const request = await run((ctx) => askOrderOverride(ctx, { id }), maker);
+    await run((ctx) => dropOrder(ctx, { id }), maker);
+    expect(await code(run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }),
+      approver))).toBe('not_pending');
+    expect((await su.query<{ status: string }>('select status from radcore.approvals where id = $1', [request.id])).rows[0]?.status).toBe('superseded');
+  });
+
   // RC-131: below the item's cost (its purchase price, with nothing on hand) stops a line, whatever the party's credit.
   it('stops a confirmation with a line priced below the item’s cost', async () => {
     // Listed at the line's own rate, so cost is the only thing it fails.
@@ -246,6 +261,8 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     const mover = await su.connect();
     try {
       await mover.query('begin');
+      // ADR-006 §1's order, as holdPeriod takes it: the company row, then the period lock (RAD-76).
+      await mover.query('select id from radcore.company for share');
       await mover.query('select id from radcore.period_lock where id = 1 for update');
       const confirming = runInTransaction(createDatabase(own), WRITE, staff, randomUUID(), (ctx) => confirmOrderNow(ctx, { id }))
         .then((r) => r.number, (e: unknown) => String(e));

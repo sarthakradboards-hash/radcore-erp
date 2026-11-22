@@ -100,6 +100,14 @@ export async function orderCheckNow(ctx: Ctx, orderId: string, o: Order) {
   return checkSale(ctx, await saleOf(ctx, o, lines, await amountsOf(ctx, o.partyId, o.businessDate, lines)));
 }
 
+/** For a quick bill's preview (RAD-115, the architect): the issue codes confirming these lines would raise, as the
+ * save would judge them with its receipts taken first (`paidNow`, as a hold's are). Reads only, and answers codes only,
+ * never a cost or a balance. */
+export async function orderIssues(ctx: Ctx, o: Order, lines: readonly Line[], paid: string): Promise<string[]> {
+  const sale = await saleOf(ctx, o, lines, await amountsOf(ctx, o.partyId, o.businessDate, lines), paid);
+  return (await checkSale(ctx, sale)).issues.map((i) => i.code);
+}
+
 /**
  * Runs the order's checks at confirmation, on the amounts it's about to store. With issues it's refused,
  * `needs_override`, naming each, unless an override was approved for exactly this order and these issues. Answers the

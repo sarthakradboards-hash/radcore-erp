@@ -1,6 +1,6 @@
 // RAD-113 (M3-09; ADR-007 §4, §7, §9; ADR-006 §6, F6, F7; RC-022, RC-113) on a real PostgreSQL, as the runtime login:
 // invoices of posted deliveries. Each test's deliveries are committed; its invoices post inside one transaction that is
-// rolled back, with the company profile set there, since the one company row must stay unset for company.test.ts. The
+// rolled back, under the committed company profile (tools/test-database.ts) and never rewrites it. The
 // database's own guards on a posted invoice (RA004) and its header-against-lines check at commit (RA006) are proved
 // as the superuser at the end.
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -51,7 +51,8 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
   async function inBooks<R>(fn: (ctx: Ctx) => Promise<R>, as: Principal = staff): Promise<R> {
     let out: R | undefined;
     await run(async (ctx) => {
-      await setCompanyProfile(ctx, COMPANY);
+      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
+      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
       out = await fn(ctx);
       throw new RolledBack();
     }, as).catch((e: unknown) => {

@@ -10,12 +10,12 @@ import { creditNoteLines, creditNotes, salesTx } from '@radcore/db/sales';
 import { applyCredit, holdParty, holdPeriod, lockPeriod, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundRate } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx,
+  AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, withdrawPending, type ApprovalSpec, type Ctx,
 } from '@radcore/lib-platform';
 import { checkPlace, postStock, reverseStock, type PostedMovement } from '@radcore/lib-stock';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { cancelCreditNote, getCreditNote, requestCreditNoteApproval } from '../contract.ts';
+import type { cancelCreditNote, deleteCreditNote, getCreditNote, requestCreditNoteApproval } from '../contract.ts';
 import { isLate, isMonthDay, refundRoom } from './credit-note-rules.ts';
 import { creditNoteShown, draftedLines, invoiceToCredit, noteFigures, noteOf, unpaidOf, wrongNoteStatus, type NoteLineIn } from './credit-notes.ts';
 import { checkDate } from './document-rules.ts';
@@ -224,5 +224,15 @@ export async function cancelCreditNoteNow(ctx: Ctx, { id, businessDate, reason }
   if (own === undefined) throw new Error('a posted credit note has an entry to reverse');
   await salesTx(ctx).update(creditNotes).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
     cancelReason: reason, cancelEntryId: own.id }).where(eq(creditNotes.id, id));
+  return {};
+}
+
+/** DELETE /sales/credit-notes/:id (credit_notes:write): a draft only. */
+export async function dropCreditNote(ctx: Ctx, { id }: In<typeof deleteCreditNote>): Promise<Out<typeof deleteCreditNote>> {
+  const now = await noteOf(ctx, id, 'credit_notes:write', true);
+  if (now.status !== 'draft') throw wrongNoteStatus(now.status);
+  // A pending approval request goes with it, superseded (the architect on RAD-114, auditor-3's finding).
+  await withdrawPending(ctx, creditNoteApprovalSpec, id);
+  await salesTx(ctx).delete(creditNotes).where(eq(creditNotes.id, id));
   return {};
 }
