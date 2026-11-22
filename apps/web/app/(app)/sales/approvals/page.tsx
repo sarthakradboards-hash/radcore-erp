@@ -20,6 +20,7 @@ import { useApiList, useApiMutation, useApiQuery } from '../../../../lib/api/que
 import { t } from '../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../admin/shared.tsx';
 import './approvals.css';
+import { issueWords } from '../issue-words.ts';
 import { SALES_MESSAGES } from '../shared.tsx';
 
 const KINDS = [
@@ -39,10 +40,6 @@ const CODES = ['own_request', 'approver_too_new', 'version_changed', 'not_pendin
 const MESSAGES = { ...SALES_MESSAGES, ...Object.fromEntries(CODES.map((c) => [c, t(`sales.approvals.err.${c}`)])) };
 /** Who sent it, by name; never the raw id. */
 const who = (p: Pending['requestedBy']) => p.displayName ?? t('admin.audit.unknown');
-
-const ISSUES = ['over_limit', 'overdue', 'below_cost', 'cost_unknown', 'no_list_rate', 'over_discount'] as const;
-/** A code the screen has words for; one the server adds later is shown as it is sent, not as a missing string. */
-const isKnownIssue = (c: string): c is (typeof ISSUES)[number] => (ISSUES as readonly string[]).includes(c);
 
 /** What approving a credit note does with money: its total, the counter refund it pays and from which account, and whether it is late
  * (past section 34's limit, so the GST on it is borne). Read from the note itself, since approving posts it. */
@@ -72,7 +69,7 @@ function Issues({ version }: { version: unknown }) {
     <section aria-labelledby={headingId}>
       <h3 id={headingId}>{t('sales.approvals.issues')}</h3>
       {codes.length === 0 ? <p>{t('sales.approvals.issues.none')}</p> : (
-        <ul>{codes.map((c, n) => <li key={n}>{isKnownIssue(c) ? t(`sales.approvals.issue.${c}`) : c}</li>)}</ul>
+        <ul>{codes.map((c, n) => <li key={n}>{issueWords(c)}</li>)}</ul>
       )}
     </section>
   );

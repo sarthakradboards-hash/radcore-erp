@@ -49,6 +49,7 @@ export const approvals = {
   'sales.approvals.issue.below_cost': 'A line is priced below the item’s cost',
   'sales.approvals.issue.cost_unknown': 'An item has no cost to check its price against',
   'sales.approvals.issue.no_list_rate': 'An item has no price on the customer’s price list to check its discount against',
+  'sales.approvals.issue.walk_in_pays_in_full': 'The Counter customer pays the whole bill, and these payments leave a balance',
   'sales.approvals.issue.over_discount': 'A line’s discount is more than its sender’s limit',
   'sales.approvals.err.own_request': 'You sent this, so someone else must approve it.',
   'sales.approvals.err.approver_too_new': 'Your account is too new to approve yet.',
