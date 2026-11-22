@@ -74,7 +74,7 @@ export const holdQuickBill = defineContract({
   method: 'POST', path: '/sales/quick-bills/hold', auth: 'session', perm: 'invoices:write', tx: write,
   input: billIn.extend({ buyer: buyer.optional() }), output: z.object({ status: z.literal('pending_override'), orderId: idString(), approvalId: idString(), versionHash: z.string() }),
   errors: [...new Set([...createOrder.errors, 'no_gst_rate', 'company_profile_incomplete', 'walk_in_pays_in_full', 'no_payment_amount',
-    'no_override_needed', 'buyer_has_party', 'buyer_details_required', 'buyer_for_walk_in_only'])],
+    'no_override_needed', 'buyer_has_party', 'buyer_details_required', 'buyer_for_walk_in_only', 'looks_like_card_number', 'not_money_account'])],
 });
 
 /**

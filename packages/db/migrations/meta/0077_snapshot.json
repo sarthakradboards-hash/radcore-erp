@@ -1,5 +1,5 @@
 {
-  "id": "ca17a720-dcf2-42b5-b8da-d11693727c11",
+  "id": "0396ce63-a5e0-4928-a957-a42bdc111b3b",
   "prevId": "648a38f0-3b10-4c6b-bee5-a7aae3dc15f4",
   "version": "7",
   "dialect": "postgresql",
@@ -1452,6 +1452,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_parties_phone": {
+          "name": "ix_parties_phone",
+          "columns": [
+            {
+              "expression": "phone",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

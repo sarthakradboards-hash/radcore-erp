@@ -151,6 +151,21 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     expect(out).toEqual(['quick_bill_held', 'approval_code_required', 'version_changed']);
   });
 
+  // auditor-2 on #318: the plan is checked before anything is written, since a hold keeps it for good (its row and its
+  // audit trail): no card digits in a bank payment's reference, and only an account that takes money.
+  it('refuses card digits in a planned reference, or an account that takes no money, with no hold written', async () => {
+    const at = await setup('200');
+    const out = await atCounter(at, async (ctx) => {
+      const bank = (accountId: string, reference?: string): Pay => ({ method: 'bank', amount: m('100'), accountId, ...(reference === undefined ? {} : { reference }) });
+      const card = await failure(hold(ctx, at, '1', [bank(await systemAccountId(ctx, 'bank'), '4111 1111 1111 1111')], at.partyId));
+      const sales = await failure(hold(ctx, at, '1', [bank(await systemAccountId(ctx, 'sales'))], at.partyId));
+      const rows = await rawOf(ctx.tx).execute(sql`select count(*)::int as n from radcore.quick_bill_holds h join radcore.sales_orders o on o.id = h.order_id
+        where o.party_id = ${at.partyId}`) as unknown as { rows: { n: number }[] };
+      return [card, sales, rows.rows[0]?.n];
+    });
+    expect(out).toEqual(['looks_like_card_number', 'not_money_account', 0]);
+  });
+
   it('refuses a walk-in hold short of the bill, and a hold of a bill that needs no approval', async () => {
     const at = await setup('100000');
     const out = await atCounter(at, async (ctx) => [await failure(hold(ctx, at, '3', [cash('1000')])),
@@ -195,10 +210,13 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     const known = mobile();
     const at = await setup('100000', known);
     const out = await atCounter(at, async (ctx) => {
-      const taken = await failure(hold(ctx, at, '1', [cash('100')], undefined, '345', { name: 'Someone', phone: known }));
-      const without = await actingAs(ctx, { ...ctx.principal, permissions: ctx.principal.permissions.filter((p) => p !== 'sales:counter_credit') });
-      return [taken, await failure(hold(without, at, '1', [cash('100')], undefined, '345', { name: 'Ravi', phone: mobile() }))];
+      // The refusal names no one: the screen finds the customer through GET /parties' phone filter (the architect on #318).
+      const taken = await hold(ctx, at, '1', [cash('100')], undefined, '345', { name: 'Someone', phone: known })
+        .then(() => [], (e: AppError) => [e.code, ...e.issues.map((i) => i.message)]);
+      const minus = async (key: string) => actingAs(ctx, { ...ctx.principal, permissions: ctx.principal.permissions.filter((p) => p !== key) });
+      return [...taken, await failure(hold(await minus('sales:counter_credit'), at, '1', [cash('100')], undefined, '345', { name: 'Ravi', phone: mobile() })),
+        await failure(hold(await minus('parties:contact'), at, '1', [cash('100')], undefined, '345', { name: 'Ravi', phone: mobile() }))];
     });
-    expect(out).toEqual(['buyer_has_party', 'forbidden']);
+    expect(out).toEqual(['buyer_has_party', 'Choose the customer with this phone', 'forbidden', 'forbidden']);
   });
 });

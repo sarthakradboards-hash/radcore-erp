@@ -175,13 +175,25 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
  */
 export async function holdBillNow(ctx: Ctx, input: In<typeof holdQuickBill>): Promise<Out<typeof holdQuickBill>> {
   needKeys(ctx);
-  const partyId = input.buyer === undefined ? input.partyId ?? await systemPartyId(ctx, 'walk_in') : await buyerParty(ctx, input);
+  // The plan is checked before anything is written (auditor-2 on #318): it's kept for good once held, in the hold's row
+  // and its audit trail, so a card number can't be stored in a reference, and an account that can't take money isn't
+  // approved only to be refused at complete.
   for (const [n, p] of input.payments.entries()) {
     if (!dec(p.amount).gt(0)) {
       throw new AppError('no_payment_amount', 'Each payment is more than 0', [{ path: ['payments', n, 'amount'], code: 'no_payment_amount',
         message: 'Type what will be paid, or remove the payment' }]);
     }
+    if (p.method !== 'bank') continue;
+    if (p.reference !== undefined && looksLikeCardNumber(p.reference)) {
+      throw new AppError('looks_like_card_number', 'That looks like a card number: a reference is a UTR or cheque number, never card digits',
+        [{ path: ['payments', n, 'reference'], code: 'looks_like_card_number', message: 'Type the UTR or cheque number' }]);
+    }
+    const refused = await moneyAccountRefusal(ctx, p.accountId);
+    if (refused !== null) {
+      throw new AppError('not_money_account', refused, [{ path: ['payments', n, 'accountId'], code: 'not_money_account', message: 'Choose Cash or a bank account' }]);
+    }
   }
+  const partyId = input.buyer === undefined ? input.partyId ?? await systemPartyId(ctx, 'walk_in') : await buyerParty(ctx, input);
   // A card's approval code comes when it's charged, at complete; any given now is dropped.
   const planned: PlannedPayment[] = input.payments.map((p) => p.method === 'bank'
     ? { method: 'bank', amount: p.amount, accountId: p.accountId, ...(p.reference === undefined ? {} : { reference: p.reference }) }
@@ -214,6 +226,8 @@ async function buyerParty(ctx: Ctx, input: In<typeof holdQuickBill>): Promise<st
   }
   const missing = ['sales:counter_credit', 'parties:write'].filter((k) => !ctx.can(k));
   if (missing.length > 0) throw new AppError('forbidden', `Leaving a balance on a counter sale needs ${missing.join(', ')}`);
+  // It can't check for a duplicate by a phone it may not see (the architect on #318).
+  if (!ctx.shows('whole', 'parties:contact')) throw new AppError('forbidden', 'Naming a buyer at the counter needs parties:contact');
   if (await partyWithPhone(ctx, b.phone) !== null) {
     throw new AppError('buyer_has_party', 'A customer with this phone exists already: choose them, so their own limit and history apply',
       [{ path: ['buyer', 'phone'], code: 'buyer_has_party', message: 'Choose the customer with this phone' }]);

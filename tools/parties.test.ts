@@ -131,6 +131,17 @@ describe.skipIf(!url)('parties', { timeout: 30_000 }, () => {
     expect([await counter({ kind: 'customer' }), await counter({ sellsTo: true })]).toEqual([1, 0]);
   });
 
+  // The counter picks the customer a quick bill's buyer already is (the architect on #318): by phone, exactly, for
+  // someone who sees phones (RAD-103's rule), else refused, naming parties:contact.
+  it('finds every party with a phone for someone who sees phones, and refuses the filter to anyone else', async () => {
+    const phone = `98${String(randomBytes(4).readUInt32BE() % 100_000_000).padStart(8, '0')}`;
+    const [a, b] = [await add({ name: `Phone A ${letters(4)}`, phone }), await add({ name: `Phone B ${letters(4)}`, phone })];
+    const as = (permissions: string[]): Principal => ({ kind: 'user', userId: randomUUID(), permissions: ['parties:read', ...permissions] });
+    const find = (p: Principal) => runInTransaction(db, write, p, randomUUID(), (ctx) => listPartiesPage(ctx, { filter: { phone: `+91 ${phone}` }, limit: 10 }));
+    expect((await find(as(['parties:contact']))).items.map((p) => p.id).toSorted()).toEqual([a.id, b.id].toSorted());
+    expect(await code(find(as([])))).toBe('forbidden');
+  });
+
   it('masks a party’s phone, email and address without pii:read or parties:contact over the real route, and logs a look with either', async () => {
     const { id } = await add();
     const user = (permissions: string[]): Principal => ({ kind: 'user', userId: randomUUID(), permissions: ['parties:read', ...permissions] });
