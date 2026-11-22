@@ -736,7 +736,8 @@ unless:
 Every write to a part locks its record's row first (a trigger from `audit_attach`'s `owner`), so a save and a
 decision on one record never overlap.
 
-**A spec whose `approved` step posts declares `lockFirst`** (RAD-114). The decision runs it before it locks the
+**A spec whose `approved` step takes the period lock declares `lockFirst`** (RAD-114), whether it posts or, like a
+purchase order's placing, only checks the period (RAD-136). The decision runs it before it locks the
 record, so a decision takes its locks in ADR-006 §1's one order, the period before the documents. It only takes
 locks (lib-accounts' `lockPeriod`: the company profile, then the period lock, `FOR SHARE`) and refuses nothing, since
 it runs for a rejection too and before the scope check; any refusal is the posting's, in `approved`. A refund past

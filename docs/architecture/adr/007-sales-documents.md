@@ -288,10 +288,12 @@ locking its own documents and before the check, so two sales to one party can't 
   - The link shows the invoice as issued, buyer's name, address, state and GSTIN in full (Rule 46), from its frozen
     copy. It shows no phone, email, note or cost, and reads through `linkRecord` (ADR-001 §6a).
   - Estimate links are M6-14's, with their approval step.
-- **A payment reminder** (RAD-119) carries one link, to the party's oldest overdue invoice (Sarthak, 21 Nov), made
-  fresh for each reminder.
+- **A payment reminder** (RAD-119) carries one link, to the party's open invoice that falls due first, whether or
+  not it's overdue yet (Sarthak, 21 Nov, "One, oldest invoice"), made fresh for each reminder.
+  - Open bills that aren't invoices (an opening balance, a manual journal) are passed over for the first one that
+    is. Only when no open bill is an invoice is there no link (`noLink: 'not_an_invoice'`).
   - A sender without `invoices:share` on that invoice still sends the reminder, with no link (`noLink:
-    'no_share_key'`). So does one whose oldest bill isn't an invoice (`not_an_invoice`).
+    'no_share_key'`).
   - The token is only in the answer (ADR-001 §7a), never in `payment_reminders` or its audit rows.
 
 ## Consequences
