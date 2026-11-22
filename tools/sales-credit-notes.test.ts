@@ -133,9 +133,10 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
     lines: [{ invoiceLineId: inv.lineId, qty: q(qty), batches: [{ batchId: at.batchId, qty: q(qty) }], serials: more.serials ?? [] }] });
   const valueOff = (ctx: Ctx, at: At, inv: Inv, taxable: string, on = at.on) => addCreditNote(ctx, { invoiceId: inv.id, kind: 'value',
     businessDate: on, locationId: null, reason: 'Discount agreed', refund: null, lines: [{ invoiceLineId: inv.lineId, taxable: m(taxable) }] });
-  /** Asks, then approves as `approver` in the same transaction; back as the maker after. */
+  /** Asks, then approves as `approver` in the same transaction; back as the maker after. Both under `settings`: the
+   * version holds whether the note is late, so a deadline changed between them would be version_changed. */
   const approve = async (ctx: Ctx, id: string, approver: Principal, settings?: Settings) => {
-    const asked = await askCreditNoteApproval(ctx, { id });
+    const asked = await askCreditNoteApproval(settings === undefined ? ctx : { ...ctx, settings }, { id });
     const as = await actingAs(ctx, approver);
     await decideApproval(settings === undefined ? as : { ...as, settings }, creditNoteApprovalSpec, asked.id,
       { decision: 'approve', versionHash: asked.versionHash });
