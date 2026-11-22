@@ -11,5 +11,7 @@ export {
   tellFollowUpsDue, updateLeadDetails,
 } from './services/pipeline.ts';
 export { captureEnquiry, leadById, repeatEnquiry, type Capture } from './services/leads.ts';
+export { addLeadSource, changeLeadSource, leadSourcesList, setAsidePage } from './services/sources.ts';
+export { addAdSpend, addCampaign, adSpendPage, campaignPath, campaignsPage, costPerLeadIn, endCampaignNow } from './services/campaigns.ts';
 export { bookingCancelled, bookingMade, leadOpens } from './services/lead-bookings.ts';
 export { holdLead } from './services/lead-locks.ts';
