@@ -37,7 +37,8 @@ it('marks parties:manage as needing the second factor, and parties:contact as al
   expect([SECOND_FACTOR_KEYS.includes('parties:manage'), SECOND_FACTOR_KEYS.includes('parties:contact')]).toEqual([true, false]);
   // leads:contact (RAD-106) is all-only for the same reason, and leads:unassigned (RAD-109) and sales:counter_credit
   // (RAD-115) have no scope to give.
-  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'sales:counter_credit', 'leads:contact', 'leads:unassigned']);
+  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'sales:counter_credit', 'leads:contact',
+    'leads:unassigned', 'campaigns:read', 'campaigns:write']);
 });
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
