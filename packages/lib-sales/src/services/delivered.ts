@@ -121,7 +121,7 @@ export const rupeesOf = (values: Iterable<Decimal>): Money => roundMoney([...val
  * shortcut: the skip holds only while walk_in can't carry a debit; revisit if that ever changes. The seeded Counter
  * customer is never left owing: it's reached only through the quick bill, which takes it paid in full or names a buyer,
  * and anything else that moves it (a return, a refund) only takes it into credit, which skipping makes stricter
- * (tools/walk-in-owes-nothing.test.ts pins this). So its credit checks skip its whole history, which every counter sale
+ * (tools/quick-bills.test.ts pins this). So its credit checks skip its whole history, which every counter sale
  * lengthens (RAD-115's save under 2 seconds, the architect's option (a)). Other parties still read all of it until
  * backend's ticket makes that flat.
  */

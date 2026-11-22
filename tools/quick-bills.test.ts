@@ -4,7 +4,7 @@
 // and never rewrites it. The Counter customer is the seeded `walk_in` party, sold from the test's list through the
 // sales.default_price_list setting on that transaction's ctx, so its shared row never changes.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, changeParty, openFinancialYear, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
+import { addParty, changeParty, openFinancialYear, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId, systemPartyId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -357,5 +357,57 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     } finally {
       await server.stop();
     }
+  });
+
+  // The guard on the walk-in skip (the architect on RAD-115, delivered.ts's counterCustomer): every path that touches
+  // the Counter customer leaves its Debtors balance at 0 or below, and nothing delivered to it left uninvoiced.
+  it('never leaves the Counter customer owing, whatever a counter sale tries', async () => {
+    const at = await setup({ rate: '345', stock: '20' });
+    const out = await atCounter(at, async (ctx) => {
+      const walkIn = await systemPartyId(ctx, 'walk_in');
+      const owed = async () => (await rawOf(ctx.tx).execute(sql`select
+        (select coalesce(sum(l.debit - l.credit), 0) from radcore.journal_lines l join radcore.accounts a on a.id = l.account_id
+          where a.system_key = 'debtors' and l.party_id = ${walkIn}) <= 0
+        and not exists (select 1 from radcore.delivery_lines dl join radcore.deliveries d on d.id = dl.delivery_id
+          where d.party_id = ${walkIn} and d.status = 'posted' and not exists (select 1 from radcore.invoice_lines il
+            join radcore.invoices i on i.id = il.invoice_id where il.delivery_line_id = dl.id and i.status = 'posted')) as ok`) as unknown as {
+        rows: { ok: boolean }[] }).rows[0]?.ok;
+      const steps: [string, string, boolean | undefined][] = [];
+      const step = async (name: string, p: Promise<unknown>) => steps.push([name, await failure(p), await owed()]);
+      await step('paid in cash', bill(ctx, at, '1', [cash('362')]));
+      await step('split by card and cash', bill(ctx, at, '2', [cash('225'), { method: 'card', amount: m('500'), approvalCode: 'A1B2C3' }]));
+      await step('short', bill(ctx, at, '1', [cash('300')]));
+      await step('over', bill(ctx, at, '1', [cash('400')]));
+      await step('an order of its own', addOrder(ctx, { partyId: walkIn, businessDate: DATE, notes: null, lines: [{ itemId: at.itemId, qty: q('1'),
+        rate: unitPriceString().parse('345'), discountPercent: percentString({ max: '100' }).parse('0') }] }));
+      // POST /payments refuses the counter (the test below); a receipt taken another way only takes it into credit.
+      await step('a receipt outside the bill', recordPayment(ctx, { kind: 'receipt', partyId: walkIn, businessDate: DATE, amount: m('100'),
+        accountId: await systemAccountId(ctx, 'cash') }));
+      return steps;
+    });
+    expect(out).toEqual([['paid in cash', 'ok', true], ['split by card and cash', 'ok', true], ['short', 'walk_in_pays_in_full', true],
+      ['over', 'overpaid', true], ['an order of its own', 'counter_customer_only', true], ['a receipt outside the bill', 'ok', true]]);
+  });
+
+  // RAD-115's save under 2 seconds (the architect's option (a)): a walk-in bill reads no more of the books with a longer
+  // history. The rows each one reads, from PostgreSQL's per-transaction table counters, are the same after 3 bills and
+  // after 33 (clocks are no test's business, RC-156; the timings at 500 and 5,000 bills are on the ticket).
+  it('reads no more of the walk-in’s history as it grows', async () => {
+    const at = await setup({ rate: '345', stock: '40' });
+    const out = await atCounter(at, async (ctx) => {
+      const read = async () => Number((await rawOf(ctx.tx).execute(sql`select coalesce(sum(coalesce(idx_tup_fetch, 0)), 0)::text as n
+        from pg_stat_xact_user_tables where schemaname = 'radcore' and relname in ('journal_lines', 'deliveries', 'delivery_lines', 'invoices',
+          'invoice_lines', 'delivery_returns', 'delivery_return_lines')`) as unknown as { rows: { n: string }[] }).rows[0]?.n);
+      const one = async () => {
+        const before = await read();
+        await bill(ctx, at, '1', [cash('362')]);
+        return await read() - before;
+      };
+      for (let n = 0; n < 3; n += 1) await bill(ctx, at, '1', [cash('362')]);
+      const early = await one();
+      for (let n = 0; n < 30; n += 1) await bill(ctx, at, '1', [cash('362')]);
+      return [early, await one()];
+    });
+    expect(out[1]).toBe(out[0]);
   });
 });

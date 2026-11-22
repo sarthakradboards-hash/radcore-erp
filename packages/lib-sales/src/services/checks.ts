@@ -62,11 +62,13 @@ export type SaleCheckResult = z.input<typeof saleCheck>;
 /** Checks a sale at one stage. It reads, and changes nothing. */
 export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult> {
   const party = await getPartyById(ctx, { id: s.partyId });
-  // The Counter customer owes nothing, so its history isn't read (delivered.ts's counterCustomer says why).
-  const owed = await counterCustomer(ctx, s.partyId) ? { outstanding: '0.00', oldestUnpaid: null } : await partyReceivable(ctx, s.partyId, s.on);
+  // The Counter customer's bill is paid in full before it's confirmed (walk_in_pays_in_full), so it has no credit to judge:
+  // nothing owed, nothing added, and its history isn't read (delivered.ts's counterCustomer says why that holds).
+  const walkIn = await counterCustomer(ctx, s.partyId);
+  const owed = walkIn ? { outstanding: '0.00', oldestUnpaid: null } : await partyReceivable(ctx, s.partyId, s.on);
   const notInvoiced = dec(s.notInvoiced ?? '0').toFixed(2);
   const outstanding = dec(owed.outstanding).minus(dec(s.paidNow ?? '0')).toFixed(2);
-  const credit = creditResult({ limit: party.creditLimit, outstanding, notInvoiced, adds: s.adds,
+  const credit = creditResult({ limit: party.creditLimit, outstanding, notInvoiced, adds: walkIn ? '0.00' : s.adds,
     creditDays: party.creditDays ?? ctx.settings.get(DEFAULT_CREDIT_DAYS), oldestUnpaid: owed.oldestUnpaid, on: s.on });
   const priced = s.lines.filter((l) => l.rate !== null);
   const limit = priced.length === 0 ? '0' : await discountLimitOf(ctx, await roleOf(ctx, s.pricedBy));
