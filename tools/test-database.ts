@@ -10,6 +10,10 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
+import { series as accountsSeries } from '@radcore/lib-accounts';
+import { series as platformSeries } from '@radcore/lib-platform';
+import { series as salesSeries } from '@radcore/lib-sales';
+import { series as stockSeries } from '@radcore/lib-stock';
 import { ensureLogins } from './db-logins.ts';
 
 const admin = (url: string) => new pg.Client({ connectionString: url });
@@ -49,7 +53,8 @@ export async function freshDatabase(adminUrl: string): Promise<{ appUrl: string;
 }
 
 /** The run's one company profile, committed (the architect on RAD-112): in Maharashtra (27), as the tests' parties
- * mostly are. company.test.ts proves the unset profile by deleting it in a transaction that rolls back. */
+ * mostly are. company.test.ts proves the unset profile by deleting it in a transaction that rolls back. With it, every
+ * real series' number counter for the tests' years (RAD-76). */
 async function seedCompany(superUrl: string): Promise<void> {
   const c = admin(superUrl);
   await c.connect();
@@ -58,6 +63,14 @@ async function seedCompany(superUrl: string): Promise<void> {
     await c.query("set local app.principal = 'system:test'");
     await c.query(`insert into radcore.company (legal_name, gstin, address_line1, city, pincode)
       values ('Radboards Pvt Ltd', '27AAPFU0939F1ZV', 'Plot 4, Bhosari MIDC', 'Pune', '411019')`);
+    // Every real series' counter for the years the tests post in, committed (RAD-76). Rolled-back test transactions
+    // otherwise each insert the same uncommitted counter rows, and two inserts of one key wait on each other's
+    // transaction: a deadlock whenever two of them draw two series in opposite orders. Committed, a draw is a row lock,
+    // taken journal first by every posting. Each seed uses the year's number 1, so committed documents start at 2.
+    const keys = [...accountsSeries, ...platformSeries, ...salesSeries, ...stockSeries];
+    await c.query(`insert into radcore.number_counters (series, financial_year, prefix)
+      select s.key, y, s.prefix from unnest($1::text[], $2::text[]) as s(key, prefix), unnest(array['2025-26', '2026-27']) as y`,
+    [keys.map((k) => k.key), keys.map((k) => k.prefix)]);
     await c.query('commit');
   } finally {
     await c.end();
