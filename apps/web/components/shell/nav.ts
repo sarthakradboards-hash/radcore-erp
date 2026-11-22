@@ -52,10 +52,17 @@ export const SALES_PAGES = [
   { href: '/sales/approvals', label: 'sales.nav.approvals', perm: 'credit_notes:approve' },
 ] as const satisfies readonly NavPage[];
 
+/** The purchasing area's pages (RAD-143): purchase orders first; the approval queue for those who decide. */
+export const PURCHASES_PAGES = [
+  { href: '/purchases/orders', label: 'purchases.nav.orders', perm: 'purchasing:read' },
+  { href: '/purchases/approvals', label: 'purchases.nav.approvals', perm: 'purchasing:approve' },
+] as const satisfies readonly NavPage[];
+
 export const NAV: readonly NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
   // The owner holds audit:read alone (RAD-35), so Admin opens on the audit trail for them.
   { label: 'nav.sales', pages: SALES_PAGES, section: '/sales' },
+  { label: 'nav.purchases', pages: PURCHASES_PAGES, section: '/purchases' },
   { label: 'nav.accounts', pages: ACCOUNTS_PAGES, section: '/accounts' },
   { label: 'nav.admin', pages: ADMIN_PAGES, section: '/admin' },
 ];
