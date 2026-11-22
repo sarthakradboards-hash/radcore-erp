@@ -12,9 +12,13 @@ import { TextField } from '../../../../components/ui/form/fields.tsx';
 import { useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
-import { countByBatch, pickAfter, unlistedKeys, type DeliveryInput } from './delivery-values.ts';
+import { countByBatch, pickAfter, unlistedKeys } from './delivery-values.ts';
 
 type Condition = (typeof UNIT_CONDITIONS)[number];
+
+/** What the picker reads and writes of its form: the place, and each line's quantity, batch boxes and serials. A delivery's form and
+ * the counter's quick bill both hold these by these names. */
+type PickForm = { locationId: string; lines: { qty: string; pick: Record<string, string>; serials: string[] }[] };
 
 /** The key a batch's quantity box has in the form: the batch's id, or "unknown" for goods whose batch isn't known. */
 export const batchKey = (batchId: string | null) => batchId ?? 'unknown';
@@ -25,8 +29,8 @@ function Units({ index, units, complete }: {
   /** The whole list is shown (no search, no further page), so a picked unit missing from it isn't on hand here now. */
   complete: boolean;
 }) {
-  const { setValue, getValues } = useFormContext<DeliveryInput>();
-  const { field } = useController<DeliveryInput, `lines.${number}.serials`>({ name: `lines.${index}.serials` });
+  const { setValue, getValues } = useFormContext<PickForm>();
+  const { field } = useController<PickForm, `lines.${number}.serials`>({ name: `lines.${index}.serials` });
   const picked: readonly string[] = field.value;
   // A picked unit's condition and batch, kept while the list is narrowed by a search and it scrolls out of view.
   const [known] = useState(() => new Map<string, { condition: Condition; batchId: string | null }>());
@@ -77,15 +81,15 @@ function Units({ index, units, complete }: {
 }
 
 /** One line's stock: the position, a quantity box for each batch with stock here, and the units of a serialised item. */
-export function StockPick({ index, itemId, onSplit }: { index: number; itemId: string; onSplit: () => void }) {
-  const { control } = useFormContext<DeliveryInput>();
+/** `forDocument` names the document line the units are promised to (an order line), so they show as held for it; a counter bill has none. */
+export function StockPick({ index, itemId, forDocument, onSplit }: { index: number; itemId: string; forDocument?: string; onSplit: () => void }) {
+  const { control } = useFormContext<PickForm>();
   const locationId = useWatch({ control, name: 'locationId' });
-  const orderLineId = useWatch({ control, name: `lines.${index}.orderLineId` });
   const picks = useWatch({ control, name: `lines.${index}.pick` });
   const [q, setQ] = useState('');
-  const ready = locationId !== '' && itemId !== '' && orderLineId !== '';
+  const ready = locationId !== '' && itemId !== '';
   const stock = useApiQuery(getOnHand, {
-    itemId, locationId, forDocument: `sales_order_lines:${orderLineId}`, ...(q.trim() === '' ? {} : { q: q.trim() }), limit: 200,
+    itemId, locationId, ...(forDocument === undefined ? {} : { forDocument }), ...(q.trim() === '' ? {} : { q: q.trim() }), limit: 200,
   }, { enabled: ready });
   if (locationId === '') return <p>{t('sales.delivery.form.onHand.place')}</p>;
   if (stock.error !== null) {
