@@ -20,17 +20,17 @@ export {
   postDeliveryNow,
 } from './services/deliveries.ts';
 export { deliveryOverride } from './services/delivery-checks.ts';
-export { addInvoice, changeInvoice, dropInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
+export { addInvoice, changeInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
 export { cancelInvoiceNow } from './services/invoice-cancel.ts';
 export { remindWithLink } from './services/reminder-links.ts';
 export { DOCUMENT_LINK_DAYS, invoiceByLink, invoiceLinks, revokeInvoiceLinkNow, shareInvoiceLink } from './services/invoice-links.ts';
-export { addCreditNote, dropCreditNote, listCreditNotesPage } from './services/credit-notes.ts';
+export { addCreditNote, listCreditNotesPage } from './services/credit-notes.ts';
 export {
-  askCreditNoteApproval, cancelCreditNoteNow, CREDIT_NOTE_SERIES, CREDIT_NOTE_TAX_DEADLINE, creditNoteApprovalSpec, getCreditNoteById,
+  askCreditNoteApproval, cancelCreditNoteNow, CREDIT_NOTE_SERIES, CREDIT_NOTE_TAX_DEADLINE, creditNoteApprovalSpec, dropCreditNote, getCreditNoteById,
 } from './services/credit-note-post.ts';
 export { cancelDeliveryNow, cancelDeliveryReturnNow } from './services/delivery-cancel.ts';
 export {
-  askInvoiceOverride, B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, INVOICE_LAG_DAYS, INVOICE_SERIES, invoiceOverride, postInvoiceNow,
+  askInvoiceOverride, B2C_DETAILS_BASIS, B2C_DETAILS_LIMIT, dropInvoice, INVOICE_LAG_DAYS, INVOICE_SERIES, invoiceOverride, postInvoiceNow,
 } from './services/invoice-post.ts';
 export {
   addDeliveryReturn, changeDeliveryReturn, DELIVERY_RETURN_SERIES, dropDeliveryReturn, getDeliveryReturnById, listDeliveryReturnsPage,

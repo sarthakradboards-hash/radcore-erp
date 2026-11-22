@@ -8,7 +8,7 @@ import { AppError, decodeCursor, encodeCursor, listScope, principalId, type Ctx 
 import { checkQuantity, soldCondition, soldUnits } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { createInvoice, deleteInvoice, getInvoice, listInvoices, updateInvoice } from '../contract.ts';
+import type { createInvoice, getInvoice, listInvoices, updateInvoice } from '../contract.ts';
 import { picksOf, returnedOf, type Returned } from './delivered.ts';
 import { checkDate } from './document-rules.ts';
 import { invoiceOwner } from './invoice-rules.ts';
@@ -204,13 +204,5 @@ export async function changeInvoice(ctx: Ctx, { id, ...input }: In<typeof update
     owner: ownerOf(ctx, lines), priceListId, overrideVersion: null }).where(eq(invoices.id, id));
   await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id));
   await tx.insert(invoiceLines).values(stored(lines).map((l) => ({ ...l, invoiceId: id })));
-  return {};
-}
-
-/** DELETE /sales/invoices/:id (invoices:write): a draft only; it never had a number. */
-export async function dropInvoice(ctx: Ctx, { id }: In<typeof deleteInvoice>): Promise<Out<typeof deleteInvoice>> {
-  const now = await invoiceOf(ctx, id, 'invoices:write', true);
-  if (now.status !== 'draft') throw wrongStatus(now.status);
-  await salesTx(ctx).delete(invoices).where(eq(invoices.id, id));
   return {};
 }

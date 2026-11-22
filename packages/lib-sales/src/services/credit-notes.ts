@@ -9,7 +9,7 @@ import { AppError, decodeCursor, encodeCursor, listScope, type Ctx } from '@radc
 import { checkPlace, checkQuantity, serialKey } from '@radcore/lib-stock';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { createCreditNote, deleteCreditNote, getCreditNote, listCreditNotes } from '../contract.ts';
+import type { createCreditNote, getCreditNote, listCreditNotes } from '../contract.ts';
 import { creditLine, refundRoom, type CreditFigures } from './credit-note-rules.ts';
 import { creditedOf, pickedBatchKey, picksOf, returnedOf, type Picks } from './delivered.ts';
 import { checkDate } from './document-rules.ts';
@@ -189,13 +189,6 @@ export async function addCreditNote(ctx: Ctx, input: In<typeof createCreditNote>
   return row;
 }
 
-/** DELETE /sales/credit-notes/:id (credit_notes:write): a draft only. */
-export async function dropCreditNote(ctx: Ctx, { id }: In<typeof deleteCreditNote>): Promise<Out<typeof deleteCreditNote>> {
-  const now = await noteOf(ctx, id, 'credit_notes:write', true);
-  if (now.status !== 'draft') throw wrongNoteStatus(now.status);
-  await salesTx(ctx).delete(creditNotes).where(eq(creditNotes.id, id));
-  return {};
-}
 
 /** The drafted lines, as approval shows them and posting reads them. */
 export async function draftedLines(ctx: Ctx, id: string): Promise<NoteLineIn[]> {
