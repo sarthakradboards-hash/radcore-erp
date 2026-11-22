@@ -18,7 +18,7 @@ import type {
   cancelPurchaseOrder, closePurchaseOrder, createPurchaseOrder, deletePurchaseOrder, getPurchaseOrder, listPurchaseOrders, placePurchaseOrder,
   updatePurchaseOrder,
 } from '../contract.ts';
-import { orderLimitOf, roleOf } from './order-limits.ts';
+import { orderLimitOf } from './order-limits.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -284,10 +284,10 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updatePu
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, input.lines);
   const now = dec(o.total ?? '0');
   const next = dec(amounts.totals.total);
-  // A raise is bounded by whichever is higher, the placer's limit or what an approval was given for: past both, it's
-  // refused; lowering it, or a change within that, saves (the architect on RAD-136).
-  // The placer's limit, by the role they placed it under, not the editor's (ADR-008 §5, the auditor on #340).
-  const limit = dec(await orderLimitOf(ctx, o.placedByRole));
+  // A raise commits spend now, so it's the editor's call: it's bounded by whichever is higher, the editor's limit or what
+  // an approval was given for. Past both, it's refused; lowering it, or a change within that, saves. A low-limit editor
+  // can't raise a manager's PO up to the manager's limit (the architect on RAD-136, 18:05).
+  const limit = dec(await orderLimitOf(ctx));
   const bound = o.approvedTotal === null || limit.gt(dec(o.approvedTotal)) ? limit : dec(o.approvedTotal);
   if (next.gt(now) && next.gt(bound)) {
     throw new AppError('over_approved', 'This raises the purchase order past what was approved: put the extra goods on a new purchase order',
@@ -320,8 +320,6 @@ export async function placeOrder(ctx: Ctx, { id }: In<typeof placePurchaseOrder>
   const lines = await linesOf(ctx, id);
   await checkLines(ctx, lines);
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, lines);
-  // Who places it, by their role: a later change is judged by their limit, whoever makes it.
-  await purchasingTx(ctx).update(purchaseOrders).set({ placedByRole: roleOf(ctx) }).where(eq(purchaseOrders.id, id));
   if (dec(amounts.totals.total).lte(dec(await orderLimitOf(ctx)))) {
     return { status: 'placed', number: await place(ctx, o, false), approvalId: null, versionHash: null };
   }

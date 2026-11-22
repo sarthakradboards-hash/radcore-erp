@@ -170,9 +170,22 @@ describe.skipIf(!url || !superUrl)('purchase orders', () => {
     await run((ctx) => placeOrder(ctx, { id }), maker);
     await change(id, at, maker, '3');
     expect(await code(change(id, at, maker, '4'))).toBe('over_approved');
-    // Judged by the placer's limit, whoever changes it: an editor with a higher one doesn't lift it (the auditor on #340).
+    // An editor with a higher limit of their own may raise it within that (the architect on RAD-136, 18:05).
     const editor = await placer('1000000');
-    expect(await code(change(id, at, editor, '4'))).toBe('over_approved');
+    await change(id, at, editor, '4');
+    expect((await run((ctx) => getOrderById(ctx, { id }), editor)).total).toBe('210000.00');
+  });
+
+  it('judges a raise by the editor’s limit: a lower-limit editor can’t raise a higher-limit placer’s PO past their own', async () => {
+    const at = await setup();
+    const manager = await placer('500000');
+    const clerk = await placer('120000');
+    const { id } = await draft(at, manager);
+    expect((await run((ctx) => placeOrder(ctx, { id }), manager)).status).toBe('placed');
+    // No approval covers it, so the clerk's 1,20,000.00 bounds it: 1,57,500.00 is refused, and within it, it saves.
+    expect(await code(change(id, at, clerk, '3'))).toBe('over_approved');
+    await change(id, at, clerk, '2');
+    expect((await run((ctx) => getOrderById(ctx, { id }), clerk)).total).toBe('105000.00');
   });
 
   it('keeps a placed PO’s supplier and date (fixed_once_placed), and refuses one we don’t buy from', async () => {
