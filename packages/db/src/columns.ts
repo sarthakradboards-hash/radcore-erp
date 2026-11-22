@@ -53,7 +53,25 @@ type Audit = ReturnType<typeof audit>;
 
 /** `created_at` as PostgreSQL's text, for a table whose list pages on it: the same column, read so the page key keeps its
  * microseconds (lib-platform's momentKey). A table restates it in its columns; the database sees no change. */
-export const createdMoment = () => timestamp({ withTimezone: true, mode: 'string' }).notNull().defaultNow();
+const moments = new WeakSet<object>();
+export const createdMoment = () => {
+  const builder = timestamp({ withTimezone: true, mode: 'string' }).notNull().defaultNow();
+  moments.add(builder);
+  return builder;
+};
+
+/** A table may restate an audit column only as createdMoment()'s createdAt: the database's guard counts the four
+ * columns but not their type, NOT NULL or default, so anything else is refused here, as the module loads (auditor-2 on
+ * #316). */
+function restatedOnlyAsMoment<T extends Record<string, PgColumnBuilderBase>>(name: string, columns: T): T {
+  for (const key of Object.keys(audit())) {
+    const builder = columns[key];
+    if (builder !== undefined && !(key === 'createdAt' && moments.has(builder))) {
+      throw new Error(`${name}: ${key} is an audit column; only createdAt may be restated, as createdMoment()`);
+    }
+  }
+  return columns;
+}
 
 // drizzle-orm's own snake_case rule (its casing.ts), so `ck_<table>_<column>` names the column Drizzle writes.
 const snake = (key: string) =>
@@ -67,7 +85,7 @@ export const radcoreTable = <TName extends string, TColumns extends Record<strin
   name: TName,
   columns: TColumns,
   extras?: (t: BuildExtraConfigColumns<TName, Omit<Audit, keyof TColumns> & TColumns, 'pg'>) => PgTableExtraConfigValue[],
-) => radcore.table(name, { ...audit(), ...columns } as Omit<Audit, keyof TColumns> & TColumns, (t) => [
+) => radcore.table(name, { ...audit(), ...restatedOnlyAsMoment(name, columns) } as Omit<Audit, keyof TColumns> & TColumns, (t) => [
   ...Object.entries(columns).flatMap(([key, builder]) => {
     const rule = rules.get(builder);
     const c = t[key as keyof typeof t];
