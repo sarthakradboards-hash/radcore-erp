@@ -62,6 +62,14 @@ describe.skipIf(!url || !superUrl)('money accounts', { timeout: 30_000 }, () => 
     expect(out.items.find((a) => a.id === hdfc)).toMatchObject({ cash: false });
   });
 
+  // A credit note's counter refund names an account too (the coordinator on RAD-116): whoever drafts one by template can
+  // pick it.
+  it('is granted, by template, to every role that drafts credit notes', async () => {
+    const { rows } = await su.query<{ role: string }>(`select t.role from radcore.role_templates t where t.permission = 'credit_notes:write'
+      and not exists (select 1 from radcore.role_templates m where m.role = t.role and m.permission = 'money_accounts:read')`);
+    expect(rows.map((r) => r.role)).toEqual([]);
+  });
+
   it('answers the counter over the API, and refuses a role without money_accounts:read', async () => {
     const config = loadConfig(testSettings(), 'api');
     const get = async (as: Principal) => {
