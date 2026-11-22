@@ -40,7 +40,7 @@ type InvoiceValues = z.output<typeof invoiceSchema>;
 
 export const NEW_INVOICE: InvoiceInput = { partyId: '', businessDate: indiaDate(new Date()), notes: '', lines: [] };
 
-const useParties = (query: string) => useApiSearch(listParties, query, { params: { filter: { kind: 'customer', active: true } } });
+const useParties = (query: string) => useApiSearch(listParties, query, { params: { filter: { sellsTo: true, active: true } } });
 
 /** Brings a delivery's lines in: a choice among the customer's deliveries still waiting, and the button that adds them. */
 function AddDelivery({ append }: { append: (lines: InvoiceInput['lines']) => void }) {
