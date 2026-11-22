@@ -3,7 +3,7 @@
 // one place and its invoice, each through its own service; then every receipt is applied to the invoice. Whatever isn't
 // paid stays on the party's credit, which each stage's credit check judges (an advance already lowers what's owed).
 // Like every contract file it imports only zod, lib-common and other libraries' contract entries (D5).
-import { dateString, defineContract, idString, moneyString } from '@radcore/lib-common';
+import { dateString, defineContract, idString, listInput, listOf, momentString, moneyString, principalOut } from '@radcore/lib-common';
 import { z } from 'zod';
 import { createDelivery, picks, postDelivery } from './deliveries.ts';
 import { confirmOrder, createOrder, lineIn } from './documents.ts';
@@ -88,4 +88,37 @@ export const completeQuickBill = defineContract({
   input: z.object({ orderId: idString(), businessDate: dateString(), approvalCodes: z.array(reference()).max(10) }),
   output: sold, errors: [...new Set([...ERRORS, 'not_held', 'version_changed'])],
   dbErrors: createQuickBill.dbErrors,
+});
+
+/**
+ * What a quick bill would come to, before it's saved (the architect on RAD-115): each line's tax and total, taxed at the
+ * shop as its invoice will be, the round-off and the total, what the payments leave, and the codes of the checks that
+ * would need an approval. Read only: no number is taken, nothing is locked or written, and no figure of cost or
+ * balance is answered, only the codes. The same pricing, lib-gst and round-off as the save, so this total is the
+ * invoice's.
+ */
+export const previewQuickBill = defineContract({
+  method: 'POST', path: '/sales/quick-bills/preview', auth: 'session', perm: 'invoices:write', tx: { readOnly: true, isolation: 'read committed' },
+  input: billIn,
+  output: z.object({
+    lines: z.array(z.object({ itemId: idString(), gstRate: z.string(), taxable: moneyString(), cgst: moneyString(), sgst: moneyString(),
+      igst: moneyString(), lineTotal: moneyString() })),
+    placeOfSupply: z.string(), taxable: moneyString(), cgst: moneyString(), sgst: moneyString(), igst: moneyString(), roundOff: z.string(),
+    total: moneyString(), paid: moneyString(), left: moneyString(), issues: z.array(z.string()),
+  }),
+  errors: [...new Set([...createOrder.errors, 'no_gst_rate', 'company_profile_incomplete'])],
+});
+
+/**
+ * The quick bills held for an approval (RC-190's hold and recall; the architect on RAD-115), oldest first, a page at a
+ * time, at the order's scope as completing one is: each one's party, how many items, its planned payments by method and
+ * amount (never a reference), where its approval stands, and who held it when. One that won't be finished is thrown
+ * away by deleting its draft order, which takes its hold with it.
+ */
+export const listHeldQuickBills = defineContract({
+  method: 'GET', path: '/sales/quick-bills/held', auth: 'session', perm: 'invoices:write', tx: { readOnly: true, isolation: 'read committed' },
+  input: listInput(z.object({})),
+  output: listOf(z.object({ orderId: idString(), partyId: idString(), partyName: z.string(), items: z.number().int().nonnegative(),
+    payments: z.array(z.object({ method: z.enum(['cash', 'card', 'bank']), amount: moneyString() })),
+    approval: z.enum(['waiting', 'approved', 'rejected']), heldBy: principalOut, heldAt: momentString() })),
 });
