@@ -10,6 +10,7 @@ import { and, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelPaymentContract, recordPaymentContract } from '../contract.ts';
 import { paymentUsed } from './allocations.ts';
+import { takesMoney } from './money-accounts.ts';
 import { holdPeriod, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { holdParty } from './parties.ts';
 
@@ -50,9 +51,10 @@ async function moneyAccount(ctx: Ctx, id: string): Promise<{ cash: boolean }> {
   if (a === undefined) return refuse('unknown_account', 'There’s no such account');
   // The engine would refuse it too (RA009); said here by name, before anything is written (the auditor on #234).
   if (!a.active) refuse('account_inactive', 'This account is switched off: switch it on, or use another');
-  if (a.key === 'cash' || a.key === 'bank') return { cash: a.key === 'cash' };
   const [parent] = a.parentId === null ? [] : await tx.select({ key: accounts.systemKey }).from(accounts).where(eq(accounts.id, a.parentId)).limit(1);
-  return parent?.key === 'bank' ? { cash: false } : refuse('not_money_account', 'Take or pay money through Cash or a bank account');
+  // The one rule GET /money-accounts lists by (money-accounts.ts).
+  return takesMoney({ key: a.key, parentKey: parent?.key ?? null }) ? { cash: a.key === 'cash' }
+    : refuse('not_money_account', 'Take or pay money through Cash or a bank account');
 }
 
 /** The lines a payment posts (ADR-006 §6): its party's Debtors or Creditors line carries the whole amount, gross of TDS. */

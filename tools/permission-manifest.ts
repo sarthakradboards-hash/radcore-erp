@@ -99,6 +99,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'PUT /parties/:id/credit': 'parties:manage',
   // The chart of accounts and the journal (RAD-86): posting and reversing each have their own key.
   'GET /accounts': 'journal:read',
+  'GET /money-accounts': 'money_accounts:read',
   // Receipts, payments and refunds (RAD-116); cash past the day's limit waits for payments:approve.
   'POST /payments': 'payments:write',
   'POST /payments/:id/cancel': 'payments:write',
@@ -373,6 +374,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'PATCH /parties/:id': ['lib-accounts', 'lib-platform'],
   'PUT /parties/:id/credit': ['lib-accounts', 'lib-platform'],
   'GET /accounts': ['lib-accounts', 'lib-platform'],
+  'GET /money-accounts': ['lib-accounts', 'lib-platform'],
   'POST /payments': ['lib-accounts', 'lib-platform'],
   'POST /payments/:id/cancel': ['lib-accounts', 'lib-platform'],
   'POST /payments/:id/allocations': ['lib-accounts', 'lib-platform'],

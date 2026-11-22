@@ -149,6 +149,15 @@ export const listAccounts = defineContract({
   input: z.object({}), output: z.object({ items: z.array(account) }),
 });
 
+/** GET /money-accounts (money_accounts:read): the switched-on accounts money moves through, Cash, Bank and those under it,
+ * for a screen's payment picker (RAD-116, the architect's ruling): each one's code, name and whether it's cash, and no
+ * balance, so it needs no journal:read. The chart is small, so it's one answer. */
+export const listMoneyAccounts = defineContract({
+  method: 'GET', path: '/money-accounts', auth: 'session', perm: 'money_accounts:read', tx: read,
+  input: z.object({}),
+  output: z.object({ items: z.array(z.object({ id: idString(), code: z.string().nullable(), name: z.string(), cash: z.boolean() })) }),
+});
+
 /** An account's code: upper-case letters and digits, with dots and hyphens after the first, at most 12. */
 const accountCode = () => z.string().regex(/^[0-9A-Z][0-9A-Z.-]{0,11}$/, 'Use up to 12 capital letters, digits, dots or hyphens');
 
