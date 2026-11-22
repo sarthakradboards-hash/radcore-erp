@@ -6,9 +6,21 @@ import { t } from '../../../lib/i18n/index.ts';
 export type Stage = (typeof LEAD_STAGES)[number];
 
 const CODES = ['unknown_source', 'lead_taken', 'unknown_reason', 'wrong_stage', 'unknown_plan', 'unknown_reply', 'unknown_person',
-  'owner_cannot_see_leads', 'forbidden'] as const;
+  'owner_cannot_see_leads', 'forbidden', 'name_taken', 'source_not_ignorable'] as const;
 /** The CRM contracts' refusals in the screen's words, for Form's `messages`. */
 export const CRM_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`crm.err.${c}`)]));
+
+/** For an action on one lead: there a not_found means the lead left this person's sight, almost always because
+ * someone else claimed it first (e2e-2 on #334), so it says so rather than a bare "Not found". */
+export const LEAD_MESSAGES: Partial<Record<string, string>> = { ...CRM_MESSAGES, not_found: t('crm.err.lead_gone') };
+
+/** The step a lead's shown follow-up belongs to. The server's planStep is the step the follow-up after it takes
+ * (pipeline.ts), so the shown one is the plan's step just before it, read from the plan's own steps (e2e-2 on #334). */
+export function shownStep(steps: readonly { step: number }[], planStep: number | null): number | null {
+  if (planStep === null) return null;
+  const at = steps.findIndex((s) => s.step === planStep);
+  return at > 0 ? steps[at - 1]!.step : null;
+}
 
 export const stageName = (s: Stage) => t(`crm.stage.${s}`);
 

@@ -111,12 +111,17 @@ export function rateFor(itemChanged: boolean, current: string, filled: string | 
 /** Why a save was refused in a way a hold may answer: a check needs an approval, or the Counter customer was left a balance. */
 export type Refusal = 'override' | 'walk_in' | null;
 
+/** The preview's check codes that need someone's approval: all but the Counter customer's balance (`walk_in_pays_in_full`), which is not an
+ * approval but a balance only a named buyer can carry (it is told apart, and answered by the balance path of the hold choice). */
+export const approvalIssues = (codes: readonly string[]): string[] => codes.filter((c) => c !== 'walk_in_pays_in_full');
+
 /** Whether the choice between saving and holding is drawn, and whether hold is its default. It is drawn when a check needs an approval
- * (the preview's issues), when a save was refused for one of the two reasons, and for the Counter customer when the payments leave a
- * balance and the person may leave one (sales:counter_credit). Hold is the default after a refusal a hold answers: a needs_override, or a
- * walk-in balance for someone who may leave one. When it is not drawn the mode is "save", so a hold chosen earlier doesn't linger. */
+ * (the preview's approval issues), after a needs_override refusal, and for the Counter customer when the payments leave a balance (or a
+ * save was refused for one) and the person may leave one (sales:counter_credit). Someone who may not is not offered a hold that could not
+ * hold a balance. Hold is the default after a refusal a hold answers. When it is not drawn the mode is "save", so a hold chosen earlier
+ * doesn't linger. */
 export function holdChoiceState(o: { issues: number; refused: Refusal; counter: boolean; mayCredit: boolean; leftOver: boolean }): { shown: boolean; holdByDefault: boolean } {
-  const balance = o.counter && o.mayCredit && o.leftOver;
-  const shown = o.issues > 0 || o.refused !== null || balance;
+  const balance = o.counter && o.mayCredit && (o.leftOver || o.refused === 'walk_in');
+  const shown = o.issues > 0 || o.refused === 'override' || balance;
   return { shown, holdByDefault: shown && (o.refused === 'override' || (o.refused === 'walk_in' && o.mayCredit)) };
 }

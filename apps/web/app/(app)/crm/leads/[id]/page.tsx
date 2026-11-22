@@ -12,7 +12,7 @@ import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import { Pii } from '../../../../../components/ui/masked.tsx';
 import { useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
-import { leadName, ownerText, stageName } from '../../shared.ts';
+import { leadName, ownerText, shownStep, stageName } from '../../shared.ts';
 import { AssignDialog, EditDialog, FollowUpDialog, MoveDialog, PlanDialog, ReplyDialog } from './lead-dialogs.tsx';
 
 type Dialogs = 'followUp' | 'move' | 'plan' | 'reply' | 'edit' | 'assign' | null;
@@ -22,18 +22,19 @@ export default function LeadPage() {
   const me = useMe();
   const mayWrite = me.permissions.includes('leads:write');
   const q = useApiQuery(getLead, { id });
-  const lists = useApiQuery(getLeadLists, {}).data;
+  const listsQ = useApiQuery(getLeadLists, {});
+  const lists = listsQ.data;
   const [dialog, setDialog] = useState<Dialogs>(null);
   const enquiriesId = useId();
   const timelineId = useId();
   const lead = q.data;
 
-  if (q.error !== null) {
+  if (q.error !== null || listsQ.error !== null) {
     return (
       <>
         <p><Link href="/crm/leads">{t('crm.back')}</Link></p>
         <div role="alert" className="kit-form-alert">
-          {t('crm.missing')} <button type="button" className="kit-button" onClick={() => void q.refetch()}>{t('error.retry')}</button>
+          {t('crm.missing')} <button type="button" className="kit-button" onClick={() => { void q.refetch(); void listsQ.refetch(); }}>{t('error.retry')}</button>
         </div>
       </>
     );
@@ -42,6 +43,7 @@ export default function LeadPage() {
   const open = (which: Exclude<Dialogs, null>) => () => setDialog(which);
   const shut = (isOpen: boolean) => { if (!isOpen) setDialog(null); };
   const plan = lists.plans.find((p) => p.id === lead.planId);
+  const step = plan === undefined ? null : shownStep(plan.steps, lead.planStep);
   const lostReason = lists.lostReasons.find((r) => r.id === lead.lostReasonId);
   return (
     <>
@@ -56,7 +58,7 @@ export default function LeadPage() {
         <dt>{t('crm.owner')}</dt><dd>{ownerText(lead.owner, me.user.id)}</dd>
         <dt>{t('crm.followUpOn')}</dt><dd>{lead.followUpOn === null ? t('crm.followUpNone') : formatDate(lead.followUpOn)}</dd>
         {plan === undefined ? null : (
-          <><dt>{t('crm.plan')}</dt><dd>{lead.planStep === null ? plan.name : t('crm.plan.step', { plan: plan.name, step: String(lead.planStep) })}</dd></>
+          <><dt>{t('crm.plan')}</dt><dd>{step === null ? plan.name : t('crm.plan.step', { plan: plan.name, step: String(step) })}</dd></>
         )}
         <dt>{t('crm.value')}</dt><dd>{lead.value === null ? t('crm.none') : formatMoney(lead.value)}</dd>
         <dt>{t('crm.score')}</dt><dd>{lead.score === null ? t('crm.none') : String(lead.score)}</dd>

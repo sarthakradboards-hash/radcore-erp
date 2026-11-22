@@ -2,17 +2,21 @@
 // note is approved by someone else (credit_notes:approve, with the second factor, D-19), and the approval's approved()
 // posts it. In ADR-006 §1's order: the period (the spec's lockFirst), the note (the approval's read), then its
 // invoice, so two notes of one invoice, or a note and the invoice's cancellation, take turns; the party for a counter
-// refund; then the stock engine's, the entry, the number last. The entry (F9): Dr Sales, Dr Output GST (or GST Borne on Late Credit Notes past section 34's limit, F25), Cr
+// refund; then the stock engine's, the entry, the number last. A note with a counter refund posts two documents, so it
+// takes its stock and then every series' turn up front (holdSeries: JV, then PV, then CN), before either posts. The entry (F9): Dr Sales, Dr Output GST (or GST Borne on Late Credit Notes past section 34's limit, F25), Cr
 // Debtors for the total, the round-off, and for goods back Dr Stock in Hand, Cr COGS at the value they went out at,
 // their units `returned` (RC-128). The note then applies to its invoice, as far as the invoice is unpaid, and pays the
 // counter refund drafted with it (F26).
 import { creditNoteLines, creditNotes, salesTx } from '@radcore/db/sales';
-import { applyCredit, holdParty, holdPeriod, lockPeriod, postEntry, refundCredit, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
+import {
+  applyCredit, holdParty, holdPeriod, JOURNAL_SERIES, lockPeriod, PAYMENT_SERIES, postEntry, refundCredit, reverseEntriesOf, type JournalLine,
+} from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundRate } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, withdrawPending, type ApprovalSpec, type Ctx,
+  AppError, awaitingApproval, defineSeries, defineSetting, holdSeries, nextNumber, principalId, requestApproval, withdrawPending, type ApprovalSpec,
+  type Ctx,
 } from '@radcore/lib-platform';
-import { checkPlace, postStock, reverseStock, type PostedMovement } from '@radcore/lib-stock';
+import { checkPlace, holdStock, postStock, reverseStock, type PostedMovement } from '@radcore/lib-stock';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelCreditNote, deleteCreditNote, getCreditNote, requestCreditNoteApproval } from '../contract.ts';
@@ -88,6 +92,14 @@ async function postNote(ctx: Ctx, id: string): Promise<void> {
   checkDate(note.businessDate, today(), { date: inv.businessDate, what: 'invoice' });
   if (note.locationId !== null) await checkPlace(ctx, note.locationId);
   const figures = await noteFigures(ctx, inv, note.kind as Kind, await draftedLines(ctx, id));
+  // ADR-006 §1 for a save that posts several documents (the architect on RAD-115): the note and its refund draw CN and
+  // PV, so their turns are taken here in seriesOrder, after the goods' stock, never CN and then PV as they're drawn.
+  if (note.refundAmount !== null) {
+    if (note.locationId !== null) {
+      await holdStock(ctx, figures.map((f) => ({ itemId: f.itemId, locationId: note.locationId ?? '', serials: f.line.serials ?? [] })));
+    }
+    await holdSeries(ctx, [JOURNAL_SERIES, CREDIT_NOTE_SERIES, PAYMENT_SERIES]);
+  }
   const totals = totalsOf(figures);
   const late = isLate(note.businessDate, inv.businessDate, ctx.settings.get(CREDIT_NOTE_TAX_DEADLINE));
   const lineIds = new Map((await tx.select({ id: creditNoteLines.id, lineNo: creditNoteLines.lineNo }).from(creditNoteLines)
