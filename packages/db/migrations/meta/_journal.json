@@ -530,8 +530,15 @@
     {
       "idx": 75,
       "version": "7",
-      "when": 1795337882108,
-      "tag": "0075_sales_list_order",
+      "when": 1795337021699,
+      "tag": "0075_crm_setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795338050655,
+      "tag": "0076_sales_list_order",
       "breakpoints": true
     }
   ]

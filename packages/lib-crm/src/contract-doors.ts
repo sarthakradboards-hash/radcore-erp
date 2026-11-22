@@ -18,6 +18,9 @@ export const submitEnquiry = defineContract({
     name: z.string().trim().min(1).max(120).optional(),
     email: emailString().optional(),
     message: z.string().trim().min(1).max(2000).optional(),
+    // The campaign token its link or QR code carried (M3-06): an identifier, not a secret, that grants nothing beyond
+    // tagging the enquiry; an unknown or ended one tags nothing (the architect on RAD-110).
+    campaign: z.string().regex(/^[A-Za-z0-9_-]{22}$/).optional(),
     captcha: z.string().min(1).max(2048),
   }),
   output: z.object({}), errors: ['captcha_failed'],

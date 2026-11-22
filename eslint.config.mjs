@@ -250,6 +250,7 @@ OPTIONS['radcore/e7-scope-on-owned-reads'] = { tables: [...SCOPED_TABLES,
   // The files that rightly read past the record scope: one file each, with its reason, by an architect's ruling
   // (ADR-001 §6a). tools/eslint-options.json pins the list.
   exempt: {
+    'packages/lib-crm/src/services/enquiry-counts.ts': 'counts a campaign’s or source’s enquiries over an India-date range for cost per lead, whoever owns the lead, as counts keyed by campaign and source ids the caller holds through campaigns:read (the architect on RAD-110)',
     'packages/lib-crm/src/services/lead-locks.ts': 'locks one lead by an id taken from a booking the caller has already locked within its scope, for the booking’s cancellation, and answers nothing (the architect on RAD-117)',
     'packages/lib-sales/src/services/booking-holds.ts': 'locks and updates the live bookings of an order or of order lines that the delivery, delivery cancel or order service has already locked within the principal’s scope, and tells a cancelled booking whether its lead has another live booking, whoever made it (the architect on RAD-117)',
     'packages/lib-sales/src/services/delivered.ts': 'sums every posted delivery, return and credit note for a party’s credit exposure, an order’s remaining quantities and an invoice’s open credit, as aggregates keyed by ids the caller had in scope (the architect on RAD-112 and RAD-114)',

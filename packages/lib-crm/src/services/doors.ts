@@ -58,7 +58,7 @@ export async function takeFormEnquiry(ctx: Ctx, { captcha, ...answers }: In<type
 /** The form's job. */
 export async function formEnquiry(ctx: Ctx, delivery: WebhookDelivery): Promise<void> {
   const a = FORM.parse(JSON.parse(delivery.payload));
-  await captureEnquiry(ctx, { phone: a.phone, name: a.name, email: a.email, source: 'form', message: a.message });
+  await captureEnquiry(ctx, { phone: a.phone, name: a.name, email: a.email, source: 'form', message: a.message, campaign: a.campaign });
 }
 
 /** Google's job. A lead with no phone can't be a lead (one per number): it's dropped, and its delivery stays stored. */
