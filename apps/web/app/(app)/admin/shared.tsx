@@ -19,10 +19,12 @@ import './admin.css';
 export function SectionNav({ label, pages }: { label: string; pages: readonly NavPage[] }) {
   const here = usePathname();
   const { permissions } = useMe();
+  // A page offered under either of two keys is listed once.
+  const shown = pages.filter((page) => allowed(page, permissions)).filter((page, i, all) => all.findIndex((p) => p.href === page.href) === i);
   return (
     <nav aria-label={label} className="admin-nav">
       <ul>
-        {pages.filter((page) => allowed(page, permissions)).map(({ href, label }) => (
+        {shown.map(({ href, label }) => (
           <li key={href}><Link href={href} aria-current={here === href || here.startsWith(`${href}/`) ? 'page' : undefined}>{t(label)}</Link></li>
         ))}
       </ul>
