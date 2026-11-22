@@ -24,8 +24,11 @@ const href = (id: string) => `/purchases/orders/${id}`;
 
 /** What approving places: the supplier and the total with GST, from the PO as it is now. */
 function Figures({ id }: { id: string }) {
-  const po = useApiQuery(getPurchaseOrder, { id }).data;
-  if (po === undefined) return null;
+  const q = useApiQuery(getPurchaseOrder, { id });
+  const po = q.data;
+  // A PO that can't be read (an error, or an approver without purchasing:read) says so, never shows nothing (auditor-3 on #337).
+  if (q.error !== null) return <p role="alert" className="kit-form-alert">{t('purchases.approvals.cannotRead')}</p>;
+  if (po === undefined) return <p>{t('loading')}</p>;
   return (
     <dl className="admin-facts" aria-label={t('purchases.approvals.figures')}>
       <dt>{t('purchases.approvals.supplier')}</dt><dd>{po.supplierName}</dd>

@@ -104,6 +104,7 @@ export const purchases = {
   'purchases.approvals.someone': 'someone',
   'purchases.approvals.changed': 'The purchase order has changed since this was asked, so it can’t be approved as it is. Reject it, and the placer can ask again.',
   'purchases.approvals.figures': 'What approving places',
+  'purchases.approvals.cannotRead': 'The purchase order couldn’t be read, so its supplier and total can’t be shown here. Open it, or ask someone who can see purchase orders.',
   'purchases.approvals.supplier': 'Supplier',
   'purchases.approvals.total': 'Total with GST',
   'purchases.approvals.approve': 'Approve and place',
