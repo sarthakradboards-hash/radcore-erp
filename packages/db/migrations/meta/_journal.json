@@ -547,6 +547,13 @@
       "when": 1795340169934,
       "tag": "0077_quick_bill_holds",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1795341117599,
+      "tag": "0078_sales_list_order",
+      "breakpoints": true
     }
   ]
 }

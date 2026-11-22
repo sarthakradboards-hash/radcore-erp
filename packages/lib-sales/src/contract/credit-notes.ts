@@ -58,6 +58,10 @@ const note = header.extend({
   // A draft's amounts are worked out on read, as posting would (e2e-playwright on #299); while its invoice or lines
   // refuse it, they're blank and this says why. Null once posted, when they're the stored ones.
   amountsNote: z.string().nullable(),
+  // Where it's applied (RAD-114, for ui-2's "reverse the application"): each application to its invoice, oldest first,
+  // and whether it's been reversed (POST /credit-applications/:id/reverse).
+  applications: z.array(z.object({ id: idString(), documentTable: z.string(), documentId: idString(), documentNumber: z.string().nullable(),
+    amount: money(), businessDate: dateString(), reversed: z.boolean() })),
 });
 
 // The refusals a draft shares: its invoice, its date, its lines and its place.
