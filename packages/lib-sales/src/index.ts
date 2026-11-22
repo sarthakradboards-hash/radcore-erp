@@ -43,7 +43,7 @@ export {
   addAdvance, addBooking, BOOKING_SERIES, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow, saveChecklist,
 } from './services/bookings.ts';
 export { listTestRidesPage, recordRide, scheduleRide } from './services/test-rides.ts';
-export { CARD_ACCOUNT, quickBill } from './services/quick-bills.ts';
+export { CARD_ACCOUNT, completeBillNow, holdBillNow, quickBill } from './services/quick-bills.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';

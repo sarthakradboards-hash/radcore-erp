@@ -14,7 +14,7 @@ import {
   cancelDeliveryNow, cancelDeliveryReturnNow,
   deliveryReturnCounts, orderCounts, quoteCounts,
   addAdvance, addBooking, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow,
-  listTestRidesPage, recordRide, saveChecklist, scheduleRide, quickBill,
+  listTestRidesPage, recordRide, saveChecklist, scheduleRide, quickBill, holdBillNow, completeBillNow,
 } from '@radcore/lib-sales';
 import {
   createPriceList, getPrice, getPriceList, getPriceListChanges, getPriceListVersion, listDiscountLimits, listPriceListRates, listPriceLists, priceListApproval as
@@ -31,7 +31,7 @@ import {
   countDeliveryReturns, countOrders, countQuotes,
   cancelDelivery, cancelDeliveryReturn,
   addBookingAdvance, cancelBooking, createBooking, getBooking, listBookings, refundBooking,
-  listTestRides, recordTestRide, saveBookingChecklist, scheduleTestRide, createQuickBill,
+  listTestRides, recordTestRide, saveBookingChecklist, scheduleTestRide, createQuickBill, holdQuickBill, completeQuickBill,
 } from '@radcore/lib-sales/contract';
 
 export default [
@@ -125,4 +125,6 @@ export default [
   defineRoute(recordTestRide, recordRide),
   // The quick bill (RAD-115).
   defineRoute(createQuickBill, quickBill),
+  defineRoute(holdQuickBill, holdBillNow),
+  defineRoute(completeQuickBill, completeBillNow),
 ];

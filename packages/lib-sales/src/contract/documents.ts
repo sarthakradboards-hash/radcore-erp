@@ -139,7 +139,7 @@ export const createOrder = defineContract({
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
   input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'change_over_checks', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete', 'version_changed',
-    'period_locked', 'year_not_open', 'booking_live', 'counter_customer_only'],
+    'period_locked', 'year_not_open', 'booking_live', 'counter_customer_only', 'quick_bill_held'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({
@@ -152,7 +152,7 @@ export const confirmOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/confirm', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }),
   errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'needs_override', 'no_gst_rate', 'version_changed',
-    'company_profile_incomplete', 'series_full'],
+    'company_profile_incomplete', 'series_full', 'quick_bill_held'],
 });
 /** Asks for an override of a draft order's issues: someone holding sales:override approves it (RAD-38). */
 export const requestOrderOverride = defineContract({

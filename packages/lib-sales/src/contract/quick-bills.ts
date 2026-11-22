@@ -38,18 +38,54 @@ const ERRORS = [...new Set([...STAGES.flatMap((c) => c.errors), ...MONEY_ERRORS,
  * past the day's limit (`cash_over_limit`, s.269ST), each with nothing saved. Paying more than the bill is `overpaid`. The
  * Counter customer never carries credit: its bill is paid in full (`walk_in_pays_in_full`).
  */
+const billIn = z.object({
+  partyId: idString().optional(), businessDate: dateString(), locationId: idString(), notes: z.string().trim().max(500).nullable(),
+  lines: z.array(lineIn.extend(picks)).min(1, 'Add at least one line').max(200, 'At most 200 lines'),
+  payments: z.array(payment).max(10),
+});
+const sold = z.object({
+  order: z.object({ id: idString(), number: z.string() }), delivery: z.object({ id: idString(), number: z.string() }),
+  invoice: z.object({ id: idString(), number: z.string() }), receipts: z.array(z.object({ id: idString(), number: z.string() })),
+  total: moneyString(), paid: moneyString(), left: moneyString(),
+});
+
 export const createQuickBill = defineContract({
   method: 'POST', path: '/sales/quick-bills', auth: 'session', perm: 'invoices:write', tx: write,
-  input: z.object({
-    partyId: idString().optional(), businessDate: dateString(), locationId: idString(), notes: z.string().trim().max(500).nullable(),
-    lines: z.array(lineIn.extend(picks)).min(1, 'Add at least one line').max(200, 'At most 200 lines'),
-    payments: z.array(payment).max(10),
-  }),
-  output: z.object({
-    order: z.object({ id: idString(), number: z.string() }), delivery: z.object({ id: idString(), number: z.string() }),
-    invoice: z.object({ id: idString(), number: z.string() }), receipts: z.array(z.object({ id: idString(), number: z.string() })),
-    total: moneyString(), paid: moneyString(), left: moneyString(),
-  }),
+  input: billIn, output: sold,
   errors: ERRORS,
   dbErrors: Object.assign({}, ...STAGES.map((c) => c.dbErrors)) as Record<string, { code: (typeof ERRORS)[number]; message: string }>,
+});
+
+/**
+ * Holds a bill that needs an approval (a discount, a price below cost, credit) for it (Sarthak: "Hold, then complete").
+ * The same input as the save and the same keys. Its order is saved a draft, with its place, picks and planned payments
+ * (method and amount: no card is charged yet), and its override is asked for, judged with those payments taken. A bill
+ * that needs none is `no_override_needed`: save it whole. The Counter customer still pays in full; to leave a balance,
+ * `buyer` names them (under sales:counter_credit and parties:write): the party with that phone is offered instead
+ * (`buyer_has_party`, to pick it), else a new customer is made, whose unpaid part is then over its (no) limit.
+ */
+/** A walk-in who leaves a balance, named (the architect on Sarthak's "Allow with approval"): a name, a mobile, and an
+ * address at or above sales.b2c_details_limit (Rule 46). The phone is the party's contact only: no lead, no consent. */
+const buyer = z.object({ name: z.string().trim().min(1).max(200), phone: z.string().trim().min(1).max(20),
+  addressLine1: z.string().trim().min(1).max(200).optional(), city: z.string().trim().min(1).max(100).optional(),
+  pincode: z.string().trim().regex(/^[1-9][0-9]{5}$/, 'Six digits, not starting with 0').optional() });
+
+export const holdQuickBill = defineContract({
+  method: 'POST', path: '/sales/quick-bills/hold', auth: 'session', perm: 'invoices:write', tx: write,
+  input: billIn.extend({ buyer: buyer.optional() }), output: z.object({ status: z.literal('pending_override'), orderId: idString(), approvalId: idString(), versionHash: z.string() }),
+  errors: [...new Set([...createOrder.errors, 'no_gst_rate', 'company_profile_incomplete', 'walk_in_pays_in_full', 'no_payment_amount',
+    'no_override_needed', 'buyer_has_party', 'buyer_details_required', 'buyer_for_walk_in_only', 'looks_like_card_number', 'not_money_account'])],
+});
+
+/**
+ * Completes a held bill once its override is approved, as held: its planned payments taken first (each card with its
+ * approval code, in order), then the order confirmed on its approval, its whole delivery and its invoice through it. A
+ * balance that moved since is `version_changed` (ask again); a new kind of issue is `needs_override`. Completing it
+ * deletes the hold, so doing it twice, or for an order never held, is `not_held`.
+ */
+export const completeQuickBill = defineContract({
+  method: 'POST', path: '/sales/quick-bills/:orderId/complete', auth: 'session', perm: 'invoices:write', tx: write,
+  input: z.object({ orderId: idString(), businessDate: dateString(), approvalCodes: z.array(reference()).max(10) }),
+  output: sold, errors: [...new Set([...ERRORS, 'not_held', 'version_changed'])],
+  dbErrors: createQuickBill.dbErrors,
 });
