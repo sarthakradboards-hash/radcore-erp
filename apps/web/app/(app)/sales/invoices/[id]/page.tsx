@@ -5,7 +5,7 @@
 // deleted. A posted invoice is cancelled with a date and a reason, which mirrors its entry and opens its deliveries for
 // invoicing again. invoices:write and invoices:cancel are the server's keys; it says whether the status still allows it.
 import { dateString, formatDate, formatMoney, indiaDate, isMasked, stateName, type Masked } from '@radcore/lib-common';
-import { cancelInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, requestInvoiceOverride } from '@radcore/lib-sales/contract';
+import { cancelInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, printInvoice, requestInvoiceOverride } from '@radcore/lib-sales/contract';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Fragment, useId, useState } from 'react';
@@ -26,6 +26,7 @@ import { OverrideConfirm } from '../../override-confirm.tsx';
 import { SALES_MESSAGES } from '../../shared.tsx';
 import { invoiceSteps } from '../../status.ts';
 import { INVOICE_CANCEL_MESSAGES, INVOICE_MESSAGES, type Invoice } from '../shared.ts';
+import { PrintButtons } from '../../print-buttons.tsx';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
 const cancelSchema = z.object({ businessDate: dateString(), reason: cancelInvoice.input.shape.reason });
@@ -177,6 +178,7 @@ export default function InvoicePage() {
       <Lines i={invoice} />
       {worked ? <Totals i={invoice} /> : <p>{t('sales.invoice.notPosted')}</p>}
       <div className="kit-actions">
+        {invoice.status !== 'draft' ? <PrintButtons contract={printInvoice} id={id} /> : null}
         {mayWrite && invoice.status === 'draft' ? (
           <>
             <Link className="kit-button" href={`/sales/invoices/${id}/edit`}>{t('sales.edit')}</Link>

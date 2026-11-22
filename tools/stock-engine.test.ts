@@ -148,6 +148,8 @@ describe.skipIf(!url || !superUrl)('the stock engine', () => {
       await c.query('begin');
       await c.query("select set_config('app.principal', 'system:test', true)");
       await c.query("insert into radcore.financial_years (start) values ('2026-04-01') on conflict do nothing");
+      // ADR-006 §1's order, as holdPeriod takes it: the company row, then the period lock (RAD-76: the other way round deadlocked).
+      await c.query('select id from radcore.company for share');
       await c.query('savepoint s');
       await expect(movement('2041-05-01')).rejects.toMatchObject({ code: '23503', constraint: 'fk_stock_movements_fy_start' });
       await c.query('rollback to savepoint s');

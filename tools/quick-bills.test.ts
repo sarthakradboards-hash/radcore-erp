@@ -1,7 +1,7 @@
 // RAD-115 (M3-11; ADR-006 §6, F7; ADR-007 §7–§9; the architect's rulings; Sarthak's card answer) on a real PostgreSQL,
 // as the runtime login: the quick bill. Each test's item, place, stock and price list are committed; each bill runs in
-// one transaction that is rolled back, with the company profile set there, since the one company row must stay unset
-// for company.test.ts. The Counter customer is the seeded `walk_in` party, sold from the test's list through the
+// one transaction that is rolled back, under the committed company profile (tools/test-database.ts)
+// and never rewrites it. The Counter customer is the seeded `walk_in` party, sold from the test's list through the
 // sales.default_price_list setting on that transaction's ctx, so its shared row never changes.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, changeParty, openFinancialYear, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
@@ -83,7 +83,8 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
   async function atCounter<R>(at: At, fn: (ctx: Ctx) => Promise<R>, o: { as?: Principal; settings?: { key: string; value: unknown }[] } = {}) {
     let out: R | undefined;
     await run(async (ctx) => {
-      await setCompanyProfile(ctx, COMPANY);
+      // The committed profile (tools/test-database.ts) is the one these tests sell under; rewriting it here took the company
+      // row exclusively for the whole test, and deadlocked against period-lock tests (RAD-76).
       out = await fn({ ...ctx, settings: new Settings([{ key: 'sales.default_price_list', value: at.listId }, ...(o.settings ?? [])]) });
       throw new RolledBack();
     }, o.as ?? await counter()).catch((e: unknown) => {
@@ -159,8 +160,8 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     const at = await setup({ rate: '345', gst: '18' });
     const cheap = await setup({ rate: '150' });
     const out = await atCounter(at, async (ctx) => [await failure(bill(ctx, at, '3', [cash('1000')])), await failure(bill(ctx, at, '3', [cash('1222')])),
-      await failure(bill(ctx, cheap, '1', [cash('158')]))]);
-    expect(out).toEqual(['walk_in_pays_in_full', 'overpaid', 'needs_override']);
+      await bill(ctx, cheap, '1', [cash('158')]).then(() => 'ok', (e: unknown) => (e instanceof AppError ? `${e.code}: ${e.message}` : String(e)))]);
+    expect(out).toEqual(['walk_in_pays_in_full', 'overpaid', 'needs_override: This bill needs someone else’s approval for an override; hold it to ask for one']);
   });
 
   // s.269ST: Rs 2 lakh or more in cash from one person in a day. The Counter customer is everyone at the counter, so its

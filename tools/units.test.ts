@@ -172,6 +172,8 @@ describe.skipIf(!url || !superUrl)('units by serial', () => {
     try {
       await c.query('begin');
       await c.query("select set_config('app.principal', 'system:test', true)");
+      // ADR-006 §1's order, as holdPeriod takes it: the company row, then the period lock (RAD-76: the other way round deadlocked).
+      await c.query('select id from radcore.company for share');
       await c.query('update radcore.period_lock set locked_through = $1 where id = 1', [DATE]);
       await c.query('savepoint s');
       await expect(damaged(DATE)).rejects.toMatchObject({ code: 'RA003' });

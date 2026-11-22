@@ -163,7 +163,12 @@ export async function quickBill(ctx: Ctx, input: In<typeof createQuickBill>): Pr
   const receipts = await takeReceipts(ctx, partyId, businessDate, await receiptsOf(ctx, input.payments));
   const order = await addCounterOrder(ctx, { partyId, businessDate, notes: input.notes, lines: orderLinesOf(input.lines) });
   await walkInPaysInFull(ctx, partyId, order.id, receipts);
-  const confirmed = await confirmOrderNow(ctx, order);
+  const confirmed = await confirmOrderNow(ctx, order).catch((e: unknown) => {
+    // The order check's refusal in the counter's words: a quick bill is held for its approval, never an order confirmed
+    // later (e2e-playwright on #325).
+    if (e instanceof AppError && e.code === 'needs_override') throw new AppError('needs_override', 'This bill needs someone else’s approval for an override; hold it to ask for one', e.issues);
+    throw e;
+  });
   const b = await deliverAndBill(ctx, { orderId: order.id, partyId, businessDate, locationId: input.locationId, lines: input.lines });
   return { order: { id: order.id, number: confirmed.number }, delivery: b.delivery, invoice: b.invoice, total: b.total,
     ...await settle(ctx, receipts, { partyId, invoiceId: b.invoice.id, total: b.total, businessDate }) };
