@@ -93,7 +93,8 @@ describe('the print engine', () => {
   }, 60_000);
 
   it('answers a render past its time limit with server_error, and renders the next one', async () => {
-    const p = pool({ renderMs: 1500, entry: new URL('./print-stall-thread.ts', import.meta.url) });
+    // Time counts from the ask, so the next print also waits for its new thread to start: 5 s leaves room under load.
+    const p = pool({ renderMs: 5000, entry: new URL('./print-stall-thread.ts', import.meta.url) });
     expect(await failure(p.render(invoice, 'a4', 'stall'))).toBe('server_error');
     expect(text(await p.render(invoice, 'a4', 'After')).startsWith('%PDF-')).toBe(true);
   }, 60_000);
