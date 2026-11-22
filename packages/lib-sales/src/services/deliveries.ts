@@ -8,7 +8,7 @@ import { after, deliveries, deliveryLines, salesOrderLines, salesOrders, salesTx
 import { holdParty, holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundQty, type Quantity } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, type Ctx,
+  AppError, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, type Ctx,
 } from '@radcore/lib-platform';
 import { checkPlace, checkQuantity, postStock } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
@@ -34,7 +34,8 @@ export const DELIVERY_SERIES = defineSeries('sales.delivery', 'DC', { digits: 5,
 
 const header = { id: deliveries.id, number: deliveries.number, orderId: deliveries.orderId, partyId: deliveries.partyId,
   locationId: deliveries.locationId, businessDate: deliveries.businessDate, status: deliveries.status, notes: deliveries.notes };
-const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+// Newest first: by date, then the moment each was made, then id (e2e-2: same-day ones were in id order, so random).
+const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 const q = (s: string) => quantityString().parse(s);
 const wrongStatus = (status: string) => new AppError('wrong_status', `This delivery is ${status}, so it can’t be changed`);
 
@@ -96,19 +97,19 @@ async function checkedLines(ctx: Ctx, orderId: string, lines: readonly LineIn[])
 /** GET /sales/deliveries (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listDeliveriesPage(ctx: Ctx, input: In<typeof listDeliveries>): Promise<Out<typeof listDeliveries>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
-  const rows = await salesTx(ctx).select(header).from(deliveries).where(and(
+  const rows = await salesTx(ctx).select({ ...header, createdAt: deliveries.createdAt }).from(deliveries).where(and(
     input.filter.status === undefined ? undefined : eq(deliveries.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(deliveries.partyId, input.filter.partyId),
     input.filter.orderId === undefined ? undefined : eq(deliveries.orderId, input.filter.orderId),
     listScope(ctx, 'sales:read', deliveries.owner),
-    after([deliveries.businessDate, deliveries.id], key && [key.date, key.id], 'desc'),
-  )).orderBy(desc(deliveries.businessDate), desc(deliveries.id)).limit(input.limit + 1);
+    after([deliveries.businessDate, deliveries.createdAt, deliveries.id], key && [key.date, key.at, key.id], 'desc'),
+  )).orderBy(desc(deliveries.businessDate), desc(deliveries.createdAt), desc(deliveries.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ ...r, status: r.status as Status, partyName: names.get(r.partyId) ?? '' })),
-    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
 

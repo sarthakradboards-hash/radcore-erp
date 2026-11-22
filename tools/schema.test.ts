@@ -10,13 +10,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
 import type { DrizzleSnapshotJSON } from 'drizzle-kit/api';
-import { getTableConfig, index, numeric, pgSchema, text, uuid, type PgTable } from 'drizzle-orm/pg-core';
+import { getTableConfig, index, numeric, pgSchema, text, timestamp, uuid, type PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as schema from '@radcore/db/schema';
 import * as views from '@radcore/db/views';
 import {
-  boundedText, foreignMoney, fxRate, id, lookupTable, money, percent, qty, radcore, radcoreTable, unitPrice,
+  boundedText, createdMoment, foreignMoney, fxRate, id, lookupTable, money, percent, qty, radcore, radcoreTable, unitPrice,
 } from '../packages/db/src/columns.ts';
 import { MIGRATIONS_FOLDER } from '../packages/db/src/migrate.ts';
 
@@ -73,6 +73,17 @@ describe('migrations', () => {
     const last = String(journal.entries.at(-1)?.idx ?? 0).padStart(4, '0');
     const committed = JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, 'meta', `${last}_snapshot.json`), 'utf8')) as DrizzleSnapshotJSON;
     expect(await generateMigration(committed, snapshotOf(real))).toEqual([]);
+  });
+});
+
+// A table may restate an audit column only as createdMoment()'s createdAt (auditor-2 on #316): the database's guard
+// counts the four columns, not their type, NOT NULL or default.
+describe('restated audit columns', () => {
+  it('takes createdAt as createdMoment(), and refuses any other restated audit column', () => {
+    expect(() => radcoreTable('fixture_moments', { id: id(), createdAt: createdMoment() })).not.toThrow();
+    expect(() => radcoreTable('fixture_who', { id: id(), createdBy: text() }))
+      .toThrow('fixture_who: createdBy is an audit column; only createdAt may be restated, as createdMoment()');
+    expect(() => radcoreTable('fixture_when', { id: id(), createdAt: timestamp() })).toThrow('fixture_when: createdAt is an audit column');
   });
 });
 
