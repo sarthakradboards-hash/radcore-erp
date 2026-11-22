@@ -34,8 +34,9 @@ export function Preview({ onFigures }: { onFigures: (figures: { total: string; l
   const { control } = useFormContext<QuickBillInput>();
   const values = useWatch({ control });
   // Only a bill that is complete enough to send is previewed; the same checks as the save, the contract's own.
-  // (A hold's card has no approval code yet, so the mode is the form's own; the buyer is not part of the figures.)
-  const parsed = useMemo(() => quickBillSchema.safeParse({ ...values, buyer: { name: '', phone: '', addressLine1: '', city: '', pincode: '' } }), [values]);
+  // (The figures don't need a card's approval code, which a save asks for and a hold leaves to the completion, so the bill is read as a hold;
+  // the buyer is not part of the figures.)
+  const parsed = useMemo(() => quickBillSchema.safeParse({ ...values, mode: 'hold', buyer: { name: '', phone: '', addressLine1: '', city: '', pincode: '' } }), [values]);
   const bill = parsed.success ? parsed.data.bill : null;
   const settled = useDebounced(bill === null ? null : JSON.stringify(bill), 600);
   const input = settled === null ? null : (JSON.parse(settled) as NonNullable<typeof bill>);

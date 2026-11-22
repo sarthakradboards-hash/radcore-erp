@@ -6,11 +6,12 @@
 // look again. A bill a check refuses (needs_override) can be held; held bills are listed below to complete or discard. When a bill is
 // saved or completed the page shows what the server worked out.
 import { holdQuickBill, createQuickBill, listHeldQuickBills, listInvoices, previewQuickBill } from '@radcore/lib-sales/contract';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { announce } from '../../../../components/ui/live-region.tsx';
 import { ApiError, callContract } from '../../../../lib/api-client.ts';
-import { useApiMutation } from '../../../../lib/api/query.ts';
+import { keyOf, useApiMutation } from '../../../../lib/api/query.ts';
 import { dec, formatMoney } from '@radcore/lib-common';
 import { t } from '../../../../lib/i18n/index.ts';
 import { HeldBills } from './held-bills.tsx';
@@ -23,6 +24,7 @@ type Figures = { total: string; left: string; issues: readonly string[] };
 
 export default function QuickBillPage() {
   const { permissions } = useMe();
+  const client = useQueryClient();
   const save = useApiMutation(createQuickBill, { invalidates: [listInvoices] });
   const hold = useApiMutation(holdQuickBill, { invalidates: [listHeldQuickBills] });
   const [done, setDone] = useState<Sold | null>(null);
@@ -62,6 +64,8 @@ export default function QuickBillPage() {
               if (figures !== null && !dec(fresh.total).eq(figures.total)) {
                 setFigures({ total: fresh.total, left: fresh.left, issues: fresh.issues });
                 setMoved(fresh.total);
+                // The figures on screen are the old ones until the preview is read again.
+                await client.invalidateQueries({ queryKey: keyOf(previewQuickBill) });
                 return;
               }
               try {
