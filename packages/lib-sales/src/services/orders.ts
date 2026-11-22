@@ -6,7 +6,8 @@ import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radc
 import { holdParty, holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, requestApproval, withdrawPending, type Ctx,
+  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, withdrawPending,
+  type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -34,7 +35,8 @@ const notFound = () => new AppError('not_found', 'There is no such order');
 const header = { id: salesOrders.id, number: salesOrders.number, partyId: salesOrders.partyId, quoteId: salesOrders.quoteId,
   businessDate: salesOrders.businessDate, status: salesOrders.status, notes: salesOrders.notes, closeReason: salesOrders.closeReason,
   total: salesOrders.total };
-const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+// Newest first: by date, then the moment each was made, then id (e2e-2: same-day ones were in id order, so random).
+const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 
 /** The order, locked when it's to be written, within the principal's scope for `permission` (else not_found), with
  * its quote's date: an order isn't dated before its quote (§4). The quote is read apart, so only the order is locked. */
@@ -75,19 +77,19 @@ async function freezeLines(ctx: Ctx, id: string, a: Amounts) {
 /** GET /sales/orders (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listOrdersPage(ctx: Ctx, input: In<typeof listOrders>): Promise<Out<typeof listOrders>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
-  const rows = await salesTx(ctx).select(header).from(salesOrders).where(and(
+  const rows = await salesTx(ctx).select({ ...header, createdAt: salesOrders.createdAt }).from(salesOrders).where(and(
     input.filter.status === undefined ? undefined : eq(salesOrders.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(salesOrders.partyId, input.filter.partyId),
     input.filter.quoteId === undefined ? undefined : eq(salesOrders.quoteId, input.filter.quoteId),
     listScope(ctx, 'sales:read', salesOrders.createdBy),
-    after([salesOrders.businessDate, salesOrders.id], key && [key.date, key.id], 'desc'),
-  )).orderBy(desc(salesOrders.businessDate), desc(salesOrders.id)).limit(input.limit + 1);
+    after([salesOrders.businessDate, salesOrders.createdAt, salesOrders.id], key && [key.date, key.at, key.id], 'desc'),
+  )).orderBy(desc(salesOrders.businessDate), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ ...r, status: r.status as SalesOrderStatus, partyName: names.get(r.partyId) ?? '' })),
-    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
 

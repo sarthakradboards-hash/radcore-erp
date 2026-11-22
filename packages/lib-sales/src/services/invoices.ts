@@ -4,7 +4,7 @@
 // the person sets another.
 import { after, deliveries, deliveryLines, invoiceLines, invoices, salesOrderLines, salesTx } from '@radcore/db/sales';
 import { dec, type Money } from '@radcore/lib-common';
-import { AppError, decodeCursor, encodeCursor, listScope, principalId, type Ctx } from '@radcore/lib-platform';
+import { AppError, decodeCursor, encodeCursor, listScope, momentKey, principalId, type Ctx } from '@radcore/lib-platform';
 import { checkQuantity, soldCondition, soldUnits } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -23,7 +23,8 @@ type Status = 'draft' | 'posted' | 'cancelled';
 
 const header = { id: invoices.id, number: invoices.number, partyId: invoices.partyId, businessDate: invoices.businessDate,
   status: invoices.status, notes: invoices.notes, total: invoices.total };
-const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
+// Newest first: by date, then the moment each was made, then id (e2e-2: same-day ones were in id order, so random).
+const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 export const wrongStatus = (status: string, what = 'changed') => new AppError('wrong_status', `This invoice is ${status}, so it can’t be ${what}`);
 
 /** The invoice, locked when it's to be written, within the principal's scope for `permission` (else not_found), by its
@@ -122,18 +123,18 @@ const shipToColumns = (s: In<typeof createInvoice>['shipTo']) =>
 /** GET /sales/invoices (sales:read): newest first, a page at a time, the principal's own when that's their scope. */
 export async function listInvoicesPage(ctx: Ctx, input: In<typeof listInvoices>): Promise<Out<typeof listInvoices>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
-  const rows = await salesTx(ctx).select(header).from(invoices).where(and(
+  const rows = await salesTx(ctx).select({ ...header, createdAt: invoices.createdAt }).from(invoices).where(and(
     input.filter.status === undefined ? undefined : eq(invoices.status, input.filter.status),
     input.filter.partyId === undefined ? undefined : eq(invoices.partyId, input.filter.partyId),
     listScope(ctx, 'sales:read', invoices.owner),
-    after([invoices.businessDate, invoices.id], key && [key.date, key.id], 'desc'),
-  )).orderBy(desc(invoices.businessDate), desc(invoices.id)).limit(input.limit + 1);
+    after([invoices.businessDate, invoices.createdAt, invoices.id], key && [key.date, key.at, key.id], 'desc'),
+  )).orderBy(desc(invoices.businessDate), desc(invoices.createdAt), desc(invoices.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ ...r, status: r.status as Status, partyName: names.get(r.partyId) ?? '' })),
-    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
 

@@ -334,6 +334,20 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
     expect(all.items.map((o) => o.id).toSorted()).toEqual([own, theirs].toSorted());
   });
 
+  // e2e-2's finding: same-day documents came back in id order, so random, and one just made could sit on page 2. Each
+  // list pages by (date, made at, id), newest first; the page key keeps PostgreSQL's microseconds, so none is skipped.
+  it('lists the same day’s orders newest first, across pages', async () => {
+    const at = await setup();
+    const made: string[] = [];
+    for (let n = 0; n < 3; n += 1) {
+      made.push((await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }))).id);
+    }
+    const first = await run((ctx) => listOrdersPage(ctx, { filter: { partyId: at.partyId }, limit: 2 }));
+    const rest = await run((ctx) => listOrdersPage(ctx, { filter: { partyId: at.partyId }, limit: 2, after: first.next ?? '' }));
+    expect([...first.items, ...rest.items].map((o) => o.id)).toEqual(made.toReversed());
+    expect(rest.next).toBeNull();
+  });
+
   // RAD-124's counter: an item's selling rate for a party on a date, from the list and rates an order would store, or
   // none; with no party named, the default list's. The default is set on the request, so no other file's setting counts.
   it('answers the counter an item’s selling rate for a party, or from the default list, as an order would store it', async () => {
