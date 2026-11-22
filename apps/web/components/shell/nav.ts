@@ -44,6 +44,7 @@ export const SALES_PAGES = [
   { href: '/sales/delivery-returns', label: 'sales.nav.returns', perm: 'sales:read' },
   { href: '/sales/invoices', label: 'sales.nav.invoices', perm: 'sales:read' },
   { href: '/sales/credit-notes', label: 'sales.nav.credits', perm: 'sales:read' },
+  { href: '/sales/quick-bill', label: 'sales.nav.quick', perm: 'invoices:write' },
   { href: '/sales/test-rides', label: 'sales.nav.rides', perm: 'bookings:read' },
   { href: '/sales/bookings', label: 'sales.nav.bookings', perm: 'bookings:read' },
   // Whoever may decide an override, or a credit note: one page, offered under either key (the section menu lists it once).

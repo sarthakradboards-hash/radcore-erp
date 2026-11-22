@@ -14,6 +14,8 @@ export {
 } from './services/payments.ts';
 export { partyReceivable } from './services/receivables.ts';
 export { listMoneyAccountsNow } from './services/money-accounts.ts';
+// A receipt for its printout (RAD-120): lib-sales' template prints it.
+export { receiptForPrint, type ReceiptForPrint } from './services/receipts.ts';
 export { partyStatement, toCollectPage } from './services/collect.ts';
 export { remind, remindersPage, type ReminderLink, type ReminderLinkFor } from './services/reminders.ts';
 export {

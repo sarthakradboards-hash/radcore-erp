@@ -13,7 +13,7 @@ import { AppError, decideApproval, principalId, Settings, type Ctx, type Princip
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addCreditNote, addDelivery, addInvoice, addOrder, askCreditNoteApproval, cancelCreditNoteNow, cancelInvoiceNow, confirmOrderNow,
-  creditNoteApprovalSpec, getCreditNoteById, getDeliveryById, getInvoiceById, getOrderById, postDeliveryNow, postInvoiceNow,
+  creditNoteApprovalSpec, dropCreditNote, getCreditNoteById, getDeliveryById, getInvoiceById, getOrderById, postDeliveryNow, postInvoiceNow,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { sql } from 'drizzle-orm';
@@ -363,6 +363,24 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
     expect(out.posted).toEqual([false]);
     expect(out.after).toEqual([[true, 'invoices', true, out.number, '1050.00', DATE, true], [false, 'invoices', true, out.number, '1050.00', DATE, false]]);
     expect(out.number?.startsWith('INV/')).toBe(true);
+  });
+
+  // auditor-3's finding, the architect on RAD-114: a draft note thrown away while its approval waits closes the request,
+  // superseded, so it never points at a note that's gone; the approver's decision then answers not_pending.
+  it('closes a draft note’s pending approval as superseded when the draft is thrown away', async () => {
+    const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
+    const approver = await approverWith(['credit_notes:approve']);
+    const out = await inBooks(async (ctx) => {
+      const inv = await invoice(ctx, at);
+      const { id } = await valueOff(ctx, at, inv, '1000');
+      const asked = await askCreditNoteApproval(ctx, { id });
+      await dropCreditNote(ctx, { id });
+      const decided = await failure(decideApproval(await actingAs(ctx, approver), creditNoteApprovalSpec, asked.id,
+        { decision: 'approve', versionHash: asked.versionHash }));
+      const [request] = await rows<{ status: string }>(ctx, sql`select status from radcore.approvals where id = ${asked.id}`);
+      return [decided, request?.status];
+    });
+    expect(out).toEqual(['not_pending', 'superseded']);
   });
 
   // ADR-005 §2, as the superuser: a posted note's header must match its lines at commit (RA006).

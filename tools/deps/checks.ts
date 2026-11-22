@@ -101,8 +101,10 @@ export function checkLicences(p: Project): string[] {
     const name = entryName(key, e);
     const l = e.license;
     if (l && !isExpression(l) && (ALLOWED.has(l) || (l === 'MPL-2.0' && e.dev === true))) continue;
+    // A package that declares no licence passes only by a row saying "none declared" and naming the allowed licence
+    // its LICENSE file gives (png-js, RAD-120).
     const excepted = exceptions.some((x) => x.names.some((re) => re.test(name))
-      && l !== undefined && spdxIds(l).every((id) => x.ids.has(id)));
+      && (l === undefined ? x.ids.has('none') && [...x.ids].some((id) => ALLOWED.has(id)) : spdxIds(l).every((id) => x.ids.has(id))));
     if (excepted) continue;
     if (!l) out.push(`[C4] ${name}@${e.version} has no licence`);
     else if (l === 'MPL-2.0') out.push(`[C4] ${name}@${e.version} is MPL-2.0 in production`);

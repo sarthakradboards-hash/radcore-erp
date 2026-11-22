@@ -22,7 +22,8 @@ export {
 } from './auth/sessions.ts';
 export { requestPasswordReset } from './auth/reset-email.ts';
 export {
-  awaitingApproval, decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash, type ApprovalSpec,
+  awaitingApproval, decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash, withdrawPending,
+  type ApprovalSpec,
   type ApprovalVersion, type Decision,
 } from './approvals.ts';
 export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
@@ -32,6 +33,10 @@ export {
   defineNotification, markNotificationsRead, myNotificationsPage, notify, unreadNotifications, type NotificationKind,
 } from './notifications.ts';
 export { defineRoute, type BeforeDeps, type Route } from './route.ts';
+// Printouts (RAD-120): a document's template lays out blocks, and the print pool renders them off the event loop.
+export { PAPERS, PRINT_LIMITS, type PrintBlock, type PrintDef } from './print/blocks.ts';
+export { createPrintPool, type PrintPool } from './print/pool.ts';
+export { definePrintRoute } from './print/route.ts';
 export { csvWriter } from './export/csv.ts';
 export { amountCell, checkRows, dateCell, parseAmountCell, parseDateCell, type ImportResult, type RowError } from './import/cells.ts';
 export { collectUpload, decodeText, IMPORT_LIMITS, ImportFileError, sniffDelimiter, type Table } from './import/read.ts';

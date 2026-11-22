@@ -134,7 +134,7 @@ export default function CreditNotePage() {
         {mayWrite && note.status === 'draft' ? (
           <>
             {note.approval === 'none' ? <button type="button" className="kit-button kit-button-primary" onClick={open('send')}>{t('sales.credit.send')}</button> : null}
-            <button type="button" className="kit-button" onClick={open('delete')}>{t('sales.delete')}</button>
+            {note.approval === 'pending' ? null : <button type="button" className="kit-button" onClick={open('delete')}>{t('sales.delete')}</button>}
           </>
         ) : null}
         {mayCancel && note.status === 'posted' ? (

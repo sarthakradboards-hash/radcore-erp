@@ -3,20 +3,17 @@
 // rolled back, under the committed company profile (tools/test-database.ts) and never rewrites it. The
 // link's holder opens it in that same transaction (asLink), as the generic handler would after linkPrincipal; the
 // handler's own part (token stripped, one not_found, noindex, the use and access_log after commit) is link-routes.test.ts's.
-import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accounts';
-import { moneyString, percentString, piiPlan, quantityString, sightOf, unitPriceString, type UnitCondition } from '@radcore/lib-common';
-import { putGstRate } from '@radcore/lib-gst';
+import { randomUUID } from 'node:crypto';
+import { piiPlan, quantityString, sightOf, type UnitCondition } from '@radcore/lib-common';
 import {
   AppError, linkMaxDays, linkPrincipal, loadConfig, principalId, recordLinkAccess, Settings, type Ctx, type Principal,
 } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addDelivery, addInvoice, addOrder, cancelInvoiceNow, confirmOrderNow, DOCUMENT_LINK_DAYS, getDeliveryById, getOrderById, invoiceByLink,
-  invoiceLinks, postDeliveryNow, postInvoiceNow, remindWithLink, revokeInvoiceLinkNow, shareInvoiceLink,
+  addInvoice, cancelInvoiceNow, DOCUMENT_LINK_DAYS, invoiceByLink, invoiceLinks, postInvoiceNow, remindWithLink, revokeInvoiceLinkNow,
+  shareInvoiceLink,
 } from '@radcore/lib-sales';
 import { viewInvoiceLink } from '@radcore/lib-sales/contract';
-import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
@@ -25,8 +22,7 @@ import { createApp, listen } from '../apps/api/src/app.ts';
 import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { rawOf } from '../packages/db/src/tx.ts';
 import { mayUse } from '../packages/lib-platform/src/scope.ts';
-import { priceListFrom } from './price-list-fixture.ts';
-import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
+import { postedDelivery } from './delivered-fixture.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -38,7 +34,6 @@ const VIEW = 'sales.invoice_view';
 const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'invoices:cancel', 'invoices:share', 'parties:write',
   'parties:manage', 'items:write', 'locations:write', 'gst:write', 'company:write', 'cost:read', 'receivables:read', 'receivables:remind'];
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
-const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 class RolledBack extends Error {}
 
@@ -76,41 +71,7 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
     return out as R;
   }
 
-  /** A customer in Maharashtra with credit and an address, an item at 5% GST, a confirmed order for one at 80,000.00
-   * and its posted delivery: the delivery line an invoice bills. With `condition`, the item is serialised and the unit
-   * delivered is in it. */
-  async function delivered(condition?: UnitCondition) {
-    const serial = condition === undefined ? undefined : `SN-${tag()}`;
-    const made = await run(async (ctx) => {
-      await openFinancialYear(ctx, DATE);
-      const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: ['customer'], gstin: null, pan: null, composition: false,
-        stateCode: '27', phone: null, email: null, addressLine1: '12 MG Road', addressLine2: null, city: 'Pune', pincode: '411001' });
-      await setCreditTerms(ctx, { id: partyId, creditDays: 30, creditLimit: moneyString().parse('100000000'), reason: 'Test' });
-      const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
-      const hsn = `8716${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}`;
-      await putGstRate(ctx, { hsn, effectiveFrom: DATE, rate: percentString().parse('5'), source: 'Notification 1/2017-CT(R)', note: null,
-        reason: 'Test' });
-      const { id: itemId } = await addItem(ctx, { sku: `I-${tag()}`, name: 'Scooter', categoryId, hsn, unit: 'NOS', barcode: null,
-        serialised: serial !== undefined, hasChassis: false, purchasePrice: unitPriceString().parse('1') });
-      const { id: placeId } = await addPlace(ctx, { code: `L${tag()}`, name: `Store ${tag()}`, kind: 'store' });
-      await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: placeId,
-        qty: q(serial === undefined ? '2' : '1'), rate: unitPriceString().parse('61250'), batches: [{ batchNo: 'B1', qty: q(serial === undefined ? '2' : '1') }],
-        ...(serial === undefined ? {} : { units: [{ serialNo: serial, condition: condition ?? 'new' }] }) }] });
-      return { partyId, itemId, placeId };
-    });
-    await priceListFrom(su, DATE, { [made.itemId]: '80000' }, { partyId: made.partyId });
-    const { rows: [batch] } = await su.query<{ id: string }>('select id from radcore.batches where item_id = $1', [made.itemId]);
-    return run(async (ctx) => {
-      const { id: orderId } = await addOrder(ctx, { partyId: made.partyId, businessDate: DATE, notes: null, lines: [{ itemId: made.itemId,
-        qty: q('1'), rate: unitPriceString().parse('80000'), discountPercent: percentString({ max: '100' }).parse('0') }] });
-      await confirmOrderNow(ctx, { id: orderId });
-      const orderLineId = (await getOrderById(ctx, { id: orderId })).lines[0]?.id ?? '';
-      const { id } = await addDelivery(ctx, { orderId, locationId: made.placeId, businessDate: DATE, notes: null,
-        lines: [{ orderLineId, qty: q('1'), batches: [{ batchId: batch?.id ?? '', qty: q('1') }], serials: serial === undefined ? [] : [serial] }] });
-      await postDeliveryNow(ctx, { id });
-      return { partyId: made.partyId, deliveryLineId: (await getDeliveryById(ctx, { id })).lines[0]?.id ?? '' };
-    });
-  }
+  const delivered = (condition?: UnitCondition) => postedDelivery(run, su, DATE, condition);
   type At = Awaited<ReturnType<typeof delivered>>;
   const draft = (ctx: Ctx, at: At) => addInvoice(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, shipTo: null,
     lines: [{ deliveryLineId: at.deliveryLineId, qty: q('1') }] });

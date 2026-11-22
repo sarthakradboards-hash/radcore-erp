@@ -6,7 +6,8 @@ import { after, salesOrderLines, salesOrders, salesQuotes, salesTx } from '@radc
 import { holdParty, holdPeriod } from '@radcore/lib-accounts';
 import type { SalesOrderStatus } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, type Ctx,
+  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, requestApproval, withdrawPending,
+  type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -198,6 +199,8 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
 export async function dropOrder(ctx: Ctx, { id }: In<typeof deleteOrder>): Promise<Out<typeof deleteOrder>> {
   const now = await orderOf(ctx, id, 'sales:write', true);
   mayEdit('order', now.status);
+  // A pending override request goes with it, superseded (the architect on RAD-114).
+  await withdrawPending(ctx, orderOverride, id);
   await salesTx(ctx).delete(salesOrders).where(eq(salesOrders.id, id));
   return {};
 }

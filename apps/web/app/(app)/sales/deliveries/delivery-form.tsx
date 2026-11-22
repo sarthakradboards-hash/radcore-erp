@@ -71,7 +71,7 @@ function Lines() {
         <fieldset key={f.id}>
           <legend>{t('sales.line', { n: String(i + 1) })}: {f.label}</legend>
           <TextField name={`lines.${i}.qty`} label={t('sales.delivery.form.line.qty')} inputMode="decimal" autoComplete="off" />
-          <StockPick index={i} itemId={itemIds[i]?.itemId ?? f.itemId}
+          <StockPick index={i} itemId={itemIds[i]?.itemId ?? f.itemId} forDocument={`sales_order_lines:${f.orderLineId}`}
             onSplit={() => append({ orderLineId: f.orderLineId, itemId: f.itemId, label: f.label, qty: '', pick: {}, serials: [] })} />
           <button type="button" className="kit-button" onClick={() => remove(i)}>{t('sales.delivery.form.remove', { n: String(i + 1) })}</button>
         </fieldset>

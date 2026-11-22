@@ -121,6 +121,9 @@ export type ContractSpec<M extends Method, I extends z.ZodType, O extends z.ZodT
   /** A write whose answer holds a secret: saved-once claims the key but stores no answer, and a repeat gets 409
    * `answer_not_kept` (ADR-001 §7a, RAD-32). Only the routes on lib-platform's fixed list may declare it. */
   storesAnswer?: false;
+  /** A printout (RAD-120): a GET whose answer is a PDF's bytes, sent as application/pdf and never kept, and logged as
+   * a look at `table`'s record, the input's `id` (ADR-005 §7c). Its output is `pdfBytes()`. */
+  print?: { table: string };
 };
 export type Contract<M extends Method = Method, I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType,
   E extends string = string, X extends Idempotency = Idempotency> =
@@ -147,6 +150,11 @@ function wireExact(name: string, schema: z.ZodType): void {
   }
   if (input !== output) throw new TypeError(`${name} changes the value it reads (a transform, pipe or default)`);
 }
+
+/** A printout's answer (RAD-120): the PDF's bytes, and the records beyond the document it shows personal data of (its
+ * party), each logged as a look as the document is. */
+export const pdfBytes = () => z.object({ pdf: z.custom<Uint8Array>((v) => v instanceof Uint8Array, 'A PDF'),
+  looks: z.array(z.object({ table: z.string(), id: z.string() })) });
 
 /** Declares a route. Throws at load time on a contract that breaks a wire or transaction rule. */
 export function defineContract<const M extends Method, I extends z.ZodType, O extends z.ZodType,
@@ -190,8 +198,12 @@ export function defineContract<const M extends Method, I extends z.ZodType, O ex
     if (!errors.includes(code)) throw new TypeError(`${at}: ${key} maps to ${code}, which its errors don't list`);
     if (message.trim() === '') throw new TypeError(`${at}: ${key} needs the message a person sees`);
   }
+  if (spec.print !== undefined && (spec.method !== 'GET' || !keys.includes('id'))) {
+    throw new TypeError(`${at}: a printout is a GET of one record, by its id`);
+  }
   wireExact(`${at} input`, spec.input);
-  wireExact(`${at} output`, spec.output);
+  // A printout's answer is bytes, not JSON, so only its input is checked as wire.
+  if (spec.print === undefined) wireExact(`${at} output`, spec.output);
   return Object.freeze({ ...spec, errors, params, dbErrors: Object.freeze({ ...dbErrors }) });
 }
 

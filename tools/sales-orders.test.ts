@@ -9,7 +9,7 @@ import { moneyString, percentString, quantityString, unitPriceString } from '@ra
 import { AppError, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  acceptQuoteNow, addOrder, addQuote, askOrderOverride, orderOverride, cancelOrderNow, changeOrder, changeQuote, closeOrderNow, confirmOrderNow, getOrderById, getQuoteById,
+  acceptQuoteNow, addOrder, addQuote, askOrderOverride, orderOverride, cancelOrderNow, dropOrder, changeOrder, changeQuote, closeOrderNow, confirmOrderNow, getOrderById, getQuoteById,
   listOrdersPage, orderCounts, quoteCounts, salePrice, sendQuoteNow,
 } from '@radcore/lib-sales';
 import { putGstRate } from '@radcore/lib-gst';
@@ -158,6 +158,21 @@ describe.skipIf(!url || !superUrl)('quotes and orders', () => {
       .toBe('own_request');
     await run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }), approver);
     expect((await run((ctx) => confirmOrderNow(ctx, { id }), maker)).number).toMatch(/^SO\//);
+  });
+
+  // The architect on RAD-114: a draft thrown away takes its pending override request with it, superseded, so the
+  // request never points at nothing; deciding it then answers not_pending.
+  it('closes a draft order’s pending override as superseded when the draft is thrown away', async () => {
+    const at = await setup();
+    await run((ctx) => setCreditTerms(ctx, { id: at.partyId, creditDays: null, creditLimit: moneyString().parse('0'), reason: 'No credit' }));
+    const maker = await newUser(KEYS);
+    const approver = await newUser(['sales:override']);
+    const { id } = await run((ctx) => addOrder(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, lines: [line(at.itemId)] }), maker);
+    const request = await run((ctx) => askOrderOverride(ctx, { id }), maker);
+    await run((ctx) => dropOrder(ctx, { id }), maker);
+    expect(await code(run((ctx) => decideApproval(ctx, orderOverride, request.id, { decision: 'approve', versionHash: request.versionHash }),
+      approver))).toBe('not_pending');
+    expect((await su.query<{ status: string }>('select status from radcore.approvals where id = $1', [request.id])).rows[0]?.status).toBe('superseded');
   });
 
   // RC-131: below the item's cost (its purchase price, with nothing on hand) stops a line, whatever the party's credit.
