@@ -44,6 +44,7 @@ export {
 } from './services/bookings.ts';
 export { listTestRidesPage, recordRide, scheduleRide } from './services/test-rides.ts';
 export { CARD_ACCOUNT, completeBillNow, holdBillNow, previewBill, quickBill } from './services/quick-bills.ts';
+export { heldBillsPage } from './services/held-bills.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';

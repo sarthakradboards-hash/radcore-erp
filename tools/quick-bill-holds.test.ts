@@ -9,9 +9,11 @@ import {
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, decideApproval, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, listPendingApprovals, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { askOrderOverride, completeBillNow, confirmOrderNow, getInvoiceById, holdBillNow, orderOverride } from '@radcore/lib-sales';
+import {
+  askOrderOverride, completeBillNow, confirmOrderNow, dropOrder, getInvoiceById, heldBillsPage, holdBillNow, orderOverride,
+} from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
@@ -164,6 +166,31 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
       return [card, sales, rows.rows[0]?.n];
     });
     expect(out).toEqual(['looks_like_card_number', 'not_money_account', 0]);
+  });
+
+  // RC-190's hold and recall (the architect on RAD-115): the till finds its held bills, at the order's scope; a list
+  // shows no payment's reference; and deleting the draft order throws the hold away, its request with it.
+  it('lists held bills at the order’s scope with no reference, and deleting the order drops the hold and its request', async () => {
+    const at = await setup('200');
+    const out = await atCounter(at, async (ctx) => {
+      const h = await hold(ctx, at, '1', [{ method: 'bank', amount: m('100'), accountId: await systemAccountId(ctx, 'bank'), reference: 'UTR123456' }], at.partyId);
+      const mine = (await heldBillsPage(ctx, { limit: 200, filter: {} })).items.find((b) => b.orderId === h.orderId);
+      const me = ctx.principal as Extract<Principal, { kind: 'user' }>;
+      const other = await actingAs(ctx, { ...me, userId: randomUUID(), ownScope: ['invoices:write'] });
+      const seenByOther = (await heldBillsPage(other, { limit: 200, filter: {} })).items.some((b) => b.orderId === h.orderId);
+      const whole = await actingAs(ctx, { ...me, userId: randomUUID() });
+      const seenAtAll = (await heldBillsPage(whole, { limit: 200, filter: {} })).items.some((b) => b.orderId === h.orderId);
+      await actingAs(ctx, ctx.principal);
+      const queued = async () => (await listPendingApprovals(await actingAs(ctx, at.boss), orderOverride, { limit: 200 })).items.some((a) => a.recordId === h.orderId);
+      const before = await queued();
+      await actingAs(ctx, ctx.principal);
+      await dropOrder(ctx, { id: h.orderId });
+      const holds = await rawOf(ctx.tx).execute(sql`select count(*)::int as n from radcore.quick_bill_holds where order_id = ${h.orderId}`) as unknown as { rows: { n: number }[] };
+      return { mine: mine && { payments: mine.payments, approval: mine.approval, items: mine.items, party: mine.partyId === at.partyId },
+        seenByOther, seenAtAll, before, holds: holds.rows[0]?.n, after: await queued() };
+    });
+    expect(out).toEqual({ mine: { payments: [{ method: 'bank', amount: '100.00' }], approval: 'waiting', items: 1, party: true },
+      seenByOther: false, seenAtAll: true, before: true, holds: 0, after: false });
   });
 
   it('refuses a walk-in hold short of the bill, and a hold of a bill that needs no approval', async () => {
