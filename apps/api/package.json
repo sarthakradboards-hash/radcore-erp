@@ -19,6 +19,7 @@
     "@radcore/lib-integrations": "*",
     "@radcore/lib-hr": "*",
     "@radcore/lib-platform": "*",
+    "@radcore/lib-purchasing": "*",
     "@radcore/lib-sales": "*",
     "@radcore/lib-stock": "*",
     "express": "5.3.0"

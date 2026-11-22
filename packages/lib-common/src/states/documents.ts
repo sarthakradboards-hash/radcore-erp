@@ -10,6 +10,8 @@ export const STATE_TRANSITIONS: Readonly<Record<string, readonly (readonly [from
   delivery_returns: [['draft', 'posted'], ['posted', 'cancelled']],
   invoices: [['draft', 'posted'], ['posted', 'cancelled']],
   credit_notes: [['draft', 'posted'], ['posted', 'cancelled']],
+  // A purchase order posts nothing, so no guard reads these; its service moves it (ADR-008 §2).
+  purchase_orders: [['draft', 'placed'], ['placed', 'closed'], ['draft', 'cancelled'], ['placed', 'cancelled']],
 };
 
 /** A quote's statuses (ADR-007 §1): it posts nothing, so its service moves it and a CHECK holds the values. */

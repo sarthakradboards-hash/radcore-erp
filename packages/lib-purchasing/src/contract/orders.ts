@@ -129,10 +129,9 @@ export const listPurchaseOrderLimits = defineContract({
   output: z.object({ defaultMaxTotal: moneyString(), roles: z.array(z.object({ role: z.string(), maxTotal: moneyString() })) }),
 });
 /** Sets a role's PO limit, or the default when `role` is null; a null limit removes a role's own, so it takes the
- * default again (the default itself can't be removed: `default_required`). As the discount limits are set (the
- * architect on RAD-136). */
+ * default again, and a null default resets it to 0. As the discount limits are set (the architect on RAD-136). */
 export const setPurchaseOrderLimit = defineContract({
   method: 'PUT', path: '/purchasing/order-limits', auth: 'session', perm: 'purchasing:approve', tx: write,
   input: z.object({ role: roleKey().nullable(), maxTotal: moneyString().nullable(), reason: reason() }), output: z.object({}),
-  errors: ['unknown_role', 'default_required'],
+  errors: ['unknown_role'],
 });
