@@ -8,7 +8,7 @@ import { plain } from '../services/invoice-post.ts';
 type Address = { addressLine1: string | null; addressLine2: string | null; city: string | null; pincode: string | null };
 
 /** An address on one line, its empty parts left out. */
-export const oneLine = (a: Address): string =>
+const oneLine = (a: Address): string =>
   [a.addressLine1, a.addressLine2, [a.city, a.pincode].filter((x) => x !== null && x !== '').join(' ')].filter((x) => x !== null && x !== '').join(', ');
 
 /** A quantity without trailing zeros (1.000 is 1), with its unit. */
