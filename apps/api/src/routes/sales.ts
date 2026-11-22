@@ -12,8 +12,9 @@ import {
   cancelInvoiceNow, invoiceByLink, invoiceLinks, revokeInvoiceLinkNow, shareInvoiceLink, addCreditNote, askCreditNoteApproval, cancelCreditNoteNow, creditNoteApprovalSpec, dropCreditNote, getCreditNoteById,
   listCreditNotesPage,
   cancelDeliveryNow, cancelDeliveryReturnNow,
-  orderCounts, quoteCounts,
+  deliveryReturnCounts, orderCounts, quoteCounts,
   addAdvance, addBooking, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow,
+  listTestRidesPage, recordRide, saveChecklist, scheduleRide,
 } from '@radcore/lib-sales';
 import {
   createPriceList, getPrice, getPriceList, getPriceListChanges, getPriceListVersion, listDiscountLimits, listPriceListRates, listPriceLists, priceListApproval as
@@ -27,9 +28,10 @@ import {
   getPartyPriceList, setPartyPriceList,
   cancelInvoice, listInvoiceLinks, revokeInvoiceLink, shareInvoice, viewInvoiceLink, cancelCreditNote, createCreditNote, creditNoteApproval, deleteCreditNote, getCreditNote, listCreditNotes,
   requestCreditNoteApproval,
-  countOrders, countQuotes,
+  countDeliveryReturns, countOrders, countQuotes,
   cancelDelivery, cancelDeliveryReturn,
   addBookingAdvance, cancelBooking, createBooking, getBooking, listBookings, refundBooking,
+  listTestRides, recordTestRide, saveBookingChecklist, scheduleTestRide,
 } from '@radcore/lib-sales/contract';
 
 export default [
@@ -61,6 +63,7 @@ export default [
   defineRoute(closeQuote, closeQuoteNow),
   defineRoute(listOrders, listOrdersPage),
   defineRoute(countOrders, orderCounts),
+  defineRoute(countDeliveryReturns, deliveryReturnCounts),
   defineRoute(getOrder, getOrderById),
   defineRoute(createOrder, addOrder),
   defineRoute(updateOrder, changeOrder),
@@ -114,4 +117,9 @@ export default [
   defineRoute(addBookingAdvance, addAdvance),
   defineRoute(cancelBooking, cancelBookingNow),
   defineRoute(refundBooking, refundBookingNow),
+  // Test rides and a delivered booking's checklist (RAD-117).
+  defineRoute(saveBookingChecklist, saveChecklist),
+  defineRoute(listTestRides, listTestRidesPage),
+  defineRoute(scheduleTestRide, scheduleRide),
+  defineRoute(recordTestRide, recordRide),
 ];

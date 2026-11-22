@@ -31,8 +31,15 @@ const posted = {
   cessPerUnitAmount: money(), lineTotal: money().nullable(), cost: cost(money().nullable()), deliveryTaxable: money().nullable(),
   deliveryGst: money().nullable(),
 };
+// A line with its item's SKU and name (RAD-125's screens), and the worst condition of the units it bills when they
+// aren't all new: read as they stand while a draft, carried once posted (the architect on RAD-112).
 const line = z.object({ id: idString(), lineNo: z.number().int().positive(), deliveryLineId: idString(), itemId: idString(),
-  qty: quantityString(), rate: unitPriceString(), discountPercent: z.string(), ...posted });
+  sku: z.string(), name: z.string(), qty: quantityString(), rate: unitPriceString(), discountPercent: z.string(), ...posted,
+  unitCondition: z.enum(['demo', 'used', 'damaged']).nullable(),
+  // For a credit note's goods back (ui-2 on #298): the batches the line's goods left in, as delivered, and its units still
+  // out with the batch each left in; goods back name batches and serials from these.
+  goods: z.object({ batches: z.array(z.object({ batchId: idString().nullable(), batchNo: z.string().nullable(), qty: quantityString() })),
+    units: z.array(z.object({ serialNo: z.string(), batchId: idString().nullable() })) }) });
 const header = z.object({
   id: idString(), number: z.string().nullable(), partyId: idString(), partyName: z.string(), businessDate: dateString(), status,
   notes: z.string().nullable(), total: money(),
@@ -55,7 +62,7 @@ const invoice = piiRecord('invoices', header.extend({
 const DRAFT_ERRORS = ['date_in_future', 'date_before_source', 'invoice_too_late', 'wrong_status', 'not_on_source', 'over_quantity',
   'quantity_too_precise', 'unknown_party', 'not_a_customer', 'other_party'] as const;
 const POST_ERRORS = [...DRAFT_ERRORS, 'version_changed', 'year_not_open', 'period_locked', 'account_inactive', 'no_gst_rate',
-  'company_profile_incomplete', 'buyer_details_required', 'needs_override'] as const;
+  'company_profile_incomplete', 'buyer_details_required', 'needs_override', 'series_full'] as const;
 
 /** Invoices, newest first, a page at a time. */
 export const listInvoices = defineContract({

@@ -1,8 +1,11 @@
 // Uploaded files' routes (RAD-43): declarations only. Each kind has its own read and write permissions.
 import {
-  defineRoute, importFileService, itemPictureFileService, photoFileService, resumeFileService, statementFileService,
+  defineRoute, deliveryNoteFileService, deliveryPhotoFileService, importFileService, itemPictureFileService, photoFileService,
+  resumeFileService, statementFileService,
 } from '@radcore/lib-platform';
-import { importFiles, itemPictureFiles, photoFiles, resumeFiles, statementFiles } from '@radcore/lib-platform/contract';
+import {
+  deliveryNoteFiles, deliveryPhotoFiles, importFiles, itemPictureFiles, photoFiles, resumeFiles, statementFiles,
+} from '@radcore/lib-platform/contract';
 
 export default [
   defineRoute(photoFiles.startUpload, photoFileService.startUpload),
@@ -20,4 +23,11 @@ export default [
   // Item pictures (RAD-89): upload and confirm only; they're seen through the item's answer, inline.
   defineRoute(itemPictureFiles.startUpload, itemPictureFileService.startUpload),
   defineRoute(itemPictureFiles.confirmUpload, itemPictureFileService.confirmUpload),
+  // A delivered booking's checklist photo and signed note (RAD-117), under the bookings keys.
+  defineRoute(deliveryPhotoFiles.startUpload, deliveryPhotoFileService.startUpload),
+  defineRoute(deliveryPhotoFiles.confirmUpload, deliveryPhotoFileService.confirmUpload),
+  defineRoute(deliveryPhotoFiles.downloadLink, deliveryPhotoFileService.downloadLink),
+  defineRoute(deliveryNoteFiles.startUpload, deliveryNoteFileService.startUpload),
+  defineRoute(deliveryNoteFiles.confirmUpload, deliveryNoteFileService.confirmUpload),
+  defineRoute(deliveryNoteFiles.downloadLink, deliveryNoteFileService.downloadLink),
 ];

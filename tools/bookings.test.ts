@@ -9,15 +9,19 @@ import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accoun
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { captureEnquiry } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addBooking, addDelivery, addOrder, cancelBookingNow, cancelDeliveryNow, cancelOrderNow, changeOrder, closeOrderNow, confirmOrderNow,
-  getBookingById, getOrderById, postDeliveryNow, refundBookingNow,
+  addBooking, addDelivery, addInvoice, addOrder, cancelBookingNow, cancelDeliveryNow, cancelOrderNow, changeOrder, closeOrderNow,
+  confirmOrderNow, getBookingById, getDeliveryById, getOrderById, listBookingsPage, listTestRidesPage, postDeliveryNow, postInvoiceNow,
+  recordRide, refundBookingNow, saveChecklist, scheduleRide,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace, postUnitEvents } from '@radcore/lib-stock';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -26,7 +30,7 @@ const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156).
 const DATE = '2026-11-15';
-const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'deliveries:cancel', 'bookings:read', 'bookings:write', 'leads:read', 'leads:write',
+const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'deliveries:cancel', 'invoices:write', 'bookings:read', 'bookings:write', 'leads:read', 'leads:write',
   'parties:write', 'parties:manage', 'items:write', 'locations:write', 'cost:read', 'gst:write'];
 const FULL = 'bookings:refund_full';
 const PART = 'bookings:refund_part';
@@ -60,7 +64,7 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: ['customer'], gstin: null, pan: null, composition: false,
-        stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
+        stateCode: '27', phone: null, email: null, addressLine1: '1 Main Road', addressLine2: null, city: 'Pune', pincode: '411001' });
       await setCreditTerms(ctx, { id: partyId, creditDays: 30, creditLimit: m('10000000'), reason: 'Test' });
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
       const hsn = `8711${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}`;
@@ -105,6 +109,102 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     return id;
   };
   const leadOf = async (owner: Principal) => (await run((ctx) => captureEnquiry(ctx, { phone: mobile(), source: 'manual' }), owner)).id ?? '';
+  /** A file as the upload check left it, written as the system (the stamp trigger needs a principal). */
+  const fileOf = async (kind: string, status = 'ready') => {
+    const id = randomUUID();
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      await c.query(`insert into radcore.files (id, kind, store_key, filename, content_type, size, status)
+        values ($1, $2, $3, 'f.png', 'image/png', 2048, $4)`, [id, kind, `${kind}/${id}`, status]);
+      await c.query('commit');
+    } finally {
+      c.release();
+    }
+    return id;
+  };
+  /** A request through the API, so a refusal is checked as declared on its route, not answered as a 500. */
+  const http = async (method: string, path: string, body: unknown) => {
+    const config = loadConfig(testSettings(), 'api');
+    const app = createApp(config, { info: () => undefined, error: () => undefined }, { db, authenticate: async () => staff, routes: salesRoutes });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}${path}`, { method, body: JSON.stringify(body),
+        headers: { 'content-type': 'application/json', origin: config.publicOrigin, 'idempotency-key': randomUUID() } });
+      return [res.status, (await res.json() as { code?: string }).code ?? 'ok'];
+    } finally {
+      await server.stop();
+    }
+  };
+
+  it('keeps a delivered booking’s checklist, each file a ready upload of its own kind; the invoice never waits for it (RC-208)', async () => {
+    const booked = `S-${tag()}`;
+    const at = await setup({ serials: [booked] });
+    const line = at.lines[0] ?? { orderId: '', orderLineId: '' };
+    const { id } = await book(line.orderLineId, booked, '10000');
+    const [photo, note] = [await fileOf('delivery_photo'), await fileOf('delivery_note')];
+    const save = (o: { photoId?: string | null; noteId?: string | null; briefed?: boolean } = {}) => run((ctx) => saveChecklist(ctx, { id,
+      inspected: true, briefed: o.briefed ?? true, warrantyRegistered: true, photoId: o.photoId === undefined ? photo : o.photoId,
+      noteId: o.noteId === undefined ? note : o.noteId }));
+    expect(await failure(save())).toBe('wrong_status');
+    const deliveryId = await deliver(at, line, at.placeId, booked);
+    // An import CSV can't stand in for the photo, nor a photo for the signed note; a file still being checked waits.
+    expect(await http('PUT', `/sales/bookings/${id}/checklist`, { inspected: true, briefed: true, warrantyRegistered: true,
+      photoId: await fileOf('statement'), noteId: note })).toEqual([422, 'wrong_file_kind']);
+    expect(await failure(save({ noteId: photo }))).toBe('wrong_file_kind');
+    expect(await failure(save({ photoId: await fileOf('delivery_photo', 'pending') }))).toBe('not_ready');
+    expect(await save({ briefed: false, noteId: null })).toEqual({ complete: false });
+    const incomplete = () => run(async (ctx) => (await listBookingsPage(ctx, { filter: { orderId: line.orderId, checklist: 'incomplete' }, limit: 10 }))
+      .items.map((b) => b.id));
+    expect(await incomplete()).toEqual([id]);
+    // The invoice posts with the checklist incomplete.
+    await run(async (ctx) => {
+      const deliveryLineId = (await getDeliveryById(ctx, { id: deliveryId })).lines[0]?.id ?? '';
+      const { id: invoiceId } = await addInvoice(ctx, { partyId: at.partyId, businessDate: DATE, notes: null, shipTo: null,
+        lines: [{ deliveryLineId, qty: q('1') }] });
+      await postInvoiceNow(ctx, { id: invoiceId });
+    });
+    expect(await save()).toEqual({ complete: true });
+    expect([(await run((ctx) => getBookingById(ctx, { id }))).checklist, await incomplete()]).toEqual([{ inspected: true, briefed: true,
+      warrantyRegistered: true, photoId: photo, noteId: note, complete: true }, []]);
+  });
+
+  it('takes test rides on our demo units only, several to a unit; each records its outcome once', async () => {
+    const [demo, fresh] = [`S-${tag()}`, `S-${tag()}`];
+    const at = await setup({ serials: [demo, fresh] });
+    await run((ctx) => postUnitEvents(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE,
+      changes: [{ kind: 'condition_changed', itemId: at.itemId, serialNo: demo, condition: 'demo' }] }));
+    const lead = await leadOf(staff);
+    const ride = (serialNo: string, o: { leadId?: string; as?: Principal; at?: string } = {}) => run((ctx) => scheduleRide(ctx,
+      { leadId: o.leadId ?? lead, itemId: at.itemId, serialNo, scheduledAt: o.at ?? '2026-11-16T05:30:00.000Z' }), o.as);
+    expect(await failure(ride(fresh))).toBe('not_demo');
+    expect(await failure(ride('NO-SUCH'))).toBe('not_demo');
+    // Another seller's lead, for one who sees only their own.
+    expect(await failure(ride(demo, { as: person([], ['leads:read', 'bookings:write']) }))).toBe('not_found');
+    // Far ahead, so it's still to come whenever the suite runs.
+    const later = await ride(demo, { at: '2099-01-01T09:00:00.000Z' });
+    const first = await ride(demo);
+    const again = await ride(demo);
+    const record = (id: string, outcome: 'liked' | 'cancelled') => failure(run((ctx) => recordRide(ctx, { id, outcome })));
+    // A ride still to come can only be called off (auditor-2's note on #292).
+    expect([await record(first.id, 'liked'), await record(first.id, 'cancelled'), await record(again.id, 'cancelled'),
+      await record(later.id, 'liked')]).toEqual(['ok', 'wrong_status', 'ok', 'wrong_status']);
+    const rides = await run((ctx) => listTestRidesPage(ctx, { filter: { leadId: lead }, limit: 10 }));
+    expect(rides.items.map((r) => [r.id, r.outcome])).toEqual(expect.arrayContaining([[first.id, 'liked'], [again.id, 'cancelled']]));
+    expect(rides.items.at(-1)).toMatchObject({ id: later.id, outcome: null, doneAt: null });
+    // Done needs an outcome, and an outcome a ride that's done, in the table too.
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      await expect(c.query('update radcore.test_rides set done_at = now() where id = $1', [later.id])).rejects.toMatchObject({ code: '23514' });
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+  });
+
   const stageOf = async (leadId: string) => (await su.query<{ stage: string; follow_up_on: string | null }>(
     'select stage, follow_up_on::text from radcore.leads where id = $1', [leadId])).rows[0];
 

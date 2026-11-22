@@ -25,6 +25,7 @@ import {
 } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Alerter, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
+import { warnUndeclared, type UndeclaredMode } from './undeclared.ts';
 
 type Database = Parameters<typeof runInTransaction>[0];
 
@@ -48,6 +49,7 @@ export type HandlerDeps = {
   guards?: RequestGuards | undefined;
   /** Alerts on an unexpected failure, one per route and code per hour (RC-158). The api always passes it. */
   alert?: Alerter | undefined;
+  undeclared?: UndeclaredMode | undefined; // An undeclared code answers 500; `warn` also logs and warns (undeclared.ts).
 };
 const READ = { readOnly: true, isolation: 'read committed' } as const;
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
@@ -354,8 +356,8 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
           else if (change !== null) res.cookie(name, change.token, { ...COOKIE, expires: change.expires });
         }
         if (refused !== null) {
-          send(res, failureOf(refused, contract.errors, contract.dbErrors), requestId);
-          return;
+          warnUndeclared(deps, refused, contract.errors, `${route} (request ${requestId})`);
+          return send(res, failureOf(refused, contract.errors, contract.dbErrors), requestId);
         }
         // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c). A read-only
         // link spends its use here, before anything is answered: if the last use went to a request racing this one,
@@ -373,6 +375,7 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         res.status(200).json(output);
       } catch (err) {
         const failure = failureOf(err, contract.errors, contract.dbErrors);
+        warnUndeclared(deps, err, contract.errors, `${route} (request ${requestId})`);
         // Ids only: never the input, the output or a value from the database (RAD-29).
         if (failure.status >= 500) deps.log.error(`${route} failed (request ${requestId})`, err);
         send(res, failure, requestId);

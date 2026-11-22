@@ -39,7 +39,8 @@ const noteIn = z.object({
 });
 
 const line = z.object({
-  id: idString(), lineNo: z.number().int().positive(), invoiceLineId: idString(), itemId: idString(), qty: quantityString().nullable(),
+  id: idString(), lineNo: z.number().int().positive(), invoiceLineId: idString(), itemId: idString(), sku: z.string(), name: z.string(),
+  qty: quantityString().nullable(),
   batches: z.array(z.object({ batchId: idString().nullable(), qty: quantityString() })), serials: z.array(z.string()),
   taxable: money().nullable(), gstRate: z.string().nullable(), gstRateSource: z.string().nullable(), cgst: money().nullable(),
   sgst: money().nullable(), igst: money().nullable(), lineTotal: money().nullable(), cost: cost(money().nullable()),
@@ -51,6 +52,9 @@ const header = z.object({
 const note = header.extend({
   locationId: idString().nullable(), reason: z.string(), refund: z.object({ amount: money(), accountId: idString() }).nullable(),
   late: z.boolean(), taxable: money(), cgst: money(), sgst: money(), igst: money(), roundOff: z.string(), lines: z.array(line),
+  // Where its approval stands (ui-2 on #298, like the order's override): a request waiting, approved (approving posts
+  // it, so a posted or cancelled note was), or neither (a draft not sent, or one whose request was declined or expired).
+  approval: z.enum(['none', 'pending', 'approved']),
 });
 
 // The refusals a draft shares: its invoice, its date, its lines and its place.
@@ -97,7 +101,9 @@ export const requestCreditNoteApproval = defineContract({
 /** The credit notes' approval routes (RAD-38): approving posts the note, applies it to its invoice and pays its refund. */
 export const creditNoteApproval = approvalContracts('credit-note', 'credit_notes:approve',
   [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'account_inactive', 'batches_mismatch', 'units_mismatch',
-    'serial_twice', 'not_serialised', 'credit_not_posted', 'refund_other_party', 'wrong_credit', 'unknown_account', 'not_money_account'],
+    'serial_twice', 'not_serialised', 'credit_not_posted', 'refund_other_party', 'wrong_credit', 'unknown_account', 'not_money_account',
+    // Posting draws the note's number, and goods back go through the stock engine (RAD-134).
+    'series_full', 'no_estimate', 'unit_batch'],
   CREDIT_REFUND_DB_ERRORS);
 /** Cancels a posted credit note (ADR-007 §6): its entry mirrored on the cancellation's day, goods back out again at the
  * value they came back at (RC-207). Refused while it's applied or refunded: reverse those first. */

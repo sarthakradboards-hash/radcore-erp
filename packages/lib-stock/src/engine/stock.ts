@@ -20,8 +20,8 @@ import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import {
-  checkHeld, checkUnits, lockUnits, refuseDamaged, serialKey, serialisedItems, writeUnitEvents, type InUnitEvent, type MoveUnitEvent,
-  type OutUnitEvent,
+  checkHeld, checkUnits, lockUnits, oneCondition, refuseDamaged, serialKey, serialisedItems, writeUnitEvents, type InUnitEvent,
+  type MoveUnitEvent, type OutUnitEvent,
   type UnitEventRow, type UnitOnLine,
 } from './units.ts';
 import { and, asc, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm';
@@ -191,8 +191,11 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const promised = await lockUnits(ctx, named, p.endingPromisesOf ?? []);
   await checkHeld(ctx, outs);
   // A delivery never names a damaged unit (unit_damaged): a return to the supplier may.
-  await refuseDamaged(ctx, outs.filter((o) => (o.unitEvent ?? 'delivered') === 'delivered')
-    .flatMap((o) => (o.units ?? []).map((u) => ({ itemId: o.itemId, serialNo: u.serialNo }))));
+  const deliveryLines = outs.filter((o) => (o.unitEvent ?? 'delivered') === 'delivered');
+  await refuseDamaged(ctx, deliveryLines.flatMap((o) => (o.units ?? []).map((u) => ({ itemId: o.itemId, serialNo: u.serialNo }))));
+  // Each delivery line's units are of one condition, which their `delivered` events record (the architect on RAD-112):
+  // a snapshot of the rows lockUnits locked, never a caller's value; lib-stock alone writes unit events (D7), so no trigger.
+  const conditions = await oneCondition(ctx, deliveryLines);
   const events: UnitEventRow[] = [];
   const lastId = () => posted.at(-1)?.id ?? '';
   const tx = stockTx(ctx);
@@ -224,8 +227,10 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
     const value = await issueValue(ctx, o.itemId, o.locationId, o.qty, p.businessDate, negativeMode && o.delivery === true);
     await write({ itemId: o.itemId, locationId: o.locationId, sourceLineId: o.sourceLineId, direction: 'out', qty: o.qty, value }, o.batches);
     for (const u of o.units ?? []) {
+      const condition = conditions.get(`${o.itemId}:${serialKey(u.serialNo)}`);
       events.push({ itemId: o.itemId, serialNo: u.serialNo, kind: o.unitEvent ?? 'delivered', outMovementId: lastId(),
-        ...(o.sourceLineId == null ? {} : { saleLineId: o.sourceLineId }), ...(o.orderLineId === undefined ? {} : { promisedTo: o.orderLineId }) });
+        ...(o.sourceLineId == null ? {} : { saleLineId: o.sourceLineId }), ...(o.orderLineId === undefined ? {} : { promisedTo: o.orderLineId }),
+        ...(condition === undefined ? {} : { condition }) });
     }
   }
   for (const i of ins) {

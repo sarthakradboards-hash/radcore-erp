@@ -9,7 +9,7 @@ import { companyForInvoice, getCompanyProfile, getPartyById, holdParty, holdPeri
 import { dec, moneyString, roundMoney, type Money } from '@radcore/lib-common';
 import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, defineSeries, defineSetting, nextNumber, requestApproval, versionHash, type Ctx } from '@radcore/lib-platform';
-import { itemLabels } from '@radcore/lib-stock';
+import { itemLabels, soldCondition } from '@radcore/lib-stock';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { postInvoice, requestInvoiceOverride } from '../contract.ts';
@@ -196,13 +196,15 @@ export async function postInvoiceNow(ctx: Ctx, { id }: In<typeof postInvoice>): 
         issues.map((i) => ({ path: 'line' in i ? ['lines', i.line] : ['partyId'], code: i.code, message: ISSUE_WORDS[i.code] ?? i.code })));
     }
   }
-  // The lines' figures first: once the invoice is posted, its lines are fixed (guard_document_line).
+  // The lines' figures first: once the invoice is posted, its lines are fixed (guard_document_line). Each carries its
+  // units' condition when they aren't all new, read now (the architect on RAD-112).
+  const conditions = await soldCondition(ctx, w.figures.map((f) => f.deliveryLineId));
   for (const f of w.figures) {
     // Cess stays at its default 0 until lib-gst has cess rates (CA-50), so posting writes no cess line.
     await tx.update(invoiceLines).set({ listRate: f.listRate, listVersionId: f.listVersionId, hsn: f.hsn, gstRate: f.gstRate,
       gstRateSource: f.gstRateSource, taxable: f.taxable, cgst: f.cgst,
       sgst: f.sgst, igst: f.igst, lineTotal: f.lineTotal, cost: f.cost,
-      deliveryTaxable: f.deliveryTaxable, deliveryGst: f.deliveryGst })
+      deliveryTaxable: f.deliveryTaxable, deliveryGst: f.deliveryGst, unitCondition: conditions.get(f.deliveryLineId) ?? null })
       .where(and(eq(invoiceLines.invoiceId, id), eq(invoiceLines.lineNo, f.lineNo)));
   }
   const cost = roundMoney(w.figures.reduce((s, f) => s.plus(dec(f.cost)), dec('0')));

@@ -5,15 +5,15 @@
 import { after, deliveries, deliveryLines, invoiceLines, invoices, salesOrderLines, salesTx } from '@radcore/db/sales';
 import { dec, type Money } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, listScope, principalId, type Ctx } from '@radcore/lib-platform';
-import { checkQuantity } from '@radcore/lib-stock';
+import { checkQuantity, soldCondition, soldUnits } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createInvoice, deleteInvoice, getInvoice, listInvoices, updateInvoice } from '../contract.ts';
-import { returnedOf, type Returned } from './delivered.ts';
+import { picksOf, returnedOf, type Returned } from './delivered.ts';
 import { checkDate } from './document-rules.ts';
 import { invoiceOwner } from './invoice-rules.ts';
 import { listRatesOf, priceListOf } from './party-price-lists.ts';
-import { sellingTo, today } from './document-lines.ts';
+import { labelled, numberedBatches, sellingTo, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -137,6 +137,15 @@ export async function listInvoicesPage(ctx: Ctx, input: In<typeof listInvoices>)
   };
 }
 
+/** Each delivery line's batches as its goods left, with their numbers, and its units still out (ui-2 on #298). */
+async function goodsOf(ctx: Ctx, deliveryLineIds: readonly string[]) {
+  const rows = deliveryLineIds.length === 0 ? [] : await salesTx(ctx).select({ id: deliveryLines.id, picks: deliveryLines.picks })
+    .from(deliveryLines).where(inArray(deliveryLines.id, [...deliveryLineIds]));
+  const picked = await numberedBatches(ctx, rows.map((r) => ({ id: r.id, batches: picksOf(r.picks).batches })));
+  const out = await soldUnits(ctx, deliveryLineIds);
+  return new Map(picked.map((p) => [p.id, { batches: p.batches, units: out.get(p.id) ?? [] }]));
+}
+
 /** GET /sales/invoices/:id (sales:read): with its frozen issuer and buyer, once posted. */
 export async function getInvoiceById(ctx: Ctx, { id }: In<typeof getInvoice>): Promise<Out<typeof getInvoice>> {
   const r = await invoiceOf(ctx, id, 'sales:read');
@@ -145,10 +154,16 @@ export async function getInvoiceById(ctx: Ctx, { id }: In<typeof getInvoice>): P
     hsn: invoiceLines.hsn, gstRate: invoiceLines.gstRate, gstRateSource: invoiceLines.gstRateSource, taxable: invoiceLines.taxable,
     cgst: invoiceLines.cgst, sgst: invoiceLines.sgst, igst: invoiceLines.igst, cessAdValorem: invoiceLines.cessAdValorem,
     cessPerUnitAmount: invoiceLines.cessPerUnitAmount, lineTotal: invoiceLines.lineTotal, cost: invoiceLines.cost,
-    deliveryTaxable: invoiceLines.deliveryTaxable, deliveryGst: invoiceLines.deliveryGst }).from(invoiceLines)
-    .where(eq(invoiceLines.invoiceId, id)).orderBy(asc(invoiceLines.lineNo));
+    deliveryTaxable: invoiceLines.deliveryTaxable, deliveryGst: invoiceLines.deliveryGst, unitCondition: invoiceLines.unitCondition })
+    .from(invoiceLines).where(eq(invoiceLines.invoiceId, id)).orderBy(asc(invoiceLines.lineNo));
   const names = await partyNames(ctx, [r.partyId]);
   const frozen = r.status !== 'draft';
+  // A draft's units' condition is read as it stands; a posted line's is the one it carries (the architect on RAD-112).
+  const live = frozen ? new Map<string, string | null>() : await soldCondition(ctx, lines.map((l) => l.deliveryLineId));
+  const goods = await goodsOf(ctx, lines.map((l) => l.deliveryLineId));
+  const shown = (await labelled(ctx, lines)).map((l) => ({ ...l,
+    unitCondition: (frozen ? l.unitCondition : live.get(l.deliveryLineId) ?? null) as 'demo' | 'used' | 'damaged' | null,
+    goods: goods.get(l.deliveryLineId) ?? { batches: [], units: [] } }));
   return {
     id: r.id, number: r.number, partyId: r.partyId, partyName: names.get(r.partyId) ?? '', businessDate: r.businessDate,
     status: r.status as Status, notes: r.notes, total: r.total as Money,
@@ -158,7 +173,7 @@ export async function getInvoiceById(ctx: Ctx, { id }: In<typeof getInvoice>): P
     buyer: frozen ? { name: r.buyerName ?? '', gstin: r.buyerGstin, addressLine1: r.buyerAddressLine1, addressLine2: r.buyerAddressLine2,
       city: r.buyerCity, pincode: r.buyerPincode, stateCode: r.buyerStateCode ?? '' } : null,
     placeOfSupply: r.placeOfSupply, taxable: r.taxable as Money, cgst: r.cgst as Money, sgst: r.sgst as Money, igst: r.igst as Money,
-    cess: r.cess as Money, roundOff: r.roundOff, lines,
+    cess: r.cess as Money, roundOff: r.roundOff, lines: shown,
   };
 }
 

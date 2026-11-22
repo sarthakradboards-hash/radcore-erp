@@ -84,7 +84,7 @@ export const deleteQuote = defineContract({
 export const sendQuote = defineContract({
   method: 'POST', path: '/sales/quotes/:id/send', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }),
-  errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'company_profile_incomplete', 'no_gst_rate'],
+  errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'company_profile_incomplete', 'no_gst_rate', 'series_full'],
 });
 /** The party accepted a sent quote: it makes a draft order with its lines, dated `businessDate` (not before the quote). */
 export const acceptQuote = defineContract({
@@ -139,7 +139,7 @@ export const createOrder = defineContract({
 export const updateOrder = defineContract({
   method: 'PUT', path: '/sales/orders/:id', auth: 'session', perm: 'sales:write', tx: write,
   input: orderIn.extend({ id: idString() }), output: z.object({}), errors: [...DOCUMENT_ERRORS, 'change_over_checks', 'no_gst_rate', 'order_delivered', 'company_profile_incomplete', 'version_changed',
-    'period_locked', 'year_not_open'],
+    'period_locked', 'year_not_open', 'booking_live'],
 });
 /** A draft order, thrown away. */
 export const deleteOrder = defineContract({
@@ -152,7 +152,7 @@ export const confirmOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/confirm', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString() }), output: z.object({ number: z.string() }),
   errors: ['wrong_status', 'date_in_future', 'year_not_open', 'period_locked', 'needs_override', 'no_gst_rate', 'version_changed',
-    'company_profile_incomplete'],
+    'company_profile_incomplete', 'series_full'],
 });
 /** Asks for an override of a draft order's issues: someone holding sales:override approves it (RAD-38). */
 export const requestOrderOverride = defineContract({
@@ -166,10 +166,11 @@ export const orderOverrideApproval = approvalContracts('sales-order-override', '
 export const closeOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/close', auth: 'session', perm: 'sales:write', tx: write,
   input: z.object({ id: idString(), reason: reason().optional() }), output: z.object({ short: z.boolean() }),
-  errors: ['wrong_status', 'reason_required'],
+  errors: ['wrong_status', 'reason_required', 'booking_live'],
 });
 /** Cancels a confirmed order nothing has been delivered on, with a reason. */
 export const cancelOrder = defineContract({
   method: 'POST', path: '/sales/orders/:id/cancel', auth: 'session', perm: 'sales:write', tx: write,
-  input: z.object({ id: idString(), reason: reason() }), output: z.object({}), errors: ['wrong_status', 'order_delivered'],
+  input: z.object({ id: idString(), reason: reason() }), output: z.object({}),
+  errors: ['wrong_status', 'order_delivered', 'booking_live'],
 });

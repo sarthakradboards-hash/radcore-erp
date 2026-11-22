@@ -5,7 +5,7 @@
 // handler's own part (token stripped, one not_found, noindex, the use and access_log after commit) is link-routes.test.ts's.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, setCompanyProfile, setCreditTerms } from '@radcore/lib-accounts';
-import { moneyString, percentString, piiPlan, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
+import { moneyString, percentString, piiPlan, quantityString, sightOf, unitPriceString, type UnitCondition } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import {
   AppError, linkMaxDays, linkPrincipal, loadConfig, principalId, recordLinkAccess, Settings, type Ctx, type Principal,
@@ -13,7 +13,7 @@ import {
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addDelivery, addInvoice, addOrder, cancelInvoiceNow, confirmOrderNow, DOCUMENT_LINK_DAYS, getDeliveryById, getOrderById, invoiceByLink,
-  invoiceLinks, postDeliveryNow, postInvoiceNow, revokeInvoiceLinkNow, shareInvoiceLink,
+  invoiceLinks, postDeliveryNow, postInvoiceNow, remindWithLink, revokeInvoiceLinkNow, shareInvoiceLink,
 } from '@radcore/lib-sales';
 import { viewInvoiceLink } from '@radcore/lib-sales/contract';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
@@ -36,7 +36,7 @@ const DATE = '2026-11-15';
 const DAY = 86_400_000;
 const VIEW = 'sales.invoice_view';
 const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'invoices:cancel', 'invoices:share', 'parties:write',
-  'parties:manage', 'items:write', 'locations:write', 'gst:write', 'company:write', 'cost:read'];
+  'parties:manage', 'items:write', 'locations:write', 'gst:write', 'company:write', 'cost:read', 'receivables:read', 'receivables:remind'];
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
@@ -78,8 +78,10 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
   }
 
   /** A customer in Maharashtra with credit and an address, an item at 5% GST, a confirmed order for one at 80,000.00
-   * and its posted delivery: the delivery line an invoice bills. */
-  async function delivered() {
+   * and its posted delivery: the delivery line an invoice bills. With `condition`, the item is serialised and the unit
+   * delivered is in it. */
+  async function delivered(condition?: UnitCondition) {
+    const serial = condition === undefined ? undefined : `SN-${tag()}`;
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: partyId } = await addParty(ctx, { name: `Party ${tag()}`, kinds: ['customer'], gstin: null, pan: null, composition: false,
@@ -90,10 +92,11 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
       await putGstRate(ctx, { hsn, effectiveFrom: DATE, rate: percentString().parse('5'), source: 'Notification 1/2017-CT(R)', note: null,
         reason: 'Test' });
       const { id: itemId } = await addItem(ctx, { sku: `I-${tag()}`, name: 'Scooter', categoryId, hsn, unit: 'NOS', barcode: null,
-        serialised: false, hasChassis: false, purchasePrice: unitPriceString().parse('1') });
+        serialised: serial !== undefined, hasChassis: false, purchasePrice: unitPriceString().parse('1') });
       const { id: placeId } = await addPlace(ctx, { code: `L${tag()}`, name: `Store ${tag()}`, kind: 'store' });
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: placeId,
-        qty: q('2'), rate: unitPriceString().parse('61250'), batches: [{ batchNo: 'B1', qty: q('2') }] }] });
+        qty: q(serial === undefined ? '2' : '1'), rate: unitPriceString().parse('61250'), batches: [{ batchNo: 'B1', qty: q(serial === undefined ? '2' : '1') }],
+        ...(serial === undefined ? {} : { units: [{ serialNo: serial, condition: condition ?? 'new' }] }) }] });
       return { partyId, itemId, placeId };
     });
     await priceListFrom(su, DATE, { [made.itemId]: '80000' }, { partyId: made.partyId });
@@ -104,7 +107,7 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
       await confirmOrderNow(ctx, { id: orderId });
       const orderLineId = (await getOrderById(ctx, { id: orderId })).lines[0]?.id ?? '';
       const { id } = await addDelivery(ctx, { orderId, locationId: made.placeId, businessDate: DATE, notes: null,
-        lines: [{ orderLineId, qty: q('1'), batches: [{ batchId: batch?.id ?? '', qty: q('1') }], serials: [] }] });
+        lines: [{ orderLineId, qty: q('1'), batches: [{ batchId: batch?.id ?? '', qty: q('1') }], serials: serial === undefined ? [] : [serial] }] });
       await postDeliveryNow(ctx, { id });
       return { partyId: made.partyId, deliveryLineId: (await getDeliveryById(ctx, { id })).lines[0]?.id ?? '' };
     });
@@ -152,6 +155,21 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
     expect(out.view.lines.map((l) => [l.name, l.unit, l.qty, l.rate, l.taxable, l.lineTotal])).toEqual([['Scooter', 'NOS', '1.000', '80000.000000',
       '80000.00', '84000.00']]);
     expect(JSON.stringify(out.view)).not.toMatch(/cost|phone|email|notes|createdBy|owner/i);
+  });
+
+  // auditor-2 on #289: the buyer's own copy says what the staff's does. An ex-demo unit's line, opened by its link,
+  // shows demo; a new unit's shows none (the architect's ruling on RAD-112).
+  it('shows the buyer, by the link, the condition the units left with', async () => {
+    const out = [];
+    for (const condition of ['demo', 'new'] as const) {
+      const at = await delivered(condition);
+      out.push(await inBooks(async (ctx) => {
+        const inv = await posted(ctx, at);
+        const view = await opened(ctx, (await shareInvoiceLink(ctx, { id: inv.id })).token);
+        return view === 'not_found' ? 'not_found' : view.lines[0]?.unitCondition;
+      }));
+    }
+    expect(out).toEqual(['demo', null]);
   });
 
   it("answers only the link's own invoice, for its own action; not_found for a staff request or a link for anything else", async () => {
@@ -251,6 +269,54 @@ describe.skipIf(!url || !superUrl)('invoice links', () => {
       return { others, wrongInvoice, view: await opened(ctx, link.token) };
     });
     expect(out).toEqual({ others: ['not_found', 'not_found', 'not_found'], wrongInvoice: 'not_found', view: 'not_found' });
+  });
+
+  // RAD-119 (the architect's ruling): a reminder carries a new link to the oldest overdue invoice, its token in the
+  // answer only. The reminder row keeps the link's id, and neither it nor its audit rows hold the token.
+  it("sends a reminder with a new link to the party's invoice, its token in the answer only", async () => {
+    const at = await delivered();
+    const out = await inBooks(async (ctx) => {
+      const inv = await posted(ctx, at);
+      const sent = await remindWithLink(ctx, { id: at.partyId, channel: 'whatsapp' });
+      const token = sent.link?.path.split('#token=')[1] ?? '';
+      const view = await opened(ctx, token);
+      const q = async (query: ReturnType<typeof sql>) => ((await rawOf(ctx.tx).execute(query)) as unknown as { rows: { t: string }[] }).rows.map((r) => r.t);
+      const kept = [...await q(sql`select r::text as t from radcore.payment_reminders r where r.id = ${sent.id}`),
+        ...await q(sql`select a::text as t from radcore.audit_log a where a.table_name = 'payment_reminders' and a.record_id = ${sent.id}`)];
+      const [row] = await q(sql`select link_id::text as t from radcore.payment_reminders where id = ${sent.id}`);
+      return { number: inv.number, sent, token, view, kept, row };
+    });
+    expect([out.sent.noLink, out.token.length > 40, out.view === 'not_found' ? null : out.view.number, out.row]).toEqual([null, true,
+      out.number, out.sent.link?.id]);
+    expect(out.sent.text).not.toContain(out.token);
+    expect([out.kept.length >= 2, out.kept.some((t) => t.includes(out.token))]).toEqual([true, false]);
+  });
+
+  it('sends the reminder without a link to someone who may not share the invoice (no_share_key)', async () => {
+    const at = await delivered();
+    const collector: Principal = { kind: 'user', userId: randomUUID(), permissions: ['receivables:read', 'receivables:remind'] };
+    const out = await inBooks(async (ctx) => {
+      await posted(ctx, at);
+      const sent = await remindWithLink(await actingAs(ctx, collector), { id: at.partyId, channel: 'phone' });
+      await actingAs(ctx, staff);
+      return sent;
+    });
+    expect([out.link, out.noLink]).toEqual([null, 'no_share_key']);
+  });
+
+  it('answers sharing a draft with 422 wrong_status, through the route (the auditor on #287)', async () => {
+    const at = await delivered();
+    const { id } = await run((ctx) => draft(ctx, at));
+    const config = loadConfig(testSettings(), 'api');
+    const app = createApp(config, { info: () => undefined, error: () => undefined }, { db, authenticate: async () => staff, routes: salesRoutes });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/sales/invoices/${id}/links`, { method: 'POST', body: '{}',
+        headers: { 'content-type': 'application/json', origin: config.publicOrigin, 'idempotency-key': randomUUID() } });
+      expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([422, 'wrong_status']);
+    } finally {
+      await server.stop();
+    }
   });
 
   it('needs invoices:share: 403 without it', async () => {

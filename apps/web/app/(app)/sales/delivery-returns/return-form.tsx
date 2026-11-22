@@ -100,7 +100,8 @@ function Picks({ index, deliveryId, deliveryLineId }: { index: number; deliveryI
         {source.batches.map((b, n) => (
           <TextField key={batchKey(b.batchId)} name={`lines.${index}.pick.${batchKey(b.batchId)}`} inputMode="decimal" autoComplete="off"
             label={t('sales.return.form.batch', {
-              batch: b.batchId === null ? t('sales.return.form.batch.unknown') : t('sales.return.form.batch.n', { n: String(n + 1) }),
+              batch: b.batchNo !== null ? t('sales.return.form.batch.no', { no: b.batchNo })
+                : b.batchId === null ? t('sales.return.form.batch.unknown') : t('sales.return.form.batch.n', { n: String(n + 1) }),
               left: asWritten(b.qty),
             })} />
         ))}
