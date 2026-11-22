@@ -3,7 +3,7 @@
 // Bank, switched on; never another account, and no balance.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { listMoneyAccountsNow } from '@radcore/lib-accounts';
-import { listMoneyAccounts } from '@radcore/lib-accounts/contract';
+import { listMoneyAccounts, recordPaymentContract } from '@radcore/lib-accounts/contract';
 import { requestFor } from '@radcore/lib-common';
 import { loadConfig, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -68,6 +68,26 @@ describe.skipIf(!url || !superUrl)('money accounts', { timeout: 30_000 }, () => 
     const { rows } = await su.query<{ role: string }>(`select t.role from radcore.role_templates t where t.permission = 'credit_notes:write'
       and not exists (select 1 from radcore.role_templates m where m.role = t.role and m.permission = 'money_accounts:read')`);
     expect(rows.map((r) => r.role)).toEqual([]);
+  });
+
+  // Never card digits in a payment's reference, on POST /payments as in the quick bill (backend on #304): refused by
+  // name through the route, before anything is written.
+  it('refuses card digits in a reference on POST /payments, by name', async () => {
+    const config = loadConfig(testSettings(), 'api');
+    const accounts = await roleOf('accounts');
+    const server = await listen(createApp(config, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => accounts, routes: accountRoutes }),
+      0, '127.0.0.1');
+    try {
+      const { rows } = await su.query<{ party: string; bank: string }>(`select (select id from radcore.parties where system_key = 'walk_in') as party,
+        (select id from radcore.accounts where system_key = 'bank') as bank`);
+      const sent = requestFor(recordPaymentContract, { kind: 'receipt', partyId: rows[0]?.party, businessDate: '2026-11-15', amount: '100',
+        accountId: rows[0]?.bank, reference: '4111 1111 1111 1111' });
+      const res = await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { method: sent.method, body: sent.body ?? null,
+        headers: { 'content-type': 'application/json', origin: config.publicOrigin, 'sec-fetch-site': 'same-origin', 'idempotency-key': randomUUID() } });
+      expect([res.status, (await res.json() as { code?: string }).code]).toEqual([422, 'looks_like_card_number']);
+    } finally {
+      await server.stop();
+    }
   });
 
   it('answers the counter over the API, and refuses a role without money_accounts:read', async () => {
