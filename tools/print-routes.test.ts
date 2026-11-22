@@ -65,6 +65,10 @@ describe.skipIf(!url || !superUrl)('sales printouts', () => {
     const width = /\/MediaBox \[0 0 ([\d.]+)/.exec(res.bytes.toString('latin1'))?.[1];
     expect(Math.round(Number(width))).toBe(227);
     expect(await accessRows('deliveries', at.deliveryId)).toEqual([{ created_by: `user:${staff.userId}` }]);
+    // A challan is statutory (Rule 55): the consignee's address prints in full, and the party's look is logged too.
+    const m = await run((ctx) => challanPrint.read(ctx, at.deliveryId));
+    expect([m.party.addressLine1, m.party.city]).toEqual(['12 MG Road', 'Pune']);
+    expect(await accessRows('parties', at.partyId)).toEqual([{ created_by: `user:${staff.userId}` }]);
   }, 60_000);
 
   it('refuses a draft invoice (wrong_status), and holds the key and the record scope', async () => {
@@ -87,9 +91,14 @@ describe.skipIf(!url || !superUrl)('sales printouts', () => {
       lines: [{ itemId: at.itemId, qty: q('2'), rate: unitPriceString().parse('80000'), discountPercent: percentString({ max: '100' }).parse('0') }] }));
     const res = await print(staff, `/sales/quotes/${id}/pdf`, 'a4');
     expect([res.status, res.type, res.bytes.subarray(0, 5).toString()]).toEqual([200, 'application/pdf', '%PDF-']);
-    // Neither a quote nor a challan prints the party's address, which is personal data (the auditor on #317).
-    const parties = await run(async (ctx) => [(await quotePrint.read(ctx, id)).party, (await challanPrint.read(ctx, at.deliveryId)).party]);
-    expect(parties.map((p) => Object.keys(p).sort())).toEqual([['gstin', 'name', 'stateCode'], ['gstin', 'name', 'stateCode']]);
+    // A quote isn't statutory: the party's address shows as on the screen, so without parties:contact it's hidden and no
+    // look at the party is logged; with the key it shows, and the look is (the architect on RAD-120).
+    const hidden = await run((ctx) => quotePrint.read(ctx, id));
+    expect([hidden.party.addressLine1, hidden.party.city, await accessRows('parties', at.partyId)]).toEqual(['Hidden', null, []]);
+    const contact: Principal = { ...staff, userId: randomUUID(), permissions: [...KEYS, 'parties:contact'] };
+    expect((await print(contact, `/sales/quotes/${id}/pdf`, 'a4')).status).toBe(200);
+    expect((await run((ctx) => quotePrint.read(ctx, id), contact)).party.addressLine1).toBe('12 MG Road');
+    expect(await accessRows('parties', at.partyId)).toEqual([{ created_by: `user:${contact.userId}` }]);
   }, 60_000);
 
   // The architect's ruling: one posted receipt under receipts:print, with no balance on it; a draft and a payment out
@@ -124,6 +133,8 @@ describe.skipIf(!url || !superUrl)('sales printouts', () => {
         lines: [{ deliveryLineId: at.deliveryLineId, qty: q('1') }] });
       const { number } = await postInvoiceNow(ctx, { id });
       const m = await invoicePrint.read(ctx, id);
+      // Its frozen buyer's address is on every copy (Rule 46), so every print is a look at the party too.
+      expect(invoicePrint.looks?.(m)).toEqual([{ table: 'parties', id: at.partyId }]);
       blocks = { a4: invoicePrint.layout(m, 'a4'), roll: invoicePrint.layout(m, 'thermal80'), number };
       throw new RolledBack();
     }).catch((e: unknown) => {

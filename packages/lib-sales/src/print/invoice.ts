@@ -8,15 +8,17 @@ import { issuedInvoice } from '../services/invoice-links.ts';
 import { invoiceOf } from '../services/invoices.ts';
 import { issuerBlocks, partyBlocks, percent, quantity, rupees, signature, taxTotals } from './shared.ts';
 
-type Issued = Awaited<ReturnType<typeof issuedInvoice>> & { cancelled: boolean };
+type Issued = Awaited<ReturnType<typeof issuedInvoice>> & { cancelled: boolean; partyId: string };
 
 export const invoicePrint: PrintDef<Issued> = {
   async read(ctx, id) {
     const r = await invoiceOf(ctx, id, 'sales:read');
     if (r.number === null) throw new AppError('wrong_status', 'This invoice is a draft, so it has no number to print yet');
-    return { ...(await issuedInvoice(ctx, { ...r, number: r.number })), cancelled: r.status === 'cancelled' };
+    return { ...(await issuedInvoice(ctx, { ...r, number: r.number })), cancelled: r.status === 'cancelled', partyId: r.partyId };
   },
   title: (m) => `Tax invoice ${m.number}`,
+  // Its frozen buyer's address is on every copy (Rule 46): a look at the party, so the audit shows who printed it.
+  looks: (m) => [{ table: 'parties', id: m.partyId }],
   layout: (m) => [
     { kind: 'heading', text: m.cancelled ? 'Tax invoice (cancelled)' : 'Tax invoice' },
     ...issuerBlocks(m.issuer),

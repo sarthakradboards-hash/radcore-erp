@@ -151,8 +151,10 @@ function wireExact(name: string, schema: z.ZodType): void {
   if (input !== output) throw new TypeError(`${name} changes the value it reads (a transform, pipe or default)`);
 }
 
-/** A printout's answer: the PDF's bytes (RAD-120). */
-export const pdfBytes = () => z.custom<Uint8Array>((v) => v instanceof Uint8Array, 'A PDF');
+/** A printout's answer (RAD-120): the PDF's bytes, and the records beyond the document it shows personal data of (its
+ * party), each logged as a look as the document is. */
+export const pdfBytes = () => z.object({ pdf: z.custom<Uint8Array>((v) => v instanceof Uint8Array, 'A PDF'),
+  looks: z.array(z.object({ table: z.string(), id: z.string() })) });
 
 /** Declares a route. Throws at load time on a contract that breaks a wire or transaction rule. */
 export function defineContract<const M extends Method, I extends z.ZodType, O extends z.ZodType,

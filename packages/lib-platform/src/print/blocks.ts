@@ -1,6 +1,7 @@
 // Printouts (RAD-120, RC-152; the architect's ruling): what a document's template lays out. A template turns its
 // document into these blocks, plain data, and only render.ts turns blocks into a PDF, so only that file imports the
 // PDF library and React. Images are bytes, never URLs (ADR-003 §7).
+import type { Look } from '@radcore/lib-common';
 import type { Paper } from '../contract/print.ts';
 import type { Ctx } from '../ctx.ts';
 
@@ -22,6 +23,8 @@ export type PrintDef<M> = {
   read(ctx: Ctx, id: string): Promise<M>;
   title(model: M): string;
   layout(model: M, paper: Paper): readonly PrintBlock[];
+  /** The records beyond the document whose personal data it prints (its party's address), each logged as a look. */
+  looks?(model: M): readonly Look[];
 };
 
 /** Each paper in points (1 mm = 72 / 25.4). The 80 mm roll has no fixed height: render.ts works it out. */

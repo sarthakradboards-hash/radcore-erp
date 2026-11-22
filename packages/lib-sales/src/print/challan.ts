@@ -6,13 +6,13 @@ import { dec, formatDate, roundMoney } from '@radcore/lib-common';
 import { AppError, type PrintDef } from '@radcore/lib-platform';
 import { itemLabels } from '@radcore/lib-stock';
 import { getDeliveryById } from '../services/deliveries.ts';
-import { issuerBlocks, partyBlocks, partyOf, quantity, rupees, signature } from './shared.ts';
+import { issuerBlocks, partyBlocks, partyLook, partyOf, quantity, rupees, signature } from './shared.ts';
 
 const challanOf = async (ctx: Parameters<PrintDef<unknown>['read']>[0], id: string) => {
   const d = await getDeliveryById(ctx, { id });
   if (d.number === null) throw new AppError('wrong_status', 'This delivery is a draft, so it has no number to print yet');
   const { company } = await getCompanyProfile(ctx);
-  const party = await partyOf(ctx, d.partyId);
+  const party = await partyOf(ctx, d.partyId, true);
   const labels = await itemLabels(ctx, d.lines.map((l) => l.itemId));
   return { ...d, number: d.number, company, party, labels };
 };
@@ -20,6 +20,7 @@ const challanOf = async (ctx: Parameters<PrintDef<unknown>['read']>[0], id: stri
 export const challanPrint: PrintDef<Awaited<ReturnType<typeof challanOf>>> = {
   read: challanOf,
   title: (m) => `Delivery challan ${m.number}`,
+  looks: (m) => partyLook(m.party),
   layout: (m) => {
     const sum = (pick: (l: (typeof m.lines)[number]) => string | null) => roundMoney(m.lines.reduce((t, l) => t.plus(pick(l) ?? '0'), dec('0')));
     const taxable = sum((l) => l.taxable);

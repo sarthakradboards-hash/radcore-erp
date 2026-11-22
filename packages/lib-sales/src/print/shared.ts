@@ -3,6 +3,7 @@
 import { getPartyById } from '@radcore/lib-accounts';
 import { dec, formatMoney } from '@radcore/lib-common';
 import type { Ctx, PrintBlock } from '@radcore/lib-platform';
+import { plain } from '../services/invoice-post.ts';
 
 type Address = { addressLine1: string | null; addressLine2: string | null; city: string | null; pincode: string | null };
 
@@ -25,12 +26,21 @@ export const issuerBlocks = (c: Address & { legalName: string; gstin: string; st
     { kind: 'pairs', rows: [['GSTIN', c.gstin], ['State code', c.stateCode]] },
   ];
 
-/** Who a quote or challan is for: the party's name, GSTIN and state. Never its address, which is personal data shown
- * only with parties:contact and logged as a look (the auditor on #317); the invoice prints its own frozen copy. */
-export async function partyOf(ctx: Ctx, id: string) {
+/**
+ * Who a printout is for: the party's name, GSTIN, state and address, never its phone or email (the architect on
+ * RAD-120). A statutory document (a challan, under Rule 55) prints the address in full; any other prints it as the
+ * screen does, only with parties:contact or pii:read, and "Hidden" without. `shown` says the address is on the page,
+ * so the printout logs a look at the party.
+ */
+export async function partyOf(ctx: Ctx, id: string, statutory: boolean) {
   const p = await getPartyById(ctx, { id });
-  return { name: p.name, gstin: p.gstin, stateCode: p.stateCode };
+  const shown = statutory || ctx.shows('whole', 'parties:contact');
+  return { id: p.id, name: p.name, gstin: p.gstin, stateCode: p.stateCode, shown,
+    addressLine1: shown ? plain(p.addressLine1) : 'Hidden', addressLine2: shown ? plain(p.addressLine2) : null,
+    city: shown ? plain(p.city) : null, pincode: shown ? plain(p.pincode) : null };
 }
+/** A look at the party, when its address is on the page. */
+export const partyLook = (party: { id: string; shown: boolean }) => (party.shown ? [{ table: 'parties', id: party.id }] : []);
 
 /** Who a document is for: its name, address, GSTIN (or that it has none) and state. */
 export const partyBlocks = (heading: string, p: Partial<Address> & { name: string; gstin: string | null; stateCode: string }): PrintBlock[] => {

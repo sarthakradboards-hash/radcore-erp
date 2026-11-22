@@ -77,6 +77,12 @@ describe('the print engine', () => {
     }
   }, 60_000);
 
+  it('answers a thread past its heap with server_error, and the process stays up', async () => {
+    // A heap too small to load the PDF library: the thread runs out of memory (ERR_WORKER_OUT_OF_MEMORY) as it starts.
+    const p = pool({ heapMb: 4 });
+    expect(await failure(p.render(invoice, 'a4', 'Too big'))).toBe('server_error');
+  }, 60_000);
+
   it('refuses a print past 20 waiting as rate_limited, and fails what waits when the pool closes', async () => {
     const p = createPrintPool({ size: 1, renderMs: 30_000, entry: new URL('./print-stall-thread.ts', import.meta.url) });
     // All asked for at once, before the thread is ready to take any: 20 wait, and the next is refused.

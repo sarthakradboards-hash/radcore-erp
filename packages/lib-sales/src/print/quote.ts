@@ -4,18 +4,19 @@ import { getCompanyProfile } from '@radcore/lib-accounts';
 import { amountInWords, formatDate } from '@radcore/lib-common';
 import type { PrintDef } from '@radcore/lib-platform';
 import { getQuoteById } from '../services/quotes.ts';
-import { issuerBlocks, partyBlocks, partyOf, percent, quantity, rupees, signature, taxTotals } from './shared.ts';
+import { issuerBlocks, partyBlocks, partyLook, partyOf, percent, quantity, rupees, signature, taxTotals } from './shared.ts';
 
 const quoteOf = async (ctx: Parameters<PrintDef<unknown>['read']>[0], id: string) => {
   const q = await getQuoteById(ctx, { id });
   const { company } = await getCompanyProfile(ctx);
-  const party = await partyOf(ctx, q.partyId);
+  const party = await partyOf(ctx, q.partyId, false);
   return { ...q, company, party };
 };
 
 export const quotePrint: PrintDef<Awaited<ReturnType<typeof quoteOf>>> = {
   read: quoteOf,
   title: (m) => (m.number === null ? 'Quotation (draft)' : `Quotation ${m.number}`),
+  looks: (m) => partyLook(m.party),
   layout: (m) => [
     { kind: 'heading', text: m.number === null ? 'Quotation (draft)' : 'Quotation' },
     ...issuerBlocks(m.company),
