@@ -7,7 +7,7 @@ import { deliveryLines, salesOrderLines, salesTx } from '@radcore/db/sales';
 import {
   allocatePayment, companyForInvoice, moneyAccountRefusal, recordCounterReceipt, systemAccountId, systemPartyId,
 } from '@radcore/lib-accounts';
-import { dec, roundMoney, sum } from '@radcore/lib-common';
+import { dec, looksLikeCardNumber, roundMoney, sum } from '@radcore/lib-common';
 import { AppError, defineSetting, type Ctx } from '@radcore/lib-platform';
 import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -16,7 +16,6 @@ import { addDelivery, postDeliveryNow } from './deliveries.ts';
 import { postInvoiceNow } from './invoice-post.ts';
 import { addInvoice } from './invoices.ts';
 import { addCounterOrder, confirmOrderNow, getOrderById } from './orders.ts';
-import { looksLikeCardNumber } from './quick-bill-rules.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;

@@ -3,7 +3,7 @@
 // payment or refund. Cash past a day's limit (RC-114, CA-24) stays a draft and asks an owner, through defineApproval;
 // the approval posts it. A posted one is cancelled only by a mirror entry dated the cancellation's day (ADR-007 §6).
 import { accounts, accountsTx, parties, payments } from '@radcore/db/accounts';
-import { dec, indiaDate, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
+import { dec, indiaDate, looksLikeCardNumber, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
   from '@radcore/lib-platform';
 import { and, eq, inArray, ne } from 'drizzle-orm';
@@ -244,6 +244,11 @@ async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor
   if (!dec(p.tds).lt(p.amount)) refuse('invalid_tds', 'TDS held back is less than the amount');
   if (p.kind === 'refund' && dec(p.tds).gt(0)) refuse('invalid_tds', 'A refund holds no TDS');
   if (p.businessDate > today()) refuse('date_in_future', 'The date is after today');
+  // Never card digits (Sarthak on RAD-115), wherever a reference comes from, POST /payments too (backend on #304).
+  if (p.reference !== undefined && looksLikeCardNumber(p.reference)) {
+    throw new AppError('looks_like_card_number', 'That looks like a card number: a reference is an approval code, UTR or cheque number, never card digits',
+      [{ path: ['reference'], code: 'looks_like_card_number', message: 'Type the approval code, UTR or cheque number' }]);
+  }
   // The period lock FOR SHARE first (ADR-006 §1), with year_not_open and period_locked by name.
   await holdPeriod(ctx, p.businessDate);
   if (p.kind === 'refund') {
