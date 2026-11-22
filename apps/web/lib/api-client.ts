@@ -71,6 +71,20 @@ async function call(c: Contract, input: unknown, o: CallOptions = {}): Promise<u
     : { code: 'server_error', message: 'Something went wrong. Please try again.', issues: [], requestId: '' });
 }
 
+/** A printout (RAD-120): the PDF the server makes for a print contract, as a Blob. The other calls answer JSON; a refusal still does. */
+export async function callPdf<C extends Contract>(contract: C, input: z.input<C['input']>, o: ClientOptions & { signal?: AbortSignal } = {}): Promise<Blob> {
+  const checked = checkInput(contract, input);
+  if (!checked.ok) throw new ApiError(400, { ...checked.error, requestId: '' });
+  const req = requestFor(contract, checked.value);
+  const url = `${o.baseUrl ?? '/api'}${req.path}`;
+  const init: RequestInit = { method: req.method, headers: { accept: 'application/pdf' }, credentials: 'same-origin', signal: o.signal ?? null };
+  const res = await (o.fetch ? o.fetch(url, init) : fetch(url, init));
+  if (res.ok) return res.blob();
+  const env = errorEnvelope.safeParse(await res.json().catch(() => undefined));
+  throw new ApiError(res.status, env.success ? env.data
+    : { code: 'server_error', message: 'Something went wrong. Please try again.', issues: [], requestId: '' });
+}
+
 /** One request for one contract, with createClient's defaults: for hooks that take a contract directly. */
 export function callContract<C extends Contract>(contract: C, input: z.input<C['input']>,
   ...[options]: OptionsOf<C>): Promise<z.output<C['output']>> {
