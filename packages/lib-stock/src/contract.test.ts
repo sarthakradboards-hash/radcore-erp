@@ -15,7 +15,8 @@ describe('the item contracts', () => {
   it('read with items:read and change with items:write', () => {
     // The item contracts: the entry also holds locations' and their kinds' (RAD-92, under /stock/), checked by their own
     // keys in tools/locations.test.ts and tools/location-kind-labels.test.ts, and the books check (RAD-95, below).
-    const all = Object.values(contracts).filter((c) => !c.path.startsWith('/stock/') && !c.path.startsWith('/books/'));
+    // An approval's bundle of routes (approvalContracts) isn't one contract; the stock moves' own test checks theirs.
+    const all = Object.values(contracts).filter((c) => 'path' in c).filter((c) => !c.path.startsWith('/stock/') && !c.path.startsWith('/books/'));
     expect(all.every((c) => c.perm === (c.method === 'GET' ? 'items:read' : 'items:write'))).toBe(true);
     expect(all.every((c) => c.tx.readOnly === (c.method === 'GET'))).toBe(true);
   });
