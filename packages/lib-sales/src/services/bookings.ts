@@ -13,13 +13,13 @@ import { heldLeft, holdParty, holdPeriod, recordHeldReceipt, refundHeld } from '
 import { dec, roundMoney } from '@radcore/lib-common';
 import { bookingCancelled, bookingMade, holdLead } from '@radcore/lib-crm';
 import {
-  AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, type Ctx,
+  AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, readyFile, type Ctx,
 } from '@radcore/lib-platform';
 import { checkPlace, postUnitEvents, releasePromises, SELL_DAMAGED_UNITS, unitFor } from '@radcore/lib-stock';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
-  addBookingAdvance, BOOKING_STATUSES, cancelBooking, createBooking, getBooking, listBookings, refundBooking,
+  addBookingAdvance, BOOKING_STATUSES, cancelBooking, createBooking, getBooking, listBookings, refundBooking, saveBookingChecklist,
 } from '../contract.ts';
 import { otherLiveBooking } from './booking-holds.ts';
 import { bookable } from './booking-rules.ts';
@@ -46,15 +46,18 @@ const PAGE_KEY = z.object({ date: z.iso.date(), id: z.uuid() });
 /** The booking, locked when it's to be written, within the principal's scope for `permission` (else not_found), with its
  * order's party. Only the booking's row is locked: the order is read apart. */
 async function bookingOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  const q = salesTx(ctx).select({ ...own, cancelReason: vehicleBookings.cancelReason, owner: vehicleBookings.createdBy })
-    .from(vehicleBookings).where(eq(vehicleBookings.id, id));
+  const q = salesTx(ctx).select({ ...own, cancelReason: vehicleBookings.cancelReason, owner: vehicleBookings.createdBy,
+    checklistInspected: vehicleBookings.checklistInspected, checklistBriefed: vehicleBookings.checklistBriefed,
+    checklistWarranty: vehicleBookings.checklistWarranty, checklistPhotoId: vehicleBookings.checklistPhotoId,
+    checklistNoteId: vehicleBookings.checklistNoteId }).from(vehicleBookings).where(eq(vehicleBookings.id, id));
   const [row] = forUpdate ? await q.for('update') : await q;
   if (row === undefined) throw notFound();
-  const { owner, ...booking } = row;
+  const { owner, checklistInspected, checklistBriefed, checklistWarranty, checklistPhotoId, checklistNoteId, ...booking } = row;
   ctx.see(permission, { owner });
   const [order] = await salesTx(ctx).select({ partyId: salesOrders.partyId }).from(salesOrders).where(eq(salesOrders.id, booking.orderId));
   if (order === undefined) throw new Error(`booking ${id}'s order is gone`);
-  return { ...booking, partyId: order.partyId, status: booking.status as Status };
+  return { ...booking, partyId: order.partyId, status: booking.status as Status,
+    checklist: checklistOf({ checklistInspected, checklistBriefed, checklistWarranty, checklistPhotoId, checklistNoteId }) };
 }
 
 /** GET /sales/bookings (bookings:read): newest first, a page at a time, the principal's own when that's their scope. */
@@ -66,6 +69,7 @@ export async function listBookingsPage(ctx: Ctx, input: In<typeof listBookings>)
       f.status === undefined ? undefined : eq(vehicleBookings.status, f.status),
       f.orderId === undefined ? undefined : eq(vehicleBookings.orderId, f.orderId),
       f.leadId === undefined ? undefined : eq(vehicleBookings.leadId, f.leadId),
+      f.checklist === undefined ? undefined : and(eq(vehicleBookings.status, 'delivered'), incomplete),
       listScope(ctx, 'bookings:read', vehicleBookings.createdBy),
       after([vehicleBookings.businessDate, vehicleBookings.id], key && [key.date, key.id], 'desc'),
     )).orderBy(desc(vehicleBookings.businessDate), desc(vehicleBookings.id)).limit(input.limit + 1);
@@ -78,12 +82,35 @@ export async function listBookingsPage(ctx: Ctx, input: In<typeof listBookings>)
   };
 }
 
+/** A delivered booking's checklist that isn't done (RC-208): any part unticked or missing. */
+const incomplete = or(eq(vehicleBookings.checklistInspected, false), eq(vehicleBookings.checklistBriefed, false),
+  eq(vehicleBookings.checklistWarranty, false), isNull(vehicleBookings.checklistPhotoId), isNull(vehicleBookings.checklistNoteId));
+const checklistOf = (c: { checklistInspected: boolean; checklistBriefed: boolean; checklistWarranty: boolean; checklistPhotoId: string | null;
+  checklistNoteId: string | null }) => ({ inspected: c.checklistInspected, briefed: c.checklistBriefed, warrantyRegistered: c.checklistWarranty,
+  photoId: c.checklistPhotoId, noteId: c.checklistNoteId, complete: c.checklistInspected && c.checklistBriefed && c.checklistWarranty
+    && c.checklistPhotoId !== null && c.checklistNoteId !== null });
+
 /** GET /sales/bookings/:id (bookings:read). */
 export async function getBookingById(ctx: Ctx, { id }: In<typeof getBooking>): Promise<Out<typeof getBooking>> {
   const b = await bookingOf(ctx, id, 'bookings:read');
   const { taken, left } = await heldLeft(ctx, heldFor(id));
   const names = await partyNames(ctx, [b.partyId]);
-  return { ...b, partyName: names.get(b.partyId) ?? '', advance: { taken, left } };
+  // The unit as it stands, so a damaged one booked under stock.sell_damaged_units shows as damaged.
+  const { unit } = await unitFor(ctx, b.itemId, b.serialNo);
+  return { ...b, partyName: names.get(b.partyId) ?? '', advance: { taken, left }, unitCondition: unit?.condition ?? null };
+}
+
+/** PUT /sales/bookings/:id/checklist (bookings:write): a delivered booking's, saved whole; each file must be a ready
+ * upload of its own kind, so an import CSV can't stand in for the photo (RC-208). */
+export async function saveChecklist(ctx: Ctx, { id, ...c }: In<typeof saveBookingChecklist>): Promise<Out<typeof saveBookingChecklist>> {
+  const b = await bookingOf(ctx, id, 'bookings:write', true);
+  if (b.status !== 'delivered') throw new AppError('wrong_status', `This booking is ${b.status}: its checklist is kept once it's delivered`);
+  if (c.photoId !== null) await readyFile(ctx, 'delivery_photo', c.photoId, { wrongKind: ['photoId'] });
+  if (c.noteId !== null) await readyFile(ctx, 'delivery_note', c.noteId, { wrongKind: ['noteId'] });
+  const set = { checklistInspected: c.inspected, checklistBriefed: c.briefed, checklistWarranty: c.warrantyRegistered,
+    checklistPhotoId: c.photoId, checklistNoteId: c.noteId };
+  await salesTx(ctx).update(vehicleBookings).set(set).where(eq(vehicleBookings.id, id));
+  return { complete: checklistOf(set).complete };
 }
 
 const positive = (amount: string) => {

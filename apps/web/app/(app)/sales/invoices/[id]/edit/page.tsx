@@ -30,7 +30,7 @@ export default function EditInvoicePage() {
       <h1 id="edit-invoice">{t('sales.invoice.edit.title')}</h1>
       <InvoiceForm labelledBy="edit-invoice" submit={t('sales.invoice.save')} party={{ id: invoice.partyId, name: invoice.partyName }}
         initial={{ partyId: invoice.partyId, businessDate: invoice.businessDate, notes: invoice.notes ?? '',
-          lines: invoice.lines.map((l) => ({ deliveryLineId: l.deliveryLineId, itemId: l.itemId, qty: asWritten(l.qty),
+          lines: invoice.lines.map((l) => ({ deliveryLineId: l.deliveryLineId, itemId: l.itemId, label: `${l.name} (${l.sku})`, qty: asWritten(l.qty),
             rate: asPrice(l.rate), discountPercent: asWritten(l.discountPercent) })) }}
         onSubmit={async (v) => {
           await update.submit({ id, ...v, shipTo: shipTo === null ? null : { ...shipTo, address: String(shipTo.address) } });

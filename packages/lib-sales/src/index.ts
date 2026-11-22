@@ -22,10 +22,11 @@ export {
 export { deliveryOverride } from './services/delivery-checks.ts';
 export { addInvoice, changeInvoice, dropInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
 export { cancelInvoiceNow } from './services/invoice-cancel.ts';
+export { remindWithLink } from './services/reminder-links.ts';
 export { DOCUMENT_LINK_DAYS, invoiceByLink, invoiceLinks, revokeInvoiceLinkNow, shareInvoiceLink } from './services/invoice-links.ts';
-export { addCreditNote, dropCreditNote, getCreditNoteById, listCreditNotesPage } from './services/credit-notes.ts';
+export { addCreditNote, dropCreditNote, listCreditNotesPage } from './services/credit-notes.ts';
 export {
-  askCreditNoteApproval, cancelCreditNoteNow, CREDIT_NOTE_SERIES, CREDIT_NOTE_TAX_DEADLINE, creditNoteApprovalSpec,
+  askCreditNoteApproval, cancelCreditNoteNow, CREDIT_NOTE_SERIES, CREDIT_NOTE_TAX_DEADLINE, creditNoteApprovalSpec, getCreditNoteById,
 } from './services/credit-note-post.ts';
 export { cancelDeliveryNow, cancelDeliveryReturnNow } from './services/delivery-cancel.ts';
 export {
@@ -39,8 +40,9 @@ export {
   acceptQuoteNow, addQuote, changeQuote, closeQuoteNow, dropQuote, getQuoteById, listQuotesPage, QUOTE_SERIES, sendQuoteNow,
 } from './services/quotes.ts';
 export {
-  addAdvance, addBooking, BOOKING_SERIES, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow,
+  addAdvance, addBooking, BOOKING_SERIES, cancelBookingNow, getBookingById, listBookingsPage, refundBookingNow, saveChecklist,
 } from './services/bookings.ts';
+export { listTestRidesPage, recordRide, scheduleRide } from './services/test-rides.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';

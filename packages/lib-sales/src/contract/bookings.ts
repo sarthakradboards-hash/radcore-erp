@@ -19,8 +19,9 @@ const money = z.object({ amount: moneyString(), accountId: idString(), businessD
 const payment = z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() });
 
 // What taking or paying back money can refuse (lib-accounts' recordPayment), beyond a booking's own.
+// Each records a payment, which draws a number (series_full, RAD-134).
 const MONEY_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_account', 'not_money_account', 'account_inactive',
-  'exceeds_receipt', 'date_before_source'] as const;
+  'exceeds_receipt', 'date_before_source', 'series_full'] as const;
 
 const bookingRow = z.object({
   id: idString(), number: z.string().nullable(), orderId: idString(), orderLineId: idString(), partyId: idString(), partyName: z.string(),
@@ -30,16 +31,22 @@ const bookingRow = z.object({
 /** Bookings, newest first, a page at a time: the principal's own at `own` scope. */
 export const listBookings = defineContract({
   method: 'GET', path: '/sales/bookings', auth: 'session', perm: 'bookings:read', tx: read,
-  input: listInput(z.object({ status: status.optional(), orderId: idString().optional(), leadId: idString().optional() })),
+  input: listInput(z.object({ status: status.optional(), orderId: idString().optional(), leadId: idString().optional(),
+    // Delivered bookings whose checklist isn't complete (RC-208, the architect).
+    checklist: z.literal('incomplete').optional() })),
   output: listOf(bookingRow),
 });
 
 /** One booking, with its advance read live from its held receipts: what it took in, and what's left of it (taken less
- * what's applied to an invoice or refunded, refunds waiting for approval included). */
+ * what's applied to an invoice or refunded, refunds waiting for approval included). `unitCondition` marks a damaged unit
+ * booked under stock.sell_damaged_units. Once delivered, its checklist, and whether it's complete (RC-208). */
 export const getBooking = defineContract({
   method: 'GET', path: '/sales/bookings/:id', auth: 'session', perm: 'bookings:read', tx: read,
   input: z.object({ id: idString() }),
-  output: bookingRow.extend({ cancelReason: z.string().nullable(), advance: z.object({ taken: moneyString(), left: moneyString() }) }),
+  output: bookingRow.extend({ cancelReason: z.string().nullable(), advance: z.object({ taken: moneyString(), left: moneyString() }),
+    unitCondition: z.string().nullable(),
+    checklist: z.object({ inspected: z.boolean(), briefed: z.boolean(), warrantyRegistered: z.boolean(), photoId: idString().nullable(),
+      noteId: idString().nullable(), complete: z.boolean() }) }),
 });
 
 /**

@@ -23,7 +23,7 @@ import { t } from '../../../../../lib/i18n/index.ts';
 import { asPrice, asWritten } from '../../../admin/decimal.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
 import { OverrideConfirm } from '../../override-confirm.tsx';
-import { ItemName, SALES_MESSAGES } from '../../shared.tsx';
+import { SALES_MESSAGES } from '../../shared.tsx';
 import { invoiceSteps } from '../../status.ts';
 import { INVOICE_CANCEL_MESSAGES, INVOICE_MESSAGES, type Invoice } from '../shared.ts';
 
@@ -50,6 +50,8 @@ function Totals({ i }: { i: Invoice }) {
 
 function Lines({ i }: { i: Invoice }) {
   const captionId = useId();
+  // The condition shows only when some unit billed isn't new: it prints on the invoice and the buyer's copy (RAD-112).
+  const condition = i.lines.some((l) => l.unitCondition !== null);
   return (
     <div className="kit-table">
       <div className="kit-table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
@@ -58,6 +60,7 @@ function Lines({ i }: { i: Invoice }) {
           <thead>
             <tr>
               <th scope="col">{t('sales.line.item')}</th>
+              {condition ? <th scope="col">{t('sales.invoice.col.condition')}</th> : null}
               <th scope="col">{t('sales.invoice.hsn')}</th>
               <th scope="col" className="kit-numeric">{t('sales.line.qty')}</th>
               <th scope="col" className="kit-numeric">{t('sales.line.rate')}</th>
@@ -72,7 +75,8 @@ function Lines({ i }: { i: Invoice }) {
           <tbody>
             {i.lines.map((l) => (
               <tr key={l.id}>
-                <td><ItemName id={l.itemId} /></td>
+                <td>{l.name} ({l.sku})</td>
+                {condition ? <td>{l.unitCondition === null ? '' : t(`sales.invoice.condition.${l.unitCondition}`)}</td> : null}
                 <td>{l.hsn ?? ''}</td>
                 <td className="kit-numeric">{asWritten(l.qty)}</td>
                 <td className="kit-numeric">{asPrice(l.rate)}</td>

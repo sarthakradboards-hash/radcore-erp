@@ -4,9 +4,10 @@
 // in the past, so with no credit days both are overdue whatever the run date (RC-156).
 import { randomUUID } from 'node:crypto';
 import {
-  allocatePayment, openFinancialYear, partyStatement, postEntry, recordPayment, remind, remindersPage, setCreditTerms, toCollectPage,
+  allocatePayment, openFinancialYear, partyStatement, postEntry, recordPayment, remindersPage, setCreditTerms, toCollectPage,
 } from '@radcore/lib-accounts';
 import { getPartyStatement, recordReminder } from '@radcore/lib-accounts/contract';
+import { remindWithLink } from '@radcore/lib-sales';
 import { moneyString, requestFor } from '@radcore/lib-common';
 import { loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -131,9 +132,11 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
     };
     expect(await found()).toMatchObject({ outstanding: '80.00', overdue: '110.00', notOnABill: '-30.00', lastReminderAt: null });
     // A reminder records the amounts as they are, answers with its text, and shows on the list.
-    const sent = await run((ctx) => remind(ctx, { id: party, channel: 'whatsapp', note: 'Asked for the April bill' }));
+    const sent = await run((ctx) => remindWithLink(ctx, { id: party, channel: 'whatsapp', note: 'Asked for the April bill' }));
     expect(sent).toMatchObject({ outstanding: '80.00', overdue: '110.00', oldestDue: '2026-04-10', channel: 'whatsapp' });
     expect(sent.text).toMatch(/80\.00 is outstanding, of which .*110\.00 has been due since/);
+    // The fixture's bills aren't invoices, so there's nothing to link (RAD-118's links are invoices').
+    expect([sent.link, sent.noLink]).toEqual([null, 'not_an_invoice']);
     const listed = await run((ctx) => remindersPage(ctx, { id: party, filter: {}, limit: 10 }));
     expect(listed.items.map((r) => [r.id, r.overdue, r.by.id])).toEqual([[sent.id, '110.00', CLERK.userId]]);
     expect(await found()).toMatchObject({ lastReminderAt: sent.asAt });
@@ -164,7 +167,7 @@ describe.skipIf(!url || !superUrl)('what parties owe', { timeout: 30_000 }, () =
     expect([seen.includes(mine), seen.includes(theirs), seen.includes(unassigned)]).toEqual([true, false, false]);
     const statementOf = (id: string) => code(run((ctx) => partyStatement(ctx, { id, from: '2026-11-01', to: '2026-11-30' }), SALES));
     expect([await statementOf(mine), await statementOf(theirs), await statementOf(unassigned)]).toEqual(['ok', 'not_found', 'not_found']);
-    const remindOf = (id: string) => code(run((ctx) => remind(ctx, { id, channel: 'phone' }), SALES));
+    const remindOf = (id: string) => code(run((ctx) => remindWithLink(ctx, { id, channel: 'phone' }), SALES));
     expect([await remindOf(mine), await remindOf(theirs)]).toEqual(['ok', 'not_found']);
     expect(await code(run((ctx) => remindersPage(ctx, { id: theirs, filter: {}, limit: 10 }), SALES))).toBe('not_found');
     // Who manages a party is set under parties:manage, and then they see it.

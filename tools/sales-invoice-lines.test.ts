@@ -163,7 +163,8 @@ describe.skipIf(!url || !superUrl)('invoice and delivery lines', () => {
   });
 
   // 3 delivered, 1 taken back, 1 invoiced: 1 is still to invoice, in getDelivery and in the to-invoice list. Delivery
-  // and return lines answer their item, and the delivery's returns are counted by status (auditor-3 on #288).
+  // and return lines answer their item and their batches' numbers, and the delivery's returns are counted by status
+  // (auditor-3 on #288; #293).
   it('answers each delivery line’s quantity still to invoice, its item, and the delivery’s returns by status', async () => {
     const at = await setup({ stock: '4' });
     const { deliveryId, deliveryLineId } = await delivered(at, '4', '3');
@@ -183,8 +184,10 @@ describe.skipIf(!url || !superUrl)('invoice and delivery lines', () => {
     expect({
       left: one.lines[0]?.qtyToInvoice,
       labels: [one.lines[0]?.sku === at.sku, one.lines[0]?.name, back.lines[0]?.sku === at.sku, back.lines[0]?.name],
+      // Each batch picked, by its number, for the return form (#293).
+      batches: [one.lines[0]?.batches.map((b) => [b.batchId === at.batchId, b.batchNo]), back.lines[0]?.batches.map((b) => b.batchNo)],
       counts: counts.byStatus, listed: listed?.lines.map((l) => [l.id === deliveryLineId, l.sku === at.sku, l.qtyToInvoice]),
-    }).toEqual({ left: '1.000', labels: [true, 'Scooter', true, 'Scooter'], counts: { draft: 0, posted: 1, cancelled: 0 },
+    }).toEqual({ left: '1.000', labels: [true, 'Scooter', true, 'Scooter'], batches: [[[true, 'B1']], ['B1']], counts: { draft: 0, posted: 1, cancelled: 0 },
       listed: [[true, true, '1.000']] });
   });
 
