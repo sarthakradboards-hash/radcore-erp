@@ -3,10 +3,10 @@
 // it. A found serialised unit names its serial, its condition and, where the item keeps one, its chassis number, and is
 // `received` with the adjustment's number as its batch. An adjustment is its maker's (created_by).
 import { after, batches, items, stockAdjustmentLines, stockAdjustments, stockTx, units } from '@radcore/db/stock';
-import { holdPeriod, lockPeriod, reverseEntriesOf } from '@radcore/lib-accounts';
+import { holdPeriod, JOURNAL_SERIES, lockPeriod, reverseEntriesOf } from '@radcore/lib-accounts';
 import { quantityString, type UnitCondition } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, listScope, momentKey, nextNumber, principalId, requestApproval,
+  AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, holdSeries, listScope, momentKey, nextNumber, principalId, requestApproval,
   withdrawPending, type ApprovalSpec, type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
@@ -15,7 +15,7 @@ import type {
   cancelStockAdjustment, createStockAdjustment, deleteStockAdjustment, getStockAdjustment, listStockAdjustments,
   requestStockAdjustmentApproval, updateStockAdjustment,
 } from '../contract.ts';
-import { reverseStock } from '../engine/stock.ts';
+import { holdStock, reverseStock } from '../engine/stock.ts';
 import { serialKey } from '../engine/units.ts';
 import { batchNumbers, itemLabels } from './items.ts';
 import { checkLines, picksOf, placeNames, placeOf } from './moves-lines.ts';
@@ -138,6 +138,10 @@ async function postAdjustment(ctx: Ctx, id: string): Promise<void> {
   await holdPeriod(ctx, a.businessDate);
   const lines = await linesOf(ctx, id);
   await checkAdjustment(ctx, { locationId: a.locationId, lines: lines.map((l) => l.line) });
+  // ADR-006 §1 for a document whose number names a batch (the architect on RAD-141): its stock, then the journal's and its
+  // own series' turns, then its number, which names the batch postDifferences creates before it posts.
+  await holdStock(ctx, lines.map((l) => ({ itemId: l.line.itemId, locationId: a.locationId, serials: l.line.serials.map((s) => s.serialNo) })));
+  await holdSeries(ctx, [JOURNAL_SERIES, ADJUSTMENT_SERIES]);
   const number = await nextNumber(ctx, ADJUSTMENT_SERIES, a.businessDate);
   const { values, entryId } = await postDifferences(ctx, { sourceTable: 'stock_adjustments', sourceId: id, businessDate: a.businessDate,
     locationId: a.locationId, kind: 'stock_adjustment', batchNo: number,

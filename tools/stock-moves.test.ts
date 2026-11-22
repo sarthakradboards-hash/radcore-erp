@@ -3,19 +3,20 @@
 // then its documents, each in a committed transaction, as the routes run them. Counts and adjustments are approved by
 // someone else, whose account is made before the test's requests (approver_too_new).
 import { randomBytes, randomUUID } from 'node:crypto';
-import { journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
+import { JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
 import { quantityString, unitPriceString } from '@radcore/lib-common';
 import { AppError, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addAdjustment, addCategory, addCount, addItem, addPlace, addTransfer, adjustmentApprovalSpec, askAdjustmentApproval, askCountApproval,
+  addAdjustment, addCategory, addCount, addItem, addPlace, addTransfer, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, askCountApproval,
   cancelTransferNow, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
 } from '@radcore/lib-stock';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
+const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156).
 const DATE = '2026-11-15';
@@ -24,11 +25,13 @@ const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
 
-describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
+describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', () => {
   const pool = new pg.Pool({ connectionString: url, max: 4 });
+  const su = new pg.Pool({ connectionString: superUrl, max: 2 });
   const db = createDatabase(pool);
   afterAll(async () => {
     await pool.end();
+    await su.end();
   });
   const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
   const run = <T>(fn: (ctx: Ctx) => Promise<T>, as: Principal = staff, settings?: Settings) =>
@@ -225,9 +228,9 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     expect(await entryOf(id, 'stock_adjustment')).toEqual(['Stock in Hand 0.00 61250.00', 'Stock Adjustment 61250.00 0.00']);
   });
 
-  // The architect on RAD-141: an adjustment draws its own number (SA) right after the period and itself, before its
-  // stock, since a found unit's batch is that number. Two adjustments at once, one with a found unit and one without, and
-  // an adjustment beside a delivery of the same item, all finish: no 40P01.
+  // ADR-006 §1, the architect on RAD-141: an adjustment takes its stock, then the journal's and SA's turns, then its number
+  // (a found unit's batch). Two adjustments at once, one with a found unit and one without, and an adjustment beside a
+  // delivery of the same item, all finish: no 40P01.
   it('posts two adjustments at once, and one beside a delivery of the same item, with no deadlock', async () => {
     const boss = await approver();
     const serials = [`S-${tag()}`, `S-${tag()}`, `S-${tag()}`];
@@ -247,5 +250,34 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
       sourceId: randomUUID(), businessDate: DATE, outs: [{ itemId: at.itemId, locationId: store, qty: q('1'), batches: [{ batchId: at.batchId, qty: q('1') }],
         units: [{ serialNo: serials[1] ?? '' }], unitEvent: 'delivered' }] })))]);
     expect([both, beside, await onHand(at.itemId, store)]).toEqual([['ok', 'ok'], ['ok', 'ok'], { qty: '3', value: '183750.00' }]);
+  });
+
+  // The same order, forced rather than raced: while another save holds the item's stock, an approved adjustment waits on
+  // it holding neither the journal's turn nor SA's, so a save that holds stock and then draws its number can't meet it.
+  it('waits for its stock before it takes the journal and SA turns', async () => {
+    const boss = await approver();
+    const at = await setup(['store'], { stock: '1', rate: '100', serials: [`S-${tag()}`] });
+    const [store] = at.places as [string];
+    const asked = await run(async (ctx) => {
+      const { id } = await addAdjustment(ctx, { locationId: store, businessDate: DATE, reason: 'Found in the bay',
+        lines: [{ itemId: at.itemId, direction: 'in', qty: q('1'), condition: 'new', batches: [], serials: [{ serialNo: `N-${tag()}`, chassisNo: null }] }] });
+      return askAdjustmentApproval(ctx, { id });
+    });
+    const holder = await su.connect();
+    try {
+      await holder.query('begin');
+      await holder.query('select 1 from radcore.stock_positions where item_id = $1 and location_id = $2 for update', [at.itemId, store]);
+      const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]?.pid;
+      const approved = code(decide(adjustmentApprovalSpec, boss, asked));
+      await vi.waitFor(async () => expect((await su.query<{ n: number }>(
+        'select count(*)::int n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.n).toBe(1), { timeout: 10_000 });
+      const free = (await su.query<{ free: boolean }>(`select pg_try_advisory_xact_lock(hashtextextended($1, 0))
+        and pg_try_advisory_xact_lock(hashtextextended($2, 0)) as free`, [`numbering.${JOURNAL_SERIES.key}`, `numbering.${ADJUSTMENT_SERIES.key}`])).rows[0]?.free;
+      await holder.query('commit');
+      expect([free, await approved, await onHand(at.itemId, store)]).toEqual([true, 'ok', { qty: '2', value: '200.00' }]);
+    } finally {
+      await holder.query('rollback').catch(() => undefined);
+      holder.release();
+    }
   });
 });
