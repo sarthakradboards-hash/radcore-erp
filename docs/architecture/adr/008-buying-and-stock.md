@@ -109,7 +109,7 @@ the document it comes from (`date_before_source`):
 - **Lines** are an item, a quantity and a rate before tax. The tax figures are worked out by lib-gst as a sale's are
   (place of supply from the supplier's state against ours), computed on read while a draft and stored when placed.
 - **Placing.** The PO's total with GST, the figure it shows and what will be paid, is compared with the placer's role
-  limit. Whether the limit should be on the taxable value instead is Sarthak's to say; it's one comparison either way:
+  limit (Sarthak, 22 Nov, "Total with GST"):
   - **within it,** the PO is placed at once and takes its number;
   - **above it,** placing requests approval through `defineApproval`, kind `purchase-order`, under
     `purchasing:approve`. The PO stays a draft while the request is pending, and the approval's `approved` step
@@ -242,9 +242,15 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
   refused (`use_job_work`).
 - **A transfer can be undone (RC-124).** Cancelling it mirrors it at the same values, dated the cancellation's day.
   It's refused if the goods are no longer where it put them, or a unit on it has moved since (`goods_moved_on`).
-- **No approval.** Plan flow 7 asks a reason of a transfer and an approval of counts and adjustments only. If Sarthak
-  wants transfers into some kinds of place approved (a franchisee's store, say), that's a setting naming those kinds,
-  empty by default, through the same approval as a count. Nothing is built for it until he asks.
+- **No approval, except into a franchisee's store when an admin turns it on.** Plan flow 7 asks a reason of a transfer
+  and an approval of counts and adjustments only. `stock.franchisee_transfer_approval` (yes or no, **default no**,
+  Sarthak, 22 Nov, "Setting, default no"):
+  - **off:** every transfer posts at once;
+  - **on:** a transfer into a location of kind `franchisee` waits as a draft for `defineApproval`, kind
+    `stock-transfer`, under `stock:approve`, from someone other than its maker. The approver sees the lines and their
+    values. Its `approved` step posts, so the spec declares `lockFirst`, and deleting the pending draft closes the
+    request (`withdrawPending`);
+  - the setting is read when the transfer is sent, so turning it on doesn't catch transfers already posted.
 - **What posts** is one `stock_transfer` entry with a Stock in Hand line for each location (ADR-006 §6, F13). It's one
   account, but its lines carry the location, so books by place agree with stock by place (ADR-006 §7). The total
   doesn't move.
@@ -338,7 +344,7 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
 | `supplier_returns:write` | return rejects, raise debit notes, undo a return | admin, stores, accounts |
 | `stock:move` | transfer stock and undo a transfer | admin, stores |
 | `stock:count` | count stock and propose adjustments | admin, stores |
-| `stock:approve` | approve counts and adjustments, and cancel them | admin, owner |
+| `stock:approve` | approve counts and adjustments (and franchisee transfers, when §9's setting is on), and cancel them | admin, owner |
 | `job_work:write` | send and receive job work | admin, stores, operations |
 
 - **Record scope (E7):** `purchasing:read` names `purchase_orders`, `goods_receipts`, `purchase_bills` and
@@ -358,7 +364,7 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
 | M4-02 | backend-3 | `goods_receipts`, lines; the `purchasing.receipt` series; `inward:write`, `inward:qc`; the re-inspection transfer (§9) |
 | M4-03 | backend | `purchase_bills`, lines, the duplicate index; the `purchase_bill` file kind; `purchasing.bill_tolerance_pct`; the `purchasing.bill` series; the `allocatable_documents` row; `bills:write`, `bills:approve` |
 | M4-05 | backend-3 | `supplier_returns`, lines; the `purchasing.return` and `purchasing.debit_note` series; the `allocatable_documents` row; `supplier_returns:write` |
-| M4-06 | backend-3 | `stock_transfers`, `stock_counts`, `stock_adjustments` and their lines; their three series; `stock:move`, `stock:count`, `stock:approve`; `stock:read`'s new records |
+| M4-06 | backend-3 | `stock_transfers`, `stock_counts`, `stock_adjustments` and their lines; their three series; `stock.franchisee_transfer_approval`; `stock:move`, `stock:count`, `stock:approve`; `stock:read`'s new records |
 | M4-07 | backend-2 | `job_work_challans`, `job_work_receipts` and their lines; `locations.party_id`; `stock.job_work_return_days`; the two job work series; `job_work:write` |
 
 - **Two writers never share a tables file.** Purchasing's tables split by family (`tables-orders.ts`,
@@ -402,6 +408,8 @@ Beyond each document's own happy path and ADR-006's figures:
   - F13 and F14;
   - rejects to a sellable place are refused `needs_qc`, and pass as a re-inspection under `inward:qc`;
   - a transfer undone, and refused once the goods have moved on;
+  - with `stock.franchisee_transfer_approval` on, a transfer into a franchisee's store waits for another person, while one
+    to any other place posts at once; with it off, both post;
   - a count listing an item twice merges into one line (RC-123);
   - a sale between `counted_at` and the approval is neither missed nor counted twice;
   - nothing posts until another person approves;
