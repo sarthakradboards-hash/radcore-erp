@@ -20,7 +20,7 @@ import { usePlaces } from '../deliveries/shared.tsx';
 import { StockPick } from '../deliveries/stock-pick.tsx';
 import { PickedField } from '../picked-field.tsx';
 import {
-  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, rateAfterPrice, type QuickBillInput, type QuickBillValues,
+  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, rateFor, type QuickBillInput, type QuickBillValues,
 } from './quick-bill-values.ts';
 import { QUICK_BILL_MESSAGES } from './shared.ts';
 
@@ -73,24 +73,21 @@ function ItemBox({ index }: { index: number }) {
     { enabled: mayPrice && itemId !== '' && /^\d{4}-\d{2}-\d{2}$/.test(on) }).data;
   const listRate = price?.rate != null && price.taxInclusive === false ? asPrice(price.rate) : null;
   const filled = useRef<string | null>(null);
-  useEffect(() => {
-    const next = rateAfterPrice(getValues(`lines.${index}.rate`), filled.current, listRate);
-    filled.current = next.filled;
-    if (next.rate !== getValues(`lines.${index}.rate`)) setValue(`lines.${index}.rate`, next.rate);
-  }, [listRate, index, getValues, setValue]);
-  // What was picked for one item is not for another: a new item leaves no batches or serials of the old one (auditor-3 on #320). Not on
-  // the first render, and kept when an earlier line is removed (this box stays with its own line, whose item is the same).
+  // One effect for the item and its list rate, so a list rate already in the cache (the item was read before) is applied after the
+  // item's old picks and rate are cleared, never before. A new item leaves no batches, serials or rate of the old one (auditor-3 and
+  // e2e-playwright on #320); not on the first render, and kept when an earlier line is removed (this box stays with its own line).
   const itemSeen = useRef(itemId);
   useEffect(() => {
-    if (itemSeen.current !== itemId) {
+    const changed = itemSeen.current !== itemId;
+    itemSeen.current = itemId;
+    if (changed) {
       setValue(`lines.${index}.pick`, {});
       setValue(`lines.${index}.serials`, []);
-      // The rate was for the old item, filled or typed: the new item's list rate (if any) fills it again.
-      setValue(`lines.${index}.rate`, '');
-      filled.current = null;
     }
-    itemSeen.current = itemId;
-  }, [itemId, index, setValue]);
+    const next = rateFor(changed, getValues(`lines.${index}.rate`), filled.current, listRate);
+    filled.current = next.filled;
+    if (next.rate !== getValues(`lines.${index}.rate`)) setValue(`lines.${index}.rate`, next.rate);
+  }, [itemId, listRate, index, getValues, setValue]);
   const item = useApiQuery(getItem, { id: itemId }, { enabled: itemId !== '' }).data ?? null;
   return (
     <>

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { quickBillSchema, rateAfterPrice } from './quick-bill-values.ts';
+import { quickBillSchema, rateAfterPrice, rateFor } from './quick-bill-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const line = (over: object = {}) => ({ itemId: id(1), qty: '2', rate: '500.00', discountPercent: '0', pick: { [id(2)]: '2' }, serials: [] as string[], ...over });
@@ -43,4 +43,13 @@ it('fills an empty rate box from the list, replaces what it filled when the list
   // a rate someone typed (or edited) stays
   expect(rateAfterPrice('499.00', '500.00', '450.00')).toEqual({ rate: '499.00', filled: '500.00' });
   expect(rateAfterPrice('499.00', null, '450.00')).toEqual({ rate: '499.00', filled: null });
+});
+
+it('starts a new item from an empty box and fills its list rate at once, also when that rate was read before', () => {
+  // item A filled 500, then item C whose rate (800) is already known: the old rate goes and 800 is in, in one step
+  expect(rateFor(true, '500.00', '500.00', '800.00')).toEqual({ rate: '800.00', filled: '800.00' });
+  // a new item with no list rate (or not read yet) leaves the box empty, even if a rate had been typed for the old one
+  expect(rateFor(true, '499.00', null, null)).toEqual({ rate: '', filled: null });
+  // the same item: a typed rate stays
+  expect(rateFor(false, '499.00', '500.00', '800.00')).toEqual({ rate: '499.00', filled: '500.00' });
 });

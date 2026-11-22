@@ -78,3 +78,9 @@ export function rateAfterPrice(current: string, filled: string | null, listRate:
   if (current !== '' && current !== filled) return { rate: current, filled };
   return listRate === null ? { rate: '', filled: null } : { rate: listRate, filled: listRate };
 }
+
+/** The rate box when the item or its list rate changes: a new item starts from an empty box (the rate was for the old one, filled or
+ * typed), then the list rate rules apply; so a list rate that is already known fills it at once. */
+export function rateFor(itemChanged: boolean, current: string, filled: string | null, listRate: string | null): { rate: string; filled: string | null } {
+  return itemChanged ? rateAfterPrice('', null, listRate) : rateAfterPrice(current, filled, listRate);
+}
