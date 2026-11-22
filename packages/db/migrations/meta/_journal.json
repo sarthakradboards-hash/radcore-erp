@@ -533,6 +533,13 @@
       "when": 1795337021699,
       "tag": "0075_crm_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795338318569,
+      "tag": "0076_receipts_print",
+      "breakpoints": true
     }
   ]
 }

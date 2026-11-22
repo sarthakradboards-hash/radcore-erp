@@ -175,7 +175,7 @@ A dependency is added in the PR that first needs it. **That PR also adds its row
   | `@img/sharp-win32-*`, `@img/sharp-wasm32` (same `sharp`, bundling libvips) | `Apache-2.0 AND LGPL-3.0-or-later` (wasm32 adds `AND MIT`); chosen: all of them apply | the same libvips binary as the row above, so it stands or falls with it. Added by RAD-13 from the real lockfile |
   | `language-subtag-registry` (via eslint-config-next's eslint-plugin-jsx-a11y) | CC0-1.0 | a public-domain data file of language tags; dev tooling only. Added by RAD-13 from the real lockfile |
   | `@fontsource/noto-sans` (§2's font row) | OFL-1.1 | a font licence: the font files are bundled and embedded in PDFs, which OFL-1.1 allows; no code (RAD-120) |
-  | `png-js` (via @react-pdf/renderer's image) | none declared; its LICENSE file is MIT | its `package.json` has no `license` field, but the package's LICENSE file is MIT (Devon Govett, react-pdf's author). Checked by the architect on RAD-120 |
+  | `png-js` (via @react-pdf/renderer's image) | none declared; MIT on npm's registry | its lockfile entry carries no `license` field, so the licence check can't read one; npm's registry record for 2.0.0 says MIT (the architect, RAD-120) |
 
 - **Maintenance:** a release in the last 12 months, or a stated reason in its row (decimal.js, pino-http, cmdk and
   eslint-plugin-drizzle carry one). It must have no open advisory without a fix (C5). Its install scripts, if any,
