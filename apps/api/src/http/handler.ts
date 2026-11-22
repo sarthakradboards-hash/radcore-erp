@@ -14,9 +14,8 @@
 // Still to come, each with its ticket: rate guards (M1-21) and webhooks' own lane (M1-27).
 import { randomUUID } from 'node:crypto';
 import { BUSINESS_RULE_STATUS, maskedInputPath, maskOutput, newPasswordFields, piiPlan, reasonFields, PASSWORD_MIN_LENGTH,
-  PLATFORM_ERRORS, readInput, RETRY_AFTER_CODES, sightOf, type Contract, type Issue, type Look, type PlatformErrorCode }
-  from '@radcore/lib-common';
-import { AppError, claimSavedOnce, cookieFor, deviceOf, describeError, isRateLimitClass, linkPrincipal, originAllowed,
+  readInput, sightOf, type Look } from '@radcore/lib-common';
+import { claimSavedOnce, cookieFor, deviceOf, isRateLimitClass, linkPrincipal, originAllowed,
   recordChangeReason, RecordedRefusal, recordLinkAccess, recordLooks, useLink, type Files, type Principal, type RequestGuards,
   type Route, type Secrets, type SessionCookie, type SignInCookie,
 } from '@radcore/lib-platform';
@@ -25,6 +24,7 @@ import {
 } from '@radcore/lib-platform/contract';
 import { runInTransaction, type Alerter, type Logger } from '@radcore/lib-platform/runtime';
 import express, { type CookieOptions, type Express, type NextFunction, type Request, type Response } from 'express';
+import { failureOf, limited, platform, type Failure } from './failures.ts';
 import { warnUndeclared, type UndeclaredMode } from './undeclared.ts';
 
 type Database = Parameters<typeof runInTransaction>[0];
@@ -76,61 +76,6 @@ const DIRECT = new Set(['same-origin', 'none']);
 const PUBLIC: Principal = Object.freeze({ kind: 'system', name: 'public', permissions: Object.freeze([]) });
 // A link route's token is looked up by this principal, in a read of its own, before the request runs as the link's holder.
 const LINK_CHECK: Principal = Object.freeze({ kind: 'system', name: 'link-check', permissions: Object.freeze([]) });
-
-// PostgreSQL's code for a failure the caller can act on. Every other database error is the server's.
-const SQLSTATE: Readonly<Record<string, PlatformErrorCode>> = {
-  '23505': 'conflict', // unique_violation
-  '23503': 'conflict', // foreign_key_violation
-  '40001': 'conflict', // serialization_failure
-  '40P01': 'conflict', // deadlock_detected
-  '55P03': 'conflict', // lock_not_available: lock_timeout ran out
-};
-const MESSAGES: Readonly<Record<PlatformErrorCode, string>> = {
-  invalid_input: 'Some of what was sent needs correcting',
-  idempotency_key_required: 'This request needs an idempotency key',
-  signed_out: 'Please sign in',
-  forbidden: "You don't have permission to do that",
-  not_found: 'Not found',
-  conflict: 'Someone else changed this at the same time. Please try again',
-  idempotency_mismatch: 'This idempotency key was used for a different request',
-  answer_not_kept: 'That answer was shown once and is not kept. Please start again',
-  rate_limited: 'Too many requests. Please wait a moment',
-  account_locked: 'This account is locked for now',
-  server_error: 'Something went wrong on our side',
-};
-
-const isPlatform = (code: string): code is PlatformErrorCode => Object.hasOwn(PLATFORM_ERRORS, code);
-
-type Failure = { status: number; code: string; message: string; issues: readonly Issue[]; retryAfterSeconds?: number };
-// Too many requests (RAD-39): how many seconds until a retry can succeed, in the body and in Retry-After.
-const limited = (wait: number): Failure => ({ ...platform('rate_limited'), retryAfterSeconds: wait });
-const platform = (code: PlatformErrorCode, issues: readonly Issue[] = []): Failure =>
-  ({ status: PLATFORM_ERRORS[code], code, message: MESSAGES[code], issues });
-
-/** What a thrown error answers with: by its code only. */
-function failureOf(err: unknown, declared: readonly string[], dbErrors: Contract['dbErrors'] = {}): Failure {
-  if (err instanceof AppError) {
-    // A server error's own text is for the log, never the caller.
-    if (err.code === 'server_error') return platform('server_error');
-    if (isPlatform(err.code)) {
-      const failure: Failure = { ...platform(err.code, err.issues), message: err.message };
-      // Only the codes lib-common lets say when to retry (ADR-001 §7a), in whole seconds.
-      if (RETRY_AFTER_CODES.includes(err.code) && err.retryAfterSeconds !== undefined) {
-        failure.retryAfterSeconds = Math.ceil(err.retryAfterSeconds);
-      }
-      return failure;
-    }
-    if (declared.includes(err.code)) return { status: BUSINESS_RULE_STATUS, code: err.code, message: err.message, issues: err.issues };
-    return platform('server_error');
-  }
-  const { code: sqlstate, constraint } = describeError(err);
-  // A refusal a person can cause, by its SQLSTATE and constraint, mapped by the contract wherever it was raised, at the
-  // statement or at commit, with the contract's message, never the database's (ADR-005 §9). Unmapped, it's a bug.
-  const named = sqlstate === undefined || constraint === undefined ? undefined : dbErrors[`${sqlstate}:${constraint}`];
-  if (named !== undefined) return { status: BUSINESS_RULE_STATUS, code: named.code, message: named.message, issues: [] };
-  const mapped = sqlstate === undefined ? undefined : SQLSTATE[sqlstate];
-  return platform(mapped ?? 'server_error');
-}
 
 /** The output broke its contract: a bug, so the transaction rolls back and the caller gets 500. */
 class OutputMismatch extends Error {
@@ -362,7 +307,10 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
         // What a link's holder opened, as its own short write once the work has committed (ADR-005 §7c). A read-only
         // link spends its use here, before anything is answered: if the last use went to a request racing this one,
         // this one gets the same not_found, and sees nothing.
-        // A read's looks are logged the same way, before the answer goes out: no log, no answer.
+        // A read's looks are logged the same way, before the answer goes out: no log, no answer. A printout is a look
+        // at its one record (RAD-120).
+        const printed = contract.print === undefined ? null : output as { pdf: Uint8Array; looks: readonly Look[] };
+        if (contract.print !== undefined) looks.push({ table: contract.print.table, id: String((work as { id: unknown }).id) }, ...printed?.looks ?? []);
         if (principal?.kind === 'link' || looks.length > 0) {
           await runInTransaction(deps.db, WRITE, principal ?? PUBLIC, requestId, async (ctx) => {
             if (principal?.kind === 'link') {
@@ -372,7 +320,9 @@ export function mountRoutes(app: Express, routes: readonly Route[], deps: Handle
             await recordLooks(ctx, looks);
           });
         }
-        res.status(200).json(output);
+        // A printout is its PDF's bytes, under the no-store every answer has; anything else is JSON.
+        if (printed === null) res.status(200).json(output);
+        else res.status(200).type('application/pdf').send(Buffer.from(printed.pdf));
       } catch (err) {
         const failure = failureOf(err, contract.errors, contract.dbErrors);
         warnUndeclared(deps, err, contract.errors, `${route} (request ${requestId})`);

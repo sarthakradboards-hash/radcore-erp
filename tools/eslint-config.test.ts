@@ -39,7 +39,8 @@ it('each zone is exactly the ADR-002 table', () => {
     'packages/db/src/migrate.ts': ['drizzle', 'migrate'],
     'packages/lib-platform/src/db/client.ts': ['drizzle'],
   });
-  expect(L8_LIFTED).toEqual({ 'packages/lib-platform/src/import/isolate.ts': ['worker_threads'] });
+  expect(L8_LIFTED).toEqual({ 'packages/lib-platform/src/import/isolate.ts': ['worker_threads'],
+    'packages/lib-platform/src/print/pool.ts': ['worker_threads'], 'packages/lib-platform/src/print/render-thread.ts': ['worker_threads'] });
   expect(REQUEST_CONTEXT_HELPER).toBe('applyRequestContext');
 });
 

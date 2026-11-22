@@ -56,7 +56,7 @@ async function companyRead(ctx: Ctx): Promise<Company> {
 
 /** A party's stored value, as lib-accounts' service answers it to another service: the handler masks answers, never a
  * service's values, so a masked one here is a bug, refused rather than frozen onto an invoice. */
-function plain(v: string | { masked: string } | null): string | null {
+export function plain(v: string | { masked: string } | null): string | null {
   if (v !== null && typeof v === 'object') throw new Error('a party’s stored detail came back masked');
   return v;
 }
