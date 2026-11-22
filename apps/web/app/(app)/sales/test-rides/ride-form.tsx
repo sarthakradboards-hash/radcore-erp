@@ -4,10 +4,11 @@
 // checks again (`not_demo`). The read is the stock-by-place one (stock:read): a person without it can still type the serial number.
 import { listLeads } from '@radcore/lib-crm/contract';
 import { getOnHand, listItems } from '@radcore/lib-stock/contract';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
+import { ApiError } from '../../../../lib/api-client.ts';
 import { useApiList, useApiQuery, useApiSearch } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { usePlaces } from '../deliveries/shared.tsx';
@@ -20,6 +21,10 @@ const useItems = (query: string) => useApiSearch(listItems, query, { params: { f
 /** The leads to choose from (leads:read): by name, with the phone as masked as the list gives it. */
 function LeadField() {
   const leads = useApiList(listLeads, { filter: {} });
+  // A refused read is not "no leads": a person without leads:read is told so (e2e-2 on #309).
+  if (leads.error !== null) {
+    return <p role="alert" className="kit-form-alert">{t(leads.error instanceof ApiError && leads.error.status === 403 ? 'sales.ride.form.lead.forbidden' : 'sales.ride.form.lead.error')}</p>;
+  }
   return (
     <>
       <SelectField name="leadId" label={t('sales.ride.form.lead')} hint={t('sales.ride.form.lead.hint')} placeholder={t('sales.ride.form.lead.none')}
@@ -36,6 +41,12 @@ function Units() {
   const itemId = useWatch({ control, name: 'itemId' });
   const places = usePlaces('');
   const [place, setPlace] = useState('');
+  // A serial number belongs to one model: another model leaves nothing of the old unit (auditor-3 on #309). Not on the first render.
+  const itemSeen = useRef(itemId);
+  useEffect(() => {
+    if (itemSeen.current !== itemId) setValue('serialNo', '');
+    itemSeen.current = itemId;
+  }, [itemId, setValue]);
   const stock = useApiQuery(getOnHand, { itemId, locationId: place, limit: 200 }, { enabled: place !== '' && itemId !== '' });
   const demo = (stock.data?.units?.items ?? []).filter((u) => u.condition === 'demo');
   return (
