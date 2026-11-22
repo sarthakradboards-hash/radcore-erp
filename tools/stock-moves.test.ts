@@ -25,7 +25,7 @@ const q = (s: string) => quantityString().parse(s);
 const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
 
 describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
-  const pool = new pg.Pool({ connectionString: url, max: 3 });
+  const pool = new pg.Pool({ connectionString: url, max: 4 });
   const db = createDatabase(pool);
   afterAll(async () => {
     await pool.end();
@@ -43,7 +43,7 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     run((ctx) => decideApproval(ctx, spec, asked.id, { decision: 'approve', versionHash: asked.versionHash }), who);
 
   /** An item (serialised with `serials`) and places of these kinds, with `stock` of it in the first at `rate`, in batch B1. */
-  async function setup(kinds: ('stores' | 'store' | 'demo' | 'rejected' | 'franchisee' | 'job_work')[],
+  async function setup(kinds: ('stores' | 'store' | 'demo' | 'rejected' | 'franchisee' | 'job_work' | 'in_transit')[],
     o: { stock: string; rate: string; serials?: string[]; batches?: { batchNo: string; qty: string }[] }) {
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
@@ -92,14 +92,16 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
       { qty: '3', value: '183750.00' }, { qty: '1', value: '61250.00' }]);
   });
 
-  // RC-124: rejects can't go back to a sellable place without QC; a job worker's place is job work's; never to itself.
-  it('refuses rejects to a sellable place (needs_qc), a job work place (use_job_work) and the same place', async () => {
-    const at = await setup(['rejected', 'store', 'job_work', 'demo'], { stock: '2', rate: '100' });
-    const [rejected, store, jobWork, demo] = at.places as [string, string, string, string];
+  // RC-124, the architect on RAD-141: rejects go only to another rejects place, so they can't reach a selling shelf in two
+  // hops through demo or in transit; a job worker's place is job work's; never to itself.
+  it('sends rejects only to another rejects place (needs_qc otherwise), never to job work (use_job_work) or itself', async () => {
+    const at = await setup(['rejected', 'store', 'job_work', 'demo', 'in_transit', 'rejected'], { stock: '2', rate: '100' });
+    const [rejected, store, jobWork, demo, transit, otherRejects] = at.places as [string, string, string, string, string, string];
     const move = (fromId: string, toId: string) => code(run((ctx) => addTransfer(ctx, { fromId, toId, businessDate: DATE, reason: 'Test',
       lines: [line(at.itemId, '1', at.batchId)] })));
-    expect([await move(rejected, store), await move(rejected, jobWork), await move(rejected, rejected), await move(rejected, demo)])
-      .toEqual(['needs_qc', 'use_job_work', 'transfer_same_location', 'ok']);
+    expect([await move(rejected, store), await move(rejected, jobWork), await move(rejected, rejected), await move(rejected, demo),
+      await move(rejected, transit), await move(rejected, otherRejects)])
+      .toEqual(['needs_qc', 'use_job_work', 'transfer_same_location', 'needs_qc', 'needs_qc', 'ok']);
   });
 
   // RC-124: a transfer is undone by its mirror, and refused once the goods have moved on from where it put them.
@@ -221,5 +223,29 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     expect(units.toSorted((a, b) => (a.serial_no < b.serial_no ? -1 : 1))).toEqual(
       [{ serial_no: serials[0], ownership: 'ours' }, { serial_no: serials[1], ownership: 'gone' }].toSorted((a, b) => ((a.serial_no ?? '') < (b.serial_no ?? '') ? -1 : 1)));
     expect(await entryOf(id, 'stock_adjustment')).toEqual(['Stock in Hand 0.00 61250.00', 'Stock Adjustment 61250.00 0.00']);
+  });
+
+  // The architect on RAD-141: an adjustment draws its own number (SA) right after the period and itself, before its
+  // stock, since a found unit's batch is that number. Two adjustments at once, one with a found unit and one without, and
+  // an adjustment beside a delivery of the same item, all finish: no 40P01.
+  it('posts two adjustments at once, and one beside a delivery of the same item, with no deadlock', async () => {
+    const boss = await approver();
+    const serials = [`S-${tag()}`, `S-${tag()}`, `S-${tag()}`];
+    const at = await setup(['store'], { stock: '3', rate: '61250', serials });
+    const [store] = at.places as [string];
+    const found = (serial: string) => run((ctx) => addAdjustment(ctx, { locationId: store, businessDate: DATE, reason: 'Found in the bay',
+      lines: [{ itemId: at.itemId, direction: 'in', qty: q('1'), condition: 'new', batches: [], serials: [{ serialNo: serial, chassisNo: null }] }] }));
+    const lost = (serial: string) => run((ctx) => addAdjustment(ctx, { locationId: store, businessDate: DATE, reason: 'Damaged beyond repair',
+      lines: [{ itemId: at.itemId, direction: 'out', qty: q('1'), condition: null, batches: [{ batchId: at.batchId, qty: q('1') }],
+        serials: [{ serialNo: serial, chassisNo: null }] }] }));
+    const ask = (id: string) => run((ctx) => askAdjustmentApproval(ctx, { id }));
+    const a = await ask((await found(`N-${tag()}`)).id);
+    const b = await ask((await lost(serials[0] ?? '')).id);
+    const both = await Promise.all([code(decide(adjustmentApprovalSpec, boss, a)), code(decide(adjustmentApprovalSpec, boss, b))]);
+    const c = await ask((await found(`N-${tag()}`)).id);
+    const beside = await Promise.all([code(decide(adjustmentApprovalSpec, boss, c)), code(run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE,
+      sourceId: randomUUID(), businessDate: DATE, outs: [{ itemId: at.itemId, locationId: store, qty: q('1'), batches: [{ batchId: at.batchId, qty: q('1') }],
+        units: [{ serialNo: serials[1] ?? '' }], unitEvent: 'delivered' }] })))]);
+    expect([both, beside, await onHand(at.itemId, store)]).toEqual([['ok', 'ok'], ['ok', 'ok'], { qty: '3', value: '183750.00' }]);
   });
 });

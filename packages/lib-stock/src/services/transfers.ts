@@ -48,7 +48,9 @@ async function transferOf(ctx: Ctx, id: string, permission: string, forUpdate = 
 
 /**
  * Where a transfer may go (§9): never to the same place, never to or from a job work place (its own documents, §11),
- * and never out of `rejected` to a sellable place: only M4-02's re-inspection under inward:qc brings rejects back.
+ * and out of `rejected` only to another `rejected` place (the architect on RAD-141): through demo or in transit, rejects
+ * would reach a selling shelf in two hops. Rejects leave only by a supplier return, M4-02's re-inspection under inward:qc,
+ * or an approved write-off.
  */
 function checkRoute(from: Place, to: Place): void {
   if (from.id === to.id) {
@@ -58,9 +60,9 @@ function checkRoute(from: Place, to: Place): void {
     throw new AppError('use_job_work', 'Goods go to and from a job worker on a job work challan and receipt',
       [{ path: [from.kind === 'job_work' ? 'fromId' : 'toId'], code: 'use_job_work', message: 'Use job work for this place' }]);
   }
-  if (from.kind === 'rejected' && to.sellable) {
+  if (from.kind === 'rejected' && to.kind !== 'rejected') {
     throw new AppError('needs_qc', 'Rejected stock goes back to selling only after it’s inspected again',
-      [{ path: ['toId'], code: 'needs_qc', message: 'Choose a place that isn’t for selling' }]);
+      [{ path: ['toId'], code: 'needs_qc', message: 'Rejects go only to another rejects place' }]);
   }
 }
 
