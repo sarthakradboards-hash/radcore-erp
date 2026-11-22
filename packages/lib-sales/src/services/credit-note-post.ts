@@ -40,7 +40,8 @@ export const CREDIT_NOTE_TAX_DEADLINE = defineSetting('sales.credit_note_tax_dea
 /** What the approver sees and approves: the note as drafted, and the amounts it will post, worked out as posting works
  * them (the architect on RAD-114, (a)). Another note posting on the invoice can change them (a goods-back share of
  * what's left, or tax capped at what's left), and then the decision answers version_changed: the approver looks again
- * at the money that will post. `amounts` is null while the invoice or lines refuse the note, as posting would. */
+ * at the money that will post. `amounts` is null while the invoice or lines refuse the note, as posting would; once posted, it's
+ * the amounts stored as it posted, which are the ones approved. */
 type NoteVersion = { invoiceId: string; kind: string; businessDate: string; locationId: string | null; reason: string;
   refund: { amount: string; accountId: string } | null;
   lines: { invoiceLineId: string; qty: string | null; taxable: string | null; batches: { batchId: string | null; qty: string }[]; serials: string[] }[];
@@ -142,7 +143,10 @@ export const creditNoteApprovalSpec: ApprovalSpec<NoteVersion> = {
     // Whichever of the two keys the reader holds: the note is its invoice's owner's, so either sees the invoice, and the
     // amounts never depend on who reads them. With forUpdate the invoice is locked after the note, as posting locks it.
     const as = ctx.can('credit_notes:approve', { owner: note.owner }) ? 'credit_notes:approve' : 'credit_notes:write';
-    const w = await worked(ctx, note, as, forUpdate);
+    // Once posted, the amounts it stored: the very ones worked under the invoice's lock as it posted, and what the engine
+    // checks again after approved(); worked out afresh, the note would count against itself.
+    const w = note.status === 'draft' ? await worked(ctx, note, as, forUpdate)
+      : { totals: { taxable: note.taxable, cgst: note.cgst, sgst: note.sgst, igst: note.igst, total: note.total }, late: note.late };
     return { invoiceId: note.invoiceId, kind: note.kind, businessDate: note.businessDate, locationId: note.locationId, reason: note.reason,
       refund: note.refundAmount === null || note.refundAccountId === null ? null
         : { amount: roundMoney(note.refundAmount), accountId: note.refundAccountId },
