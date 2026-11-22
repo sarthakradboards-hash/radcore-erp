@@ -12,4 +12,7 @@ export type CreditNote = z.output<typeof getCreditNote.output>;
 
 /** The date refusal means something different on a note and on its cancellation, so each dialog names its own (as the invoice's do). */
 export const CREDIT_MESSAGES: Partial<Record<string, string>> = { ...SALES_MESSAGES, date_before_source: t('sales.credit.err.date_before_source') };
-export const CREDIT_CANCEL_MESSAGES: Partial<Record<string, string>> = { ...SALES_MESSAGES, date_before_source: t('sales.credit.err.cancel_date') };
+/** A note still applied or refunded is freed by reversing that, which is not an invoice's "payments or credits" (e2e-2 on #327). */
+export const CREDIT_CANCEL_MESSAGES: Partial<Record<string, string>> = {
+  ...SALES_MESSAGES, date_before_source: t('sales.credit.err.cancel_date'), still_applied: t('sales.credit.err.still_applied'),
+};

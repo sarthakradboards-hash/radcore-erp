@@ -21,3 +21,7 @@ export type SalesQuoteStatus = (typeof SALES_QUOTE_STATUSES)[number];
 /** An order's statuses (ADR-007 §1): closed when every line is delivered, or closed short with a reason (RC-125). */
 export const SALES_ORDER_STATUSES = ['draft', 'confirmed', 'closed', 'cancelled'] as const;
 export type SalesOrderStatus = (typeof SALES_ORDER_STATUSES)[number];
+/** A purchase order's statuses (ADR-008 §1): it posts nothing; closed when every line is received, or closed short
+ * with a reason, and cancelled only while nothing has been received against it. */
+export const PURCHASE_ORDER_STATUSES = ['draft', 'placed', 'closed', 'cancelled'] as const;
+export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
