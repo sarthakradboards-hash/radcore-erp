@@ -25,13 +25,15 @@ it('each zone is exactly the ADR-002 table', () => {
     'radcore/no-driver': ['packages/lib-platform/src/db/client.ts', 'packages/db/src/migrate.ts'],
     'radcore/tables-in-schema': ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
       'packages/db/src/sales/tables-credit.ts', 'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts',
-      'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/columns.ts'],
+      'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
+      'packages/db/src/columns.ts'],
     'radcore/views-in-views': [VIEW],
     'radcore/outbound-only': ['packages/lib-platform/src/http/outbound.ts'],
   });
   expect(L1_SQL_ZONE).toEqual([VIEW, 'packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
     'packages/db/src/sales/tables-credit.ts', 'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts',
-    'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/columns.ts', 'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts']);
+    'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
+      'packages/db/src/columns.ts', 'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts']);
   expect(L1_EXTRA_NAMES).toEqual({
     'packages/db/src/*/relations.ts': ['relations'],
     'packages/db/src/conditions.ts': ['notInArray'],
@@ -92,6 +94,8 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   'packages/db/src/sales/tables-bookings.ts': {
     rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
   'packages/db/src/sales/tables-quick-bills.ts': {
+    rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
+  'packages/db/src/stock/tables-moves.ts': {
     rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
   'packages/db/src/sales/relations.ts': {
     rules: [...SERVER, 'radcore/e4-no-escape'], l1: { allowNames: [...ALLOW, 'relations'] }, typed: true, server: true },
