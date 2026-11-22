@@ -9,11 +9,11 @@
 //   lib-accounts' route-less refundHeld, one refund per receipt, each within its own cap.
 // - Its delivery's side (the booking delivered, the hold ended) is in booking-holds.ts.
 import { after, salesOrderLines, salesOrders, salesTx, vehicleBookings } from '@radcore/db/sales';
-import { heldLeft, holdParty, holdPeriod, recordHeldReceipt, refundHeld } from '@radcore/lib-accounts';
+import { heldLeft, holdParty, holdPeriod, JOURNAL_SERIES, PAYMENT_SERIES, RECEIPT_SERIES, recordHeldReceipt, refundHeld } from '@radcore/lib-accounts';
 import { dec, roundMoney } from '@radcore/lib-common';
 import { bookingCancelled, bookingMade, holdLead } from '@radcore/lib-crm';
 import {
-  AppError, decodeCursor, defineSeries, encodeCursor, listScope, nextNumber, readyFile, type Ctx,
+  AppError, decodeCursor, defineSeries, encodeCursor, holdSeries, listScope, nextNumber, readyFile, type Ctx,
 } from '@radcore/lib-platform';
 import { checkPlace, postUnitEvents, releasePromises, SELL_DAMAGED_UNITS, unitFor } from '@radcore/lib-stock';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
@@ -161,6 +161,9 @@ export async function addBooking(ctx: Ctx, input: In<typeof createBooking>): Pro
   await checkPlace(ctx, unit.locationId, { sellable: true });
   await postUnitEvents(ctx, { sourceTable: TABLE, sourceId: made.id, businessDate: advance.businessDate,
     changes: [{ kind: 'reserved', itemId: line.itemId, serialNo: input.serialNo, promisedTo: input.orderLineId }] });
+  // ADR-006 §1 step 6 for a save that posts several documents: every series it draws, the journal first, after the period,
+  // order, booking, lead, party and unit (the architect on RAD-115 and RAD-117). Then the advance and the booking's number.
+  await holdSeries(ctx, [JOURNAL_SERIES, RECEIPT_SERIES, BOOKING_SERIES]);
   const receipt = await recordHeldReceipt(ctx, { partyId: order.partyId, ...advance }, heldFor(made.id));
   const number = await nextNumber(ctx, BOOKING_SERIES, advance.businessDate);
   await tx.update(vehicleBookings).set({ number }).where(eq(vehicleBookings.id, made.id));
@@ -225,8 +228,12 @@ export async function cancelBookingNow(ctx: Ctx, { id, businessDate, reason, ref
       await bookingCancelled(ctx, b.leadId, `Booking ${b.number ?? ''} cancelled: ${reason}`, businessDate);
     }
   }
-  const refunds = refund === undefined ? [] : await refundLeft(ctx, b, { ...refund, businessDate });
+  // §1's order for the rest (the architect on RAD-115): the party, then the unit, released, then the refunds' series, the
+  // journal first. Releasing after the refunds held the journal's turn while waiting on the unit, against a delivery of it.
+  await holdParty(ctx, b.partyId);
   await releasePromises(ctx, { sourceTable: TABLE, sourceId: id, businessDate, orderLineIds: [b.orderLineId] });
+  if (refund !== undefined) await holdSeries(ctx, [JOURNAL_SERIES, PAYMENT_SERIES]);
+  const refunds = refund === undefined ? [] : await refundLeft(ctx, b, { ...refund, businessDate });
   await tx.update(vehicleBookings).set({ status: 'cancelled', cancelReason: reason, cancelledOn: businessDate }).where(eq(vehicleBookings.id, id));
   return { refunds, credit: (await heldLeft(ctx, heldFor(id))).left };
 }

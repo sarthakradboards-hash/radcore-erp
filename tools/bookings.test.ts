@@ -19,7 +19,7 @@ import {
 import { addCategory, addItem, addPlace, postUnitEvents } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { priceListFrom } from './price-list-fixture.ts';
@@ -46,7 +46,7 @@ it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
 
 describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 4 });
-  const su = new pg.Pool({ connectionString: superUrl, max: 1 });
+  const su = new pg.Pool({ connectionString: superUrl, max: 2 });
   const db = createDatabase(pool);
   afterAll(async () => {
     await pool.end();
@@ -336,6 +336,35 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     await Promise.all([run((ctx) => cancelBookingNow(ctx, { id: only.id, businessDate: DATE, reason: 'Another on the way' })),
       book(l4?.orderLineId ?? '', s[3] ?? '', '1000', { leadId: one })]);
     expect((await stageOf(one))?.stage).toBe('converted');
+  });
+
+  // ADR-006 §1 (the architect on RAD-115): a cancel with a refund releases its unit before the refund's series. So, with
+  // a delivery's locks taken by hand (the unit, then the journal's turn once the cancel waits on it), both finish; a
+  // cancel that refunded first would hold the journal's turn at the unit, and the two would deadlock (40P01).
+  it('cancels with a refund while a delivery holds its unit, holding no series as it waits', async () => {
+    const s = [`S-${tag()}`];
+    const at = await setup({ serials: s });
+    const made = await book(at.lines[0]?.orderLineId ?? '', s[0] ?? '', '10000');
+    const bank = await systemId('bank');
+    const plain = await su.connect();
+    try {
+      await plain.query('begin');
+      await plain.query("set local app.principal = 'system:test'");
+      await plain.query('select 1 from radcore.units where serial_no = $1 for update', [s[0]]);
+      const pid = (await plain.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
+      let done = false;
+      const saved = failure(run((ctx) => cancelBookingNow(ctx, { id: made.id, businessDate: DATE, reason: 'Test',
+        refund: { amount: m('10000'), accountId: bank } }))).finally(() => { done = true; });
+      const waiting = async () => (await su.query<{ n: number }>('select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
+        [pid])).rows[0]?.n ?? 0;
+      await vi.waitFor(async () => expect(done || await waiting() > 0).toBe(true), { timeout: 10_000 });
+      const turn = await plain.query("select pg_advisory_xact_lock(hashtextextended('numbering.accounts.journal', 0))")
+        .then(() => 'ok', (e: unknown) => String((e as { code?: string }).code ?? e));
+      await plain.query(turn === 'ok' ? 'commit' : 'rollback');
+      expect([turn, await saved]).toEqual(['ok', 'ok']);
+    } finally {
+      plain.release();
+    }
   });
 
   it('refunds all of what’s left only with refund_full, part with refund_part, and never more than is left', async () => {
