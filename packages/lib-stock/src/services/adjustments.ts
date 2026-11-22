@@ -56,6 +56,9 @@ async function checkAdjustment(ctx: Ctx, input: Pick<AdjustmentIn, 'locationId' 
     for (const [b, batch] of l.batches.entries()) {
       if (batch.batchId !== null && known.get(batch.batchId) !== l.itemId) throw refuse('unknown_batch', 'That batch isn’t this item’s', ['lines', n, 'batches', b, 'batchId']);
     }
+    if (l.direction === 'in' && l.serials.length === 0 && l.batches.some((b) => b.batchId === null)) {
+      throw refuse('unknown_batch', 'Goods found come in to their batch, not as batch unknown', ['lines', n, 'batches']);
+    }
     const item = flags.get(l.itemId);
     if (l.serials.length > 0 && item?.serialised !== true) throw refuse('not_serialised', 'This item has no serials', ['lines', n, 'serials']);
     const keys = l.serials.map((s) => serialKey(s.serialNo));

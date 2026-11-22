@@ -123,12 +123,25 @@ async function workedLines(ctx: Ctx, c: { id: string; locationId: string; counte
 async function withUnlisted(ctx: Ctx, locationId: string, countedAt: string, lines: readonly Line[]): Promise<Line[]> {
   const listed = new Set(lines.map((l) => keyOf(l.itemId, l.batchId)));
   const extra: Line[] = [];
-  for (const [k, qty] of await bookOf(ctx, locationId, countedAt, lines)) {
+  const book = await bookOf(ctx, locationId, countedAt, lines);
+  refuseUnknownGain(lines, book);
+  for (const [k, qty] of book) {
     if (listed.has(k) || dec(qty).isZero()) continue;
     const [itemId = '', batchId = ''] = k.split(' ');
     extra.push({ itemId, batchId: batchId === '' ? null : batchId, found: '0.000', serials: [] });
   }
   return [...lines, ...extra];
+}
+
+/** More found than booked under "batch unknown" is refused (`unknown_batch`): that batch holds only a negative-stock
+ * delivery's shortfall (the database's RA007), so goods found are counted in the batch they're in. */
+function refuseUnknownGain(lines: readonly Line[], book: ReadonlyMap<string, string>): void {
+  for (const [n, l] of lines.entries()) {
+    if (l.batchId === null && dec(l.found).gt(dec(book.get(keyOf(l.itemId, null)) ?? '0'))) {
+      throw new AppError('unknown_batch', 'Goods found are counted in their batch, not as batch unknown',
+        [{ path: ['lines', n, 'batchId'], code: 'unknown_batch', message: 'Choose the batch they’re in' }]);
+    }
+  }
 }
 
 async function writeLines(ctx: Ctx, countId: string, lines: readonly Line[]): Promise<void> {
@@ -177,6 +190,8 @@ async function postCount(ctx: Ctx, id: string): Promise<void> {
   await holdPeriod(ctx, c.businessDate);
   await placeOf(ctx, c.locationId, 'locationId');
   const worked = await workedLines(ctx, c);
+  refuseUnknownGain(worked.map((w) => ({ ...w.line, found: roundQty(dec(w.book).plus(dec(w.difference)), 3) })),
+    new Map(worked.map((w) => [keyOf(w.row.itemId, w.row.batchId), w.book])));
   const outs = [];
   for (const w of worked.filter((x) => dec(x.difference).isNegative())) {
     const qty = roundQty(dec(w.difference).neg(), 3);

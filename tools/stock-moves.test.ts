@@ -43,7 +43,8 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     run((ctx) => decideApproval(ctx, spec, asked.id, { decision: 'approve', versionHash: asked.versionHash }), who);
 
   /** An item (serialised with `serials`) and places of these kinds, with `stock` of it in the first at `rate`, in batch B1. */
-  async function setup(kinds: ('stores' | 'store' | 'demo' | 'rejected' | 'franchisee' | 'job_work')[], o: { stock: string; rate: string; serials?: string[] }) {
+  async function setup(kinds: ('stores' | 'store' | 'demo' | 'rejected' | 'franchisee' | 'job_work')[],
+    o: { stock: string; rate: string; serials?: string[]; batches?: { batchNo: string; qty: string }[] }) {
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
@@ -52,13 +53,13 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
       const places: string[] = [];
       for (const kind of kinds) places.push((await addPlace(ctx, { code: `L${tag()}`, name: `${kind} ${tag()}`, kind })).id);
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: places[0] ?? '',
-        qty: q(o.stock), rate: unitPriceString().parse(o.rate), batches: [{ batchNo: 'B1', qty: q(o.stock) }],
+        qty: q(o.stock), rate: unitPriceString().parse(o.rate), batches: (o.batches ?? [{ batchNo: 'B1', qty: o.stock }]).map((b) => ({ batchNo: b.batchNo, qty: q(b.qty) })),
         ...(o.serials === undefined ? {} : { units: o.serials.map((serialNo) => ({ serialNo })) }) }] });
       return { itemId, places };
     });
     // Its batch, read once the setup has committed.
-    const [batch] = (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1', [made.itemId])).rows;
-    return { ...made, batchId: batch?.id ?? '' };
+    const batches = (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1 order by batch_no', [made.itemId])).rows;
+    return { ...made, batchId: batches[0]?.id ?? '', batchIds: batches.map((b) => b.id) };
   }
   const onHand = async (itemId: string, locationId: string) => (await pool.query<{ qty: string; value: string }>(`select
     coalesce(sum(case direction when 'in' then qty when 'out' then -qty else 0 end), 0)::numeric(18, 0)::text as qty,
@@ -81,18 +82,18 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     const unit = (await pool.query<{ location_id: string; condition: string; ownership: string }>(
       'select location_id, condition, ownership from radcore.units where item_id = $1 and serial_no = $2', [at.itemId, serials[3]])).rows[0];
     expect([t.number?.startsWith('ST/'), t.approval]).toEqual([true, null]);
-    expect(await entryOf(t.id, 'stock_transfer')).toEqual(['Stock in Hand 61250.00 0.00', 'Stock in Hand 0.00 61250.00']);
+    expect(await entryOf(t.id, 'stock_transfer')).toEqual(['Stock in Hand 0.00 61250.00', 'Stock in Hand 61250.00 0.00']);
     expect([unit, await onHand(at.itemId, stores), await onHand(at.itemId, demo)]).toEqual([{ location_id: demo, condition: 'demo', ownership: 'ours' },
       { qty: '3', value: '183750.00' }, { qty: '1', value: '61250.00' }]);
   });
 
   // RC-124: rejects can't go back to a sellable place without QC; a job worker's place is job work's; never to itself.
   it('refuses rejects to a sellable place (needs_qc), a job work place (use_job_work) and the same place', async () => {
-    const at = await setup(['rejected', 'store', 'job_work', 'stores'], { stock: '2', rate: '100' });
-    const [rejected, store, jobWork, stores] = at.places as [string, string, string, string];
+    const at = await setup(['rejected', 'store', 'job_work', 'demo'], { stock: '2', rate: '100' });
+    const [rejected, store, jobWork, demo] = at.places as [string, string, string, string];
     const move = (fromId: string, toId: string) => code(run((ctx) => addTransfer(ctx, { fromId, toId, businessDate: DATE, reason: 'Test',
       lines: [line(at.itemId, '1', at.batchId)] })));
-    expect([await move(rejected, store), await move(rejected, jobWork), await move(rejected, rejected), await move(rejected, stores)])
+    expect([await move(rejected, store), await move(rejected, jobWork), await move(rejected, rejected), await move(rejected, demo)])
       .toEqual(['needs_qc', 'use_job_work', 'transfer_same_location', 'ok']);
   });
 
@@ -138,7 +139,7 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     const boss = await approver();
     const at = await setup(['store'], { stock: '7', rate: '200' });
     const [showroom] = at.places as [string];
-    const countedAt = new Date(Date.UTC(2026, 10, 15, 10)).toISOString();
+    const countedAt = new Date().toISOString();
     const { id } = await run((ctx) => addCount(ctx, { locationId: showroom, countedAt, businessDate: DATE, reason: 'Month end',
       lines: [{ itemId: at.itemId, batchId: at.batchId, qty: q('4'), serials: [] }, { itemId: at.itemId, batchId: at.batchId, qty: q('2'), serials: [] }] }));
     const drafted = await run((ctx) => getCountById(ctx, { id }));
@@ -179,19 +180,24 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     expect(await entryOf(id, 'stock_adjustment')).toEqual(['Stock in Hand 150.00 0.00', 'Stock Adjustment 0.00 150.00']);
   });
 
-  // F21 (auditor-2 on #339): the books hold 5 in batch L1, and the count finds 5 with the batch unknown. The unlisted L1 is
-  // found 0, so the 5 move from L1 to "batch unknown" at the same value, with no entry and nothing gained.
+  // F21 (auditor-2 on #339): the books hold 5 in batch L1 and 1 in L2, and the count finds all 6 in L2. The unlisted L1 is
+  // found 0, so 5 move from L1 to L2 at the same value, with no entry and nothing gained. ("Batch unknown" can't take a
+  // gain: it holds only a negative-stock delivery's shortfall, so a count naming it for goods found is refused.)
   it('moves a difference between batches alone at the same value, with no entry (F21)', async () => {
     const boss = await approver();
-    const at = await setup(['stores'], { stock: '5', rate: '200' });
+    const at = await setup(['stores'], { stock: '6', rate: '200', batches: [{ batchNo: 'L1', qty: '5' }, { batchNo: 'L2', qty: '1' }] });
     const [stores] = at.places as [string];
-    const { id } = await run((ctx) => addCount(ctx, { locationId: stores, countedAt: new Date(Date.UTC(2026, 10, 15, 10)).toISOString(),
-      businessDate: DATE, reason: 'Batch labels lost', lines: [{ itemId: at.itemId, batchId: null, qty: q('5'), serials: [] }] }));
+    const [l1, l2] = at.batchIds as [string, string];
+    const unknown = await code(run((ctx) => addCount(ctx, { locationId: stores, countedAt: new Date().toISOString(), businessDate: DATE, reason: 'Test',
+      lines: [{ itemId: at.itemId, batchId: null, qty: q('6'), serials: [] }] })));
+    const { id } = await run((ctx) => addCount(ctx, { locationId: stores, countedAt: new Date().toISOString(),
+      businessDate: DATE, reason: 'Labels mixed up', lines: [{ itemId: at.itemId, batchId: l2, qty: q('6'), serials: [] }] }));
     const drafted = await run((ctx) => getCountById(ctx, { id }));
     await decide(countApprovalSpec, boss, await run((ctx) => askCountApproval(ctx, { id })));
-    const entries = (await pool.query<{ n: number }>("select count(*)::int as n from radcore.journal_entries where source_id = $1", [id])).rows[0]?.n;
-    expect(drafted.lines.map((l) => [l.batchId, l.found, l.book, l.difference])).toEqual([[null, '5.000', '0.000', '5.000'], [at.batchId, '0.000', '5.000', '-5.000']]);
-    expect([entries, await onHand(at.itemId, stores)]).toEqual([0, { qty: '5', value: '1000.00' }]);
+    const entries = (await pool.query<{ n: number }>('select count(*)::int as n from radcore.journal_entries where source_id = $1', [id])).rows[0]?.n;
+    expect(unknown).toBe('unknown_batch');
+    expect(drafted.lines.map((l) => [l.batchId, l.found, l.book, l.difference])).toEqual([[l2, '6.000', '1.000', '5.000'], [l1, '0.000', '5.000', '-5.000']]);
+    expect([entries, await onHand(at.itemId, stores)]).toEqual([0, { qty: '6', value: '1200.00' }]);
   });
 
   // §10 (auditor-2 on #339): a serialised shortage writes off, `scrapped`, a unit of the line's batch that wasn't found.
@@ -200,7 +206,7 @@ describe.skipIf(!url)('stock transfers, counts and adjustments', () => {
     const serials = [`S-${tag()}`, `S-${tag()}`];
     const at = await setup(['store'], { stock: '2', rate: '61250', serials });
     const [store] = at.places as [string];
-    const { id } = await run((ctx) => addCount(ctx, { locationId: store, countedAt: new Date(Date.UTC(2026, 10, 15, 10)).toISOString(), businessDate: DATE,
+    const { id } = await run((ctx) => addCount(ctx, { locationId: store, countedAt: new Date().toISOString(), businessDate: DATE,
       reason: 'Month end', lines: [{ itemId: at.itemId, batchId: at.batchId, qty: q('1'), serials: [serials[0] ?? ''] }] }));
     await decide(countApprovalSpec, boss, await run((ctx) => askCountApproval(ctx, { id })));
     const units = (await pool.query<{ serial_no: string; ownership: string }>('select serial_no, ownership from radcore.units where item_id = $1 order by serial_no',
