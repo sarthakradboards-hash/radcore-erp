@@ -173,3 +173,5 @@ export * from './contract/invoices.ts';
 export * from './contract/credit-notes.ts';
 // Invoice links (M3-14, RAD-118), in a file of their own.
 export * from './contract/invoice-links.ts';
+// The quick bill (M3-11, RAD-115), in a file of its own.
+export * from './contract/quick-bills.ts';

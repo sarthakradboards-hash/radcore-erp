@@ -4,7 +4,7 @@
 // only credit is checked here (§9: price where it isn't copied from an approved order line). Over it, posting needs
 // an override someone else approved (sales:override), for exactly these figures and issues, as an order's.
 import { deliveries, deliveryLines, salesOrderLines, salesTx } from '@radcore/db/sales';
-import { dec, roundMoney, type Money } from '@radcore/lib-common';
+import { dec, type Money } from '@radcore/lib-common';
 import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
 import { itemLabels } from '@radcore/lib-stock';
@@ -12,6 +12,7 @@ import { asc, eq, inArray } from 'drizzle-orm';
 import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { deliveredNotInvoiced } from './delivered.ts';
 import { lineValues } from './document-rules.ts';
+import { toRupee } from './invoice-rules.ts';
 import { ISSUE_WORDS } from './order-checks.ts';
 
 type Delivery = { orderId: string; partyId: string; locationId: string; businessDate: string; createdBy: string };
@@ -41,13 +42,14 @@ export async function pricedLines(ctx: Ctx, on: string, lines: readonly Line[]):
 const figuresOf = (d: Delivery, lines: readonly Line[]) => ({ orderId: d.orderId, partyId: d.partyId, locationId: d.locationId,
   businessDate: d.businessDate, lines: lines.map((l) => ({ orderLineId: l.orderLineId, itemId: l.itemId, qty: l.qty })) });
 
-/** What the delivery asks checkSale: what it adds at selling value with GST, beside what the party already has
- * delivered and not invoiced; its lines unpriced, as their prices are the order's. */
+/** What the delivery asks checkSale: what it adds at selling value with GST, to the rupee as its invoice will be and as
+ * the order's total is (the architect on RAD-115), beside what the party already has delivered and not invoiced; its
+ * lines unpriced, as their prices are the order's. */
 async function saleOf(ctx: Ctx, d: Delivery, lines: readonly Line[]): Promise<SaleCheck> {
   const priced = await pricedLines(ctx, d.businessDate, lines);
   return {
     stage: 'deliver', partyId: d.partyId, on: d.businessDate, pricedBy: d.createdBy,
-    adds: roundMoney(priced.reduce((s, p) => s.plus(dec(p.taxable)).plus(dec(p.gst)), dec('0'))),
+    adds: toRupee(priced.reduce((s, p) => s.plus(dec(p.taxable)).plus(dec(p.gst)), dec('0'))),
     notInvoiced: await deliveredNotInvoiced(ctx, d.partyId),
     lines: lines.map((l) => ({ itemId: l.itemId, locationId: d.locationId, rate: null, listRate: null })),
   };
