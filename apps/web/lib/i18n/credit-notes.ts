@@ -84,6 +84,7 @@ export const creditNotes = {
   'sales.credit.err.nothing': 'Type a taxable value on at least one line',
   'sales.credit.err.refund': 'Give both an amount and the account it is paid from, or neither',
   'sales.credit.err.date_before_source': 'A credit note can’t be dated before its invoice.',
+  'sales.credit.err.still_applied': 'This credit note is still applied to an invoice or refunded. Reverse the application (under Where it is applied) or the refund first.',
   'sales.credit.err.cancel_date': 'The cancellation can’t be dated before the credit note.',
   'sales.err.exceeds_invoice': 'A line credits more than the invoice billed on it.',
   'sales.err.exceeds_credit': 'That refund is more than is left of the credit note once it has settled its invoice. Lower the amount.',
