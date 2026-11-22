@@ -15,10 +15,10 @@ const qtyBox = z.string().trim().refine((v) => v === '' || quantityString().safe
 /** The key a batch's quantity box has in the form: the batch's id, or "unknown" for goods whose batch wasn't known. */
 export const batchKey = (batchId: string | null) => batchId ?? 'unknown';
 
-// A line as the form holds it: the delivery line it takes back, its item (to name it), a quantity, how many go back into each
+// A line as the form holds it: the delivery line it takes back, its item and its name and SKU as a label, a quantity, how many go back into each
 // batch (by batchKey) and the serials coming back. It goes to the contract as batches with their quantities.
 const line = z.object({
-  deliveryLineId: lineShape.deliveryLineId, itemId: z.string(), qty: lineShape.qty, pick: z.record(z.string(), qtyBox), serials: z.array(z.string()),
+  deliveryLineId: lineShape.deliveryLineId, itemId: z.string(), label: z.string(), qty: lineShape.qty, pick: z.record(z.string(), qtyBox), serials: z.array(z.string()),
 }).transform((l, ctx) => {
   const batches = Object.entries(l.pick).filter(([, qty]) => qty !== '').map(([key, qty]) => ({ batchId: key === 'unknown' ? null : key, qty }));
   if (batches.length === 0) {

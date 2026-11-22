@@ -30,7 +30,7 @@ export default function EditDeliveryPage() {
       <DeliveryForm labelledBy="edit-delivery" submit={t('sales.delivery.save')}
         initial={{ orderId: delivery.orderId, locationId: delivery.locationId, businessDate: delivery.businessDate, notes: delivery.notes ?? '',
           lines: delivery.lines.map((l) => ({
-            orderLineId: l.orderLineId, itemId: l.itemId, qty: asWritten(l.qty), serials: [...l.serials],
+            orderLineId: l.orderLineId, itemId: l.itemId, label: `${l.name} (${l.sku})`, qty: asWritten(l.qty), serials: [...l.serials],
             pick: Object.fromEntries(l.batches.map((b) => [batchKey(b.batchId), asWritten(b.qty)])),
           })) }}
         onSubmit={async (v) => {

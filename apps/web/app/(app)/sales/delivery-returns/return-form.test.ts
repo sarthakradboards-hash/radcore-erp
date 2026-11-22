@@ -3,7 +3,7 @@ import { returnSchema } from './return-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const base = { deliveryId: id(1), locationId: id(2), businessDate: '2026-11-20', notes: '' };
-const line = (over: object) => ({ deliveryLineId: id(3), itemId: id(4), qty: '1', pick: { [id(5)]: '1' }, serials: [] as string[], ...over });
+const line = (over: object) => ({ deliveryLineId: id(3), itemId: id(4), label: 'Helmet (H-1)', qty: '1', pick: { [id(5)]: '1' }, serials: [] as string[], ...over });
 
 it('sends each batch the goods go back into with its quantity, "batch unknown" as a null batch, and leaves empty boxes out', () => {
   const out = returnSchema.parse({ ...base, lines: [line({ qty: '3', pick: { [id(5)]: '2', unknown: '1', [id(6)]: '' } })] });

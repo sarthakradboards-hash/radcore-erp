@@ -14,7 +14,6 @@ import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { asWritten } from '../../admin/decimal.ts';
-import { ItemName } from '../shared.tsx';
 import { DELIVERY_MESSAGES } from './shared.tsx';
 import { deliverySchema, type DeliveryInput, type DeliveryValues, type LineInput } from './delivery-values.ts';
 import { StockPick } from './stock-pick.tsx';
@@ -57,7 +56,7 @@ function AddOrder({ append, hasLines }: { append: (lines: LineInput[]) => void; 
           setValue('orderId', order.id);
           // What is left to deliver starts the quantity; it is only a suggestion, and the server holds the limit.
           append(order.lines.filter((l) => dec(l.qty).gt(l.delivered)).map((l) => ({
-            orderLineId: l.id, itemId: l.itemId, qty: asWritten(dec(l.qty).minus(l.delivered).toString()), pick: {}, serials: [],
+            orderLineId: l.id, itemId: l.itemId, label: `${l.name} (${l.sku})`, qty: asWritten(dec(l.qty).minus(l.delivered).toString()), pick: {}, serials: [],
           })));
           setOrderId('');
         }}>{t('sales.delivery.form.order.add')}</button>
@@ -83,10 +82,10 @@ function Lines() {
       {orderId !== '' && fields.length > 0 ? <AgainstOrder id={orderId} /> : null}
       {fields.map((f, i) => (
         <fieldset key={f.id}>
-          <legend>{t('sales.line', { n: String(i + 1) })}: <ItemName id={f.itemId} /></legend>
+          <legend>{t('sales.line', { n: String(i + 1) })}: {f.label}</legend>
           <TextField name={`lines.${i}.qty`} label={t('sales.delivery.form.line.qty')} inputMode="decimal" autoComplete="off" />
           <StockPick index={i} itemId={itemIds[i]?.itemId ?? f.itemId}
-            onSplit={() => append({ orderLineId: f.orderLineId, itemId: f.itemId, qty: '', pick: {}, serials: [] })} />
+            onSplit={() => append({ orderLineId: f.orderLineId, itemId: f.itemId, label: f.label, qty: '', pick: {}, serials: [] })} />
           <button type="button" className="kit-button" onClick={() => remove(i)}>{t('sales.delivery.form.remove', { n: String(i + 1) })}</button>
         </fieldset>
       ))}
