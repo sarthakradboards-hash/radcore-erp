@@ -69,6 +69,8 @@ export const quickBill = {
   'sales.quick.done.paid': 'Paid',
   'sales.quick.done.left': 'Left unpaid',
   'sales.quick.done.receipts': 'Receipts',
+  'sales.quick.print.invoice': 'Print the invoice (80 mm roll)',
+  'sales.quick.print.receipt': 'Print receipt {number} (80 mm roll)',
   'sales.quick.done.invoice': 'Open the invoice',
   'sales.quick.done.delivery': 'Open the delivery',
   'sales.quick.done.next': 'Start another bill',
