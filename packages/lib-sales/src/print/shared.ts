@@ -3,7 +3,6 @@
 import { getPartyById } from '@radcore/lib-accounts';
 import { dec, formatMoney } from '@radcore/lib-common';
 import type { Ctx, PrintBlock } from '@radcore/lib-platform';
-import { plain } from '../services/invoice-post.ts';
 
 type Address = { addressLine1: string | null; addressLine2: string | null; city: string | null; pincode: string | null };
 
@@ -26,16 +25,16 @@ export const issuerBlocks = (c: Address & { legalName: string; gstin: string; st
     { kind: 'pairs', rows: [['GSTIN', c.gstin], ['State code', c.stateCode]] },
   ];
 
-/** A party's name, GSTIN, state and address as stored, for a printout that names who it's for. */
+/** Who a quote or challan is for: the party's name, GSTIN and state. Never its address, which is personal data shown
+ * only with parties:contact and logged as a look (the auditor on #317); the invoice prints its own frozen copy. */
 export async function partyOf(ctx: Ctx, id: string) {
   const p = await getPartyById(ctx, { id });
-  return { name: p.name, gstin: p.gstin, stateCode: p.stateCode, addressLine1: plain(p.addressLine1), addressLine2: plain(p.addressLine2),
-    city: plain(p.city), pincode: plain(p.pincode) };
+  return { name: p.name, gstin: p.gstin, stateCode: p.stateCode };
 }
 
 /** Who a document is for: its name, address, GSTIN (or that it has none) and state. */
-export const partyBlocks = (heading: string, p: Address & { name: string; gstin: string | null; stateCode: string }): PrintBlock[] => {
-  const address = oneLine(p);
+export const partyBlocks = (heading: string, p: Partial<Address> & { name: string; gstin: string | null; stateCode: string }): PrintBlock[] => {
+  const address = oneLine({ addressLine1: p.addressLine1 ?? null, addressLine2: p.addressLine2 ?? null, city: p.city ?? null, pincode: p.pincode ?? null });
   return [
     { kind: 'text', text: heading, bold: true },
     { kind: 'text', text: p.name },

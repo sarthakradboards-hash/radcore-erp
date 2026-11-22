@@ -7,7 +7,7 @@ import { recordPayment, setCompanyProfile, systemAccountId } from '@radcore/lib-
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { createPrintPool, createSecrets, loadConfig, type Ctx, type PrintBlock, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { addInvoice, addQuote, invoicePrint, postInvoiceNow, receiptPrint } from '@radcore/lib-sales';
+import { addInvoice, addQuote, challanPrint, invoicePrint, postInvoiceNow, quotePrint, receiptPrint } from '@radcore/lib-sales';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -87,6 +87,9 @@ describe.skipIf(!url || !superUrl)('sales printouts', () => {
       lines: [{ itemId: at.itemId, qty: q('2'), rate: unitPriceString().parse('80000'), discountPercent: percentString({ max: '100' }).parse('0') }] }));
     const res = await print(staff, `/sales/quotes/${id}/pdf`, 'a4');
     expect([res.status, res.type, res.bytes.subarray(0, 5).toString()]).toEqual([200, 'application/pdf', '%PDF-']);
+    // Neither a quote nor a challan prints the party's address, which is personal data (the auditor on #317).
+    const parties = await run(async (ctx) => [(await quotePrint.read(ctx, id)).party, (await challanPrint.read(ctx, at.deliveryId)).party]);
+    expect(parties.map((p) => Object.keys(p).sort())).toEqual([['gstin', 'name', 'stateCode'], ['gstin', 'name', 'stateCode']]);
   }, 60_000);
 
   // The architect's ruling: one posted receipt under receipts:print, with no balance on it; a draft and a payment out

@@ -2,9 +2,11 @@
 // and on the 80 mm roll with ₹ in Noto Sans; one past 50 pages is refused too_large; a render past its time limit is
 // answered server_error and the next one works. Read straight from the PDF: its page sizes, and its fonts' ToUnicode
 // maps, which name ₹ (U+20B9) only if it was drawn with the bundled font, since the standard fonts lack it.
+import { rmSync, writeFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
 import { AppError, createPrintPool, PAPERS, type PrintBlock, type PrintPool } from '@radcore/lib-platform';
 import { afterAll, describe, expect, it } from 'vitest';
+import { crashMarker } from './print-crash-thread.ts';
 
 const invoice: PrintBlock[] = [
   { kind: 'heading', text: 'Tax invoice INV/2026-27/0001' },
@@ -59,6 +61,30 @@ describe('the print engine', () => {
       { label: 'Amount', share: 2 }], rows }];
     expect(await failure(pool().render(long, 'a4', 'Long'))).toBe('too_large');
   }, 120_000);
+
+  // The auditor on #317: a thread that throws as it loads (its fonts missing), or goes past its heap, is the job's
+  // server_error, never an unhandled 'error' that takes the api down; and the next print starts a thread again.
+  it('answers a thread that dies as it loads with server_error, keeps the process up, and renders once it loads again', async () => {
+    writeFileSync(crashMarker(), '');
+    try {
+      const p = pool({ entry: new URL('./print-crash-thread.ts', import.meta.url) });
+      const first = await p.render(invoice, 'a4', 'Crash').then(() => null, (e: unknown) => e);
+      expect([first instanceof AppError ? first.code : String(first), String(first)]).toEqual(['server_error', expect.stringContaining('the fonts did not load')]);
+      rmSync(crashMarker());
+      expect(text(await p.render(invoice, 'a4', 'After')).startsWith('%PDF-')).toBe(true);
+    } finally {
+      rmSync(crashMarker(), { force: true });
+    }
+  }, 60_000);
+
+  it('refuses a print past 20 waiting as rate_limited, and fails what waits when the pool closes', async () => {
+    const p = createPrintPool({ size: 1, renderMs: 30_000, entry: new URL('./print-stall-thread.ts', import.meta.url) });
+    // All asked for at once, before the thread is ready to take any: 20 wait, and the next is refused.
+    const waiting = Array.from({ length: 20 }, () => failure(p.render(invoice, 'a4', 'stall')));
+    expect(await failure(p.render(invoice, 'a4', 'stall'))).toBe('rate_limited');
+    await p.close();
+    expect(new Set(await Promise.all(waiting))).toEqual(new Set(['server_error']));
+  }, 60_000);
 
   it('answers a render past its time limit with server_error, and renders the next one', async () => {
     const p = pool({ renderMs: 1500, entry: new URL('./print-stall-thread.ts', import.meta.url) });
