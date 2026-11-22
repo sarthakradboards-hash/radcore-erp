@@ -186,3 +186,17 @@ export function maskedInputPath(value: unknown, path: (string | number)[] = []):
   }
   return null;
 }
+
+// A card is never stored by its digits (Sarthak on RAD-115): a payment's reference (a card machine's approval code, a
+// UPI UTR, a cheque number) is refused when it reads as a card number, wherever it's typed.
+/** Whether `text` reads as a card number: 13 to 19 digits once spaces and dashes are dropped, passing the Luhn check. */
+export function looksLikeCardNumber(text: string): boolean {
+  const digits = text.replace(/[\s-]/g, '');
+  if (!/^[0-9]{13,19}$/.test(digits)) return false;
+  let sum = 0;
+  for (const [i, ch] of [...digits].toReversed().entries()) {
+    const d = Number(ch) * (i % 2 === 1 ? 2 : 1);
+    sum += d > 9 ? d - 9 : d;
+  }
+  return sum % 10 === 0;
+}

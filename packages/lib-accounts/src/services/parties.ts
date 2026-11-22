@@ -129,10 +129,11 @@ export async function setCreditTerms(ctx: Ctx, { id, creditDays, creditLimit, ac
   // The route checks this key; a caller from another library is checked here too, so credit terms need it either way.
   // So does the account manager, who then sees what the party owes at `own` (the architect on RAD-119).
   if (!ctx.can('parties:manage')) throw new AppError('forbidden', 'Setting credit terms needs parties:manage');
-  const done = await accountsTx(ctx).update(parties).set({ creditDays, creditLimit }).where(eq(parties.id, id))
-    .returning({ id: parties.id, systemKey: parties.systemKey });
-  if (done.length === 0) throw new AppError('not_found', 'There is no such party');
-  if (done[0]?.systemKey !== null) throw systemParty();
+  // A system party is refused before anything is written (backend on #304).
+  const [now] = await accountsTx(ctx).select({ systemKey: parties.systemKey }).from(parties).where(eq(parties.id, id)).limit(1).for('no key update');
+  if (now === undefined) throw new AppError('not_found', 'There is no such party');
+  if (now.systemKey !== null) throw systemParty();
+  await accountsTx(ctx).update(parties).set({ creditDays, creditLimit }).where(eq(parties.id, id));
   if (accountManager !== undefined) await setPartyManager(ctx, id, accountManager);
   return {};
 }

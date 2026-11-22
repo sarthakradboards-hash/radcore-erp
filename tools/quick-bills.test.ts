@@ -147,6 +147,10 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
       await failure(bill(ctx, at, '1', [{ method: 'card', amount: m('362'), approvalCode: '4111 1111 1111 1111' }])),
     ]);
     expect(refusals).toEqual(['approval_code_required', 'looks_like_card_number']);
+    // Nor in any receipt's reference, taken outside the quick bill too, as POST /payments takes them (backend on #304).
+    const [walkIn] = await rowsOf<{ id: string }>("select id from radcore.parties where system_key = 'walk_in'", []);
+    expect(await atCounter(at, async (ctx) => failure(recordPayment(ctx, { kind: 'receipt', partyId: walkIn?.id ?? '', businessDate: DATE,
+      amount: m('100'), accountId: await systemAccountId(ctx, 'bank'), reference: '4111-1111-1111-1111' })))).toBe('looks_like_card_number');
   });
 
   // The Counter customer never carries credit (the architect on RAD-115); a check's issue still refuses its bill, paid in
