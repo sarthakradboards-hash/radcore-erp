@@ -14,21 +14,11 @@ import { RadioField, SelectField, TextAreaField, TextField } from '../../../../c
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
+import { usePlaces } from '../deliveries/shared.tsx';
 import { useMoneyAccounts } from '../money-accounts.ts';
 import { CREDIT_MESSAGES } from './shared.tsx';
-import { listLocationKinds, listLocations } from '@radcore/lib-stock/contract';
 import { asWritten } from '../../admin/decimal.ts';
 import { batchKey, creditSchema, type CreditInput, type CreditLineInput, type CreditValues } from './credit-values.ts';
-
-/** The places goods can come back into: active places of a kind that sells. The form waits for them, so a select never loses its
- * value to options that arrive late. */
-function usePlaces() {
-  const kinds = useApiQuery(listLocationKinds, {});
-  const places = useApiList(listLocations, { filter: { status: 'active' } }, { limit: 200 });
-  const sells = new Set(kinds.data?.kinds.filter((k) => k.sellable).map((k) => k.kind));
-  const options = places.items.filter((l) => kinds.data === undefined || sells.has(l.kind)).map((l) => ({ value: l.id, label: l.name }));
-  return { options, ready: !places.isPending && !kinds.isPending };
-}
 
 /** Brings an invoice's lines in: a choice among the posted invoices, and the button that adds its lines. */
 function AddInvoice({ append, hasLines }: { append: (lines: CreditLineInput[]) => void; hasLines: boolean }) {
@@ -167,7 +157,7 @@ export function CreditNoteForm({ labelledBy, initial, submit, onSubmit }: {
   labelledBy: string; initial: CreditInput; submit: string; onSubmit: (values: CreditValues) => Promise<unknown>;
 }) {
   const accounts = useMoneyAccounts();
-  const places = usePlaces();
+  const places = usePlaces('');
   if (!places.ready) return <p>{t('loading')}</p>;
   return (
     <Form aria-labelledby={labelledBy} schema={creditSchema} saved={false} messages={CREDIT_MESSAGES} defaultValues={initial} onSubmit={onSubmit}>

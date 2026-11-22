@@ -51,3 +51,10 @@ it('needs a place for goods back, and a batch for each line that comes back, ref
   expect(!none.success && none.error.issues.some((i) => i.path.join('.') === 'lines.0.qty')).toBe(true);
   expect(creditSchema.safeParse({ ...goods, lines: [line({ taxable: '', qty: '' })] }).success).toBe(false);
 });
+
+it('refuses batches that do not add up to the quantity, on the quantity box', () => {
+  const goods = (qty: string, pick: Record<string, string>) => creditSchema.safeParse({ ...base, kind: 'goods', locationId: id(8), lines: [line({ taxable: '', qty, pick })] });
+  expect(goods('2', { [id(5)]: '2' }).success).toBe(true);
+  const bad = goods('3', { [id(5)]: '2' });
+  expect(bad.success ? [] : bad.error.issues.map((i) => i.path.join('.'))).toEqual(['lines.0.qty']);
+});
