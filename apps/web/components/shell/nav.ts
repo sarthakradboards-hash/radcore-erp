@@ -47,6 +47,9 @@ export const SALES_PAGES = [
   { href: '/sales/quick-bill', label: 'sales.nav.quick', perm: 'invoices:write' },
   { href: '/sales/test-rides', label: 'sales.nav.rides', perm: 'bookings:read' },
   { href: '/sales/bookings', label: 'sales.nav.bookings', perm: 'bookings:read' },
+  // Whoever may decide an override, or a credit note: one page, offered under either key (the section menu lists it once).
+  { href: '/sales/approvals', label: 'sales.nav.approvals', perm: 'sales:override' },
+  { href: '/sales/approvals', label: 'sales.nav.approvals', perm: 'credit_notes:approve' },
 ] as const satisfies readonly NavPage[];
 
 export const NAV: readonly NavItem[] = [

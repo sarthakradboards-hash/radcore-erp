@@ -7,6 +7,7 @@
 import { dec, formatMoney, indiaDate, moneyString, sum } from '@radcore/lib-common';
 import { getPartyStatement, listMoneyAccounts, listParties } from '@radcore/lib-accounts/contract';
 import { getItem, listItems } from '@radcore/lib-stock/contract';
+import { useEffect, useRef } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { RadioField, SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
@@ -57,8 +58,18 @@ function PartyBox() {
 
 /** One line's item box. It names the item the line's own value holds, so it stays right when a line before it is removed. */
 function ItemBox({ index }: { index: number }) {
-  const { control } = useFormContext<QuickBillInput>();
+  const { control, setValue } = useFormContext<QuickBillInput>();
   const itemId = useWatch({ control, name: `lines.${index}.itemId` });
+  // What was picked for one item is not for another: a new item leaves no batches or serials of the old one (auditor-3 on #320). Not on
+  // the first render, and kept when an earlier line is removed (this box stays with its own line, whose item is the same).
+  const itemSeen = useRef(itemId);
+  useEffect(() => {
+    if (itemSeen.current !== itemId) {
+      setValue(`lines.${index}.pick`, {});
+      setValue(`lines.${index}.serials`, []);
+    }
+    itemSeen.current = itemId;
+  }, [itemId, index, setValue]);
   const item = useApiQuery(getItem, { id: itemId }, { enabled: itemId !== '' }).data ?? null;
   return (
     <PickedField name={`lines.${index}.itemId`} label={t('sales.quick.line.item')} hint={t('sales.quick.line.item.hint')} initial={item}
@@ -67,7 +78,7 @@ function ItemBox({ index }: { index: number }) {
 }
 
 function Lines() {
-  const { control } = useFormContext<QuickBillInput>();
+  const { control, getValues } = useFormContext<QuickBillInput>();
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
   const lines = useWatch({ control, name: 'lines' });
   return (
@@ -79,7 +90,7 @@ function Lines() {
           <TextField name={`lines.${i}.qty`} label={t('sales.quick.line.qty')} inputMode="decimal" autoComplete="off" />
           <TextField name={`lines.${i}.rate`} label={t('sales.quick.line.rate')} inputMode="decimal" autoComplete="off" />
           <TextField name={`lines.${i}.discountPercent`} label={t('sales.quick.line.discount')} inputMode="decimal" autoComplete="off" />
-          <StockPick index={i} itemId={lines[i]?.itemId ?? ''} onSplit={() => append({ ...blankLine, itemId: lines[i]?.itemId ?? '' })} />
+          <StockPick index={i} itemId={lines[i]?.itemId ?? ''} onSplit={() => { const here = getValues(`lines.${i}`); append({ ...blankLine, itemId: here.itemId, rate: here.rate, discountPercent: here.discountPercent }); }} />
           {fields.length > 1 ? (
             <button type="button" className="kit-button" onClick={() => remove(i)}>{t('sales.quick.line.remove', { n: String(i + 1) })}</button>
           ) : null}

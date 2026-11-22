@@ -70,8 +70,6 @@ export const quickBill = {
   'sales.quick.done.next': 'Start another bill',
 
   'sales.err.cash_over_limit': 'Cash this large can’t be taken in one day (section 269ST). Take part of it another way, such as UPI or card.',
-  'sales.err.walk_in_pays_in_full': 'The Counter customer pays the whole bill. Add payments for all of it, or choose a named customer to leave a balance.',
-  'sales.err.overpaid': 'The payments are more than the bill.',
   'sales.err.no_payment_amount': 'A payment has no amount.',
   'sales.err.approval_code_required': 'A card payment needs the machine’s approval code.',
   'sales.err.looks_like_card_number': 'That looks like a card number. Type the approval code, UTR or reference, never the card’s digits.',
