@@ -7,11 +7,12 @@ export {
   addReceipt, cancelReceiptNow, changeReceipt, dropReceipt, getReceiptById, listReceiptsPage, postReceipt, RECEIPT_SERIES, receiptLinesFor,
 } from './services/receipts.ts';
 export { purchaseOrderPrint } from './print/order.ts';
-export { addBill, BILL_SERIES, BILL_TOLERANCE, changeBill, dropBill, getBillById, listBillsPage, overPoRate } from './services/bills.ts';
+export { addBill, changeBill, dropBill, getBillById, listBillsPage } from './services/bills.ts';
+export { BILL_SERIES, BILL_TOLERANCE, overPoRate } from './services/bill-checks.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
-import { BILL_SERIES, BILL_TOLERANCE } from './services/bills.ts';
+import { BILL_SERIES, BILL_TOLERANCE } from './services/bill-checks.ts';
 import { ORDER_LIMIT_DEFAULT } from './services/order-limits.ts';
 import { ORDER_SERIES } from './services/orders.ts';
 import { RECEIPT_SERIES as received } from './services/receipts.ts';
