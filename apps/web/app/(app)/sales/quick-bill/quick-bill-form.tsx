@@ -20,7 +20,7 @@ import { usePlaces } from '../deliveries/shared.tsx';
 import { StockPick } from '../deliveries/stock-pick.tsx';
 import { PickedField } from '../picked-field.tsx';
 import {
-  blankLine, blankPayment, PAYMENT_METHODS, quickBillSchema, rateFor, type QuickBillInput, type QuickBillValues, type Refusal,
+  blankLine, blankPayment, PAYMENT_METHODS, approvalIssues, quickBillSchema, rateFor, type QuickBillInput, type QuickBillValues, type Refusal,
 } from './quick-bill-values.ts';
 import { BuyerBox, HoldChoice, Preview, usePartyName } from './quick-bill-extras.tsx';
 import { QUICK_BILL_MESSAGES } from './shared.ts';
@@ -211,7 +211,7 @@ export function QuickBillForm({ labelledBy, initial, refused, figures, onFigures
       <Lines />
       <Payments />
       <Preview onFigures={onFigures} />
-      <HoldChoice issues={figures?.issues.length ?? 0} refused={refused} left={figures?.left ?? null} />
+      <HoldChoice issues={approvalIssues(figures?.issues ?? []).length} refused={refused} left={figures?.left ?? null} />
       <BuyerBox />
       <SubmitLabel />
     </Form>

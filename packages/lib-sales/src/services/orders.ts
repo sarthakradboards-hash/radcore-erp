@@ -42,6 +42,7 @@ const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() })
  * its quote's date: an order isn't dated before its quote (§4). The quote is read apart, so only the order is locked. */
 async function orderOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
   const q = salesTx(ctx).select({ ...header, owner: salesOrders.createdBy, overrideVersion: salesOrders.overrideVersion,
+    overrideAfter: salesOrders.overrideAfter,
     stored: { placeOfSupply: salesOrders.placeOfSupply, taxable: salesOrders.taxable, cgst: salesOrders.cgst, sgst: salesOrders.sgst,
       igst: salesOrders.igst, roundOff: salesOrders.roundOff, total: salesOrders.total } })
     .from(salesOrders).where(eq(salesOrders.id, id));
@@ -178,12 +179,12 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updateOr
   await tx.delete(salesOrderLines).where(eq(salesOrderLines.orderId, id));
   await tx.insert(salesOrderLines).values(lines.map((l) => ({ ...l, orderId: id })));
   // A draft's lines changing makes any override approved for the old ones stale; it's asked for again.
-  await tx.update(salesOrders).set({ overrideVersion: null }).where(eq(salesOrders.id, id));
+  await tx.update(salesOrders).set({ overrideVersion: null, overrideAfter: null }).where(eq(salesOrders.id, id));
   if (now.status === 'confirmed') {
     await holdParty(ctx, now.partyId); // ADR-006 §1's step 3, after the order and before the check
     // Its lines changed, so what it stores is worked out again for them, as at its confirmation. Every line is, at the
     // order's own date: an unchanged line comes out the same unless lib-gst's rate for that date was corrected since.
-    const a = await checkOrder(ctx, id, { ...input, overrideVersion: null, createdBy: now.createdBy }).catch((e: unknown) => {
+    const a = await checkOrder(ctx, id, { ...input, overrideVersion: null, overrideAfter: null, createdBy: now.createdBy }).catch((e: unknown) => {
       if (!(e instanceof AppError) || e.code !== 'needs_override') throw e;
       // The way forward (the architect on RAD-112): more goods go on a new order, through its own override; a price or
       // discount the checks refuse means closing this one short and raising it again.

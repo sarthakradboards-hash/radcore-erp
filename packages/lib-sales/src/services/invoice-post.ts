@@ -13,7 +13,7 @@ import { itemLabels, soldCondition } from '@radcore/lib-stock';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { deleteInvoice, postInvoice, requestInvoiceOverride } from '../contract.ts';
-import { checkSale, coveredBy, overrideApproval, type ApprovedThrough, type OverrideVersion, type SaleCheck } from './checks.ts';
+import { checkSale, coveredBy, overrideApproval, refuseGrown, type ApprovedThrough, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { notInvoicedLeft, rupeesOf } from './delivered.ts';
 import { checkDate, listRateBeforeTax, netRate, shareOf } from './document-rules.ts';
 import { sellingTo, today } from './document-lines.ts';
@@ -135,8 +135,8 @@ export const invoiceOverride = overrideApproval({
   },
   // It records what was approved; posting the invoice is its maker's next step.
   async approved(ctx, id) {
-    const version = await invoiceOverride.version(ctx, id, { forUpdate: false });
-    if (version !== null) await salesTx(ctx).update(invoices).set({ overrideVersion: versionHash(version) }).where(eq(invoices.id, id));
+    const judged = await invoiceOverride.judged(ctx, id);
+    if (judged !== null) await salesTx(ctx).update(invoices).set(judged).where(eq(invoices.id, id));
   },
   async rejected() {
     // A refused override leaves the invoice a draft, to change or to ask again.
@@ -221,6 +221,7 @@ async function postInvoiceFor(ctx: Ctx, id: string, through?: ApprovedThrough): 
       throw new AppError('needs_override', 'This invoice needs someone else to approve an override before it’s posted',
         issues.map((i) => ({ path: 'line' in i ? ['lines', i.line] : ['partyId'], code: i.code, message: ISSUE_WORDS[i.code] ?? i.code })));
     }
+    refuseGrown(inv.overrideAfter, result, 'invoice');
   }
   // The lines' figures first: once the invoice is posted, its lines are fixed (guard_document_line). Each carries its
   // units' condition when they aren't all new, read now (the architect on RAD-112).
