@@ -70,7 +70,9 @@ export const CRM_PAGES = [
 export const PURCHASES_PAGES = [
   { href: '/purchases/orders', label: 'purchases.nav.orders', perm: 'purchasing:read' },
   { href: '/purchases/receipts', label: 'inward.nav.receipts', perm: 'purchasing:read' },
+  { href: '/purchases/bills', label: 'purchases.nav.bills', perm: 'purchasing:read' },
   { href: '/purchases/approvals', label: 'purchases.nav.approvals', perm: 'purchasing:approve' },
+  { href: '/purchases/bills/approvals', label: 'purchases.nav.billApprovals', perm: 'bills:approve' },
 ] as const satisfies readonly NavPage[];
 
 /** The stock area's pages (RAD-144): counts first, as stores work them most; the queue for those who approve. */
