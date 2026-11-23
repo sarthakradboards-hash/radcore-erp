@@ -37,8 +37,9 @@ const lineAmounts = z.object({ gstRate: z.string().nullable(), gstRateSource: z.
 const lineOut = z.discriminatedUnion('kind', [
   goodsIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(), name: z.string(),
     unit: z.string(), poRate: unitPriceString(), poNumber: z.string(),
-    /** How far its rate is above its PO line's, in percent, and whether that's past the tolerance. */
-    overPoRate: z.string(), overTolerance: z.boolean(), amounts: lineAmounts }),
+    /** How far its rate is above its PO line's, in percent (0 at or below it), and whether that's past the tolerance.
+     * Null for a free item's line (a PO rate of 0) billed at a price: there's no percentage, and it's past the tolerance. */
+    overPoRate: z.string().nullable(), overTolerance: z.boolean(), amounts: lineAmounts }),
   chargeIn.extend({ id: idString(), lineNo: z.number().int().positive(), amounts: lineAmounts }),
 ]);
 const lines = () => z.array(lineIn).min(1, 'Add at least one line').max(200, 'At most 200 lines');
