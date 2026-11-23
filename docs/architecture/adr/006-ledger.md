@@ -74,6 +74,11 @@ half covers every sum and comparison in them, and they round half up, as lib-com
    this order, its series last and in the same order (`holdSeries`, with lib-stock's `holdStock` for steps 4 and 5;
    the architect on RAD-115).
    The quick bill does; a booking with its advance and a credit note with its refund follow under their own tickets.
+   **A document whose own number names a batch** (a stock adjustment's found goods, a goods receipt, a job-work
+   receipt, opening stock) keeps this order with no exception: its stock and units (`holdStock`), then its series'
+   turns, the journal's and its own (`holdSeries`), then it draws its number, creates the batch row that number
+   names (§4a), and posts (the architect on RAD-141). That batch row comes after step 6, not in step 4, and can't
+   meet another save's, since no two documents share a number.
 
 The stock lock is a row in `stock_positions (item_id, location_id)`, never the item row. A `FOR UPDATE` on `items`
 also blocks every insert that references the item by foreign key, which is how v1 blocked unrelated saves. The
@@ -325,8 +330,8 @@ batch costing.
 - `batches` is append-only (ADR-005 §7). A batch number entered wrongly is put right by moving the quantity to the
   right batch (below), never by an edit, so the history stays as it happened.
 - Goods that carry no batch number take the receiving document's own number as their batch, with its supplier: a
-  goods receipt, opening stock, a job-work receipt or a count. So every unit of stock can still be traced to the
-  document that brought it in.
+  goods receipt, opening stock, a job-work receipt or a stock adjustment's found goods. So every unit of stock can
+  still be traced to the document that brought it in. A count creates none: its lines name the batches found.
 
 **A movement's quantity, split by batch.**
 - `stock_movement_batches (id, movement_id, item_id, batch_id, qty)`, append-only, with `qty > 0`. `batch_id` is

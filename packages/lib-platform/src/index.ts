@@ -28,7 +28,7 @@ export {
 } from './approvals.ts';
 export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
-export { isActiveUser, principalsOf, roleOf } from './principals.ts';
+export { isActiveUser, peopleHolding, principalsOf, roleOf } from './principals.ts';
 export {
   defineNotification, markNotificationsRead, myNotificationsPage, notify, unreadNotifications, type NotificationKind,
 } from './notifications.ts';
