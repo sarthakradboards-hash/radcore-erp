@@ -2,13 +2,13 @@
 // worker's own place (kind `job_work`, found by its party), posted at once through the engine, serialised inputs going
 // `sent_to_job_work`. Its entry moves Stock in Hand from our place to the job worker's, item by item (F16). Undone by
 // its mirror while no receipt answers it. A challan is its maker's (created_by) for record scope.
-import { after, jobWorkChallanLines, jobWorkChallans, locations, stockTx } from '@radcore/db/stock';
+import { after, jobWorkChallanLines, jobWorkChallans, jobWorkChallanStates, locations, stockTx } from '@radcore/db/stock';
 import { getPartyById, holdPeriod, partyNames, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { addDays, dec, indiaDate, quantityString, roundMoney, roundQty } from '@radcore/lib-common';
 import {
   AppError, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, nextNumber, principalId, type Ctx,
 } from '@radcore/lib-platform';
-import { and, asc, desc, eq, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelJobWorkChallan, createJobWorkChallan, getJobWorkChallan, listJobWorkChallans } from '../contract.ts';
 import { postStock, reverseStock, type PostedMovement } from '../engine/stock.ts';
@@ -33,9 +33,13 @@ const SOURCE = 'job_work_challans';
 const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
 const wrongStatus = (status: string, what: string) => new AppError('wrong_status', `This challan is ${status}, so it can’t be ${what}`);
 
-/** The challan, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
+/**
+ * The posted challan with whether it's closed, both locked when it's to be written, within the principal's scope for
+ * `permission` (else not_found). A draft lives only inside the save that posts it, and has no state yet.
+ */
 export async function challanOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  const sel = stockTx(ctx).select().from(jobWorkChallans).where(eq(jobWorkChallans.id, id));
+  const sel = stockTx(ctx).select({ ...getTableColumns(jobWorkChallans), closed: jobWorkChallanStates.closed }).from(jobWorkChallans)
+    .innerJoin(jobWorkChallanStates, eq(jobWorkChallanStates.challanId, jobWorkChallans.id)).where(eq(jobWorkChallans.id, id));
   const [row] = forUpdate ? await sel.for('update') : await sel;
   if (row === undefined) throw new AppError('not_found', 'There is no such challan');
   ctx.see(permission, { owner: row.createdBy });
@@ -100,6 +104,7 @@ export async function addChallan(ctx: Ctx, input: In<typeof createJobWorkChallan
   const entry = await entryOf(ctx, row.id, input.businessDate, moved);
   const number = await nextNumber(ctx, JOB_WORK_CHALLAN_SERIES, input.businessDate);
   await tx.update(jobWorkChallans).set({ status: 'posted', number, postedEntryId: entry }).where(eq(jobWorkChallans.id, row.id));
+  await tx.insert(jobWorkChallanStates).values({ challanId: row.id });
   return { id: row.id, number };
 }
 
@@ -143,12 +148,13 @@ export async function listChallansPage(ctx: Ctx, input: In<typeof listJobWorkCha
   // Past its return days: dated on or before today less the setting's days.
   const lastDay = addDays(indiaDate(new Date()), -ctx.settings.get(JOB_WORK_RETURN_DAYS) - 1);
   const rows = await stockTx(ctx).select({ id: jobWorkChallans.id, number: jobWorkChallans.number, fromId: jobWorkChallans.fromId,
-    partyId: jobWorkChallans.partyId, businessDate: jobWorkChallans.businessDate, status: jobWorkChallans.status, closed: jobWorkChallans.closed,
-    createdAt: jobWorkChallans.createdAt }).from(jobWorkChallans).where(and(
-    // A draft lives only inside the save that posts it, so none is ever listed.
+    partyId: jobWorkChallans.partyId, businessDate: jobWorkChallans.businessDate, status: jobWorkChallans.status, closed: jobWorkChallanStates.closed,
+    createdAt: jobWorkChallans.createdAt }).from(jobWorkChallans)
+    .innerJoin(jobWorkChallanStates, eq(jobWorkChallanStates.challanId, jobWorkChallans.id)).where(and(
+    // A draft lives only inside the save that posts it, and has no state, so none is ever listed.
     f.status === undefined ? undefined : eq(jobWorkChallans.status, f.status),
     f.partyId === undefined ? undefined : eq(jobWorkChallans.partyId, f.partyId),
-    open ? and(eq(jobWorkChallans.status, 'posted'), eq(jobWorkChallans.closed, false)) : undefined,
+    open ? and(eq(jobWorkChallans.status, 'posted'), eq(jobWorkChallanStates.closed, false)) : undefined,
     f.pastReturnDays === true ? lte(jobWorkChallans.businessDate, lastDay) : undefined,
     listScope(ctx, 'stock:read', jobWorkChallans.createdBy),
     after([jobWorkChallans.businessDate, jobWorkChallans.createdAt, jobWorkChallans.id], key && [key.date, key.at, key.id], 'desc'),

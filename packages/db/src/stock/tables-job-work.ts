@@ -32,9 +32,6 @@ export const jobWorkChallans = radcoreTable('job_work_challans', {
   fromId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
   toId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
   partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
-  // Closed once its receipts account for everything it sent (§11), open again if one is cancelled: the only column a
-  // posted challan's receipts change, so the guard lets it.
-  closed: boolean().notNull().default(false),
   ...posting(),
 }, (t) => [
   check('ck_job_work_challans_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
@@ -49,6 +46,16 @@ export const jobWorkChallans = radcoreTable('job_work_challans', {
   index('ix_job_work_challans_posted_entry').on(t.postedEntryId),
   index('ix_job_work_challans_cancel_entry').on(t.cancelEntryId),
 ]);
+
+/**
+ * Whether a posted challan is closed (§11): once its receipts account for everything it sent, and open again when one
+ * is cancelled. Its own row, since a posted challan changes only by being cancelled (#185's guard). Written as the
+ * challan posts, and by each receipt's posting and cancelling.
+ */
+export const jobWorkChallanStates = radcoreTable('job_work_challan_states', {
+  challanId: uuid().primaryKey().references(() => jobWorkChallans.id, { onDelete: 'cascade' }),
+  closed: boolean().notNull().default(false),
+}, (t) => [index('ix_job_work_challan_states_closed').on(t.closed)]);
 
 /** A challan's line: an input's quantity and the batches and serials picked (`picks`), and the value it went at. */
 export const jobWorkChallanLines = radcoreTable('job_work_challan_lines', {

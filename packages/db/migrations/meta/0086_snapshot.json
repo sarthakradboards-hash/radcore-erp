@@ -1,5 +1,5 @@
 {
-  "id": "766ad1c8-6d4c-4ce4-bec2-76213bf88ee0",
+  "id": "612c78a9-a15e-45b8-966b-cdc40faefd59",
   "prevId": "19662870-dff6-4344-918a-34fb06b4070b",
   "version": "7",
   "dialect": "postgresql",
@@ -16673,6 +16673,91 @@
       },
       "isRLSEnabled": false
     },
+    "radcore.job_work_challan_states": {
+      "name": "job_work_challan_states",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "challan_id": {
+          "name": "challan_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "closed": {
+          "name": "closed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "ix_job_work_challan_states_closed": {
+          "name": "ix_job_work_challan_states_closed",
+          "columns": [
+            {
+              "expression": "closed",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "job_work_challan_states_challan_id_job_work_challans_id_fk": {
+          "name": "job_work_challan_states_challan_id_job_work_challans_id_fk",
+          "tableFrom": "job_work_challan_states",
+          "tableTo": "job_work_challans",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "challan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "radcore.job_work_challans": {
       "name": "job_work_challans",
       "schema": "radcore",
@@ -16729,13 +16814,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "closed": {
-          "name": "closed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "status": {
           "name": "status",

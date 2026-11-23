@@ -3,7 +3,7 @@
 // inputs used and lost, out of the job worker's place (units `scrapped`); and those back unused, moved home
 // (`received_from_job_work`). Its number names the made goods' batch (RC-130). Its charges accrue to Job Work Charges
 // to be Billed. Undone by its mirror while what it brought in is still where it went. A receipt is its maker's.
-import { after, jobWorkChallanLines, jobWorkChallans, jobWorkReceiptLines, jobWorkReceipts, stockTx } from '@radcore/db/stock';
+import { after, jobWorkChallanLines, jobWorkChallanStates, jobWorkChallans, jobWorkReceiptLines, jobWorkReceipts, stockTx } from '@radcore/db/stock';
 import { holdPeriod, JOURNAL_SERIES, partyNames, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, roundQty, roundRate, type Money, type Quantity } from '@radcore/lib-common';
 import {
@@ -187,7 +187,7 @@ async function closeIfDone(ctx: Ctx, challanId: string, lines: ReadonlyMap<strin
     const d = done.get(id);
     return d !== undefined && dec(d.used).plus(d.back).plus(d.lost).gte(l.qty);
   });
-  await stockTx(ctx).update(jobWorkChallans).set({ closed }).where(eq(jobWorkChallans.id, challanId));
+  await stockTx(ctx).update(jobWorkChallanStates).set({ closed }).where(eq(jobWorkChallanStates.challanId, challanId));
 }
 
 /**

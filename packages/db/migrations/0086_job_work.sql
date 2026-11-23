@@ -14,6 +14,15 @@ CREATE TABLE "radcore"."job_work_challan_lines" (
 	CONSTRAINT "ck_job_work_challan_lines_value" CHECK ("radcore"."job_work_challan_lines"."value" >= 0 and "radcore"."job_work_challan_lines"."value" <> 'NaN')
 );
 --> statement-breakpoint
+CREATE TABLE "radcore"."job_work_challan_states" (
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
+	"challan_id" uuid PRIMARY KEY NOT NULL,
+	"closed" boolean DEFAULT false NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "radcore"."job_work_challans" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_by" text DEFAULT nullif(current_setting('app.principal', true), '') NOT NULL,
@@ -23,7 +32,6 @@ CREATE TABLE "radcore"."job_work_challans" (
 	"from_id" uuid NOT NULL,
 	"to_id" uuid NOT NULL,
 	"party_id" uuid NOT NULL,
-	"closed" boolean DEFAULT false NOT NULL,
 	"status" text DEFAULT 'draft' NOT NULL,
 	"number" text,
 	"business_date" date NOT NULL,
@@ -106,6 +114,7 @@ CREATE TABLE "radcore"."job_work_receipts" (
 ALTER TABLE "radcore"."locations" ADD COLUMN "party_id" uuid;--> statement-breakpoint
 ALTER TABLE "radcore"."job_work_challan_lines" ADD CONSTRAINT "job_work_challan_lines_challan_id_job_work_challans_id_fk" FOREIGN KEY ("challan_id") REFERENCES "radcore"."job_work_challans"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."job_work_challan_lines" ADD CONSTRAINT "job_work_challan_lines_item_id_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "radcore"."items"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."job_work_challan_states" ADD CONSTRAINT "job_work_challan_states_challan_id_job_work_challans_id_fk" FOREIGN KEY ("challan_id") REFERENCES "radcore"."job_work_challans"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."job_work_challans" ADD CONSTRAINT "job_work_challans_from_id_locations_id_fk" FOREIGN KEY ("from_id") REFERENCES "radcore"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."job_work_challans" ADD CONSTRAINT "job_work_challans_to_id_locations_id_fk" FOREIGN KEY ("to_id") REFERENCES "radcore"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "radcore"."job_work_challans" ADD CONSTRAINT "job_work_challans_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "radcore"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -120,6 +129,7 @@ ALTER TABLE "radcore"."job_work_receipts" ADD CONSTRAINT "job_work_receipts_post
 ALTER TABLE "radcore"."job_work_receipts" ADD CONSTRAINT "job_work_receipts_cancel_entry_id_journal_entries_id_fk" FOREIGN KEY ("cancel_entry_id") REFERENCES "radcore"."journal_entries"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "ux_job_work_challan_lines_line" ON "radcore"."job_work_challan_lines" USING btree ("challan_id","line_no");--> statement-breakpoint
 CREATE INDEX "ix_job_work_challan_lines_item" ON "radcore"."job_work_challan_lines" USING btree ("item_id");--> statement-breakpoint
+CREATE INDEX "ix_job_work_challan_states_closed" ON "radcore"."job_work_challan_states" USING btree ("closed");--> statement-breakpoint
 CREATE INDEX "ix_job_work_challans_date" ON "radcore"."job_work_challans" USING btree ("business_date","created_at","id");--> statement-breakpoint
 CREATE INDEX "ix_job_work_challans_party" ON "radcore"."job_work_challans" USING btree ("party_id");--> statement-breakpoint
 CREATE INDEX "ix_job_work_challans_from" ON "radcore"."job_work_challans" USING btree ("from_id");--> statement-breakpoint
@@ -146,9 +156,8 @@ INSERT INTO radcore.state_transitions (document_table, from_status, to_status) V
   ('job_work_challans', 'draft', 'posted'), ('job_work_challans', 'posted', 'cancelled'),
   ('job_work_receipts', 'draft', 'posted'), ('job_work_receipts', 'posted', 'cancelled');
 --> statement-breakpoint
--- A posted challan's receipts close and reopen it (`closed`), so the guard lets that column change too.
 CREATE TRIGGER guard_posted_document BEFORE INSERT OR UPDATE OR DELETE ON radcore.job_work_challans
-  FOR EACH ROW EXECUTE FUNCTION radcore.guard_posted_document('draft', 'cancelled_at,cancelled_by,cancel_reason,cancel_entry_id,closed', '');
+  FOR EACH ROW EXECUTE FUNCTION radcore.guard_posted_document('draft', 'cancelled_at,cancelled_by,cancel_reason,cancel_entry_id', '');
 --> statement-breakpoint
 CREATE TRIGGER guard_document_line BEFORE INSERT OR UPDATE OR DELETE ON radcore.job_work_challan_lines
   FOR EACH ROW EXECUTE FUNCTION radcore.guard_document_line('job_work_challans', 'challan_id', 'draft');
@@ -160,7 +169,7 @@ CREATE TRIGGER guard_document_line BEFORE INSERT OR UPDATE OR DELETE ON radcore.
   FOR EACH ROW EXECUTE FUNCTION radcore.guard_document_line('job_work_receipts', 'receipt_id', 'draft');
 --> statement-breakpoint
 -- Audited in full; the lines are their documents' parts (ADR-001 §8b).
-SELECT radcore.audit_attach('job_work_challans', keep => array['status', 'number', 'from_id', 'to_id', 'party_id', 'closed', 'business_date', 'notes',
+SELECT radcore.audit_attach('job_work_challans', keep => array['status', 'number', 'from_id', 'to_id', 'party_id', 'business_date', 'notes',
   'posted_entry_id', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'cancel_entry_id']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('job_work_challan_lines', keep => array['challan_id', 'line_no', 'item_id', 'qty', 'picks', 'value'],
@@ -173,8 +182,11 @@ SELECT radcore.audit_attach('job_work_receipt_lines', keep => array['receipt_id'
   'charge_rate', 'made_serials', 'used', 'used_picks', 'back', 'back_picks', 'lost', 'lost_picks', 'used_value', 'charge', 'lost_value'],
   owner => 'receipt_id', owner_table => 'job_work_receipts');
 --> statement-breakpoint
-REVOKE TRUNCATE ON radcore.job_work_challans, radcore.job_work_challan_lines, radcore.job_work_receipts, radcore.job_work_receipt_lines
-  FROM radcore_app;
+SELECT radcore.audit_attach('job_work_challan_states', keep => array['challan_id', 'closed'], owner => 'challan_id',
+  owner_table => 'job_work_challans');
+--> statement-breakpoint
+REVOKE TRUNCATE ON radcore.job_work_challans, radcore.job_work_challan_lines, radcore.job_work_receipts, radcore.job_work_receipt_lines,
+  radcore.job_work_challan_states FROM radcore_app;
 --> statement-breakpoint
 -- job_work:write (ADR-008 §13): an ordinary catalogue key, no second factor (D-19), not all-only. Its starting grants,
 -- in each role's template too (RAD-83): the admin, the stores and operations.
