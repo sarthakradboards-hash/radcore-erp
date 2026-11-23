@@ -26,6 +26,7 @@ export const ADMIN_PAGES = [
   { href: '/admin/price-lists', label: 'admin.nav.prices', perm: 'prices:read' },
   { href: '/admin/price-approvals', label: 'admin.nav.priceApprovals', perm: 'prices:approve' },
   { href: '/admin/discount-limits', label: 'admin.nav.discounts', perm: 'prices:read' },
+  { href: '/admin/po-limits', label: 'purchases.nav.limits', perm: 'purchasing:read' },
   { href: '/admin/settings', label: 'admin.nav.settings', perm: 'settings:read' },
   { href: '/admin/number-series', label: 'admin.nav.series', perm: 'settings:read' },
 ] as const satisfies readonly NavPage[];
