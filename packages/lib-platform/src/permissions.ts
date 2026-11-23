@@ -108,9 +108,15 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'statement_files:write', module: 'Files', label: 'Upload bank statements', secondFactor: true },
   { key: 'import_files:read', module: 'Files', label: 'See import files' },
   { key: 'import_files:write', module: 'Files', label: 'Upload import files' },
-  // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so the keys name no records.
+  // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so its keys name no records. The stock
+  // documents (M4-06, ADR-008 §13) are their makers' (created_by), so stock:read and the keys that move them name them.
   { key: 'locations:read', module: 'Stock', label: 'See locations' },
-  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial' },
+  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial, and stock transfers, counts and adjustments',
+    records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'stock:move', module: 'Stock', label: 'Transfer stock between places, and undo a transfer', records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'stock:count', module: 'Stock', label: 'Count stock and propose adjustments', records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'stock:approve', module: 'Stock', label: 'Approve stock counts, adjustments and transfers that need it, and cancel them',
+    records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
   { key: 'locations:write', module: 'Stock', label: 'Add and change locations, switch them off' },
   // HR (M2-14, RAD-92): the employee master. Writing it reaches HR, so it needs the second factor (D-19); reading is a
   // directory whose contact details stay masked without pii:read. Any role may be granted either (Sarthak, 15 Nov).

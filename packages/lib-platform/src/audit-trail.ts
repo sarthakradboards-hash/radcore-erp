@@ -35,6 +35,10 @@ export const COST_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.
   invoice_lines: Object.freeze(['cost']),
   // The goods a credit note takes back, at what they went out at (RAD-114, ADR-006 §4).
   credit_note_lines: Object.freeze(['cost']),
+  // What a transfer, a count's difference and an adjustment moved at (RAD-141, ADR-008 §9, §10).
+  stock_transfer_lines: Object.freeze(['value']),
+  stock_count_lines: Object.freeze(['value']),
+  stock_adjustment_lines: Object.freeze(['value']),
 });
 
 /** listAuditTrail (audit:read): newest first, within a date range of at most AUDIT_RANGE_MAX_DAYS India days. */
