@@ -8,7 +8,7 @@ import { addDays, dec, indiaDate, quantityString, roundMoney, roundQty } from '@
 import {
   AppError, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, nextNumber, principalId, type Ctx,
 } from '@radcore/lib-platform';
-import { and, asc, desc, eq, getTableColumns, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelJobWorkChallan, createJobWorkChallan, getJobWorkChallan, listJobWorkChallans } from '../contract.ts';
 import { postStock, reverseStock, type PostedMovement } from '../engine/stock.ts';
@@ -38,12 +38,12 @@ const wrongStatus = (status: string, what: string) => new AppError('wrong_status
  * `permission` (else not_found). A draft lives only inside the save that posts it, and has no state yet.
  */
 export async function challanOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
-  const sel = stockTx(ctx).select({ ...getTableColumns(jobWorkChallans), closed: jobWorkChallanStates.closed }).from(jobWorkChallans)
+  const sel = stockTx(ctx).select({ challan: jobWorkChallans, closed: jobWorkChallanStates.closed }).from(jobWorkChallans)
     .innerJoin(jobWorkChallanStates, eq(jobWorkChallanStates.challanId, jobWorkChallans.id)).where(eq(jobWorkChallans.id, id));
   const [row] = forUpdate ? await sel.for('update') : await sel;
   if (row === undefined) throw new AppError('not_found', 'There is no such challan');
-  ctx.see(permission, { owner: row.createdBy });
-  return row;
+  ctx.see(permission, { owner: row.challan.createdBy });
+  return { ...row.challan, closed: row.closed };
 }
 
 /** The job worker's own place: refused when the party doesn't exist (`unknown_party`) or has none (`no_job_work_place`). */
