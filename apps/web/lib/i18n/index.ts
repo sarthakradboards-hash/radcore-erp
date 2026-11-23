@@ -14,6 +14,7 @@ import { masters } from './masters.ts';
 import { payments } from './payments.ts';
 import { quickBill } from './quick-bill.ts';
 import { sales } from './sales.ts';
+import { stock } from './stock.ts';
 import { testRides } from './test-rides.ts';
 
 /** The app's own text; the admin screens', the masters', the accounts screens' and the kit's are in admin.ts, masters.ts,
@@ -38,6 +39,7 @@ export const core = {
   'nav.admin': 'Admin',
   'nav.accounts': 'Accounts',
   'nav.sales': 'Sales',
+  'nav.stock': 'Stock',
   'nav.crm': 'CRM',
   'bell.label': 'Notifications',
   'bell.labelUnread': 'Notifications, {n} unread',
@@ -103,7 +105,7 @@ export const core = {
 
 // Spreading lets a later key silently replace an earlier one (TypeScript allows it), so index.test.ts checks that the
 // catalogues share no key: a clash once put the account page's words on the admin Sessions page.
-const en = { ...core, ...admin, ...masters, ...books, ...collect, ...payments, ...sales, ...invoices, ...approvals, ...deliveries, ...creditNotes, ...testRides, ...bookings, ...quickBill, ...crm, ...kit } as const;
+const en = { ...core, ...admin, ...masters, ...books, ...collect, ...payments, ...sales, ...invoices, ...approvals, ...deliveries, ...creditNotes, ...testRides, ...bookings, ...quickBill, ...crm, ...stock, ...kit } as const;
 
 export type MessageKey = keyof typeof en;
 

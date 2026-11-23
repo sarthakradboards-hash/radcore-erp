@@ -17,7 +17,8 @@ export {
   type UnitChange, type UnitOnLine,
 } from './engine/units.ts';
 export {
-  addTransfer, askTransferApproval, cancelTransferNow, dropTransfer, FRANCHISEE_TRANSFER_APPROVAL, getTransferById, listTransfersPage, TRANSFER_SERIES,
+  addTransfer, askTransferApproval, cancelTransferNow, dropTransfer, FRANCHISEE_TRANSFER_APPROVAL, getTransferById, listTransfersPage, requalifyTransfer,
+  TRANSFER_SERIES,
   transferApprovalSpec,
 } from './services/transfers.ts';
 export {
