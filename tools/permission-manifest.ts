@@ -256,7 +256,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Transfers, counts and adjustments (M4-06, RAD-141; ADR-008 §13).
   'GET /stock/job-work/challans': 'stock:read',
   'GET /stock/job-work/challans/:id': 'stock:read',
-  'GET /stock/job-work/challans/:id/pdf': 'stock:read',
+  'GET /stock/job-work/challans/:id/pdf': 'job_work:write',
   'POST /stock/job-work/challans': 'job_work:write',
   'POST /stock/job-work/challans/:id/cancel': 'job_work:write',
   'GET /stock/job-work/receipts': 'stock:read',

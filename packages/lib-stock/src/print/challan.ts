@@ -1,7 +1,8 @@
 // A job work challan's printout (RAD-142, on RAD-120's engine; ADR-008 §11): Rule 55's delivery challan for inputs
 // sent for job work. It's statutory, so the job worker's name, address, state and GSTIN print in full and the look at
-// the party is logged. The issuer is today's company profile, as for a sales challan. The goods' value is a stock
-// value, `cost()`: it prints only for a principal who sees costs, as the screen shows it.
+// the party is logged; so does the goods' value, which Rule 55 also asks for, whoever prints it. That's why the print
+// is under job_work:write, not stock:read: on screen the values stay `cost()` (the architect on RAD-142). The issuer
+// is today's company profile, as for a sales challan.
 import { getCompanyProfile, getPartyById } from '@radcore/lib-accounts';
 import { dec, formatDate, formatMoney, roundMoney } from '@radcore/lib-common';
 import type { Ctx, PrintBlock, PrintDef } from '@radcore/lib-platform';
@@ -19,7 +20,7 @@ async function challanOf(ctx: Ctx, id: string) {
   const { company } = await getCompanyProfile(ctx);
   const p = await getPartyById(ctx, { id: c.partyId });
   const labels = await itemLabels(ctx, c.lines.map((l) => l.itemId));
-  return { ...c, company, labels, seesCost: ctx.shows('cost'), returnDays: ctx.settings.get(JOB_WORK_RETURN_DAYS),
+  return { ...c, company, labels, returnDays: ctx.settings.get(JOB_WORK_RETURN_DAYS),
     jobWorker: { id: p.id, name: p.name, gstin: p.gstin, stateCode: p.stateCode,
       address: oneLine([text(p.addressLine1), text(p.addressLine2), `${text(p.city)} ${text(p.pincode)}`.trim()]) } };
 }
@@ -31,7 +32,7 @@ export const jobWorkChallanPrint: PrintDef<Awaited<ReturnType<typeof challanOf>>
   looks: (m) => [{ table: 'parties', id: m.jobWorker.id }],
   layout: (m) => {
     const c = m.company;
-    const value = (v: string | null) => (!m.seesCost ? 'Hidden' : v === null ? '—' : formatMoney(v));
+    const value = (v: string | null) => (v === null ? '—' : formatMoney(v));
     const total = roundMoney(m.lines.reduce((t, l) => t.plus(amount(l.value) ?? '0'), dec('0')));
     const blocks: PrintBlock[] = [
       { kind: 'heading', text: m.status === 'cancelled' ? 'Job work challan (cancelled)' : 'Job work challan' },

@@ -1,4 +1,4 @@
-// RAD-142's contracts (ADR-008 §11, §13): job work sent and received under job_work:write, read and printed under
+// RAD-142's contracts (ADR-008 §11, §13): job work sent, received and printed under job_work:write, read under
 // stock:read; and the codes RAD-134's guard needs declared where a route can reach them.
 import { describe, expect, it } from 'vitest';
 import * as jobWork from './job-work.ts';
@@ -9,8 +9,10 @@ const ID = '3f2b8c9e-1d4a-4f6b-9c2e-7a1b5d3e9f01';
 const part = (qty: string, serials: string[] = []) => ({ qty, batches: qty === '0' ? [] : [{ batchId: null, qty }], serials });
 
 describe('the job work contracts', () => {
-  it('read and print under stock:read, and send, receive or cancel under job_work:write', () => {
-    expect(routes.filter((c) => c.method === 'GET').every((c) => c.perm === 'stock:read')).toBe(true);
+  it('read under stock:read, and send, receive, cancel or print under job_work:write', () => {
+    // The print carries the goods' value in full (Rule 55), so it's the senders' key (the architect on RAD-142).
+    expect(routes.filter((c) => c.method === 'GET').map((c) => `${c.path} ${String(c.perm)}`).filter((r) => !r.endsWith(' stock:read')))
+      .toEqual(['/stock/job-work/challans/:id/pdf job_work:write']);
     expect(routes.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.path} ${String(c.perm)}`)).toEqual([
       'POST /stock/job-work/challans job_work:write', 'POST /stock/job-work/challans/:id/cancel job_work:write',
       'POST /stock/job-work/receipts job_work:write', 'POST /stock/job-work/receipts/:id/cancel job_work:write',
