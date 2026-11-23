@@ -89,6 +89,12 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
     secondFactor: true },
   // Who may ask; sales:override approves (RAD-115, Sarthak's "Allow with approval"). No second factor: the approval has it.
   { key: 'sales:counter_credit', module: 'Sales', label: 'Ask to leave a balance on a counter sale', allOnly: true },
+  // Purchasing (ADR-008 §13, RAD-136): ordinary catalogue keys, scoped by each document's maker, with no second factor,
+  // since none moves money (D-19). Approving is someone else's, under its own key.
+  { key: 'purchasing:read', module: 'Purchasing', label: 'See purchase orders', records: ['@radcore/db/purchasing#purchaseOrders'] },
+  { key: 'purchasing:write', module: 'Purchasing', label: 'Draft, place, change, close short and cancel purchase orders',
+    records: ['@radcore/db/purchasing#purchaseOrders'] },
+  { key: 'purchasing:approve', module: 'Purchasing', label: 'Approve a purchase order above its placer’s limit, and set the limits' },
   // Vehicle bookings (M3-13, RAD-117; ADR-007 §5): a booking holds a unit and takes its advance. Scoped by who made it.
   // Refunding a cancelled booking's advance is keyed by how much of what's left (Sarthak, 20 Nov): all of it needs
   // refund_full, a part refund_part; each moves money out, so each needs the second factor (D-19).

@@ -13,6 +13,7 @@ import {
 } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { turnsHeldBy } from './books-turn.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -271,10 +272,11 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
       const approved = code(decide(adjustmentApprovalSpec, boss, asked));
       await vi.waitFor(async () => expect((await su.query<{ n: number }>(
         'select count(*)::int n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.n).toBe(1), { timeout: 10_000 });
-      const free = (await su.query<{ free: boolean }>(`select pg_try_advisory_xact_lock(hashtextextended($1, 0))
-        and pg_try_advisory_xact_lock(hashtextextended($2, 0)) as free`, [`numbering.${JOURNAL_SERIES.key}`, `numbering.${ADJUSTMENT_SERIES.key}`])).rows[0]?.free;
+      // The one waiter on this test's own stock row is the adjustment: the turns it holds, not whether they're free.
+      const waiter = (await su.query<{ pid: number }>('select pid from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.pid;
+      const held = await turnsHeldBy(su, waiter, [JOURNAL_SERIES.key, ADJUSTMENT_SERIES.key]);
       await holder.query('commit');
-      expect([free, await approved, await onHand(at.itemId, store)]).toEqual([true, 'ok', { qty: '2', value: '200.00' }]);
+      expect([held, await approved, await onHand(at.itemId, store)]).toEqual([0, 'ok', { qty: '2', value: '200.00' }]);
     } finally {
       await holder.query('rollback').catch(() => undefined);
       holder.release();

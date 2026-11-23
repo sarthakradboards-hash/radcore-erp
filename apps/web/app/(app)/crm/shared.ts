@@ -29,9 +29,10 @@ export const stageName = (s: Stage) => t(`crm.stage.${s}`);
  * name, so another person's lead reads "Someone else".
  * shortcut: no owner names until listLeads and getLead send them (asked of backend-2 on RAD-122); then show the name.
  */
-export function ownerText(owner: string | null, meId: string): string {
+export function ownerText(owner: { kind: string; id: string; displayName: string | null } | null, meId: string): string {
   if (owner === null) return t('crm.owner.nobody');
-  return owner === `user:${meId}` ? t('crm.owner.you') : t('crm.owner.other');
+  if (owner.kind === 'user' && owner.id === meId) return t('crm.owner.you');
+  return owner.displayName ?? t('crm.owner.other');
 }
 
 /** A lead's name, or, while it has none, the last digits its masked phone keeps. */

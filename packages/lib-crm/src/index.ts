@@ -7,11 +7,11 @@ export {
   addLostReason, addPlan, addQuickReply, changeLostReason, changePlan, changeQuickReply, leadLists,
 } from './services/lead-lists.ts';
 export {
-  assignLeadOwner, followUpDone, followUpDue, followUpsDueWatch, listLeadsPage, moveLeadStage, putOnPlan, quickReplyText,
+  assignLeadOwner, followUpDone, followUpDue, followUpsDueWatch, leadHolders, listLeadsPage, moveLeadStage, putOnPlan, quickReplyText,
   tellFollowUpsDue, updateLeadDetails,
 } from './services/pipeline.ts';
 export { captureEnquiry, leadById, repeatEnquiry, type Capture } from './services/leads.ts';
 export { addLeadSource, changeLeadSource, leadSourcesList, setAsidePage } from './services/sources.ts';
 export { addAdSpend, addCampaign, adSpendPage, campaignPath, campaignsPage, costPerLeadIn, endCampaignNow } from './services/campaigns.ts';
-export { bookingCancelled, bookingMade, leadOpens } from './services/lead-bookings.ts';
+export { bookingCancelled, bookingMade, leadNames, leadOpens } from './services/lead-bookings.ts';
 export { holdLead } from './services/lead-locks.ts';
