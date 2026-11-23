@@ -147,8 +147,10 @@ export const postDeliveryReturn = defineContract({
 
 // Cancelling a posted delivery or return (RAD-114, ADR-007 §6), under its own key: the stock and entries mirrored on
 // the cancellation's day, nothing deleted.
+// A cancel's units must still be where the document left them: the stock engine refuses one that has moved on since
+// (units_mismatch, auditor-2 on #365).
 const CANCEL_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive',
-  'not_enough_stock', 'already_reversed', 'not_reversible'] as const;
+  'not_enough_stock', 'already_reversed', 'not_reversible', 'units_mismatch'] as const;
 const cancelIn = z.object({ id: idString(), businessDate: dateString(), reason: reason() });
 /** Cancels a posted delivery while nothing on it is invoiced or taken back: its goods come back at the values they went out
  * at, its units with them, and an order it closed opens again. */

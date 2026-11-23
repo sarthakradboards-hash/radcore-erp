@@ -19,6 +19,10 @@ export const FILE_KINDS = {
     perms: { read: 'bookings:read', write: 'bookings:write' } },
   delivery_note: { maxBytes: 10 * MB, types: ['application/pdf', 'image/jpeg', 'image/png'],
     perms: { read: 'bookings:read', write: 'bookings:write' } },
+  // A supplier's bill as it came (RAD-138, ADR-008 §7, RC-172): a purchase bill posts only with it, so every posted bill
+  // can be shown. Kept with the bills keys: entered under bills:write, seen by whoever reads purchasing.
+  purchase_bill: { maxBytes: 10 * MB, types: ['application/pdf', 'image/jpeg', 'image/png'],
+    perms: { read: 'purchasing:read', write: 'bills:write' } },
 } as const satisfies Record<string, { maxBytes: number; types: readonly string[]; view?: true;
   perms?: { read: string; write: string } }>;
 

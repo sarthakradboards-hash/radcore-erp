@@ -98,7 +98,9 @@ export const recordAdSpend = defineContract({
     note: z.string().trim().min(1).max(200).nullable() })
     .refine((s) => (s.campaignId === undefined) !== (s.sourceId === undefined), { path: ['campaignId'], error: 'Name a campaign or a source' })
     .refine((s) => s.toDate >= s.fromDate, { path: ['toDate'], error: 'The range ends on or after it starts' })
-    .refine((s) => dec(s.amount).gt(0), { path: ['amount'], error: 'Enter what was spent' }),
+    // An amount that isn't money already has its own issue; only one that is can be judged above zero (e2e-2 on #355:
+    // dec() threw on "", a 500, not a 422).
+    .refine((s) => !moneyString().safeParse(s.amount).success || dec(s.amount).gt(0), { path: ['amount'], error: 'Enter what was spent' }),
   output: z.object({ id: idString() }), errors: ['unknown_campaign', 'unknown_source'],
 });
 

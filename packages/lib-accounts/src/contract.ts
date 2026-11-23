@@ -205,7 +205,9 @@ export const getJournal = defineContract({
 /** A manual journal's line: one account, and a debit or a credit above zero. */
 const manualLine = z.object({ accountId: idString(), debit: moneyString().optional(), credit: moneyString().optional() })
   .refine((l) => (l.debit === undefined) !== (l.credit === undefined), 'Enter a debit or a credit, not both')
-  .refine((l) => dec(l.debit ?? l.credit ?? '0').gt(0), 'Enter an amount above zero');
+  // Judged only once the amount is money: dec() throws on anything else (as recordAdSpend's did, RAD-110).
+  .refine((l) => !moneyString().safeParse(l.debit ?? l.credit ?? '0').success || dec(l.debit ?? l.credit ?? '0').gt(0),
+    'Enter an amount above zero');
 
 /** POST /journal (journal:post): a manual journal on ordinary accounts, with the reason it was made (RC-093). */
 export const postJournal = defineContract({
@@ -341,3 +343,4 @@ export const reverseCreditApplicationContract = defineContract({
 });
 
 export * from './contract-collect.ts';
+export * from './contract-payments.ts';

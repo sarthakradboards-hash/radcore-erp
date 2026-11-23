@@ -45,6 +45,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'accounts:write', module: 'Journal', label: 'Change the chart of accounts: codes, and switching accounts off and on' },
   // The accounts a payment may name, for a screen's picker (RAD-116, the architect): no balance, so no second factor.
   { key: 'money_accounts:read', module: 'Payments', label: 'See the cash and bank accounts a payment may use', allOnly: true },
+  // Receipts, payments and refunds as a list and one by one (RAD-116, for RAD-126): all-only, as receipts:print, since
+  // payments isn't a scoped table. No balance on it, so not receivables:read, and no second factor: it moves nothing.
+  { key: 'payments:read', module: 'Payments', label: 'See receipts, payments and refunds', allOnly: true },
   { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
   // One posted receipt, printed by its id (the architect on RAD-120): no balance on it, so not receivables:read; all-only,
@@ -91,10 +94,20 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'sales:counter_credit', module: 'Sales', label: 'Ask to leave a balance on a counter sale', allOnly: true },
   // Purchasing (ADR-008 §13, RAD-136): ordinary catalogue keys, scoped by each document's maker, with no second factor,
   // since none moves money (D-19). Approving is someone else's, under its own key.
-  { key: 'purchasing:read', module: 'Purchasing', label: 'See purchase orders', records: ['@radcore/db/purchasing#purchaseOrders'] },
+  { key: 'purchasing:read', module: 'Purchasing', label: 'See purchase orders, goods receipts and bills',
+    records: ['@radcore/db/purchasing#purchaseOrders', '@radcore/db/purchasing#goodsReceipts', '@radcore/db/purchasing#purchaseBills'] },
   { key: 'purchasing:write', module: 'Purchasing', label: 'Draft, place, change, close short and cancel purchase orders',
     records: ['@radcore/db/purchasing#purchaseOrders'] },
   { key: 'purchasing:approve', module: 'Purchasing', label: 'Approve a purchase order above its placer’s limit, and set the limits' },
+  // Goods coming in (ADR-008 §6, §13, RAD-137): `inward`, since `receipts` are payments. Recording what arrived is one key;
+  // inspecting it, posting it and undoing it is another, which also re-inspects rejects (§9).
+  { key: 'inward:write', module: 'Purchasing', label: 'Record goods that arrived against a purchase order', records: ['@radcore/db/purchasing#goodsReceipts'] },
+  { key: 'inward:qc', module: 'Purchasing', label: 'Inspect and post goods receipts, cancel them, and re-inspect rejects',
+    records: ['@radcore/db/purchasing#goodsReceipts'] },
+  // Supplier bills (M4-03, RAD-138; ADR-008 §13): none needs the second factor, since a bill makes a payable and paying it
+  // is M3-12's (D-19). Records by who entered each (created_by).
+  { key: 'bills:write', module: 'Purchasing', label: 'Enter, post and cancel supplier bills', records: ['@radcore/db/purchasing#purchaseBills'] },
+  { key: 'bills:approve', module: 'Purchasing', label: 'Approve a supplier bill over the tolerance' },
   // Vehicle bookings (M3-13, RAD-117; ADR-007 §5): a booking holds a unit and takes its advance. Scoped by who made it.
   // Refunding a cancelled booking's advance is keyed by how much of what's left (Sarthak, 20 Nov): all of it needs
   // refund_full, a part refund_part; each moves money out, so each needs the second factor (D-19).

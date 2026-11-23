@@ -112,7 +112,7 @@ export const roleTemplates = radcoreTable('role_templates', {
   role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
   permission: text().notNull(), scope: text().notNull(),
 }, (t) => [primaryKey({ name: 'pk_role_templates', columns: [t.role, t.permission] }),
-  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print') or ${t.scope} = 'all')`)]);
+  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read') or ${t.scope} = 'all')`)]);
 
 /**
  * What a role may do (RAD-35, ADR-001 §6a): one permission key each, at a scope. `all` reaches every record of that
@@ -126,7 +126,7 @@ export const roleGrants = radcoreTable('role_grants', {
 }, (t) => [
   primaryKey({ name: 'pk_role_grants', columns: [t.role, t.permission] }),
   check('ck_role_grants_permission', sql`${t.permission} ~ '^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$'`),
-  check('ck_role_grants_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print') or ${t.scope} = 'all')`),
+  check('ck_role_grants_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read') or ${t.scope} = 'all')`),
 ]);
 
 /**
@@ -266,7 +266,7 @@ export const files = radcoreTable('files', {
   status: text().notNull().default('pending'),
 }, (t) => [
   uniqueIndex('ux_files_store_key').on(t.storeKey),
-  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import', 'item_picture', 'delivery_photo', 'delivery_note')`),
+  check('ck_files_kind', sql`${t.kind} in ('photo', 'resume', 'statement', 'import', 'item_picture', 'delivery_photo', 'delivery_note', 'purchase_bill')`),
   check('ck_files_status', sql`${t.status} in ('pending', 'checking', 'ready', 'refused')`),
   check('ck_files_store_key', sql`${t.storeKey} ~ ('^' || ${t.kind} || '/[0-9a-f-]{36}$')`),
   // A ready file has its checked size.

@@ -101,6 +101,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /accounts': 'journal:read',
   'GET /money-accounts': 'money_accounts:read',
   // Receipts, payments and refunds (RAD-116); cash past the day's limit waits for payments:approve.
+  'GET /payments': 'payments:read',
+  'GET /payments/:id': 'payments:read',
   'POST /payments': 'payments:write',
   'POST /payments/:id/cancel': 'payments:write',
   'POST /payments/:id/allocations': 'payments:write',
@@ -233,6 +235,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/delivery-note': 'bookings:write',
   'POST /files/delivery-note/:id/confirm': 'bookings:write',
   'POST /files/delivery-note/:id/download': 'bookings:read',
+  'POST /files/purchase-bill': 'bills:write',
+  'POST /files/purchase-bill/:id/confirm': 'bills:write',
+  'POST /files/purchase-bill/:id/download': 'purchasing:read',
   'POST /files/resume': 'resume_files:write',
   'POST /files/resume/:id/confirm': 'resume_files:write',
   'POST /files/resume/:id/download': 'resume_files:read',
@@ -252,6 +257,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /stock/transfers': 'stock:read',
   'GET /stock/transfers/:id': 'stock:read',
   'POST /stock/transfers': 'stock:move',
+  'POST /stock/transfers/requalify': 'inward:qc',
   'DELETE /stock/transfers/:id': 'stock:move',
   'POST /stock/transfers/:id/approval': 'stock:move',
   'GET /approvals/stock-transfer': 'stock:approve',
@@ -306,6 +312,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /leads/:id/plan': 'leads:write',
   'POST /leads/:id/quick-reply': 'leads:write',
   'POST /leads/:id/owner': 'leads:write',
+  'GET /leads/holders': 'leads:write',
   'GET /crm/lead-sources': 'leads:setup',
   'POST /crm/lead-sources': 'leads:setup',
   'PUT /crm/lead-sources/:id': 'leads:setup',
@@ -329,7 +336,19 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /purchasing/orders/:id/cancel': 'purchasing:write',
   'GET /purchasing/order-limits': 'purchasing:read',
   'PUT /purchasing/order-limits': 'purchasing:approve',
+  'GET /purchasing/bills': 'purchasing:read',
+  'GET /purchasing/bills/:id': 'purchasing:read',
+  'POST /purchasing/bills': 'bills:write',
+  'PUT /purchasing/bills/:id': 'bills:write',
+  'DELETE /purchasing/bills/:id': 'bills:write',
   'GET /purchasing/orders/:id/pdf': 'purchasing:read',
+  'GET /purchasing/receipts': 'purchasing:read',
+  'GET /purchasing/receipts/:id': 'purchasing:read',
+  'POST /purchasing/receipts': 'inward:write',
+  'PUT /purchasing/receipts/:id': 'inward:write',
+  'DELETE /purchasing/receipts/:id': 'inward:write',
+  'POST /purchasing/receipts/:id/post': 'inward:qc',
+  'POST /purchasing/receipts/:id/cancel': 'inward:qc',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -367,6 +386,8 @@ const SETTINGS = ['lib-accounts', 'lib-crm', 'lib-gst', 'lib-integrations', 'lib
 const BOOKINGS = ['lib-accounts', 'lib-crm', 'lib-gst', 'lib-integrations', 'lib-platform', 'lib-sales', 'lib-stock'];
 // lib-purchasing's POs read parties and the company (lib-accounts), tax (lib-gst) and items (lib-stock) (RAD-136).
 const PURCHASING = ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-purchasing', 'lib-stock'];
+// Its goods receipts read parties (lib-accounts) and post through the stock engine (lib-stock) (RAD-137).
+const RECEIVING = ['lib-accounts', 'lib-platform', 'lib-purchasing', 'lib-stock'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -441,6 +462,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'PUT /parties/:id/credit': ['lib-accounts', 'lib-platform'],
   'GET /accounts': ['lib-accounts', 'lib-platform'],
   'GET /money-accounts': ['lib-accounts', 'lib-platform'],
+  'GET /payments': ['lib-accounts', 'lib-platform'],
+  'GET /payments/:id': ['lib-accounts', 'lib-platform'],
   'POST /payments': ['lib-accounts', 'lib-platform'],
   'POST /payments/:id/cancel': ['lib-accounts', 'lib-platform'],
   'POST /payments/:id/allocations': ['lib-accounts', 'lib-platform'],
@@ -574,6 +597,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/delivery-note': PLATFORM,
   'POST /files/delivery-note/:id/confirm': PLATFORM,
   'POST /files/delivery-note/:id/download': PLATFORM,
+  'POST /files/purchase-bill': PLATFORM,
+  'POST /files/purchase-bill/:id/confirm': PLATFORM,
+  'POST /files/purchase-bill/:id/download': PLATFORM,
   'POST /files/resume': PLATFORM,
   'POST /files/resume/:id/confirm': PLATFORM,
   'POST /files/resume/:id/download': PLATFORM,
@@ -591,6 +617,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /stock/transfers': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/transfers/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/transfers': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/transfers/requalify': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'DELETE /stock/transfers/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/transfers/:id/approval': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /approvals/stock-transfer': ['lib-accounts', 'lib-platform', 'lib-stock'],
@@ -644,6 +671,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /leads/:id/plan': CRM,
   'POST /leads/:id/quick-reply': CRM,
   'POST /leads/:id/owner': CRM,
+  'GET /leads/holders': CRM,
   'GET /crm/lead-sources': CRM,
   'POST /crm/lead-sources': CRM,
   'PUT /crm/lead-sources/:id': CRM,
@@ -667,7 +695,19 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /purchasing/orders/:id/cancel': PURCHASING,
   'GET /purchasing/order-limits': ['lib-platform', 'lib-purchasing'],
   'PUT /purchasing/order-limits': ['lib-platform', 'lib-purchasing'],
+  'GET /purchasing/bills': PURCHASING,
+  'GET /purchasing/bills/:id': PURCHASING,
+  'POST /purchasing/bills': PURCHASING,
+  'PUT /purchasing/bills/:id': PURCHASING,
+  'DELETE /purchasing/bills/:id': PURCHASING,
   'GET /purchasing/orders/:id/pdf': PURCHASING,
+  'GET /purchasing/receipts': RECEIVING,
+  'GET /purchasing/receipts/:id': RECEIVING,
+  'POST /purchasing/receipts': RECEIVING,
+  'PUT /purchasing/receipts/:id': RECEIVING,
+  'DELETE /purchasing/receipts/:id': RECEIVING,
+  'POST /purchasing/receipts/:id/post': RECEIVING,
+  'POST /purchasing/receipts/:id/cancel': RECEIVING,
   'POST /public/enquiries': CRM_DOORS,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,

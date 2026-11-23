@@ -84,12 +84,13 @@ export const createPurchaseOrder = defineContract({
  * a new PO, a price rise is caught at the bill, and a rework is closing it short and raising another. Lowering it, or a
  * change within the higher of the two, saves. A placed PO keeps its supplier and date, which its number and approval were given for
  * (`fixed_once_placed`), and no line goes below what has come in against it, nor is a received line removed
- * (`po_received`, as a sales order's `order_delivered`; the auditor on #333).
+ * (`po_received`, as a sales order's `order_delivered`; the auditor on #333). Nor is a line a supplier's bill names
+ * removed or given another item (`po_billed`, RAD-138).
  */
 export const updatePurchaseOrder = defineContract({
   method: 'PUT', path: '/purchasing/orders/:id', auth: 'session', perm: 'purchasing:write', tx: write,
   input: expectedAfter(orderShape.extend({ id: idString() })), output: z.object({}),
-  errors: [...DRAFT_ERRORS, 'no_gst_rate', 'company_profile_incomplete', 'over_approved', 'fixed_once_placed', 'po_received'],
+  errors: [...DRAFT_ERRORS, 'no_gst_rate', 'company_profile_incomplete', 'over_approved', 'fixed_once_placed', 'po_received', 'po_billed'],
 });
 /** A draft thrown away: it never had a number, and any request for its approval is closed first. */
 export const deletePurchaseOrder = defineContract({

@@ -16,7 +16,8 @@ const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const staff: Principal = { kind: 'user', userId: '00000000-0000-4000-8000-000000000096',
-  permissions: ['items:write', 'locations:write'] };
+  // cost:read: an item's purchase price is a cost, set only by someone who may see it (the estimate test sets one).
+  permissions: ['items:write', 'locations:write', 'cost:read'] };
 const q = (s: string) => quantityString().parse(s);
 const r = (s: string) => unitPriceString().parse(s);
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
@@ -39,11 +40,11 @@ describe.skipIf(!url || !superUrl)('negative stock and the commit checks', () =>
     const err = e as { code?: string; cause?: { code?: string } };
     return err.code ?? err.cause?.code ?? String(e);
   });
-  async function place() {
+  async function place(purchasePrice?: string) {
     return run(async (ctx) => {
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
       const { id: itemId } = await addItem(ctx, { sku: `N-${tag()}`, name: 'Brake-pad set', categoryId, hsn: '8708', unit: 'NOS',
-        barcode: null, serialised: false, hasChassis: false });
+        barcode: null, serialised: false, hasChassis: false, ...(purchasePrice === undefined ? {} : { purchasePrice: r(purchasePrice) }) });
       const { id: locationId } = await addPlace(ctx, { code: `L${tag()}`, name: `Showroom ${tag()}`, kind: 'store' });
       return { itemId, locationId };
     });
@@ -100,6 +101,14 @@ describe.skipIf(!url || !superUrl)('negative stock and the commit checks', () =>
     const part = await oversold();
     expect((await receive(part, '2')).map((m) => m.value)).toEqual(['480.00', '-80.00']);
     expect(await onHand(part.itemId, part.locationId)).toEqual(['-1', '-200.00']);
+  });
+
+  // ADR-006 §4, the architect on RAD-144: with no receipt at the location, the item's purchase price is the estimate.
+  it('estimates a delivery below zero at the item’s purchase price where the location has had no receipt', async () => {
+    await negative(true);
+    const { itemId, locationId } = await place('120');
+    const moved = await post({ outs: [{ itemId, locationId, qty: q('2'), delivery: true, batches: [{ batchId: null, qty: q('2') }] }] });
+    expect([moved.map((m) => m.value), await onHand(itemId, locationId)]).toEqual([['240.00'], ['-2', '-240.00']]);
   });
 
   it('lets only a delivery go below zero, and only with negative stock allowed and a rate to estimate from', async () => {

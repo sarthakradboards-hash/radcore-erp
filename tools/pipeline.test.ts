@@ -4,12 +4,12 @@
 // own people, numbers and list items; the starting items 0059 seeds are only read.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addLostReason, addPlan, addQuickReply, assignLeadOwner, captureEnquiry, changeLostReason, changePlan, followUpDone, leadById, leadLists,
+  addLostReason, addPlan, addQuickReply, assignLeadOwner, captureEnquiry, changeLostReason, changePlan, followUpDone, leadById, leadHolders, leadLists,
   listLeadsPage, moveLeadStage, putOnPlan, quickReplyText, tellFollowUpsDue, updateLeadDetails,
 } from '@radcore/lib-crm';
 import { listLeads } from '@radcore/lib-crm/contract';
 import { addDays, moneyString, piiPlan, requestFor } from '@radcore/lib-common';
-import { loadConfig, myNotificationsPage, type Ctx, type Principal } from '@radcore/lib-platform';
+import { holdsKey, loadConfig, myNotificationsPage, peopleHolding, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
@@ -323,6 +323,16 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
     }
     await as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: raviId }));
     expect(await owner('select owner from radcore.leads where id = $1', [id])).toEqual([{ owner: `user:${raviId}` }]);
+    // The owner picker offers exactly whom the hand-on accepts, only to someone who may hand leads on (RAD-109).
+    const holders = (await as(manager(bossId), (ctx) => leadHolders(ctx))).items.map((p) => p.id);
+    expect([raviId, clerk?.id ?? '', gone?.id ?? '', bossId].map((p) => holders.includes(p))).toEqual([true, false, false, false]);
+    await expect(as(taker(ashaId), (ctx) => leadHolders(ctx))).rejects.toMatchObject({ code: 'forbidden' });
+    // And a lead answers its owner as a person, by name, in the list and on its page.
+    const [ravi] = await owner<{ display_name: string }>('select display_name from radcore.users where id = $1', [raviId]);
+    const shown = { kind: 'user', id: raviId, displayName: ravi?.display_name };
+    expect((await as(manager(bossId), (ctx) => leadById(ctx, { id }))).owner).toEqual(shown);
+    expect((await as(manager(bossId), (ctx) => listLeadsPage(ctx, { limit: 200, filter: {} }))).items.find((l) => l.id === id)?.owner)
+      .toEqual(shown);
     await as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: null }));
     expect(await owner('select owner from radcore.leads where id = $1', [id])).toEqual([{ owner: null }]);
     // A manager's note on an unowned lead is triage and doesn't take it; a salesperson's note does (the architect).
@@ -330,5 +340,20 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
     expect(await owner('select owner from radcore.leads where id = $1', [id])).toEqual([{ owner: null }]);
     await as(taker(raviId), (ctx) => updateLeadDetails(ctx, { id, notes: 'Calling today' }));
     expect(await owner('select owner, notes from radcore.leads where id = $1', [id])).toEqual([{ owner: `user:${raviId}`, notes: 'Calling today' }]);
+  });
+
+  // lib-platform's peopleHolding is holdsKey's rule for many people (backend's condition on RAD-109): the picker lists
+  // exactly whom the hand-on would accept. A salesperson's role sees leads at `own`; an accounts clerk's doesn't at all.
+  it('lists as lead holders exactly the people holdsKey passes for leads:read', async () => {
+    const active = async (role: string) => (await owner<{ id: string }>(`insert into radcore.users (email, display_name, role, status, password_hash)
+      values ($1, $2, $3, 'active', 'test') returning id`, [`${letters()}@example.test`, `Person ${letters()}`, role]))[0]?.id ?? '';
+    const bare = `t_${letters()}`;
+    await owner("insert into radcore.roles (key, name, description) values ($1, $2, 'No keys at all')", [bare, `Bare ${letters()}`]);
+    const people = { ownScope: await active('sales'), invited: await person(), withoutKey: await active('accounts'), noGrants: await active(bare) };
+    const out = await as(manager(randomUUID()), async (ctx) => {
+      const listed = new Set((await peopleHolding(ctx, 'leads:read')).map((p) => p.id));
+      return Promise.all(Object.entries(people).map(async ([who, id]) => [who, listed.has(id), await holdsKey(ctx, id, 'leads:read') === true]));
+    });
+    expect(out).toEqual([['ownScope', true, true], ['invited', false, false], ['withoutKey', false, false], ['noGrants', false, false]]);
   });
 });

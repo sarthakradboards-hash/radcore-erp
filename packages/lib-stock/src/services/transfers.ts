@@ -3,18 +3,21 @@
 // franchisee's place while `stock.franchisee_transfer_approval` is on (Sarthak, default off), the transfer waits as a
 // draft for someone else's approval (stock:approve), and approving posts it. Undone by its mirror (RC-124). A transfer
 // is its maker's (created_by) for record scope.
-import { after, stockTransferLines, stockTransfers, stockTx } from '@radcore/db/stock';
+import { after, stockTransferLines, stockTransfers, stockTx, unitEvents } from '@radcore/db/stock';
 import { holdPeriod, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
-import { dec, quantityString, roundMoney } from '@radcore/lib-common';
+import { dec, quantityString, roundMoney, type UnitCondition } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, nextNumber,
+  AppError, approvedFor, awaitingApproval, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, nextNumber,
   principalId, requestApproval, withdrawPending, type ApprovalSpec, type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
-  cancelStockTransfer, createStockTransfer, deleteStockTransfer, getStockTransfer, listStockTransfers, requestStockTransferApproval,
+  cancelStockTransfer, createStockTransfer, deleteStockTransfer, getStockTransfer, listStockTransfers, requalifyStockTransfer,
+  requestStockTransferApproval,
 } from '../contract.ts';
+import { conditionBefore } from '../engine/undo.ts';
+import { postUnitEvents } from '../engine/units.ts';
 import { postStock, reverseStock, type PostedMovement } from '../engine/stock.ts';
 import { batchNumbers, itemLabels } from './items.ts';
 import { checkLines, placeNames, placeOf, picksOf, type Place } from './moves-lines.ts';
@@ -66,17 +69,41 @@ function checkRoute(from: Place, to: Place): void {
   }
 }
 
+/** A re-inspection's route (§9): out of a rejects place, into a sellable one, never the same place. */
+function checkRequalify(from: Place, to: Place): void {
+  if (from.id === to.id) {
+    throw new AppError('transfer_same_location', 'A transfer must go to another location', [{ path: ['toId'], code: 'same_location', message: 'Pick a different location' }]);
+  }
+  if (from.kind !== 'rejected') {
+    throw new AppError('not_a_rejects_place', 'A re-inspection takes goods out of a rejects place',
+      [{ path: ['fromId'], code: 'not_a_rejects_place', message: 'Choose a place of kind Rejected' }]);
+  }
+  if (!to.sellable) {
+    throw new AppError('place_not_sellable', 'Goods passed at re-inspection go back to a sellable place',
+      [{ path: ['toId'], code: 'not_sellable', message: 'Choose a sellable place' }]);
+  }
+  // Into one of our own: a franchisee's store is reached by a plain transfer after, which keeps its own approval
+  // (stock.franchisee_transfer_approval), so QC and that approval stay two steps (auditor-2 on #372).
+  if (to.kind === 'franchisee') {
+    throw new AppError('requalify_to_own_place', 'Re-inspect into one of our own places, then transfer to the franchisee',
+      [{ path: ['toId'], code: 'requalify_to_own_place', message: 'Choose one of our own places' }]);
+  }
+}
+
 /** Posts a draft transfer: its stock, its entry, its lines' values and its number, last (ADR-008 §12). */
 async function postTransfer(ctx: Ctx, id: string): Promise<string> {
   const tx = stockTx(ctx);
   const [t] = await tx.select().from(stockTransfers).where(eq(stockTransfers.id, id)).for('update');
-  // Its maker posting it at once (stock:move), or its approver approving it (stock:approve), within scope.
-  if (t === undefined || (!ctx.can('stock:move', { owner: t.createdBy }) && !ctx.can('stock:approve', { owner: t.createdBy }))) {
+  // Its maker posting it at once (stock:move, or inward:qc for a re-inspection), or its approver approving it
+  // (stock:approve), within scope.
+  const may = (key: string) => t !== undefined && ctx.can(key, { owner: t.createdBy });
+  if (t === undefined || !(t.requalified ? may('inward:qc') : may('stock:move') || may('stock:approve'))) {
     throw new AppError('not_found', 'There is no such transfer');
   }
   if (t.status !== 'draft') throw wrongStatus(t.status, 'posted');
   const [from, to] = [await placeOf(ctx, t.fromId, 'fromId'), await placeOf(ctx, t.toId, 'toId')];
-  checkRoute(from, to);
+  if (t.requalified) checkRequalify(from, to);
+  else checkRoute(from, to);
   const lines = await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id)).orderBy(asc(stockTransferLines.lineNo));
   // Into `demo`, serialised units take condition `demo` (F13); out of it they keep it.
   const moved = await postStock(ctx, { sourceTable: 'stock_transfers', sourceId: id, businessDate: t.businessDate,
@@ -88,6 +115,12 @@ async function postTransfer(ctx: Ctx, id: string): Promise<string> {
   // Each line moves out of `from`, then into `to`, in the lines' order (the engine's).
   const outs = moved.filter((m) => m.direction === 'out');
   for (const [n, l] of lines.entries()) await tx.update(stockTransferLines).set({ value: outs[n]?.value ?? roundMoney('0') }).where(eq(stockTransferLines.id, l.id));
+  // A re-inspection's units take the condition the inspection found, as condition_changed (§9).
+  if (t.condition !== null) {
+    await postUnitEvents(ctx, { sourceTable: 'stock_transfers', sourceId: id, businessDate: t.businessDate,
+      changes: lines.flatMap((l) => picksOf<string>(l.picks).serials.map((serialNo) => ({ itemId: l.itemId, serialNo, kind: 'condition_changed' as const,
+        condition: t.condition as UnitCondition }))) });
+  }
   const entry = await entryOf(ctx, id, t.businessDate, moved);
   const number = await nextNumber(ctx, TRANSFER_SERIES, t.businessDate);
   await tx.update(stockTransfers).set({ status: 'posted', number, postedEntryId: entry }).where(eq(stockTransfers.id, id));
@@ -150,6 +183,21 @@ export async function addTransfer(ctx: Ctx, input: In<typeof createStockTransfer
   return { id: row.id, number: await postTransfer(ctx, row.id), approval: null };
 }
 
+/** POST /stock/transfers/requalify (inward:qc): rejects inspected again and moved back to a sellable place, posted at
+ * once (§9, the architect on RAD-137). */
+export async function requalifyTransfer(ctx: Ctx, input: In<typeof requalifyStockTransfer>): Promise<Out<typeof requalifyStockTransfer>> {
+  await holdPeriod(ctx, input.businessDate);
+  checkRequalify(await placeOf(ctx, input.fromId, 'fromId'), await placeOf(ctx, input.toId, 'toId'));
+  await checkLines(ctx, input.lines);
+  const tx = stockTx(ctx);
+  const [row] = await tx.insert(stockTransfers).values({ fromId: input.fromId, toId: input.toId, businessDate: input.businessDate,
+    reason: input.reason, requalified: true, condition: input.condition }).returning({ id: stockTransfers.id });
+  if (row === undefined) throw new Error('the insert returned no row');
+  await tx.insert(stockTransferLines).values(input.lines.map((l, n) => ({ transferId: row.id, lineNo: n + 1, itemId: l.itemId, qty: l.qty,
+    picks: { batches: l.batches, serials: l.serials } })));
+  return { id: row.id, number: await postTransfer(ctx, row.id) };
+}
+
 /** POST /stock/transfers/:id/approval (stock:move): a waiting transfer sent again, after a refusal. */
 export async function askTransferApproval(ctx: Ctx, { id }: In<typeof requestStockTransferApproval>): Promise<Out<typeof requestStockTransferApproval>> {
   const t = await transferOf(ctx, id, 'stock:move', true);
@@ -182,6 +230,15 @@ export async function cancelTransferNow(ctx: Ctx, { id, businessDate, reason }: 
     }
     throw e;
   });
+  // A re-inspection undone: its units, back in rejects, take back the condition they had before it (§9).
+  if (t.requalified) {
+    const changed = await stockTx(ctx).select({ id: unitEvents.id, itemId: unitEvents.itemId, serialNo: unitEvents.serialNo,
+      postedAt: unitEvents.postedAt }).from(unitEvents).where(and(eq(unitEvents.sourceTable, 'stock_transfers'), eq(unitEvents.sourceId, id),
+      eq(unitEvents.kind, 'condition_changed')));
+    const changes = [];
+    for (const e of changed) changes.push({ itemId: e.itemId, serialNo: e.serialNo, kind: 'condition_changed' as const, condition: await conditionBefore(ctx, e) });
+    await postUnitEvents(ctx, { sourceTable: 'stock_transfers', sourceId: id, businessDate, changes });
+  }
   const [own] = t.postedEntryId === null ? [] : await reverseEntriesOf(ctx, { source: { table: 'stock_transfers', id }, businessDate, reason });
   await stockTx(ctx).update(stockTransfers).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
     cancelReason: reason, cancelEntryId: own?.id ?? null }).where(eq(stockTransfers.id, id));
@@ -214,10 +271,12 @@ export async function getTransferById(ctx: Ctx, { id }: In<typeof getStockTransf
   const lines = await stockTx(ctx).select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id)).orderBy(asc(stockTransferLines.lineNo));
   const [labels, names, pending] = [await itemLabels(ctx, lines.map((l) => l.itemId)), await placeNames(ctx, [t.fromId, t.toId]),
     t.status === 'draft' && (await awaitingApproval(ctx, transferApprovalSpec, [id])).has(id)];
+  // A posted one shows the approval it was posted by, if any (auditor-2 on #339).
+  const approved = t.status !== 'draft' && (await approvedFor(ctx, transferApprovalSpec, [id])).has(id);
   const batchNos = await batchNumbers(ctx, lines.flatMap((l) => picksOf<string>(l.picks).batches.flatMap((b) => (b.batchId === null ? [] : [b.batchId]))));
   return { id: t.id, number: t.number, fromId: t.fromId, fromName: names.get(t.fromId) ?? '', toId: t.toId, toName: names.get(t.toId) ?? '',
     businessDate: t.businessDate, status: t.status as Status, reason: t.reason,
-    approval: t.status !== 'draft' ? 'none' : pending ? 'pending' : 'none',
+    approval: approved ? 'approved' : pending ? 'pending' : 'none', requalified: t.condition as 'new' | 'used' | null,
     lines: lines.map((l) => {
       const picks = picksOf<string>(l.picks);
       return { id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: labels.get(l.itemId)?.sku ?? '', name: labels.get(l.itemId)?.name ?? '',

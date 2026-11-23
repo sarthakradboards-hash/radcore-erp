@@ -15,10 +15,10 @@ const me = '0193b1c2-3d4e-7f80-9a1b-2c3d4e5f6a70';
 
 it('says whose a lead is from its owner principal', () => {
   expect(ownerText(null, me)).toBe('No one');
-  expect(ownerText(`user:${me}`, me)).toBe('You');
-  expect(ownerText('user:0193b1c2-3d4e-7f80-9a1b-2c3d4e5f6a71', me)).toBe('Someone else');
-  // A bare id is not this person: the owner is always a principal.
-  expect(ownerText(me, me)).toBe('Someone else');
+  expect(ownerText({ kind: 'user', id: me, displayName: 'Me' }, me)).toBe('You');
+  // Someone else by name, as the server answers the owner (RAD-109); without a name, someone else.
+  expect(ownerText({ kind: 'user', id: '0193b1c2-3d4e-7f80-9a1b-2c3d4e5f6a71', displayName: 'Ravi Kumar' }, me)).toBe('Ravi Kumar');
+  expect(ownerText({ kind: 'user', id: '0193b1c2-3d4e-7f80-9a1b-2c3d4e5f6a71', displayName: null }, me)).toBe('Someone else');
 });
 
 it('names a lead by its name, else by the digits its phone keeps', () => {
