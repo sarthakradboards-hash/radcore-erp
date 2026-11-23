@@ -253,6 +253,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Stock (RAD-92): locations, and their kinds' labels.
   'GET /stock/location-kinds': 'locations:read',
   'GET /stock/on-hand': 'stock:read',
+  'GET /stock/positions': 'stock:read',
+  'GET /stock/units': 'stock:read',
+  'GET /stock/units/:id': 'stock:read',
   // Transfers, counts and adjustments (M4-06, RAD-141; ADR-008 §13).
   'GET /stock/job-work/challans': 'stock:read',
   'GET /stock/job-work/challans/:id': 'stock:read',
@@ -636,6 +639,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Stock's routes reach lib-stock and, through it, lib-platform.
   'GET /stock/location-kinds': STOCK,
   'GET /stock/on-hand': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/positions': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/units': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/units/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/job-work/challans': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/job-work/challans/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/job-work/challans/:id/pdf': ['lib-accounts', 'lib-platform', 'lib-stock'],

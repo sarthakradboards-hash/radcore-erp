@@ -178,6 +178,9 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
     add(['GET /parties/:id', 'GET /parties/:id/statement', 'GET /parties/:id/reminders', 'GET /sales/party-price-lists/:partyId'],
       base.customer, base.supplier);
     add(['GET /items/:id'], base.plain, base.serial);
+    // A unit received above: its trail (RAD-144).
+    add(['GET /stock/units/:id'], (await su.query<{ id: string }>('select id from radcore.units where item_id = $1 order by serial_key limit 1',
+      [base.serial])).rows[0]?.id);
     add(['hsn'], base.hsn);
     add(['stores'], base.stores);
 
