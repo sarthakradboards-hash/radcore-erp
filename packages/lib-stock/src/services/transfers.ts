@@ -82,6 +82,12 @@ function checkRequalify(from: Place, to: Place): void {
     throw new AppError('place_not_sellable', 'Goods passed at re-inspection go back to a sellable place',
       [{ path: ['toId'], code: 'not_sellable', message: 'Choose a sellable place' }]);
   }
+  // Into one of our own: a franchisee's store is reached by a plain transfer after, which keeps its own approval
+  // (stock.franchisee_transfer_approval), so QC and that approval stay two steps (auditor-2 on #372).
+  if (to.kind === 'franchisee') {
+    throw new AppError('requalify_to_own_place', 'Re-inspect into one of our own places, then transfer to the franchisee',
+      [{ path: ['toId'], code: 'requalify_to_own_place', message: 'Choose one of our own places' }]);
+  }
 }
 
 /** Posts a draft transfer: its stock, its entry, its lines' values and its number, last (ADR-008 §12). */

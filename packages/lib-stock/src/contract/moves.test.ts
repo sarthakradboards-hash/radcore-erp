@@ -23,7 +23,7 @@ describe('the stock moves contracts', () => {
     expect(routes.every((c) => c.tx.readOnly === (c.method === 'GET'))).toBe(true);
     // A re-inspection is QC's (§9, the architect on RAD-137), not a plain transfer's.
     expect(keyOf('POST', '/stock/transfers/requalify')).toBe('inward:qc');
-    expect(moves.requalifyStockTransfer.errors).toEqual(expect.arrayContaining(['not_a_rejects_place', 'place_not_sellable']));
+    expect(moves.requalifyStockTransfer.errors).toEqual(expect.arrayContaining(['not_a_rejects_place', 'place_not_sellable', 'requalify_to_own_place']));
   });
 
   it('declare a transfer’s refusals on the route that makes it (RAD-134), and the undo’s on its cancel', () => {

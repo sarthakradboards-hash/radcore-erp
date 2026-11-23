@@ -95,7 +95,8 @@ export const stockTransferApproval = approvalContracts('stock-transfer', 'stock:
  * A re-inspection (§9, the architect on RAD-137): rejects inspected again and moved from a rejects place to a sellable
  * one, under inward:qc, the key that does QC at receipt, with a reason; posted at once, numbered from the transfers'
  * series. Its serialised units take the condition found, `new` or `used` (condition_changed); batch goods keep their
- * batches. The goods move at the value they carry, so they join the selling average only now (RC-205). The plain
+ * batches. The goods move at the value they carry, so they join the selling average only now (RC-205). Into one of our
+ * own places only (`requalify_to_own_place`): a franchisee's store is a plain transfer after, with its approval. The plain
  * transfer keeps refusing rejects (`needs_qc`). It's undone by the plain cancel, its units back in their condition.
  */
 export const requalifyStockTransfer = defineContract({
@@ -103,7 +104,7 @@ export const requalifyStockTransfer = defineContract({
   input: z.object({ fromId: idString(), toId: idString(), businessDate: dateString(), reason: reason(), condition: z.enum(['new', 'used']),
     lines: lines(moveLineIn) }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['not_a_rejects_place', 'place_not_sellable', 'transfer_same_location', ...LINE_ERRORS, ...POSTING_ERRORS],
+  errors: ['not_a_rejects_place', 'place_not_sellable', 'requalify_to_own_place', 'transfer_same_location', ...LINE_ERRORS, ...POSTING_ERRORS],
 });
 /** Undoes a posted transfer (RC-124): its mirror at the same values, dated the cancellation's day; refused once the
  * goods have left where it put them, or a unit on it has moved since (`goods_moved_on`). */
