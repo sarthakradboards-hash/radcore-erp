@@ -39,6 +39,8 @@ export const purchases = {
   'purchases.col.date': 'Date',
   'purchases.col.expectedBy': 'Expected by',
   'purchases.col.total': 'Total',
+  // A draft stores no total: the server works it out when the PO is placed (e2e-playwright on #337).
+  'purchases.col.total.draft': 'Worked out when placed',
   'purchases.col.status': 'Status',
   // A draft placed above its placer's limit (the contract's awaitingApproval).
   'purchases.status.awaiting': 'Draft, waiting for approval',

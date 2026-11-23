@@ -21,7 +21,7 @@ const columns: Column<Row>[] = [
   { id: 'supplier', header: t('purchases.col.supplier'), cell: (o) => o.supplierName },
   { id: 'date', header: t('purchases.col.date'), cell: (o) => formatDate(o.businessDate) },
   { id: 'expectedBy', header: t('purchases.col.expectedBy'), cell: (o) => (o.expectedBy === null ? '' : formatDate(o.expectedBy)) },
-  { id: 'total', header: t('purchases.col.total'), numeric: true, cell: (o) => (o.total === null ? '' : formatMoney(o.total)) },
+  { id: 'total', header: t('purchases.col.total'), numeric: true, cell: (o) => (o.total === null ? t('purchases.col.total.draft') : formatMoney(o.total)) },
   { id: 'status', header: t('purchases.col.status'),
     cell: (o) => (o.awaitingApproval ? t('purchases.status.awaiting') : statusName(o.status)) },
 ];
