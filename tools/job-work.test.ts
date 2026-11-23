@@ -137,6 +137,20 @@ describe.skipIf(!url || !superUrl)('job work', () => {
     expect(await code(receive(at, sent.id, line, { back: '2' }))).toBe('ok');
   });
 
+  // The architect on RAD-142 (job-work-accounted.ts's E7 exemption): what's left counts every posted receipt, so an
+  // own-scope sender can't receive past a colleague's.
+  it('counts a colleague’s receipt in what an own-scope sender has left to receive', async () => {
+    const at = await setup();
+    const mine: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS, ownScope: ['stock:read', 'job_work:write'] };
+    const sent = await run((ctx) => addChallan(ctx, { fromId: at.stores, partyId: at.partyId, businessDate: DATE, notes: null,
+      lines: [{ itemId: at.kit, qty: q('4'), batches: [{ batchId: at.batch, qty: q('4') }], serials: [] }] }), mine);
+    const line = await challanLine(sent.id);
+    await receive(at, sent.id, line, { back: '3' });
+    const back = (qty: string) => code(run((ctx) => addReceipt(ctx, { challanId: sent.id, locationId: at.stores, businessDate: DATE, notes: null,
+      lines: [{ challanLineId: line, made: null, used: none(), back: part(at, qty), lost: none() }] }), mine));
+    expect([await back('2'), await back('1')]).toEqual(['over_challan', 'ok']);
+  });
+
   // The architect on RAD-141: a reject is re-inspected or returned to its supplier first, never sent for job work.
   it('sends no challan from rejects, nor from a job worker’s place', async () => {
     const at = await setup();

@@ -198,5 +198,11 @@ INSERT INTO radcore.role_templates (role, permission, scope)
 SELECT r, 'job_work:write', 'all' FROM unnest(array['admin', 'stores', 'operations']) AS r
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
+-- stock:read to operations too (the architect on RAD-142; ADR-008 §13): whoever sends job work picks its batches and
+-- serials from stock on hand. Values stay cost()-masked, as operations holds no cost:read.
+INSERT INTO radcore.role_grants (role, permission, scope) VALUES ('operations', 'stock:read', 'all') ON CONFLICT DO NOTHING;
+--> statement-breakpoint
+INSERT INTO radcore.role_templates (role, permission, scope) VALUES ('operations', 'stock:read', 'all') ON CONFLICT DO NOTHING;
+--> statement-breakpoint
 -- locations gains party_id (a job worker's own place, §11): attached again, so its trail keeps it (ADR-005 §5).
 SELECT radcore.audit_attach('locations', keep => array['code', 'name', 'kind', 'active', 'code_key', 'party_id']);

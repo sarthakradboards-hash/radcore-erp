@@ -17,6 +17,8 @@ export const STATE_TRANSITIONS: Readonly<Record<string, readonly (readonly [from
   // opens again when a cancelled receipt brings a line back below what was ordered (RAD-137, as sales orders do).
   purchase_orders: [['draft', 'placed'], ['placed', 'closed'], ['closed', 'placed'], ['draft', 'cancelled'], ['placed', 'cancelled']],
   goods_receipts: [['draft', 'posted'], ['posted', 'cancelled']],
+  job_work_challans: [['draft', 'posted'], ['posted', 'cancelled']],
+  job_work_receipts: [['draft', 'posted'], ['posted', 'cancelled']],
 };
 
 /** A quote's statuses (ADR-007 §1): it posts nothing, so its service moves it and a CHECK holds the values. */

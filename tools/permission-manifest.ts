@@ -648,9 +648,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /approvals/stock-adjustment/:id/decision': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/adjustments/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'PUT /stock/location-kinds/:kind': STOCK,
-  'GET /stock/locations': STOCK,
-  'POST /stock/locations': STOCK,
-  'PATCH /stock/locations/:id': STOCK,
+  // A job worker's place names its party (RAD-142), checked through lib-accounts.
+  'GET /stock/locations': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/locations': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'PATCH /stock/locations/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   // The workbook's start route takes only its contract (the architect on RAD-92): lib-platform's own.
   'POST /platform/masters/exports': PLATFORM,
   // HR's routes reach lib-hr and, through it, lib-platform.
