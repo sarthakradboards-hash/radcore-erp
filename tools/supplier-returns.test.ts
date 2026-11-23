@@ -13,6 +13,7 @@ import {
   postReceipt, postReturn,
 } from '@radcore/lib-purchasing';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
+import { getSupplierReturn } from '@radcore/lib-purchasing/contract';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -121,8 +122,11 @@ describe.skipIf(!url || !superUrl)('supplier returns', { timeout: 30_000 }, () =
     const at = await received();
     const closed = (await order(at)).status;
     const { id } = await draft(at);
+    const drafted = await run((ctx) => getReturnById(ctx, { id }), at.staff);
     const posted = await run((ctx) => postReturn(ctx, { id }), at.staff);
     const r = await run((ctx) => getReturnById(ctx, { id }), at.staff);
+    // What the route answers passes its contract's output, drafted and posted (#367's lesson: a service test skips it).
+    expect([getSupplierReturn.output.safeParse(drafted).error, getSupplierReturn.output.safeParse(r).error]).toEqual([undefined, undefined]);
     const reopened = await order(at);
     expect(posted).toEqual({ number: expect.stringMatching(/^SR\/\d{2}-\d{2}\/\d{5}$/) as string, debitNoteNumber: null });
     expect([r.status, r.unbilledValue, r.lines.map((l) => [l.qty, l.unbilledQty, l.unbilledValue, l.billed.length])])
