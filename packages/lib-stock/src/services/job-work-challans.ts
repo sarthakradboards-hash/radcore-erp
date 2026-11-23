@@ -62,12 +62,9 @@ async function jobWorkerPlace(ctx: Ctx, partyId: string): Promise<string> {
   return place.id;
 }
 
-/**
- * The entry (F16): Dr Stock in Hand at the job worker's place, Cr at ours, by item; none when nothing has value. A move
- * into negative stock also revalues, which the engine posts as its own entry (ADR-006 §4), so only ins and outs count.
- */
+/** The entry (F16): Dr Stock in Hand at the job worker's place, Cr at ours, by item; none when nothing has value. */
 async function entryOf(ctx: Ctx, id: string, businessDate: string, moved: readonly PostedMovement[]): Promise<string | null> {
-  const lines: JournalLine[] = moved.filter((m) => m.direction !== 'revalue' && dec(m.value).gt(0)).map((m) => ({ account: { system: 'stock' }, itemId: m.itemId,
+  const lines: JournalLine[] = moved.filter((m) => dec(m.value).gt(0)).map((m) => ({ account: { system: 'stock' }, itemId: m.itemId,
     locationId: m.locationId, ...(m.direction === 'in' ? { debit: m.value } : { credit: m.value }) }));
   if (lines.length === 0) return null;
   return (await postEntry(ctx, { kind: 'job_work', businessDate, source: { table: SOURCE, id }, lines })).id;

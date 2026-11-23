@@ -326,7 +326,9 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
   location.
 - **The challan** sends inputs from a location of ours to the job worker's (ADR-006 §6, F16). Serialised inputs go with
   `sent_to_job_work`, and batches go with them. It's the delivery challan Rule 55 asks for goods sent for job work, so
-  it prints the job worker's name, address, state and GSTIN in full.
+  it prints the job worker's name, address, state and GSTIN in full, and the goods' value, which Rule 55 also asks for,
+  in full whoever prints it; so its print is under `job_work:write`, not `stock:read`, and on screen the values stay
+  `cost()` (RAD-142).
 - **No challan sends from a `rejected` place** (`needs_qc`, as a plain transfer is refused, §9; RAD-141). What a job
   worker makes or sends back comes into our stock, so rejects sent out would come back sellable without QC.
 - **The receipt** names the challan lines it answers, and says, for each:

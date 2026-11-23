@@ -8,6 +8,7 @@ import { indiaDate } from '@radcore/lib-common';
 import { createStockTransfer, getItem, listItems, listStockTransfers, stockTransferApproval } from '@radcore/lib-stock/contract';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { SelectField, TextAreaField, TextField } from '../../../../../components/ui/form/fields.tsx';
@@ -41,9 +42,18 @@ const blankLine = (itemId = ''): TransferInput['lines'][number] => ({ itemId, qt
 const useItems = (query: string) => useApiSearch(listItems, query, { params: { filter: { active: true } } });
 
 function LineFields({ index, onSplit }: { index: number; onSplit: () => void }) {
-  const { control } = useFormContext<TransferInput>();
+  const { control, setValue } = useFormContext<TransferInput>();
   const itemId = useWatch({ control, name: `lines.${index}.itemId` });
   const from = useWatch({ control, name: 'locationId' });
+  // A new item or From place leaves none of the old picks or serials (auditor-3 on #375, as adjustment-form.tsx): not on
+  // the first render, so an edited draft keeps what was saved; every line watches From, so changing it resets them all.
+  const seen = useRef({ itemId, from });
+  useEffect(() => {
+    if (seen.current.itemId === itemId && seen.current.from === from) return;
+    seen.current = { itemId, from };
+    setValue(`lines.${index}.pick`, {});
+    setValue(`lines.${index}.serials`, []);
+  }, [itemId, from, index, setValue]);
   const item = useApiQuery(getItem, { id: itemId }, { enabled: itemId !== '' }).data ?? null;
   return (
     <>
