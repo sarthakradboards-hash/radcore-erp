@@ -2,6 +2,7 @@
 // case or spacing are one code: the database's unique `code_key` decides, and its refusal is answered as code_taken,
 // so no check here can race another request.
 import { after, locations, searchWords, stockTx } from '@radcore/db/stock';
+import { getPartyById } from '@radcore/lib-accounts';
 import { LOCATION_KINDS, type LocationKind } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, sortedCursor, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq } from 'drizzle-orm';
@@ -18,6 +19,10 @@ async function sameCodeRefused<T>(write: Promise<T>): Promise<T> {
   try {
     return await write;
   } catch (e) {
+    if ((e as { cause?: { constraint?: string } }).cause?.constraint === 'ux_locations_party') {
+      throw new AppError('job_worker_has_place', 'This job worker has a job work place already',
+        [{ path: ['partyId'], code: 'job_worker_has_place', message: 'Use the job worker’s place' }]);
+    }
     if ((e as { cause?: { constraint?: string } }).cause?.constraint === 'ux_locations_code_key') {
       throw new AppError('code_taken', 'Another location already has this code',
         [{ path: ['code'], code: 'taken', message: 'Choose another code' }]);
@@ -50,10 +55,32 @@ export async function listPlaces(ctx: Ctx, input: In<typeof listLocations>): Pro
   };
 }
 
+/** A job work place names its job worker, an existing party, and no other kind names one (ADR-008 §11). */
+async function checkJobWorker(ctx: Ctx, kind: string, partyId: string | null): Promise<void> {
+  if (kind === 'job_work' && partyId === null) {
+    throw new AppError('job_worker_required', 'A job work place is a job worker’s: name them',
+      [{ path: ['partyId'], code: 'job_worker_required', message: 'Choose the job worker' }]);
+  }
+  if (kind !== 'job_work' && partyId !== null) {
+    throw new AppError('not_a_job_work_place', 'Only a job work place names a party',
+      [{ path: ['partyId'], code: 'not_a_job_work_place', message: 'Leave the party out' }]);
+  }
+  if (partyId !== null) {
+    await getPartyById(ctx, { id: partyId }).catch((e: unknown) => {
+      if (e instanceof AppError && e.code === 'not_found') {
+        throw new AppError('unknown_party', 'There is no such party', [{ path: ['partyId'], code: 'unknown_party', message: 'Choose a party' }]);
+      }
+      throw e;
+    });
+  }
+}
+
 /** POST /stock/locations (locations:write). */
 export async function addPlace(ctx: Ctx, input: In<typeof addLocation>): Promise<Out<typeof addLocation>> {
+  const partyId = input.partyId ?? null;
+  await checkJobWorker(ctx, input.kind, partyId);
   const [row] = await sameCodeRefused(stockTx(ctx).insert(locations)
-    .values({ code: input.code, name: input.name, kind: input.kind }).returning({ id: locations.id }));
+    .values({ code: input.code, name: input.name, kind: input.kind, partyId }).returning({ id: locations.id }));
   if (row === undefined) throw new Error('the insert returned no row');
   return { id: row.id };
 }
@@ -63,6 +90,12 @@ export async function updatePlace(ctx: Ctx, input: In<typeof updateLocation>): P
   const { id, ...fields } = input;
   const changes = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
   const tx = stockTx(ctx);
+  if (fields.kind !== undefined || fields.partyId !== undefined) {
+    // The place as it would be, judged whole: a kind changed to or from job work moves its party with it.
+    const [now] = await tx.select({ kind: locations.kind, partyId: locations.partyId }).from(locations).where(eq(locations.id, id)).for('update');
+    if (now === undefined) throw new AppError('not_found', 'There is no such location');
+    await checkJobWorker(ctx, fields.kind ?? now.kind, fields.partyId === undefined ? now.partyId : fields.partyId);
+  }
   const found = Object.keys(changes).length === 0
     ? await tx.select({ id: locations.id }).from(locations).where(eq(locations.id, id))
     : await sameCodeRefused(tx.update(locations).set(changes).where(eq(locations.id, id)).returning({ id: locations.id }));
@@ -72,17 +105,24 @@ export async function updatePlace(ctx: Ctx, input: In<typeof updateLocation>): P
 
 /** Refuses a place a document can't move stock at: one that doesn't exist (`unknown_location`), is switched off
  * (`location_inactive`), or, for a document that sells, isn't of a sellable kind (`place_not_sellable`: a demo or
- * rejected unit is moved to a sellable place first, ADR-007 §1). A stock document calls it before it posts (M3-08 on). */
-export async function checkPlace(ctx: Ctx, id: string, o: { sellable?: boolean } = {}): Promise<void> {
+ * rejected unit is moved to a sellable place first, ADR-007 §1), or, where rejects go, isn't of kind `rejected`
+ * (`not_a_rejects_place`, a goods receipt's, ADR-008 §6). A stock document calls it before it posts (M3-08 on). `path`
+ * names the field the refusal points at. */
+export async function checkPlace(ctx: Ctx, id: string, o: { sellable?: boolean; rejects?: boolean; path?: string } = {}): Promise<void> {
+  const path = [o.path ?? 'locationId'];
   const [row] = await stockTx(ctx).select({ active: locations.active, kind: locations.kind }).from(locations).where(eq(locations.id, id)).limit(1);
   if (row === undefined) {
-    throw new AppError('unknown_location', 'There is no such location', [{ path: ['locationId'], code: 'unknown', message: 'Choose a location' }]);
+    throw new AppError('unknown_location', 'There is no such location', [{ path, code: 'unknown', message: 'Choose a location' }]);
   }
   if (!row.active) {
-    throw new AppError('location_inactive', 'This location is switched off', [{ path: ['locationId'], code: 'inactive', message: 'Choose another location' }]);
+    throw new AppError('location_inactive', 'This location is switched off', [{ path, code: 'inactive', message: 'Choose another location' }]);
   }
   if (o.sellable === true && LOCATION_KINDS[row.kind as LocationKind]?.sellable !== true) {
     throw new AppError('place_not_sellable', 'Goods are sold only from a sellable place',
-      [{ path: ['locationId'], code: 'not_sellable', message: 'Move the goods to a sellable place first' }]);
+      [{ path, code: 'not_sellable', message: 'Move the goods to a sellable place first' }]);
+  }
+  if (o.rejects === true && row.kind !== 'rejected') {
+    throw new AppError('not_a_rejects_place', 'Rejected goods go to a rejects place',
+      [{ path, code: 'not_a_rejects_place', message: 'Choose a place of kind Rejected' }]);
   }
 }

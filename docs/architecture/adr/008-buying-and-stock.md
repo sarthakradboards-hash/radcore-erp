@@ -138,6 +138,16 @@ the document it comes from (`date_before_source`):
   - lowering a quantity or rate, closing short, and any edit within both limits save at once.
 - **Receiving more than ordered is refused** (`over_ordered`). Extra goods need a PO line of their own; there's no
   quantity tolerance.
+- **What a PO line counts as received** is its receipts' received quantity, accepted and rejected alike, net of
+  cancelled receipts (RAD-137), and net of supplier returns once M4-05 posts them (Sarthak, 23 Nov, RAD-140). A draft
+  receipt is judged with the line's other drafts too, so two drafts can't over-receive between them; posting judges
+  against posted receipts. Rejects later re-inspected stay counted: they were received, and only their place changed.
+- **A PO closes** when every line has received all it ordered, and **reopens** (`closed → placed`) when a cancelled
+  receipt, or a supplier return (§8), brings a line below that again, so the goods can come on the same PO. A PO a
+  person closed short, with a reason, stays closed (RAD-137, as ADR-007 §1 has sales orders do).
+- **The sums count every receipt, whoever made it.** lib-purchasing's `services/received.ts` reads past the record
+  scope under ADR-001 §6a's exemption, answering only quantities and ids for the lines its caller holds in scope, so a
+  stores user at `own` scope can't over-receive against a colleague's receipt.
 - The PO prints on A4 through RAD-120's engine (M4-01). It isn't a tax document, so personal fields print as the
   screen shows them.
 
@@ -160,7 +170,8 @@ Flow 5: goods arrive and are counted, but aren't in stock until QC has split the
   `serial_in_stock`, both before the database's RA008. A serial that went back to its supplier (`gone`) can come in
   again.
 - **Cancelling a posted receipt** mirrors it, at the same values, only while nothing on it has been billed, returned
-  or moved on (`receipt_in_use`).
+  or moved on (`receipt_in_use`). It locks the PO, then the receipt (§12), and a PO its receipts closed reopens if a
+  line falls below what was ordered (§5).
 
 ### 7. Purchase bills (M4-03, RC-023, RC-056, RC-172)
 
@@ -249,10 +260,15 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
   goes only to another `rejected` one. To any other place, sellable or not, it's refused (`needs_qc`), so a hop
   through a demo or franchisee place can't carry rejects back to selling (RAD-141). Rejects otherwise leave only by
   a supplier return (§8), an approved write-off adjustment (§10), or a **re-inspection**:
-  - a transfer marked `requalified`, under `inward:qc`, the key that does QC at receipt, with a reason;
-  - its serialised units take the condition the inspection found, `new` or `used`, by `condition_changed`;
-  - M4-06 ships the refusal. M4-02, which brings `inward:qc`, adds the re-inspection, so until then rejects can't go
-    back at all.
+  - a route of its own, `POST /stock/transfers/requalify`, under `inward:qc`, the key that does QC at receipt, with a
+    reason, posted at once as a `stock_transfers` row marked `requalified`, numbered from the transfers' series
+    (RAD-137). A route has one key, so the plain transfer route never needs to check a second one;
+  - it moves goods from a `rejected` place (`not_a_rejects_place` otherwise) to a sellable place of our own
+    (`place_not_sellable`; a franchisee's store is `requalify_to_own_place`, reached by a plain transfer after, with
+    its own approval, so QC and that approval stay two steps);
+  - its serialised units take the one condition the inspection found, `new` or `used`, by `condition_changed`, and
+    batch goods keep their batches. The goods move at the value they carry, so they join the selling average only now;
+  - the plain cancel undoes it, the units back in their condition before: putting goods back in rejects needs no QC.
 - **Job work locations** are reached only by job work's own documents (§11): a plain transfer to or from one is
   refused (`use_job_work`).
 - **A transfer can be undone (RC-124).** Cancelling it mirrors it at the same values, dated the cancellation's day.
@@ -291,7 +307,8 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
   Its `approved` step posts, so the spec declares `lockFirst`.
 - **What posts** is ADR-006 §6's row and F14:
   - a shortage goes out at the location's average, and a gain comes in at it, or at the item's last `in` rate where
-    the location holds none, against ADR-006 §2's existing `stock_adjustment` account;
+    the location holds none, else at its purchase price, as ADR-006 §4's estimate falls back (RAD-144); with none of
+    them it's refused (`no_estimate`). It posts against ADR-006 §2's existing `stock_adjustment` account;
   - a serialised shortage is written off as lost, `scrapped`. An adjustment's own serialised gain is `received`, with
     the adjustment's number as its batch;
   - a difference between batches alone moves the quantity between them, at the same value, with no entry (F21).
@@ -373,10 +390,10 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
   `supplier_returns` in its `records`, owned by `created_by`. `stock:read` gains the stock documents
   (`stock_transfers`, `stock_counts`, `stock_adjustments`, `job_work_challans`, `job_work_receipts`). The ledgers stay
   out of every `records` (ADR-006 §1).
-- **Who reads stock documents, on purpose:** `stock:read` is already granted to the counter and sales, for picking
-  stock, so they can read transfers, counts, adjustments and job work too. That's intended: where stock went is
-  useful to them. The documents' values are `cost()`, masked without `cost:read`. An admin who wants counts kept to
-  stores narrows `stock:read` on the roles screen.
+- **Who reads stock documents, on purpose:** `stock:read` is granted to the counter and sales, for picking stock, and to
+  operations, for picking what job work sends out (RAD-142), so they can read transfers, counts, adjustments and job
+  work too. That's intended: where stock went is useful to them. The documents' values are `cost()`, masked without
+  `cost:read`. An admin who wants counts kept to stores narrows `stock:read` on the roles screen.
 - **A purchasing document's own figures are content, not `cost()`** (RAD-136). A PO's, receipt's, bill's and
   return's rates, amounts and tax are what the document says: shown to whoever holds `purchasing:read`, and printed
   on it. `cost()` stays on what's worked out from them: an item's moving average, stock values and margins (ADR-001's

@@ -205,7 +205,9 @@ export const getJournal = defineContract({
 /** A manual journal's line: one account, and a debit or a credit above zero. */
 const manualLine = z.object({ accountId: idString(), debit: moneyString().optional(), credit: moneyString().optional() })
   .refine((l) => (l.debit === undefined) !== (l.credit === undefined), 'Enter a debit or a credit, not both')
-  .refine((l) => dec(l.debit ?? l.credit ?? '0').gt(0), 'Enter an amount above zero');
+  // Judged only once the amount is money: dec() throws on anything else (as recordAdSpend's did, RAD-110).
+  .refine((l) => !moneyString().safeParse(l.debit ?? l.credit ?? '0').success || dec(l.debit ?? l.credit ?? '0').gt(0),
+    'Enter an amount above zero');
 
 /** POST /journal (journal:post): a manual journal on ordinary accounts, with the reason it was made (RC-093). */
 export const postJournal = defineContract({
@@ -254,7 +256,7 @@ export const recordPaymentContract = defineContract({
     reference: z.string().trim().min(1).max(40).optional(),
   }),
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
-  errors: ['invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',
+  errors: ['amount_not_positive', 'invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',
     'refund_other_party', 'date_before_source', 'exceeds_receipt', 'unknown_account', 'not_money_account', 'account_inactive', 'not_draft',
     'refund_through_owner', 'series_full', 'looks_like_card_number', ...CREDIT_REFUND_ERRORS],
   dbErrors: CREDIT_REFUND_DB_ERRORS,

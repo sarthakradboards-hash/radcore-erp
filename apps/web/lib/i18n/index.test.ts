@@ -6,6 +6,7 @@ import { bookings } from './bookings.ts';
 import { deliveries } from './deliveries.ts';
 import { approvals } from './approvals.ts';
 import { payments } from './payments.ts';
+import { purchases } from './purchases.ts';
 import { quickBill } from './quick-bill.ts';
 import { testRides } from './test-rides.ts';
 import { collect } from './collect.ts';
@@ -15,6 +16,7 @@ import { invoices } from './invoices.ts';
 import { kit } from './kit.ts';
 import { masters } from './masters.ts';
 import { sales } from './sales.ts';
+import { stock } from './stock.ts';
 
 it('fills placeholders and leaves an unknown one visible', () => {
   expect(t('error.reference', { id: 'abc123' })).toBe('Reference: abc123');
@@ -25,7 +27,7 @@ it('fills placeholders and leaves an unknown one visible', () => {
 });
 
 it('keeps each catalogue under its own prefix, so no key replaces another', () => {
-  const catalogues = { core, admin, masters, books, collect, payments, sales, invoices, approvals, deliveries, creditNotes, testRides, bookings, quickBill, crm, kit };
+  const catalogues = { core, admin, masters, books, collect, payments, sales, invoices, approvals, deliveries, creditNotes, testRides, bookings, quickBill, crm, stock, purchases, kit };
   const seen = new Map<string, string>();
   for (const [name, catalogue] of Object.entries(catalogues)) {
     for (const key of Object.keys(catalogue)) {
@@ -37,6 +39,8 @@ it('keeps each catalogue under its own prefix, so no key replaces another', () =
   expect(Object.keys(masters).every((k) => k.startsWith('admin.'))).toBe(true);
   expect(Object.keys(kit).every((k) => k.startsWith('kit.'))).toBe(true);
   expect(Object.keys(crm).every((k) => k.startsWith('crm.'))).toBe(true);
+  expect(Object.keys(purchases).every((k) => k.startsWith('purchases.'))).toBe(true);
+  expect(Object.keys(stock).every((k) => k.startsWith('stock.'))).toBe(true);
   expect(Object.keys(books).every((k) => k.startsWith('books.'))).toBe(true);
   expect(Object.keys(collect).every((k) => k.startsWith('books.'))).toBe(true);
   expect(Object.keys(payments).every((k) => k.startsWith('books.'))).toBe(true);

@@ -87,12 +87,16 @@ export const locations = radcoreTable('locations', {
   kind: text().notNull(),
   active: boolean().notNull().default(true),
   codeKey: text().notNull().generatedAlwaysAs(sql`upper(btrim(code))`),
+  // A job worker's own place (ADR-008 §11, RAD-142): the party it's theirs, exactly when its kind is `job_work`, one each.
+  partyId: uuid().references(() => parties.id, { onDelete: 'restrict' }),
 }, (t) => [
   // LOCATION_KINDS' codes, written out because L1 allows only a plain `sql` here; tables.test.ts holds the two equal.
   check('ck_locations_kind',
     sql`${t.kind} in ('store', 'stores', 'service_bay', 'franchisee', 'rejected', 'demo', 'job_work', 'in_transit')`),
   uniqueIndex('ux_locations_code_key').on(t.codeKey),
   index('ix_locations_kind').on(t.kind),
+  check('ck_locations_job_worker', sql`(${t.kind} = 'job_work') = (${t.partyId} is not null)`),
+  uniqueIndex('ux_locations_party').on(t.partyId),
 ]);
 
 /**

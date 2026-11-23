@@ -57,9 +57,26 @@ export const SALES_PAGES = [
 /** The CRM area's pages (RAD-122): leads first, as the sales team works them most. */
 export const CRM_PAGES = [
   { href: '/crm/leads', label: 'crm.nav.leads', perm: 'leads:read' },
+  { href: '/crm/board', label: 'crm.nav.board', perm: 'leads:read' },
   { href: '/crm/lists', label: 'crm.nav.lists', perm: 'leads:setup' },
   { href: '/crm/sources', label: 'crm.nav.sources', perm: 'leads:setup' },
   { href: '/crm/set-aside', label: 'crm.nav.setAside', perm: 'leads:setup' },
+  { href: '/crm/campaigns', label: 'crm.nav.campaigns', perm: 'campaigns:read' },
+  { href: '/crm/ad-spend', label: 'crm.nav.adSpend', perm: 'campaigns:read' },
+] as const satisfies readonly NavPage[];
+
+/** The purchasing area's pages (RAD-143): purchase orders first; the approval queue for those who decide. */
+export const PURCHASES_PAGES = [
+  { href: '/purchases/orders', label: 'purchases.nav.orders', perm: 'purchasing:read' },
+  { href: '/purchases/approvals', label: 'purchases.nav.approvals', perm: 'purchasing:approve' },
+] as const satisfies readonly NavPage[];
+
+/** The stock area's pages (RAD-144): counts first, as stores work them most; the queue for those who approve. */
+export const STOCK_PAGES = [
+  { href: '/stock/counts', label: 'stock.nav.counts', perm: 'stock:read' },
+  { href: '/stock/adjustments', label: 'stock.nav.adjustments', perm: 'stock:read' },
+  { href: '/stock/transfers', label: 'stock.nav.transfers', perm: 'stock:read' },
+  { href: '/stock/approvals', label: 'stock.nav.approvals', perm: 'stock:approve' },
 ] as const satisfies readonly NavPage[];
 
 export const NAV: readonly NavItem[] = [
@@ -67,6 +84,8 @@ export const NAV: readonly NavItem[] = [
   // The owner holds audit:read alone (RAD-35), so Admin opens on the audit trail for them.
   { label: 'nav.sales', pages: SALES_PAGES, section: '/sales' },
   { label: 'nav.crm', pages: CRM_PAGES, section: '/crm' },
+  { label: 'nav.purchases', pages: PURCHASES_PAGES, section: '/purchases' },
+  { label: 'nav.stock', pages: STOCK_PAGES, section: '/stock' },
   { label: 'nav.accounts', pages: ACCOUNTS_PAGES, section: '/accounts' },
   { label: 'nav.admin', pages: ADMIN_PAGES, section: '/admin' },
 ];

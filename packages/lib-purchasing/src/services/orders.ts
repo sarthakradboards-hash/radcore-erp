@@ -4,7 +4,7 @@
 // it. A placed PO's lines may change, but a raise past what was approved or the placer's limit is refused
 // (over_approved, the architect on RAD-136). It posts nothing to the books.
 import { after, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
-import { BUYS_FROM_KINDS, getCompanyProfile, getPartyById, holdPeriod, lockPeriod } from '@radcore/lib-accounts';
+import { getCompanyProfile, getPartyById, holdPeriod, lockPeriod } from '@radcore/lib-accounts';
 import { dec, indiaDate, type Money } from '@radcore/lib-common';
 import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax, type Totals } from '@radcore/lib-gst';
 import {
@@ -19,6 +19,8 @@ import type {
   updatePurchaseOrder,
 } from '../contract.ts';
 import { orderLimitOf } from './order-limits.ts';
+import { linesBilled, linesReceived, receivedOf } from './received.ts';
+import { buyingFrom } from './suppliers.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -43,21 +45,6 @@ async function orderOf(ctx: Ctx, id: string, key: string, forUpdate = false): Pr
   if (row === undefined) throw notFound();
   ctx.see(key, { owner: row.createdBy });
   return row;
-}
-
-/** The supplier, if it's one we buy from and switched on (ADR-008 §5). Answers its name and state. */
-async function buyingFrom(ctx: Ctx, partyId: string): Promise<{ name: string; stateCode: string }> {
-  const party = await getPartyById(ctx, { id: partyId }).catch((e: unknown) => {
-    if (e instanceof AppError && e.code === 'not_found') {
-      throw new AppError('unknown_party', 'There is no such party', [{ path: ['supplierId'], code: 'unknown', message: 'Choose a supplier' }]);
-    }
-    throw e;
-  });
-  if (!party.active || !party.kinds.some((k) => (BUYS_FROM_KINDS as readonly string[]).includes(k))) {
-    throw new AppError('not_a_supplier', `${party.name} isn’t a supplier we buy from`,
-      [{ path: ['supplierId'], code: 'not_a_supplier', message: party.active ? 'Choose a supplier' : 'This party is switched off' }]);
-  }
-  return { name: party.name, stateCode: party.stateCode };
 }
 
 /** Each line's item exists, is switched on, and its quantity fits its unit (RC-162). */
@@ -127,8 +114,8 @@ async function writeLines(ctx: Ctx, orderId: string, lines: readonly LineIn[], p
 /** What the approver sees and approves (RAD-38): the supplier, the date and the lines, and their total with GST. */
 type Version = { supplierId: string; businessDate: string; lines: { itemId: string; qty: string; rate: string }[]; total: string | null };
 
-/** The PO approval's spec (ADR-008 §5): kind purchase-order, under purchasing:approve. Placing posts nothing, so it has
- * no lockFirst; approving places the PO. */
+/** The PO approval's spec (ADR-008 §5): kind purchase-order, under purchasing:approve. Approving places the PO, which
+ * checks its date against the year and the period lock, so it declares lockFirst (the architect on RAD-136). */
 export const orderApproval: ApprovalSpec<Version> = {
   kind: 'purchase-order',
   table: 'purchase_orders',
@@ -236,13 +223,14 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getPurchaseOrder>
       sgst: l.sgst, igst: l.igst, lineTotal: l.lineTotal }));
   }
   const waiting = await awaitingApproval(ctx, orderApproval, [id]);
+  const got = await receivedOf(ctx, lines.map((l) => l.id), { drafts: false });
   return {
     id: o.id, number: o.number, supplierId: o.partyId, supplierName: supplier.name, businessDate: o.businessDate, expectedBy: o.expectedBy,
     status: o.status as Status, total: o.total as Money | null, awaitingApproval: waiting.has(id), notes: o.notes, amounts: header,
     approvedTotal: o.approvedTotal as Money | null, closedReason: o.closeReason,
-    // What has come in against each line: receipts are M4-02's, so nothing yet.
+    // What has come in against each line: its posted receipts' received quantities, accepted and rejected (M4-02).
     lines: lines.map((l, i) => ({ id: l.id, lineNo: l.lineNo, itemId: l.itemId, qty: l.qty, rate: l.rate, sku: labels.get(l.itemId)?.sku ?? '',
-      name: labels.get(l.itemId)?.name ?? '', unit: labels.get(l.itemId)?.unit ?? '', received: '0',
+      name: labels.get(l.itemId)?.name ?? '', unit: labels.get(l.itemId)?.unit ?? '', received: (got.get(l.id) ?? dec('0')).toFixed(3),
       amounts: lineAmounts[i] ?? { gstRate: null, gstRateSource: null, taxable: '0.00', ...none, lineTotal: null } })),
   };
 }
@@ -277,9 +265,8 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updatePu
     throw new AppError('fixed_once_placed', 'A placed purchase order keeps its supplier and date: close it short and raise another',
       [{ path: [input.supplierId !== o.partyId ? 'supplierId' : 'businessDate'], code: 'fixed_once_placed', message: 'This can’t change once placed' }]);
   }
-  // shortcut: nothing can be received until M4-02's goods receipts exist, so no line is below what has come in
-  // (po_received); M4-02 checks each line's new quantity against its received quantity here. Its lines are written afresh,
-  // with new ids, which M4-02 changes to an update by line once a receipt line points at one.
+  // No line below what has come in against it, nor a line receipts name removed or turned into another item (po_received).
+  await checkReceived(ctx, id, input.lines);
   const supplier = await buyingFrom(ctx, o.partyId);
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, input.lines);
   const now = dec(o.total ?? '0');
@@ -295,8 +282,46 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updatePu
   }
   await purchasingTx(ctx).update(purchaseOrders).set({ expectedBy: input.expectedBy, notes: input.notes, ...frozenHeader(amounts) })
     .where(eq(purchaseOrders.id, id));
-  await writeLines(ctx, id, input.lines, amounts.lines);
+  await placedLines(ctx, id, input.lines, amounts.lines);
   return {};
+}
+
+/** A placed PO's change keeps what has come in (M4-02): line n of the change is line n of the PO, which its receipts
+ * name, so none goes below its received quantity, nor is removed or given another item while a receipt names it. */
+async function checkReceived(ctx: Ctx, id: string, lines: readonly LineIn[]): Promise<void> {
+  const now = await linesOf(ctx, id);
+  const got = await receivedOf(ctx, now.map((l) => l.id), { drafts: false });
+  const named = await linesReceived(ctx, now.map((l) => l.id));
+  const billed = await linesBilled(ctx, now.map((l) => l.id));
+  for (const [i, l] of now.entries()) {
+    const next = lines[i];
+    if (named.has(l.id) && (next === undefined || next.itemId !== l.itemId)) {
+      throw new AppError('po_received', 'Goods have come in on this line, so it stays: lower it to what came, or close the order short',
+        [{ path: ['lines', next === undefined ? now.length - 1 : i], code: 'po_received', message: 'A receipt names this line' }]);
+    }
+    if (billed.has(l.id) && (next === undefined || next.itemId !== l.itemId)) {
+      throw new AppError('po_billed', 'A supplier’s bill names this line, so it stays: lower it, or close the order short',
+        [{ path: ['lines', next === undefined ? now.length - 1 : i], code: 'po_billed', message: 'A bill names this line' }]);
+    }
+    if (next !== undefined && dec(next.qty).lt(got.get(l.id) ?? dec('0'))) {
+      throw new AppError('po_received', `${(got.get(l.id) ?? dec('0')).toFixed()} of this line have come in already`,
+        [{ path: ['lines', i, 'qty'], code: 'po_received', message: 'Not below what has come in' }]);
+    }
+  }
+}
+
+/** A placed PO's lines changed in place, by line number, so the receipt lines that name them still do; lines added are
+ * inserted after, and lines dropped (none a receipt names, checkReceived) deleted. */
+async function placedLines(ctx: Ctx, orderId: string, lines: readonly LineIn[], priced: readonly Priced[]): Promise<void> {
+  const tx = purchasingTx(ctx);
+  const now = await linesOf(ctx, orderId);
+  for (const [i, l] of lines.entries()) {
+    const values = { itemId: l.itemId, qty: l.qty, rate: l.rate, ...(priced[i] === undefined ? {} : frozenLine(priced[i])) };
+    const at = now[i];
+    if (at === undefined) await tx.insert(purchaseOrderLines).values({ orderId, lineNo: i + 1, ...values });
+    else await tx.update(purchaseOrderLines).set(values).where(eq(purchaseOrderLines.id, at.id));
+  }
+  for (const gone of now.slice(lines.length)) await tx.delete(purchaseOrderLines).where(eq(purchaseOrderLines.id, gone.id));
 }
 
 /** DELETE /purchasing/orders/:id (purchasing:write): a draft thrown away, any request for its approval closed first. */
@@ -339,7 +364,11 @@ export async function closeOrder(ctx: Ctx, { id, reason }: In<typeof closePurcha
 export async function cancelOrder(ctx: Ctx, { id, reason }: In<typeof cancelPurchaseOrder>): Promise<Out<typeof cancelPurchaseOrder>> {
   const o = await orderOf(ctx, id, 'purchasing:write', true);
   if (o.status !== 'draft' && o.status !== 'placed') throw wrongStatus(o.status, 'cancelled');
-  // shortcut: nothing can be received until M4-02, so nothing refuses po_received yet; M4-02 checks it here.
+  // Cancelled only while nothing has come in against it (M4-02): once goods have, it's closed short instead.
+  const got = await receivedOf(ctx, (await linesOf(ctx, id)).map((l) => l.id), { drafts: false });
+  if ([...got.values()].some((q) => q.gt(0))) {
+    throw new AppError('po_received', 'Goods have come in against this purchase order: close it short instead');
+  }
   if (o.status === 'draft') await withdrawPending(ctx, orderApproval, id);
   await purchasingTx(ctx).update(purchaseOrders).set({ status: 'cancelled', closeReason: reason }).where(eq(purchaseOrders.id, id));
   return {};

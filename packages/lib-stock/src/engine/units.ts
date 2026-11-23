@@ -63,6 +63,15 @@ export async function unitFor(ctx: Ctx, itemId: string, serialNo: string, o: { l
   return { serialised: item?.serialised === true, unit: unit ?? null };
 }
 
+/** Who holds each of an item's serials now (ADR-006 §5): `ours`, `customer` or `gone`, keyed by serialKey; a serial
+ * never seen is left out. One read, for a receipt's serial_sold and serial_in_stock before the database's RA008. */
+export async function unitOwners(ctx: Ctx, itemId: string, serials: readonly string[]): Promise<Map<string, string>> {
+  if (serials.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ key: units.serialKey, ownership: units.ownership }).from(units)
+    .where(and(eq(units.itemId, itemId), inArray(units.serialKey, serials.map(serialKey))));
+  return new Map(rows.map((r) => [r.key, r.ownership]));
+}
+
 /** The serialised items among `itemIds`. */
 export async function serialisedItems(ctx: Ctx, itemIds: readonly string[]): Promise<Set<string>> {
   if (itemIds.length === 0) return new Set();

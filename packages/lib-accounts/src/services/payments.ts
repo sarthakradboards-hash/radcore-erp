@@ -241,6 +241,8 @@ async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor
   const tx = accountsTx(ctx);
   // TDS held back is optional: none when it's left out.
   const p = { ...input, tds: input.tds ?? roundMoney('0') };
+  // An amount of nothing is its own mistake, before the TDS is judged against it (e2e-2 on #348, RAD-126).
+  if (!dec(p.amount).gt(0)) refuse('amount_not_positive', 'Enter an amount above 0');
   if (!dec(p.tds).lt(p.amount)) refuse('invalid_tds', 'TDS held back is less than the amount');
   if (p.kind === 'refund' && dec(p.tds).gt(0)) refuse('invalid_tds', 'A refund holds no TDS');
   if (p.businessDate > today()) refuse('date_in_future', 'The date is after today');

@@ -4,3 +4,10 @@
 .crm-list > li { padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
 .crm-list-head { margin: 0; font-weight: 600; }
 .crm-message, .crm-reply-text { margin: 0.25rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The pipeline board (RAD-122): a column per stage, side by side where there's room, one under another on a phone. */
+.crm-board { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); align-items: start; }
+.crm-column { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-2); background: var(--surface); }
+.crm-column[data-over] { border: 2px dashed var(--accent); background: var(--surface-selected); }
+.crm-card { background: var(--surface-raised); border-radius: var(--radius-sm); padding: var(--space-2); margin-bottom: var(--space-2); }
+.crm-card[draggable="true"] { cursor: grab; }
+.crm-card p { margin: 0.125rem 0; }

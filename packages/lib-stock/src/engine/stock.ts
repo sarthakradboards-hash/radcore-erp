@@ -14,7 +14,7 @@
 // The document posts its own entry from the movements answered here; the engine posts only the revaluations it makes,
 // as the document's one `revaluation` entry (§1, F15).
 import {
-  batches, stockMovementBatches, stockMovements, stockPositions, stockTx, unitEvents,
+  batches, items, stockMovementBatches, stockMovements, stockPositions, stockTx, unitEvents,
 } from '@radcore/db/stock';
 import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
@@ -68,6 +68,9 @@ export type StockPosting = {
   readonly sourceTable: string;
   readonly sourceId: string;
   readonly businessDate: string;
+  /** Whose batches the goods coming in are named in (ADR-006 §4a, RC-028): a goods receipt's supplier, so another
+   * supplier's same number is another batch. Null (the default) for goods that came from no supplier. */
+  readonly supplierId?: string | null;
   readonly ins?: readonly StockIn[];
   readonly outs?: readonly StockOut[];
   readonly transfers?: readonly StockTransfer[];
@@ -110,9 +113,9 @@ export async function holdStock(ctx: Ctx, lines: readonly { itemId: string; loca
   await lockUnits(ctx, lines.flatMap((l) => (l.serials ?? []).map((serialNo) => ({ itemId: l.itemId, serialNo }))));
 }
 
-/** The new batches a posting's goods-in name, created after the position locks in `(item_id, batch_key)` order
- * (§4a; every supplier is null until parties land), and every batch's id, by item and key. */
-async function batchIds(ctx: Ctx, ins: readonly StockIn[]): Promise<Map<string, string>> {
+/** The new batches a posting's goods-in name, its supplier's (or no supplier's), created after the position locks in
+ * `(item_id, batch_key)` order (§4a: one posting names one supplier), and every batch's id, by item and key. */
+async function batchIds(ctx: Ctx, ins: readonly StockIn[], supplierId: string | null): Promise<Map<string, string>> {
   const wanted = [...new Map(ins.flatMap((l) => l.batches.flatMap((b) => {
     if (!('batchNo' in b) || b.batchNo === null) return [];
     const k = batchKey(b.batchNo);
@@ -122,9 +125,10 @@ async function batchIds(ctx: Ctx, ins: readonly StockIn[]): Promise<Map<string, 
   const tx = stockTx(ctx);
   // One at a time, in order, so two saves bringing the same new lots wait on their unique keys in the same order.
   for (const w of wanted) {
-    await tx.insert(batches).values({ itemId: w.itemId, batchNo: w.batchNo }).onConflictDoNothing();
+    await tx.insert(batches).values({ itemId: w.itemId, supplierId, batchNo: w.batchNo }).onConflictDoNothing();
     const [row] = await tx.select({ id: batches.id }).from(batches)
-      .where(and(eq(batches.itemId, w.itemId), isNull(batches.supplierId), eq(batches.batchKey, w.batchKey)));
+      .where(and(eq(batches.itemId, w.itemId), supplierId === null ? isNull(batches.supplierId) : eq(batches.supplierId, supplierId),
+        eq(batches.batchKey, w.batchKey)));
     if (row === undefined) throw new Error(`batch ${w.batchKey} wasn't found after its insert`);
     ids.set(`${w.itemId} ${w.batchKey}`, row.id);
   }
@@ -140,15 +144,21 @@ async function byDate(ctx: Ctx, itemId: string, locationId: string) {
 }
 
 /** The location's last `in` rate for the item: negative stock's estimate (§4). A transfer in carries no rate, so its
- * value over its quantity stands for one, and a location stocked only by transfers still has an estimate.
- * shortcut: the item's purchase price is the fallback once items carry one (purchasing, M4); until then, none. */
+ * value over its quantity stands for one, and a location stocked only by transfers still has an estimate. Where the
+ * location has had none, the item's purchase price (§4, the architect on RAD-144); with neither, no estimate. */
 async function estimate(ctx: Ctx, itemId: string, locationId: string): Promise<string | undefined> {
   const [row] = await stockTx(ctx).select({ rate: stockMovements.rate, qty: stockMovements.qty, value: stockMovements.value })
     .from(stockMovements)
     .where(and(eq(stockMovements.itemId, itemId), eq(stockMovements.locationId, locationId), eq(stockMovements.direction, 'in')))
     .orderBy(desc(stockMovements.postedAt), desc(stockMovements.id)).limit(1);
-  if (row === undefined) return undefined;
+  if (row === undefined) return purchasePriceOf(ctx, itemId);
   return row.rate ?? dec(row.value).div(dec(row.qty)).toFixed();
+}
+
+/** The item's purchase price, the last fallback for a rate to value goods at (§4), if it has one. */
+export async function purchasePriceOf(ctx: Ctx, itemId: string): Promise<string | undefined> {
+  const [item] = await stockTx(ctx).select({ price: items.purchasePrice }).from(items).where(eq(items.id, itemId)).limit(1);
+  return item?.price ?? undefined;
 }
 
 /** An issue's value (§4): all of what's on hand when it empties the location, else round(V × q / Q, 2). A delivery in
@@ -195,7 +205,7 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const negativeMode = ctx.settings.get(NEGATIVE_STOCK);
   await lockPositions(ctx, [...ins.map((l) => [l.itemId, l.locationId] as const), ...outs.map((l) => [l.itemId, l.locationId] as const),
     ...transfers.flatMap((t) => [[t.itemId, t.from] as const, [t.itemId, t.to] as const])]);
-  const ids = await batchIds(ctx, ins);
+  const ids = await batchIds(ctx, ins, p.supplierId ?? null);
   // §1's step 4: the units the lines name, after the positions and batches, with the units still promised to the order
   // lines this posting finishes (a booking's, RC-122), in one id-ordered lock.
   const named = [...ins, ...outs, ...transfers].flatMap((l) => (l.units ?? []).map((u) => ({ itemId: l.itemId, serialNo: u.serialNo })));
@@ -364,6 +374,9 @@ export async function reverseStock(ctx: Ctx, p: { sourceTable: string; sourceId:
     else if (kind === 'moved') {
       const before = e.condition === null ? undefined : await conditionBefore(ctx, e);
       undone.push({ ...unit, outMovementId: mirrorIn, inMovementId: mirrorOut, ...(before === undefined ? {} : { condition: before }) });
+    } else if (kind === 'sent_to_job_work' || kind === 'received_from_job_work') {
+      // Job work's moves, undone by each other: back out of where the move put it, into where it came from (RAD-142).
+      undone.push({ ...unit, outMovementId: mirrorIn, inMovementId: mirrorOut });
     } else if (kind === 'returned_to_supplier') undone.push({ ...unit, outMovementId: mirrorIn });
     // Back in, in the batch and condition it left with (units keeps both while it's gone).
     else undone.push({ ...unit, inMovementId: mirrorOut, ...(await goneUnit(ctx, e.itemId, e.serialNo)) });

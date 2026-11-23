@@ -94,10 +94,20 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'sales:counter_credit', module: 'Sales', label: 'Ask to leave a balance on a counter sale', allOnly: true },
   // Purchasing (ADR-008 §13, RAD-136): ordinary catalogue keys, scoped by each document's maker, with no second factor,
   // since none moves money (D-19). Approving is someone else's, under its own key.
-  { key: 'purchasing:read', module: 'Purchasing', label: 'See purchase orders', records: ['@radcore/db/purchasing#purchaseOrders'] },
+  { key: 'purchasing:read', module: 'Purchasing', label: 'See purchase orders, goods receipts and bills',
+    records: ['@radcore/db/purchasing#purchaseOrders', '@radcore/db/purchasing#goodsReceipts', '@radcore/db/purchasing#purchaseBills'] },
   { key: 'purchasing:write', module: 'Purchasing', label: 'Draft, place, change, close short and cancel purchase orders',
     records: ['@radcore/db/purchasing#purchaseOrders'] },
   { key: 'purchasing:approve', module: 'Purchasing', label: 'Approve a purchase order above its placer’s limit, and set the limits' },
+  // Goods coming in (ADR-008 §6, §13, RAD-137): `inward`, since `receipts` are payments. Recording what arrived is one key;
+  // inspecting it, posting it and undoing it is another, which also re-inspects rejects (§9).
+  { key: 'inward:write', module: 'Purchasing', label: 'Record goods that arrived against a purchase order', records: ['@radcore/db/purchasing#goodsReceipts'] },
+  { key: 'inward:qc', module: 'Purchasing', label: 'Inspect and post goods receipts, cancel them, and re-inspect rejects',
+    records: ['@radcore/db/purchasing#goodsReceipts'] },
+  // Supplier bills (M4-03, RAD-138; ADR-008 §13): none needs the second factor, since a bill makes a payable and paying it
+  // is M3-12's (D-19). Records by who entered each (created_by).
+  { key: 'bills:write', module: 'Purchasing', label: 'Enter, post and cancel supplier bills', records: ['@radcore/db/purchasing#purchaseBills'] },
+  { key: 'bills:approve', module: 'Purchasing', label: 'Approve a supplier bill over the tolerance' },
   // Vehicle bookings (M3-13, RAD-117; ADR-007 §5): a booking holds a unit and takes its advance. Scoped by who made it.
   // Refunding a cancelled booking's advance is keyed by how much of what's left (Sarthak, 20 Nov): all of it needs
   // refund_full, a part refund_part; each moves money out, so each needs the second factor (D-19).
@@ -120,9 +130,11 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so its keys name no records. The stock
   // documents (M4-06, ADR-008 §13) are their makers' (created_by), so stock:read and the keys that move them name them.
   { key: 'locations:read', module: 'Stock', label: 'See locations' },
-  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial, and stock transfers, counts and adjustments',
-    records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial, and stock transfers, counts, adjustments and job work',
+    records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments',
+      '@radcore/db/stock#jobWorkChallans', '@radcore/db/stock#jobWorkReceipts'] },
   { key: 'stock:move', module: 'Stock', label: 'Transfer stock between places, and undo a transfer', records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'job_work:write', module: 'Stock', label: 'Send goods for job work and receive them back, and undo either', records: ['@radcore/db/stock#jobWorkChallans', '@radcore/db/stock#jobWorkReceipts'] },
   { key: 'stock:count', module: 'Stock', label: 'Count stock and propose adjustments', records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
   { key: 'stock:approve', module: 'Stock', label: 'Approve stock counts, adjustments and transfers that need it, and cancel them',
     records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },

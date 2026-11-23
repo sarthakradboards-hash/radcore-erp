@@ -235,6 +235,9 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /files/delivery-note': 'bookings:write',
   'POST /files/delivery-note/:id/confirm': 'bookings:write',
   'POST /files/delivery-note/:id/download': 'bookings:read',
+  'POST /files/purchase-bill': 'bills:write',
+  'POST /files/purchase-bill/:id/confirm': 'bills:write',
+  'POST /files/purchase-bill/:id/download': 'purchasing:read',
   'POST /files/resume': 'resume_files:write',
   'POST /files/resume/:id/confirm': 'resume_files:write',
   'POST /files/resume/:id/download': 'resume_files:read',
@@ -251,9 +254,18 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /stock/location-kinds': 'locations:read',
   'GET /stock/on-hand': 'stock:read',
   // Transfers, counts and adjustments (M4-06, RAD-141; ADR-008 §13).
+  'GET /stock/job-work/challans': 'stock:read',
+  'GET /stock/job-work/challans/:id': 'stock:read',
+  'POST /stock/job-work/challans': 'job_work:write',
+  'POST /stock/job-work/challans/:id/cancel': 'job_work:write',
+  'GET /stock/job-work/receipts': 'stock:read',
+  'GET /stock/job-work/receipts/:id': 'stock:read',
+  'POST /stock/job-work/receipts': 'job_work:write',
+  'POST /stock/job-work/receipts/:id/cancel': 'job_work:write',
   'GET /stock/transfers': 'stock:read',
   'GET /stock/transfers/:id': 'stock:read',
   'POST /stock/transfers': 'stock:move',
+  'POST /stock/transfers/requalify': 'inward:qc',
   'DELETE /stock/transfers/:id': 'stock:move',
   'POST /stock/transfers/:id/approval': 'stock:move',
   'GET /approvals/stock-transfer': 'stock:approve',
@@ -332,7 +344,19 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /purchasing/orders/:id/cancel': 'purchasing:write',
   'GET /purchasing/order-limits': 'purchasing:read',
   'PUT /purchasing/order-limits': 'purchasing:approve',
+  'GET /purchasing/bills': 'purchasing:read',
+  'GET /purchasing/bills/:id': 'purchasing:read',
+  'POST /purchasing/bills': 'bills:write',
+  'PUT /purchasing/bills/:id': 'bills:write',
+  'DELETE /purchasing/bills/:id': 'bills:write',
   'GET /purchasing/orders/:id/pdf': 'purchasing:read',
+  'GET /purchasing/receipts': 'purchasing:read',
+  'GET /purchasing/receipts/:id': 'purchasing:read',
+  'POST /purchasing/receipts': 'inward:write',
+  'PUT /purchasing/receipts/:id': 'inward:write',
+  'DELETE /purchasing/receipts/:id': 'inward:write',
+  'POST /purchasing/receipts/:id/post': 'inward:qc',
+  'POST /purchasing/receipts/:id/cancel': 'inward:qc',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -370,6 +394,8 @@ const SETTINGS = ['lib-accounts', 'lib-crm', 'lib-gst', 'lib-integrations', 'lib
 const BOOKINGS = ['lib-accounts', 'lib-crm', 'lib-gst', 'lib-integrations', 'lib-platform', 'lib-sales', 'lib-stock'];
 // lib-purchasing's POs read parties and the company (lib-accounts), tax (lib-gst) and items (lib-stock) (RAD-136).
 const PURCHASING = ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-purchasing', 'lib-stock'];
+// Its goods receipts read parties (lib-accounts) and post through the stock engine (lib-stock) (RAD-137).
+const RECEIVING = ['lib-accounts', 'lib-platform', 'lib-purchasing', 'lib-stock'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -579,6 +605,9 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /files/delivery-note': PLATFORM,
   'POST /files/delivery-note/:id/confirm': PLATFORM,
   'POST /files/delivery-note/:id/download': PLATFORM,
+  'POST /files/purchase-bill': PLATFORM,
+  'POST /files/purchase-bill/:id/confirm': PLATFORM,
+  'POST /files/purchase-bill/:id/download': PLATFORM,
   'POST /files/resume': PLATFORM,
   'POST /files/resume/:id/confirm': PLATFORM,
   'POST /files/resume/:id/download': PLATFORM,
@@ -593,9 +622,18 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Stock's routes reach lib-stock and, through it, lib-platform.
   'GET /stock/location-kinds': STOCK,
   'GET /stock/on-hand': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/challans': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/challans/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/job-work/challans': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/job-work/challans/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/receipts': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/receipts/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/job-work/receipts': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/job-work/receipts/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/transfers': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/transfers/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/transfers': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/transfers/requalify': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'DELETE /stock/transfers/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/transfers/:id/approval': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /approvals/stock-transfer': ['lib-accounts', 'lib-platform', 'lib-stock'],
@@ -623,9 +661,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /approvals/stock-adjustment/:id/decision': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/adjustments/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'PUT /stock/location-kinds/:kind': STOCK,
-  'GET /stock/locations': STOCK,
-  'POST /stock/locations': STOCK,
-  'PATCH /stock/locations/:id': STOCK,
+  // A job worker's place names its party (RAD-142), checked through lib-accounts.
+  'GET /stock/locations': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/locations': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'PATCH /stock/locations/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   // The workbook's start route takes only its contract (the architect on RAD-92): lib-platform's own.
   'POST /platform/masters/exports': PLATFORM,
   // HR's routes reach lib-hr and, through it, lib-platform.
@@ -673,7 +712,19 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /purchasing/orders/:id/cancel': PURCHASING,
   'GET /purchasing/order-limits': ['lib-platform', 'lib-purchasing'],
   'PUT /purchasing/order-limits': ['lib-platform', 'lib-purchasing'],
+  'GET /purchasing/bills': PURCHASING,
+  'GET /purchasing/bills/:id': PURCHASING,
+  'POST /purchasing/bills': PURCHASING,
+  'PUT /purchasing/bills/:id': PURCHASING,
+  'DELETE /purchasing/bills/:id': PURCHASING,
   'GET /purchasing/orders/:id/pdf': PURCHASING,
+  'GET /purchasing/receipts': RECEIVING,
+  'GET /purchasing/receipts/:id': RECEIVING,
+  'POST /purchasing/receipts': RECEIVING,
+  'PUT /purchasing/receipts/:id': RECEIVING,
+  'DELETE /purchasing/receipts/:id': RECEIVING,
+  'POST /purchasing/receipts/:id/post': RECEIVING,
+  'POST /purchasing/receipts/:id/cancel': RECEIVING,
   'POST /public/enquiries': CRM_DOORS,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,
