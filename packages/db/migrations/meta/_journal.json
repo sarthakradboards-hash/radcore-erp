@@ -565,8 +565,22 @@
     {
       "idx": 80,
       "version": "7",
-      "when": 1795369848601,
-      "tag": "0080_delivery_left",
+      "when": 1795352515384,
+      "tag": "0080_override_after",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795409256834,
+      "tag": "0081_stock_moves",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795409807048,
+      "tag": "0082_purchase_orders",
       "breakpoints": true
     }
   ]
