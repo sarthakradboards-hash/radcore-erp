@@ -4,7 +4,7 @@ export {
   listItemsPage, purchasePrices, listUnits, renameCategory,
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
-export { onHand } from './services/on-hand.ts';
+export { onHand, sellableOnHand } from './services/on-hand.ts';
 export { SELL_DAMAGED_UNITS } from './engine/units.ts';
 export { checkBooks } from './services/books-check.ts';
 export { averageCost } from './services/cost.ts';
@@ -28,7 +28,7 @@ export {
   addAdjustment, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, cancelAdjustmentNow, changeAdjustment, dropAdjustment,
   getAdjustmentById, listAdjustmentsPage,
 } from './services/adjustments.ts';
-export { NEGATIVE_STOCK, batchKey, holdStock, postStock, reverseStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
+export { NEGATIVE_STOCK, batchKey, holdStock, postStock, reverseStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockRevalue, type StockTransfer } from './engine/stock.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
