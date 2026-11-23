@@ -596,6 +596,13 @@
       "when": 1795414946448,
       "tag": "0084_payments_read",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1795427885122,
+      "tag": "0085_goods_receipts",
+      "breakpoints": true
     }
   ]
 }

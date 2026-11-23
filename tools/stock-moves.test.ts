@@ -5,11 +5,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
 import { quantityString, unitPriceString } from '@radcore/lib-common';
-import { AppError, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, approvedFor, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addAdjustment, addCategory, addCount, addItem, addPlace, addTransfer, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, askCountApproval,
-  cancelAdjustmentNow, cancelTransferNow, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
+  cancelAdjustmentNow, cancelTransferNow, dropTransfer, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
 } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -171,6 +171,37 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
       { serial_no: serials[0], ownership: 'ours', batch_id: at.batchId, condition: 'new' }, { qty: '2', value: '122500.00' }]);
   });
 
+  // auditor-2 on #339: a serialised adjustment names a serial for each unit, and a found one its condition, as a draft.
+  it('refuses a draft adjustment short of serials (serials_mismatch) or a found unit with no condition (condition_required)', async () => {
+    const at = await setup(['store'], { stock: '2', rate: '61250', serials: [`S-${tag()}`, `S-${tag()}`] });
+    const [store] = at.places as [string];
+    const draft = (line: Parameters<typeof addAdjustment>[1]['lines'][number]) => code(run((ctx) => addAdjustment(ctx, { locationId: store,
+      businessDate: DATE, reason: 'Test', lines: [line] })));
+    expect([
+      await draft({ itemId: at.itemId, direction: 'out', qty: q('2'), condition: null, batches: [{ batchId: at.batchId, qty: q('2') }], serials: [] }),
+      await draft({ itemId: at.itemId, direction: 'in', qty: q('1'), condition: null, batches: [],
+        serials: [{ serialNo: `N-${tag()}`, chassisNo: null }] }),
+    ]).toEqual(['serials_mismatch', 'condition_required']);
+  });
+
+  // backend's owner read on #367: approvedFor answers only records with an approved request, not one pending, refused
+  // or superseded (its draft thrown away), and nothing for no ids.
+  it('names only the approved transfers (approvedFor)', async () => {
+    const boss = await approver();
+    const at = await setup(['stores', 'franchisee'], { stock: '4', rate: '100' });
+    const [stores, franchisee] = at.places as [string, string];
+    const on = new Settings([{ key: 'stock.franchisee_transfer_approval', value: true }]);
+    const send = () => run((ctx) => addTransfer(ctx, { fromId: stores, toId: franchisee, businessDate: DATE, reason: 'Test',
+      lines: [line(at.itemId, '1', at.batchId)] }), staff, on);
+    const [approved, pending, refused, dropped] = [await send(), await send(), await send(), await send()];
+    await decide(transferApprovalSpec, boss, approved.approval ?? { id: '', versionHash: '' });
+    await run((ctx) => decideApproval(ctx, transferApprovalSpec, refused.approval?.id ?? '', { decision: 'reject', reason: 'Not this week' }), boss);
+    await run((ctx) => dropTransfer(ctx, { id: dropped.id }));
+    const named = await run((ctx) => approvedFor(ctx, transferApprovalSpec, [approved.id, pending.id, refused.id, dropped.id]));
+    const none = await run((ctx) => approvedFor(ctx, transferApprovalSpec, []));
+    expect([[...named], none.size]).toEqual([[approved.id], 0]);
+  });
+
   // Sarthak's setting: into a franchisee's store, off posts at once; on, it waits for someone else's approval.
   it('waits for approval into a franchisee only while stock.franchisee_transfer_approval is on', async () => {
     const boss = await approver();
@@ -188,8 +219,11 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
     const own = await code(decide(transferApprovalSpec, staff, waiting.approval ?? { id: '', versionHash: '' }));
     await decide(transferApprovalSpec, boss, waiting.approval ?? { id: '', versionHash: '' });
     const after = await run((ctx) => getTransferById(ctx, { id: waiting.id }));
+    // A posted transfer shows the approval it was posted by; one posted at once shows none (auditor-2 on #339).
+    const shown = [(await run((ctx) => getTransferById(ctx, { id: off.id }))).approval, after.approval];
     expect([off.number?.startsWith('ST/'), off.approval, waiting.number, before, own, after.status, after.number?.startsWith('ST/'),
-      plain.number?.startsWith('ST/'), plain.approval]).toEqual([true, null, null, { qty: '1', value: '100.00' }, 'own_request', 'posted', true, true, null]);
+      plain.number?.startsWith('ST/'), plain.approval, shown]).toEqual([true, null, null, { qty: '1', value: '100.00' }, 'own_request', 'posted', true,
+      true, null, ['none', 'approved']]);
   });
 
   // F14, RC-123: a count lists the pads twice (two shelves); they're one line; nothing posts until someone else approves.

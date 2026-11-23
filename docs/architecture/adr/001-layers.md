@@ -313,13 +313,16 @@ check names the right owner. A service that rightly reads past the scope can't s
 switches a rule off (`noInlineConfig`): it is named, with its reason, in E7's options, which the config test pins. Each
 exemption names one file and its reason (`exempt`), and that file's functions return only aggregates keyed by ids their
 caller already had in scope, never another's rows. The first is lib-sales' `services/delivered.ts`, which sums every
-posted delivery, return and credit note for a party's credit exposure, an order's remaining quantities and an
-invoice's open credit (RAD-112, RAD-114). The second is lib-sales' `services/booking-holds.ts`, which locks and updates
-the live bookings of an order's lines for its delivery, cancelled delivery and changes, and tells a cancelled booking
-whether its lead has another, answering only booleans, counts and ids (RAD-117). The third is lib-crm's
-`services/lead-locks.ts`, which locks a booking's lead for its cancellation and answers nothing (RAD-117). The fourth is
-lib-crm's `services/enquiry-counts.ts`, which counts a campaign's or source's enquiries over a date range for cost per
-lead, answering only counts (RAD-110).
+posted delivery, return and credit note for a party's credit exposure, an order's remaining quantities and an invoice's
+open credit (RAD-112, RAD-114). The second is lib-sales' `services/booking-holds.ts`, which locks and updates the live
+bookings of an order's lines for its delivery, cancelled delivery and changes, and tells a cancelled booking whether its
+lead has another, answering only booleans, counts and ids (RAD-117). The third is lib-crm's `services/lead-locks.ts`,
+which locks a booking's lead for its cancellation and answers nothing (RAD-117). The fourth is lib-crm's
+`services/enquiry-counts.ts`, which counts a campaign's or source's enquiries over a date range for cost per lead,
+answering only counts (RAD-110). The fifth is lib-purchasing's `services/received.ts`, which sums every posted receipt's
+accepted and rejected quantities by purchase order line, net of cancellations, and names the lines a receipt names, for
+receiving, closing and reopening a PO and for its edits (`over_ordered`, `po_received`), answering only quantities and
+ids (RAD-137).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:
