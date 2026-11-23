@@ -16,7 +16,8 @@ const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const staff: Principal = { kind: 'user', userId: '00000000-0000-4000-8000-000000000096',
-  permissions: ['items:write', 'locations:write'] };
+  // cost:read: an item's purchase price is a cost, set only by someone who may see it (the estimate test sets one).
+  permissions: ['items:write', 'locations:write', 'cost:read'] };
 const q = (s: string) => quantityString().parse(s);
 const r = (s: string) => unitPriceString().parse(s);
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
