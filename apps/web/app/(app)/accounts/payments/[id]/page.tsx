@@ -17,7 +17,7 @@ import '../../../../../components/ui/table/table.css';
 import { useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { PrintButtons } from '../../../sales/print-buttons.tsx';
-import { documentHref } from '../../collect/document-href.ts';
+import { documentHref, documentWord } from '../../collect/document-href.ts';
 import { AllocateForm } from '../allocate-form.tsx';
 import { CancelPayment, ReverseApplication, RefundReceipt } from './payment-actions.tsx';
 
@@ -51,7 +51,8 @@ export default function PaymentPage() {
   const posted = p.status === 'posted';
   const hasLeft = p.kind === 'receipt' && posted && dec(p.left).gt(0);
   const links = [
-    ...(p.kind === 'payment' ? [] : [{ label: t('books.pay.rec.statement'), href: `/accounts/collect/${p.partyId}` }]),
+    // The statement is read with receivables:read: a person without it isn't offered a page that would refuse them.
+    ...(p.kind === 'payment' || !permissions.includes('receivables:read') ? [] : [{ label: t('books.pay.rec.statement'), href: `/accounts/collect/${p.partyId}` }]),
     ...(p.refundOf === null ? [] : [{ label: t('books.pay.rec.refundOf'), href: `/accounts/payments/${p.refundOf}` }]),
     ...(p.credit === null ? [] : [{ label: t('books.pay.rec.credit'), href: documentHref(p.credit.table, p.credit.id) ?? '' }].filter((l) => l.href !== '')),
   ];
@@ -68,7 +69,7 @@ export default function PaymentPage() {
         { label: t('books.pay.rec.count.refunded'), value: formatMoney(p.refunded) },
         { label: t('books.pay.rec.count.left'), value: formatMoney(p.left) },
       ]} />
-      <dl className="admin-facts" aria-label={t('books.pay.rec.counts')}>
+      <dl className="admin-facts" aria-label={t('books.pay.rec.facts')}>
         <dt>{t('books.pay.rec.party')}</dt><dd>{p.partyName}</dd>
         <dt>{t('books.pay.rec.date')}</dt><dd>{formatDate(p.businessDate)}</dd>
         <dt>{t('books.pay.rec.recorded')}</dt><dd>{formatMoment(p.recordedAt)}</dd>
@@ -96,7 +97,7 @@ export default function PaymentPage() {
                 <tbody>
                   {p.allocations.map((a) => {
                     const href = documentHref(a.documentTable, a.documentId);
-                    const doc = a.documentTable.replaceAll('_', ' ');
+                    const doc = documentWord(a.documentTable);
                     return (
                       <tr key={a.id}>
                         <td>{href === null ? doc : <Link href={href}>{doc}</Link>}</td>

@@ -20,13 +20,15 @@ import { refundSchema } from '../payment-values.ts';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
 const refresh = [getPaymentContract, listPaymentsContract] as const;
+// Cancelling words the not-posted refusal as a cancel's: the shared wording is about applying a receipt.
+const CANCEL_MESSAGES = { ...PAYMENT_MESSAGES, not_posted: t('books.pay.err.cancel.not_posted') };
 const dateAndReason = (reason: z.ZodType<string>) => z.object({ businessDate: dateString(), reason });
 
 export function CancelPayment({ id, onClose }: { id: string; onClose: () => void }) {
   const cancel = useApiMutation(cancelPaymentContract, { invalidates: refresh });
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={t('books.pay.cancel.title')} description={t('books.pay.cancel.body')}>
-      <Form schema={dateAndReason(cancelPaymentContract.input.shape.reason)} saved={false} messages={PAYMENT_MESSAGES}
+      <Form schema={dateAndReason(cancelPaymentContract.input.shape.reason)} saved={false} messages={CANCEL_MESSAGES}
         defaultValues={{ businessDate: indiaDate(new Date()), reason: '' }}
         onSubmit={async (v) => { await cancel.submit({ id, ...v }); onClose(); later(t('books.pay.cancelled')); }}>
         <TextField name="businessDate" label={t('books.pay.cancel.date')} type="date" />
