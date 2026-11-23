@@ -5,7 +5,7 @@
 // source_not_ignorable (RC-212). Every change is audited.
 import { after, crmTx, leadSetAsides, leadSources } from '@radcore/db/crm';
 import { maskOf } from '@radcore/lib-common';
-import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
+import { AppError, decodeCursor, encodeCursor, isoMoment, momentKey, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createLeadSource, listLeadSources, listSetAside, updateLeadSource } from '../contract.ts';
@@ -14,7 +14,8 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 type Channel = Out<typeof listLeadSources>['sources'][number]['channel'];
 
-const PAGE_KEY = z.object({ at: z.iso.datetime({ offset: true }), id: z.uuid() });
+// The moment as PostgreSQL writes it, to the microsecond (#316, #325): a Date's would repeat or skip rows.
+const PAGE_KEY = z.object({ at: momentKey(), id: z.uuid() });
 
 /** GET /crm/lead-sources (leads:setup): the doors' own first, then the rest, by name. */
 export async function leadSourcesList(ctx: Ctx): Promise<Out<typeof listLeadSources>> {
@@ -44,12 +45,12 @@ export async function setAsidePage(ctx: Ctx, input: In<typeof listSetAside>): Pr
     phone: leadSetAsides.phone, name: leadSetAsides.name, message: leadSetAsides.message, receivedAt: leadSetAsides.receivedAt })
     .from(leadSetAsides).where(and(
       input.filter.sourceId === undefined ? undefined : eq(leadSetAsides.sourceId, input.filter.sourceId),
-      after([leadSetAsides.receivedAt, leadSetAsides.id], key && [new Date(key.at), key.id], 'desc'),
+      after([leadSetAsides.receivedAt, leadSetAsides.id], key && [key.at, key.id], 'desc'),
     )).orderBy(desc(leadSetAsides.receivedAt), desc(leadSetAsides.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
   return {
-    items: page.map((r) => ({ ...r, phone: maskOf(r.phone, 'last4'), receivedAt: r.receivedAt.toISOString() })),
-    next: rows.length > input.limit && last ? encodeCursor({ at: last.receivedAt.toISOString(), id: last.id }) : null,
+    items: page.map((r) => ({ ...r, phone: maskOf(r.phone, 'last4'), receivedAt: isoMoment(r.receivedAt) })),
+    next: rows.length > input.limit && last ? encodeCursor({ at: last.receivedAt, id: last.id }) : null,
   };
 }

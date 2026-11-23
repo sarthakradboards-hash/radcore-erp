@@ -607,8 +607,15 @@
     {
       "idx": 86,
       "version": "7",
-      "when": 1795430093969,
-      "tag": "0086_purchase_bills",
+      "when": 1795429949926,
+      "tag": "0086_requalified_transfers",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795431454961,
+      "tag": "0087_purchase_bills",
       "breakpoints": true
     }
   ]

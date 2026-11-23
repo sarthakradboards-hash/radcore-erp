@@ -14,7 +14,6 @@ import { checkQuantity, itemLabels } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createPurchaseBill, deletePurchaseBill, getPurchaseBill, listPurchaseBills, updatePurchaseBill } from '../contract.ts';
-import { receiptLinesFor } from './receipts.ts';
 import { buyingFrom } from './suppliers.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -83,8 +82,6 @@ async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLine>> {
   }
   const goods = b.lines.flatMap((l, n) => (l.kind === 'goods' ? [{ l, n }] : []));
   const po = await poLinesOf(ctx, goods.map((g) => g.l.poLineId));
-  const received = new Map((await receiptLinesFor(ctx, goods.flatMap((g) => (g.l.receiptLineId === null ? [] : [g.l.receiptLineId])),
-    { forUpdate: false })).map((r) => [r.id, r]));
   for (const { l, n } of goods) {
     const line = po.get(l.poLineId);
     if (line === undefined) throw refuseAt('unknown_po_line', 'There is no such purchase order line', ['lines', n, 'poLineId']);
@@ -92,14 +89,9 @@ async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLine>> {
       throw refuseAt('po_not_placed', `That purchase order is ${line.status}: only a placed one is billed`, ['lines', n, 'poLineId']);
     }
     if (line.partyId !== b.supplierId) throw refuseAt('other_supplier', 'That purchase order is another supplier’s', ['lines', n, 'poLineId']);
-    if (l.receiptLineId !== null) {
-      // The receipt line it bills, once the goods are in: posted, and for this very PO line (ADR-008 §7).
-      const r = received.get(l.receiptLineId);
-      if (r === undefined) throw refuseAt('unknown_receipt_line', 'There is no such goods receipt line', ['lines', n, 'receiptLineId']);
-      if (r.status !== 'posted') throw refuseAt('receipt_not_posted', `That goods receipt is ${r.status}: only a posted one is billed`,
-        ['lines', n, 'receiptLineId']);
-      if (r.orderLineId !== l.poLineId) throw refuseAt('not_this_po_line', 'That goods receipt line is for another order line', ['lines', n, 'receiptLineId']);
-    }
+    // shortcut: goods receipts arrive with M4-02 (RAD-137), so no receipt line can be named yet; RAD-138's posting PR
+    // checks the receipt line against this PO line.
+    if (l.receiptLineId !== null) throw refuseAt('unknown_receipt_line', 'There is no such goods receipt line', ['lines', n, 'receiptLineId']);
     await checkQuantity(ctx, line.itemId, l.qty).catch((e: unknown) => {
       throw e instanceof AppError ? refuseAt(e.code, e.message, ['lines', n, 'qty']) : e;
     });
@@ -108,13 +100,27 @@ async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLine>> {
   return po;
 }
 
+const poLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'goods' ? [l.poLineId] : []));
+
+/** The POs these PO lines are on, locked FOR SHARE in id order, before the bill (ADR-008 §12: POs, then receipts, then
+ * bills). A placed PO's change holds its row FOR UPDATE while it checks which lines bills name (po_billed), so a draft
+ * naming its lines waits for it, and it for the draft: never both. Only POs the principal may read are taken. */
+async function holdOrders(ctx: Ctx, poLineIds: readonly string[]): Promise<void> {
+  if (poLineIds.length === 0) return;
+  const tx = purchasingTx(ctx);
+  const ids = [...new Set((await tx.select({ id: purchaseOrderLines.orderId }).from(purchaseOrderLines)
+    .where(inArray(purchaseOrderLines.id, [...new Set(poLineIds)]))).map((o) => o.id))];
+  if (ids.length === 0) return;
+  await tx.select({ id: purchaseOrders.id }).from(purchaseOrders).where(and(inArray(purchaseOrders.id, ids),
+    listScope(ctx, 'purchasing:read', purchaseOrders.createdBy))).orderBy(asc(purchaseOrders.id)).for('share');
+}
+
 /** Writes a draft's lines afresh, numbered from 1 in the order sent; a goods line takes its PO line's item. */
 async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], po: ReadonlyMap<string, PoLine>): Promise<void> {
   const tx = purchasingTx(ctx);
   await tx.delete(purchaseBillLines).where(eq(purchaseBillLines.billId, billId));
   await tx.insert(purchaseBillLines).values(lines.map((l, i) => (l.kind === 'goods'
-    ? { billId, lineNo: i + 1, kind: 'goods', poLineId: l.poLineId, receiptLineId: l.receiptLineId, itemId: po.get(l.poLineId)?.itemId ?? '', qty: l.qty,
-      rate: l.rate }
+    ? { billId, lineNo: i + 1, kind: 'goods', poLineId: l.poLineId, itemId: po.get(l.poLineId)?.itemId ?? '', qty: l.qty, rate: l.rate }
     : { billId, lineNo: i + 1, kind: 'charge', charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount })));
 }
 
@@ -123,6 +129,7 @@ const header = (b: BillIn) => ({ partyId: b.supplierId, businessDate: b.business
 
 /** POST /purchasing/bills (bills:write): a new draft. */
 export async function addBill(ctx: Ctx, input: In<typeof createPurchaseBill>): Promise<Out<typeof createPurchaseBill>> {
+  await holdOrders(ctx, poLineIdsOf(input.lines));
   const po = await checkDraft(ctx, input);
   const [row] = await purchasingTx(ctx).insert(purchaseBills).values(header(input)).returning({ id: purchaseBills.id });
   if (row === undefined) throw new Error('the purchase bill was not stored');
@@ -132,6 +139,11 @@ export async function addBill(ctx: Ctx, input: In<typeof createPurchaseBill>): P
 
 /** PUT /purchasing/bills/:id (bills:write): a draft rewritten whole. */
 export async function changeBill(ctx: Ctx, { id, ...input }: In<typeof updatePurchaseBill>): Promise<Out<typeof updatePurchaseBill>> {
+  // §12: the draft read unlocked to learn the POs it names now, then those and the new ones locked, then the bill.
+  const seen = await billOf(ctx, id, 'bills:write');
+  if (seen.status !== 'draft') throw wrongStatus(seen.status, 'changed');
+  const named = await purchasingTx(ctx).select({ id: purchaseBillLines.poLineId }).from(purchaseBillLines).where(eq(purchaseBillLines.billId, id));
+  await holdOrders(ctx, [...named.flatMap((l) => (l.id === null ? [] : [l.id])), ...poLineIdsOf(input.lines)]);
   const b = await billOf(ctx, id, 'bills:write', true);
   if (b.status !== 'draft') throw wrongStatus(b.status, 'changed');
   const po = await checkDraft(ctx, input);
@@ -261,10 +273,9 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
       const p = po.get(l.poLineId ?? '');
       const over = overPoRate(l.rate ?? '0', p?.rate ?? '0');
       const item = labels.get(l.itemId ?? '');
-      return { kind: 'goods' as const, id: l.id, lineNo: l.lineNo, poLineId: l.poLineId ?? '', receiptLineId: l.receiptLineId, itemId: l.itemId ?? '',
+      return { kind: 'goods' as const, id: l.id, lineNo: l.lineNo, poLineId: l.poLineId ?? '', receiptLineId: null, itemId: l.itemId ?? '',
         sku: item?.sku ?? '', name: item?.name ?? '', unit: item?.unit ?? '', qty: l.qty ?? '0', rate: l.rate ?? '0', poRate: p?.rate ?? '0',
         poNumber: p?.orderNumber ?? '', overPoRate: over, overTolerance: over === null || dec(over).gt(tolerance), amounts: a };
     }),
   };
 }
-
