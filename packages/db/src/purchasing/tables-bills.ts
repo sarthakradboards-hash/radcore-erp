@@ -2,7 +2,7 @@
 // file and posted against what was ordered and received. A bill posts to the journal, so it carries ADR-008 §2's two
 // generic guards (its migration attaches them), and these CHECKs hold the values. Its tax is worked out on read while a
 // draft and stored when it's posted. Its goods lines name PO lines; the receipt line each bills joins with M4-02.
-import { sql } from 'drizzle-orm';
+import { isNull, sql } from 'drizzle-orm';
 import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { journalEntries, parties } from '../accounts/tables.ts';
 import { boundedText, createdMoment, id, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
@@ -53,7 +53,8 @@ export const purchaseBills = radcoreTable('purchase_bills', {
   check('ck_purchase_bills_supplier_date', sql`${t.supplierInvoiceDate} <= ${t.businessDate}`),
   check('ck_purchase_bills_supplier_gstin', sql`${t.supplierGstin} is null or ${t.supplierGstin} ~ '^[0-9]{2}[A-Z0-9]{13}$'`),
   check('ck_purchase_bills_supplier_number', sql`btrim(${t.supplierInvoiceNumber}) <> ''`),
-  uniqueIndex('ux_purchase_bills_supplier_invoice').on(t.partyId, t.supplierInvoiceFy, t.supplierInvoiceKey).where(sql`${t.status} <> 'cancelled'`),
+  // Over every bill not cancelled: a bill is cancelled exactly when it has its cancel entry (ck_purchase_bills_cancelled).
+  uniqueIndex('ux_purchase_bills_supplier_invoice').on(t.partyId, t.supplierInvoiceFy, t.supplierInvoiceKey).where(isNull(t.cancelEntryId)),
   index('ix_purchase_bills_party').on(t.partyId),
   index('ix_purchase_bills_date').on(t.businessDate, t.createdAt, t.id),
   index('ix_purchase_bills_file').on(t.fileId),

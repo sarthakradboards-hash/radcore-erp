@@ -341,6 +341,13 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'PUT /purchasing/bills/:id': 'bills:write',
   'DELETE /purchasing/bills/:id': 'bills:write',
   'GET /purchasing/orders/:id/pdf': 'purchasing:read',
+  'GET /purchasing/receipts': 'purchasing:read',
+  'GET /purchasing/receipts/:id': 'purchasing:read',
+  'POST /purchasing/receipts': 'inward:write',
+  'PUT /purchasing/receipts/:id': 'inward:write',
+  'DELETE /purchasing/receipts/:id': 'inward:write',
+  'POST /purchasing/receipts/:id/post': 'inward:qc',
+  'POST /purchasing/receipts/:id/cancel': 'inward:qc',
 };
 
 /** Each job: `system <name> [<keys>]` for a schedule or webhook, or `user <key>` for one queued by a person, checked
@@ -378,6 +385,8 @@ const SETTINGS = ['lib-accounts', 'lib-crm', 'lib-gst', 'lib-integrations', 'lib
 const BOOKINGS = ['lib-accounts', 'lib-crm', 'lib-gst', 'lib-integrations', 'lib-platform', 'lib-sales', 'lib-stock'];
 // lib-purchasing's POs read parties and the company (lib-accounts), tax (lib-gst) and items (lib-stock) (RAD-136).
 const PURCHASING = ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-purchasing', 'lib-stock'];
+// Its goods receipts read parties (lib-accounts) and post through the stock engine (lib-stock) (RAD-137).
+const RECEIVING = ['lib-accounts', 'lib-platform', 'lib-purchasing', 'lib-stock'];
 export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Routes, in ROUTE_CHECKS' order: lib-platform's own, for now.
   'POST /sign-in': PLATFORM,
@@ -690,6 +699,13 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'PUT /purchasing/bills/:id': PURCHASING,
   'DELETE /purchasing/bills/:id': PURCHASING,
   'GET /purchasing/orders/:id/pdf': PURCHASING,
+  'GET /purchasing/receipts': RECEIVING,
+  'GET /purchasing/receipts/:id': RECEIVING,
+  'POST /purchasing/receipts': RECEIVING,
+  'PUT /purchasing/receipts/:id': RECEIVING,
+  'DELETE /purchasing/receipts/:id': RECEIVING,
+  'POST /purchasing/receipts/:id/post': RECEIVING,
+  'POST /purchasing/receipts/:id/cancel': RECEIVING,
   'POST /public/enquiries': CRM_DOORS,
   // Jobs, in JOB_PRINCIPALS' order.
   'platform.saved-once-cleanup': PLATFORM,

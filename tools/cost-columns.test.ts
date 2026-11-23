@@ -32,6 +32,11 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     taxable: 'a line’s value (purchasing:read)', cgst: 'tax on a line (purchasing:read)', sgst: 'tax on a line (purchasing:read)',
     igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)' },
   purchase_order_limits: { max_total: 'a role’s PO limit (purchasing:read)' },
+  // A goods receipt's (RAD-137): quantities, and the PO rates its goods came in at, a purchasing document's content.
+  goods_receipts: { value: 'a receipt’s value at the PO’s rates (purchasing:read)' },
+  goods_receipt_lines: { received: 'a quantity', accepted: 'a quantity', rejected: 'a quantity',
+    rate: 'the PO line’s rate (purchasing:read)', accepted_value: 'accepted goods at the PO rate (purchasing:read)',
+    rejected_value: 'rejected goods at the PO rate (purchasing:read)' },
   // A purchase bill's (RAD-138): what the supplier billed and its tax, the bill's own content under purchasing:read, as a
   // PO's (the architect on RAD-136). cost() stays on what's derived from it: the stock's average and the price difference.
   purchase_bills: { stated_total: 'the total the supplier’s bill states (purchasing:read)', taxable: 'a bill’s value (purchasing:read)',

@@ -10,7 +10,7 @@ import { gstinCheckChar, moneyString, percentString, PURCHASE_BILL_STATUSES, qua
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { addBill, addOrder, changeBill, dropBill, getBillById, getOrderById, listBillsPage, overPoRate } from '@radcore/lib-purchasing';
+import { addBill, addOrder, changeBill, changeOrder, dropBill, getBillById, getOrderById, listBillsPage, overPoRate } from '@radcore/lib-purchasing';
 import { addCategory, addItem } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -182,6 +182,19 @@ describe.skipIf(!url || !superUrl)('purchase bills as drafts', () => {
     // Another supplier's same number, and the same supplier's in another financial year (31 March is the year before).
     expect(await add(other, n)).toBe('ok');
     expect(await add(at, n, '2026-03-31')).toBe('ok');
+  });
+
+  // A bill line names its PO line by a restrict foreign key, so a placed PO's change that would drop that line, or give
+  // it another item, is refused by name (RAD-138, after RAD-137's in-place PO line updates); lowering it saves.
+  it('keeps a PO line a bill names: not removed nor given another item (po_billed)', async () => {
+    const at = await setup();
+    const second = await setup();
+    await run((ctx) => addBill(ctx, bill(at, { lines: [goods(at.poLineId)] })));
+    const line = (itemId: string, qty: string) => ({ itemId, qty: quantityString().parse(qty), rate: unitPriceString().parse('50000') });
+    const change = (lines: ReturnType<typeof line>[]) => code(run((ctx) => changeOrder(ctx, { id: at.orderId, supplierId: at.supplierId,
+      businessDate: DATE, expectedBy: null, notes: null, lines })));
+    expect(await change([line(second.itemId, '2')])).toBe('po_billed');
+    expect(await change([line(at.itemId, '1')])).toBe('ok');
   });
 
   it('rewrites a draft whole and throws one away; lists only a person’s own where that’s their scope', async () => {

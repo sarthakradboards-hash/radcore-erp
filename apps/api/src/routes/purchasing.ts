@@ -1,14 +1,16 @@
 // lib-purchasing's routes (ADR-001 §6): declarations only. Purchase orders, their approval and the PO limits (RAD-136);
-// purchase bills' drafts (RAD-138), with posting, its approval and cancelling to come with goods receipts.
+// goods receipts (RAD-137); purchase bills' drafts (RAD-138), with posting, its approval and cancelling to come.
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
-  addBill, addOrder, cancelOrder, changeBill, changeOrder, closeOrder, dropBill, dropOrder, getBillById, getOrderById, listBillsPage, listOrderLimits, listOrdersPage, orderApproval, placeOrder,
-  setOrderLimit,
+  addBill, addOrder, addReceipt, cancelOrder, cancelReceiptNow, changeBill, changeOrder, changeReceipt, closeOrder, dropBill, dropOrder,
+  dropReceipt, getBillById, getOrderById, getReceiptById, listBillsPage, listOrderLimits, listOrdersPage, listReceiptsPage, orderApproval,
+  placeOrder, postReceipt, setOrderLimit,
 } from '@radcore/lib-purchasing';
 import {
-  cancelPurchaseOrder, closePurchaseOrder, createPurchaseBill, createPurchaseOrder, deletePurchaseBill, deletePurchaseOrder, getPurchaseBill,
-  getPurchaseOrder, listPurchaseBills, listPurchaseOrderLimits, updatePurchaseBill,
-  listPurchaseOrders, placePurchaseOrder, purchaseOrderApproval, setPurchaseOrderLimit, updatePurchaseOrder,
+  cancelGoodsReceipt, cancelPurchaseOrder, closePurchaseOrder, createGoodsReceipt, createPurchaseBill, createPurchaseOrder, deleteGoodsReceipt,
+  deletePurchaseBill, deletePurchaseOrder, getGoodsReceipt, getPurchaseBill, getPurchaseOrder, listGoodsReceipts, listPurchaseBills,
+  listPurchaseOrderLimits, listPurchaseOrders, placePurchaseOrder, postGoodsReceipt, purchaseOrderApproval, setPurchaseOrderLimit,
+  updateGoodsReceipt, updatePurchaseBill, updatePurchaseOrder,
 } from '@radcore/lib-purchasing/contract';
 
 export default [
@@ -23,6 +25,13 @@ export default [
   defineRoute(cancelPurchaseOrder, cancelOrder),
   defineRoute(listPurchaseOrderLimits, listOrderLimits),
   defineRoute(setPurchaseOrderLimit, setOrderLimit),
+  defineRoute(listGoodsReceipts, listReceiptsPage),
+  defineRoute(getGoodsReceipt, getReceiptById),
+  defineRoute(createGoodsReceipt, addReceipt),
+  defineRoute(updateGoodsReceipt, changeReceipt),
+  defineRoute(deleteGoodsReceipt, dropReceipt),
+  defineRoute(postGoodsReceipt, postReceipt),
+  defineRoute(cancelGoodsReceipt, cancelReceiptNow),
   defineRoute(listPurchaseBills, listBillsPage),
   defineRoute(getPurchaseBill, getBillById),
   defineRoute(createPurchaseBill, addBill),

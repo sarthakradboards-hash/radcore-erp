@@ -5,7 +5,6 @@
 // (what was taken, and what is left of it), so nothing is worked out here.
 import { dateString, dec, formatDate, formatMoney, indiaDate } from '@radcore/lib-common';
 import { addBookingAdvance, getBooking, listBookings } from '@radcore/lib-sales/contract';
-import { getItem } from '@radcore/lib-stock/contract';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
@@ -29,12 +28,6 @@ const shape = addBookingAdvance.input.shape;
 const advanceSchema = z.object({
   amount: shape.amount, accountId: z.string().min(1, t('sales.booking.advance.account.none')).pipe(shape.accountId), businessDate: dateString(),
 });
-
-/** The unit's item by name and SKU; a person who can't read items sees only the serial number. */
-function UnitItem({ id }: { id: string }) {
-  const q = useApiQuery(getItem, { id });
-  return q.data === undefined ? null : <> ({q.data.name}, {q.data.sku})</>;
-}
 
 export default function BookingPage() {
   const { id } = useParams<{ id: string }>();
@@ -72,7 +65,7 @@ export default function BookingPage() {
       <dl className="admin-facts" aria-label={t('sales.facts')}>
         <dt>{t('sales.party')}</dt><dd>{booking.partyName}</dd>
         <dt>{t('sales.date')}</dt><dd>{formatDate(booking.businessDate)}</dd>
-        <dt>{t('sales.booking.unit')}</dt><dd>{booking.serialNo}<UnitItem id={booking.itemId} /></dd>
+        <dt>{t('sales.booking.unit')}</dt><dd>{booking.serialNo} ({booking.name}, {booking.sku})</dd>
         {booking.cancelReason === null ? null : <><dt>{t('sales.booking.cancelReason')}</dt><dd>{booking.cancelReason}</dd></>}
       </dl>
       {booking.status === 'booked' ? <p>{t('sales.booking.held')}</p> : null}
