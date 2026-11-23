@@ -75,7 +75,7 @@ function AddFromPo({ onAdd }: { onAdd: (lines: BillLineInput[]) => void }) {
       </select>
       <button type="button" className="kit-button" disabled={po === undefined}
         onClick={() => { if (po !== undefined) { onAdd(po.lines.map((l) => ({ kind: 'goods', label: `${l.name} (${l.sku}), ${po.number ?? ''}`,
-          poLineId: l.id, receiptId: '', receiptLineId: '', qty: '', rate: l.rate }))); setPoId(''); } }}>
+          poLineId: l.id, receiptId: '', receiptLineId: '', qty: '', rate: asPrice(l.rate) }))); setPoId(''); } }}>
         {t('purchases.bill.addPoLines')}
       </button>
     </div>
