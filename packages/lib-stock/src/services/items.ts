@@ -130,11 +130,13 @@ export async function getItemById(ctx: Ctx, { id }: In<typeof getItem>): Promise
 
 /** Each item's SKU, name and unit, by id, for another library showing the items it refers to (lib-sales' price lists).
  * An id that names no item is left out. */
-export async function itemLabels(ctx: Ctx, ids: readonly string[]): Promise<Map<string, { sku: string; name: string; unit: string; hsn: string }>> {
+export async function itemLabels(ctx: Ctx, ids: readonly string[]):
+  Promise<Map<string, { sku: string; name: string; unit: string; hsn: string; active: boolean }>> {
   if (ids.length === 0) return new Map();
-  const rows = await stockTx(ctx).select({ id: items.id, sku: items.sku, name: items.name, unit: items.unit, hsn: items.hsn }).from(items)
-    .where(inArray(items.id, [...ids]));
-  return new Map(rows.map((r) => [r.id, { sku: r.sku, name: r.name, unit: r.unit, hsn: r.hsn }]));
+  const rows = await stockTx(ctx).select({ id: items.id, sku: items.sku, name: items.name, unit: items.unit, hsn: items.hsn,
+    active: items.active }).from(items).where(inArray(items.id, [...ids]));
+  // `active` for a document that refuses a switched-off item (a purchase order, RAD-136).
+  return new Map(rows.map((r) => [r.id, { sku: r.sku, name: r.name, unit: r.unit, hsn: r.hsn, active: r.active }]));
 }
 
 /** Each batch's number, by id, for another library showing the batches its lines picked (lib-sales' deliveries and

@@ -13,7 +13,6 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   discount_limits: { max_percent: 'a role’s discount limit, a percentage (prices:read)' },
   gst_rates: { rate: 'a tax rate' },
   payment_allocations: { amount: 'money applied to a document (payments:write)' },
-  quick_bill_holds: { approved_after: 'what a party would owe when its held bill was approved (sales:override)' },
   payment_reminders: { outstanding: 'what a party owed when reminded (receivables:read)', overdue: 'what of it was overdue (receivables:read)' },
   credit_applications: { amount: 'a credit applied to a document (payments:write)' },
   // tools/allocations-routes.test.ts's fixture document, there only while that file runs.
@@ -23,12 +22,23 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   leads: { value: 'a lead’s expected deal value, what it might sell for (leads:read)', score: 'a lead’s score, 0 to 100' },
   price_list_rates: { rate: 'a selling price (prices:read)' },
   stock_movements: { qty: 'a quantity' },
+  // A purchase order's (RAD-136): the rates agreed with the supplier and their tax. A purchasing document's own rates are
+  // its content under purchasing:read, not cost(), which stays on derived figures: averages, stock values and margins
+  // (the architect on RAD-136).
+  purchase_orders: { approved_total: 'the total a PO was approved for (purchasing:read)', taxable: 'a PO’s value (purchasing:read)',
+    cgst: 'tax on a PO (purchasing:read)', sgst: 'tax on a PO (purchasing:read)', igst: 'tax on a PO (purchasing:read)',
+    round_off: 'a PO’s round-off (purchasing:read)', total: 'a PO’s total (purchasing:read)' },
+  purchase_order_lines: { qty: 'a quantity', rate: 'a rate agreed with the supplier (purchasing:read)', gst_rate: 'a tax rate',
+    taxable: 'a line’s value (purchasing:read)', cgst: 'tax on a line (purchasing:read)', sgst: 'tax on a line (purchasing:read)',
+    igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)' },
+  purchase_order_limits: { max_total: 'a role’s PO limit (purchasing:read)' },
   // A quote's and an order's amounts, frozen when sent or confirmed (RAD-112): what was offered, its tax and round-off;
   // a line's, what was offered or ordered, at its selling rate and tax (sales:read).
   sales_quotes: { taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)', sgst: 'tax quoted (sales:read)',
     igst: 'tax quoted (sales:read)', round_off: 'the round-off to the rupee (sales:read)', total: 'what the party is offered (sales:read)' },
   sales_orders: { taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)', sgst: 'tax quoted (sales:read)',
-    igst: 'tax quoted (sales:read)', round_off: 'the round-off to the rupee (sales:read)', total: 'what the party is offered (sales:read)' },
+    igst: 'tax quoted (sales:read)', round_off: 'the round-off to the rupee (sales:read)', total: 'what the party is offered (sales:read)',
+    override_after: 'what the party would owe when its override was approved (sales:override)' },
   sales_quote_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage',
     gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)',
     sgst: 'tax quoted (sales:read)', igst: 'tax quoted (sales:read)', line_total: 'a selling value with tax (sales:read)' },
@@ -36,13 +46,14 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     list_rate: 'a list price (prices:read)', gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)',
     sgst: 'tax quoted (sales:read)', igst: 'tax quoted (sales:read)', line_total: 'a selling value with tax (sales:read)' },
   stock_movement_batches: { qty: 'a quantity' },
+  deliveries: { override_after: 'what the party would owe when its override was approved (sales:override)' },
   // A delivery's or return's line (RAD-112): how many went or came back, and what they sold for (sales:read).
   delivery_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst: 'the GST on a selling value (sales:read)' },
   delivery_return_lines: { qty: 'a quantity', taxable: 'a selling value (sales:read)', gst: 'the GST on a selling value (sales:read)' },
   // An invoice and its lines (RAD-113): what was billed, its tax and round-off (sales:read). Only a line's cost is a cost.
   invoices: { taxable: 'a selling value (sales:read)', cgst: 'tax charged (sales:read)', sgst: 'tax charged (sales:read)',
     igst: 'tax charged (sales:read)', cess: 'tax charged (sales:read)', round_off: 'the round-off to the rupee (sales:read)',
-    total: 'what the party owes on it (sales:read)' },
+    total: 'what the party owes on it (sales:read)', override_after: 'what the party would owe when its override was approved (sales:override)' },
   invoice_lines: { qty: 'a quantity', rate: 'a selling price (sales:read)', discount_percent: 'a discount, a percentage',
     list_rate: 'a list price (prices:read)',
     gst_rate: 'a tax rate', taxable: 'a selling value (sales:read)', cgst: 'tax charged (sales:read)', sgst: 'tax charged (sales:read)',
@@ -58,6 +69,10 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     sgst: 'tax credited (sales:read)', igst: 'tax credited (sales:read)', line_total: 'a selling value with tax (sales:read)' },
   // What marketing spent on a campaign or source (RAD-110): it feeds cost per lead only (campaigns:read), never the books.
   ad_spend: { amount: 'marketing spend (campaigns:read)' },
+  // Stock documents' quantities (RAD-141); their values are costs (COST_COLUMNS).
+  stock_transfer_lines: { qty: 'a quantity' },
+  stock_count_lines: { found: 'a quantity', book: 'a quantity', difference: 'a quantity' },
+  stock_adjustment_lines: { qty: 'a quantity' },
   // The books: who may read them is journal:read's question, which the architect is ruling on (auditor-2 on #224).
   journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)' },
 };

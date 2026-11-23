@@ -9,7 +9,7 @@ import { gstRateFor } from '@radcore/lib-gst';
 import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
 import { itemLabels } from '@radcore/lib-stock';
 import { asc, eq, inArray } from 'drizzle-orm';
-import { checkSale, coveredBy, overrideApproval, type ApprovedThrough, type OverrideVersion, type SaleCheck } from './checks.ts';
+import { checkSale, coveredBy, overrideApproval, refuseGrown, type ApprovedThrough, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { deliveredNotInvoiced } from './delivered.ts';
 import { lineValues } from './document-rules.ts';
 import { toRupee } from './invoice-rules.ts';
@@ -73,8 +73,8 @@ export const deliveryOverride = overrideApproval({
   },
   // It records what was approved; posting the delivery is its maker's next step.
   async approved(ctx, id) {
-    const version = await deliveryOverride.version(ctx, id, { forUpdate: false });
-    if (version !== null) await salesTx(ctx).update(deliveries).set({ overrideVersion: versionHash(version) }).where(eq(deliveries.id, id));
+    const judged = await deliveryOverride.judged(ctx, id);
+    if (judged !== null) await salesTx(ctx).update(deliveries).set(judged).where(eq(deliveries.id, id));
   },
   async rejected() {
     // A refused override leaves the delivery a draft, to change or to ask again.
@@ -93,14 +93,17 @@ async function wholeOrder(ctx: Ctx, d: Delivery, lines: readonly Line[]): Promis
  * override was approved for exactly this delivery and these issues; or, completing a held quick bill (`through`, never
  * from a route), its order's approval covers them and this is that order's whole delivery (the architect on RAD-115).
  */
-export async function checkDelivery(ctx: Ctx, d: Delivery & { overrideVersion: string | null }, lines: readonly Line[],
+export async function checkDelivery(ctx: Ctx, d: Delivery & { overrideVersion: string | null; overrideAfter: string | null }, lines: readonly Line[],
   through?: ApprovedThrough): Promise<void> {
   const result = await checkSale(ctx, await saleOf(ctx, d, lines));
   const { issues } = result;
   if (issues.length === 0) return;
   if (through !== undefined && through.orderId === d.orderId && coveredBy(through, result) && await wholeOrder(ctx, d, lines)) return;
   const version: OverrideVersion = { figures: figuresOf(d, lines), issues };
-  if (d.overrideVersion !== null && d.overrideVersion === versionHash(version)) return;
+  if (d.overrideVersion !== null && d.overrideVersion === versionHash(version)) {
+    refuseGrown(d.overrideAfter, result, 'delivery');
+    return;
+  }
   throw new AppError('needs_override', 'This delivery needs someone else to approve an override before it’s posted',
     issues.map((i) => ({ path: 'line' in i ? ['lines', i.line] : ['partyId'], code: i.code, message: ISSUE_WORDS[i.code] ?? i.code })));
 }

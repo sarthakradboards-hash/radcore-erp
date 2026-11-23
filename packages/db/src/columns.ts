@@ -24,9 +24,10 @@ export const money = (o: { signed?: boolean } = {}) =>
 export const foreignMoney = () => withRule(numeric({ precision: 18, scale: 4 }), { op: 'min0' });
 /** A rate per unit, stored exactly: 0.375, or a foreign unit price (RC-008). */
 export const unitPrice = () => withRule(numeric({ precision: 18, scale: 6 }), { op: 'min0' });
-/** A quantity: `> 0` on a document line (`{ line: true }`), `>= 0` elsewhere. */
-export const qty = (o: { line?: boolean } = {}) =>
-  withRule(numeric({ precision: 18, scale: 3 }), { op: o.line ? 'gt0' : 'min0' });
+/** A quantity: `> 0` on a document line (`{ line: true }`), `>= 0` elsewhere, or either sign (`{ signed: true }`: a
+ * count's book quantity and difference, RAD-141). */
+export const qty = (o: { line?: boolean; signed?: boolean } = {}) =>
+  withRule(numeric({ precision: 18, scale: 3 }), { op: o.signed ? 'notNaN' : o.line ? 'gt0' : 'min0' });
 /** A rate in percent, `between 0 and 100`, or up to `max` where the law allows more (a cess rate). */
 export const percent = (o: { max?: number } = {}) =>
   withRule(numeric({ precision: 9, scale: 6 }), { op: 'between', max: o.max ?? 100 });

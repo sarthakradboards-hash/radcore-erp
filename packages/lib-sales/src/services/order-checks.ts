@@ -6,11 +6,11 @@
 import { priceListVersions, salesOrderLines, salesOrders, salesTx } from '@radcore/db/sales';
 import { AppError, versionHash, type Ctx } from '@radcore/lib-platform';
 import { asc, eq } from 'drizzle-orm';
-import { checkSale, overrideApproval, type OverrideVersion, type SaleCheck } from './checks.ts';
+import { checkSale, overrideApproval, refuseGrown, type OverrideVersion, type SaleCheck } from './checks.ts';
 import { deliveredNotInvoiced } from './delivered.ts';
 import { amountsOf, type Amounts } from './document-amounts.ts';
 import { listRateBeforeTax, netRate } from './document-rules.ts';
-import { heldPaid, setApprovedAfter } from './quick-bill-holds.ts';
+import { heldPaid } from './quick-bill-holds.ts';
 
 type Order = { partyId: string; businessDate: string; createdBy: string };
 type Line = { itemId: string; qty: string; rate: string; discountPercent: string; listRate: string | null; listTaxInclusive: boolean | null };
@@ -64,11 +64,9 @@ export const orderOverride = overrideApproval({
   read: readOrder,
   // It records what was approved; confirming the order is its maker's next step.
   async approved(ctx, id) {
-    const version = await orderOverride.version(ctx, id, { forUpdate: false });
-    if (version !== null) await salesTx(ctx).update(salesOrders).set({ overrideVersion: versionHash(version) }).where(eq(salesOrders.id, id));
-    // A held quick bill's approval holds only for what was owed then (the architect on RAD-115).
-    const exposure = await heldExposure(ctx, id);
-    if (exposure !== null) await setApprovedAfter(ctx, id, exposure);
+    // A held quick bill's figure is with its planned payments taken, as readOrder judges it (the architect on RAD-135).
+    const judged = await orderOverride.judged(ctx, id);
+    if (judged !== null) await salesTx(ctx).update(salesOrders).set(judged).where(eq(salesOrders.id, id));
   },
   async rejected() {
     // A refused override leaves the order a draft, to change or to ask again.
@@ -113,13 +111,17 @@ export async function orderIssues(ctx: Ctx, o: Order, lines: readonly Line[], pa
  * `needs_override`, naming each, unless an override was approved for exactly this order and these issues. Answers the
  * amounts, for the caller to store.
  */
-export async function checkOrder(ctx: Ctx, orderId: string, o: Order & { overrideVersion: string | null }): Promise<Amounts> {
+export async function checkOrder(ctx: Ctx, orderId: string, o: Order & { overrideVersion: string | null; overrideAfter: string | null }): Promise<Amounts> {
   const lines = await linesOf(ctx, orderId);
   const a = await amountsOf(ctx, o.partyId, o.businessDate, lines);
-  const { issues } = await checkSale(ctx, await saleOf(ctx, o, lines, a));
+  const result = await checkSale(ctx, await saleOf(ctx, o, lines, a));
+  const { issues } = result;
   if (issues.length === 0) return a;
   const version: OverrideVersion = { figures: figuresOf(o, lines), issues };
-  if (o.overrideVersion !== null && o.overrideVersion === versionHash(version)) return a;
+  if (o.overrideVersion !== null && o.overrideVersion === versionHash(version)) {
+    refuseGrown(o.overrideAfter, result, 'order');
+    return a;
+  }
   throw new AppError('needs_override', 'This order needs someone else to approve an override before it’s confirmed',
     issues.map((i) => ({ path: 'line' in i ? ['lines', i.line] : ['partyId'], code: i.code, message: ISSUE_WORDS[i.code] ?? i.code })));
 }

@@ -19,7 +19,7 @@ import {
 import { addCategory, addItem, addPlace, postUnitEvents } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import salesRoutes from '../apps/api/src/routes/sales.ts';
 import { priceListFrom } from './price-list-fixture.ts';
@@ -46,7 +46,7 @@ it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
 
 describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 4 });
-  const su = new pg.Pool({ connectionString: superUrl, max: 1 });
+  const su = new pg.Pool({ connectionString: superUrl, max: 2 });
   const db = createDatabase(pool);
   afterAll(async () => {
     await pool.end();
@@ -175,7 +175,7 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     const at = await setup({ serials: [demo, fresh] });
     await run((ctx) => postUnitEvents(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE,
       changes: [{ kind: 'condition_changed', itemId: at.itemId, serialNo: demo, condition: 'demo' }] }));
-    const lead = await leadOf(staff);
+    const lead = (await run((ctx) => captureEnquiry(ctx, { phone: mobile(), source: 'manual', name: 'Asha Rao' }), staff)).id ?? '';
     const ride = (serialNo: string, o: { leadId?: string; as?: Principal; at?: string } = {}) => run((ctx) => scheduleRide(ctx,
       { leadId: o.leadId ?? lead, itemId: at.itemId, serialNo, scheduledAt: o.at ?? '2026-11-16T05:30:00.000Z' }), o.as);
     expect(await failure(ride(fresh))).toBe('not_demo');
@@ -193,6 +193,12 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     const rides = await run((ctx) => listTestRidesPage(ctx, { filter: { leadId: lead }, limit: 10 }));
     expect(rides.items.map((r) => [r.id, r.outcome])).toEqual(expect.arrayContaining([[first.id, 'liked'], [again.id, 'cancelled']]));
     expect(rides.items.at(-1)).toMatchObject({ id: later.id, outcome: null, doneAt: null });
+    // Each row names the model and the lead (RAD-117's labels): the lead's name only for a reader who may open it.
+    const { rows: [item] } = await su.query<{ sku: string; name: string }>('select sku, name from radcore.items where id = $1', [at.itemId]);
+    expect(rides.items.map((r) => [r.sku, r.name, r.leadName])).toEqual(rides.items.map(() => [item?.sku, item?.name, 'Asha Rao']));
+    const ownLeadsOnly = person([], ['leads:read']);
+    const theirs = await run((ctx) => listTestRidesPage(ctx, { filter: { leadId: lead }, limit: 10 }), ownLeadsOnly);
+    expect(theirs.items.map((r) => [r.sku, r.leadName])).toEqual(theirs.items.map(() => [item?.sku, null]));
     // Done needs an outcome, and an outcome a ride that's done, in the table too.
     const c = await su.connect();
     try {
@@ -228,6 +234,18 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect(await failure(book(b?.orderLineId ?? '', s[1] ?? '', '0'))).toBe('advance_required');
     const two = await setup({ serials: [`S-${tag()}`], qty: '2' });
     expect(await failure(book(two.lines[0]?.orderLineId ?? '', 'X', '1000'))).toBe('booking_one_unit');
+  });
+
+  // RAD-117's labels: a booking's item by its SKU and name, in the list and on its page, as documents' lines are.
+  it('names a booking’s item by its SKU and name, in the list and on its page', async () => {
+    const s = [`S-${tag()}`];
+    const at = await setup({ serials: s });
+    const line = at.lines[0];
+    const made = await book(line?.orderLineId ?? '', s[0] ?? '', '10000');
+    const { rows: [item] } = await su.query<{ sku: string; name: string }>('select sku, name from radcore.items where id = $1', [at.itemId]);
+    const listed = await run((ctx) => listBookingsPage(ctx, { filter: { orderId: line?.orderId ?? '' }, limit: 10 }));
+    const shown = await run((ctx) => getBookingById(ctx, { id: made.id }));
+    expect([listed.items.map((b) => [b.sku, b.name]), [shown.sku, shown.name]]).toEqual([[[item?.sku, item?.name]], [item?.sku, item?.name]]);
   });
 
   it('books a damaged unit only where stock.sell_damaged_units is on (auditor-2 on #286)', async () => {
@@ -336,6 +354,48 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     await Promise.all([run((ctx) => cancelBookingNow(ctx, { id: only.id, businessDate: DATE, reason: 'Another on the way' })),
       book(l4?.orderLineId ?? '', s[3] ?? '', '1000', { leadId: one })]);
     expect((await stageOf(one))?.stage).toBe('converted');
+  });
+
+  /** A plain save's locks taken by hand (ADR-006 §1, the architect on RAD-115): the unit, then, once `save` waits on it,
+   * the journal's series turn, as a delivery of that unit takes them. Answers how the turn and the save ended: with
+   * §1's order `save` waits holding no series and both finish; one holding the journal's turn would deadlock (40P01). */
+  async function againstUnitHolder(serialNo: string, save: () => Promise<string>): Promise<string[]> {
+    const plain = await su.connect();
+    try {
+      await plain.query('begin');
+      await plain.query("set local app.principal = 'system:test'");
+      await plain.query('select 1 from radcore.units where serial_no = $1 for update', [serialNo]);
+      const pid = (await plain.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
+      let done = false;
+      const saved = save().finally(() => { done = true; });
+      const waiting = async () => (await su.query<{ n: number }>('select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
+        [pid])).rows[0]?.n ?? 0;
+      await vi.waitFor(async () => expect(done || await waiting() > 0).toBe(true), { timeout: 10_000 });
+      const turn = await plain.query("select pg_advisory_xact_lock(hashtextextended('numbering.accounts.journal', 0))")
+        .then(() => 'ok', (e: unknown) => String((e as { code?: string }).code ?? e));
+      await plain.query(turn === 'ok' ? 'commit' : 'rollback');
+      return [turn, await saved];
+    } finally {
+      plain.release();
+    }
+  }
+
+  // A cancel with a refund releases its unit before the refund's series (the real gap this closes; mutation-checked).
+  it('cancels with a refund while a delivery holds its unit, holding no series as it waits', async () => {
+    const s = [`S-${tag()}`];
+    const at = await setup({ serials: s });
+    const made = await book(at.lines[0]?.orderLineId ?? '', s[0] ?? '', '10000');
+    const bank = await systemId('bank');
+    expect(await againstUnitHolder(s[0] ?? '', () => failure(run((ctx) => cancelBookingNow(ctx, { id: made.id, businessDate: DATE, reason: 'Test',
+      refund: { amount: m('10000'), accountId: bank } }))))).toEqual(['ok', 'ok']);
+  });
+
+  // A booking with its advance takes its series (JV, RV, BK) only after its unit, so it meets a delivery, or a quick
+  // bill's delivery, of that unit the same way (auditor-2 on #353, the architect's RAD-115 list).
+  it('books a unit a delivery holds, holding no series as it waits, and takes its advance after', async () => {
+    const s = [`S-${tag()}`];
+    const at = await setup({ serials: s });
+    expect(await againstUnitHolder(s[0] ?? '', () => failure(book(at.lines[0]?.orderLineId ?? '', s[0] ?? '', '10000')))).toEqual(['ok', 'ok']);
   });
 
   it('refunds all of what’s left only with refund_full, part with refund_part, and never more than is left', async () => {
