@@ -77,10 +77,10 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
     // A posted receipt line has its QC figures (only a draft's are null).
     const accepted = dec(r.accepted ?? '0');
     const rejectedAll = dec(r.rejected ?? '0');
-    // Less rejects returned before they were billed (ADR-008 §7). RAD-140's return_billed has every return come before any
-    // bill on its PO line, and a return takes the rejects first (§8), then any accepted goods moved to rejects. What went
-    // back takes the top of each pool, so the shares below clear what's left of GRNB. shortcut: a return clears at its own
-    // rounding (qty × rate), so a fractional quantity could leave a paisa there; exact once a return records each pool's share.
+    // Less rejects returned before they were billed (ADR-008 §7). A return takes its unbilled part first (§8): the rejects,
+    // then any accepted goods moved to rejects, each from the top of its pool and clearing its share of what the pool
+    // accrued (debit-notes.ts), so with the shares below, taken from the bottom, the last document clears what's left of
+    // GRNB exactly. A return's billed part only comes once nothing is unbilled, so counting it here bills nothing more.
     const returned = back.get(r.id) ?? zero();
     const accLeft = accepted.minus(returned.gt(rejectedAll) ? returned.minus(rejectedAll) : zero());
     const left = accLeft.plus(rejectedAll.minus(minOf(returned, rejectedAll)));

@@ -53,15 +53,35 @@ async function billPartsOf(ctx: Ctx, receiptLineIds: readonly string[], o: { for
 
 type Debit = { billId: string; billNumber: string; billDate: string; billLineId: string; qty: Decimal; rate: string; gstRate: string | null;
   tax: LineTax; claimable: boolean; billTotal: string; placeOfSupply: string };
-export type Split = { lineId: string; unbilledQty: Decimal; debits: Debit[] };
+export type Split = { lineId: string; unbilledQty: Decimal; unbilledValue: Money; debits: Debit[] };
 type ReturnLine = { id: string; receiptLineId: string; qty: string };
+/** A posted receipt line's QC split and what each part accrued to Goods Received Not Billed. */
+export type Accrued = { received: string; accepted: string | null; rejected: string | null; acceptedValue: string | null; rejectedValue: string | null };
+
+/** A pool's value between two positions from its top, telescoping as a bill's shares do from the bottom (bill-post.ts),
+ * so whichever document takes a pool's last unit clears exactly what's left of it. */
+const fromTop = (value: string | null, size: Decimal, taken0: Decimal, taken1: Decimal): Decimal => (size.isZero() ? zero()
+  : dec(roundMoney(dec(value ?? '0').times(size.minus(taken0)).div(size))).minus(dec(roundMoney(dec(value ?? '0').times(size.minus(taken1)).div(size)))));
+
+/**
+ * What a return's unbilled part clears from Goods Received Not Billed (F4, the architect on RAD-140): the receipt line's
+ * rate × quantity, but as shares of what each pool accrued, so no paisa is left when returns and bills split a line
+ * (backend-3 on #398). Returns take the rejects from the top, then accepted goods moved to rejects; bills take accepted
+ * goods from the bottom, then rejects. `gone0` is what posted returns already sent back unbilled.
+ */
+function unbilledShare(a: Accrued, gone0: Decimal, qty: Decimal): Decimal {
+  const [acc, rej] = [dec(a.accepted ?? '0'), dec(a.rejected ?? '0')];
+  const gone1 = gone0.plus(qty);
+  const over = (g: Decimal) => (g.gt(rej) ? g.minus(rej) : zero());
+  return fromTop(a.rejectedValue, rej, minOf(gone0, rej), minOf(gone1, rej)).plus(fromTop(a.acceptedValue, acc, over(gone0), over(gone1)));
+}
 
 /**
  * Each return line split (§8): the unbilled part first, at most what's left unbilled of its receipt line (what came in,
  * less what posted bills billed, less what posted returns sent back unbilled), then the rest against its bills latest
  * first, each bill line at most what it billed less what earlier returns debited. A part past both is `over_received`.
  */
-export async function splitLines(ctx: Ctx, lines: readonly ReturnLine[], received: ReadonlyMap<string, string>,
+export async function splitLines(ctx: Ctx, lines: readonly ReturnLine[], accrued: ReadonlyMap<string, Accrued>,
   o: { forUpdate: boolean }): Promise<Split[]> {
   const ids = lines.map((l) => l.receiptLineId);
   const parts = await billPartsOf(ctx, ids, o);
@@ -69,7 +89,7 @@ export async function splitLines(ctx: Ctx, lines: readonly ReturnLine[], receive
   const back = await unbilledReturnedOf(ctx, ids);
   const used = await debitedOf(ctx, parts.map((p) => p.billLineId));
   const unbilled = new Map(ids.map((id) => {
-    const left = dec(received.get(id) ?? '0').minus(billed.get(id) ?? zero()).minus(back.get(id) ?? zero());
+    const left = dec(accrued.get(id)?.received ?? '0').minus(billed.get(id) ?? zero()).minus(back.get(id) ?? zero());
     return [id, left.gt(0) ? left : zero()];
   }));
   const company = parts.length === 0 ? null : (await getCompanyProfile(ctx)).company;
@@ -80,6 +100,10 @@ export async function splitLines(ctx: Ctx, lines: readonly ReturnLine[], receive
     const free = unbilled.get(l.receiptLineId) ?? zero();
     const unbilledQty = minOf(dec(l.qty), free);
     unbilled.set(l.receiptLineId, free.minus(unbilledQty));
+    const gone0 = back.get(l.receiptLineId) ?? zero();
+    back.set(l.receiptLineId, gone0.plus(unbilledQty));
+    const a = accrued.get(l.receiptLineId);
+    const unbilledValue = roundMoney(a === undefined ? zero() : unbilledShare(a, gone0, unbilledQty));
     let rest = dec(l.qty).minus(unbilledQty);
     const debits: Debit[] = [];
     for (const p of parts.filter((x) => x.receiptLineId === l.receiptLineId)) {
@@ -97,7 +121,7 @@ export async function splitLines(ctx: Ctx, lines: readonly ReturnLine[], receive
       throw new AppError('over_received', 'More goes back than came in on that receipt line, less what has gone back already',
         [{ path: ['lines', n, 'qty'], code: 'over_received', message: 'Fewer go back' }]);
     }
-    return { lineId: l.id, unbilledQty, debits };
+    return { lineId: l.id, unbilledQty, unbilledValue, debits };
   });
 }
 

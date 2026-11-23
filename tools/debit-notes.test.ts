@@ -79,18 +79,19 @@ describe.skipIf(!url || !superUrl)('debit notes', { timeout: 60_000 }, () => {
   };
 
   /** F2's start: a PO for `accepted + rejected` SCOOTERs at 62,000.00, received with the rejects in Rejected. */
-  async function setup(accepted: string, rejected: string, o: { registered: boolean } = { registered: true }) {
+  async function setup(accepted: string, rejected: string, o: { registered?: boolean; rate?: string } = {}) {
+    const rate = o.rate ?? '62000';
     const staff = await person();
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
-      const supplierGstin = o.registered ? gstin() : null;
+      const supplierGstin = o.registered === false ? null : gstin();
       const { id: supplierId } = await addParty(ctx, { name: `Supplier ${tag()}`, kinds: ['supplier'], gstin: supplierGstin, pan: null, composition: false,
         stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
       const hsn = `8711${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}`;
       await putGstRate(ctx, { hsn, effectiveFrom: '2026-04-01', rate: percentString().parse('5'), source: 'Test', note: null, reason: 'Test' });
       const { id: itemId } = await addItem(ctx, { sku: `D-${tag()}`, name: 'Scooter', categoryId, hsn, unit: 'NOS', barcode: null, serialised: false,
-        hasChassis: false, purchasePrice: unitPriceString().parse('62000') });
+        hasChassis: false, purchasePrice: unitPriceString().parse(rate) });
       const stores = (await addPlace(ctx, { code: `S${tag()}`, name: `Stores ${tag()}`, kind: 'stores' })).id;
       const rejects = (await addPlace(ctx, { code: `R${tag()}`, name: `Rejected ${tag()}`, kind: 'rejected' })).id;
       return { supplierId, supplierGstin, itemId, stores, rejects };
@@ -98,7 +99,7 @@ describe.skipIf(!url || !superUrl)('debit notes', { timeout: 60_000 }, () => {
     const bought = await run(async (ctx) => {
       const total = String(Number(accepted) + Number(rejected));
       const { id: orderId } = await addOrder(ctx, { supplierId: made.supplierId, businessDate: DATE, expectedBy: null, notes: null,
-        lines: [{ itemId: made.itemId, qty: q(total), rate: unitPriceString().parse('62000') }] });
+        lines: [{ itemId: made.itemId, qty: q(total), rate: unitPriceString().parse(rate) }] });
       await placeOrder(ctx, { id: orderId });
       const poLineId = (await getOrderById(ctx, { id: orderId })).lines[0]?.id ?? '';
       const { id: receiptId } = await addReceipt(ctx, { orderId, businessDate: DATE, locationId: made.stores, rejectsLocationId: made.rejects,
@@ -106,7 +107,7 @@ describe.skipIf(!url || !superUrl)('debit notes', { timeout: 60_000 }, () => {
       const receiptLineId = (await getReceiptById(ctx, { id: receiptId })).lines[0]?.id ?? '';
       await postReceipt(ctx, { id: receiptId, lines: [{ lineId: receiptLineId, batches: [{ batchNo: 'L1', accepted: q(accepted), rejected: q(rejected) }],
         serials: [], rejectReason: 'Dented panel' }] });
-      return { poLineId, receiptLineId };
+      return { poLineId, receiptId, receiptLineId };
     }, staff);
     const batchId = (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1', [made.itemId])).rows[0]?.id ?? '';
     return { ...made, ...bought, staff, batchId };
@@ -214,6 +215,21 @@ describe.skipIf(!url || !superUrl)('debit notes', { timeout: 60_000 }, () => {
     const { id } = await giveBack(at, '1');
     const r = await run((ctx) => getReturnById(ctx, { id }), at.staff);
     expect([r.applications.map((a) => a.amount), await paid(at, billId)]).toEqual([['45300.00'], '195300.00']);
+  });
+
+  // backend-3 on #398: returns and a bill splitting one receipt line three ways leave Goods Received Not Billed at 0.00. Three
+  // rejects at 33.333333 accrued 100.00; a return, a bill and a return clear 33.33, 33.33 and 33.34, returns taking the
+  // pool from the top as bills take it from the bottom, so the last share takes what's left (not 33.33 at rate × qty).
+  it('clears exactly what the receipt accrued when returns and a bill split a line three ways', async () => {
+    const at = await setup('0', '3', { rate: '33.333333' });
+    const { id: first } = await giveBack(at, '1');
+    const billId = await bill(at, '1', '33.333333');
+    const { id: second } = await giveBack(at, '1');
+    const left = (await pool.query<{ v: string }>(`select coalesce(sum(l.credit - l.debit), 0)::numeric(18, 2)::text as v
+      from radcore.journal_lines l join radcore.accounts a on a.id = l.account_id join radcore.journal_entries e on e.id = l.entry_id
+      where a.system_key = 'grni' and e.source_id = any($1::uuid[])`, [[at.receiptId, billId, first, second]])).rows[0]?.v;
+    const shares = await Promise.all([first, second].map(async (id) => (await run((ctx) => getReturnById(ctx, { id }), at.staff)).unbilledValue));
+    expect([shares, left]).toEqual([['33.33', '33.34'], '0.00']);
   });
 
   // RC-129 and §7: undoing the return reverses its debit note's application, so the bill is open again; until then the

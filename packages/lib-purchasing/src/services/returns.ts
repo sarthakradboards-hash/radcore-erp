@@ -59,7 +59,7 @@ async function returnOf(ctx: Ctx, id: string, key: string, forUpdate = false): P
 const linesOf = (ctx: Ctx, id: string) => purchasingTx(ctx).select().from(supplierReturnLines)
   .where(eq(supplierReturnLines.returnId, id)).orderBy(asc(supplierReturnLines.lineNo));
 type Line = Awaited<ReturnType<typeof linesOf>>[number];
-const receivedBy = (receipt: ReadonlyMap<string, ReceiptLine>) => new Map([...receipt.values()].map((x) => [x.id, x.received]));
+const receivedBy = (receipt: ReadonlyMap<string, ReceiptLine>) => new Map([...receipt.values()].map((x) => [x.id, x]));
 const asDraftLines = (lines: readonly Line[]): LineIn[] => lines.map((l) => ({ receiptLineId: l.receiptLineId, qty: l.qty as Quantity,
   ...(l.picks as Picks) }));
 
@@ -203,7 +203,7 @@ export async function postReturn(ctx: Ctx, { id }: In<typeof postSupplierReturn>
   // unbilled quantity (F4), and the debit note is at its bills' rates. Any difference goes to Cost of Goods Sold, as a
   // bill's price difference on goods no longer on hand does (ADR-006 §4).
   const rateOf = (l: Line) => receipt.get(l.receiptLineId)?.rate ?? '0';
-  const accrued = lines.map((l, i) => roundMoney((splits[i]?.unbilledQty ?? dec('0')).times(dec(rateOf(l)))));
+  const accrued = lines.map((_, i) => splits[i]?.unbilledValue ?? ('0.00' as Money));
   const value = roundMoney(accrued.reduce((s, v) => s.plus(dec(v)), dec('0')));
   const signed = (account: JournalLine['account'], v: Decimal, more: Partial<JournalLine> = {}): JournalLine[] =>
     (v.isZero() ? [] : [{ account, ...more, ...(v.gt(0) ? { debit: roundMoney(v) } : { credit: roundMoney(v.abs()) }) }]);
@@ -341,12 +341,14 @@ export async function getReturnById(ctx: Ctx, { id }: In<typeof getSupplierRetur
     const src = receipt.get(l.receiptLineId);
     const rate = l.rate ?? src?.rate ?? '0';
     const p = l.picks as Picks;
-    const unbilledQty = l.unbilledQty ?? draft?.splits?.find((s) => s.lineId === l.id)?.unbilledQty.toFixed(3) ?? l.qty;
+    const worked = draft?.splits?.find((s) => s.lineId === l.id);
+    const unbilledQty = l.unbilledQty ?? worked?.unbilledQty.toFixed(3) ?? l.qty;
     return { id: l.id, lineNo: l.lineNo, receiptLineId: l.receiptLineId, receiptId: src?.receiptId ?? null, receiptNumber: src?.receiptNumber ?? null,
       orderLineId: src?.orderLineId ?? null, itemId: l.itemId, sku: labels.get(l.itemId)?.sku ?? '', name: labels.get(l.itemId)?.name ?? '',
       unit: labels.get(l.itemId)?.unit ?? '', qty: l.qty,
       batches: p.batches.map((b) => ({ batchId: b.batchId, batchNo: numbers.get(b.batchId)?.batchNo ?? '', qty: b.qty })), serials: p.serials,
-      rate, unbilledQty, unbilledValue: (l.unbilledValue ?? roundMoney(dec(unbilledQty).times(dec(rate)))) as Money, billed: billedOf(l.id) };
+      rate, unbilledQty, unbilledValue: (l.unbilledValue ?? worked?.unbilledValue ?? roundMoney(dec(unbilledQty).times(dec(rate)))) as Money,
+      billed: billedOf(l.id) };
   });
   const worked = draft?.splits === undefined || draft.splits === null ? null : debitTotals(draft.splits);
   const debitNote = r.status === 'draft'
