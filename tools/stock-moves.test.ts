@@ -9,7 +9,7 @@ import { AppError, decideApproval, Settings, type Ctx, type Principal } from '@r
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addAdjustment, addCategory, addCount, addItem, addPlace, addTransfer, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, askCountApproval,
-  cancelTransferNow, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
+  cancelAdjustmentNow, cancelTransferNow, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
 } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -122,6 +122,53 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
     expect([back, (await run((ctx) => getTransferById(ctx, { id: first.id }))).status,
       await code(run((ctx) => cancelTransferNow(ctx, { id: second.id, businessDate: DATE, reason: 'Too late' })))])
       .toEqual([{ qty: '2', value: '200.00' }, 'cancelled', 'goods_moved_on']);
+  });
+
+  // RC-124 for serialised goods (dev after #339): undoing F13 moves the unit back to Stores in the condition it had
+  // there, `new`; once a unit has moved on from where a transfer put it, that transfer is refused goods_moved_on.
+  it('undoes a serialised transfer into demo, the unit back as it was, and refuses once a unit has moved on', async () => {
+    const serials = [`S-${tag()}`, `S-${tag()}`];
+    const at = await setup(['stores', 'demo', 'store'], { stock: '2', rate: '61250', serials });
+    const [stores, demo, store] = at.places as [string, string, string];
+    const send = (fromId: string, toId: string, serial: string) => run((ctx) => addTransfer(ctx, { fromId, toId, businessDate: DATE,
+      reason: 'Test', lines: [line(at.itemId, '1', at.batchId, [serial])] }));
+    const unitOf = async (serial: string) => (await pool.query<{ location_id: string; condition: string; ownership: string }>(
+      'select location_id, condition, ownership from radcore.units where item_id = $1 and serial_no = $2', [at.itemId, serial])).rows[0];
+    const first = await send(stores, demo, serials[0] ?? '');
+    const undone = await code(run((ctx) => cancelTransferNow(ctx, { id: first.id, businessDate: DATE, reason: 'Sent in error' })));
+    const back = await unitOf(serials[0] ?? '');
+    // The other unit: to the store, then on to demo, so the first transfer's unit is no longer where it put it.
+    const second = await send(stores, store, serials[1] ?? '');
+    await send(store, demo, serials[1] ?? '');
+    const late = await code(run((ctx) => cancelTransferNow(ctx, { id: second.id, businessDate: DATE, reason: 'Too late' })));
+    expect([undone, back, late, await onHand(at.itemId, stores)]).toEqual(['ok', { location_id: stores, condition: 'new', ownership: 'ours' },
+      'goods_moved_on', { qty: '1', value: '61250.00' }]);
+  });
+
+  // RC-123's undo for serialised goods: an adjustment's found unit leaves again, gone, and its scrapped one comes back,
+  // ours in its batch and condition; both mirrored at the values they posted at.
+  it('cancels a serialised adjustment: a found unit gone again, a scrapped one back in its batch', async () => {
+    const boss = await approver();
+    const serials = [`S-${tag()}`, `S-${tag()}`];
+    const at = await setup(['store'], { stock: '2', rate: '61250', serials });
+    const [store] = at.places as [string];
+    const adjusted = async (lines: Parameters<typeof addAdjustment>[1]['lines']) => {
+      const { id } = await run((ctx) => addAdjustment(ctx, { locationId: store, businessDate: DATE, reason: 'Test', lines }));
+      await decide(adjustmentApprovalSpec, boss, await run((ctx) => askAdjustmentApproval(ctx, { id })));
+      return id;
+    };
+    const found = `N-${tag()}`;
+    const inId = await adjusted([{ itemId: at.itemId, direction: 'in', qty: q('1'), condition: 'new', batches: [],
+      serials: [{ serialNo: found, chassisNo: null }] }]);
+    const outId = await adjusted([{ itemId: at.itemId, direction: 'out', qty: q('1'), condition: null,
+      batches: [{ batchId: at.batchId, qty: q('1') }], serials: [{ serialNo: serials[0] ?? '', chassisNo: null }] }]);
+    const cancel = (id: string) => code(run((ctx) => cancelAdjustmentNow(ctx, { id, businessDate: DATE, reason: 'Entered in error' }), boss));
+    const states = [await cancel(inId), await cancel(outId)];
+    const units = (await pool.query<{ serial_no: string; ownership: string; batch_id: string | null; condition: string }>(
+      'select serial_no, ownership, batch_id, condition from radcore.units where item_id = $1 and serial_no = any($2)', [at.itemId, [found, serials[0]]])).rows;
+    const of = (s: string) => units.find((u) => u.serial_no === s);
+    expect([states, of(found)?.ownership, of(serials[0] ?? ''), await onHand(at.itemId, store)]).toEqual([['ok', 'ok'], 'gone',
+      { serial_no: serials[0], ownership: 'ours', batch_id: at.batchId, condition: 'new' }, { qty: '2', value: '122500.00' }]);
   });
 
   // Sarthak's setting: into a franchisee's store, off posts at once; on, it waits for someone else's approval.
