@@ -149,9 +149,12 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
   const on = await sellableOnHand(ctx, items);
   let cogs = zero();
   for (const [itemId, { d, billed }] of byItem) {
-    const places = on.get(itemId) ?? [];
-    const held = places.reduce((s, p) => s.plus(dec(p.qty)), zero());
-    const toStock = held.gte(billed) ? d : held.gt(0) ? dec(roundMoney(d.times(held).div(billed))) : zero();
+    // Only the positions held above (backend-3 on #380): a place that took the item between the two reads would be locked
+    // out of order by postStock, so it counts as having taken it just after this bill.
+    const held = new Set((seen.get(itemId) ?? []).map((p) => p.locationId));
+    const places = (on.get(itemId) ?? []).filter((p) => held.has(p.locationId));
+    const onHand = places.reduce((s, p) => s.plus(dec(p.qty)), zero());
+    const toStock = onHand.gte(billed) ? d : onHand.gt(0) ? dec(roundMoney(d.times(onHand).div(billed))) : zero();
     cogs = cogs.plus(d.minus(toStock));
     for (const [i, share] of spread(toStock, places.map((p) => dec(p.qty))).entries()) {
       if (!share.isZero()) revalues.push({ itemId, locationId: places[i]?.locationId ?? '', value: roundMoney(share) });
