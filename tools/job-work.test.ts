@@ -267,6 +267,20 @@ describe.skipIf(!url || !superUrl)('job work', () => {
 
   // #365's undo for job work's unit events (auditor-2 on #366): a serialised input comes home when its challan is
   // cancelled, and goes back to the job worker when a receipt that brought it home is.
+  // auditor-3's NIT on #393 (RAD-144): the challan says which units it sent are still out, and a receipt accounts only
+  // for units its line sent, not another challan's at the same job worker.
+  it('names the units still out, and refuses a unit another challan sent', async () => {
+    const serials = [`K-${tag()}`, `K-${tag()}`, `K-${tag()}`];
+    const at = await setup({ kits: '3', serials });
+    const sent = await send(at, '2', { serials: [serials[0] ?? '', serials[1] ?? ''] });
+    await send(at, '1', { serials: [serials[2] ?? ''] });
+    const line = await challanLine(sent.id);
+    expect((await run((ctx) => getChallanById(ctx, { id: sent.id }))).lines[0]?.serialsOut).toEqual([serials[0], serials[1]]);
+    expect(await code(receive(at, sent.id, line, { back: '1', backSerials: [serials[2] ?? ''] }))).toBe('not_on_challan');
+    await receive(at, sent.id, line, { back: '1', backSerials: [serials[0] ?? ''] });
+    expect((await run((ctx) => getChallanById(ctx, { id: sent.id }))).lines[0]?.serialsOut).toEqual([serials[1]]);
+  });
+
   it('undoes a serialised challan and a receipt of inputs back, and cancels a challan only while no receipt answers it', async () => {
     const serials = [`K-${tag()}`, `K-${tag()}`];
     const at = await setup({ kits: '2', serials });

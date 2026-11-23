@@ -13,6 +13,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelJobWorkReceipt, createJobWorkReceipt, getJobWorkReceipt, listJobWorkReceipts } from '../contract.ts';
 import { holdStock, postStock, reverseStock, type PostedMovement } from '../engine/stock.ts';
+import { serialKey } from '../engine/units.ts';
 import { batchNumbers, itemLabels } from './items.ts';
 import { accountedFor } from './job-work-accounted.ts';
 import { challanOf } from './job-work-challans.ts';
@@ -43,13 +44,23 @@ async function receiptOf(ctx: Ctx, id: string, permission: string, forUpdate = f
 }
 
 /** Each line's parts judged against its challan line, before anything is written (§11). */
-async function checkReceipt(ctx: Ctx, input: In<typeof createJobWorkReceipt>, challanLines: ReadonlyMap<string, { qty: string }>): Promise<void> {
+async function checkReceipt(ctx: Ctx, input: In<typeof createJobWorkReceipt>,
+  challanLines: ReadonlyMap<string, { qty: string; picks: unknown }>): Promise<void> {
   const asked = new Map<string, Quantity>();
   for (const [n, l] of input.lines.entries()) {
     const line = challanLines.get(l.challanLineId);
     if (line === undefined) {
       throw new AppError('not_on_challan', 'A line names an input this challan didn’t send',
         [{ path: at(n, 'challanLineId'), code: 'not_on_challan', message: 'Choose one of the challan’s lines' }]);
+    }
+    // A serial accounted for is one this challan line sent, not another challan's unit at the same job worker.
+    const sent = new Set(picksOf<string>(line.picks).serials.map(serialKey));
+    for (const part of ['used', 'back', 'lost'] as const) {
+      const stray = l[part].serials.find((s) => !sent.has(serialKey(s)));
+      if (stray !== undefined) {
+        throw new AppError('not_on_challan', `Unit ${stray} wasn’t sent on this challan line`,
+          [{ path: at(n, part), code: 'not_on_challan', message: `${stray} wasn’t sent on this line` }]);
+      }
     }
     const used = positive(l.used);
     if (l.made !== null && !used) {
@@ -101,7 +112,8 @@ export async function addReceipt(ctx: Ctx, input: In<typeof createJobWorkReceipt
       [{ path: ['locationId'], code: 'needs_qc', message: 'Choose a place that isn’t rejects' }]);
   }
   const tx = stockTx(ctx);
-  const challanLines = new Map((await tx.select({ id: jobWorkChallanLines.id, itemId: jobWorkChallanLines.itemId, qty: jobWorkChallanLines.qty })
+  const challanLines = new Map((await tx.select({ id: jobWorkChallanLines.id, itemId: jobWorkChallanLines.itemId, qty: jobWorkChallanLines.qty,
+    picks: jobWorkChallanLines.picks })
     .from(jobWorkChallanLines).where(eq(jobWorkChallanLines.challanId, c.id))).map((l) => [l.id, l]));
   await checkReceipt(ctx, input, challanLines);
 
