@@ -1,7 +1,7 @@
 // Purchase bills (M4-03, RAD-138; ADR-008 §1, §2, §7): what a supplier's own invoice says, entered as a draft with its
 // file and posted against what was ordered and received. A bill posts to the journal, so it carries ADR-008 §2's two
 // generic guards (its migration attaches them), and these CHECKs hold the values. Its tax is worked out on read while a
-// draft and stored when it's posted. Its goods lines name PO lines; the receipt line each bills joins with M4-02.
+// draft and stored when it's posted. Its goods lines name PO lines, and the receipt line each bills once the goods are in.
 import { isNull, sql } from 'drizzle-orm';
 import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { journalEntries, parties } from '../accounts/tables.ts';
@@ -9,6 +9,7 @@ import { boundedText, createdMoment, id, money, percent, qty, radcoreTable, unit
 import { files } from '../platform/tables.ts';
 import { items } from '../stock/tables.ts';
 import { purchaseOrderLines } from './tables-orders.ts';
+import { goodsReceiptLines } from './tables-receipts.ts';
 
 /**
  * A purchase bill (ADR-008 §7). The supplier's invoice number is unique for that supplier within the financial year of
@@ -70,6 +71,8 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   lineNo: smallint().notNull(),
   kind: text().notNull(),
   poLineId: uuid().references(() => purchaseOrderLines.id, { onDelete: 'restrict' }),
+  // The receipt line a goods line bills (M4-02): null while the bill has come before the goods; posting needs it.
+  receiptLineId: uuid().references(() => goodsReceiptLines.id, { onDelete: 'restrict' }),
   itemId: uuid().references(() => items.id, { onDelete: 'restrict' }),
   qty: qty({ line: true }),
   rate: unitPrice(),
@@ -84,6 +87,7 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   check('ck_purchase_bill_lines_goods', sql`(${t.kind} = 'goods') = (${t.poLineId} is not null and ${t.itemId} is not null and ${t.qty} is not null
     and ${t.rate} is not null) and (${t.kind} = 'charge') = (${t.charge} is not null and ${t.description} is not null and ${t.hsn} is not null
     and ${t.amount} is not null)`),
+  check('ck_purchase_bill_lines_receipt', sql`${t.receiptLineId} is null or ${t.kind} = 'goods'`),
   check('ck_purchase_bill_lines_charge', sql`${t.charge} is null or ${t.charge} in ('freight', 'packing', 'insurance', 'other')`),
   check('ck_purchase_bill_lines_hsn', sql`${t.hsn} is null or ${t.hsn} ~ '^[0-9]{4}([0-9]{2}){0,2}$'`),
   check('ck_purchase_bill_lines_frozen', sql`num_nulls(${t.gstRate}, ${t.gstRateSource}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst},
@@ -92,5 +96,6 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
     and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
   uniqueIndex('ux_purchase_bill_lines_line').on(t.billId, t.lineNo),
   index('ix_purchase_bill_lines_po_line').on(t.poLineId),
+  index('ix_purchase_bill_lines_receipt_line').on(t.receiptLineId),
   index('ix_purchase_bill_lines_item').on(t.itemId),
 ]);
