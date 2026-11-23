@@ -115,7 +115,7 @@ export default function LeadPage() {
       {dialog === 'plan' ? <PlanDialog lead={lead} lists={lists} open onOpenChange={shut} /> : null}
       {dialog === 'reply' ? <ReplyDialog id={id} lists={lists} open onOpenChange={shut} /> : null}
       {dialog === 'edit' ? <EditDialog lead={lead} open onOpenChange={shut} /> : null}
-      {dialog === 'assign' ? <AssignDialog id={id} meId={me.user.id} open onOpenChange={shut} /> : null}
+      {dialog === 'assign' ? <AssignDialog id={id} open onOpenChange={shut} /> : null}
     </>
   );
 }
