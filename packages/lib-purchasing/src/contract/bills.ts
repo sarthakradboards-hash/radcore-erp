@@ -68,10 +68,11 @@ const billShape = z.object({ supplierId: idString(), businessDate: dateString(),
 const supplierDated = <T extends z.ZodType<{ businessDate: string; supplierInvoiceDate: string }>>(s: T) =>
   s.refine((b) => b.supplierInvoiceDate <= b.businessDate, { path: ['supplierInvoiceDate'], message: 'On or before the bill’s own date' });
 
-// What a draft's save can refuse: its dates, its supplier and GSTIN, its lines' PO and receipt lines, and its status.
+// What a draft's save can refuse: its dates, its supplier and GSTIN, its lines' PO and receipt lines, its file (lib-platform's
+// readyFile: another kind, still being checked, or refused), and its status.
 const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'unknown_party', 'not_a_supplier', 'gstin_mismatch',
   'unknown_po_line', 'po_not_placed', 'other_supplier', 'unknown_receipt_line', 'receipt_not_posted', 'not_this_po_line',
-  'quantity_too_precise', 'unknown_file', 'wrong_status'] as const;
+  'quantity_too_precise', 'wrong_file_kind', 'not_ready', 'upload_refused', 'wrong_status'] as const;
 // What posting adds: the dates (ADR-008 §4), the file, the duplicate, the three-way match, the tax and stated total, the
 // approved version still holding, and the series.
 const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'date_before_source', 'bill_file_required', 'goods_not_received',
