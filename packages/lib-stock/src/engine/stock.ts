@@ -368,6 +368,9 @@ export async function reverseStock(ctx: Ctx, p: { sourceTable: string; sourceId:
     else if (kind === 'moved') {
       const before = e.condition === null ? undefined : await conditionBefore(ctx, e);
       undone.push({ ...unit, outMovementId: mirrorIn, inMovementId: mirrorOut, ...(before === undefined ? {} : { condition: before }) });
+    } else if (kind === 'sent_to_job_work' || kind === 'received_from_job_work') {
+      // Job work's moves, undone by each other: back out of where the move put it, into where it came from (RAD-142).
+      undone.push({ ...unit, outMovementId: mirrorIn, inMovementId: mirrorOut });
     } else if (kind === 'returned_to_supplier') undone.push({ ...unit, outMovementId: mirrorIn });
     // Back in, in the batch and condition it left with (units keeps both while it's gone).
     else undone.push({ ...unit, inMovementId: mirrorOut, ...(await goneUnit(ctx, e.itemId, e.serialNo)) });

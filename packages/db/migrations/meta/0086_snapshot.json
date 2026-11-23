@@ -1,5 +1,5 @@
 {
-  "id": "6644c1ce-64ea-48ad-8de4-e38caa804db8",
+  "id": "766ad1c8-6d4c-4ce4-bec2-76213bf88ee0",
   "prevId": "19662870-dff6-4344-918a-34fb06b4070b",
   "version": "7",
   "dialect": "postgresql",
@@ -16729,6 +16729,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "closed": {
+          "name": "closed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "status": {
           "name": "status",

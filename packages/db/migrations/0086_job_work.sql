@@ -23,6 +23,7 @@ CREATE TABLE "radcore"."job_work_challans" (
 	"from_id" uuid NOT NULL,
 	"to_id" uuid NOT NULL,
 	"party_id" uuid NOT NULL,
+	"closed" boolean DEFAULT false NOT NULL,
 	"status" text DEFAULT 'draft' NOT NULL,
 	"number" text,
 	"business_date" date NOT NULL,
@@ -145,8 +146,9 @@ INSERT INTO radcore.state_transitions (document_table, from_status, to_status) V
   ('job_work_challans', 'draft', 'posted'), ('job_work_challans', 'posted', 'cancelled'),
   ('job_work_receipts', 'draft', 'posted'), ('job_work_receipts', 'posted', 'cancelled');
 --> statement-breakpoint
+-- A posted challan's receipts close and reopen it (`closed`), so the guard lets that column change too.
 CREATE TRIGGER guard_posted_document BEFORE INSERT OR UPDATE OR DELETE ON radcore.job_work_challans
-  FOR EACH ROW EXECUTE FUNCTION radcore.guard_posted_document('draft', 'cancelled_at,cancelled_by,cancel_reason,cancel_entry_id', '');
+  FOR EACH ROW EXECUTE FUNCTION radcore.guard_posted_document('draft', 'cancelled_at,cancelled_by,cancel_reason,cancel_entry_id,closed', '');
 --> statement-breakpoint
 CREATE TRIGGER guard_document_line BEFORE INSERT OR UPDATE OR DELETE ON radcore.job_work_challan_lines
   FOR EACH ROW EXECUTE FUNCTION radcore.guard_document_line('job_work_challans', 'challan_id', 'draft');
@@ -158,7 +160,7 @@ CREATE TRIGGER guard_document_line BEFORE INSERT OR UPDATE OR DELETE ON radcore.
   FOR EACH ROW EXECUTE FUNCTION radcore.guard_document_line('job_work_receipts', 'receipt_id', 'draft');
 --> statement-breakpoint
 -- Audited in full; the lines are their documents' parts (ADR-001 §8b).
-SELECT radcore.audit_attach('job_work_challans', keep => array['status', 'number', 'from_id', 'to_id', 'party_id', 'business_date', 'notes',
+SELECT radcore.audit_attach('job_work_challans', keep => array['status', 'number', 'from_id', 'to_id', 'party_id', 'closed', 'business_date', 'notes',
   'posted_entry_id', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'cancel_entry_id']);
 --> statement-breakpoint
 SELECT radcore.audit_attach('job_work_challan_lines', keep => array['challan_id', 'line_no', 'item_id', 'qty', 'picks', 'value'],

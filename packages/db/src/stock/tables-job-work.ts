@@ -4,7 +4,7 @@
 // given its lines and posted in one save, through lib-stock's engine; #185's generic guards keep it as posted after
 // that, attached in its migration.
 import { sql } from 'drizzle-orm';
-import { check, date, foreignKey, index, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, date, foreignKey, index, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { journalEntries, parties } from '../accounts/tables.ts';
 import { boundedText, createdMoment, id, json, money, qty, radcoreTable, unitPrice } from '../columns.ts';
 import { items, locations } from './tables.ts';
@@ -32,6 +32,9 @@ export const jobWorkChallans = radcoreTable('job_work_challans', {
   fromId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
   toId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
   partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  // Closed once its receipts account for everything it sent (§11), open again if one is cancelled: the only column a
+  // posted challan's receipts change, so the guard lets it.
+  closed: boolean().notNull().default(false),
   ...posting(),
 }, (t) => [
   check('ck_job_work_challans_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
