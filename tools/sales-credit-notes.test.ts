@@ -1,4 +1,4 @@
-// RAD-114 PR 2 (M3-10; ADR-007 §6; ADR-006 §4, §6, F9, F25, F26; RC-126, RC-128, RC-207; CA-10) on a real
+// RAD-114 PR 2 (M3-10; ADR-007 §6; ADR-006 §4, §6, F9, F25, F26; RC-110, RC-126, RC-128, RC-207; CA-10) on a real
 // PostgreSQL, as the runtime login: credit notes. Each test's deliveries are committed; its invoices and notes post
 // inside one transaction that is rolled back, under the committed company profile
 // (tools/test-database.ts) and never rewrites it. Every note is approved by someone else, whose decision runs in that same transaction as
@@ -181,7 +181,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       after: { qty: '4', value: '247250.00' }, paid: { allocated: '0.00', credited: '84000.00', paid: '84000.00' } });
   });
 
-  // F9's variant and ADR-007 §6's cap: a value-only discount, with no movement; then no more than is left of the line.
+  // RC-110, F9's variant and ADR-007 §6's cap: a price discount is a credit note, value only, with no movement; then no
+  // more than is left of the line.
   it('credits a discount with no movement, and never more than is left of the invoice line', async () => {
     const approver = await approverWith(['credit_notes:approve']);
     const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
@@ -207,8 +208,9 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       stale: ['0.00', null, 'A credit note can’t exceed what’s left of its invoice'] });
   });
 
-  // F25, CA-10: an invoice of FY 2025-26, deadline 30 November 2026 by default. With the setting earlier, the same note
-  // is late and its tax goes to GST Borne on Late Credit Notes; Output GST isn't touched.
+  // RC-110, F25, CA-10: output tax is cut only within section 34's limit. An invoice of FY 2025-26, deadline 30 November
+  // 2026 by default. With the setting earlier, the same note is late and its tax goes to GST Borne on Late Credit Notes;
+  // Output GST isn't touched.
   it('posts a note past section 34’s limit to GST Borne on Late Credit Notes (F25)', async () => {
     const approver = await approverWith(['credit_notes:approve']);
     const at = await setup({ on: '2026-03-10', stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
