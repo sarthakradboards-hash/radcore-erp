@@ -58,7 +58,9 @@ function CostTable({ caption, rows }: { caption: string; rows: readonly Cost[] }
 const spendShape = recordAdSpend.input.shape;
 const recordSchema = z.object({
   on: z.enum(['campaign', 'source']), campaignId: z.string(), sourceId: z.string(),
-  fromDate: spendShape.fromDate, toDate: spendShape.toDate, amount: z.string().trim(), note: z.string().trim(),
+  fromDate: spendShape.fromDate, toDate: spendShape.toDate, note: z.string().trim(),
+  // Checked here, before the contract pipe: its refine reads the amount as a decimal and throws on "" (e2e-2 on #355).
+  amount: z.string().trim().min(1, t('crm.adSpend.amountNeeded')).pipe(spendShape.amount),
 }).transform((v, ctx) => {
   const target = v.on === 'campaign' ? v.campaignId : v.sourceId;
   if (target === '') {

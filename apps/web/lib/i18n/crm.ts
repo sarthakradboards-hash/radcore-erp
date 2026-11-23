@@ -300,6 +300,7 @@ export const crm = {
   'crm.adSpend.sourceField': 'Source',
   'crm.adSpend.source.pick': 'Choose a source',
   'crm.adSpend.amount': 'Amount',
+  'crm.adSpend.amountNeeded': 'Enter what was spent.',
   'crm.adSpend.note': 'Note',
   'crm.adSpend.unknown': 'Unknown',
   'crm.adSpend.rangeBad': 'The range ends on or after it starts.',
