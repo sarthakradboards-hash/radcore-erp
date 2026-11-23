@@ -63,6 +63,9 @@ export type StockTransfer = { readonly itemId: string; readonly from: string; re
   readonly sourceLineId?: string | null; readonly qty: Quantity; readonly batches: readonly BatchOut[];
   readonly units?: readonly UnitOnLine[]; readonly unitEvent?: MoveUnitEvent };
 
+/** A signed change to a position's value with no units (a bill's price difference, ADR-006 §4): its caller posts the entry. */
+export type StockRevalue = { readonly itemId: string; readonly locationId: string; readonly sourceLineId?: string | null; readonly value: Money };
+
 /** One document's stock: the document it comes from, its business date, and its lines in the order they post. */
 export type StockPosting = {
   readonly sourceTable: string;
@@ -74,6 +77,8 @@ export type StockPosting = {
   readonly ins?: readonly StockIn[];
   readonly outs?: readonly StockOut[];
   readonly transfers?: readonly StockTransfer[];
+  /** Revaluations, written after the goods in, each refused `nothing_to_revalue` where the position holds nothing. */
+  readonly revalues?: readonly StockRevalue[];
   /** The order lines this posting finishes (delivered in full): every unit still promised to one is released, in the
    * posting's own unit lock (RC-122, the architect on RAD-117). The owning library decides which lines are done. */
   readonly endingPromisesOf?: readonly string[];
@@ -204,7 +209,8 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   await holdPeriod(ctx, p.businessDate);
   const negativeMode = ctx.settings.get(NEGATIVE_STOCK);
   await lockPositions(ctx, [...ins.map((l) => [l.itemId, l.locationId] as const), ...outs.map((l) => [l.itemId, l.locationId] as const),
-    ...transfers.flatMap((t) => [[t.itemId, t.from] as const, [t.itemId, t.to] as const])]);
+    ...transfers.flatMap((t) => [[t.itemId, t.from] as const, [t.itemId, t.to] as const]),
+    ...(p.revalues ?? []).map((r) => [r.itemId, r.locationId] as const)]);
   const ids = await batchIds(ctx, ins, p.supplierId ?? null);
   // §1's step 4: the units the lines name, after the positions and batches, with the units still promised to the order
   // lines this posting finishes (a booking's, RC-122), in one id-ordered lock.
@@ -267,6 +273,14 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
       await write({ itemId: i.itemId, locationId: i.locationId, sourceLineId: i.sourceLineId, direction: 'revalue', qty: NO_UNITS, value: change }, []);
     }
   }
+  // The engine's own revaluations (goods into negative stock, F15) get its revaluation entry; a caller's posts its own.
+  const revalued = posted.filter((m) => m.direction === 'revalue');
+  for (const r of p.revalues ?? []) {
+    // Value 0 at quantity 0 (ADR-006 §7): a position that holds nothing, or a change taking its value below 0, is refused.
+    const at = position(await byDate(ctx, r.itemId, r.locationId));
+    if (!at.qty.gt(0) || at.value.plus(dec(r.value)).lt(0)) throw new AppError('nothing_to_revalue', 'There is no stock there to take the price difference');
+    await write({ ...r, direction: 'revalue', qty: NO_UNITS, value: roundMoney(r.value) }, []);
+  }
   // The hold ends when the line is done, whatever serial left (RC-122): each unit still promised to it, and not just
   // delivered, is released.
   const delivered = new Set(outs.flatMap((o) => (o.units ?? []).map((u) => `${o.itemId} ${serialKey(u.serialNo)}`)));
@@ -274,7 +288,6 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
     if (!delivered.has(`${u.itemId} ${serialKey(u.serialNo)}`)) events.push({ itemId: u.itemId, serialNo: u.serialNo, kind: 'released' });
   }
   await writeUnitEvents(ctx, base, events);
-  const revalued = posted.filter((m) => m.direction === 'revalue');
   if (revalued.length > 0) {
     await postEntry(ctx, { kind: 'revaluation', businessDate: p.businessDate, source: { table: p.sourceTable, id: p.sourceId },
       lines: revalued.flatMap(revaluationLines) });
