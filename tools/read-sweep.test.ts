@@ -9,21 +9,24 @@
 // other files count their own. A GET this can't reach is pinned below with its reason, so every new GET is either
 // reached or listed (the ratchet). Its known limit: it catches only the shapes the seed holds.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, openFinancialYear, postManual, recordPayment, systemAccountId } from '@radcore/lib-accounts';
+import { addParty, openFinancialYear, postManual, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { addAdSpend, addCampaign, captureEnquiry, createEnquiryForm, leadSourcesList } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
-import { createClientErrors, createSecrets, loadConfig, Settings, type Ctx, type Principal, type Route } from '@radcore/lib-platform';
+import {
+  createClientErrors, createSecrets, decideApproval, loadConfig, Settings, startMastersExport, type Ctx, type Principal, type Route,
+} from '@radcore/lib-platform';
 import { createAuth, createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { PERMISSIONS } from '../packages/lib-platform/src/permissions.ts';
 import {
-  addBill, addOrder as addPurchaseOrder, addReceipt as addGoodsReceipt, cancelReceiptNow as cancelGoodsReceipt, getOrderById as getPurchaseOrder, getReceiptById,
+  addBill, postBillNow, addOrder as addPurchaseOrder, addReceipt as addGoodsReceipt, cancelReceiptNow as cancelGoodsReceipt, getOrderById as getPurchaseOrder, getReceiptById,
   placeOrder,
   postReceipt, addReturn as addSupplierReturn, postReturn as postSupplierReturn,
 } from '@radcore/lib-purchasing';
 import {
-  addCreditNote, addDeliveryReturn, addInvoice, addQuote, askCreditNoteApproval, getDeliveryById, getInvoiceById,
-  postDeliveryReturnNow, postInvoiceNow,
+  addBooking, addCreditNote, addDelivery, addDeliveryReturn, addInvoice, addList, addOrder, addQuote, askApproval as askPriceListApproval,
+  askCreditNoteApproval, askDeliveryOverride, askInvoiceOverride, askOrderOverride, confirmOrderNow, getDeliveryById, getInvoiceById, getOrderById,
+  postDeliveryReturnNow, postInvoiceNow, priceListApproval, putRates,
 } from '@radcore/lib-sales';
 import {
   addAdjustment, addCategory, addChallan, addCount, addItem, addPlace, addReceipt as addJobWorkReceipt, addTransfer, askAdjustmentApproval,
@@ -35,6 +38,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import { apiRoutes } from '../apps/api/src/routes.ts';
 import { postedDelivery } from './delivered-fixture.ts';
+import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -55,18 +59,8 @@ const KEYS = PERMISSIONS.map((p) => p.key).filter((k) => !UNMASKING.has(k));
  * list is the floor, and a new GET must either be reached or be named here.
  */
 const NOT_REACHED: Readonly<Record<string, string>> = {
-  'GET /exports/:id': 'an export is a job’s file, made by the worker, which this file doesn’t run',
-  'GET /approvals/cash-limit/:id': 'a cash-limit request needs a cash payment past the day’s limit, which changes a setting other files read',
-  'GET /approvals/price-list/:id': 'a price-list request needs a price-list version sent for approval; price-lists.test.ts reads its own',
-  'GET /approvals/sales-delivery-override/:id': 'an override request needs a sale refused below its checks; sales-overrides tests read their own',
-  'GET /approvals/sales-invoice-override/:id': 'as the delivery override',
-  'GET /approvals/sales-order-override/:id': 'as the delivery override',
-  'GET /price-lists/:id': 'the price-list fixture writes rates straight to the database, with no list id the seed keeps',
-  'GET /price-lists/:id/price': 'as GET /price-lists/:id',
-  'GET /price-lists/versions/:id': 'as GET /price-lists/:id',
-  'GET /price-lists/versions/:id/changes': 'as GET /price-lists/:id',
-  'GET /price-lists/versions/:id/rates': 'as GET /price-lists/:id',
-  'GET /sales/bookings/:id': 'a booking needs a serialised order line and an advance; bookings.test.ts reads its own',
+  // shortcut: an approved version's price starts on its approval day, the run date, which no test reads (RC-156); reach it by reading the version's start date from the database.
+  'GET /price-lists/:id/price': 'an approved price starts on the run date, which this file never reads (RC-156)',
 };
 
 /** What each /:id route is called with: the seed's ids, by route. */
@@ -295,7 +289,21 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       const bill = await run((ctx) => addBill(ctx, { supplierId: base.supplier, businessDate: DATE, supplierInvoiceNumber: `INV/${tag()}`,
         supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: m('210'), fileId: null, notes: null,
         lines: [{ kind: 'goods', poLineId: lineId, receiptLineId: null, qty: q('2'), rate: r('100') }] }));
-      add(['GET /purchasing/bills/:id'], bill.id);
+      // A bill 3% over the PO rate on the accepted goods, past the 2% tolerance, waits for bills:approve. Posting needs the
+      // supplier's file, so one is recorded as uploaded and ready.
+      const fileId = randomUUID();
+      await su.query(`with p as (select set_config('app.principal', 'system:test', true)) insert into radcore.files
+        (id, kind, store_key, filename, content_type, size, status) select $1, 'purchase_bill', $2, 'bill.pdf', 'application/pdf', 2048, 'ready'
+        from p`, [fileId, `purchase_bill/${fileId}`]);
+      const acceptedLine = (await run((ctx) => getReceiptById(ctx, { id: posted.id }))).lines[0]?.id ?? null;
+      const over = await run(async (ctx) => {
+        const { id } = await addBill(ctx, { supplierId: base.supplier, businessDate: DATE, supplierInvoiceNumber: `INV/${tag()}`,
+          supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: m('108.15'), fileId, notes: null,
+          lines: [{ kind: 'goods', poLineId: lineId, receiptLineId: acceptedLine, qty: q('1'), rate: r('103') }] });
+        return { id, asked: await postBillNow(ctx, { id }) };
+      });
+      add(['GET /purchasing/bills/:id'], bill.id, over.id);
+      add(['GET /approvals/purchase-bill/:id'], over.asked.approvalId ?? undefined);
       // The posted receipt's reject (batch L2) back to the supplier, posted.
       const rejected = (await su.query<{ id: string }>("select id from radcore.batches where item_id = $1 and batch_no = 'L2'", [base.plain])).rows[0]?.id ?? '';
       const receiptLine = (await run((ctx) => getReceiptById(ctx, { id: posted.id }))).lines[0]?.id ?? '';
@@ -329,6 +337,74 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       const campaign = await run((ctx) => addCampaign(ctx, { name: `Sweep ${tag()}`, sourceId: form?.id ?? '' }));
       await run((ctx) => addAdSpend(ctx, { campaignId: campaign.id, fromDate: DATE, toDate: DATE, amount: m('100'), note: null }));
     });
+    // Price lists: one approved by someone else, one waiting for approval; each list, version, its rates and changes.
+    await step('price lists', async () => {
+      const sent = async (rate: string) => {
+        const { id, draftId } = await run((ctx) => addList(ctx, { name: `Sweep ${tag()}`, taxInclusive: true }));
+        await run((ctx) => putRates(ctx, { id: draftId, rates: [{ itemId: base.plain, rate: r(rate) }] }));
+        return { id, draftId, asked: await run((ctx) => askPriceListApproval(ctx, { id: draftId })) };
+      };
+      const live = await sent('120');
+      await runAs(buyer)((ctx) => decideApproval(ctx, priceListApproval, live.asked.id, { decision: 'approve', versionHash: live.asked.versionHash }));
+      const waiting = await sent('125');
+      add(['GET /price-lists/:id', 'GET /price-lists/:id/price'], live.id, waiting.id);
+      add(['GET /price-lists/versions/:id', 'GET /price-lists/versions/:id/changes', 'GET /price-lists/versions/:id/rates'], live.draftId, waiting.draftId);
+      add(['GET /approvals/price-list/:id'], live.asked.id, waiting.asked.id);
+    });
+
+    // Overrides: an order, a delivery and an invoice, each a draft with its override asked (the ask needs no failed check).
+    await step('overrides', async () => {
+      const d = await postedDelivery(run, su, DATE);
+      const placeId = (await run((ctx) => getDeliveryById(ctx, { id: d.deliveryId }))).locationId;
+      const batchId = await batchOf(d.itemId);
+      const order = () => run((ctx) => addOrder(ctx, { partyId: d.partyId, businessDate: DATE, notes: null,
+        lines: [{ itemId: d.itemId, qty: q('1'), rate: r('80000'), discountPercent: percentString({ max: '100' }).parse('0') }] }));
+      const draftOrder = await order();
+      const confirmed = await order();
+      const asked = await run(async (ctx) => {
+        await confirmOrderNow(ctx, { id: confirmed.id });
+        const orderLineId = (await getOrderById(ctx, { id: confirmed.id })).lines[0]?.id ?? '';
+        const { id: deliveryId } = await addDelivery(ctx, { orderId: confirmed.id, locationId: placeId, businessDate: DATE, notes: null,
+          lines: [{ orderLineId, qty: q('1'), batches: [{ batchId, qty: q('1') }], serials: [] }] });
+        const { id: invoiceId } = await addInvoice(ctx, { partyId: d.partyId, businessDate: DATE, notes: null, shipTo: null,
+          lines: [{ deliveryLineId: d.deliveryLineId, qty: q('1') }] });
+        return { order: await askOrderOverride(ctx, { id: draftOrder.id }), delivery: await askDeliveryOverride(ctx, { id: deliveryId }),
+          invoice: await askInvoiceOverride(ctx, { id: invoiceId }) };
+      });
+      add(['GET /approvals/sales-order-override/:id'], asked.order.id);
+      add(['GET /approvals/sales-delivery-override/:id'], asked.delivery.id);
+      add(['GET /approvals/sales-invoice-override/:id'], asked.invoice.id);
+    });
+
+    // A cash payment past the day's limit (10,000.00 by default) waits for approval.
+    await step('cash limit', async () => {
+      const held = await run(async (ctx) => recordPayment(ctx, { kind: 'payment', partyId: base.supplier, businessDate: DATE,
+        amount: m('10000.01'), accountId: await systemAccountId(ctx, 'cash') }));
+      const request = (await su.query<{ id: string }>("select id from radcore.approvals where kind = 'cash-limit' and record_id = $1",
+        [held.id])).rows[0]?.id;
+      add(['GET /approvals/cash-limit/:id'], request);
+    });
+
+    // A booking: a serialised unit promised to a confirmed order line, with an advance.
+    await step('booking', async () => {
+      // The customer's credit and price for the scooter, so its order confirms without an override.
+      await run((ctx) => setCreditTerms(ctx, { id: base.customer, creditDays: 30, creditLimit: m('100000000'), reason: 'Sweep' }));
+      await priceListFrom(su, DATE, { [base.serial]: '70000' }, { partyId: base.customer });
+      const booked = await run(async (ctx) => {
+        const { id: orderId } = await addOrder(ctx, { partyId: base.customer, businessDate: DATE, notes: null, lines: [{ itemId: base.serial,
+          qty: q('1'), rate: r('70000'), discountPercent: percentString({ max: '100' }).parse('0') }] });
+        await confirmOrderNow(ctx, { id: orderId });
+        const orderLineId = (await getOrderById(ctx, { id: orderId })).lines[0]?.id ?? '';
+        return addBooking(ctx, { orderLineId, serialNo: base.serials[0] ?? '',
+          advance: { amount: m('1000'), accountId: await systemAccountId(ctx, 'bank'), businessDate: DATE } });
+      });
+      add(['GET /sales/bookings/:id'], booked.id);
+    });
+
+    // An export started: queued, as the worker (not run here) leaves it until it takes the job.
+    await step('export', async () => {
+      add(['GET /exports/:id'], (await run((ctx) => startMastersExport(ctx, { filter: {} }))).exportId);
+    });
     return ids;
   }
 
@@ -344,6 +420,7 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       'GET /gst/rates/in-force': { hsn: ids['hsn']?.[0] ?? '', on: DATE },
       'GET /admin/audit': { filter: { occurred: { from: DATE, to: DATE } }, limit: 50 },
       'GET /admin/security-events': { filter: { occurred: { from: DATE, to: DATE } }, limit: 50 },
+      'GET /price-lists/:id/price': { itemId: item, on: DATE },
       'GET /stock/on-hand': { itemId: item, locationId: ids['stores']?.[0] ?? '', limit: 50 },
     };
     return known[path] ?? {};

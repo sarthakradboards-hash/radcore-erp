@@ -6,7 +6,7 @@
 // (the coordinator on RAD-122). Phones are the server's last-4 mask, as on every lead list (RC-041).
 import { LEAD_STAGES, getLeadLists, listLeads, moveLead } from '@radcore/lib-crm/contract';
 import Link from 'next/link';
-import { useId, useState, type DragEvent } from 'react';
+import { useId, useRef, useState, type DragEvent } from 'react';
 import { z } from 'zod';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { CloseButton, Dialog } from '../../../../components/ui/dialog/dialog.tsx';
@@ -19,7 +19,7 @@ import { useApiList, useApiMutation, useApiQuery } from '../../../../lib/api/que
 import { ApiError } from '../../../../lib/api-client.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { ChoiceButtons } from '../../admin/shared.tsx';
-import { LEAD_MESSAGES, leadName, ownerText, stageName, type Stage } from '../shared.ts';
+import { droppedId, LEAD_MESSAGES, leadName, ownerText, stageName, type Stage } from '../shared.ts';
 
 type Lead = z.output<typeof listLeads.output>['items'][number];
 type Whose = 'all' | 'me' | 'none';
@@ -44,11 +44,28 @@ function LostDialog({ lead, onClose, onMoved }: { lead: Lead; onClose: () => voi
   );
 }
 
-function Card({ lead, meId, mayWrite, onMove }: { lead: Lead; meId: string; mayWrite: boolean; onMove: (lead: Lead, to: Stage) => void }) {
+type Props = {
+  meId: string; mayWrite: boolean; onMove: (lead: Lead, to: Stage) => void;
+  /** The card this page is dragging: kept on drag start, taken (and cleared) by the drop. */
+  onDrag: (lead: Lead) => void; takeDragged: () => Lead | null;
+};
+
+/** After a move, once the lists have refetched and drawn, focus follows the card to its new column, or that column's
+ * heading while the card isn't on its first page, so a keyboard user isn't dropped back at the top (e2e-2 on #358). */
+const focusMoved = (id: string, stage: Stage) => requestAnimationFrame(() => {
+  const column = document.querySelector(`[data-stage="${stage}"]`);
+  (column?.querySelector<HTMLElement>(`[data-lead="${id}"] a`) ?? column?.querySelector<HTMLElement>('h2'))?.focus();
+});
+
+function Card({ lead, meId, mayWrite, onMove, onDrag }: { lead: Lead } & Props) {
   const name = leadName(lead.name, lead.phone);
   return (
-    <li className="crm-card" draggable={mayWrite}
-      onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ id: lead.id })); e.dataTransfer.effectAllowed = 'move'; }}>
+    <li className="crm-card" draggable={mayWrite} data-lead={lead.id}
+      onDragStart={(e) => {
+        onDrag(lead);
+        e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ id: lead.id }));
+        e.dataTransfer.effectAllowed = 'move';
+      }}>
       <p className="crm-list-head"><Link href={`/crm/leads/${lead.id}`}>{name}</Link></p>
       <p><Pii value={lead.phone} /></p>
       <p className="kit-field-hint">{ownerText(lead.owner, meId)}</p>
@@ -60,30 +77,27 @@ function Card({ lead, meId, mayWrite, onMove }: { lead: Lead; meId: string; mayW
   );
 }
 
-function Column({ stage, whose, meId, mayWrite, onMove, byId }: {
-  stage: Stage; whose: Whose; meId: string; mayWrite: boolean; onMove: (lead: Lead, to: Stage) => void; byId: Map<string, Lead>;
-}) {
+function Column({ stage, whose, ...props }: { stage: Stage; whose: Whose } & Props) {
   const headingId = useId();
   const list = useApiList(listLeads, { filter: { stage, ...(whose === 'all' ? {} : { owner: whose }) } }, { limit: 50 });
-  for (const l of list.items) byId.set(l.id, l);
+  const { mayWrite, onMove, takeDragged } = props;
   const [over, setOver] = useState(false);
   const drop = (e: DragEvent) => {
     e.preventDefault();
     setOver(false);
-    const raw = e.dataTransfer.getData(DRAG_TYPE);
-    const id = raw === '' ? undefined : (JSON.parse(raw) as { id?: unknown }).id;
-    const lead = typeof id === 'string' ? byId.get(id) : undefined;
-    if (lead !== undefined && lead.stage !== stage) onMove(lead, stage);
+    // The lead comes from the card this page started dragging, never from the drop's data, which any page could send.
+    const lead = takeDragged();
+    if (lead !== null && lead.id === droppedId(e.dataTransfer.getData(DRAG_TYPE)) && lead.stage !== stage) onMove(lead, stage);
   };
   return (
-    <section aria-labelledby={headingId} className="crm-column" data-over={over || undefined}
+    <section aria-labelledby={headingId} className="crm-column" data-stage={stage} data-over={over || undefined}
       onDragOver={(e) => { if (mayWrite && e.dataTransfer.types.includes(DRAG_TYPE)) { e.preventDefault(); setOver(true); } }}
       onDragLeave={() => setOver(false)} onDrop={drop}>
-      <h2 id={headingId}>{stageName(stage)}</h2>
+      <h2 id={headingId} tabIndex={-1}>{stageName(stage)}</h2>
       {list.error !== null ? <p role="alert" className="kit-form-alert">{t('error.title')}</p>
         : list.isPending ? <p>{t('loading')}</p>
         : list.items.length === 0 ? <p>{t('crm.board.empty')}</p> : (
-          <ol className="crm-list">{list.items.map((l) => <Card key={l.id} lead={l} meId={meId} mayWrite={mayWrite} onMove={onMove} />)}</ol>
+          <ol className="crm-list">{list.items.map((l) => <Card key={l.id} lead={l} {...props} />)}</ol>
         )}
       {list.hasNextPage ? (
         <button type="button" className="kit-button" disabled={list.isFetchingNextPage} onClick={() => list.fetchNextPage()}>{t('crm.board.more')}</button>
@@ -98,13 +112,13 @@ export default function LeadBoardPage() {
   const [whose, setWhose] = useState<Whose>('all');
   const [lost, setLost] = useState<Lead | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [byId] = useState(() => new Map<string, Lead>());
+  const dragged = useRef<Lead | null>(null);
   const move = useApiMutation(moveLead, { invalidates: [listLeads] });
   const onMove = (lead: Lead, to: Stage) => {
     setProblem(null);
     if (to === 'lost') { setLost(lead); return; }
     move.submit({ id: lead.id, stage: to }).then(
-      () => announce(t('crm.board.moved', { name: leadName(lead.name, lead.phone), stage: stageName(to) })),
+      () => { focusMoved(lead.id, to); announce(t('crm.board.moved', { name: leadName(lead.name, lead.phone), stage: stageName(to) })); },
       (e: unknown) => setProblem(e instanceof ApiError ? LEAD_MESSAGES[e.code] ?? e.message : t('error.title')),
     );
   };
@@ -120,11 +134,17 @@ export default function LeadBoardPage() {
       </div>
       {problem === null ? null : <p role="alert" className="kit-form-alert">{problem}</p>}
       <div className="crm-board">
-        {LEAD_STAGES.map((s) => <Column key={s} stage={s} whose={whose} meId={me.user.id} mayWrite={mayWrite} onMove={onMove} byId={byId} />)}
+        {LEAD_STAGES.map((s) => <Column key={s} stage={s} whose={whose} meId={me.user.id} mayWrite={mayWrite} onMove={onMove}
+          onDrag={(l) => { dragged.current = l; }} takeDragged={() => { const l = dragged.current; dragged.current = null; return l; }} />)}
       </div>
       {lost === null ? null : (
         <LostDialog lead={lost} onClose={() => setLost(null)}
-          onMoved={() => { const l = lost; setLost(null); setTimeout(() => announce(t('crm.board.moved', { name: leadName(l.name, l.phone), stage: stageName('lost') })), 0); }} />
+          onMoved={() => {
+            const l = lost;
+            setLost(null);
+            // After the dialog has handed focus back to the menu button, which the move takes off the board.
+            setTimeout(() => { focusMoved(l.id, 'lost'); announce(t('crm.board.moved', { name: leadName(l.name, l.phone), stage: stageName('lost') })); }, 0);
+          }} />
       )}
     </>
   );
