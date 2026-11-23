@@ -1,14 +1,16 @@
 // lib-purchasing's routes (ADR-001 §6): declarations only. Purchase orders, their approval and the PO limits (RAD-136);
-// goods receipts (RAD-137).
+// goods receipts (RAD-137); purchase bills' drafts (RAD-138), with posting, its approval and cancelling to come.
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
-  addOrder, addReceipt, cancelOrder, cancelReceiptNow, changeOrder, changeReceipt, closeOrder, dropOrder, dropReceipt, getOrderById,
-  getReceiptById, listOrderLimits, listOrdersPage, listReceiptsPage, orderApproval, placeOrder, postReceipt, setOrderLimit,
+  addBill, addOrder, addReceipt, cancelOrder, cancelReceiptNow, changeBill, changeOrder, changeReceipt, closeOrder, dropBill, dropOrder,
+  dropReceipt, getBillById, getOrderById, getReceiptById, listBillsPage, listOrderLimits, listOrdersPage, listReceiptsPage, orderApproval,
+  placeOrder, postReceipt, setOrderLimit,
 } from '@radcore/lib-purchasing';
 import {
-  cancelGoodsReceipt, cancelPurchaseOrder, closePurchaseOrder, createGoodsReceipt, createPurchaseOrder, deleteGoodsReceipt, deletePurchaseOrder,
-  getGoodsReceipt, getPurchaseOrder, listGoodsReceipts, listPurchaseOrderLimits, listPurchaseOrders, placePurchaseOrder, postGoodsReceipt,
-  purchaseOrderApproval, setPurchaseOrderLimit, updateGoodsReceipt, updatePurchaseOrder,
+  cancelGoodsReceipt, cancelPurchaseOrder, closePurchaseOrder, createGoodsReceipt, createPurchaseBill, createPurchaseOrder, deleteGoodsReceipt,
+  deletePurchaseBill, deletePurchaseOrder, getGoodsReceipt, getPurchaseBill, getPurchaseOrder, listGoodsReceipts, listPurchaseBills,
+  listPurchaseOrderLimits, listPurchaseOrders, placePurchaseOrder, postGoodsReceipt, purchaseOrderApproval, setPurchaseOrderLimit,
+  updateGoodsReceipt, updatePurchaseBill, updatePurchaseOrder,
 } from '@radcore/lib-purchasing/contract';
 
 export default [
@@ -30,4 +32,9 @@ export default [
   defineRoute(deleteGoodsReceipt, dropReceipt),
   defineRoute(postGoodsReceipt, postReceipt),
   defineRoute(cancelGoodsReceipt, cancelReceiptNow),
+  defineRoute(listPurchaseBills, listBillsPage),
+  defineRoute(getPurchaseBill, getBillById),
+  defineRoute(createPurchaseBill, addBill),
+  defineRoute(updatePurchaseBill, changeBill),
+  defineRoute(deletePurchaseBill, dropBill),
 ];

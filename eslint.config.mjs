@@ -24,7 +24,8 @@ const LOCKS = 'packages/db/src/locks.ts';
 // A module's tables, and a second file per document family once its tables.ts would pass E2's cap (the architect on RAD-114).
 const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/sales/tables-credit.ts',
   'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts', 'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
-  'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts', 'packages/db/src/columns.ts'];
+  'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts', 'packages/db/src/purchasing/tables-bills.ts',
+  'packages/db/src/columns.ts'];
 // The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.
 export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${TS}`, `apps/api/src/**/*.${TS}`,
   `apps/worker/src/**/*.${TS}`, `apps/web/**/*.${TS}`];
