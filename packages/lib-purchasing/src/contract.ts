@@ -2,3 +2,5 @@
 // every contract file it imports only zod, lib-common and other libraries' contract entries (D5).
 // Purchase orders (M4-01, RAD-136).
 export * from './contract/orders.ts';
+// Purchase bills (M4-03, RAD-138).
+export * from './contract/bills.ts';
