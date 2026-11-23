@@ -75,6 +75,8 @@ export const PURCHASES_PAGES = [
 
 /** The stock area's pages (RAD-144): counts first, as stores work them most; the queue for those who approve. */
 export const STOCK_PAGES = [
+  { href: '/stock/on-hand', label: 'stock.nav.onHand', perm: 'stock:read' },
+  { href: '/stock/units', label: 'stock.nav.units', perm: 'stock:read' },
   { href: '/stock/counts', label: 'stock.nav.counts', perm: 'stock:read' },
   { href: '/stock/adjustments', label: 'stock.nav.adjustments', perm: 'stock:read' },
   { href: '/stock/transfers', label: 'stock.nav.transfers', perm: 'stock:read' },
