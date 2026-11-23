@@ -16,6 +16,7 @@ import * as salesQuickBills from './sales/tables-quick-bills.ts';
 import * as purchasingOrders from './purchasing/tables-orders.ts';
 import * as purchasingReceipts from './purchasing/tables-receipts.ts';
 import * as stock from './stock/tables.ts';
+import * as stockJobWork from './stock/tables-job-work.ts';
 import * as stockMoves from './stock/tables-moves.ts';
 import { applyRequestContext, type RequestContext } from './request-context.ts';
 import { bind, unbind, type RawTx, type Tx } from './tx.ts';
@@ -36,11 +37,12 @@ export * from './sales/tables-quick-bills.ts';
 export * from './purchasing/tables-orders.ts';
 export * from './purchasing/tables-receipts.ts';
 export * from './stock/tables.ts';
+export * from './stock/tables-job-work.ts';
 export * from './stock/tables-moves.ts';
 
 /** Every module's tables and relations, as they land: the same files drizzle.config.ts lists. */
 export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...platformSignIn, ...accounts, ...crm, ...gst, ...hr, ...sales,
-  ...salesCredit, ...salesPrices, ...salesBookings, ...salesQuickBills, ...stock, ...stockMoves, ...purchasingOrders,
+  ...salesCredit, ...salesPrices, ...salesBookings, ...salesQuickBills, ...stock, ...stockMoves, ...stockJobWork, ...purchasingOrders,
   ...purchasingReceipts });
 
 /** The Drizzle client lib-platform builds on its pool. */

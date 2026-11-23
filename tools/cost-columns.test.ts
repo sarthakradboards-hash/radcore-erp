@@ -78,6 +78,11 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   stock_transfer_lines: { qty: 'a quantity' },
   stock_count_lines: { found: 'a quantity', book: 'a quantity', difference: 'a quantity' },
   stock_adjustment_lines: { qty: 'a quantity' },
+  // Job work's quantities, and the job worker's charge (RAD-142): the document's own figures (ADR-008 §11).
+  job_work_challan_lines: { qty: 'a quantity' },
+  job_work_receipt_lines: { made_qty: 'a quantity', used: 'a quantity', back: 'a quantity', lost: 'a quantity',
+    charge_rate: 'the job worker’s charge rate (stock:read)', charge: 'the job worker’s charge (stock:read)' },
+  job_work_receipts: { charges: 'the job worker’s charges (stock:read)' },
   // The books: who may read them is journal:read's question, which the architect is ruling on (auditor-2 on #224).
   journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)' },
 };
