@@ -130,9 +130,11 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so its keys name no records. The stock
   // documents (M4-06, ADR-008 §13) are their makers' (created_by), so stock:read and the keys that move them name them.
   { key: 'locations:read', module: 'Stock', label: 'See locations' },
-  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial, and stock transfers, counts and adjustments',
-    records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial, and stock transfers, counts, adjustments and job work',
+    records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments',
+      '@radcore/db/stock#jobWorkChallans', '@radcore/db/stock#jobWorkReceipts'] },
   { key: 'stock:move', module: 'Stock', label: 'Transfer stock between places, and undo a transfer', records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'job_work:write', module: 'Stock', label: 'Send goods for job work and receive them back, and undo either', records: ['@radcore/db/stock#jobWorkChallans', '@radcore/db/stock#jobWorkReceipts'] },
   { key: 'stock:count', module: 'Stock', label: 'Count stock and propose adjustments', records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
   { key: 'stock:approve', module: 'Stock', label: 'Approve stock counts, adjustments and transfers that need it, and cancel them',
     records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
