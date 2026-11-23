@@ -72,12 +72,13 @@ const supplierDated = <T extends z.ZodType<{ businessDate: string; supplierInvoi
 // readyFile: another kind, still being checked, or refused), and its status.
 const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'unknown_party', 'not_a_supplier', 'gstin_mismatch',
   'unknown_po_line', 'po_not_placed', 'other_supplier', 'unknown_receipt_line', 'receipt_not_posted', 'not_this_po_line',
-  'quantity_too_precise', 'wrong_file_kind', 'not_ready', 'upload_refused', 'wrong_status'] as const;
+  'quantity_too_precise', 'wrong_file_kind', 'not_ready', 'upload_refused', 'duplicate_bill', 'wrong_status'] as const;
 // What posting adds: the dates (ADR-008 §4), the file, the duplicate, the three-way match, the tax and stated total, the
 // approved version still holding, and the series.
 const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'date_before_source', 'bill_file_required', 'goods_not_received',
-  'over_received', 'duplicate_bill', 'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'version_changed', 'series_full'] as const;
-// The duplicate check is the database's: a partial unique index on (party, the invoice's financial year, its key).
+  'over_received', 'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'version_changed', 'series_full'] as const;
+// The duplicate check is the database's: a partial unique index on (party, the invoice's financial year, its key) over
+// every bill that isn't cancelled, drafts too (ADR-008 §7), so a draft's save meets it as posting does.
 const BILL_DB_ERRORS = {
   '23505:ux_purchase_bills_supplier_invoice': { code: 'duplicate_bill', message: 'This supplier’s bill with that number is already entered for that year' },
 } as const;
@@ -100,12 +101,12 @@ export const getPurchaseBill = defineContract({
 /** A new draft bill. */
 export const createPurchaseBill = defineContract({
   method: 'POST', path: '/purchasing/bills', auth: 'session', perm: 'bills:write', tx: write,
-  input: supplierDated(billShape), output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS],
+  input: supplierDated(billShape), output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS], dbErrors: BILL_DB_ERRORS,
 });
 /** A draft rewritten whole: its receipt lines named once the goods are in, its file attached. */
 export const updatePurchaseBill = defineContract({
   method: 'PUT', path: '/purchasing/bills/:id', auth: 'session', perm: 'bills:write', tx: write,
-  input: supplierDated(billShape.extend({ id: idString() })), output: z.object({}), errors: [...DRAFT_ERRORS],
+  input: supplierDated(billShape.extend({ id: idString() })), output: z.object({}), errors: [...DRAFT_ERRORS], dbErrors: BILL_DB_ERRORS,
 });
 /** A draft thrown away: any request for its approval is closed first. */
 export const deletePurchaseBill = defineContract({
