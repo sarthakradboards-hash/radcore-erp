@@ -6,3 +6,5 @@ export * from './contract/orders.ts';
 export * from './contract/receipts.ts';
 // Purchase bills (M4-03, RAD-138).
 export * from './contract/bills.ts';
+// Supplier returns and debit notes (M4-05, RAD-140).
+export * from './contract/returns.ts';

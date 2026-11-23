@@ -139,6 +139,15 @@ export async function itemLabels(ctx: Ctx, ids: readonly string[]):
   return new Map(rows.map((r) => [r.id, { sku: r.sku, name: r.name, unit: r.unit, hsn: r.hsn, active: r.active }]));
 }
 
+/** Each item's flags for goods coming in (a goods receipt, ADR-008 §6): whether its units are named by serial, and
+ * whether each keeps a chassis number (F22). An id that names no item is left out. */
+export async function itemFlags(ctx: Ctx, ids: readonly string[]): Promise<Map<string, { serialised: boolean; hasChassis: boolean }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ id: items.id, serialised: items.serialised, hasChassis: items.hasChassis }).from(items)
+    .where(inArray(items.id, [...ids]));
+  return new Map(rows.map((r) => [r.id, { serialised: r.serialised, hasChassis: r.hasChassis }]));
+}
+
 /** Each batch's number, by id, for another library showing the batches its lines picked (lib-sales' deliveries and
  * returns, ui-2's return form on #293). An id that names no batch is left out. */
 export async function batchNumbers(ctx: Ctx, ids: readonly string[]): Promise<Map<string, string>> {

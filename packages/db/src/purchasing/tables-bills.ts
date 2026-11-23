@@ -1,0 +1,96 @@
+// Purchase bills (M4-03, RAD-138; ADR-008 §1, §2, §7): what a supplier's own invoice says, entered as a draft with its
+// file and posted against what was ordered and received. A bill posts to the journal, so it carries ADR-008 §2's two
+// generic guards (its migration attaches them), and these CHECKs hold the values. Its tax is worked out on read while a
+// draft and stored when it's posted. Its goods lines name PO lines; the receipt line each bills joins with M4-02.
+import { isNull, sql } from 'drizzle-orm';
+import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { journalEntries, parties } from '../accounts/tables.ts';
+import { boundedText, createdMoment, id, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
+import { files } from '../platform/tables.ts';
+import { items } from '../stock/tables.ts';
+import { purchaseOrderLines } from './tables-orders.ts';
+
+/**
+ * A purchase bill (ADR-008 §7). The supplier's invoice number is unique for that supplier within the financial year of
+ * its date (Rule 46), compared as written in upper case and trimmed (`supplier_invoice_key`), for every bill that isn't
+ * cancelled: drafts too, so a duplicate is caught as it's entered. Its owner is its maker (`created_by`).
+ */
+export const purchaseBills = radcoreTable('purchase_bills', {
+  id: id(), createdAt: createdMoment(),
+  number: text().unique(),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  businessDate: date({ mode: 'string' }).notNull(),
+  status: text().notNull().default('draft'),
+  supplierInvoiceNumber: boundedText({ max: 40 }).notNull(),
+  supplierInvoiceKey: text().notNull().generatedAlwaysAs(sql`upper(btrim(supplier_invoice_number))`),
+  supplierInvoiceDate: date({ mode: 'string' }).notNull(),
+  supplierInvoiceFy: date({ mode: 'string' }).notNull()
+    .generatedAlwaysAs(sql`make_date(extract(year from supplier_invoice_date)::int - (extract(month from supplier_invoice_date) < 4)::int, 4, 1)`),
+  // The GSTIN as printed on the supplier's bill: the party's own, or none for an unregistered supplier.
+  supplierGstin: text(),
+  // What the supplier's bill states as its total; posting holds the worked-out total to it within the round-off.
+  statedTotal: money().notNull(),
+  // The supplier's bill itself, a purchase_bill file: a bill posts only with it (RC-172).
+  fileId: uuid().references(() => files.id, { onDelete: 'restrict' }),
+  notes: boundedText({ max: 500 }),
+  placeOfSupply: text(), taxable: money(), cgst: money(), sgst: money(), igst: money(), roundOff: money({ signed: true }), total: money(),
+  postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+  cancelledAt: timestamp({ withTimezone: true }),
+  cancelledBy: text(),
+  cancelReason: boundedText({ max: 500 }),
+  cancelEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+}, (t) => [
+  // lib-common's PURCHASE_BILL_STATUSES, written out (L1); tools/purchase-bills.test.ts holds them equal.
+  check('ck_purchase_bills_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
+  // Posted, it has its number and its tax; a draft has neither.
+  check('ck_purchase_bills_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.total} is null)`),
+  check('ck_purchase_bills_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
+  check('ck_purchase_bills_frozen', sql`num_nulls(${t.placeOfSupply}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst}, ${t.roundOff}, ${t.total}) in (0, 7)
+    and coalesce(${t.placeOfSupply}, '00') ~ '^[0-9]{2}$'`),
+  check('ck_purchase_bills_identity', sql`${t.total} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.roundOff}
+    and abs(${t.roundOff}) < 1 and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
+  // The supplier's date is theirs: on or before the bill's own (ADR-008 §4).
+  check('ck_purchase_bills_supplier_date', sql`${t.supplierInvoiceDate} <= ${t.businessDate}`),
+  check('ck_purchase_bills_supplier_gstin', sql`${t.supplierGstin} is null or ${t.supplierGstin} ~ '^[0-9]{2}[A-Z0-9]{13}$'`),
+  check('ck_purchase_bills_supplier_number', sql`btrim(${t.supplierInvoiceNumber}) <> ''`),
+  // Over every bill not cancelled: a bill is cancelled exactly when it has its cancel entry (ck_purchase_bills_cancelled).
+  uniqueIndex('ux_purchase_bills_supplier_invoice').on(t.partyId, t.supplierInvoiceFy, t.supplierInvoiceKey).where(isNull(t.cancelEntryId)),
+  index('ix_purchase_bills_party').on(t.partyId),
+  index('ix_purchase_bills_date').on(t.businessDate, t.createdAt, t.id),
+  index('ix_purchase_bills_file').on(t.fileId),
+  index('ix_purchase_bills_posted_entry').on(t.postedEntryId),
+  index('ix_purchase_bills_cancel_entry').on(t.cancelEntryId),
+]);
+
+/** A bill's line (ADR-008 §7): goods (a PO line's item, how many, at what rate before tax, as the supplier billed it)
+ * or a charge on the goods (freight, packing, insurance: its taxable amount and HSN or SAC), spread over the goods. */
+export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
+  id: id(),
+  billId: uuid().notNull().references((): AnyPgColumn => purchaseBills.id, { onDelete: 'cascade' }),
+  lineNo: smallint().notNull(),
+  kind: text().notNull(),
+  poLineId: uuid().references(() => purchaseOrderLines.id, { onDelete: 'restrict' }),
+  itemId: uuid().references(() => items.id, { onDelete: 'restrict' }),
+  qty: qty({ line: true }),
+  rate: unitPrice(),
+  charge: text(),
+  description: boundedText({ max: 100 }),
+  hsn: text(),
+  amount: money(),
+  gstRate: percent(), gstRateSource: boundedText({ max: 200 }), taxable: money(), cgst: money(), sgst: money(), igst: money(), lineTotal: money(),
+}, (t) => [
+  check('ck_purchase_bill_lines_kind', sql`${t.kind} in ('goods', 'charge')`),
+  // A goods line names its PO line and item, with a quantity and rate; a charge, its kind, words, HSN and amount.
+  check('ck_purchase_bill_lines_goods', sql`(${t.kind} = 'goods') = (${t.poLineId} is not null and ${t.itemId} is not null and ${t.qty} is not null
+    and ${t.rate} is not null) and (${t.kind} = 'charge') = (${t.charge} is not null and ${t.description} is not null and ${t.hsn} is not null
+    and ${t.amount} is not null)`),
+  check('ck_purchase_bill_lines_charge', sql`${t.charge} is null or ${t.charge} in ('freight', 'packing', 'insurance', 'other')`),
+  check('ck_purchase_bill_lines_hsn', sql`${t.hsn} is null or ${t.hsn} ~ '^[0-9]{4}([0-9]{2}){0,2}$'`),
+  check('ck_purchase_bill_lines_frozen', sql`num_nulls(${t.gstRate}, ${t.gstRateSource}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst},
+    ${t.lineTotal}) in (0, 7)`),
+  check('ck_purchase_bill_lines_identity', sql`${t.lineTotal} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst}
+    and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
+  uniqueIndex('ux_purchase_bill_lines_line').on(t.billId, t.lineNo),
+  index('ix_purchase_bill_lines_po_line').on(t.poLineId),
+  index('ix_purchase_bill_lines_item').on(t.itemId),
+]);

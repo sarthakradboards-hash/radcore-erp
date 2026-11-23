@@ -73,10 +73,11 @@ it('shows Sales on sales:read, opening quotes, and marks it current on its pages
     .toEqual([true, true, false]);
 });
 
-it('shows Purchases on purchasing:read, opening the goods receipts, and marks it current on its pages only (RAD-143)', () => {
-  expect(PURCHASES_PAGES.map((p) => [p.href, p.perm])).toEqual([['/purchases/receipts', 'purchasing:read']]);
-  const purchases = menuFor(NAV, ['purchasing:read']).find((e) => e.label === 'inward.nav.section');
-  expect(purchases?.href).toBe('/purchases/receipts');
-  expect(menuFor(NAV, ['sales:read']).some((e) => e.label === 'inward.nav.section')).toBe(false);
+it('shows Purchases on purchasing:read, opening the orders, with the goods receipts among its pages and current on them (RAD-143)', () => {
+  expect(PURCHASES_PAGES.map((p) => [p.href, p.perm])).toEqual([['/purchases/orders', 'purchasing:read'], ['/purchases/receipts', 'purchasing:read'],
+    ['/purchases/approvals', 'purchasing:approve']]);
+  const purchases = menuFor(NAV, ['purchasing:read']).find((e) => e.label === 'nav.purchases');
+  expect(purchases?.href).toBe('/purchases/orders');
+  expect(menuFor(NAV, ['sales:read']).some((e) => e.label === 'nav.purchases')).toBe(false);
   expect(['/purchases/receipts/new', '/purchases/orders', '/sales/orders'].map((p) => purchases !== undefined && isCurrent(purchases, p))).toEqual([true, true, false]);
 });

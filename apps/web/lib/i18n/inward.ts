@@ -1,7 +1,6 @@
 // The goods receipt and QC screens' text (RAD-143 on RAD-137's contracts): merged into the English catalogue in index.ts. Under
 // "inward." in a file of its own, so each stays small and its keys can't clash with the purchase orders' or the sales area's.
 export const inward = {
-  'inward.nav.section': 'Purchases',
   'inward.nav.receipts': 'Goods receipts',
   'inward.title': 'Goods receipts',
   'inward.intro': 'Goods that arrived against a placed purchase order. They are counted at the door, then QC splits them into accepted and rejected; only then are they in stock. A receipt has its number once QC is done.',

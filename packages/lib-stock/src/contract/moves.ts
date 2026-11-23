@@ -45,6 +45,8 @@ const transferHeader = z.object({
 const transfer = transferHeader.extend({
   // Where its approval stands: only a transfer into a franchisee's place, while the setting is on, ever has one.
   approval: z.enum(['none', 'pending', 'approved']),
+  // A re-inspection's: rejects back to selling, its units in the condition found (§9); null for any other transfer.
+  requalified: z.enum(['new', 'used']).nullable(),
   lines: z.array(z.object({ ...lineOut, qty: quantityString(), batches: batchesOut, serials: z.array(z.string()),
     value: cost(money().nullable()) })),
 });
@@ -65,8 +67,8 @@ export const getStockTransfer = defineContract({
  * out and come in under the same batches. Into a franchisee's place while `stock.franchisee_transfer_approval` is on
  * (Sarthak, default off), it's kept as a draft instead and sent for someone else's approval in the same save: `number`
  * null, and `approval` the request to decide. Refused to the same place (`transfer_same_location`), out of `rejected`
- * to a sellable place (`needs_qc`: M4-02's re-inspection under inward:qc is the only way back), and to or from a job
- * work place (`use_job_work`, §11).
+ * to anywhere but another rejects place (`needs_qc`: M4-02's re-inspection under inward:qc is the only way back to
+ * selling), and to or from a job work place (`use_job_work`, §11).
  */
 export const createStockTransfer = defineContract({
   method: 'POST', path: '/stock/transfers', auth: 'session', perm: 'stock:move', tx: write,
@@ -89,6 +91,21 @@ export const requestStockTransferApproval = defineContract({
 /** The transfer approval routes (RAD-38): approving posts it, as creating one does when no approval is needed. */
 export const stockTransferApproval = approvalContracts('stock-transfer', 'stock:approve',
   ['wrong_status', 'transfer_same_location', 'needs_qc', 'use_job_work', 'location_inactive', ...POSTING_ERRORS]);
+/**
+ * A re-inspection (§9, the architect on RAD-137): rejects inspected again and moved from a rejects place to a sellable
+ * one, under inward:qc, the key that does QC at receipt, with a reason; posted at once, numbered from the transfers'
+ * series. Its serialised units take the condition found, `new` or `used` (condition_changed); batch goods keep their
+ * batches. The goods move at the value they carry, so they join the selling average only now (RC-205). Into one of our
+ * own places only (`requalify_to_own_place`): a franchisee's store is a plain transfer after, with its approval. The plain
+ * transfer keeps refusing rejects (`needs_qc`). It's undone by the plain cancel, its units back in their condition.
+ */
+export const requalifyStockTransfer = defineContract({
+  method: 'POST', path: '/stock/transfers/requalify', auth: 'session', perm: 'inward:qc', tx: write,
+  input: z.object({ fromId: idString(), toId: idString(), businessDate: dateString(), reason: reason(), condition: z.enum(['new', 'used']),
+    lines: lines(moveLineIn) }),
+  output: z.object({ id: idString(), number: z.string() }),
+  errors: ['not_a_rejects_place', 'place_not_sellable', 'requalify_to_own_place', 'transfer_same_location', ...LINE_ERRORS, ...POSTING_ERRORS],
+});
 /** Undoes a posted transfer (RC-124): its mirror at the same values, dated the cancellation's day; refused once the
  * goods have left where it put them, or a unit on it has moved since (`goods_moved_on`). */
 export const cancelStockTransfer = defineContract({
@@ -181,9 +198,10 @@ const adjustmentIn = z.object({
     serials: z.array(z.object({ serialNo: z.string().trim().min(1).max(60), chassisNo: z.string().trim().min(1).max(40).nullable() }))
       .max(1000) })),
 });
-// A found unit's chassis number: needed where the item keeps one, refused where it doesn't (F22).
+// A found unit's chassis number: needed where the item keeps one, refused where it doesn't (F22). A serialised line names
+// a serial for each unit, and a found one its condition, as a draft too (auditor-2 on #339).
 const ADJUSTMENT_ERRORS = [...LINE_ERRORS, 'unknown_batch', 'serial_twice', 'not_serialised', 'serial_elsewhere', 'chassis_required',
-  'chassis_not_allowed'] as const;
+  'chassis_not_allowed', 'serials_mismatch', 'condition_required'] as const;
 
 /** Stock adjustments, newest first, a page at a time. */
 export const listStockAdjustments = defineContract({
@@ -219,7 +237,8 @@ export const requestStockAdjustmentApproval = defineContract({
 /** The adjustment approval routes (RAD-38): approving posts it (F14). */
 // A found unit's chassis number is judged again as it posts: the item's flag may have changed since the draft.
 export const stockAdjustmentApproval = approvalContracts('stock-adjustment', 'stock:approve',
-  ['wrong_status', 'serial_elsewhere', 'chassis_required', 'chassis_not_allowed', 'unknown_batch', ...POSTING_ERRORS]);
+  ['wrong_status', 'serial_elsewhere', 'chassis_required', 'chassis_not_allowed', 'unknown_batch', 'serials_mismatch', 'condition_required',
+    ...POSTING_ERRORS]);
 /** Cancels a posted adjustment: its mirror, dated the cancellation's day. */
 export const cancelStockAdjustment = defineContract({
   method: 'POST', path: '/stock/adjustments/:id/cancel', auth: 'session', perm: 'stock:approve', tx: write,

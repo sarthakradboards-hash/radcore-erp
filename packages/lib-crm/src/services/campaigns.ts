@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { adSpend, after, campaigns, crmTx, leadSources } from '@radcore/db/crm';
 import { dec, roundMoney } from '@radcore/lib-common';
-import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
+import { AppError, decodeCursor, encodeCursor, momentKey, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import type { costPerLead, createCampaign, endCampaign, listAdSpend, listCampaigns, recordAdSpend } from '../contract.ts';
@@ -15,7 +15,8 @@ import { enquiryCounts } from './enquiry-counts.ts';
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
-const PAGE_KEY = z.object({ at: z.iso.datetime({ offset: true }), id: z.uuid() });
+// The moment as PostgreSQL writes it, to the microsecond (#316, #325): a Date's would repeat or skip rows (e2e-2 on #355).
+const PAGE_KEY = z.object({ at: momentKey(), id: z.uuid() });
 /** The public enquiry page with a campaign's token: its link, relative to the site, and its QR code's text. */
 export const campaignPath = (token: string): string => `/enquiry?c=${token}`;
 const unknownSource = () => new AppError('unknown_source', 'Choose the website form’s or a QR source',
@@ -27,13 +28,13 @@ export async function campaignsPage(ctx: Ctx, input: In<typeof listCampaigns>): 
   const rows = await crmTx(ctx).select({ id: campaigns.id, name: campaigns.name, sourceId: campaigns.sourceId, token: campaigns.token,
     endedAt: campaigns.endedAt, createdAt: campaigns.createdAt }).from(campaigns).where(and(
     input.filter.ended === undefined ? undefined : input.filter.ended ? isNotNull(campaigns.endedAt) : isNull(campaigns.endedAt),
-    after([campaigns.createdAt, campaigns.id], key && [new Date(key.at), key.id], 'desc'),
+    after([campaigns.createdAt, campaigns.id], key && [key.at, key.id], 'desc'),
   )).orderBy(desc(campaigns.createdAt), desc(campaigns.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ id: r.id, name: r.name, sourceId: r.sourceId, path: campaignPath(r.token), endedAt: r.endedAt?.toISOString() ?? null })),
-    next: rows.length > input.limit && last ? encodeCursor({ at: last.createdAt.toISOString(), id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ at: last.createdAt, id: last.id }) : null,
   };
 }
 
@@ -65,14 +66,14 @@ export async function adSpendPage(ctx: Ctx, input: In<typeof listAdSpend>): Prom
   const rows = await crmTx(ctx).select().from(adSpend).where(and(
     input.filter.campaignId === undefined ? undefined : eq(adSpend.campaignId, input.filter.campaignId),
     input.filter.sourceId === undefined ? undefined : eq(adSpend.sourceId, input.filter.sourceId),
-    after([adSpend.createdAt, adSpend.id], key && [new Date(key.at), key.id], 'desc'),
+    after([adSpend.createdAt, adSpend.id], key && [key.at, key.id], 'desc'),
   )).orderBy(desc(adSpend.createdAt), desc(adSpend.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ id: r.id, campaignId: r.campaignId, sourceId: r.sourceId, fromDate: r.fromDate, toDate: r.toDate,
       amount: roundMoney(r.amount), note: r.note })),
-    next: rows.length > input.limit && last ? encodeCursor({ at: last.createdAt.toISOString(), id: last.id }) : null,
+    next: rows.length > input.limit && last ? encodeCursor({ at: last.createdAt, id: last.id }) : null,
   };
 }
 
