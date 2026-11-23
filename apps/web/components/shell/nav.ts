@@ -54,6 +54,11 @@ export const SALES_PAGES = [
   { href: '/sales/approvals', label: 'sales.nav.approvals', perm: 'credit_notes:approve' },
 ] as const satisfies readonly NavPage[];
 
+/** The purchases area's pages (RAD-143): the goods receipts, read under the purchasing key. */
+export const PURCHASES_PAGES = [
+  { href: '/purchases/receipts', label: 'inward.nav.receipts', perm: 'purchasing:read' },
+] as const satisfies readonly NavPage[];
+
 /** The CRM area's pages (RAD-122): leads first, as the sales team works them most. */
 export const CRM_PAGES = [
   { href: '/crm/leads', label: 'crm.nav.leads', perm: 'leads:read' },
@@ -66,6 +71,7 @@ export const NAV: readonly NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
   // The owner holds audit:read alone (RAD-35), so Admin opens on the audit trail for them.
   { label: 'nav.sales', pages: SALES_PAGES, section: '/sales' },
+  { label: 'inward.nav.section', pages: PURCHASES_PAGES, section: '/purchases' },
   { label: 'nav.crm', pages: CRM_PAGES, section: '/crm' },
   { label: 'nav.accounts', pages: ACCOUNTS_PAGES, section: '/accounts' },
   { label: 'nav.admin', pages: ADMIN_PAGES, section: '/admin' },

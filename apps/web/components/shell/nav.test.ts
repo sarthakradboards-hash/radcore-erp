@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ACCOUNTS_PAGES, ADMIN_PAGES, isCurrent, menuFor, NAV, SALES_PAGES, type NavItem } from './nav.ts';
+import { ACCOUNTS_PAGES, ADMIN_PAGES, isCurrent, menuFor, NAV, PURCHASES_PAGES, SALES_PAGES, type NavItem } from './nav.ts';
 
 const items: NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
@@ -71,4 +71,12 @@ it('shows Sales on sales:read, opening quotes, and marks it current on its pages
   expect(menuFor(NAV, ['journal:read']).some((e) => e.label === 'nav.sales')).toBe(false);
   expect(['/sales/orders/abc', '/sales/quotes/new', '/accounts/journal'].map((p) => sales !== undefined && isCurrent(sales, p)))
     .toEqual([true, true, false]);
+});
+
+it('shows Purchases on purchasing:read, opening the goods receipts, and marks it current on its pages only (RAD-143)', () => {
+  expect(PURCHASES_PAGES.map((p) => [p.href, p.perm])).toEqual([['/purchases/receipts', 'purchasing:read']]);
+  const purchases = menuFor(NAV, ['purchasing:read']).find((e) => e.label === 'inward.nav.section');
+  expect(purchases?.href).toBe('/purchases/receipts');
+  expect(menuFor(NAV, ['sales:read']).some((e) => e.label === 'inward.nav.section')).toBe(false);
+  expect(['/purchases/receipts/new', '/purchases/orders', '/sales/orders'].map((p) => purchases !== undefined && isCurrent(purchases, p))).toEqual([true, true, false]);
 });
