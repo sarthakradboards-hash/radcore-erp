@@ -52,6 +52,8 @@ export default function TestRidesPage() {
   const [recording, setRecording] = useState<RideRow | null>(null);
   const columns: Column<RideRow>[] = [
     { id: 'when', header: t('sales.ride.col.when'), cell: (r) => formatMoment(r.scheduledAt) },
+    { id: 'lead', header: t('sales.ride.col.lead'), cell: (r) => r.leadName ?? t('sales.ride.lead.hidden') },
+    { id: 'model', header: t('sales.ride.col.model'), cell: (r) => `${r.name} (${r.sku})` },
     { id: 'unit', header: t('sales.ride.col.unit'), cell: (r) => r.serialNo },
     { id: 'outcome', header: t('sales.ride.col.outcome'), cell: (r) => (r.outcome === null ? t('sales.ride.outcome.none') : t(`sales.ride.outcome.${r.outcome}`)) },
     { id: 'note', header: t('sales.ride.col.note'), cell: (r) => r.note ?? '' },

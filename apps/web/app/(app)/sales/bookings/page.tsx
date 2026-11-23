@@ -18,6 +18,7 @@ type Show = (typeof BOOKING_STATUSES)[number] | 'all' | 'checklist';
 const columns: Column<BookingRow>[] = [
   { id: 'number', header: t('sales.number'), cell: (r) => <Link href={`/sales/bookings/${r.id}`}>{numberText(r.number)}</Link> },
   { id: 'party', header: t('sales.party'), cell: (r) => r.partyName },
+  { id: 'model', header: t('sales.booking.col.model'), cell: (r) => `${r.name} (${r.sku})` },
   { id: 'unit', header: t('sales.booking.col.unit'), cell: (r) => r.serialNo },
   { id: 'date', header: t('sales.date'), cell: (r) => formatDate(r.businessDate) },
   { id: 'status', header: t('sales.status'), cell: (r) => t(`sales.booking.status.${r.status}`) },
