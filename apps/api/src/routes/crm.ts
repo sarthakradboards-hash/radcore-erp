@@ -16,9 +16,10 @@ import {
 
 export default [
   defineRoute(captureLead, captureEnquiry),
+  // Before GET /leads/:id, which would otherwise answer for it (Express takes the first match).
+  defineRoute(listLeadHolders, leadHolders),
   defineRoute(getLead, leadById),
   defineRoute(listLeads, listLeadsPage),
-  defineRoute(listLeadHolders, leadHolders),
   defineRoute(getLeadLists, leadLists),
   defineRoute(createLostReason, addLostReason),
   defineRoute(updateLostReason, changeLostReason),

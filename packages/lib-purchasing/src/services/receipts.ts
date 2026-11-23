@@ -20,6 +20,7 @@ import { z } from 'zod';
 import type {
   cancelGoodsReceipt, createGoodsReceipt, deleteGoodsReceipt, getGoodsReceipt, listGoodsReceipts, postGoodsReceipt, updateGoodsReceipt,
 } from '../contract.ts';
+import { billedQty } from './billed.ts';
 import { receivedOf, returnedOf, settleOrder } from './received.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -278,10 +279,12 @@ export async function cancelReceiptNow(ctx: Ctx, { id, businessDate, reason }: I
   if (r.status !== 'posted') throw wrongStatus(r.status, 'cancelled');
   if (businessDate > today()) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < r.businessDate) throw refuse('date_before_source', `The receipt is dated ${r.businessDate}`, ['businessDate']);
-  // Goods sent back to the supplier on a posted return (RAD-140) are in use. shortcut: bills (M4-03) can't post yet, so
-  // nothing on a receipt can be billed; RAD-138's billedQty refuses receipt_in_use here when it lands.
-  const back = await returnedOf(ctx, (await linesOf(ctx, id)).map((l) => l.id), { drafts: false });
-  if ([...back.values()].some((q) => q.gt(0))) {
+  // A receipt any of it was billed on (RAD-138) or sent back on a posted return (RAD-140) stays: cancel those first.
+  const ids = (await linesOf(ctx, id)).map((l) => l.id);
+  if ([...(await billedQty(ctx, ids)).values()].some((q) => q.gt(0))) {
+    throw new AppError('receipt_in_use', 'Goods on this receipt have been billed, so it can’t be cancelled: cancel the bill first');
+  }
+  if ([...(await returnedOf(ctx, ids, { drafts: false })).values()].some((q) => q.gt(0))) {
     throw new AppError('receipt_in_use', 'Goods on this receipt have gone back to the supplier: cancel that return first');
   }
   await reverseStock(ctx, { sourceTable: SOURCE, sourceId: id, businessDate }).catch((e: unknown) => {
@@ -373,28 +376,4 @@ export async function getReceiptById(ctx: Ctx, { id }: In<typeof getGoodsReceipt
       batches: batchesOf(l),
       serials: (qc?.serials ?? []).map((s) => ({ serialNo: s.serialNo, chassisNo: s.chassisNo, batchNo: batchNo(s.batchNo), rejected: s.rejected })) };
   }) };
-}
-
-/**
- * For a purchase bill (M4-03, backend's RAD-138), reached by no route: posted receipt lines as the bill matches them,
- * with what each accrued to Goods Received Not Billed at receipt (`acceptedValue`, `rejectedValue`), which the bill
- * clears exactly. Locked when `forUpdate`, after their POs and before the bill (ADR-008 §12): receipts in id order.
- */
-export async function receiptLinesFor(ctx: Ctx, lineIds: readonly string[], o: { forUpdate: boolean }) {
-  if (lineIds.length === 0) return [];
-  const tx = purchasingTx(ctx);
-  const q = tx.select({ id: goodsReceiptLines.id, receiptId: goodsReceipts.id, receiptNumber: goodsReceipts.number,
-    receiptDate: goodsReceipts.businessDate, status: goodsReceipts.status, supplierId: goodsReceipts.partyId, orderId: goodsReceipts.orderId,
-    orderNumber: purchaseOrders.number, orderLineId: goodsReceiptLines.orderLineId, itemId: goodsReceiptLines.itemId,
-    received: goodsReceiptLines.received, accepted: goodsReceiptLines.accepted, rejected: goodsReceiptLines.rejected, rate: goodsReceiptLines.rate,
-    acceptedValue: goodsReceiptLines.acceptedValue, rejectedValue: goodsReceiptLines.rejectedValue,
-    acceptedMovementId: goodsReceiptLines.acceptedMovementId, rejectedMovementId: goodsReceiptLines.rejectedMovementId,
-    locationId: goodsReceipts.locationId, rejectsLocationId: goodsReceipts.rejectsLocationId, owner: goodsReceipts.createdBy })
-    .from(goodsReceiptLines).innerJoin(goodsReceipts, eq(goodsReceipts.id, goodsReceiptLines.receiptId))
-    .innerJoin(purchaseOrders, eq(purchaseOrders.id, goodsReceipts.orderId))
-    // Scoped in the query, so a receipt the caller can't see is neither answered nor locked (auditor-2 on #367).
-    .where(and(inArray(goodsReceiptLines.id, [...lineIds]), listScope(ctx, 'purchasing:read', goodsReceipts.createdBy)))
-    .orderBy(asc(goodsReceipts.id), asc(goodsReceiptLines.lineNo));
-  // Their POs are already locked by the bill (§12), so this takes only their receipts in turn.
-  return o.forUpdate ? q.for('update') : q;
 }

@@ -1,9 +1,9 @@
 // What's on hand of an item at a place (the architect on RAD-112), for the delivery and return forms: the quantity,
 // each batch's, and the serialised units free to pick. Quantities only, no cost. A convenience, never the guard:
 // posting checks every batch and unit again (RA007, RA008), so a unit someone takes meanwhile is refused there.
-import { batches, items, stockMovementBatches, stockMovements, stockTx, units } from '@radcore/db/stock';
+import { batches, items, locations, stockMovementBatches, stockMovements, stockTx, units } from '@radcore/db/stock';
 import { partyNames } from '@radcore/lib-accounts';
-import { UNIT_CONDITIONS } from '@radcore/lib-common';
+import { dec, LOCATION_KIND_CODES, LOCATION_KINDS, roundQty, UNIT_CONDITIONS, type Quantity } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, gt, inArray, isNull, like, or, sum as total } from 'drizzle-orm';
 import { z } from 'zod';
@@ -64,4 +64,39 @@ async function pickable(ctx: Ctx, input: In<typeof getOnHand>) {
   return { items: page.map((u) => ({ unitId: u.id, serialNo: u.serialNo, chassisNo: u.chassisNo, condition: conditionOf.parse(u.condition),
     heldForThis: line !== null && u.promisedTo === line, batchId: u.batchId, batchNo: u.batchNo })),
     next: rows.length > input.limit && last ? encodeCursor({ serialKey: last.serialKey, id: last.id }) : null };
+}
+
+/** Where each item is on hand at a sellable kind of location (LOCATION_KINDS, RAD-138): the positions holding more than
+ * nothing, with their quantities, for spreading a bill's price difference over the stock still there (ADR-006 §4).
+ * Quantities only, no values. Called after the positions are locked (holdStock), so it reads what the posting will. */
+export async function sellableOnHand(ctx: Ctx, itemIds: readonly string[]): Promise<Map<string, { locationId: string; qty: Quantity }[]>> {
+  const out = new Map(itemIds.map((id) => [id, [] as { locationId: string; qty: Quantity }[]]));
+  if (itemIds.length === 0) return out;
+  const sellable = LOCATION_KIND_CODES.filter((k) => LOCATION_KINDS[k].sellable);
+  const rows = await stockTx(ctx).select({ itemId: stockMovements.itemId, locationId: stockMovements.locationId,
+    direction: stockMovements.direction, qty: total(stockMovements.qty) }).from(stockMovements)
+    .innerJoin(locations, eq(locations.id, stockMovements.locationId))
+    .where(and(inArray(stockMovements.itemId, [...new Set(itemIds)]), inArray(locations.kind, [...sellable])))
+    .groupBy(stockMovements.itemId, stockMovements.locationId, stockMovements.direction)
+    .orderBy(asc(stockMovements.itemId), asc(stockMovements.locationId));
+  for (const [key, own] of Map.groupBy(rows, (r) => `${r.itemId} ${r.locationId}`)) {
+    const qty = netQty(own);
+    const [itemId = '', locationId = ''] = key.split(' ');
+    if (dec(qty).gt(0)) out.get(itemId)?.push({ locationId, qty });
+  }
+  return out;
+}
+
+/** What's on hand at each of these positions, keyed `itemId locationId` (RAD-138): a billed reject's price difference
+ * goes onto what its rejects place still holds (ADR-008 §7). Quantities only. Called after the positions are locked. */
+export async function quantitiesAt(ctx: Ctx, positions: readonly { itemId: string; locationId: string }[]): Promise<Map<string, Quantity>> {
+  const out = new Map(positions.map((p) => [`${p.itemId} ${p.locationId}`, roundQty('0', 3)]));
+  if (positions.length === 0) return out;
+  const rows = await stockTx(ctx).select({ itemId: stockMovements.itemId, locationId: stockMovements.locationId,
+    direction: stockMovements.direction, qty: total(stockMovements.qty) }).from(stockMovements)
+    .where(and(inArray(stockMovements.itemId, [...new Set(positions.map((p) => p.itemId))]),
+      inArray(stockMovements.locationId, [...new Set(positions.map((p) => p.locationId))])))
+    .groupBy(stockMovements.itemId, stockMovements.locationId, stockMovements.direction);
+  for (const [key, own] of Map.groupBy(rows, (r) => `${r.itemId} ${r.locationId}`)) if (out.has(key)) out.set(key, netQty(own));
+  return out;
 }

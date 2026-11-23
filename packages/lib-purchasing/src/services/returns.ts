@@ -22,7 +22,7 @@ import type {
   updateSupplierReturn,
 } from '../contract.ts';
 import { linesBilled, lockOrdersFor, receiptSources, receivedOf, returnedOf, settleOrders } from './received.ts';
-import { receiptLinesFor } from './receipts.ts';
+import { receiptLinesFor } from './receipt-lines.ts';
 import { buyingFrom } from './suppliers.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;

@@ -220,7 +220,9 @@ Flow 5: goods arrive and are counted, but aren't in stock until QC has split the
   Payments (M3-12) and debit notes (§8) apply to it.
 - **TDS at the bill** (section 194Q or 194C) is M5-10's. Until then a bill carries none.
 - **Cancelling a posted bill** mirrors its entry, only while nothing is applied to it (`guard_applied_cancel`) and no
-  return has debited it.
+  return has debited it. Its price difference comes back by ADR-006 §4's rule as things stand at the cancel: the part
+  that went to Cost of Goods Sold from there, and the part that went to stock from the locations still holding the item,
+  in proportion to their quantity, with what's gone since from Cost of Goods Sold (RAD-138).
 
 ### 7a. Input credit (M4-04, RC-014, CA-04)
 

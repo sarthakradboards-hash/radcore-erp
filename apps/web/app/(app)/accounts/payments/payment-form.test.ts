@@ -15,6 +15,9 @@ it('asks for a party, an amount and an account, and refuses a reference that rea
   expect(paths(paymentSchema.safeParse({ ...base, partyId: '', amount: '', accountId: '' })).sort()).toEqual(['accountId', 'amount', 'partyId']);
   expect(paths(paymentSchema.safeParse({ ...base, reference: '4111 1111 1111 1111' }))).toEqual(['reference']);
   expect(paths(paymentSchema.safeParse({ ...base, tds: 'ten' }))).toEqual(['tds']);
+  // an amount of nothing is refused, on a payment and on a bill's amount
+  expect(paths(paymentSchema.safeParse({ ...base, amount: '0' }))).toEqual(['amount']);
+  expect(paths(paymentSchema.safeParse({ ...base, amount: '0.00' }))).toEqual(['amount']);
 });
 
 it('applies a receipt to the bills that have an amount, and needs at least one', () => {
@@ -24,4 +27,5 @@ it('applies a receipt to the bills that have an amount, and needs at least one',
   expect(allocateSchema.parse({ businessDate: '2026-11-23', lines }).lines).toEqual([{ documentTable: 'invoices', documentId: id(3), amount: '1200' }]);
   expect(paths(allocateSchema.safeParse({ businessDate: '2026-11-23', lines: [lines[1]] }))).toEqual(['lines']);
   expect(paths(allocateSchema.safeParse({ businessDate: '2026-11-23', lines: [{ ...lines[0], amount: 'x' }] }))).toEqual(['lines.0.amount']);
+  expect(paths(allocateSchema.safeParse({ businessDate: '2026-11-23', lines: [{ ...lines[0], amount: '0' }] }))).toEqual(['lines.0.amount']);
 });
