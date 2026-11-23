@@ -16,8 +16,10 @@ const write = { readOnly: false, isolation: 'read committed' } as const;
 const status = z.enum(['draft', 'posted', 'cancelled']);
 const money = () => moneyString().nullable();
 const hsn = () => z.string().regex(/^[0-9]{4}([0-9]{2}){0,2}$/, 'Enter the 4, 6 or 8-digit HSN or SAC code');
-/** The supplier's own invoice number, as printed: compared in upper case and trimmed, "/" and "-" kept (ADR-008 §7). */
-const supplierNumber = () => z.string().trim().min(1, 'Enter the supplier’s invoice number').max(16, 'At most 16 characters (Rule 46)');
+/** The supplier's own invoice number, as printed: compared in upper case and trimmed, "/" and "-" kept (ADR-008 §7).
+ * Up to 40 characters, as payments.reference: Rule 46's 16 binds a registered supplier's tax invoice, not an
+ * unregistered, service or import supplier's bill (the auditor on #361). */
+const supplierNumber = () => z.string().trim().min(1, 'Enter the supplier’s invoice number').max(40, 'At most 40 characters');
 
 /** A goods line: the PO line it's for, and once the goods are in, the receipt line it bills; how many, at what rate
  * before tax, as the supplier's bill says. */
@@ -30,7 +32,7 @@ const chargeIn = z.object({ kind: z.literal('charge'), charge: z.enum(['freight'
 const lineIn = z.discriminatedUnion('kind', [goodsIn, chargeIn]);
 /** A line's tax, worked out by lib-gst from the bill's own lines at the rates in force on the supplier's invoice date,
  * never at the PO's (RC-056): on read while a draft, stored when posted. */
-const lineAmounts = z.object({ gstRate: z.string().nullable(), taxable: moneyString(), cgst: money(), sgst: money(), igst: money(),
+const lineAmounts = z.object({ gstRate: z.string().nullable(), gstRateSource: z.string().nullable(), taxable: moneyString(), cgst: money(), sgst: money(), igst: money(),
   lineTotal: money() });
 const lineOut = z.discriminatedUnion('kind', [
   goodsIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(), name: z.string(),
@@ -120,9 +122,11 @@ export const postPurchaseBill = defineContract({
 });
 /** The bills' approval routes (RAD-38): someone other than the poster, holding bills:approve, decides, and approving
  * posts it. Approving re-checks what can change while the request waits: the draft's status, its dates against the year
- * and the period lock, the receipt lines still unbilled, the tax, the duplicate, and the series. */
+ * and the period lock, the supplier still one we buy from with the same GSTIN, the receipt lines still unbilled, the
+ * tax, the duplicate, and the series. */
 export const purchaseBillApproval = approvalContracts('purchase-bill', 'bills:approve',
-  ['wrong_status', 'year_not_open', 'period_locked', 'date_before_source', 'over_received', 'receipt_not_posted', 'duplicate_bill',
+  ['wrong_status', 'year_not_open', 'period_locked', 'date_before_source', 'not_a_supplier', 'gstin_mismatch', 'over_received',
+    'receipt_not_posted', 'duplicate_bill',
     'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'series_full'], BILL_DB_ERRORS);
 /** Cancels a posted bill by a mirror entry dated `businessDate`, with the reason: only while nothing is applied to it
  * and no supplier return has debited it. */
