@@ -5,8 +5,8 @@
 // them (actingAs): the request is the maker's, the approval the approver's, as two requests would be.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addParty, allocatePayment, applyCredit, cashLimitSpec, journalEntryById, journalPage, openFinancialYear, paidOf, PAYMENT_SERIES, recordPayment,
-  reverseCreditApplication, setCreditTerms,
+  addParty, allocatePayment, applyCredit, cashLimitSpec, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear, paidOf, PAYMENT_SERIES,
+  recordPayment, reverseCreditApplication, setCreditTerms,
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
@@ -22,7 +22,7 @@ import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { rawOf } from '../packages/db/src/tx.ts';
 import { mayUse } from '../packages/lib-platform/src/scope.ts';
-import { takeBooksTurn } from './books-turn.ts';
+import { takeBooksTurn, turnsHeldBy } from './books-turn.ts';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -301,7 +301,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
 
   // ADR-006 §1 for a save that posts several documents (the architect on RAD-115): a note with a counter refund draws CN
   // and PV, against key order, so it takes JV's, PV's and CN's turns up front, after its stock. Forced: while another
-  // save holds PV's turn, the approval waits on it before drawing CN, so CN's turn is free; then both post, numbered.
+  // save holds PV's turn, the approval waits on it holding JV's and not CN's; then both post, numbered. The approval runs
+  // on its own named connection, so the probe reads its locks, not another file's save waiting on PV too.
   it('takes its series’ turns up front, in order, when its counter refund draws a second number', async () => {
     const approver = await approverWith(['credit_notes:approve']);
     const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
@@ -313,26 +314,29 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       const { id } = await goodsBack(ctx, at, inv, '1', { refund: { amount: '407', accountId: cash } });
       return { noteId: id, ...await askCreditNoteApproval(ctx, { id }) };
     });
+    const name = `credit-note-turns-${tag()}`;
+    const own = new pg.Pool({ connectionString: url, max: 1, application_name: name });
     const holder = await su.connect();
     try {
       await holder.query('begin');
       await holder.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`numbering.${PAYMENT_SERIES.key}`]);
       const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]?.pid;
-      const approved = failure(run((ctx) => decideApproval(ctx, creditNoteApprovalSpec, asked.id, { decision: 'approve',
-        versionHash: asked.versionHash }), approver));
-      await vi.waitFor(async () => expect((await su.query<{ n: number }>(
-        // At least one: another file's save may wait on PV's turn too.
-        'select count(*)::int n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.n).toBeGreaterThan(0), { timeout: 10_000 });
-      const free = (await su.query<{ free: boolean }>('select pg_try_advisory_xact_lock(hashtextextended($1, 0)) as free',
-        [`numbering.${CREDIT_NOTE_SERIES.key}`])).rows[0]?.free;
+      const approved = failure(runInTransaction(createDatabase(own), WRITE, approver, randomUUID(), (ctx) => decideApproval(ctx,
+        creditNoteApprovalSpec, asked.id, { decision: 'approve', versionHash: asked.versionHash })));
+      const waiter = async () => (await su.query<{ pid: number }>(`select pid from pg_stat_activity
+        where application_name = $1 and $2 = any(pg_blocking_pids(pid))`, [name, pid])).rows[0]?.pid;
+      await vi.waitFor(async () => expect(await waiter()).toBeDefined(), { timeout: 10_000 });
+      const waiting = await waiter();
+      const held = [await turnsHeldBy(su, waiting, [JOURNAL_SERIES.key]), await turnsHeldBy(su, waiting, [CREDIT_NOTE_SERIES.key])];
       await holder.query('commit');
       const done = await approved;
       const { rows: [posted] } = await su.query<{ note: string | null; refund: string | null }>(`select n.number as note, p.number as refund
         from radcore.credit_notes n join radcore.payments p on p.credit_table = 'credit_notes' and p.credit_id = n.id where n.id = $1`, [asked.noteId]);
-      expect([free, done, posted?.note != null, posted?.refund != null]).toEqual([true, 'ok', true, true]);
+      expect([held, done, posted?.note != null, posted?.refund != null]).toEqual([[1, 0], 'ok', true, true]);
     } finally {
       await holder.query('rollback').catch(() => undefined);
       holder.release();
+      await own.end();
     }
   });
 
