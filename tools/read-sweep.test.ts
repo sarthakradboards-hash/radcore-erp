@@ -313,7 +313,7 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       const none = { qty: q('0'), batches: [], serials: [] };
       const back = await run((ctx) => addJobWorkReceipt(ctx, { challanId: challan.id, locationId: base.stores, businessDate: DATE, notes: null,
         lines: [{ challanLineId: line, made: null, used: none, back: { qty: q('1'), batches: [{ batchId: b1, qty: q('1') }], serials: [] }, lost: none }] }));
-      add(['GET /stock/job-work/challans/:id'], challan.id);
+      add(['GET /stock/job-work/challans/:id', 'GET /stock/job-work/challans/:id/pdf'], challan.id);
       add(['GET /stock/job-work/receipts/:id'], back.id);
     });
 
