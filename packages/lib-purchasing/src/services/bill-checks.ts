@@ -36,10 +36,10 @@ export const BILL_TOLERANCE = defineSetting<string>('purchasing.bill_tolerance_p
 
 // Newest first: by date, then the moment each was entered, then id (as purchase orders page).
 export const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
-export const today = (): string => indiaDate(new Date());
-export const notFound = () => new AppError('not_found', 'There is no such purchase bill');
+const today = (): string => indiaDate(new Date());
+const notFound = () => new AppError('not_found', 'There is no such purchase bill');
 export const wrongStatus = (status: string, what: string) => new AppError('wrong_status', `This bill is ${status}, so it can’t be ${what}`);
-export const refuseAt = (code: string, message: string, path: (string | number)[]) => new AppError(code, message, [{ path, code, message }]);
+const refuseAt = (code: string, message: string, path: (string | number)[]) => new AppError(code, message, [{ path, code, message }]);
 
 /** The bill within the principal's scope for `key`, by its maker (ADR-008 §13), else not_found; locked when it's to change. */
 export async function billOf(ctx: Ctx, id: string, key: string, forUpdate = false): Promise<Row> {
@@ -120,7 +120,7 @@ export async function holdOrders(ctx: Ctx, poLineIds: readonly string[]): Promis
 }
 
 
-export type Taxed = LineTax & { gstRate: string; gstRateSource: string };
+type Taxed = LineTax & { gstRate: string; gstRateSource: string };
 /** The bill's tax from its own lines (RC-056): each at the rate in force on the supplier's invoice date for its item's HSN,
  * or its charge's HSN or SAC; the supplier sells, we buy, so the place of supply is ours (§7, as a PO's). */
 export async function amountsOf(ctx: Ctx, supplierState: string, on: string, lines: readonly (typeof purchaseBillLines.$inferSelect)[]) {
