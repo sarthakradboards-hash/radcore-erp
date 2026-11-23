@@ -4,7 +4,7 @@
 // of each bill and of the receipt, the date, and whether the bill is posted are the server's to say; the screen shows the amounts
 // entered next to the receipt's, and words the refusals. A receipt can be left unapplied and applied later.
 import { dec, formatDate, formatMoney, indiaDate, sum } from '@radcore/lib-common';
-import { allocatePaymentContract, getPartyStatement } from '@radcore/lib-accounts/contract';
+import { allocatePaymentContract, getPartyStatement, getPaymentContract, listPaymentsContract } from '@radcore/lib-accounts/contract';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
@@ -27,7 +27,7 @@ export function AllocateForm({ paymentId, partyId, amount, onDone }: { paymentId
   const may = useMe().permissions.includes('receivables:read');
   const today = indiaDate(new Date());
   const statement = useApiQuery(getPartyStatement, { id: partyId, from: today, to: today }, { enabled: may });
-  const allocate = useApiMutation(allocatePaymentContract);
+  const allocate = useApiMutation(allocatePaymentContract, { invalidates: [getPaymentContract, listPaymentsContract] });
   if (!may) return <p>{t('books.pay.allocate.hidden')}</p>;
   if (statement.error !== null) return <p role="alert" className="kit-form-alert">{t('books.pay.allocate.err.read')}</p>;
   if (statement.data === undefined) return <p>{t('loading')}</p>;

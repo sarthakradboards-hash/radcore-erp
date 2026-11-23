@@ -295,7 +295,8 @@ average:
 - a serialised unit returns at its own value;
 - other goods return at the line's unit value, and the last return from a line clears what is left of it exactly.
 
-A later re-delivery is costed afresh.
+A later re-delivery is costed afresh. A bill's revaluation is the one movement a cancellation doesn't mirror one for
+one: it's value with no goods, so it's undone where the goods still are (ADR-008 §7).
 
 **Part of a delivery line** (M3-08, M3-09). A delivery line of Q units at value V can be invoiced, or taken back,
 a part at a time:

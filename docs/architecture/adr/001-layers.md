@@ -308,13 +308,13 @@ must apply the scope in the outermost function around the read: `ctx.see`, `ctx.
 principal is a link made for exactly that action, and `not_found` for any other principal or action. Every read
 must filter by the id it returns, which E7 can't see, so a test does. This is a
 backstop to the list engine's filter and each module's own-scope tests. It can't follow a read or a check into another
-function, a table passed around as a value, a table reached through a relation (`with:`) or a view, or whether the
-check names the right owner. A service that rightly reads past the scope can't say so in a comment, since no comment
-switches a rule off (`noInlineConfig`): it is named, with its reason, in E7's options, which the config test pins. Each
-exemption names one file and its reason (`exempt`), and that file's functions return only aggregates keyed by ids their
-caller already had in scope, never another's rows. The first is lib-sales' `services/delivered.ts`, which sums every
-posted delivery, return and credit note for a party's credit exposure, an order's remaining quantities and an invoice's
-open credit (RAD-112, RAD-114). The second is lib-sales' `services/booking-holds.ts`, which locks and updates the live
+function, a table passed around as a value, a table reached through a relation (`with:`) or a view, or whether the check
+names the right owner. A service that rightly reads past the scope can't say so in a comment, since no comment switches
+a rule off (`noInlineConfig`): it is named, with its reason, in E7's options, which the config test pins. Each exemption
+names one file and its reason (`exempt`), and that file's functions return only aggregates keyed by ids their caller
+already had in scope, never another's rows. The first is lib-sales' `services/delivered.ts`, which sums every posted
+delivery, return and credit note for a party's credit exposure, an order's remaining quantities and an invoice's open
+credit (RAD-112, RAD-114). The second is lib-sales' `services/booking-holds.ts`, which locks and updates the live
 bookings of an order's lines for its delivery, cancelled delivery and changes, and tells a cancelled booking whether its
 lead has another, answering only booleans, counts and ids (RAD-117). The third is lib-crm's `services/lead-locks.ts`,
 which locks a booking's lead for its cancellation and answers nothing (RAD-117). The fourth is lib-crm's
@@ -325,7 +325,9 @@ receiving, closing and reopening a PO and for its edits (`over_ordered`, `po_rec
 ids (RAD-137). The sixth is lib-stock's `services/job-work-accounted.ts`, which sums every posted job-work receipt's
 used, returned and lost quantities by challan line, and says whether a posted receipt answers a challan, for
 `over_challan`, a challan's accounted quantities and its cancellation (`challan_answered`), answering only quantities
-and yes or no (RAD-142).
+and yes or no (RAD-142). The seventh is lib-purchasing's `services/billed.ts`, which sums what posted bills have billed
+of each receipt line, net of cancellations, for a bill's `over_received` and a receipt's `receipt_in_use`, answering
+only quantities (RAD-138).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:

@@ -3,124 +3,26 @@
 // check is the database's unique index, over every bill not cancelled. A draft's tax is worked out on read, from its own
 // lines at the rates in force on the supplier's invoice date (RC-056), and how each line stands against its PO rate.
 // Posting, the three-way match against receipts and the approval join with M4-02's goods receipts (RAD-138 PR 3).
-import { after, purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
-import { getCompanyProfile, getPartyById } from '@radcore/lib-accounts';
-import { dec, indiaDate, percentString, roundMoney, type Money } from '@radcore/lib-common';
-import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax } from '@radcore/lib-gst';
-import {
-  AppError, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, readyFile, type Ctx,
-} from '@radcore/lib-platform';
-import { checkQuantity, itemLabels } from '@radcore/lib-stock';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { z } from 'zod';
+import { after, purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purchasing';
+import { getPartyById } from '@radcore/lib-accounts';
+import { dec, roundMoney, type Money } from '@radcore/lib-common';
+import { AppError, awaitingApproval, decodeCursor, encodeCursor, listScope, withdrawPending, type Ctx } from '@radcore/lib-platform';
+import { itemLabels } from '@radcore/lib-stock';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import type { createPurchaseBill, deletePurchaseBill, getPurchaseBill, listPurchaseBills, updatePurchaseBill } from '../contract.ts';
-import { buyingFrom } from './suppliers.ts';
-
-type In<C extends { input: z.ZodType }> = z.output<C['input']>;
-type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
-type Status = 'draft' | 'posted' | 'cancelled';
-type BillIn = In<typeof createPurchaseBill>;
-type LineIn = BillIn['lines'][number];
-type Row = typeof purchaseBills.$inferSelect;
-type BillOut = Out<typeof getPurchaseBill>;
-type LineAmounts = BillOut['lines'][number]['amounts'];
-
-/** Bills' numbers (ADR-008 §3): PB/YY-YY/NNNNN, drawn as the last step of posting. */
-export const BILL_SERIES = defineSeries('purchasing.bill', 'PB', { digits: 5, label: 'Purchase bills' });
-
-/** How far above its PO rate a line may be billed, and the charges as a share of the goods, before someone else approves
- * it (ADR-008 §7): 2%, Sarthak, 22 Nov. */
-export const BILL_TOLERANCE = defineSetting<string>('purchasing.bill_tolerance_pct', percentString(), '2', {
-  label: 'Purchase bill tolerance',
-  description: 'How far above its purchase order rate a bill’s line may be, in percent, and its charges as a share of its goods, '
-    + 'before someone else approves the bill.',
-  input: { kind: 'percent' },
-});
-
-// Newest first: by date, then the moment each was entered, then id (as purchase orders page).
-const PAGE_KEY = z.object({ date: z.iso.date(), at: momentKey(), id: z.uuid() });
-const today = (): string => indiaDate(new Date());
-const notFound = () => new AppError('not_found', 'There is no such purchase bill');
-const wrongStatus = (status: string, what: string) => new AppError('wrong_status', `This bill is ${status}, so it can’t be ${what}`);
-const refuseAt = (code: string, message: string, path: (string | number)[]) => new AppError(code, message, [{ path, code, message }]);
-
-/** The bill within the principal's scope for `key`, by its maker (ADR-008 §13), else not_found; locked when it's to change. */
-async function billOf(ctx: Ctx, id: string, key: string, forUpdate = false): Promise<Row> {
-  const q = purchasingTx(ctx).select().from(purchaseBills).where(eq(purchaseBills.id, id)).limit(1);
-  const [row] = forUpdate ? await q.for('update') : await q;
-  if (row === undefined) throw notFound();
-  ctx.see(key, { owner: row.createdBy });
-  return row;
-}
-
-type PoLine = { id: string; orderId: string; orderNumber: string | null; status: string; partyId: string; itemId: string; rate: string;
-  owner: string };
-/** The PO lines these goods lines name, by id: only those whose PO the principal may read (purchasing:read, by its
- * maker, ADR-008 §13); one outside that scope is left out, as if there were none. */
-async function poLinesOf(ctx: Ctx, ids: readonly string[]): Promise<Map<string, PoLine>> {
-  if (ids.length === 0) return new Map();
-  const rows = await purchasingTx(ctx).select({ id: purchaseOrderLines.id, orderId: purchaseOrders.id, orderNumber: purchaseOrders.number,
-    status: purchaseOrders.status, partyId: purchaseOrders.partyId, itemId: purchaseOrderLines.itemId, rate: purchaseOrderLines.rate,
-    owner: purchaseOrders.createdBy })
-    .from(purchaseOrderLines).innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.orderId))
-    .where(inArray(purchaseOrderLines.id, [...new Set(ids)]));
-  return new Map(rows.filter((r) => ctx.can('purchasing:read', { owner: r.owner })).map((r) => [r.id, r]));
-}
-
-/** A draft's checks (ADR-008 §4, §7): the dates, the supplier and the GSTIN printed on its bill, each goods line's PO
- * line (placed or closed, the supplier's own), its quantity, and the file. Answers each goods line's PO line. */
-async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLine>> {
-  if (b.businessDate > today()) throw refuseAt('date_in_future', 'The date is after today', ['businessDate']);
-  if (b.supplierInvoiceDate > b.businessDate) {
-    throw refuseAt('supplier_date_after_bill', 'The supplier’s date is after the bill’s own', ['supplierInvoiceDate']);
-  }
-  const supplier = await buyingFrom(ctx, b.supplierId);
-  // The GSTIN as printed must be the party's own, or none for an unregistered supplier (ADR-008 §7).
-  if ((b.supplierGstin ?? null) !== supplier.gstin) {
-    throw refuseAt('gstin_mismatch', supplier.gstin === null ? `${supplier.name} has no GSTIN on record` : `${supplier.name}’s GSTIN is ${supplier.gstin}`,
-      ['supplierGstin']);
-  }
-  const goods = b.lines.flatMap((l, n) => (l.kind === 'goods' ? [{ l, n }] : []));
-  const po = await poLinesOf(ctx, goods.map((g) => g.l.poLineId));
-  for (const { l, n } of goods) {
-    const line = po.get(l.poLineId);
-    if (line === undefined) throw refuseAt('unknown_po_line', 'There is no such purchase order line', ['lines', n, 'poLineId']);
-    if (line.status !== 'placed' && line.status !== 'closed') {
-      throw refuseAt('po_not_placed', `That purchase order is ${line.status}: only a placed one is billed`, ['lines', n, 'poLineId']);
-    }
-    if (line.partyId !== b.supplierId) throw refuseAt('other_supplier', 'That purchase order is another supplier’s', ['lines', n, 'poLineId']);
-    // shortcut: goods receipts arrive with M4-02 (RAD-137), so no receipt line can be named yet; RAD-138's posting PR
-    // checks the receipt line against this PO line.
-    if (l.receiptLineId !== null) throw refuseAt('unknown_receipt_line', 'There is no such goods receipt line', ['lines', n, 'receiptLineId']);
-    await checkQuantity(ctx, line.itemId, l.qty).catch((e: unknown) => {
-      throw e instanceof AppError ? refuseAt(e.code, e.message, ['lines', n, 'qty']) : e;
-    });
-  }
-  if (b.fileId !== null) await readyFile(ctx, 'purchase_bill', b.fileId, { wrongKind: ['fileId'] });
-  return po;
-}
-
-const poLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'goods' ? [l.poLineId] : []));
-
-/** The POs these PO lines are on, locked FOR SHARE in id order, before the bill (ADR-008 §12: POs, then receipts, then
- * bills). A placed PO's change holds its row FOR UPDATE while it checks which lines bills name (po_billed), so a draft
- * naming its lines waits for it, and it for the draft: never both. Only POs the principal may read are taken. */
-async function holdOrders(ctx: Ctx, poLineIds: readonly string[]): Promise<void> {
-  if (poLineIds.length === 0) return;
-  const tx = purchasingTx(ctx);
-  const ids = [...new Set((await tx.select({ id: purchaseOrderLines.orderId }).from(purchaseOrderLines)
-    .where(inArray(purchaseOrderLines.id, [...new Set(poLineIds)]))).map((o) => o.id))];
-  if (ids.length === 0) return;
-  await tx.select({ id: purchaseOrders.id }).from(purchaseOrders).where(and(inArray(purchaseOrders.id, ids),
-    listScope(ctx, 'purchasing:read', purchaseOrders.createdBy))).orderBy(asc(purchaseOrders.id)).for('share');
-}
+import {
+  amountsOf, BILL_TOLERANCE, billOf, checkDraft, holdOrders, overPoRate, PAGE_KEY, poLineIdsOf, poLinesOf, wrongStatus,
+  type BillIn, type BillOut, type In, type LineAmounts, type LineIn, type Out, type PoLine, type Status,
+} from './bill-checks.ts';
+import { billApproval } from './bill-post.ts';
 
 /** Writes a draft's lines afresh, numbered from 1 in the order sent; a goods line takes its PO line's item. */
 async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], po: ReadonlyMap<string, PoLine>): Promise<void> {
   const tx = purchasingTx(ctx);
   await tx.delete(purchaseBillLines).where(eq(purchaseBillLines.billId, billId));
   await tx.insert(purchaseBillLines).values(lines.map((l, i) => (l.kind === 'goods'
-    ? { billId, lineNo: i + 1, kind: 'goods', poLineId: l.poLineId, itemId: po.get(l.poLineId)?.itemId ?? '', qty: l.qty, rate: l.rate }
+    ? { billId, lineNo: i + 1, kind: 'goods', poLineId: l.poLineId, receiptLineId: l.receiptLineId, itemId: po.get(l.poLineId)?.itemId ?? '', qty: l.qty,
+      rate: l.rate }
     : { billId, lineNo: i + 1, kind: 'charge', charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount })));
 }
 
@@ -156,8 +58,8 @@ export async function changeBill(ctx: Ctx, { id, ...input }: In<typeof updatePur
 export async function dropBill(ctx: Ctx, { id }: In<typeof deletePurchaseBill>): Promise<Out<typeof deletePurchaseBill>> {
   const b = await billOf(ctx, id, 'bills:write', true);
   if (b.status !== 'draft') throw wrongStatus(b.status, 'deleted: cancel it instead');
-  // shortcut: the bills' approval arrives with posting (RAD-138 PR 3), which closes a pending request here first
-  // (withdrawPending), as a purchase order's delete does.
+  // A pending request goes with it, superseded, as a purchase order's does (the architect on RAD-114).
+  await withdrawPending(ctx, billApproval, id);
   await purchasingTx(ctx).delete(purchaseBills).where(eq(purchaseBills.id, id));
   return {};
 }
@@ -179,44 +81,15 @@ export async function listBillsPage(ctx: Ctx, input: In<typeof listPurchaseBills
   // if pages grow.
   const names = new Map<string, string>();
   for (const id of new Set(page.map((r) => r.partyId))) names.set(id, (await getPartyById(ctx, { id })).name);
+  const waiting = await awaitingApproval(ctx, billApproval, page.map((r) => r.id));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ id: r.id, number: r.number, supplierId: r.partyId, supplierName: names.get(r.partyId) ?? '',
       businessDate: r.businessDate, status: r.status as Status, supplierInvoiceNumber: r.supplierInvoiceNumber,
       supplierInvoiceDate: r.supplierInvoiceDate, total: r.total as Money | null,
-      // shortcut: no request can wait until posting and its approval arrive (RAD-138 PR 3).
-      awaitingApproval: false })),
+      awaitingApproval: waiting.has(r.id) })),
     next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
-}
-
-type Taxed = LineTax & { gstRate: string; gstRateSource: string };
-/** The bill's tax from its own lines (RC-056): each at the rate in force on the supplier's invoice date for its item's HSN,
- * or its charge's HSN or SAC; the supplier sells, we buy, so the place of supply is ours (§7, as a PO's). */
-async function amountsOf(ctx: Ctx, supplierState: string, on: string, lines: readonly (typeof purchaseBillLines.$inferSelect)[]) {
-  const { company } = await getCompanyProfile(ctx);
-  if (company === null) throw new AppError('company_profile_incomplete', 'Set the company’s GSTIN, address and state to work out the GST');
-  const place = placeOfSupply(supplierState, company.stateCode, null);
-  const labels = await itemLabels(ctx, lines.flatMap((l) => (l.itemId === null ? [] : [l.itemId])));
-  const taxed: Taxed[] = [];
-  for (const [n, l] of lines.entries()) {
-    const hsn = l.kind === 'goods' ? labels.get(l.itemId ?? '')?.hsn ?? '' : l.hsn ?? '';
-    const rate = await gstRateFor(ctx, hsn, on).catch((e: unknown) => {
-      throw e instanceof AppError ? refuseAt(e.code, e.message, ['lines', n]) : e;
-    });
-    const t = l.kind === 'goods' ? lineTax({ qty: l.qty ?? '0', rate: l.rate ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState)
-      : lineTax({ qty: '1', rate: l.amount ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState);
-    taxed.push({ ...t, gstRate: rate.rate, gstRateSource: rate.source });
-  }
-  return { placeOfSupply: place.state, lines: taxed, totals: totalsOf(taxed) };
-}
-
-/** How far a billed rate is above its PO rate, in percent to two places (0 at or below it); null for a free item's line
- * (a PO rate of 0) billed at a price, which has no percentage and is past any tolerance. */
-export function overPoRate(rate: string, poRate: string): string | null {
-  if (dec(rate).lte(dec(poRate))) return '0.00';
-  if (dec(poRate).isZero()) return null;
-  return dec(rate).minus(dec(poRate)).times(100).div(dec(poRate)).toFixed(2);
 }
 
 /** GET /purchasing/bills/:id (purchasing:read): with its lines, how each goods line stands against its PO rate, and its
@@ -262,7 +135,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
   return {
     id: b.id, number: b.number, supplierId: b.partyId, supplierName: supplier.name, businessDate: b.businessDate, status: b.status as Status,
     supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate, total: b.total as Money | null,
-    awaitingApproval: false, supplierGstin: b.supplierGstin, statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes, amounts,
+    awaitingApproval: (await awaitingApproval(ctx, billApproval, [id])).has(id), supplierGstin: b.supplierGstin, statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes, amounts,
     chargesOverTolerance, cancelReason: b.cancelReason,
     lines: lines.map((l, i) => {
       const a = lineAmounts[i] ?? empty;
@@ -273,7 +146,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
       const p = po.get(l.poLineId ?? '');
       const over = overPoRate(l.rate ?? '0', p?.rate ?? '0');
       const item = labels.get(l.itemId ?? '');
-      return { kind: 'goods' as const, id: l.id, lineNo: l.lineNo, poLineId: l.poLineId ?? '', receiptLineId: null, itemId: l.itemId ?? '',
+      return { kind: 'goods' as const, id: l.id, lineNo: l.lineNo, poLineId: l.poLineId ?? '', receiptLineId: l.receiptLineId, itemId: l.itemId ?? '',
         sku: item?.sku ?? '', name: item?.name ?? '', unit: item?.unit ?? '', qty: l.qty ?? '0', rate: l.rate ?? '0', poRate: p?.rate ?? '0',
         poNumber: p?.orderNumber ?? '', overPoRate: over, overTolerance: over === null || dec(over).gt(tolerance), amounts: a };
     }),
