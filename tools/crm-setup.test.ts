@@ -8,9 +8,9 @@
 //   whoever owns its lead (enquiry-counts.ts's E7 exemption).
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addAdSpend, addCampaign, captureEnquiry, changeLeadSource, costPerLeadIn, endCampaignNow, leadSourcesList, setAsidePage,
+  addAdSpend, addCampaign, adSpendPage, captureEnquiry, changeLeadSource, costPerLeadIn, endCampaignNow, leadSourcesList, setAsidePage,
 } from '@radcore/lib-crm';
-import { updateLeadSource } from '@radcore/lib-crm/contract';
+import { listCampaigns, updateLeadSource } from '@radcore/lib-crm/contract';
 import { moneyString, requestFor } from '@radcore/lib-common';
 import { loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -97,6 +97,66 @@ describe.skipIf(!url || !superUrl)('CRM setup', { timeout: 30_000 }, () => {
       await server.stop();
     }
     expect((await doorSource('walk_in'))?.ignored).toBe(false);
+  });
+
+  // e2e-2 on #355: a list longer than its page goes on to page 2. Its cursor is the moment as PostgreSQL writes it
+  // (#316, #325), never a Date, which answered 500. Over the real route for campaigns; each page has no repeats, and
+  // rows made in one transaction (one created_at) are told apart by id.
+  it('pages campaigns over the real route, and ad spend and set-asides, past their first page with no repeats', async () => {
+    const form = await doorSource('form');
+    const made = await as(marketing, async (ctx) => {
+      const ids: string[] = [];
+      for (let i = 0; i < 3; i += 1) ids.push((await addCampaign(ctx, { name: `Page ${letters()}`, sourceId: form?.id ?? '' })).id);
+      for (let i = 0; i < 3; i += 1) {
+        await addAdSpend(ctx, { campaignId: ids[0], fromDate: '2026-11-01', toDate: '2026-11-15', amount: moneyString().parse(`${i + 1}00.00`),
+          note: null });
+      }
+      return ids;
+    });
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => marketing, routes: crmRoutes }),
+      0, '127.0.0.1');
+    const seen: string[] = [];
+    const statuses: number[] = [];
+    try {
+      let after: string | undefined;
+      do {
+        const sent = requestFor(listCampaigns, { limit: 2, filter: {}, ...(after === undefined ? {} : { after }) });
+        const res = await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { headers: { origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin' } });
+        statuses.push(res.status);
+        const body = (await res.json()) as { items?: { id: string }[]; next?: string | null };
+        seen.push(...(body.items ?? []).map((c) => c.id));
+        after = body.next ?? undefined;
+      } while (after !== undefined && statuses.at(-1) === 200);
+    } finally {
+      await server.stop();
+    }
+    const spend = await as(marketing, async (ctx) => {
+      const first = await adSpendPage(ctx, { limit: 2, filter: { campaignId: made[0] } });
+      const second = await adSpendPage(ctx, { limit: 2, filter: { campaignId: made[0] }, after: first.next ?? '' });
+      return [first.items.length, second.items.length, second.next, new Set([...first.items, ...second.items].map((s) => s.id)).size];
+    });
+    expect([statuses.every((s) => s === 200), new Set(seen).size === seen.length, made.every((id) => seen.includes(id))]).toEqual([true, true, true]);
+    expect(spend).toEqual([2, 1, null, 3]);
+  });
+
+  // RC-212's set-aside list pages the same way (its cursor was a Date too). Ignoring the QR source is the run's, so this
+  // rolls back.
+  it('pages the set-aside enquiries past their first page with no repeats', async () => {
+    const qr = await doorSource('qr');
+    let out: unknown;
+    await as(marketing, async (ctx) => {
+      await changeLeadSource(ctx, { id: qr?.id ?? '', name: qr?.name ?? '', active: true, ignored: true });
+      for (let i = 0; i < 3; i += 1) await captureEnquiry(ctx, { phone: mobile(), source: 'qr' });
+      const first = await setAsidePage(ctx, { limit: 2, filter: { sourceId: qr?.id ?? '' } });
+      const second = await setAsidePage(ctx, { limit: 2, filter: { sourceId: qr?.id ?? '' }, after: first.next ?? '' });
+      out = [first.items.length, second.items.length >= 1, new Set([...first.items, ...second.items].map((s) => s.id)).size
+        === first.items.length + second.items.length, typeof first.items[0]?.receivedAt];
+      throw new RolledBack();
+    }).catch((e: unknown) => {
+      if (!(e instanceof RolledBack)) throw e;
+    });
+    expect(out).toEqual([2, true, true, 'string']);
   });
 
   // The architect on RAD-110: marketing starts with both campaign keys, sales with neither, and an `own` grant of
