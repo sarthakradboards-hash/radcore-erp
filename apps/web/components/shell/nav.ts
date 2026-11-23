@@ -34,6 +34,7 @@ export const ADMIN_PAGES = [
 export const ACCOUNTS_PAGES = [
   { href: '/accounts/journal', label: 'books.nav.journal', perm: 'journal:read' },
   { href: '/accounts/chart', label: 'books.nav.chart', perm: 'journal:read' },
+  { href: '/accounts/collect', label: 'books.nav.collect', perm: 'receivables:read' },
 ] as const satisfies readonly NavPage[];
 
 /** The sales area's pages (RAD-125): quotes first, as an order usually starts from one. */
@@ -55,6 +56,9 @@ export const SALES_PAGES = [
 /** The CRM area's pages (RAD-122): leads first, as the sales team works them most. */
 export const CRM_PAGES = [
   { href: '/crm/leads', label: 'crm.nav.leads', perm: 'leads:read' },
+  { href: '/crm/lists', label: 'crm.nav.lists', perm: 'leads:setup' },
+  { href: '/crm/sources', label: 'crm.nav.sources', perm: 'leads:setup' },
+  { href: '/crm/set-aside', label: 'crm.nav.setAside', perm: 'leads:setup' },
 ] as const satisfies readonly NavPage[];
 
 export const NAV: readonly NavItem[] = [

@@ -6,7 +6,7 @@
 // prefixes and no issued number changes (the architect on #171, until the CA settles the format, CA-44).
 // The draw is a document's last step, after every check has passed (ADR-006 §1's lock order), so the counter's row
 // lock is held for the shortest time; a save that rolls back gives its number back.
-import { numberCounters, platformTx } from '@radcore/db/platform';
+import { drawCounter, takeTurns } from '@radcore/db/platform';
 import { financialYear } from '@radcore/lib-common';
 import { z } from 'zod';
 import type { Ctx } from './ctx.ts';
@@ -42,6 +42,31 @@ export const declaredSeriesKeys = (): readonly string[] => [...declared].toSorte
 export const formatNumber = (series: Series, prefix: string, year: string, n: number) =>
   `${prefix}/${year.slice(2)}/${String(n).padStart(series.digits, '0')}`;
 
+// ADR-006 §1 step 6 (the architect on RAD-115): every save draws its series in one order, so two saves never wait on each
+// other's series the opposite way round: sales.quote, then sales.order (named, not a class: they number documents that
+// post no entry, and every flow draws them before posting), then the journal, then any other by key. A series added later
+// sorts after the journal unless it's named here. Each draw takes its series' turn
+// first; a save that posts several documents takes all of its series' turns up front, through holdSeries. The turn is an
+// advisory lock, not the counter's row, which a year's first number creates: locking it would mean drawing one.
+const FIRST = ['sales.quote', 'sales.order', 'accounts.journal'];
+const rank = (key: string) => (FIRST.includes(key) ? FIRST.indexOf(key) : FIRST.length);
+const turnOf = (key: string) => `numbering.${key}`;
+
+/** Series keys in the one order every save takes them: the quote's and the order's, the journal, then the rest by key;
+ * each once. */
+export const seriesOrder = (keys: readonly string[]): string[] =>
+  [...new Set(keys)].toSorted((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+
+/**
+ * Takes the turns of every series a save that posts several documents will draw (the quick bill; a booking with its
+ * advance), in seriesOrder, after its period, documents, party and stock locks and before its first document posts.
+ * A single document's save needs none: it draws the journal (postEntry) and then its own, which is already the order.
+ * A credit note with a counter refund holds its three (RAD-114), since it draws sales.credit_note before accounts.payment.
+ */
+export async function holdSeries(ctx: Ctx, series: readonly Series[]): Promise<void> {
+  await takeTurns(ctx.tx, seriesOrder(series.map((s) => s.key)).map(turnOf));
+}
+
 /**
  * The series' next number for the financial year of `businessDate`, such as "JV/26-27/00042", in one query. The
  * counter's row stays locked until the transaction ends, so concurrent saves take turns and none skips or repeats.
@@ -49,13 +74,11 @@ export const formatNumber = (series: Series, prefix: string, year: string, n: nu
  */
 export async function nextNumber(ctx: Ctx, series: Series, businessDate: string): Promise<string> {
   const year = financialYear(businessDate).label;
-  // A year's first draw inserts the counter, and the database's trigger gives it the latest prefix in series_prefixes
-  // on or before the year, else this declared one. A later draw sets `last` to itself, and the trigger makes it exactly
-  // one more and keeps the prefix (migrations 0038 and RAD-132's).
-  const [row] = await platformTx(ctx).insert(numberCounters)
-    .values({ series: series.key, financialYear: year, prefix: series.prefix })
-    .onConflictDoUpdate({ target: [numberCounters.series, numberCounters.financialYear], set: { last: numberCounters.last } })
-    .returning({ last: numberCounters.last, prefix: numberCounters.prefix });
+  // The series' turn first (step 6), whether or not its counter exists yet, in the same statement; a save that holds it
+  // already passes. A year's first draw inserts the counter, and the database's trigger gives it the latest prefix in
+  // series_prefixes on or before the year, else this declared one. A later draw sets `last` to itself, and the trigger
+  // makes it exactly one more and keeps the prefix (migrations 0038 and RAD-132's).
+  const row = await drawCounter(ctx.tx, { turn: turnOf(series.key), series: series.key, financialYear: year, prefix: series.prefix });
   if (row === undefined) throw new Error(`${series.key}: no number was drawn`);
   if (row.last > series.max) {
     throw new AppError('series_full', `This year's ${series.key} numbers have run out. Ask an admin to start a new series`);

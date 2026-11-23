@@ -15,12 +15,26 @@ export {
   postUnitEvents, releasePromises, serialKey, soldCondition, soldUnits, unitFor, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent,
   type UnitChange, type UnitOnLine,
 } from './engine/units.ts';
-export { NEGATIVE_STOCK, batchKey, postStock, reverseStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
+export {
+  addTransfer, askTransferApproval, cancelTransferNow, dropTransfer, FRANCHISEE_TRANSFER_APPROVAL, getTransferById, listTransfersPage, TRANSFER_SERIES,
+  transferApprovalSpec,
+} from './services/transfers.ts';
+export {
+  addCount, askCountApproval, cancelCountNow, changeCount, COUNT_SERIES, countApprovalSpec, dropCount, getCountById, listCountsPage,
+} from './services/counts.ts';
+export {
+  addAdjustment, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, cancelAdjustmentNow, changeAdjustment, dropAdjustment,
+  getAdjustmentById, listAdjustmentsPage,
+} from './services/adjustments.ts';
+export { NEGATIVE_STOCK, batchKey, holdStock, postStock, reverseStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
 import { NEGATIVE_STOCK as negative } from './engine/stock.ts';
 import { SELL_DAMAGED_UNITS as sellDamaged } from './engine/units.ts';
 import { KIND_LABELS } from './location-kinds.ts';
-export const settings: readonly SettingDef<unknown>[] = [negative, sellDamaged, ...Object.values(KIND_LABELS)];
-export const series: readonly Series[] = [];
+import { ADJUSTMENT_SERIES as adjusted } from './services/adjustments.ts';
+import { COUNT_SERIES as counted } from './services/counts.ts';
+import { FRANCHISEE_TRANSFER_APPROVAL as franchisee, TRANSFER_SERIES as moved } from './services/transfers.ts';
+export const settings: readonly SettingDef<unknown>[] = [negative, sellDamaged, franchisee, ...Object.values(KIND_LABELS)];
+export const series: readonly Series[] = [moved, counted, adjusted];

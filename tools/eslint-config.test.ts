@@ -19,19 +19,22 @@ it('has drizzle.config read every file that may declare a table', () => {
 
 it('each zone is exactly the ADR-002 table', () => {
   expect(ZONES).toEqual({
-    'radcore/no-query-strings': [VIEW, 'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts'],
-    'radcore/no-raw-execution': ['packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts',
+    'radcore/no-query-strings': [VIEW, 'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts', 'packages/db/src/locks.ts'],
+    'radcore/no-raw-execution': ['packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts', 'packages/db/src/locks.ts',
       'packages/db/src/migrate.ts'],
     'radcore/no-driver': ['packages/lib-platform/src/db/client.ts', 'packages/db/src/migrate.ts'],
     'radcore/tables-in-schema': ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
       'packages/db/src/sales/tables-credit.ts', 'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts',
-      'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/columns.ts'],
+      'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
+      'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/columns.ts'],
     'radcore/views-in-views': [VIEW],
     'radcore/outbound-only': ['packages/lib-platform/src/http/outbound.ts'],
   });
   expect(L1_SQL_ZONE).toEqual([VIEW, 'packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
     'packages/db/src/sales/tables-credit.ts', 'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts',
-    'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/columns.ts', 'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts']);
+    'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts', 'packages/db/src/purchasing/tables-orders.ts',
+      'packages/db/src/columns.ts',
+      'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts', 'packages/db/src/locks.ts']);
   expect(L1_EXTRA_NAMES).toEqual({
     'packages/db/src/*/relations.ts': ['relations'],
     'packages/db/src/conditions.ts': ['notInArray'],
@@ -78,6 +81,10 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   'packages/db/src/log-writers.ts': {
     rules: without(SERVER, 'radcore/no-query-strings', 'radcore/no-raw-execution'),
     l1: { ...L1.zone, exportedFunctions: true }, typed: false, server: true },
+  // A numbering series' turn and draw (RAD-115): `sql` in its exported functions only.
+  'packages/db/src/locks.ts': {
+    rules: without(SERVER, 'radcore/no-query-strings', 'radcore/no-raw-execution'),
+    l1: { ...L1.zone, exportedFunctions: true }, typed: false, server: true },
   'packages/lib-sales/src/services/invoices.test.ts': {
     rules: LIB, l1: { ...L1.base, importExpressions: false }, typed: true, server: true },
   // Beyond ADR-002's seven: a view's test file is outside the zone, and so is a web page.
@@ -92,6 +99,10 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   'packages/db/src/sales/tables-bookings.ts': {
     rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
   'packages/db/src/sales/tables-quick-bills.ts': {
+    rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
+  'packages/db/src/stock/tables-moves.ts': {
+    rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
+  'packages/db/src/purchasing/tables-orders.ts': {
     rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
   'packages/db/src/sales/relations.ts': {
     rules: [...SERVER, 'radcore/e4-no-escape'], l1: { allowNames: [...ALLOW, 'relations'] }, typed: true, server: true },

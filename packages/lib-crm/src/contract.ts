@@ -47,7 +47,7 @@ export const getLead = defineContract({
   input: z.object({ id: idString() }),
   output: piiRecord('leads', z.object({
     id: idString(), name: z.string().nullable(), phone: pii(z.string(), 'last4'), email: pii(z.string().nullable()),
-    owner: z.string().nullable(), followUpOn: dateString().nullable(), notes: z.string().nullable(), stage,
+    owner: principalOut.nullable(), followUpOn: dateString().nullable(), notes: z.string().nullable(), stage,
     lostReasonId: idString().nullable(), value: moneyString().nullable(), score: score.nullable(), planId: idString().nullable(),
     planStep: z.number().int().nullable(),
     enquiries: z.array(z.object({ source: z.enum(LEAD_SOURCES), message: z.string().nullable(), receivedAt: momentString() })),
@@ -67,7 +67,7 @@ export const listLeads = defineContract({
   method: 'GET', path: '/leads', auth: 'session', perm: 'leads:read', tx: read,
   input: listInput(z.object({ stage: stage.optional(), owner: z.enum(['me', 'none']).optional(), followUpBy: dateString().optional() })),
   output: listOf(z.object({
-    id: idString(), name: z.string().nullable(), phone: z.object({ masked: z.string() }), stage, owner: z.string().nullable(),
+    id: idString(), name: z.string().nullable(), phone: z.object({ masked: z.string() }), stage, owner: principalOut.nullable(),
     followUpOn: dateString().nullable(), value: moneyString().nullable(), score: score.nullable(), lastEnquiryAt: momentString(),
   })),
 });
@@ -159,6 +159,15 @@ export const quickReply = defineContract({
   method: 'POST', path: '/leads/:id/quick-reply', auth: 'session', perm: 'leads:write', tx: write,
   input: z.object({ id: idString(), replyId: idString() }),
   output: z.object({ text: z.string() }), errors: ['unknown_reply', 'lead_taken'],
+});
+
+/** Who a lead may be handed to, by name, for the owner picker (RAD-109, ui's RAD-122): the active people whose role sees
+ * leads (leads:read), as assignLead accepts them. Only for someone who may hand leads on (leads:write at `all`, D-11), so
+ * a sales manager without users:read can still choose. */
+export const listLeadHolders = defineContract({
+  method: 'GET', path: '/leads/holders', auth: 'session', perm: 'leads:write', tx: read,
+  input: z.object({}),
+  output: z.object({ items: z.array(z.object({ id: idString(), displayName: z.string() })) }),
 });
 
 /** Hands a lead to a person, or (null) back to no one: only for someone who holds leads:write at `all` (D-11). A person

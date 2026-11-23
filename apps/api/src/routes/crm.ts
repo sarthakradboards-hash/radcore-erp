@@ -2,13 +2,13 @@
 // lead, the pipeline, and CRM setup: lead sources and what they set aside, campaigns, ad spend and cost per lead.
 import { defineRoute } from '@radcore/lib-platform';
 import {
-  addLostReason, addPlan, addQuickReply, assignLeadOwner, captureEnquiry, changeLostReason, changePlan, changeQuickReply, followUpDone,
+  addLostReason, addPlan, addQuickReply, assignLeadOwner, captureEnquiry, leadHolders, changeLostReason, changePlan, changeQuickReply, followUpDone,
   leadById, leadLists, listLeadsPage, moveLeadStage, putOnPlan, quickReplyText, updateLeadDetails,
   addAdSpend, addCampaign, addLeadSource, adSpendPage, campaignsPage, changeLeadSource, costPerLeadIn, endCampaignNow, leadSourcesList,
   setAsidePage,
 } from '@radcore/lib-crm';
 import {
-  assignLead, captureLead, createLostReason, createPlan, createQuickReply, followUpLead, getLead, getLeadLists, listLeads, moveLead,
+  assignLead, captureLead, createLostReason, createPlan, createQuickReply, followUpLead, getLead, getLeadLists, listLeadHolders, listLeads, moveLead,
   planLead, quickReply, updateLead, updateLostReason, updatePlan, updateQuickReply,
   costPerLead, createCampaign, createLeadSource, endCampaign, listAdSpend, listCampaigns, listLeadSources, listSetAside, recordAdSpend,
   updateLeadSource,
@@ -18,6 +18,7 @@ export default [
   defineRoute(captureLead, captureEnquiry),
   defineRoute(getLead, leadById),
   defineRoute(listLeads, listLeadsPage),
+  defineRoute(listLeadHolders, leadHolders),
   defineRoute(getLeadLists, leadLists),
   defineRoute(createLostReason, addLostReason),
   defineRoute(updateLostReason, changeLostReason),

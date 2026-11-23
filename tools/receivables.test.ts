@@ -1,12 +1,13 @@
 // RAD-111 (the architect's ruling) on a real PostgreSQL 16, as the app login: what a party owes, from its Debtors
 // lines as at a date. Bills and payments of the party's own count, another party's don't, and nothing dated after the
 // date does. The party is the test's own; entries are dated in 2034-35, which no other file posts in.
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { openFinancialYear, partyReceivable, postEntry, reverseEntry } from '@radcore/lib-accounts';
 import type { Money } from '@radcore/lib-common';
 import type { Ctx, Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
+import { receivable } from '../packages/lib-accounts/src/rules/receivable.ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -78,4 +79,30 @@ describe.skipIf(!url)('what a party owes', { timeout: 30_000 }, () => {
     await post(party, '2034-04-05', 'paid', '500.00');
     expect(await owes(party, '2034-06-01')).toEqual({ outstanding: '-500.00', oldestUnpaid: null });
   });
+
+  // RAD-148: worked out in the database, the answer is the rule's over every line, for any history and any date:
+  // bills, payments and advances of any size, either reversed on a later day, and dates before, between and after them.
+  it('answers exactly what the rule over every line answers, for random histories and dates', async () => {
+    const day = (n: number) => new Date(Date.UTC(2034, 3, 1 + n)).toISOString().slice(0, 10);
+    for (let round = 0; round < 6; round += 1) {
+      const party = randomUUID();
+      const posted: { id: string; date: number }[] = [];
+      for (let i = 0; i < 25; i += 1) {
+        const date = randomInt(0, 300);
+        const amount = `${String(randomInt(1, 500))}.${String(randomInt(0, 100)).padStart(2, '0')}`;
+        posted.push({ id: (await post(party, day(date), randomInt(0, 3) === 0 ? 'paid' : 'bill', amount)).id, date });
+      }
+      for (const p of posted.filter(() => randomInt(0, 5) === 0)) {
+        await run((ctx) => reverseEntry(ctx, { entryId: p.id, businessDate: day(p.date + randomInt(0, 40)), reason: 'Test' }));
+      }
+      const { rows } = await pool.query<{ businessDate: string; debit: string; credit: string; entryId: string; reversesEntryId: string | null }>(
+        `select l.business_date::text as "businessDate", l.debit::text as debit, l.credit::text as credit, l.entry_id as "entryId",
+          e.reverses_entry_id as "reversesEntryId", l.posted_at, l.id
+        from radcore.journal_lines l join radcore.accounts a on a.id = l.account_id join radcore.journal_entries e on e.id = l.entry_id
+        where a.system_key = 'debtors' and l.party_id = $1 order by l.business_date, l.posted_at, l.id`, [party]);
+      for (const on of [day(-1), ...Array.from({ length: 8 }, () => day(randomInt(0, 345)))]) {
+        expect(await owes(party, on), `as at ${on}`).toEqual(receivable(rows.filter((r) => r.businessDate <= on)));
+      }
+    }
+  }, 120_000);
 });

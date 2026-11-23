@@ -25,7 +25,7 @@ const MONEY_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unkno
 
 const bookingRow = z.object({
   id: idString(), number: z.string().nullable(), orderId: idString(), orderLineId: idString(), partyId: idString(), partyName: z.string(),
-  itemId: idString(), serialNo: z.string(), leadId: idString().nullable(), businessDate: dateString(), status,
+  itemId: idString(), sku: z.string(), name: z.string(), serialNo: z.string(), leadId: idString().nullable(), businessDate: dateString(), status,
 });
 
 /** Bookings, newest first, a page at a time: the principal's own at `own` scope. */

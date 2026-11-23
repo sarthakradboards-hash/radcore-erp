@@ -66,7 +66,19 @@ half covers every sum and comparison in them, and they round half up, as lib-com
    `(item_id, supplier_id, batch_key)` order (§4a);
 5. the units, `ORDER BY id FOR UPDATE` (§5);
 6. the numbering series (M2-04), last. A number is drawn only once every check has passed, and the series row is
-   held for the shortest time.
+   held for the shortest time. A save draws its series in one order: `sales.quote`, then `sales.order`, which number
+   documents that post no entry; then the journal (`accounts.journal`); then any other in ascending key order, a
+   series added later included unless this list names it; each draw takes its series' turn first, a transaction
+   advisory lock (lib-platform's `nextNumber`), since a year's first number creates the counter row, which can't be
+   locked before it exists. A save that posts several documents takes each class of lock for all of them first, in
+   this order, its series last and in the same order (`holdSeries`, with lib-stock's `holdStock` for steps 4 and 5;
+   the architect on RAD-115).
+   The quick bill does; a booking with its advance and a credit note with its refund follow under their own tickets.
+   **A document whose own number names a batch** (a stock adjustment's found goods, a goods receipt, a job-work
+   receipt, opening stock) keeps this order with no exception: its stock and units (`holdStock`), then its series'
+   turns, the journal's and its own (`holdSeries`), then it draws its number, creates the batch row that number
+   names (§4a), and posts (the architect on RAD-141). That batch row comes after step 6, not in step 4, and can't
+   meet another save's, since no two documents share a number.
 
 The stock lock is a row in `stock_positions (item_id, location_id)`, never the item row. A `FOR UPDATE` on `items`
 also blocks every insert that references the item by foreign key, which is how v1 blocked unrelated saves. The
@@ -318,8 +330,8 @@ batch costing.
 - `batches` is append-only (ADR-005 §7). A batch number entered wrongly is put right by moving the quantity to the
   right batch (below), never by an edit, so the history stays as it happened.
 - Goods that carry no batch number take the receiving document's own number as their batch, with its supplier: a
-  goods receipt, opening stock, a job-work receipt or a count. So every unit of stock can still be traced to the
-  document that brought it in.
+  goods receipt, opening stock, a job-work receipt or a stock adjustment's found goods. So every unit of stock can
+  still be traced to the document that brought it in. A count creates none: its lines name the batches found.
 
 **A movement's quantity, split by batch.**
 - `stock_movement_batches (id, movement_id, item_id, batch_id, qty)`, append-only, with `qty > 0`. `batch_id` is
@@ -449,6 +461,18 @@ serialised)`: only a serialised item can have it.
   service answers `chassis_numbers_recorded`, and a trigger on `items` refuses it too (RA008). Once a vehicle has
   its number, the product is a registered vehicle, and turning the flag off would let the next one leave without
   one. A flag set by mistake can still be turned off before any number is entered.
+
+**Damaged units, and what a sale says about a unit's condition (RAD-112).**
+- **Selling a damaged unit is a setting,** `stock.sell_damaged_units`, off by default (Sarthak, 21 Nov). Off: a
+  `damaged` unit is left out of the picker and refused at posting (`unit_damaged`). On: it's offered, marked.
+- **An invoice line says any condition that isn't `new`:** `demo`, `used` or `damaged`, so used or ex-demo goods never
+  pass as new (Consumer Protection Act 2019). It isn't a setting. The condition is the unit's own at the moment it
+  left, recorded on its `delivered` event from the locked unit row, never a value the caller passes, and frozen on
+  the invoice line (`unit_condition`).
+- **A serialised delivery line holds units of one condition** (`mixed_condition` at posting, checked under the units'
+  locks), so an invoice that bills part of a line copies that one condition exactly.
+- **Stock on hand,** by place, batch and serial, is read through `GET /stock/on-hand` under `stock:read`. Its serials
+  leave out a unit promised to another order line, and mark one promised to the line being picked (`heldForThis`).
 
 ### 6. What each document posts
 

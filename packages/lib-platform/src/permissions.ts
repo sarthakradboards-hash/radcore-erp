@@ -92,6 +92,12 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
     secondFactor: true },
   // Who may ask; sales:override approves (RAD-115, Sarthak's "Allow with approval"). No second factor: the approval has it.
   { key: 'sales:counter_credit', module: 'Sales', label: 'Ask to leave a balance on a counter sale', allOnly: true },
+  // Purchasing (ADR-008 §13, RAD-136): ordinary catalogue keys, scoped by each document's maker, with no second factor,
+  // since none moves money (D-19). Approving is someone else's, under its own key.
+  { key: 'purchasing:read', module: 'Purchasing', label: 'See purchase orders', records: ['@radcore/db/purchasing#purchaseOrders'] },
+  { key: 'purchasing:write', module: 'Purchasing', label: 'Draft, place, change, close short and cancel purchase orders',
+    records: ['@radcore/db/purchasing#purchaseOrders'] },
+  { key: 'purchasing:approve', module: 'Purchasing', label: 'Approve a purchase order above its placer’s limit, and set the limits' },
   // Vehicle bookings (M3-13, RAD-117; ADR-007 §5): a booking holds a unit and takes its advance. Scoped by who made it.
   // Refunding a cancelled booking's advance is keyed by how much of what's left (Sarthak, 20 Nov): all of it needs
   // refund_full, a part refund_part; each moves money out, so each needs the second factor (D-19).
@@ -111,9 +117,15 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'statement_files:write', module: 'Files', label: 'Upload bank statements', secondFactor: true },
   { key: 'import_files:read', module: 'Files', label: 'See import files' },
   { key: 'import_files:write', module: 'Files', label: 'Upload import files' },
-  // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so the keys name no records.
+  // Stock (M2-14, RAD-92): the places stock can be. A location has no owner, so its keys name no records. The stock
+  // documents (M4-06, ADR-008 §13) are their makers' (created_by), so stock:read and the keys that move them name them.
   { key: 'locations:read', module: 'Stock', label: 'See locations' },
-  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial' },
+  { key: 'stock:read', module: 'Stock', label: 'See stock on hand, by place, batch and serial, and stock transfers, counts and adjustments',
+    records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'stock:move', module: 'Stock', label: 'Transfer stock between places, and undo a transfer', records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'stock:count', module: 'Stock', label: 'Count stock and propose adjustments', records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
+  { key: 'stock:approve', module: 'Stock', label: 'Approve stock counts, adjustments and transfers that need it, and cancel them',
+    records: ['@radcore/db/stock#stockTransfers', '@radcore/db/stock#stockCounts', '@radcore/db/stock#stockAdjustments'] },
   { key: 'locations:write', module: 'Stock', label: 'Add and change locations, switch them off' },
   // HR (M2-14, RAD-92): the employee master. Writing it reaches HR, so it needs the second factor (D-19); reading is a
   // directory whose contact details stay masked without pii:read. Any role may be granted either (Sarthak, 15 Nov).
