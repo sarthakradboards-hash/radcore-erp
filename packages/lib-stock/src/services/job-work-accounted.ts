@@ -2,8 +2,9 @@
 // and lost, summed over its posted receipts, and whether any posted receipt answers a challan. Every receipt counts,
 // whoever made it, as the answers are about the challan, not a person: so this file reads past the record scope, and
 // is exempt from E7, as purchasing's received.ts is. Its rules: each export answers only quantities and a yes or no,
-// keyed by the challan and challan-line ids its caller passed in, never another document's row; and the caller has
-// already applied ctx.see to that challan.
+// keyed by the challan and challan-line ids its caller passed in, never another document's row; the caller has already
+// applied ctx.see to that challan; and a writer calls it only after locking the challan (§12), so the sums can't move
+// under its check (the architect on RAD-142).
 import { jobWorkReceiptLines, jobWorkReceipts, stockTx } from '@radcore/db/stock';
 import { dec, roundQty, type Quantity } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';

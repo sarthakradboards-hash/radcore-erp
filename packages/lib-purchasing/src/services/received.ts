@@ -2,7 +2,9 @@
 // receipts' lines, accepted and rejected alike, counted against what was ordered. A PO closes when every line has all
 // it ordered, and one its receipts closed opens again when a cancelled receipt brings a line back below that; one a
 // person closed short, with a reason, stays as it is (as ADR-007 §1 has sales orders do).
-import { goodsReceiptLines, goodsReceipts, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
+import {
+  goodsReceiptLines, goodsReceipts, purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx,
+} from '@radcore/db/purchasing';
 import { dec, type Decimal } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';
 import { and, eq, inArray, ne, sum } from 'drizzle-orm';
@@ -21,6 +23,16 @@ export async function receivedOf(ctx: Ctx, orderLineIds: readonly string[], o: {
     .groupBy(goodsReceiptLines.orderLineId);
   for (const r of rows) got.set(r.orderLineId, dec(r.qty ?? '0'));
   return got;
+}
+
+/** Which of these PO lines a bill not cancelled, draft or posted, names (RAD-138): such a line can't be removed or given
+ * another item (`po_billed`), since the bill line names it by a restrict foreign key. */
+export async function linesBilled(ctx: Ctx, orderLineIds: readonly string[]): Promise<Set<string>> {
+  if (orderLineIds.length === 0) return new Set();
+  const rows = await purchasingTx(ctx).select({ id: purchaseBillLines.poLineId }).from(purchaseBillLines)
+    .innerJoin(purchaseBills, eq(purchaseBills.id, purchaseBillLines.billId))
+    .where(and(inArray(purchaseBillLines.poLineId, [...new Set(orderLineIds)]), ne(purchaseBills.status, 'cancelled')));
+  return new Set(rows.flatMap((r) => (r.id === null ? [] : [r.id])));
 }
 
 /** Whether any receipt, draft or posted, names one of these PO lines: such a line can't be removed (`po_received`). */

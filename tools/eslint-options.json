@@ -6,6 +6,7 @@
       "@radcore/db/crm#leadEnquiries",
       "@radcore/db/crm#leads",
       "@radcore/db/purchasing#goodsReceipts",
+      "@radcore/db/purchasing#purchaseBills",
       "@radcore/db/purchasing#purchaseOrders",
       "@radcore/db/sales#creditNotes",
       "@radcore/db/sales#deliveries",

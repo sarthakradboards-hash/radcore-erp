@@ -42,8 +42,8 @@ export function lowestFrom(rows: readonly DateRow[], from: string) {
 export function estimatedIssue(on: Position, qty: Quantity, rate: string | undefined): Money {
   const q = dec(qty);
   if (rate === undefined) {
-    throw new AppError('no_estimate', 'There’s no rate to estimate the stock not yet received',
-      [{ path: ['qty'], code: 'no_estimate', message: `Only ${on.qty.toFixed()} on hand, and no earlier receipt here` }]);
+    throw new AppError('no_estimate', 'There’s no rate to estimate the stock not yet received: set the item’s purchase price, or receive it first',
+      [{ path: ['qty'], code: 'no_estimate', message: `Only ${on.qty.toFixed()} on hand, no earlier receipt here and no purchase price` }]);
   }
   const held = on.qty.gt(0) ? on.qty : dec('0');
   return roundMoney((on.qty.gt(0) ? on.value : dec('0')).plus(q.minus(held).times(dec(rate))));

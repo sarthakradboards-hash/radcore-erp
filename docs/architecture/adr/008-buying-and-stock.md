@@ -373,10 +373,10 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
   `supplier_returns` in its `records`, owned by `created_by`. `stock:read` gains the stock documents
   (`stock_transfers`, `stock_counts`, `stock_adjustments`, `job_work_challans`, `job_work_receipts`). The ledgers stay
   out of every `records` (ADR-006 §1).
-- **Who reads stock documents, on purpose:** `stock:read` is already granted to the counter and sales, for picking
-  stock, so they can read transfers, counts, adjustments and job work too. That's intended: where stock went is
-  useful to them. The documents' values are `cost()`, masked without `cost:read`. An admin who wants counts kept to
-  stores narrows `stock:read` on the roles screen.
+- **Who reads stock documents, on purpose:** `stock:read` is granted to the counter and sales, for picking stock, and to
+  operations, for picking what job work sends out (RAD-142), so they can read transfers, counts, adjustments and job
+  work too. That's intended: where stock went is useful to them. The documents' values are `cost()`, masked without
+  `cost:read`. An admin who wants counts kept to stores narrows `stock:read` on the roles screen.
 - **A purchasing document's own figures are content, not `cost()`** (RAD-136). A PO's, receipt's, bill's and
   return's rates, amounts and tax are what the document says: shown to whoever holds `purchasing:read`, and printed
   on it. `cost()` stays on what's worked out from them: an item's moving average, stock values and margins (ADR-001's
