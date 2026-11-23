@@ -219,7 +219,8 @@ describe.skipIf(!url || !superUrl)('goods receipts and QC', { timeout: 30_000 },
     const shapes = await run(async (ctx) => {
       const got = await receivedOf(ctx, [mine.lineId, po.lineId], { drafts: false });
       const named = await linesReceived(ctx, [mine.lineId, po.lineId]);
-      return { keys: [...got.keys()].toSorted(), values: [...got.values()].map((v) => v.toFixed(3)), named: [...named] };
+      const keys = [...got.keys()].toSorted();
+      return { keys, values: keys.map((k) => got.get(k)?.toFixed(3)), named: [...named] };
     }, own);
     expect([await draftAs('3'), await draftAs('2')]).toEqual(['over_ordered', 'ok']);
     expect(shapes).toEqual({ keys: [mine.lineId, po.lineId].toSorted(), values: [mine.lineId, po.lineId].toSorted()
