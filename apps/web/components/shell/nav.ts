@@ -68,12 +68,20 @@ export const PURCHASES_PAGES = [
   { href: '/purchases/approvals', label: 'purchases.nav.approvals', perm: 'purchasing:approve' },
 ] as const satisfies readonly NavPage[];
 
+/** The stock area's pages (RAD-144): counts first, as stores work them most; the queue for those who approve. */
+export const STOCK_PAGES = [
+  { href: '/stock/counts', label: 'stock.nav.counts', perm: 'stock:read' },
+  { href: '/stock/adjustments', label: 'stock.nav.adjustments', perm: 'stock:read' },
+  { href: '/stock/approvals', label: 'stock.nav.approvals', perm: 'stock:approve' },
+] as const satisfies readonly NavPage[];
+
 export const NAV: readonly NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
   // The owner holds audit:read alone (RAD-35), so Admin opens on the audit trail for them.
   { label: 'nav.sales', pages: SALES_PAGES, section: '/sales' },
   { label: 'nav.crm', pages: CRM_PAGES, section: '/crm' },
   { label: 'nav.purchases', pages: PURCHASES_PAGES, section: '/purchases' },
+  { label: 'nav.stock', pages: STOCK_PAGES, section: '/stock' },
   { label: 'nav.accounts', pages: ACCOUNTS_PAGES, section: '/accounts' },
   { label: 'nav.admin', pages: ADMIN_PAGES, section: '/admin' },
 ];

@@ -4,14 +4,16 @@
 // and never rewrites it. The Counter customer is the seeded `walk_in` party, sold from the test's list through the
 // sales.default_price_list setting on that transaction's ctx, so its shared row never changes.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, changeParty, openFinancialYear, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId, systemPartyId } from '@radcore/lib-accounts';
+import {
+  addParty, changeParty, JOURNAL_SERIES, openFinancialYear, RECEIPT_SERIES, recordPayment, setCompanyProfile, setCreditTerms, systemAccountId, systemPartyId,
+} from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, decideApproval, loadConfig, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, holdSeries, loadConfig, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addCreditNote, addDelivery, addInvoice, addOrder, askCreditNoteApproval, CARD_ACCOUNT, confirmOrderNow, creditNoteApprovalSpec, getCreditNoteById,
-  getDeliveryById, getInvoiceById, getOrderById, postDeliveryNow, postInvoiceNow, previewBill, quickBill,
+  addCreditNote, addDelivery, addInvoice, addOrder, askCreditNoteApproval, CARD_ACCOUNT, confirmOrderNow, creditNoteApprovalSpec, DELIVERY_SERIES,
+  getCreditNoteById, getDeliveryById, getInvoiceById, getOrderById, INVOICE_SERIES, ORDER_SERIES, postDeliveryNow, postInvoiceNow, previewBill, quickBill,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
@@ -187,6 +189,10 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
     const half = await setup({ rate: '345.24' });
     const partyId = await named('27', null);
     const out = await atCounter(at, async (ctx) => {
+      // It posts the advance (JV) before it confirms the order (SO): against ADR-006 §1 step 6's order, so it takes every
+      // series it draws up front, as a combined save does (books-turn.ts). Posted the other way round, it deadlocked
+      // with another file's confirm-then-post (Refs RAD-76; #366's and #352's CI).
+      await holdSeries(ctx, [ORDER_SERIES, JOURNAL_SERIES, RECEIPT_SERIES, DELIVERY_SERIES, INVOICE_SERIES]);
       // A delivery paid for in advance at its rounded 362.00, not yet invoiced: 362.25 delivered, 362.00 paid.
       await recordPayment(ctx, { kind: 'receipt', partyId, businessDate: DATE, amount: m('362'), accountId: await systemAccountId(ctx, 'cash') });
       const { id: orderId } = await addOrder(ctx, { partyId, businessDate: DATE, notes: null, lines: [{ itemId: at.itemId, qty: q('1'),

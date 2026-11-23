@@ -7,7 +7,7 @@ import { after, stockTransferLines, stockTransfers, stockTx } from '@radcore/db/
 import { holdPeriod, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney } from '@radcore/lib-common';
 import {
-  AppError, awaitingApproval, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, nextNumber,
+  AppError, approvedFor, awaitingApproval, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, nextNumber,
   principalId, requestApproval, withdrawPending, type ApprovalSpec, type Ctx,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, or } from 'drizzle-orm';
@@ -214,10 +214,12 @@ export async function getTransferById(ctx: Ctx, { id }: In<typeof getStockTransf
   const lines = await stockTx(ctx).select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id)).orderBy(asc(stockTransferLines.lineNo));
   const [labels, names, pending] = [await itemLabels(ctx, lines.map((l) => l.itemId)), await placeNames(ctx, [t.fromId, t.toId]),
     t.status === 'draft' && (await awaitingApproval(ctx, transferApprovalSpec, [id])).has(id)];
+  // A posted one shows the approval it was posted by, if any (auditor-2 on #339).
+  const approved = t.status !== 'draft' && (await approvedFor(ctx, transferApprovalSpec, [id])).has(id);
   const batchNos = await batchNumbers(ctx, lines.flatMap((l) => picksOf<string>(l.picks).batches.flatMap((b) => (b.batchId === null ? [] : [b.batchId]))));
   return { id: t.id, number: t.number, fromId: t.fromId, fromName: names.get(t.fromId) ?? '', toId: t.toId, toName: names.get(t.toId) ?? '',
     businessDate: t.businessDate, status: t.status as Status, reason: t.reason,
-    approval: t.status !== 'draft' ? 'none' : pending ? 'pending' : 'none',
+    approval: approved ? 'approved' : pending ? 'pending' : 'none',
     lines: lines.map((l) => {
       const picks = picksOf<string>(l.picks);
       return { id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: labels.get(l.itemId)?.sku ?? '', name: labels.get(l.itemId)?.name ?? '',

@@ -1,12 +1,14 @@
-// lib-purchasing's routes (ADR-001 §6): declarations only. Purchase orders, their approval and the PO limits (RAD-136).
+// lib-purchasing's routes (ADR-001 §6): declarations only. Purchase orders, their approval and the PO limits (RAD-136);
+// goods receipts (RAD-137).
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
-  addOrder, cancelOrder, changeOrder, closeOrder, dropOrder, getOrderById, listOrderLimits, listOrdersPage, orderApproval, placeOrder,
-  setOrderLimit,
+  addOrder, addReceipt, cancelOrder, cancelReceiptNow, changeOrder, changeReceipt, closeOrder, dropOrder, dropReceipt, getOrderById,
+  getReceiptById, listOrderLimits, listOrdersPage, listReceiptsPage, orderApproval, placeOrder, postReceipt, setOrderLimit,
 } from '@radcore/lib-purchasing';
 import {
-  cancelPurchaseOrder, closePurchaseOrder, createPurchaseOrder, deletePurchaseOrder, getPurchaseOrder, listPurchaseOrderLimits,
-  listPurchaseOrders, placePurchaseOrder, purchaseOrderApproval, setPurchaseOrderLimit, updatePurchaseOrder,
+  cancelGoodsReceipt, cancelPurchaseOrder, closePurchaseOrder, createGoodsReceipt, createPurchaseOrder, deleteGoodsReceipt, deletePurchaseOrder,
+  getGoodsReceipt, getPurchaseOrder, listGoodsReceipts, listPurchaseOrderLimits, listPurchaseOrders, placePurchaseOrder, postGoodsReceipt,
+  purchaseOrderApproval, setPurchaseOrderLimit, updateGoodsReceipt, updatePurchaseOrder,
 } from '@radcore/lib-purchasing/contract';
 
 export default [
@@ -21,4 +23,11 @@ export default [
   defineRoute(cancelPurchaseOrder, cancelOrder),
   defineRoute(listPurchaseOrderLimits, listOrderLimits),
   defineRoute(setPurchaseOrderLimit, setOrderLimit),
+  defineRoute(listGoodsReceipts, listReceiptsPage),
+  defineRoute(getGoodsReceipt, getReceiptById),
+  defineRoute(createGoodsReceipt, addReceipt),
+  defineRoute(updateGoodsReceipt, changeReceipt),
+  defineRoute(deleteGoodsReceipt, dropReceipt),
+  defineRoute(postGoodsReceipt, postReceipt),
+  defineRoute(cancelGoodsReceipt, cancelReceiptNow),
 ];
