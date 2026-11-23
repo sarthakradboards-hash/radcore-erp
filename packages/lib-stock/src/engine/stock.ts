@@ -67,6 +67,9 @@ export type StockPosting = {
   readonly sourceTable: string;
   readonly sourceId: string;
   readonly businessDate: string;
+  /** Whose batches the goods coming in are named in (ADR-006 §4a, RC-028): a goods receipt's supplier, so another
+   * supplier's same number is another batch. Null (the default) for goods that came from no supplier. */
+  readonly supplierId?: string | null;
   readonly ins?: readonly StockIn[];
   readonly outs?: readonly StockOut[];
   readonly transfers?: readonly StockTransfer[];
@@ -109,9 +112,9 @@ export async function holdStock(ctx: Ctx, lines: readonly { itemId: string; loca
   await lockUnits(ctx, lines.flatMap((l) => (l.serials ?? []).map((serialNo) => ({ itemId: l.itemId, serialNo }))));
 }
 
-/** The new batches a posting's goods-in name, created after the position locks in `(item_id, batch_key)` order
- * (§4a; every supplier is null until parties land), and every batch's id, by item and key. */
-async function batchIds(ctx: Ctx, ins: readonly StockIn[]): Promise<Map<string, string>> {
+/** The new batches a posting's goods-in name, its supplier's (or no supplier's), created after the position locks in
+ * `(item_id, batch_key)` order (§4a: one posting names one supplier), and every batch's id, by item and key. */
+async function batchIds(ctx: Ctx, ins: readonly StockIn[], supplierId: string | null): Promise<Map<string, string>> {
   const wanted = [...new Map(ins.flatMap((l) => l.batches.flatMap((b) => {
     if (!('batchNo' in b) || b.batchNo === null) return [];
     const k = batchKey(b.batchNo);
@@ -121,9 +124,10 @@ async function batchIds(ctx: Ctx, ins: readonly StockIn[]): Promise<Map<string, 
   const tx = stockTx(ctx);
   // One at a time, in order, so two saves bringing the same new lots wait on their unique keys in the same order.
   for (const w of wanted) {
-    await tx.insert(batches).values({ itemId: w.itemId, batchNo: w.batchNo }).onConflictDoNothing();
+    await tx.insert(batches).values({ itemId: w.itemId, supplierId, batchNo: w.batchNo }).onConflictDoNothing();
     const [row] = await tx.select({ id: batches.id }).from(batches)
-      .where(and(eq(batches.itemId, w.itemId), isNull(batches.supplierId), eq(batches.batchKey, w.batchKey)));
+      .where(and(eq(batches.itemId, w.itemId), supplierId === null ? isNull(batches.supplierId) : eq(batches.supplierId, supplierId),
+        eq(batches.batchKey, w.batchKey)));
     if (row === undefined) throw new Error(`batch ${w.batchKey} wasn't found after its insert`);
     ids.set(`${w.itemId} ${w.batchKey}`, row.id);
   }
@@ -194,7 +198,7 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const negativeMode = ctx.settings.get(NEGATIVE_STOCK);
   await lockPositions(ctx, [...ins.map((l) => [l.itemId, l.locationId] as const), ...outs.map((l) => [l.itemId, l.locationId] as const),
     ...transfers.flatMap((t) => [[t.itemId, t.from] as const, [t.itemId, t.to] as const])]);
-  const ids = await batchIds(ctx, ins);
+  const ids = await batchIds(ctx, ins, p.supplierId ?? null);
   // §1's step 4: the units the lines name, after the positions and batches, with the units still promised to the order
   // lines this posting finishes (a booking's, RC-122), in one id-ordered lock.
   const named = [...ins, ...outs, ...transfers].flatMap((l) => (l.units ?? []).map((u) => ({ itemId: l.itemId, serialNo: u.serialNo })));

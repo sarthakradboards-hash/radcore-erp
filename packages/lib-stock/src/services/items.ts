@@ -9,6 +9,7 @@ import type {
   attachItemPicture, createItem, createItemCategory, getItem, listItemCategories, listItems, listUnitsOfMeasure, removeItemPicture,
   renameItemCategory, updateItem,
 } from '../contract.ts';
+import { serialKey } from '../engine/units.ts';
 import { quantityFits } from '../rules/quantity.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -137,6 +138,24 @@ export async function itemLabels(ctx: Ctx, ids: readonly string[]):
     active: items.active }).from(items).where(inArray(items.id, [...ids]));
   // `active` for a document that refuses a switched-off item (a purchase order, RAD-136).
   return new Map(rows.map((r) => [r.id, { sku: r.sku, name: r.name, unit: r.unit, hsn: r.hsn, active: r.active }]));
+}
+
+/** Each item's flags for goods coming in (a goods receipt, ADR-008 §6): whether its units are named by serial, and
+ * whether each keeps a chassis number (F22). An id that names no item is left out. */
+export async function itemFlags(ctx: Ctx, ids: readonly string[]): Promise<Map<string, { serialised: boolean; hasChassis: boolean }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ id: items.id, serialised: items.serialised, hasChassis: items.hasChassis }).from(items)
+    .where(inArray(items.id, [...ids]));
+  return new Map(rows.map((r) => [r.id, { serialised: r.serialised, hasChassis: r.hasChassis }]));
+}
+
+/** Who holds each of an item's serials now (ADR-006 §5): `ours`, `customer` or `gone`, keyed by serialKey; a serial
+ * never seen is left out. One read, for a receipt's serial_sold and serial_in_stock before the database's RA008. */
+export async function unitOwners(ctx: Ctx, itemId: string, serials: readonly string[]): Promise<Map<string, string>> {
+  if (serials.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ key: units.serialKey, ownership: units.ownership }).from(units)
+    .where(and(eq(units.itemId, itemId), inArray(units.serialKey, serials.map(serialKey))));
+  return new Map(rows.map((r) => [r.key, r.ownership]));
 }
 
 /** Each batch's number, by id, for another library showing the batches its lines picked (lib-sales' deliveries and

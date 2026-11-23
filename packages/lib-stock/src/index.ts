@@ -1,7 +1,7 @@
 // lib-stock's entry (ADR-001 §2): its services, for the api's route file and for other libraries.
 export {
-  addCategory, addItem, addItemPicture, batchNumbers, changeItem, checkQuantity, dropItemPicture, getItemById, itemLabels, listCategories, listItemsPage, purchasePrices,
-  listUnits, renameCategory,
+  addCategory, addItem, addItemPicture, batchNumbers, changeItem, checkQuantity, dropItemPicture, getItemById, itemFlags, itemLabels, listCategories,
+  listItemsPage, purchasePrices, listUnits, renameCategory, unitOwners,
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
 export { onHand } from './services/on-hand.ts';
