@@ -24,7 +24,7 @@ import type {
 import { otherLiveBooking } from './booking-holds.ts';
 import { bookable } from './booking-rules.ts';
 import { checkDate } from './document-rules.ts';
-import { today } from './document-lines.ts';
+import { labelled, today } from './document-lines.ts';
 import { partyNames } from './party-names.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -77,7 +77,8 @@ export async function listBookingsPage(ctx: Ctx, input: In<typeof listBookings>)
   const names = await partyNames(ctx, page.map((r) => r.partyId));
   const last = page.at(-1);
   return {
-    items: page.map((r) => ({ ...r, status: r.status as Status, partyName: names.get(r.partyId) ?? '' })),
+    // Each row's item by its SKU and name (labelled, as documents' lines are), so a booking screen needs no getItem.
+    items: (await labelled(ctx, page)).map((r) => ({ ...r, status: r.status as Status, partyName: names.get(r.partyId) ?? '' })),
     next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, id: last.id }) : null,
   };
 }
@@ -97,7 +98,9 @@ export async function getBookingById(ctx: Ctx, { id }: In<typeof getBooking>): P
   const names = await partyNames(ctx, [b.partyId]);
   // The unit as it stands, so a damaged one booked under stock.sell_damaged_units shows as damaged.
   const { unit } = await unitFor(ctx, b.itemId, b.serialNo);
-  return { ...b, partyName: names.get(b.partyId) ?? '', advance: { taken, left }, unitCondition: unit?.condition ?? null };
+  const [labels] = await labelled(ctx, [{ itemId: b.itemId }]);
+  return { ...b, sku: labels?.sku ?? '', name: labels?.name ?? '', partyName: names.get(b.partyId) ?? '', advance: { taken, left },
+    unitCondition: unit?.condition ?? null };
 }
 
 /** PUT /sales/bookings/:id/checklist (bookings:write): a delivered booking's, saved whole; each file must be a ready
