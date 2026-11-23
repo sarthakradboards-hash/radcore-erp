@@ -172,6 +172,16 @@ export async function batchNumbers(ctx: Ctx, ids: readonly string[]): Promise<Ma
   return new Map(rows.map((r) => [r.id, r.batchNo]));
 }
 
+/** Each batch's number, item and supplier, by id, for a supplier return checking it sends back that supplier's own
+ * batches of the item (lib-purchasing, RAD-140). An id that names no batch is left out. */
+export async function batchOwners(ctx: Ctx, ids: readonly string[]):
+  Promise<Map<string, { batchNo: string; itemId: string; supplierId: string | null }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ id: batches.id, batchNo: batches.batchNo, itemId: batches.itemId, supplierId: batches.supplierId })
+    .from(batches).where(inArray(batches.id, [...ids]));
+  return new Map(rows.map(({ id, ...b }) => [id, b]));
+}
+
 /** Each item's purchase price, by id, for a sale's below-cost check when nothing is on hand (RAD-111; lib-sales'
  * checkSale). One read, no pictures; an id that names no item is left out. A cost (ADR-001 §7a): for services only,
  * so a route of its own would need cost:read. */
