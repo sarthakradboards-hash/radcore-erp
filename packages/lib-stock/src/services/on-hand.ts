@@ -19,7 +19,7 @@ const PICKABLE = ['new', 'demo', 'used'] as const;
 const conditionOf = z.enum(UNIT_CONDITIONS);
 const BACKSLASH = String.fromCharCode(92);
 /** A LIKE pattern for keys starting with `key`, its % and _ taken literally. */
-const prefix = (key: string) => `${[...key].map((c) => ('%_'.includes(c) || c === BACKSLASH ? BACKSLASH + c : c)).join('')}%`;
+export const prefix = (key: string) => `${[...key].map((c) => ('%_'.includes(c) || c === BACKSLASH ? BACKSLASH + c : c)).join('')}%`;
 
 /** GET /stock/on-hand. */
 export async function onHand(ctx: Ctx, input: In<typeof getOnHand>): Promise<Out<typeof getOnHand>> {

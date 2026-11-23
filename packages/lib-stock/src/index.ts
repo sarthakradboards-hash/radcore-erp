@@ -5,6 +5,7 @@ export {
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
 export { onHand } from './services/on-hand.ts';
+export { getUnitById, listPositions, listUnitsPage } from './services/stock-reads.ts';
 export { SELL_DAMAGED_UNITS } from './engine/units.ts';
 export { checkBooks } from './services/books-check.ts';
 export { averageCost } from './services/cost.ts';
