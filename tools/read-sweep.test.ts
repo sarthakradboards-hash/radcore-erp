@@ -19,7 +19,7 @@ import { PERMISSIONS } from '../packages/lib-platform/src/permissions.ts';
 import {
   addBill, addOrder as addPurchaseOrder, addReceipt as addGoodsReceipt, cancelReceiptNow as cancelGoodsReceipt, getOrderById as getPurchaseOrder, getReceiptById,
   placeOrder,
-  postReceipt,
+  postReceipt, addReturn as addSupplierReturn, postReturn as postSupplierReturn,
 } from '@radcore/lib-purchasing';
 import {
   addCreditNote, addDeliveryReturn, addInvoice, addQuote, askCreditNoteApproval, getDeliveryById, getInvoiceById,
@@ -293,6 +293,16 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
         supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: m('210'), fileId: null, notes: null,
         lines: [{ kind: 'goods', poLineId: lineId, receiptLineId: null, qty: q('2'), rate: r('100') }] }));
       add(['GET /purchasing/bills/:id'], bill.id);
+      // The posted receipt's reject (batch L2) back to the supplier, posted.
+      const rejected = (await su.query<{ id: string }>("select id from radcore.batches where item_id = $1 and batch_no = 'L2'", [base.plain])).rows[0]?.id ?? '';
+      const receiptLine = (await run((ctx) => getReceiptById(ctx, { id: posted.id }))).lines[0]?.id ?? '';
+      const sentBack = await run(async (ctx) => {
+        const { id } = await addSupplierReturn(ctx, { supplierId: base.supplier, businessDate: DATE, locationId: base.rejects, reason: 'Torn bag',
+          notes: null, lines: [{ receiptLineId: receiptLine, qty: q('1'), batches: [{ batchId: rejected, qty: q('1') }], serials: [] }] });
+        await postSupplierReturn(ctx, { id });
+        return id;
+      });
+      add(['GET /purchasing/returns/:id', 'GET /purchasing/returns/:id/pdf'], sentBack);
     });
 
     // Job work: a challan to the job worker, and a receipt bringing one back.
