@@ -86,7 +86,7 @@ export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id?: strin
   // An ignored source's enquiry is stored and set aside: no lead, no join to the number's lead, no one told (RC-212).
   if (source.ignored) {
     await crmTx(ctx).insert(leadSetAsides).values({ sourceId: source.id, campaignId: source.campaignId, phone, name: c.name ?? null,
-      email: c.email === undefined ? null : normaliseEmail(c.email), message, receivedAt });
+      email: c.email === undefined ? null : normaliseEmail(c.email), message, receivedAt: receivedAt.toISOString() });
     return { repeat: false };
   }
   const on = indiaDate(receivedAt);
@@ -135,8 +135,9 @@ export async function leadById(ctx: Ctx, { id }: In<typeof getLead>): Promise<Ou
   const done = await tx.select({ kind: leadActivities.kind, stage: leadActivities.stage, note: leadActivities.note,
     at: leadActivities.createdAt, by: leadActivities.createdBy }).from(leadActivities).where(eq(leadActivities.leadId, id))
     .orderBy(desc(leadActivities.createdAt), desc(leadActivities.id));
-  const who = await principalsOf(ctx, done.map((a) => a.by));
-  return { ...lead, stage: lead.stage as Stage, enquiries: enquiries.map((e) => ({ source: e.source as Capture['source'], message: e.message,
+  // The owner as a person, by name, read with the activities' authors (RAD-109).
+  const who = await principalsOf(ctx, [...done.map((a) => a.by), ...(lead.owner === null ? [] : [lead.owner])]);
+  return { ...lead, owner: lead.owner === null ? null : who(lead.owner), stage: lead.stage as Stage, enquiries: enquiries.map((e) => ({ source: e.source as Capture['source'], message: e.message,
     receivedAt: e.receivedAt.toISOString() })),
     activities: done.map((a) => ({ kind: a.kind as 'follow_up' | 'quick_reply' | 'stage', stage: a.stage as Stage | null, note: a.note,
       at: a.at.toISOString(), by: who(a.by) })) };

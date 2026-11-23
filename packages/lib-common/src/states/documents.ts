@@ -13,6 +13,10 @@ export const STATE_TRANSITIONS: Readonly<Record<string, readonly (readonly [from
   stock_transfers: [['draft', 'posted'], ['posted', 'cancelled']],
   stock_counts: [['draft', 'posted'], ['posted', 'cancelled']],
   stock_adjustments: [['draft', 'posted'], ['posted', 'cancelled']],
+  // A purchase order posts nothing, so no guard reads these; its service moves it (ADR-008 §2). One its receipts closed
+  // opens again when a cancelled receipt brings a line back below what was ordered (RAD-137, as sales orders do).
+  purchase_orders: [['draft', 'placed'], ['placed', 'closed'], ['closed', 'placed'], ['draft', 'cancelled'], ['placed', 'cancelled']],
+  goods_receipts: [['draft', 'posted'], ['posted', 'cancelled']],
 };
 
 /** A quote's statuses (ADR-007 §1): it posts nothing, so its service moves it and a CHECK holds the values. */

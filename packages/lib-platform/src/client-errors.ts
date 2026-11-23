@@ -14,18 +14,19 @@ import { defineRoute } from './route.ts';
 
 /** The web app's pages as Next names them, route groups left out; `[x]` is one path segment. tools/client-errors
  * .test.ts holds this list to apps/web/app's page files, so a new page fails there until it has its line. */
-export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accounts/chart', '/accounts/journal',
-  '/accounts/journal/[id]', '/accounts/journal/new', '/admin/audit', '/admin/company', '/admin/discount-limits', '/admin/gst-rates',
+export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accounts/chart', '/accounts/collect', '/accounts/collect/[partyId]', '/accounts/journal',
+  '/accounts/journal/[id]', '/accounts/journal/new', '/accounts/payments/new', '/admin/audit', '/admin/company', '/admin/discount-limits', '/admin/gst-rates',
   '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/number-series', '/admin/parties', '/admin/parties/[id]',
   '/admin/permissions', '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
-  '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/crm/ad-spend', '/crm/campaigns', '/crm/leads', '/crm/leads/[id]', '/crm/leads/new', '/crm/lists', '/crm/set-aside', '/crm/sources', '/invite', '/kit', '/l/invoice', '/password-reset',
+  '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/crm/ad-spend', '/crm/board', '/crm/campaigns', '/crm/leads', '/crm/leads/[id]', '/crm/leads/new', '/crm/lists', '/crm/set-aside', '/crm/sources', '/invite', '/kit', '/l/invoice', '/password-reset',
   '/password-reset/new', '/sales/approvals', '/sales/bookings', '/sales/bookings/[id]', '/sales/bookings/new', '/sales/credit-notes',
   '/sales/credit-notes/[id]', '/sales/credit-notes/new', '/sales/deliveries', '/sales/deliveries/[id]',
   '/sales/deliveries/[id]/edit', '/sales/deliveries/new', '/sales/delivery-returns',
   '/sales/delivery-returns/[id]', '/sales/delivery-returns/[id]/edit', '/sales/delivery-returns/new', '/sales/invoices', '/sales/invoices/[id]', '/sales/invoices/[id]/edit', '/sales/invoices/new',
   '/sales/orders', '/sales/orders/[id]', '/sales/orders/[id]/edit', '/sales/orders/new', '/sales/quick-bill', '/sales/quotes', '/sales/quotes/[id]',
   '/sales/quotes/[id]/edit', '/sales/quotes/new', '/sales/test-rides', '/sales/test-rides/new',
-  '/sign-in'] as const;
+  '/sign-in', '/stock/adjustments', '/stock/adjustments/[id]', '/stock/adjustments/[id]/edit', '/stock/adjustments/new', '/stock/approvals',
+  '/stock/counts', '/stock/counts/[id]', '/stock/counts/[id]/edit', '/stock/counts/new'] as const;
 
 /** The error classes an alert may name; any other is counted as `Error`. */
 export const ERROR_CLASSES = ['TypeError', 'ReferenceError', 'RangeError', 'SyntaxError', 'ChunkLoadError'] as const;
