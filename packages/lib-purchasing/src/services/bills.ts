@@ -100,6 +100,21 @@ async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLine>> {
   return po;
 }
 
+const poLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'goods' ? [l.poLineId] : []));
+
+/** The POs these PO lines are on, locked FOR SHARE in id order, before the bill (ADR-008 §12: POs, then receipts, then
+ * bills). A placed PO's change holds its row FOR UPDATE while it checks which lines bills name (po_billed), so a draft
+ * naming its lines waits for it, and it for the draft: never both. Only POs the principal may read are taken. */
+async function holdOrders(ctx: Ctx, poLineIds: readonly string[]): Promise<void> {
+  if (poLineIds.length === 0) return;
+  const tx = purchasingTx(ctx);
+  const ids = [...new Set((await tx.select({ id: purchaseOrderLines.orderId }).from(purchaseOrderLines)
+    .where(inArray(purchaseOrderLines.id, [...new Set(poLineIds)]))).map((o) => o.id))];
+  if (ids.length === 0) return;
+  await tx.select({ id: purchaseOrders.id }).from(purchaseOrders).where(and(inArray(purchaseOrders.id, ids),
+    listScope(ctx, 'purchasing:read', purchaseOrders.createdBy))).orderBy(asc(purchaseOrders.id)).for('share');
+}
+
 /** Writes a draft's lines afresh, numbered from 1 in the order sent; a goods line takes its PO line's item. */
 async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], po: ReadonlyMap<string, PoLine>): Promise<void> {
   const tx = purchasingTx(ctx);
@@ -114,6 +129,7 @@ const header = (b: BillIn) => ({ partyId: b.supplierId, businessDate: b.business
 
 /** POST /purchasing/bills (bills:write): a new draft. */
 export async function addBill(ctx: Ctx, input: In<typeof createPurchaseBill>): Promise<Out<typeof createPurchaseBill>> {
+  await holdOrders(ctx, poLineIdsOf(input.lines));
   const po = await checkDraft(ctx, input);
   const [row] = await purchasingTx(ctx).insert(purchaseBills).values(header(input)).returning({ id: purchaseBills.id });
   if (row === undefined) throw new Error('the purchase bill was not stored');
@@ -123,6 +139,11 @@ export async function addBill(ctx: Ctx, input: In<typeof createPurchaseBill>): P
 
 /** PUT /purchasing/bills/:id (bills:write): a draft rewritten whole. */
 export async function changeBill(ctx: Ctx, { id, ...input }: In<typeof updatePurchaseBill>): Promise<Out<typeof updatePurchaseBill>> {
+  // §12: the draft read unlocked to learn the POs it names now, then those and the new ones locked, then the bill.
+  const seen = await billOf(ctx, id, 'bills:write');
+  if (seen.status !== 'draft') throw wrongStatus(seen.status, 'changed');
+  const named = await purchasingTx(ctx).select({ id: purchaseBillLines.poLineId }).from(purchaseBillLines).where(eq(purchaseBillLines.billId, id));
+  await holdOrders(ctx, [...named.flatMap((l) => (l.id === null ? [] : [l.id])), ...poLineIdsOf(input.lines)]);
   const b = await billOf(ctx, id, 'bills:write', true);
   if (b.status !== 'draft') throw wrongStatus(b.status, 'changed');
   const po = await checkDraft(ctx, input);

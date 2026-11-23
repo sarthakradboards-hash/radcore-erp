@@ -186,6 +186,28 @@ describe.skipIf(!url || !superUrl)('purchase bills as drafts', () => {
 
   // A bill line names its PO line by a restrict foreign key, so a placed PO's change that would drop that line, or give
   // it another item, is refused by name (RAD-138, after RAD-137's in-place PO line updates); lowering it saves.
+  // ADR-008 §12 (the auditor on #370): a bill's save locks the POs it names before itself, so a PO change holding its row
+  // (FOR UPDATE, while it checks po_billed) and a bill draft naming its lines take turns, and never both commit unseen.
+  it('waits for a PO change holding the PO before saving a draft that names its lines', async () => {
+    const at = await setup();
+    const holder = new pg.Client({ connectionString: superUrl });
+    await holder.connect();
+    try {
+      await holder.query('begin');
+      await holder.query('select id from radcore.purchase_orders where id = $1 for update', [at.orderId]);
+      const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid ?? 0;
+      const saving = run((ctx) => addBill(ctx, bill(at, { lines: [goods(at.poLineId)] })));
+      // The save waits on the held PO: a row lock's wait shows as one on its holder.
+      const waiting = async () => (await su.query<{ n: number }>(`select count(*)::int as n from pg_stat_activity
+        where $1 = any(pg_blocking_pids(pid))`, [pid])).rows[0]?.n ?? 0;
+      while ((await waiting()) === 0);
+      await holder.query('commit');
+      expect(await code(saving)).toBe('ok');
+    } finally {
+      await holder.end();
+    }
+  });
+
   it('keeps a PO line a bill names: not removed nor given another item (po_billed)', async () => {
     const at = await setup();
     const second = await setup();
