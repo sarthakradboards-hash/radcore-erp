@@ -60,7 +60,7 @@ export { claimSavedOnce, cleanSavedOnce, SAVED_ONCE_KEEP_MS, savedOnceCleanup, t
 export { FILE_KINDS, SERVER_FILE_KINDS, type FileKind, type ServerFileKind } from './files/kinds.ts';
 export { attachment, createFileStore, UploadRefused, type FileStore } from './files/store.ts';
 export {
-  checkUpload, deliveryNoteFileService, deliveryPhotoFileService, fileCheck, importFileService, itemPictureFileService, photoFileService, readyFile, recordFileCheck, resumeFileService,
+  checkUpload, deliveryNoteFileService, deliveryPhotoFileService, fileCheck, importFileService, itemPictureFileService, photoFileService, purchaseBillFileService, readyFile, recordFileCheck, resumeFileService,
   statementFileService, viewLinks,
 } from './files/service.ts';
 export { cleanOutbox, outboxCleanup } from './outbox.ts';

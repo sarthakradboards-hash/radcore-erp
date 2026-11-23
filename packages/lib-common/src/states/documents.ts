@@ -17,6 +17,7 @@ export const STATE_TRANSITIONS: Readonly<Record<string, readonly (readonly [from
   // opens again when a cancelled receipt brings a line back below what was ordered (RAD-137, as sales orders do).
   purchase_orders: [['draft', 'placed'], ['placed', 'closed'], ['closed', 'placed'], ['draft', 'cancelled'], ['placed', 'cancelled']],
   goods_receipts: [['draft', 'posted'], ['posted', 'cancelled']],
+  purchase_bills: [['draft', 'posted'], ['posted', 'cancelled']],
 };
 
 /** A quote's statuses (ADR-007 §1): it posts nothing, so its service moves it and a CHECK holds the values. */
@@ -29,3 +30,6 @@ export type SalesOrderStatus = (typeof SALES_ORDER_STATUSES)[number];
  * with a reason, and cancelled only while nothing has been received against it. */
 export const PURCHASE_ORDER_STATUSES = ['draft', 'placed', 'closed', 'cancelled'] as const;
 export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
+/** A purchase bill's statuses (ADR-008 §1, M4-03). */
+export const PURCHASE_BILL_STATUSES = ['draft', 'posted', 'cancelled'] as const;
+export type PurchaseBillStatus = (typeof PURCHASE_BILL_STATUSES)[number];
