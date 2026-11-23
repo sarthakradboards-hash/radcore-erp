@@ -285,7 +285,8 @@ export async function completeBillNow(ctx: Ctx, input: In<typeof completeQuickBi
   // ADR-006 §1: the period first, then the order, locked, in the documents step; its hold with it.
   await holdPeriod(ctx, businessDate);
   const [order] = await salesTx(ctx).select({ partyId: salesOrders.partyId, businessDate: salesOrders.businessDate, status: salesOrders.status,
-    createdBy: salesOrders.createdBy, approved: salesOrders.overrideVersion }).from(salesOrders).where(eq(salesOrders.id, input.orderId))
+    createdBy: salesOrders.createdBy, approved: salesOrders.overrideVersion, approvedAfter: salesOrders.overrideAfter }).from(salesOrders)
+    .where(eq(salesOrders.id, input.orderId))
     .for('update');
   if (order === undefined) throw new AppError('not_found', 'There is no such order');
   ctx.see('invoices:write', { owner: order.createdBy });
@@ -297,9 +298,10 @@ export async function completeBillNow(ctx: Ctx, input: In<typeof completeQuickBi
   const items = await salesTx(ctx).select({ itemId: salesOrderLines.itemId, lineNo: salesOrderLines.lineNo }).from(salesOrderLines)
     .where(eq(salesOrderLines.orderId, input.orderId));
   await holdBill(ctx, order.partyId, businessDate, hold.locationId, items.map((l) => ({ itemId: l.itemId, serials: picked.get(l.lineNo) ?? [] })));
-  // The approval holds only for what was owed when it was given: a balance grown since is asked again (the architect).
+  // The approval holds only for what was owed when it was given, on its order (the architect on RAD-135): a balance grown
+  // since is asked again, before anything is written.
   const owed = await heldExposure(ctx, input.orderId);
-  if (hold.approvedAfter !== null && owed !== null && dec(owed).gt(hold.approvedAfter)) {
+  if (order.approvedAfter !== null && owed !== null && dec(owed).gt(order.approvedAfter)) {
     throw new AppError('version_changed', 'The party owes more than when this bill was approved: ask for its approval again');
   }
   // The amounts are the hold's, never new ones; each card payment takes its code, in order (Q4's rules).
@@ -320,7 +322,8 @@ export async function completeBillNow(ctx: Ctx, input: In<typeof completeQuickBi
   }
   // What the approval covers, read as confirming will judge it, with the receipts taken: its kinds, and what's owed.
   const now = await orderCheckNow(ctx, input.orderId, order);
-  const through: ApprovedThrough = { orderId: input.orderId, kinds: now.issues.map((i) => i.code), after: now.credit.after };
+  // Its delivery and invoice go through on no more than the order's approved figure (the architect on RAD-135).
+  const through: ApprovedThrough = { orderId: input.orderId, kinds: now.issues.map((i) => i.code), after: order.approvedAfter ?? now.credit.after };
   const confirmed = await confirmOrderNow(ctx, { id: input.orderId });
   const picks = new Map(hold.picks.map((p) => [p.lineNo, p]));
   const lines = (await getOrderById(ctx, { id: input.orderId })).lines.map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate,
