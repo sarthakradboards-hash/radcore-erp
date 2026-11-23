@@ -13,13 +13,15 @@ const healthy: BooksFigures = {
   ledger: [{ itemId: A, locationId: STORES, qty: '5', value: '1000.00' }, { itemId: A, locationId: DEMO, qty: '1', value: '200.00' }],
   current: [{ itemId: A, locationId: STORES, qty: '5', value: '1000.00' }, { itemId: A, locationId: DEMO, qty: '1', value: '200.00' }],
   batches: [{ itemId: A, locationId: STORES, qty: '5' }, { itemId: A, locationId: DEMO, qty: '1' }],
+  grni: { books: '62000.00', lines: [{ itemId: A, receipt: 'GRN/26-27/00001', accrued: '186000.00', open: '62000.00' },
+    { itemId: A, receipt: 'GRN/26-27/00002', accrued: '500.00', open: '0.00' }] },
 };
 const checks = (f: Partial<BooksFigures>) => booksProblems({ ...healthy, ...f }).map((p) => [p.check, p.locationId]);
 
 describe('the books check’s comparison', () => {
   it('finds nothing wrong with books that agree', () => {
     expect(booksProblems(healthy)).toEqual([]);
-    expect(booksProblems({ trial: { debit: '0', credit: '0.00' }, books: [], ledger: [], current: [], batches: [] })).toEqual([]);
+    expect(booksProblems({ trial: { debit: '0', credit: '0.00' }, books: [], ledger: [], current: [], batches: [], grni: { books: '0', lines: [] } })).toEqual([]);
   });
 
   it('finds debits that differ from credits', () => {
@@ -46,9 +48,25 @@ describe('the books check’s comparison', () => {
     expect(checks({ batches: [{ itemId: A, locationId: STORES, qty: '5' }] })).toEqual([['batches', DEMO]]);
   });
 
+  it('finds Goods Received Not Billed whose open receipt lines don’t add up to the books (ADR-006 §7)', () => {
+    expect(checks({ grni: { books: '62000.01', lines: healthy.grni.lines } })).toEqual([['grni', null]]);
+    expect(checks({ grni: { books: '0', lines: [] } })).toEqual([]);
+  });
+
+  it('finds a receipt line cleared past what it accrued, or left with more open than it accrued', () => {
+    const line = (open: string) => ({ itemId: A, receipt: 'GRN/26-27/00003', accrued: '100.00', open });
+    expect(checks({ grni: { books: '-0.01', lines: [line('-0.01')] } })).toEqual([['grni_line', null]]);
+    expect(checks({ grni: { books: '100.01', lines: [line('100.01')] } })).toEqual([['grni_line', null]]);
+    expect(checks({ grni: { books: '100', lines: [line('100.00')] } })).toEqual([]);
+  });
+
   it('says what it found in words a person can act on', () => {
     const [problem] = booksProblems({ ...healthy, books: [{ itemId: A, locationId: STORES, value: '1000.00' }] });
     expect(problem).toEqual({ check: 'stock_value', itemId: A, locationId: DEMO,
       message: 'Stock in Hand shows 0.00 for this item and place, the stock ledger 200.00' });
+    expect(booksProblems({ ...healthy, grni: { books: '62000.00', lines: [{ itemId: A, receipt: 'GRN/26-27/00001', accrued: '100.00',
+      open: '-5' }] } }).map((p) => p.message)).toEqual([
+      'A line of GRN/26-27/00001 accrued 100.00 to Goods Received Not Billed, but bills and returns have cleared it to -5.00',
+      'Goods Received Not Billed shows 62000.00, but the receipt lines left to bill come to -5.00']);
   });
 });
