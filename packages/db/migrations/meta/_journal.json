@@ -638,6 +638,13 @@
       "when": 1795451589214,
       "tag": "0090_bill_receipt_lines",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1795454092905,
+      "tag": "0091_debit_notes",
+      "breakpoints": true
     }
   ]
 }
