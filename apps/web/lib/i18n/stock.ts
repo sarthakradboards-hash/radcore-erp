@@ -171,7 +171,7 @@ export const stock = {
   'stock.err.batches_mismatch': 'The batches don’t add up to the quantity.',
   'stock.err.units_mismatch': 'The serials don’t match the quantity.',
   'stock.err.unit_held': 'A unit is promised to an order and can’t be moved.',
-  'stock.err.no_estimate': 'There’s no cost to value this at yet: nothing has been received here before.',
+  'stock.err.no_estimate': 'There’s no cost to value this at: the item has never been bought here (or anywhere, for found goods) and has no purchase price. Set its purchase price, or receive it first.',
   'stock.err.date_before_source': 'The cancellation can’t be dated before what it undoes.',
   'stock.err.goods_moved_on': 'The goods have moved on since, so this can’t be undone.',
   'stock.err.own_request': 'You asked for this yourself, so someone else must decide it.',
