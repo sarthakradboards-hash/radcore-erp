@@ -10,7 +10,6 @@ import { t } from '../../../../lib/i18n/index.ts';
 import { asPrice } from '../../admin/decimal.ts';
 
 const CHARGES = ['freight', 'packing', 'insurance', 'other'] as const;
-export type ChargeKind = (typeof CHARGES)[number];
 
 const goodsLine = z.object({
   kind: z.literal('goods'),

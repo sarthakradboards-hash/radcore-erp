@@ -84,10 +84,10 @@ export default function PurchaseBillPage() {
       ) : null}
 
       <ConfirmDialog open={dialog === 'post'} onOpenChange={shut} messages={PURCHASE_MESSAGES} title={t('purchases.bill.post.title')}
-        body={t('purchases.bill.post.body')} action={t('purchases.bill.post')} done={t('purchases.sentForApproval')}
+        body={t('purchases.bill.post.body')} action={t('purchases.bill.post')} done={t('purchases.bill.sentForApproval')}
         onConfirm={async () => {
           const r = await post.submit({ id });
-          return r.status === 'posted' && r.number !== null ? t('purchases.bill.posted', { number: r.number }) : t('purchases.sentForApproval');
+          return r.status === 'posted' && r.number !== null ? t('purchases.bill.posted', { number: r.number }) : t('purchases.bill.sentForApproval');
         }} />
       <ConfirmDialog open={dialog === 'delete'} onOpenChange={shut} messages={PURCHASE_MESSAGES} title={t('purchases.bill.delete.title')}
         body={t('purchases.bill.delete.body')} action={t('purchases.delete')} done={t('purchases.deleted')}

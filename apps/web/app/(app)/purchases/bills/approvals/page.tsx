@@ -66,9 +66,11 @@ function Review({ request }: { request: Pending }) {
       <p><Link href={href(a.recordId)}>{t('purchases.bill.approvals.open')}</Link></p>
       {a.changed ? <p role="alert" className="kit-form-alert">{t('purchases.approvals.changed')}</p> : null}
       <Figures id={a.recordId} />
-      {a.status !== 'pending' ? <p>{t(`purchases.approvals.status.${a.status}`)}</p> : (
+      {a.status !== 'pending' ? <p>{t(`purchases.approvals.status.${a.status}`)}</p> : !shown ? null : (
+        // Neither decision is offered until the bill's figures are on screen: deciding needs the bill read (purchasing:read),
+        // so a role that only approves would be refused either way (e2e-playwright on #397).
         <div className="kit-actions">
-          {a.changed || !shown ? null : (
+          {a.changed ? null : (
             <button type="button" className="kit-button kit-button-primary" onClick={() => setActing('approve')}>{t('purchases.bill.approvals.approve')}</button>
           )}
           <button type="button" className="kit-button" onClick={() => setActing('reject')}>{t('purchases.approvals.reject')}</button>
@@ -94,7 +96,7 @@ export default function PurchaseBillApprovalsPage() {
     { id: 'who', header: t('purchases.approvals.col.who'), cell: (r) => who(r.requestedBy) },
     { id: 'review', header: t('purchases.approvals.col.actions'), cell: (r) => (
       <button type="button" className="kit-button" aria-pressed={open?.id === r.id} onClick={() => setOpen(r)}
-        aria-label={t('purchases.approvals.review.for', { who: who(r.requestedBy) })}>{t('purchases.approvals.review')}</button>
+        aria-label={t('purchases.bill.approvals.review.for', { who: who(r.requestedBy) })}>{t('purchases.approvals.review')}</button>
     ) },
   ];
   return (

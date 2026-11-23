@@ -258,6 +258,8 @@ export const purchases = {
   'purchases.bill.approvals.approve.title': 'Approve and post this bill?',
   'purchases.bill.approvals.approve.body': 'It posts as shown, with its number. If it has changed since it was asked, it’s refused.',
   'purchases.bill.approvals.approved': 'Approved and posted',
+  'purchases.bill.approvals.review.for': 'Review the bill {who} asked about',
+  'purchases.bill.sentForApproval': 'Past the tolerance, so it’s waiting for someone else’s approval',
   'purchases.bill.new': 'Enter a bill',
   'purchases.bill.new.title': 'Enter a supplier’s bill',
   'purchases.bill.edit.title': 'Change the draft bill for invoice {invoice}',
