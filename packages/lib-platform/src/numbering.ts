@@ -42,23 +42,26 @@ export const declaredSeriesKeys = (): readonly string[] => [...declared].toSorte
 export const formatNumber = (series: Series, prefix: string, year: string, n: number) =>
   `${prefix}/${year.slice(2)}/${String(n).padStart(series.digits, '0')}`;
 
-// ADR-006 §1 step 6 (the architect on RAD-115): every save draws the journal's series before any other, and its others in
-// key order, so two saves never wait on each other's series the opposite way round. Each draw takes its series' turn
+// ADR-006 §1 step 6 (the architect on RAD-115): every save draws its series in one order, so two saves never wait on each
+// other's series the opposite way round: sales.quote, then sales.order (named, not a class: they number documents that
+// post no entry, and every flow draws them before posting), then the journal, then any other by key. A series added later
+// sorts after the journal unless it's named here. Each draw takes its series' turn
 // first; a save that posts several documents takes all of its series' turns up front, through holdSeries. The turn is an
 // advisory lock, not the counter's row, which a year's first number creates: locking it would mean drawing one.
-const JOURNAL = 'accounts.journal';
+const FIRST = ['sales.quote', 'sales.order', 'accounts.journal'];
+const rank = (key: string) => (FIRST.includes(key) ? FIRST.indexOf(key) : FIRST.length);
 const turnOf = (key: string) => `numbering.${key}`;
 
-/** Series keys in the one order every save takes them: the journal first, then the rest by key; each once. */
+/** Series keys in the one order every save takes them: the quote's and the order's, the journal, then the rest by key;
+ * each once. */
 export const seriesOrder = (keys: readonly string[]): string[] =>
-  [...new Set(keys)].toSorted((a, b) => (a === JOURNAL ? -1 : b === JOURNAL ? 1 : a < b ? -1 : a > b ? 1 : 0));
+  [...new Set(keys)].toSorted((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
 
 /**
  * Takes the turns of every series a save that posts several documents will draw (the quick bill; a booking with its
  * advance), in seriesOrder, after its period, documents, party and stock locks and before its first document posts.
  * A single document's save needs none: it draws the journal (postEntry) and then its own, which is already the order.
- * Known exception, not to be held together: a credit note with a counter refund draws sales.credit_note and then
- * accounts.payment, against key order. It's safe only while no holdSeries caller holds both (backend on RAD-115).
+ * A credit note with a counter refund holds its three (RAD-114), since it draws sales.credit_note before accounts.payment.
  */
 export async function holdSeries(ctx: Ctx, series: readonly Series[]): Promise<void> {
   await takeTurns(ctx.tx, seriesOrder(series.map((s) => s.key)).map(turnOf));

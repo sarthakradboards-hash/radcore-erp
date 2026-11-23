@@ -10,6 +10,8 @@ import { confirmOrder, createOrder, lineIn } from './documents.ts';
 import { createInvoice, postInvoice } from './invoices.ts';
 
 const write = { readOnly: false, isolation: 'read committed' } as const;
+// as const, so the client types these as reads and sends no idempotency key (ui-2, via the coordinator).
+const read = { readOnly: true, isolation: 'read committed' } as const;
 const reference = () => z.string().trim().min(1).max(40);
 
 /** How a payment is made: cash; a card, by the machine's approval code alone (never card digits: Sarthak); or into a
@@ -98,7 +100,7 @@ export const completeQuickBill = defineContract({
  * invoice's.
  */
 export const previewQuickBill = defineContract({
-  method: 'POST', path: '/sales/quick-bills/preview', auth: 'session', perm: 'invoices:write', tx: { readOnly: true, isolation: 'read committed' },
+  method: 'POST', path: '/sales/quick-bills/preview', auth: 'session', perm: 'invoices:write', tx: read,
   input: billIn,
   output: z.object({
     lines: z.array(z.object({ itemId: idString(), gstRate: z.string(), taxable: moneyString(), cgst: moneyString(), sgst: moneyString(),
@@ -116,7 +118,7 @@ export const previewQuickBill = defineContract({
  * away by deleting its draft order, which takes its hold with it.
  */
 export const listHeldQuickBills = defineContract({
-  method: 'GET', path: '/sales/quick-bills/held', auth: 'session', perm: 'invoices:write', tx: { readOnly: true, isolation: 'read committed' },
+  method: 'GET', path: '/sales/quick-bills/held', auth: 'session', perm: 'invoices:write', tx: read,
   input: listInput(z.object({})),
   output: listOf(z.object({ orderId: idString(), partyId: idString(), partyName: z.string(), items: z.number().int().nonnegative(),
     payments: z.array(z.object({ method: z.enum(['cash', 'card', 'bank']), amount: moneyString() })),

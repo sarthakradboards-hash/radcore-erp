@@ -113,7 +113,7 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     return out as R;
   }
   type Pay = Parameters<typeof holdBillNow>[1]['payments'][number];
-  type Buyer = { name: string; phone: string };
+  type Buyer = { name: string; phone: string; addressLine1?: string; city?: string; pincode?: string };
   const hold = (ctx: Ctx, at: At, qty: string, payments: Pay[], partyId?: string, rate = '345', buyer?: Buyer) => holdBillNow(ctx, {
     ...(partyId === undefined ? {} : { partyId }), ...(buyer === undefined ? {} : { buyer }),
     businessDate: DATE, locationId: at.placeId, notes: null, payments, lines: [{ itemId: at.itemId, qty: q(qty), rate: unitPriceString().parse(rate),
@@ -206,10 +206,10 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
         if (page.next === null) break;
         after = page.next;
       }
-      return { mine: seen.filter((id) => held.includes(id)), repeats: seen.length - new Set(seen).size };
+      return { held, mine: seen.filter((id) => held.includes(id)), repeats: seen.length - new Set(seen).size };
     });
-    expect([out.mine.toSorted(), out.repeats]).toEqual([[...out.mine].toSorted(), 0]);
-    expect(out.mine).toHaveLength(2);
+    // Both holds come back, each once (auditor-2 on #325).
+    expect([out.mine.toSorted(), out.repeats]).toEqual([out.held.toSorted(), 0]);
   });
 
   it('refuses a walk-in hold short of the bill, and a hold of a bill that needs no approval', async () => {
@@ -250,6 +250,19 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
         walkIn: (await partyReceivable(ctx, walkIn, DATE)).outstanding };
     });
     expect(out).toEqual({ left: '307.00', party: 'Ravi Kumar', collect: true, walkIn: '0.00' });
+  });
+
+  // Rule 46 at the hold (the architect's review of #346): from sales.b2c_details_limit (50,000.00) a new buyer is named with
+  // their address before the bill is held, not when its invoice posts. One at 60,000.00 and 5% is 63,000.00.
+  it('asks a new buyer of a bill from 50,000 for their address at the hold (buyer_details_required)', async () => {
+    const at = await setup('100000');
+    const out = await atCounter(at, async (ctx) => {
+      const bare = await failure(hold(ctx, at, '1', [cash('100')], undefined, '60000', { name: 'Ravi Kumar', phone: mobile() }));
+      const named = await hold(ctx, at, '1', [cash('100')], undefined, '60000', { name: 'Asha Rao', phone: mobile(),
+        addressLine1: '1 Main Road', city: 'Pune', pincode: '411001' });
+      return [bare, named.status];
+    });
+    expect(out).toEqual(['buyer_details_required', 'pending_override']);
   });
 
   it('offers the customer who has the phone already, and refuses to ask without sales:counter_credit', async () => {

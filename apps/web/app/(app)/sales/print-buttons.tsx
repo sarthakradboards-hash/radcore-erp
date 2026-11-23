@@ -13,7 +13,8 @@ import { noteSignedOut } from '../../../lib/session/signed-out.ts';
 /** How long the PDF's address lives: the tab has read it by then, and a printout is not kept in memory for the life of the page. */
 const REVOKE_AFTER_MS = 60_000;
 
-export function PrintButtons({ contract, id }: { contract: Contract; id: string }) {
+/** `papers` narrows the sizes offered (the counter prints on the roll only), and `label` names the one button then. */
+export function PrintButtons({ contract, id, papers = PAPER_SIZES, label }: { contract: Contract; id: string; papers?: readonly Paper[]; label?: string }) {
   const { permissions } = useMe();
   const [busy, setBusy] = useState<Paper | null>(null);
   const [problem, setProblem] = useState('');
@@ -40,9 +41,9 @@ export function PrintButtons({ contract, id }: { contract: Contract; id: string 
   };
   return (
     <>
-      {PAPER_SIZES.map((paper) => (
+      {papers.map((paper) => (
         <button key={paper} type="button" className="kit-button" disabled={busy !== null} aria-busy={busy === paper} onClick={() => void print(paper)}>
-          {t(`sales.print.${paper}`)}
+          {label ?? t(`sales.print.${paper}`)}
         </button>
       ))}
       {problem === '' ? null : <p role="alert" className="kit-form-alert">{problem}</p>}

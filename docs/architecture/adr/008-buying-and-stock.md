@@ -114,10 +114,13 @@ the document it comes from (`date_before_source`):
   - **above it,** placing requests approval through `defineApproval`, kind `purchase-order`, under
     `purchasing:approve`. The PO stays a draft while the request is pending, and the approval's `approved` step
     places it.
-  - **The limit is dynamic:** `purchase_order_limits (role, max_total)` gives a role its own limit, edited by admin,
-    and a role without a row takes `purchasing.order_limit_default`. **Its default is 0, so every PO is approved,**
-    as the discount limit's is (D-21, 18 Nov), until an admin sets one. Sarthak confirmed it (22 Nov, "0 — every PO
-    approved").
+  - **The limit is dynamic:** `purchase_order_limits (role, max_total)` gives a role its own limit, and a role
+    without a row takes `purchasing.order_limit_default`. **Its default is 0, so every PO is approved,** as the
+    discount limit's is (D-21, 18 Nov), until one is set. Sarthak confirmed it (22 Nov, "0 — every PO approved").
+  - **Setting the limits** (RAD-136): `GET /purchasing/order-limits` lists them under `purchasing:read`, and
+    `PUT /purchasing/order-limits` sets one under `purchasing:approve`, with a `reason()`, as the discount limits are
+    set. A null role sets the default. A null limit removes a role's own, so it takes the default again; given for
+    the default, it resets it to 0.
   - Placing posts nothing, but `approved` checks the PO's date against the open year and the period lock, so the
     spec declares `lockFirst` (`lockPeriod`), as ADR-001 §8b asks of any spec whose `approved` takes the period lock
     (RAD-136). Its version is the PO's own lines and total.
@@ -242,8 +245,10 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
   person names the batches and serials going out, and the goods come in under the same batches.
 - **Into `demo`,** serialised units take condition `demo` (F13). Out of `demo` they keep it, so an ex-demo unit is
   sold as one.
-- **Rejected stock can't go back to selling without QC (RC-124).** A transfer out of a `rejected` location to a
-  sellable one is refused (`needs_qc`), unless it's a **re-inspection**:
+- **Rejected stock goes back to selling only through QC (RC-124).** A plain transfer out of a `rejected` location
+  goes only to another `rejected` one. To any other place, sellable or not, it's refused (`needs_qc`), so a hop
+  through a demo or franchisee place can't carry rejects back to selling (RAD-141). Rejects otherwise leave only by
+  a supplier return (§8), an approved write-off adjustment (§10), or a **re-inspection**:
   - a transfer marked `requalified`, under `inward:qc`, the key that does QC at receipt, with a reason;
   - its serialised units take the condition the inspection found, `new` or `used`, by `condition_changed`;
   - M4-06 ships the refusal. M4-02, which brings `inward:qc`, adds the re-inspection, so until then rejects can't go
@@ -300,6 +305,8 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
 - **The challan** sends inputs from a location of ours to the job worker's (ADR-006 §6, F16). Serialised inputs go with
   `sent_to_job_work`, and batches go with them. It's the delivery challan Rule 55 asks for goods sent for job work, so
   it prints the job worker's name, address, state and GSTIN in full.
+- **No challan sends from a `rejected` place** (`needs_qc`, as a plain transfer is refused, §9; RAD-141). What a job
+  worker makes or sends back comes into our stock, so rejects sent out would come back sellable without QC.
 - **The receipt** names the challan lines it answers, and says, for each:
   - **goods made:** the output item and quantity, and its charge rate. They come in at the inputs used plus the charge
     (F16). A serialised output names each serial, and each becomes a unit `received` with the receipt's number as its
@@ -351,7 +358,7 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
 |---|---|---|
 | `purchasing:read` | see purchase orders, receipts, bills and returns | admin, owner, stores, accounts |
 | `purchasing:write` | draft, place, change, close short and cancel purchase orders | admin, stores |
-| `purchasing:approve` | approve a purchase order above its placer's limit | admin, owner |
+| `purchasing:approve` | approve a purchase order above its placer's limit, and set the limits (§5) | admin, owner |
 | `inward:write` | record goods that arrived (`inward`, not `receipts`, which are payments: `receipts:print`) | admin, stores |
 | `inward:qc` | inspect and post a receipt; re-inspect rejects (§9) | admin, stores |
 | `bills:write` | enter, post and cancel supplier bills | admin, accounts |
@@ -370,6 +377,10 @@ The duplicate-bill check is held by its unique index, not by a lock, so two save
   stock, so they can read transfers, counts, adjustments and job work too. That's intended: where stock went is
   useful to them. The documents' values are `cost()`, masked without `cost:read`. An admin who wants counts kept to
   stores narrows `stock:read` on the roles screen.
+- **A purchasing document's own figures are content, not `cost()`** (RAD-136). A PO's, receipt's, bill's and
+  return's rates, amounts and tax are what the document says: shown to whoever holds `purchasing:read`, and printed
+  on it. `cost()` stays on what's worked out from them: an item's moving average, stock values and margins (ADR-001's
+  cost fields, RC-164). So `purchasing:read` is the key that keeps what we pay suppliers from a role.
 - **None needs the second factor:** none moves money (D-19). A bill creates a payable, and paying it is M3-12's.
 - **None is `allOnly`,** so the role-scope CHECK doesn't change.
 - **The owner** reads and approves, and makes no day-to-day documents, as the role says.
@@ -433,7 +444,8 @@ Beyond each document's own happy path and ADR-006's figures:
   - cancelling a return restores the rejects, the units and the bill's open amount.
 - **M4-06:**
   - F13 and F14;
-  - rejects to a sellable place are refused `needs_qc`, and pass as a re-inspection under `inward:qc`;
+  - rejects to any place but another rejects place, a demo place included, are refused `needs_qc`, and pass to a
+    sellable one as a re-inspection under `inward:qc`;
   - a transfer undone, and refused once the goods have moved on;
   - with `stock.franchisee_transfer_approval` on, a transfer into a franchisee's store waits for another person,
     while one to any other place posts at once; with it off, both post;
@@ -444,7 +456,7 @@ Beyond each document's own happy path and ADR-006's figures:
 - **M4-07:**
   - F16 exactly;
   - a serialised output with no serials is refused, and with them creates its units (RC-130);
-  - `over_challan` is refused;
+  - `over_challan` is refused, and so is a challan from a rejects place (`needs_qc`);
   - a challan past `stock.job_work_return_days` is flagged;
   - an operations role sees charges but not stock values.
 
