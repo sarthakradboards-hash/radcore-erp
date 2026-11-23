@@ -4,7 +4,7 @@
 // own people, numbers and list items; the starting items 0059 seeds are only read.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addLostReason, addPlan, addQuickReply, assignLeadOwner, captureEnquiry, changeLostReason, changePlan, followUpDone, leadById, leadLists,
+  addLostReason, addPlan, addQuickReply, assignLeadOwner, captureEnquiry, changeLostReason, changePlan, followUpDone, leadById, leadHolders, leadLists,
   listLeadsPage, moveLeadStage, putOnPlan, quickReplyText, tellFollowUpsDue, updateLeadDetails,
 } from '@radcore/lib-crm';
 import { listLeads } from '@radcore/lib-crm/contract';
@@ -323,6 +323,16 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
     }
     await as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: raviId }));
     expect(await owner('select owner from radcore.leads where id = $1', [id])).toEqual([{ owner: `user:${raviId}` }]);
+    // The owner picker offers exactly whom the hand-on accepts, only to someone who may hand leads on (RAD-109).
+    const holders = (await as(manager(bossId), (ctx) => leadHolders(ctx))).items.map((p) => p.id);
+    expect([raviId, clerk?.id ?? '', gone?.id ?? '', bossId].map((p) => holders.includes(p))).toEqual([true, false, false, false]);
+    await expect(as(taker(ashaId), (ctx) => leadHolders(ctx))).rejects.toMatchObject({ code: 'forbidden' });
+    // And a lead answers its owner as a person, by name, in the list and on its page.
+    const [ravi] = await owner<{ display_name: string }>('select display_name from radcore.users where id = $1', [raviId]);
+    const shown = { kind: 'user', id: raviId, displayName: ravi?.display_name };
+    expect((await as(manager(bossId), (ctx) => leadById(ctx, { id }))).owner).toEqual(shown);
+    expect((await as(manager(bossId), (ctx) => listLeadsPage(ctx, { limit: 200, filter: {} }))).items.find((l) => l.id === id)?.owner)
+      .toEqual(shown);
     await as(manager(bossId), (ctx) => assignLeadOwner(ctx, { id, owner: null }));
     expect(await owner('select owner from radcore.leads where id = $1', [id])).toEqual([{ owner: null }]);
     // A manager's note on an unowned lead is triage and doesn't take it; a salesperson's note does (the architect).

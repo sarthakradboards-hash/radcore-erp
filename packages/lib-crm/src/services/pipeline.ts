@@ -10,13 +10,13 @@ import {
 } from '@radcore/db/crm';
 import { addDays, indiaDate, maskOf, normaliseEmail } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, defineNotification, encodeCursor, holdsKey, isoMoment, listScope, momentKey, notify, principalId, principalsOf,
+  AppError, decodeCursor, defineNotification, encodeCursor, holdsKey, isoMoment, listScope, momentKey, notify, peopleHolding, principalId, principalsOf,
   roleOf, type Ctx, type JobContract,
 } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
-  assignLead, followUpLead, LEAD_STAGES, listLeads, moveLead, planLead, quickReply, updateLead,
+  assignLead, followUpLead, LEAD_STAGES, listLeadHolders, listLeads, moveLead, planLead, quickReply, updateLead,
 } from '../contract.ts';
 import { fillReply } from './reply-rules.ts';
 
@@ -43,9 +43,12 @@ export async function listLeadsPage(ctx: Ctx, input: In<typeof listLeads>): Prom
   )).orderBy(desc(leads.lastEnquiryAt), desc(leads.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
+  // Each owner as a person, by name, as the activities' `by` is (RAD-109); the rows are already within leads:read's scope.
+  const who = await principalsOf(ctx, page.flatMap((r) => (r.owner === null ? [] : [r.owner])));
   return {
     // The column is read as PostgreSQL's text, kept so for the page key's microseconds; the answer is an ISO moment.
-    items: page.map((r) => ({ ...r, phone: maskOf(r.phone, 'last4'), stage: r.stage as Stage, lastEnquiryAt: isoMoment(r.lastEnquiryAt) })),
+    items: page.map((r) => ({ ...r, owner: r.owner === null ? null : who(r.owner), phone: maskOf(r.phone, 'last4'), stage: r.stage as Stage,
+      lastEnquiryAt: isoMoment(r.lastEnquiryAt) })),
     next: rows.length > input.limit && last ? encodeCursor({ at: last.lastEnquiryAt, id: last.id }) : null,
   };
 }
@@ -154,6 +157,12 @@ export async function quickReplyText(ctx: Ctx, { id, replyId }: In<typeof quickR
 
 /** POST /leads/:id/owner (leads:write at `all`): hands a lead to an active person whose role sees leads, or back to no
  * one. Its new owner is told of a follow-up already due. */
+/** GET /leads/holders (leads:write at `all`): the people a lead may be handed to, as assignLeadOwner accepts them. */
+export async function leadHolders(ctx: Ctx): Promise<Out<typeof listLeadHolders>> {
+  if (!ctx.can('leads:write', { owner: '' })) throw new AppError('forbidden', 'Only someone who works every lead may hand one on');
+  return { items: await peopleHolding(ctx, 'leads:read') };
+}
+
 export async function assignLeadOwner(ctx: Ctx, { id, owner }: In<typeof assignLead>): Promise<Out<typeof assignLead>> {
   if (!ctx.can('leads:write', { owner: '' })) throw new AppError('forbidden', 'Only someone who works every lead may hand one on');
   const tx = crmTx(ctx);

@@ -1,9 +1,9 @@
 // A principal as the screens show one (the audit trail, approvals): stored as a key ("user:<id>", "link:<id>",
 // "system:<name>", ADR-001 §6a), answered as { kind, id, displayName }, a person's name read once per page. A display
 // name isn't pii(): the people list shows it to anyone with users:read.
-import { platformTx, users } from '@radcore/db/platform';
+import { platformTx, roleGrants, users } from '@radcore/db/platform';
 import { idString, type principalOut } from '@radcore/lib-common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Ctx } from './ctx.ts';
 
@@ -40,4 +40,15 @@ export async function isActiveUser(ctx: Ctx, userId: string): Promise<boolean> {
   if (!isUserId(userId)) return false;
   const [person] = await platformTx(ctx).select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.status, 'active'))).limit(1);
   return person !== undefined;
+}
+
+/**
+ * The active people whose role holds `key`, by name: for a library that offers a choice of person (who may hold a
+ * lead, RAD-109), since it can't read the users table itself. Only ids and display names, as principalsOf answers.
+ * shortcut: not paged, as a dealership's staff is tens of people; page it if a role ever lists hundreds.
+ */
+export async function peopleHolding(ctx: Ctx, key: string): Promise<{ id: string; displayName: string }[]> {
+  return platformTx(ctx).select({ id: users.id, displayName: users.displayName }).from(users)
+    .innerJoin(roleGrants, and(eq(roleGrants.role, users.role), eq(roleGrants.permission, key)))
+    .where(eq(users.status, 'active')).orderBy(asc(users.displayName), asc(users.id));
 }
