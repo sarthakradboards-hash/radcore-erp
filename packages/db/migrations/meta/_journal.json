@@ -617,6 +617,13 @@
       "when": 1795431454961,
       "tag": "0087_purchase_bills",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1795434495245,
+      "tag": "0088_job_work",
+      "breakpoints": true
     }
   ]
 }

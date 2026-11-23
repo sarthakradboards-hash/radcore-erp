@@ -3,7 +3,7 @@
 // then its documents, each in a committed transaction, as the routes run them. Counts and adjustments are approved by
 // someone else, whose account is made before the test's requests (approver_too_new).
 import { randomBytes, randomUUID } from 'node:crypto';
-import { JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
+import { addParty, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
 import { quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { AppError, approvedFor, decideApproval, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -59,7 +59,12 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
       const { id: itemId } = await addItem(ctx, { sku: `M-${tag()}`, name: 'Scooter', categoryId, hsn: '8711', unit: 'NOS', barcode: null,
         serialised: o.serials !== undefined, hasChassis: false, purchasePrice: unitPriceString().parse('1') });
       const places: string[] = [];
-      for (const kind of kinds) places.push((await addPlace(ctx, { code: `L${tag()}`, name: `${kind} ${tag()}`, kind })).id);
+      for (const kind of kinds) {
+        // A job work place is a job worker's own (ADR-008 §11, RAD-142).
+        const partyId = kind !== 'job_work' ? null : (await addParty(ctx, { name: `Job worker ${tag()}`, kinds: ['supplier'], gstin: null, pan: null,
+          composition: false, stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null })).id;
+        places.push((await addPlace(ctx, { code: `L${tag()}`, name: `${kind} ${tag()}`, kind, partyId })).id);
+      }
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: places[0] ?? '',
         qty: q(o.stock), rate: unitPriceString().parse(o.rate), batches: (o.batches ?? [{ batchNo: 'B1', qty: o.stock }]).map((b) => ({ batchNo: b.batchNo, qty: q(b.qty) })),
         ...(o.serials === undefined ? {} : { units: o.serials.map((serialNo) => ({ serialNo })) }) }] });
