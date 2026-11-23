@@ -9,7 +9,7 @@
 // other files count their own. A GET this can't reach is pinned below with its reason, so every new GET is either
 // reached or listed (the ratchet). Its known limit: it catches only the shapes the seed holds.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, openFinancialYear, postManual, recordPayment, systemAccountId } from '@radcore/lib-accounts';
+import { addParty, openFinancialYear, postManual, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { addAdSpend, addCampaign, captureEnquiry, createEnquiryForm, leadSourcesList } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
@@ -19,7 +19,7 @@ import {
 import { createAuth, createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { PERMISSIONS } from '../packages/lib-platform/src/permissions.ts';
 import {
-  addBill, addOrder as addPurchaseOrder, addReceipt as addGoodsReceipt, cancelReceiptNow as cancelGoodsReceipt, getOrderById as getPurchaseOrder, getReceiptById,
+  addBill, postBillNow, addOrder as addPurchaseOrder, addReceipt as addGoodsReceipt, cancelReceiptNow as cancelGoodsReceipt, getOrderById as getPurchaseOrder, getReceiptById,
   placeOrder,
   postReceipt, addReturn as addSupplierReturn, postReturn as postSupplierReturn,
 } from '@radcore/lib-purchasing';
@@ -286,7 +286,21 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       const bill = await run((ctx) => addBill(ctx, { supplierId: base.supplier, businessDate: DATE, supplierInvoiceNumber: `INV/${tag()}`,
         supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: m('210'), fileId: null, notes: null,
         lines: [{ kind: 'goods', poLineId: lineId, receiptLineId: null, qty: q('2'), rate: r('100') }] }));
-      add(['GET /purchasing/bills/:id'], bill.id);
+      // A bill 3% over the PO rate on the accepted goods, past the 2% tolerance, waits for bills:approve. Posting needs the
+      // supplier's file, so one is recorded as uploaded and ready.
+      const fileId = randomUUID();
+      await su.query(`with p as (select set_config('app.principal', 'system:test', true)) insert into radcore.files
+        (id, kind, store_key, filename, content_type, size, status) select $1, 'purchase_bill', $2, 'bill.pdf', 'application/pdf', 2048, 'ready'
+        from p`, [fileId, `purchase_bill/${fileId}`]);
+      const acceptedLine = (await run((ctx) => getReceiptById(ctx, { id: posted.id }))).lines[0]?.id ?? null;
+      const over = await run(async (ctx) => {
+        const { id } = await addBill(ctx, { supplierId: base.supplier, businessDate: DATE, supplierInvoiceNumber: `INV/${tag()}`,
+          supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: m('108.15'), fileId, notes: null,
+          lines: [{ kind: 'goods', poLineId: lineId, receiptLineId: acceptedLine, qty: q('1'), rate: r('103') }] });
+        return { id, asked: await postBillNow(ctx, { id }) };
+      });
+      add(['GET /purchasing/bills/:id'], bill.id, over.id);
+      add(['GET /approvals/purchase-bill/:id'], over.asked.approvalId ?? undefined);
       // The posted receipt's reject (batch L2) back to the supplier, posted.
       const rejected = (await su.query<{ id: string }>("select id from radcore.batches where item_id = $1 and batch_no = 'L2'", [base.plain])).rows[0]?.id ?? '';
       const receiptLine = (await run((ctx) => getReceiptById(ctx, { id: posted.id }))).lines[0]?.id ?? '';
@@ -370,11 +384,11 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
 
     // A booking: a serialised unit promised to a confirmed order line, with an advance.
     await step('booking', async () => {
-      const d = await postedDelivery(run, su, DATE);
-      // The party's price for the scooter, so its order confirms without an override.
-      await priceListFrom(su, DATE, { [base.serial]: '70000' }, { partyId: d.partyId });
+      // The customer's credit and price for the scooter, so its order confirms without an override.
+      await run((ctx) => setCreditTerms(ctx, { id: base.customer, creditDays: 30, creditLimit: m('100000000'), reason: 'Sweep' }));
+      await priceListFrom(su, DATE, { [base.serial]: '70000' }, { partyId: base.customer });
       const booked = await run(async (ctx) => {
-        const { id: orderId } = await addOrder(ctx, { partyId: d.partyId, businessDate: DATE, notes: null, lines: [{ itemId: base.serial,
+        const { id: orderId } = await addOrder(ctx, { partyId: base.customer, businessDate: DATE, notes: null, lines: [{ itemId: base.serial,
           qty: q('1'), rate: r('70000'), discountPercent: percentString({ max: '100' }).parse('0') }] });
         await confirmOrderNow(ctx, { id: orderId });
         const orderLineId = (await getOrderById(ctx, { id: orderId })).lines[0]?.id ?? '';
