@@ -11,6 +11,7 @@ export const bookings = {
   'sales.bookings.new': 'New booking',
   'sales.bookings.checklist': 'Checklist not complete',
   'sales.booking.title': 'Booking {number}',
+  'sales.booking.col.model': 'Model',
   'sales.booking.col.unit': 'Unit',
   'sales.booking.unit': 'Unit',
   'sales.booking.held': 'Held for this customer until it is delivered or the booking is cancelled.',

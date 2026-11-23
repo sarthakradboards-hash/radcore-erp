@@ -91,6 +91,9 @@ describe('the journal contracts', () => {
     expect(ok({ ...manual, lines: [{ accountId: ID }, manual.lines[1]] })).toBe(false);
     expect(ok({ ...manual, lines: [{ accountId: ID, debit: '0.00' }, manual.lines[1]] })).toBe(false);
     expect(ok({ ...manual, lines: [{ accountId: ID, debit: '1.001' }, manual.lines[1]] })).toBe(false);
+    // An amount that isn't money is refused, not thrown on (RAD-110's ad spend had dec() throw inside its refine).
+    expect(ok({ ...manual, lines: [{ accountId: ID, debit: '' }, manual.lines[1]] })).toBe(false);
+    expect(ok({ ...manual, lines: [{ accountId: ID, credit: 'abc' }, manual.lines[1]] })).toBe(false);
     expect(ok({ ...manual, businessDate: '2026-02-30' })).toBe(false);
   });
 

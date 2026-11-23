@@ -65,8 +65,8 @@ export const getStockTransfer = defineContract({
  * out and come in under the same batches. Into a franchisee's place while `stock.franchisee_transfer_approval` is on
  * (Sarthak, default off), it's kept as a draft instead and sent for someone else's approval in the same save: `number`
  * null, and `approval` the request to decide. Refused to the same place (`transfer_same_location`), out of `rejected`
- * to a sellable place (`needs_qc`: M4-02's re-inspection under inward:qc is the only way back), and to or from a job
- * work place (`use_job_work`, §11).
+ * to anywhere but another rejects place (`needs_qc`: M4-02's re-inspection under inward:qc is the only way back to
+ * selling), and to or from a job work place (`use_job_work`, §11).
  */
 export const createStockTransfer = defineContract({
   method: 'POST', path: '/stock/transfers', auth: 'session', perm: 'stock:move', tx: write,
@@ -153,7 +153,7 @@ export const requestStockCountApproval = defineContract({
 });
 /** The count approval routes (RAD-38): approving posts the differences (F14, F21). */
 export const stockCountApproval = approvalContracts('stock-count', 'stock:approve',
-  ['wrong_status', 'serial_elsewhere', 'serial_unknown', ...POSTING_ERRORS]);
+  ['wrong_status', 'serial_elsewhere', 'serial_unknown', 'unknown_batch', ...POSTING_ERRORS]);
 /** Cancels a posted count: its mirror, dated the cancellation's day. */
 export const cancelStockCount = defineContract({
   method: 'POST', path: '/stock/counts/:id/cancel', auth: 'session', perm: 'stock:approve', tx: write,
@@ -181,9 +181,10 @@ const adjustmentIn = z.object({
     serials: z.array(z.object({ serialNo: z.string().trim().min(1).max(60), chassisNo: z.string().trim().min(1).max(40).nullable() }))
       .max(1000) })),
 });
-// A found unit's chassis number: needed where the item keeps one, refused where it doesn't (F22).
+// A found unit's chassis number: needed where the item keeps one, refused where it doesn't (F22). A serialised line names
+// a serial for each unit, and a found one its condition, as a draft too (auditor-2 on #339).
 const ADJUSTMENT_ERRORS = [...LINE_ERRORS, 'unknown_batch', 'serial_twice', 'not_serialised', 'serial_elsewhere', 'chassis_required',
-  'chassis_not_allowed'] as const;
+  'chassis_not_allowed', 'serials_mismatch', 'condition_required'] as const;
 
 /** Stock adjustments, newest first, a page at a time. */
 export const listStockAdjustments = defineContract({
@@ -219,7 +220,8 @@ export const requestStockAdjustmentApproval = defineContract({
 /** The adjustment approval routes (RAD-38): approving posts it (F14). */
 // A found unit's chassis number is judged again as it posts: the item's flag may have changed since the draft.
 export const stockAdjustmentApproval = approvalContracts('stock-adjustment', 'stock:approve',
-  ['wrong_status', 'serial_elsewhere', 'chassis_required', 'chassis_not_allowed', ...POSTING_ERRORS]);
+  ['wrong_status', 'serial_elsewhere', 'chassis_required', 'chassis_not_allowed', 'unknown_batch', 'serials_mismatch', 'condition_required',
+    ...POSTING_ERRORS]);
 /** Cancels a posted adjustment: its mirror, dated the cancellation's day. */
 export const cancelStockAdjustment = defineContract({
   method: 'POST', path: '/stock/adjustments/:id/cancel', auth: 'session', perm: 'stock:approve', tx: write,

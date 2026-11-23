@@ -25,6 +25,7 @@ import {
   type UnitEventRow, type UnitOnLine,
 } from './units.ts';
 import { and, asc, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm';
+import { conditionBefore, goneUnit, lastSaleLine, undoOf, unitsStillThere } from './undo.ts';
 import { averageIssue, estimatedIssue, lowestFrom, position, revaluation } from './valuation.ts';
 import { z } from 'zod';
 
@@ -67,6 +68,9 @@ export type StockPosting = {
   readonly sourceTable: string;
   readonly sourceId: string;
   readonly businessDate: string;
+  /** Whose batches the goods coming in are named in (ADR-006 §4a, RC-028): a goods receipt's supplier, so another
+   * supplier's same number is another batch. Null (the default) for goods that came from no supplier. */
+  readonly supplierId?: string | null;
   readonly ins?: readonly StockIn[];
   readonly outs?: readonly StockOut[];
   readonly transfers?: readonly StockTransfer[];
@@ -109,9 +113,9 @@ export async function holdStock(ctx: Ctx, lines: readonly { itemId: string; loca
   await lockUnits(ctx, lines.flatMap((l) => (l.serials ?? []).map((serialNo) => ({ itemId: l.itemId, serialNo }))));
 }
 
-/** The new batches a posting's goods-in name, created after the position locks in `(item_id, batch_key)` order
- * (§4a; every supplier is null until parties land), and every batch's id, by item and key. */
-async function batchIds(ctx: Ctx, ins: readonly StockIn[]): Promise<Map<string, string>> {
+/** The new batches a posting's goods-in name, its supplier's (or no supplier's), created after the position locks in
+ * `(item_id, batch_key)` order (§4a: one posting names one supplier), and every batch's id, by item and key. */
+async function batchIds(ctx: Ctx, ins: readonly StockIn[], supplierId: string | null): Promise<Map<string, string>> {
   const wanted = [...new Map(ins.flatMap((l) => l.batches.flatMap((b) => {
     if (!('batchNo' in b) || b.batchNo === null) return [];
     const k = batchKey(b.batchNo);
@@ -121,9 +125,10 @@ async function batchIds(ctx: Ctx, ins: readonly StockIn[]): Promise<Map<string, 
   const tx = stockTx(ctx);
   // One at a time, in order, so two saves bringing the same new lots wait on their unique keys in the same order.
   for (const w of wanted) {
-    await tx.insert(batches).values({ itemId: w.itemId, batchNo: w.batchNo }).onConflictDoNothing();
+    await tx.insert(batches).values({ itemId: w.itemId, supplierId, batchNo: w.batchNo }).onConflictDoNothing();
     const [row] = await tx.select({ id: batches.id }).from(batches)
-      .where(and(eq(batches.itemId, w.itemId), isNull(batches.supplierId), eq(batches.batchKey, w.batchKey)));
+      .where(and(eq(batches.itemId, w.itemId), supplierId === null ? isNull(batches.supplierId) : eq(batches.supplierId, supplierId),
+        eq(batches.batchKey, w.batchKey)));
     if (row === undefined) throw new Error(`batch ${w.batchKey} wasn't found after its insert`);
     ids.set(`${w.itemId} ${w.batchKey}`, row.id);
   }
@@ -194,7 +199,7 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   const negativeMode = ctx.settings.get(NEGATIVE_STOCK);
   await lockPositions(ctx, [...ins.map((l) => [l.itemId, l.locationId] as const), ...outs.map((l) => [l.itemId, l.locationId] as const),
     ...transfers.flatMap((t) => [[t.itemId, t.from] as const, [t.itemId, t.to] as const])]);
-  const ids = await batchIds(ctx, ins);
+  const ids = await batchIds(ctx, ins, p.supplierId ?? null);
   // §1's step 4: the units the lines name, after the positions and batches, with the units still promised to the order
   // lines this posting finishes (a booking's, RC-122), in one id-ordered lock.
   const named = [...ins, ...outs, ...transfers].flatMap((l) => (l.units ?? []).map((u) => ({ itemId: l.itemId, serialNo: u.serialNo })));
@@ -300,9 +305,6 @@ function revaluationLines(m: PostedMovement): JournalLine[] {
 
 // The unit event that undoes one on a movement being mirrored (§5): goods that went out come back, and goods that came
 // back go out again, on the sale they were on. Any other kind isn't cancelled by a document's mirror.
-const UNDO: Readonly<Record<string, 'delivered' | 'delivery_returned'>> = {
-  delivered: 'delivery_returned', delivery_returned: 'delivered', returned: 'delivered',
-};
 
 /**
  * A document's cancellation (ADR-006 §4, §6; RC-207): the mirror of each of its movements, dated `businessDate`, at the
@@ -322,10 +324,12 @@ export async function reverseStock(ctx: Ctx, p: { sourceTable: string; sourceId:
   const [done] = await tx.select({ id: stockMovements.id }).from(stockMovements).where(inArray(stockMovements.reversesMovementId, ids)).limit(1);
   if (done !== undefined) throw new AppError('already_reversed', 'This document’s stock is already cancelled');
   await lockPositions(ctx, originals.map((m) => [m.itemId, m.locationId] as const));
-  const events = await tx.select({ itemId: unitEvents.itemId, serialNo: unitEvents.serialNo, kind: unitEvents.kind,
-    outMovementId: unitEvents.outMovementId, inMovementId: unitEvents.inMovementId }).from(unitEvents)
+  const events = await tx.select({ id: unitEvents.id, itemId: unitEvents.itemId, serialNo: unitEvents.serialNo, kind: unitEvents.kind,
+    outMovementId: unitEvents.outMovementId, inMovementId: unitEvents.inMovementId, condition: unitEvents.condition,
+    postedAt: unitEvents.postedAt }).from(unitEvents)
     .where(or(inArray(unitEvents.outMovementId, ids), inArray(unitEvents.inMovementId, ids)));
   await lockUnits(ctx, events);
+  await unitsStillThere(ctx, events, new Map(originals.map((m) => [m.id, m.locationId])));
   const rows = await tx.select({ movementId: stockMovementBatches.movementId, batchId: stockMovementBatches.batchId, qty: stockMovementBatches.qty })
     .from(stockMovementBatches).where(inArray(stockMovementBatches.movementId, ids));
   const base = { sourceTable: p.sourceTable, sourceId: p.sourceId, businessDate: p.businessDate };
@@ -352,21 +356,23 @@ export async function reverseStock(ctx: Ctx, p: { sourceTable: string; sourceId:
   }
   const undone: UnitEventRow[] = [];
   for (const e of events) {
-    const kind = UNDO[e.kind];
+    const kind = undoOf(e.kind);
     if (kind === undefined) throw new AppError('not_reversible', `A unit’s ${e.kind} isn’t undone by cancelling this document`);
-    const mirror = mirrors.get(e.outMovementId ?? e.inMovementId ?? '') ?? '';
-    undone.push(kind === 'delivery_returned' ? { itemId: e.itemId, serialNo: e.serialNo, kind, inMovementId: mirror }
-      : { itemId: e.itemId, serialNo: e.serialNo, kind, outMovementId: mirror, saleLineId: await lastSaleLine(ctx, e.itemId, e.serialNo) });
+    const unit = { itemId: e.itemId, serialNo: e.serialNo, kind };
+    const mirrorOut = mirrors.get(e.outMovementId ?? '') ?? '';
+    const mirrorIn = mirrors.get(e.inMovementId ?? '') ?? '';
+    if (kind === 'delivery_returned') undone.push({ ...unit, inMovementId: mirrorOut });
+    else if (kind === 'delivered') undone.push({ ...unit, outMovementId: mirrorIn, saleLineId: await lastSaleLine(ctx, e.itemId, e.serialNo) });
+    // Back where it came from, out of where the move put it; a move that set its condition (into demo, F13) puts back
+    // the one it had before.
+    else if (kind === 'moved') {
+      const before = e.condition === null ? undefined : await conditionBefore(ctx, e);
+      undone.push({ ...unit, outMovementId: mirrorIn, inMovementId: mirrorOut, ...(before === undefined ? {} : { condition: before }) });
+    } else if (kind === 'returned_to_supplier') undone.push({ ...unit, outMovementId: mirrorIn });
+    // Back in, in the batch and condition it left with (units keeps both while it's gone).
+    else undone.push({ ...unit, inMovementId: mirrorOut, ...(await goneUnit(ctx, e.itemId, e.serialNo)) });
   }
   await writeUnitEvents(ctx, base, undone);
   return posted;
 }
 
-// The sale a unit was last delivered on: where goods that came back go out again.
-async function lastSaleLine(ctx: Ctx, itemId: string, serialNo: string): Promise<string> {
-  const [row] = await stockTx(ctx).select({ saleLineId: unitEvents.saleLineId }).from(unitEvents)
-    .where(and(eq(unitEvents.itemId, itemId), eq(unitEvents.serialNo, serialNo), eq(unitEvents.kind, 'delivered')))
-    .orderBy(desc(unitEvents.postedAt)).limit(1);
-  if (row?.saleLineId == null) throw new AppError('not_reversible', `Unit ${serialNo} was never delivered on a sale`);
-  return row.saleLineId;
-}

@@ -22,13 +22,14 @@ export {
 } from './auth/sessions.ts';
 export { requestPasswordReset } from './auth/reset-email.ts';
 export {
-  awaitingApproval, decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash, withdrawPending,
+  approvedFor, awaitingApproval, decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash,
+  withdrawPending,
   type ApprovalSpec,
   type ApprovalVersion, type Decision,
 } from './approvals.ts';
 export { decodeCursor, encodeCursor, isoMoment, listScope, momentKey, sortedCursor, type SortKey } from './lists.ts';
 export { originAllowed } from './origin.ts';
-export { isActiveUser, principalsOf, roleOf } from './principals.ts';
+export { isActiveUser, peopleHolding, principalsOf, roleOf } from './principals.ts';
 export {
   defineNotification, markNotificationsRead, myNotificationsPage, notify, unreadNotifications, type NotificationKind,
 } from './notifications.ts';

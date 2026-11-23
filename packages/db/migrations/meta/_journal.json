@@ -568,6 +568,41 @@
       "when": 1795352515384,
       "tag": "0080_override_after",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795409256834,
+      "tag": "0081_stock_moves",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795409807048,
+      "tag": "0082_purchase_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1795414154437,
+      "tag": "0083_delivery_left",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1795414946448,
+      "tag": "0084_payments_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1795427885122,
+      "tag": "0085_goods_receipts",
+      "breakpoints": true
     }
   ]
 }

@@ -222,6 +222,20 @@ describe.skipIf(!url || !superUrl)('deliveries and delivery returns', () => {
     expect((await unit())?.ownership).toBe('ours');
   });
 
+  // auditor-2 on #365: a return's unit that has moved on since (here to a demo place) can't be sent out again by
+  // cancelling the return: units_mismatch, declared on the route, never a 500.
+  it('refuses to cancel a return whose unit has moved on since (units_mismatch)', async () => {
+    const serial = `SN-${tag()}`;
+    const at = await setup({ stock: '1', rate: '30', ordered: '1', serials: [serial] });
+    const sent = await deliver(at, '1', [serial]);
+    const back = await takeBack(at, sent.id, '1', [serial]);
+    const demo = await run(async (ctx) => (await addPlace(ctx, { code: `L${tag()}`, name: `Demo ${tag()}`, kind: 'demo' })).id);
+    await run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, transfers: [{ itemId: at.itemId,
+      from: at.placeId, to: demo, qty: q('1'), batches: [{ batchId: at.batchId, qty: q('1') }], units: [{ serialNo: serial }] }] }));
+    expect(await failure(run((ctx) => cancelDeliveryReturnNow(ctx, { id: back.id, businessDate: DATE, reason: 'Entered by mistake' }))))
+      .toBe('units_mismatch');
+  });
+
   // ADR-007 §1, ADR-001 §6a: a delivery is its order's owner's, whoever made it. A salesperson holding sales:read over
   // their own sees the delivery stores made of their order, and not one of a colleague's order.
   it('shows a salesperson at own scope the deliveries of their own orders, whoever made them, and no others', async () => {
