@@ -6,7 +6,7 @@
 import { after, purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purchasing';
 import { getPartyById } from '@radcore/lib-accounts';
 import { dec, roundMoney, type Money } from '@radcore/lib-common';
-import { AppError, decodeCursor, encodeCursor, listScope, type Ctx } from '@radcore/lib-platform';
+import { AppError, awaitingApproval, decodeCursor, encodeCursor, listScope, withdrawPending, type Ctx } from '@radcore/lib-platform';
 import { itemLabels } from '@radcore/lib-stock';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import type { createPurchaseBill, deletePurchaseBill, getPurchaseBill, listPurchaseBills, updatePurchaseBill } from '../contract.ts';
@@ -14,6 +14,7 @@ import {
   amountsOf, BILL_TOLERANCE, billOf, checkDraft, holdOrders, overPoRate, PAGE_KEY, poLineIdsOf, poLinesOf, wrongStatus,
   type BillIn, type BillOut, type In, type LineAmounts, type LineIn, type Out, type PoLine, type Status,
 } from './bill-checks.ts';
+import { billApproval } from './bill-post.ts';
 
 /** Writes a draft's lines afresh, numbered from 1 in the order sent; a goods line takes its PO line's item. */
 async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], po: ReadonlyMap<string, PoLine>): Promise<void> {
@@ -57,8 +58,8 @@ export async function changeBill(ctx: Ctx, { id, ...input }: In<typeof updatePur
 export async function dropBill(ctx: Ctx, { id }: In<typeof deletePurchaseBill>): Promise<Out<typeof deletePurchaseBill>> {
   const b = await billOf(ctx, id, 'bills:write', true);
   if (b.status !== 'draft') throw wrongStatus(b.status, 'deleted: cancel it instead');
-  // shortcut: the bills' approval arrives with posting (RAD-138 PR 3), which closes a pending request here first
-  // (withdrawPending), as a purchase order's delete does.
+  // A pending request goes with it, superseded, as a purchase order's does (the architect on RAD-114).
+  await withdrawPending(ctx, billApproval, id);
   await purchasingTx(ctx).delete(purchaseBills).where(eq(purchaseBills.id, id));
   return {};
 }
@@ -80,13 +81,13 @@ export async function listBillsPage(ctx: Ctx, input: In<typeof listPurchaseBills
   // if pages grow.
   const names = new Map<string, string>();
   for (const id of new Set(page.map((r) => r.partyId))) names.set(id, (await getPartyById(ctx, { id })).name);
+  const waiting = await awaitingApproval(ctx, billApproval, page.map((r) => r.id));
   const last = page.at(-1);
   return {
     items: page.map((r) => ({ id: r.id, number: r.number, supplierId: r.partyId, supplierName: names.get(r.partyId) ?? '',
       businessDate: r.businessDate, status: r.status as Status, supplierInvoiceNumber: r.supplierInvoiceNumber,
       supplierInvoiceDate: r.supplierInvoiceDate, total: r.total as Money | null,
-      // shortcut: no request can wait until posting and its approval arrive (RAD-138 PR 3).
-      awaitingApproval: false })),
+      awaitingApproval: waiting.has(r.id) })),
     next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
@@ -134,7 +135,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
   return {
     id: b.id, number: b.number, supplierId: b.partyId, supplierName: supplier.name, businessDate: b.businessDate, status: b.status as Status,
     supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate, total: b.total as Money | null,
-    awaitingApproval: false, supplierGstin: b.supplierGstin, statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes, amounts,
+    awaitingApproval: (await awaitingApproval(ctx, billApproval, [id])).has(id), supplierGstin: b.supplierGstin, statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes, amounts,
     chargesOverTolerance, cancelReason: b.cancelReason,
     lines: lines.map((l, i) => {
       const a = lineAmounts[i] ?? empty;

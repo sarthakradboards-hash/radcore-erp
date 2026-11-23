@@ -79,7 +79,7 @@ const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'unknown_par
 // What posting adds: the dates (ADR-008 §4), the file, the duplicate, the three-way match, the tax and stated total, the
 // approved version still holding, and the series.
 const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'date_before_source', 'bill_file_required', 'goods_not_received',
-  'over_received', 'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'version_changed', 'series_full'] as const;
+  'over_received', 'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'nothing_to_revalue', 'account_inactive', 'version_changed', 'series_full'] as const;
 // The duplicate check is the database's: a partial unique index on (party, the invoice's financial year, its key) over
 // every bill that isn't cancelled, drafts too (ADR-008 §7), so a draft's save meets it as posting does.
 const BILL_DB_ERRORS = {
@@ -127,7 +127,8 @@ export const postPurchaseBill = defineContract({
  * tax, the duplicate, and the series. */
 export const purchaseBillApproval = approvalContracts('purchase-bill', 'bills:approve',
   ['wrong_status', 'year_not_open', 'period_locked', 'date_before_source', 'not_a_supplier', 'gstin_mismatch', 'over_received',
-    'receipt_not_posted', 'duplicate_bill',
+    'receipt_not_posted', 'duplicate_bill', 'goods_not_received', 'bill_file_required', 'not_this_po_line', 'unknown_receipt_line',
+    'nothing_to_revalue', 'account_inactive',
     'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'series_full'], BILL_DB_ERRORS);
 /** Cancels a posted bill by a mirror entry dated `businessDate`, with the reason: only while nothing is applied to it
  * and no supplier return has debited it. */

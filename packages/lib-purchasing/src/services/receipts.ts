@@ -20,6 +20,7 @@ import { z } from 'zod';
 import type {
   cancelGoodsReceipt, createGoodsReceipt, deleteGoodsReceipt, getGoodsReceipt, listGoodsReceipts, postGoodsReceipt, updateGoodsReceipt,
 } from '../contract.ts';
+import { billedQty } from './billed.ts';
 import { receivedOf, settleOrder } from './received.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -278,8 +279,12 @@ export async function cancelReceiptNow(ctx: Ctx, { id, businessDate, reason }: I
   if (r.status !== 'posted') throw wrongStatus(r.status, 'cancelled');
   if (businessDate > today()) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < r.businessDate) throw refuse('date_before_source', `The receipt is dated ${r.businessDate}`, ['businessDate']);
-  // shortcut: bills (M4-03) and supplier returns (M4-05) aren't built yet, so nothing on a receipt can be billed or
-  // returned; RAD-138's billedQty, and M4-05's returns, refuse receipt_in_use here when they land.
+  // A receipt any of it was billed on stays (RAD-138): its bill clears what it accrued. shortcut: supplier returns (M4-05)
+  // aren't built yet, so nothing on a receipt can be returned; their check joins this one when they land.
+  const billed = await billedQty(ctx, (await linesOf(ctx, id)).map((l) => l.id));
+  if ([...billed.values()].some((q) => q.gt(0))) {
+    throw new AppError('receipt_in_use', 'Goods on this receipt have been billed, so it can’t be cancelled: cancel the bill first');
+  }
   await reverseStock(ctx, { sourceTable: SOURCE, sourceId: id, businessDate }).catch((e: unknown) => {
     if (e instanceof AppError && ['not_enough_stock', 'units_mismatch', 'unit_held', 'not_reversible'].includes(e.code)) {
       throw new AppError('receipt_in_use', 'Goods on this receipt have moved on since, so it can’t be cancelled: return them instead');

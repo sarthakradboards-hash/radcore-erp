@@ -9,6 +9,7 @@ export {
 export { purchaseOrderPrint } from './print/order.ts';
 export { addBill, changeBill, dropBill, getBillById, listBillsPage } from './services/bills.ts';
 export { BILL_SERIES, BILL_TOLERANCE, overPoRate } from './services/bill-checks.ts';
+export { billApproval, cancelBillNow, postBillNow } from './services/bill-post.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';

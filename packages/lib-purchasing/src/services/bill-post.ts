@@ -1,0 +1,264 @@
+// Posting a purchase bill (M4-03, RAD-138; ADR-008 §7, §7a, §12; ADR-006 §4, §6, F3): matched three ways, each goods line
+// against the receipt line it bills and through it the PO line, then posted in one save. Its approval, past the tolerance,
+// posts it too; cancelling mirrors it.
+//   locks (§12): the period FOR SHARE → its POs FOR SHARE → its receipts → the bill → the stock positions → the series
+//   Goods Received Not Billed: cleared by exactly what the billed quantities accrued at receipt, accepted goods first
+//     (F3, F4): a line taking a receipt line from b0 to b1 of its quantity q, worth v at receipt, clears
+//     round(v × b1 / q) − round(v × b0 / q), so the bill that takes the last of it clears what's left, exactly
+//   the price difference: the bill's value (with its charges spread by value, and GST it can't claim, §7a) less what it
+//     accrued; an accepted part's goes to stock across the sellable places holding the item, and to cost of goods sold
+//     for what's gone (ADR-006 §4); a billed reject's onto its rejects place
+import { purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purchasing';
+import { getPartyById, holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
+import { dec, indiaDate, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
+import { AppError, holdSeries, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
+import { holdStock, postStock, reverseStock, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
+import { asc, eq } from 'drizzle-orm';
+import type { cancelPurchaseBill, postPurchaseBill } from '../contract.ts';
+import {
+  amountsOf, BILL_SERIES, BILL_TOLERANCE, billOf, checkDraft, holdOrders, overPoRate, wrongStatus, type BillIn, type In, type Out, type Row,
+} from './bill-checks.ts';
+import { billedQty } from './billed.ts';
+import { receiptLinesFor } from './receipts.ts';
+import { buyingFrom } from './suppliers.ts';
+
+type Line = typeof purchaseBillLines.$inferSelect;
+type ReceiptLine = Awaited<ReturnType<typeof receiptLinesFor>>[number];
+const SOURCE = 'purchase_bills';
+const refuse = (code: string, message: string, path: (string | number)[]) => new AppError(code, message, [{ path, code, message }]);
+const zero = () => dec('0');
+const minOf = (a: Decimal, b: Decimal) => (a.lt(b) ? a : b);
+
+const linesOf = (ctx: Ctx, id: string) => purchasingTx(ctx).select().from(purchaseBillLines).where(eq(purchaseBillLines.billId, id))
+  .orderBy(asc(purchaseBillLines.lineNo));
+const receiptIdsOf = (lines: readonly Line[]) => lines.flatMap((l) => (l.receiptLineId === null ? [] : [l.receiptLineId]));
+
+/** §12's step 2 for a bill: its POs FOR SHARE, then its receipts, in id order, before the bill itself. */
+async function holdSources(ctx: Ctx, lines: readonly Line[]): Promise<ReceiptLine[]> {
+  await holdOrders(ctx, lines.flatMap((l) => (l.poLineId === null ? [] : [l.poLineId])));
+  return receiptLinesFor(ctx, receiptIdsOf(lines), { forUpdate: true });
+}
+
+/** The stored draft as its save sent it, for the draft's checks again. */
+const inputOf = (b: Row, lines: readonly Line[]): BillIn => ({ supplierId: b.partyId, businessDate: b.businessDate,
+  supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate, supplierGstin: b.supplierGstin,
+  statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes,
+  lines: lines.map((l) => (l.kind === 'goods'
+    ? { kind: 'goods' as const, poLineId: l.poLineId ?? '', receiptLineId: l.receiptLineId, qty: (l.qty ?? '0') as never, rate: (l.rate ?? '0') as never }
+    : { kind: 'charge' as const, charge: (l.charge ?? 'other') as 'other', description: l.description ?? '', hsn: l.hsn ?? '', amount: (l.amount ?? '0') as Money })) });
+
+/** A share of what a receipt line accrued, for billing it from `from` to `to` of its `qty`: telescoping, so the last bill
+ * clears exactly what's left. */
+const accrued = (value: string, qty: Decimal, from: Decimal, to: Decimal): Decimal =>
+  (qty.isZero() ? zero() : dec(roundMoney(dec(value).times(to).div(qty))).minus(dec(roundMoney(dec(value).times(from).div(qty)))));
+
+type Accrual = { line: Line; n: number; r: ReceiptLine; accepted: Decimal; rejected: Decimal; value: Decimal };
+type Judged = Awaited<ReturnType<typeof judge>>;
+
+/** Everything posting checks and works out, under the locks: the draft's checks again, the file, each goods line's
+ * receipt line (posted, dated on or before the bill, not billed past what came in), the tax and the stated total, and
+ * whether a line or the charges are past the tolerance. */
+async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonly ReceiptLine[]) {
+  if (b.status !== 'draft') throw wrongStatus(b.status, 'posted');
+  const po = await checkDraft(ctx, inputOf(b, lines));
+  if (b.fileId === null) throw refuse('bill_file_required', 'Attach the supplier’s bill before posting it', ['fileId']);
+  const byId = new Map(receipts.map((r) => [r.id, r]));
+  const used = await billedQty(ctx, receiptIdsOf(lines));
+  const accruals: Accrual[] = [];
+  for (const [n, line] of lines.entries()) {
+    if (line.kind !== 'goods') continue;
+    const r = line.receiptLineId === null ? undefined : byId.get(line.receiptLineId);
+    if (r === undefined) throw refuse('goods_not_received', 'Name the goods receipt this line bills, once the goods are in', ['lines', n, 'receiptLineId']);
+    if (b.businessDate < r.receiptDate) throw refuse('date_before_source', `Goods receipt ${r.receiptNumber ?? ''} is dated ${r.receiptDate}`, ['businessDate']);
+    const qty = dec(line.qty ?? '0');
+    const before = used.get(r.id) ?? zero();
+    // A posted receipt line has its QC figures (only a draft's are null).
+    const accepted = dec(r.accepted ?? '0');
+    const rejectedAll = dec(r.rejected ?? '0');
+    if (before.plus(qty).gt(accepted.plus(rejectedAll))) {
+      throw refuse('over_received', `Only ${accepted.plus(rejectedAll).minus(before).toFixed()} of that receipt line is left to bill`, ['lines', n, 'qty']);
+    }
+    // The accepted goods are billed first, the rejects only beyond them (F3, F4).
+    const accBefore = minOf(before, accepted);
+    const acc = minOf(qty, accepted.minus(accBefore));
+    const rejBefore = before.gt(accepted) ? before.minus(accepted) : zero();
+    const rej = qty.minus(acc);
+    const value = accrued(r.acceptedValue ?? '0', accepted, accBefore, accBefore.plus(acc))
+      .plus(accrued(r.rejectedValue ?? '0', rejectedAll, rejBefore, rejBefore.plus(rej)));
+    used.set(r.id, before.plus(qty));
+    accruals.push({ line, n, r, accepted: acc, rejected: rej, value });
+  }
+  const supplier = await buyingFrom(ctx, b.partyId);
+  const amounts = await amountsOf(ctx, supplier.stateCode, b.supplierInvoiceDate, lines);
+  if (dec(amounts.totals.total).minus(dec(b.statedTotal)).abs().gte(1)) {
+    throw refuse('total_mismatch', `The bill works out at ${amounts.totals.total}, not the ${b.statedTotal} it states: put it right with the supplier`, ['statedTotal']);
+  }
+  const tolerance = dec(ctx.settings.get(BILL_TOLERANCE));
+  const lineOver = lines.some((l) => {
+    if (l.kind !== 'goods') return false;
+    const over = overPoRate(l.rate ?? '0', po.get(l.poLineId ?? '')?.rate ?? '0');
+    return over === null || dec(over).gt(tolerance);
+  });
+  const taxableOf = (kind: string) => lines.reduce((s, l, i) => (l.kind === kind ? s.plus(dec(amounts.lines[i]?.taxable ?? '0')) : s), zero());
+  const [goods, charges] = [taxableOf('goods'), taxableOf('charge')];
+  const chargesOver = !charges.isZero() && (goods.isZero() || charges.times(100).div(goods).gt(tolerance));
+  // Input GST is claimed only from a regular registered supplier whose GSTIN is on the bill (§7a, until CA-04).
+  const claimable = b.supplierGstin !== null && !supplier.composition;
+  return { amounts, accruals, over: lineOver || chargesOver, claimable };
+}
+
+/** Spreads `total` over `weights` by value, to the paisa, the last taking what's left so the shares add up exactly. */
+function spread(total: Decimal, weights: readonly Decimal[]): Decimal[] {
+  const sum = weights.reduce((s, w) => s.plus(w), zero());
+  let left = total;
+  return weights.map((w, i) => {
+    if (i === weights.length - 1) return left;
+    const share = sum.isZero() ? zero() : dec(roundMoney(total.times(w).div(sum)));
+    left = left.minus(share);
+    return share;
+  });
+}
+
+/** Posts a judged bill: its price difference into stock and cost of goods sold, its entry, its tax and number. */
+async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Promise<string> {
+  const gstOf = (i: number) => {
+    const a = j.amounts.lines[i];
+    return a === undefined ? zero() : dec(a.cgst).plus(dec(a.sgst)).plus(dec(a.igst));
+  };
+  // What each line costs: its taxable value, and its GST where it can't be claimed (§7a). Charges spread over the goods.
+  const costOf = (i: number) => dec(j.amounts.lines[i]?.taxable ?? '0').plus(j.claimable ? zero() : gstOf(i));
+  const chargeCost = lines.reduce((s, l, i) => (l.kind === 'charge' ? s.plus(costOf(i)) : s), zero());
+  const goodsAt = j.accruals.map((a) => lines.indexOf(a.line));
+  const chargeShares = spread(chargeCost, goodsAt.map((i) => dec(j.amounts.lines[i]?.taxable ?? '0')));
+  const byItem = new Map<string, { d: Decimal; billed: Decimal }>();
+  const revalues: StockRevalue[] = [];
+  for (const [k, a] of j.accruals.entries()) {
+    const d = costOf(goodsAt[k] ?? 0).plus(chargeShares[k] ?? zero()).minus(a.value);
+    const qty = a.accepted.plus(a.rejected);
+    const dRejected = a.rejected.isZero() || qty.isZero() ? zero() : dec(roundMoney(d.times(a.rejected).div(qty)));
+    // A billed reject's difference goes onto its rejects place, so it's worth what was billed (§7).
+    if (!dRejected.isZero()) revalues.push({ itemId: a.r.itemId, locationId: a.r.rejectsLocationId, sourceLineId: a.line.id, value: roundMoney(dRejected) });
+    const item = byItem.get(a.r.itemId) ?? { d: zero(), billed: zero() };
+    byItem.set(a.r.itemId, { d: item.d.plus(d.minus(dRejected)), billed: item.billed.plus(a.accepted) });
+  }
+  // The accepted goods' difference, by item, across the sellable places holding it, under their positions' locks.
+  const items = [...byItem.keys()];
+  const seen = await sellableOnHand(ctx, items);
+  await holdStock(ctx, [...items.flatMap((itemId) => (seen.get(itemId) ?? []).map((p) => ({ itemId, locationId: p.locationId }))),
+    ...revalues.map((r) => ({ itemId: r.itemId, locationId: r.locationId }))]);
+  const on = await sellableOnHand(ctx, items);
+  let cogs = zero();
+  for (const [itemId, { d, billed }] of byItem) {
+    const places = on.get(itemId) ?? [];
+    const held = places.reduce((s, p) => s.plus(dec(p.qty)), zero());
+    const toStock = held.gte(billed) ? d : held.gt(0) ? dec(roundMoney(d.times(held).div(billed))) : zero();
+    cogs = cogs.plus(d.minus(toStock));
+    for (const [i, share] of spread(toStock, places.map((p) => dec(p.qty))).entries()) {
+      if (!share.isZero()) revalues.push({ itemId, locationId: places[i]?.locationId ?? '', value: roundMoney(share) });
+    }
+  }
+  const moved = revalues.length === 0 ? [] : await postStock(ctx, { sourceTable: SOURCE, sourceId: b.id, businessDate: b.businessDate, revalues });
+  const t = j.amounts.totals;
+  const signed = (account: JournalLine['account'], v: Decimal, more: Partial<JournalLine> = {}): JournalLine[] =>
+    (v.isZero() ? [] : [{ account, ...more, ...(v.gt(0) ? { debit: roundMoney(v) } : { credit: roundMoney(v.abs()) }) }]);
+  const entryLines: JournalLine[] = [
+    ...signed({ system: 'grni' }, j.accruals.reduce((s, a) => s.plus(a.value), zero())),
+    ...moved.flatMap((m) => signed({ system: 'stock' }, dec(m.value), { itemId: m.itemId, locationId: m.locationId })),
+    ...signed({ system: 'cogs' }, cogs),
+    ...(j.claimable ? [...signed({ system: 'input_cgst' }, dec(t.cgst)), ...signed({ system: 'input_sgst' }, dec(t.sgst)),
+      ...signed({ system: 'input_igst' }, dec(t.igst))] : []),
+    ...signed({ system: 'round_off' }, dec(t.roundOff)),
+    { account: { system: 'creditors' }, partyId: b.partyId, credit: t.total },
+  ];
+  // The journal's and the bills' series last (ADR-006 §1): the number is the save's last step.
+  await holdSeries(ctx, [JOURNAL_SERIES, BILL_SERIES]);
+  const number = await nextNumber(ctx, BILL_SERIES, b.businessDate);
+  const entry = await postEntry(ctx, { kind: 'purchase_bill', businessDate: b.businessDate, source: { table: SOURCE, id: b.id }, lines: entryLines });
+  const tx = purchasingTx(ctx);
+  for (const [i, l] of lines.entries()) {
+    const a = j.amounts.lines[i];
+    if (a !== undefined) {
+      await tx.update(purchaseBillLines).set({ gstRate: a.gstRate, gstRateSource: a.gstRateSource, taxable: a.taxable, cgst: a.cgst, sgst: a.sgst,
+        igst: a.igst, lineTotal: a.lineTotal }).where(eq(purchaseBillLines.id, l.id));
+    }
+  }
+  await tx.update(purchaseBills).set({ status: 'posted', number, postedEntryId: entry.id, placeOfSupply: j.amounts.placeOfSupply,
+    taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, roundOff: t.roundOff, total: t.total }).where(eq(purchaseBills.id, b.id));
+  return number;
+}
+
+/** What the approver sees and approves (RAD-38): the supplier's bill as entered, its lines and its total. */
+type Version = { supplierId: string; businessDate: string; supplierInvoiceNumber: string; supplierInvoiceDate: string; statedTotal: string;
+  fileId: string | null; lines: { kind: string; poLineId: string | null; receiptLineId: string | null; qty: string | null; rate: string | null;
+    hsn: string | null; amount: string | null }[]; total: string | null };
+
+/** The bills' approval (ADR-008 §7): kind purchase-bill, under bills:approve. Approving posts the bill, so its locks come
+ * first (§12): the period, then the bill's POs and receipts, before the engine locks the bill. */
+export const billApproval: ApprovalSpec<Version> = {
+  kind: 'purchase-bill',
+  table: 'purchase_bills',
+  parts: ['purchase_bill_lines'],
+  async version(ctx, id, { forUpdate }) {
+    const q = purchasingTx(ctx).select().from(purchaseBills).where(eq(purchaseBills.id, id)).limit(1);
+    const [b] = forUpdate ? await q.for('update') : await q;
+    // Its poster asks (bills:write) and someone else decides (bills:approve); outside both, there's no such bill. Its
+    // status isn't part of it: approving posts it, which changes no figure approved.
+    if (b === undefined) return null;
+    if (!ctx.can('bills:write', { owner: b.createdBy }) && !ctx.can('bills:approve', { owner: b.createdBy })) return null;
+    const lines = await linesOf(ctx, id);
+    // It refuses nothing, for the approver's queue: a total that can't be worked out now hashes as null.
+    const party = await getPartyById(ctx, { id: b.partyId });
+    const worked = await amountsOf(ctx, party.stateCode, b.supplierInvoiceDate, lines).catch(() => null);
+    return { supplierId: b.partyId, businessDate: b.businessDate, supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate,
+      statedTotal: b.statedTotal, fileId: b.fileId, total: worked?.totals.total ?? null,
+      lines: lines.map((l) => ({ kind: l.kind, poLineId: l.poLineId, receiptLineId: l.receiptLineId, qty: l.qty, rate: l.rate, hsn: l.hsn, amount: l.amount })) };
+  },
+  async lockFirst(ctx, id) {
+    await lockPeriod(ctx);
+    await holdSources(ctx, await linesOf(ctx, id));
+  },
+  async approved(ctx, id) {
+    const b = await billOf(ctx, id, 'bills:approve', true);
+    await holdPeriod(ctx, b.businessDate);
+    const lines = await linesOf(ctx, id);
+    const receipts = await receiptLinesFor(ctx, receiptIdsOf(lines), { forUpdate: true });
+    await commit(ctx, b, lines, await judge(ctx, b, lines, receipts));
+  },
+  // A refused one stays a draft: its poster puts it right with the supplier, or lets it be.
+  async rejected() {},
+};
+
+/** POST /purchasing/bills/:id/post (bills:write): posted at once within the tolerance, else by asking for approval. */
+export async function postBillNow(ctx: Ctx, { id }: In<typeof postPurchaseBill>): Promise<Out<typeof postPurchaseBill>> {
+  // §12: the period first, so the draft is read unlocked to learn its date and sources, then they and it are locked.
+  const seen = await billOf(ctx, id, 'bills:write');
+  if (seen.status !== 'draft') throw wrongStatus(seen.status, 'posted');
+  await holdPeriod(ctx, seen.businessDate);
+  await holdSources(ctx, await linesOf(ctx, id));
+  const b = await billOf(ctx, id, 'bills:write', true);
+  const lines = await linesOf(ctx, id);
+  const receipts = await receiptLinesFor(ctx, receiptIdsOf(lines), { forUpdate: true });
+  const j = await judge(ctx, b, lines, receipts);
+  if (j.over) {
+    const asked = await requestApproval(ctx, billApproval, id);
+    return { status: 'pending_approval', number: null, approvalId: asked.id, versionHash: asked.versionHash };
+  }
+  return { status: 'posted', number: await commit(ctx, b, lines, j), approvalId: null, versionHash: null };
+}
+
+/** POST /purchasing/bills/:id/cancel (bills:write): its entry and price difference mirrored, dated the cancellation's
+ * day, only while nothing is applied to it (the database's guard_applied_cancel answers still_applied). */
+export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<typeof cancelPurchaseBill>): Promise<Out<typeof cancelPurchaseBill>> {
+  await holdPeriod(ctx, businessDate);
+  await holdSources(ctx, await linesOf(ctx, (await billOf(ctx, id, 'bills:write')).id));
+  const b = await billOf(ctx, id, 'bills:write', true);
+  if (b.status !== 'posted') throw wrongStatus(b.status, 'cancelled');
+  if (businessDate > indiaDate(new Date())) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
+  if (businessDate < b.businessDate) throw refuse('date_before_source', `The bill is dated ${b.businessDate}`, ['businessDate']);
+  // shortcut: supplier returns (M4-05) debit a bill; they refuse bill_returned here when they land.
+  await reverseStock(ctx, { sourceTable: SOURCE, sourceId: id, businessDate });
+  const [own] = await reverseEntriesOf(ctx, { source: { table: SOURCE, id }, businessDate, reason });
+  await purchasingTx(ctx).update(purchaseBills).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
+    cancelReason: reason, cancelEntryId: own?.id ?? null }).where(eq(purchaseBills.id, id));
+  return {};
+}
