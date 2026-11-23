@@ -12,7 +12,7 @@ import { purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purc
 import { getPartyById, holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, indiaDate, roundMoney, roundQty, type Decimal, type Money } from '@radcore/lib-common';
 import { AppError, holdSeries, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
-import { holdStock, postStock, quantitiesAt, reverseStock, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
+import { holdStock, postStock, quantitiesAt, revaluesOf, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import type { cancelPurchaseBill, postPurchaseBill } from '../contract.ts';
 import {
@@ -131,9 +131,14 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
   const goodsAt = j.accruals.map((a) => lines.indexOf(a.line));
   const chargeShares = spread(chargeCost, goodsAt.map((i) => dec(j.amounts.lines[i]?.taxable ?? '0')));
   const byItem = new Map<string, { d: Decimal; billed: Decimal }>();
-  const add = (itemId: string, d: Decimal, billed: Decimal) => {
+  // Each line's part of its item's billed quantity, in order, and how much of each line the stock share covers (q).
+  const parts: { itemId: string; lineId: string; qty: Decimal }[] = [];
+  const covered = new Map<string, Decimal>();
+  const cover = (lineId: string, qty: Decimal) => covered.set(lineId, (covered.get(lineId) ?? zero()).plus(qty));
+  const add = (itemId: string, d: Decimal, billed: Decimal, lineId: string) => {
     const item = byItem.get(itemId) ?? { d: zero(), billed: zero() };
     byItem.set(itemId, { d: item.d.plus(d), billed: item.billed.plus(billed) });
+    if (billed.gt(0)) parts.push({ itemId, lineId, qty: billed });
   };
   const revalues: StockRevalue[] = [];
   const rejects: { itemId: string; locationId: string; lineId: string; d: Decimal; qty: Decimal }[] = [];
@@ -142,7 +147,7 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     const qty = a.accepted.plus(a.rejected);
     const dRejected = a.rejected.isZero() || qty.isZero() ? zero() : dec(roundMoney(d.times(a.rejected).div(qty)));
     if (!a.rejected.isZero()) rejects.push({ itemId: a.r.itemId, locationId: a.r.rejectsLocationId, lineId: a.line.id, d: dRejected, qty: a.rejected });
-    add(a.r.itemId, d.minus(dRejected), a.accepted);
+    add(a.r.itemId, d.minus(dRejected), a.accepted, a.line.id);
   }
   // The positions it may revalue, under their locks: the sellable places holding each item, and each reject's place.
   const items = [...byItem.keys()];
@@ -160,7 +165,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     stillThere.set(key, roundQty(there.minus(used), 3));
     const toRejects = used.eq(r.qty) ? r.d : dec(roundMoney(r.d.times(used).div(r.qty)));
     if (!toRejects.isZero()) revalues.push({ itemId: r.itemId, locationId: r.locationId, sourceLineId: r.lineId, value: roundMoney(toRejects) });
-    add(r.itemId, r.d.minus(toRejects), r.qty.minus(used));
+    cover(r.lineId, used);
+    add(r.itemId, r.d.minus(toRejects), r.qty.minus(used), r.lineId);
   }
   const on = await sellableOnHand(ctx, items);
   let cogs = zero();
@@ -171,6 +177,13 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     const places = (on.get(itemId) ?? []).filter((p) => held.has(p.locationId));
     const onHand = places.reduce((s, p) => s.plus(dec(p.qty)), zero());
     const toStock = onHand.gte(billed) ? d : onHand.gt(0) ? dec(roundMoney(d.times(onHand).div(billed))) : zero();
+    // The units that share covers, handed to the item's lines in order.
+    let left = onHand.gte(billed) ? billed : onHand.gt(0) ? onHand : zero();
+    for (const part of parts.filter((x) => x.itemId === itemId)) {
+      const take = minOf(part.qty, left);
+      cover(part.lineId, take);
+      left = left.minus(take);
+    }
     cogs = cogs.plus(d.minus(toStock));
     for (const [i, share] of spread(toStock, places.map((p) => dec(p.qty))).entries()) {
       if (!share.isZero()) revalues.push({ itemId, locationId: places[i]?.locationId ?? '', value: roundMoney(share) });
@@ -198,7 +211,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     const a = j.amounts.lines[i];
     if (a !== undefined) {
       await tx.update(purchaseBillLines).set({ gstRate: a.gstRate, gstRateSource: a.gstRateSource, taxable: a.taxable, cgst: a.cgst, sgst: a.sgst,
-        igst: a.igst, lineTotal: a.lineTotal }).where(eq(purchaseBillLines.id, l.id));
+        igst: a.igst, lineTotal: a.lineTotal, ...(l.kind === 'goods' ? { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3) } : {}) })
+        .where(eq(purchaseBillLines.id, l.id));
     }
   }
   await tx.update(purchaseBills).set({ status: 'posted', number, postedEntryId: entry.id, placeOfSupply: j.amounts.placeOfSupply,
@@ -265,6 +279,58 @@ export async function postBillNow(ctx: Ctx, { id }: In<typeof postPurchaseBill>)
   return { status: 'posted', number: await commit(ctx, b, lines, j), approvalId: null, versionHash: null };
 }
 
+/**
+ * A cancelled bill's price difference, taken back as things stand now (the architect on RAD-138, ADR-008 §7): its entry
+ * is mirrored whole, so the Cost of Goods Sold part comes back from there; its stock part comes back by ADR-006 §4's
+ * split, from the places still holding the item (the sellable ones, and a rejects place it revalued), by quantity, and
+ * from Cost of Goods Sold for what's gone. No position at quantity 0 is revalued (0044). A `revaluation` entry moves the
+ * mirror's stock lines to where the value really comes back from, so each position's movements and lines still agree
+ * (RA007).
+ */
+async function undoDifference(ctx: Ctx, b: Row, lines: readonly Line[], businessDate: string): Promise<void> {
+  const original = await revaluesOf(ctx, SOURCE, b.id);
+  if (original.length === 0) return;
+  const items = [...new Set(original.map((r) => r.itemId))];
+  const seen = await sellableOnHand(ctx, items);
+  const sellableAt = (itemId: string) => new Set((seen.get(itemId) ?? []).map((p) => p.locationId));
+  // The rejects places it revalued count while they still hold the item.
+  const others = original.filter((r) => !sellableAt(r.itemId).has(r.locationId)).map((r) => ({ itemId: r.itemId, locationId: r.locationId }));
+  await holdStock(ctx, [...items.flatMap((itemId) => (seen.get(itemId) ?? []).map((p) => ({ itemId, locationId: p.locationId }))), ...others]);
+  const [on, there] = [await sellableOnHand(ctx, items), await quantitiesAt(ctx, others)];
+  const revalues: StockRevalue[] = [];
+  let cogs = zero();
+  for (const itemId of items) {
+    const share = original.filter((r) => r.itemId === itemId).reduce((t, r) => t.plus(dec(r.value)), zero());
+    const covered = lines.reduce((t, l) => (l.itemId === itemId ? t.plus(dec(l.revaluedQty ?? '0')) : t), zero());
+    const held = sellableAt(itemId);
+    const places = [...(on.get(itemId) ?? []).filter((p) => held.has(p.locationId)).map((p) => ({ locationId: p.locationId, qty: dec(p.qty) })),
+      ...others.filter((o) => o.itemId === itemId).map((o) => ({ locationId: o.locationId, qty: dec(there.get(`${itemId} ${o.locationId}`) ?? '0') }))]
+      .filter((p) => p.qty.gt(0));
+    const now = places.reduce((t, p) => t.plus(p.qty), zero());
+    const back = now.gte(covered) ? share : now.gt(0) ? dec(roundMoney(share.times(now).div(covered))) : zero();
+    cogs = cogs.plus(share.minus(back));
+    for (const [i, part] of spread(back, places.map((p) => p.qty)).entries()) {
+      if (!part.isZero()) revalues.push({ itemId, locationId: places[i]?.locationId ?? '', value: roundMoney(part.negated()) });
+    }
+  }
+  const moved = revalues.length === 0 ? [] : await postStock(ctx, { sourceTable: SOURCE, sourceId: b.id, businessDate, revalues });
+  // Per position: the mirror credited what posting debited, so put that back and take off what really came back.
+  const net = new Map<string, { itemId: string; locationId: string; value: Decimal }>();
+  const at = (itemId: string, locationId: string, v: Decimal) => {
+    const key = `${itemId} ${locationId}`;
+    net.set(key, { itemId, locationId, value: (net.get(key)?.value ?? zero()).plus(v) });
+  };
+  for (const r of original) at(r.itemId, r.locationId, dec(r.value));
+  for (const m of moved) at(m.itemId, m.locationId, dec(m.value));
+  const signed = (account: JournalLine['account'], v: Decimal, more: Partial<JournalLine> = {}): JournalLine[] =>
+    (v.isZero() ? [] : [{ account, ...more, ...(v.gt(0) ? { debit: roundMoney(v) } : { credit: roundMoney(v.abs()) }) }]);
+  const entryLines = [...[...net.values()].flatMap((p) => signed({ system: 'stock' }, p.value, { itemId: p.itemId, locationId: p.locationId })),
+    ...signed({ system: 'cogs' }, cogs.negated())];
+  if (entryLines.length > 0) {
+    await postEntry(ctx, { kind: 'revaluation', businessDate, source: { table: SOURCE, id: b.id }, lines: entryLines });
+  }
+}
+
 /** POST /purchasing/bills/:id/cancel (bills:write): its entry and price difference mirrored, dated the cancellation's
  * day, only while nothing is applied to it (the database's guard_applied_cancel answers still_applied). */
 export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<typeof cancelPurchaseBill>): Promise<Out<typeof cancelPurchaseBill>> {
@@ -275,8 +341,8 @@ export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<t
   if (businessDate > indiaDate(new Date())) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < b.businessDate) throw refuse('date_before_source', `The bill is dated ${b.businessDate}`, ['businessDate']);
   // shortcut: supplier returns (M4-05) debit a bill; they refuse bill_returned here when they land.
-  await reverseStock(ctx, { sourceTable: SOURCE, sourceId: id, businessDate });
   const [own] = await reverseEntriesOf(ctx, { source: { table: SOURCE, id }, businessDate, reason });
+  await undoDifference(ctx, b, await linesOf(ctx, id), businessDate);
   await purchasingTx(ctx).update(purchaseBills).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
     cancelReason: reason, cancelEntryId: own?.id ?? null }).where(eq(purchaseBills.id, id));
   return {};

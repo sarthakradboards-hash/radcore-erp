@@ -135,6 +135,7 @@ export const purchaseBillApproval = approvalContracts('purchase-bill', 'bills:ap
 export const cancelPurchaseBill = defineContract({
   method: 'POST', path: '/purchasing/bills/:id/cancel', auth: 'session', perm: 'bills:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),
-  errors: ['wrong_status', 'date_before_source', 'date_in_future', 'year_not_open', 'period_locked', 'still_applied', 'bill_returned'],
+  errors: ['wrong_status', 'date_before_source', 'date_in_future', 'year_not_open', 'period_locked', 'still_applied', 'bill_returned',
+    'nothing_to_revalue', 'account_inactive'],
   dbErrors: { 'RA006:document_still_applied': { code: 'still_applied', message: 'Payments or debit notes are still applied to this bill: reverse them first' } },
 });

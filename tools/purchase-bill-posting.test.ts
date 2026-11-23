@@ -273,6 +273,53 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     expect(await grni(at)).toBe('0.00');
   });
 
+  // Sells `qty` from a place, batch by batch, as a delivery would: issued at the average.
+  const sell = async (at: At, locationId: string, qty: number) => {
+    const { rows } = await pool.query<{ batch_id: string; q: string }>(`select smb.batch_id, sum(case m.direction when 'out' then -smb.qty else smb.qty end)::int::text as q
+      from radcore.stock_movement_batches smb join radcore.stock_movements m on m.id = smb.movement_id
+      where m.item_id = $1 and m.location_id = $2 group by smb.batch_id having sum(case m.direction when 'out' then -smb.qty else smb.qty end) > 0
+      order by smb.batch_id`, [at.itemId, locationId]);
+    let left = qty;
+    const batches = rows.flatMap((r) => {
+      const take = Math.min(left, Number(r.q));
+      left -= take;
+      return take > 0 ? [{ batchId: r.batch_id, qty: q(String(take)) }] : [];
+    });
+    await run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE,
+      outs: [{ itemId: at.itemId, locationId, qty: q(String(qty)), batches }] }), at.staff);
+  };
+  const undoneBy = (at: At, billId: string) => run(async (ctx) => {
+    const page = await journalPage(ctx, { limit: 100, filter: { from: DATE, to: DATE, kind: 'revaluation' } });
+    const id = page.items.find((e) => e.source.id === billId)?.id;
+    return id === undefined ? [] : (await journalEntryById(ctx, { id })).lines.map((l) => `${l.account.name} ${l.debit} ${l.credit}`).sort();
+  }, at.staff);
+
+  // The architect on RAD-138: a cancel takes the price difference back by ADR-006 §4's split as things stand now. With
+  // every unit sold since, its 1,000.00 comes back from Cost of Goods Sold, and Stores, at 0, isn't revalued (0044).
+  it('cancels a bill after its goods were all sold: the stock share comes back from COGS, and nothing is revalued at 0', async () => {
+    const at = await setup();
+    const { id } = await draft(at, { lines: [goods(at, '2', '62500')], total: '131250' });
+    await post(at, id);
+    await sell(at, at.places.stores, 4);
+    expect(await code(run((ctx) => cancelBillNow(ctx, { id, businessDate: DATE, reason: 'Wrong supplier' }), at.staff))).toBe('ok');
+    expect(await position(at.itemId, at.places.stores)).toEqual({ qty: '0', value: '0.00' });
+    expect(await undoneBy(at, id)).toEqual(['Cost of Goods Sold 0.00 1000.00', 'Stock in Hand 1000.00 0.00']);
+    expect(await grni(at)).toBe('186000.00');
+  });
+
+  // Some sold: 1 left of the 2 the share covered, so half of it, 500.00, comes back from Stores, and 500.00 from COGS.
+  it('cancels a bill after some of its goods were sold: half from the one still there, half from COGS', async () => {
+    const at = await setup();
+    const { id } = await draft(at, { lines: [goods(at, '2', '62500')], total: '131250' });
+    await post(at, id);
+    await sell(at, at.places.stores, 3);
+    const before = await position(at.itemId, at.places.stores);
+    await run((ctx) => cancelBillNow(ctx, { id, businessDate: DATE, reason: 'Wrong supplier' }), at.staff);
+    const after = await position(at.itemId, at.places.stores);
+    expect([before?.qty, after?.qty, (Number(before?.value) - Number(after?.value)).toFixed(2)]).toEqual(['1', '1', '500.00']);
+    expect(await undoneBy(at, id)).toEqual(['Cost of Goods Sold 0.00 500.00', 'Stock in Hand 500.00 0.00']);
+  });
+
   it('keeps a billed receipt (receipt_in_use), and cancels a bill back, its price difference and entry mirrored, its number reusable', async () => {
     const at = await setup();
     const number = `INV/${tag()}`;

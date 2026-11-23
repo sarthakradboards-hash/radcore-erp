@@ -389,5 +389,7 @@ export async function receiptLinesFor(ctx: Ctx, lineIds: readonly string[], o: {
   if (receiptIds.length > 0) {
     await tx.select({ id: goodsReceipts.id }).from(goodsReceipts).where(inArray(goodsReceipts.id, receiptIds)).orderBy(asc(goodsReceipts.id)).for('update');
   }
-  return q;
+  // Read again under the lock (awaiting `q` runs it anew), so each receipt's status is the one now held, not the one
+  // seen before the lock (backend-3 on #380): don't fold this into the read above.
+  return await q;
 }

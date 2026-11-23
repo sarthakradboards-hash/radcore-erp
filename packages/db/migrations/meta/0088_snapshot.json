@@ -1,5 +1,5 @@
 {
-  "id": "7cb4d6a9-670c-44c4-b437-35a23a8be153",
+  "id": "5280c122-0812-411b-beed-ea81c16f4dd6",
   "prevId": "6f79cfec-f86c-405c-804d-1c5564a404a3",
   "version": "7",
   "dialect": "postgresql",
@@ -17892,6 +17892,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "revalued_qty": {
+          "name": "revalued_qty",
+          "type": "numeric(18, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "gst_rate": {
           "name": "gst_rate",
           "type": "numeric(9, 6)",
@@ -18080,6 +18086,10 @@
         "ck_purchase_bill_lines_amount": {
           "name": "ck_purchase_bill_lines_amount",
           "value": "\"radcore\".\"purchase_bill_lines\".\"amount\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"amount\" <> 'NaN'"
+        },
+        "ck_purchase_bill_lines_revalued_qty": {
+          "name": "ck_purchase_bill_lines_revalued_qty",
+          "value": "\"radcore\".\"purchase_bill_lines\".\"revalued_qty\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"revalued_qty\" <> 'NaN'"
         },
         "ck_purchase_bill_lines_gst_rate": {
           "name": "ck_purchase_bill_lines_gst_rate",

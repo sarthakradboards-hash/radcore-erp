@@ -80,6 +80,9 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   description: boundedText({ max: 100 }),
   hsn: text(),
   amount: money(),
+  // Of a goods line's quantity, how much its price difference went to stock for at posting (ADR-006 §4's q): a cancel
+  // takes that share back by the same split, as the goods stand then (the architect on RAD-138).
+  revaluedQty: qty(),
   gstRate: percent(), gstRateSource: boundedText({ max: 200 }), taxable: money(), cgst: money(), sgst: money(), igst: money(), lineTotal: money(),
 }, (t) => [
   check('ck_purchase_bill_lines_kind', sql`${t.kind} in ('goods', 'charge')`),
