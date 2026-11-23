@@ -158,7 +158,8 @@ export const crm = {
 
   'crm.assign.title': 'Hand on this lead',
   'crm.assign.body': 'Only someone who works every lead may hand one on.',
-  'crm.assign.me': 'Make it mine',
+  'crm.assign.pick': 'Choose who',
+  'crm.assign.forbidden': 'You can’t hand leads on: that’s for someone who works every lead.',
   'crm.assign.nobody': 'Give it back to no one',
   'crm.assign.done': 'Handed on',
 
