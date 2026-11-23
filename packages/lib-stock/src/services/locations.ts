@@ -55,7 +55,6 @@ export async function listPlaces(ctx: Ctx, input: In<typeof listLocations>): Pro
   };
 }
 
-/** POST /stock/locations (locations:write). */
 /** A job work place names its job worker, an existing party, and no other kind names one (ADR-008 §11). */
 async function checkJobWorker(ctx: Ctx, kind: string, partyId: string | null): Promise<void> {
   if (kind === 'job_work' && partyId === null) {
@@ -76,6 +75,7 @@ async function checkJobWorker(ctx: Ctx, kind: string, partyId: string | null): P
   }
 }
 
+/** POST /stock/locations (locations:write). */
 export async function addPlace(ctx: Ctx, input: In<typeof addLocation>): Promise<Out<typeof addLocation>> {
   const partyId = input.partyId ?? null;
   await checkJobWorker(ctx, input.kind, partyId);
