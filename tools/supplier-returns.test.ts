@@ -135,6 +135,37 @@ describe.skipIf(!url || !superUrl)('supplier returns', { timeout: 30_000 }, () =
     expect((await order(at)).status).toBe('closed');
   });
 
+  // The architect on RAD-140 (F4's second variant): Rejected holds A's reject at 62,000.00 and B's at 60,000.00. Each goes
+  // out at the place's average, 61,000.00, while Goods Received Not Billed gets back what each receipt accrued; the
+  // difference goes to Cost of Goods Sold, and nets to nothing once both are back.
+  it('returns rejects of two rates at the place’s average, GRNI at each receipt’s rate, the difference to COGS', async () => {
+    const at = await received();
+    const sB = `S-0008-${tag()}`;
+    const b = await run(async (ctx) => {
+      const { id: poId } = await addOrder(ctx, { supplierId: at.supplierId, businessDate: DATE, expectedBy: null, notes: null,
+        lines: [{ itemId: at.itemId, qty: q('1'), rate: unitPriceString().parse('60000') }] });
+      await placeOrder(ctx, { id: poId });
+      const orderLineId = (await getOrderById(ctx, { id: poId })).lines[0]?.id ?? '';
+      const { id } = await addReceipt(ctx, { orderId: poId, businessDate: DATE, locationId: at.stores, rejectsLocationId: at.rejects,
+        supplierRef: null, notes: null, lines: [{ orderLineId, received: q('1') }] });
+      const lineId = (await getReceiptById(ctx, { id })).lines[0]?.id ?? '';
+      await postReceipt(ctx, { id, lines: [{ lineId, batches: [{ batchNo: 'L1', accepted: q('0'), rejected: q('1') }], rejectReason: 'Scratched',
+        serials: [{ serialNo: sB, chassisNo: null, batchNo: 'L1', rejected: true }] }] });
+      return { lineId };
+    }, at.staff);
+    const { id: first } = await draft(at);
+    await run((ctx) => postReturn(ctx, { id: first }), at.staff);
+    const { id: second } = await run((ctx) => addReturn(ctx, { supplierId: at.supplierId, businessDate: DATE, locationId: at.rejects,
+      reason: 'Scratched', notes: null, lines: [{ receiptLineId: b.lineId, qty: q('1'), batches: [{ batchId: at.batchId, qty: q('1') }],
+        serials: [sB] }] }), at.staff);
+    await run((ctx) => postReturn(ctx, { id: second }), at.staff);
+    expect([await entryOf(at, first), await entryOf(at, second)]).toEqual([
+      ['Goods Received Not Billed 62000.00 0.00', 'Stock in Hand 0.00 61000.00', 'Cost of Goods Sold 0.00 1000.00'],
+      ['Goods Received Not Billed 60000.00 0.00', 'Stock in Hand 0.00 61000.00', 'Cost of Goods Sold 1000.00 0.00']]);
+    expect([await onHand(at.itemId, at.rejects), (await run((ctx) => getReturnById(ctx, { id: first }), at.staff)).unbilledValue])
+      .toEqual([{ qty: '0', value: '0.00' }, '62000.00']);
+  });
+
   // RC-129: a return is undone. Its mirror puts the reject back at Rejected at its value, the unit `received` there, and
   // the PO line's count back up, closing the PO again.
   it('cancels a return: the reject, its unit and the PO as they were', async () => {

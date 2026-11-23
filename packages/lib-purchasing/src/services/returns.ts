@@ -1,7 +1,7 @@
 // Supplier returns (M4-05, RAD-140; ADR-008 §1, §3, §4, §8, §12; ADR-006 §5, §6, F4). A return takes rejects back to
 // their supplier out of a rejects place, each line naming the receipt line its goods came in on. Posting sends the goods
-// out at the value they carry, their units `returned_to_supplier`, and posts Dr Goods Received Not Billed, Cr Stock in
-// Hand (F4). It takes what went back off its PO lines' received quantities, so a PO its receipts closed opens again
+// out at the rejects place's average, their units `returned_to_supplier`, and posts Dr Goods Received Not Billed at
+// the receipt line's rate, Cr Stock in Hand, any difference to Cost of Goods Sold (F4 and its variant, the architect). It takes what went back off its PO lines' received quantities, so a PO its receipts closed opens again
 // and the replacement comes in on the same PO (Sarthak, 23 Nov); a PO closed short stays closed. Cancelling mirrors it.
 // Lock order (§12): period → its POs → its receipts → the return → stock → the JV and SR turns → its number.
 // shortcut: bills post with RAD-138 PR 3, and their receipt lines with it, so nothing is billed yet and every line is
@@ -181,17 +181,29 @@ export async function postReturn(ctx: Ctx, { id }: In<typeof postSupplierReturn>
     units: picks(l).serials.map((serialNo) => ({ serialNo })), unitEvent: 'returned_to_supplier' }));
   const moved = (await postStock(ctx, { sourceTable: SOURCE, sourceId: id, businessDate: r.businessDate, outs }))
     .filter((m) => m.direction === 'out');
-  const value = roundMoney(moved.reduce((s, m) => s.plus(dec(m.value)), dec('0')));
+  // The architect on RAD-140: the goods leave at the rejects place's average (the stock side), while Goods Received Not
+  // Billed gets back what it accrued, the receipt line's rate × quantity (F4). Any difference goes to Cost of Goods Sold,
+  // as a bill's price difference on goods no longer on hand does (ADR-006 §4).
+  const rateOf = (l: Line) => receipt.get(l.receiptLineId)?.rate ?? '0';
+  const accrued = lines.map((l) => roundMoney(dec(l.qty).times(dec(rateOf(l)))));
+  const value = roundMoney(accrued.reduce((s, v) => s.plus(dec(v)), dec('0')));
+  const out = moved.reduce((s, m) => s.plus(dec(m.value)), dec('0'));
   const stock: JournalLine[] = moved.filter((m) => dec(m.value).gt(0))
     .map((m) => ({ account: { system: 'stock' }, itemId: m.itemId, locationId: m.locationId, credit: m.value }));
-  // F4: the unbilled part back against Goods Received Not Billed. Free goods carry no value, and post no entry.
-  const entry = stock.length === 0 ? null : await postEntry(ctx, { kind: 'supplier_return', businessDate: r.businessDate,
-    source: { table: SOURCE, id }, lines: [{ account: { system: 'grni' }, debit: value }, ...stock] });
+  const gap = dec(value).minus(out);
+  const entryLines: JournalLine[] = [
+    ...(dec(value).gt(0) ? [{ account: { system: 'grni' }, debit: value }] : []),
+    ...stock,
+    ...(gap.isZero() ? [] : [{ account: { system: 'cogs' }, ...(gap.gt(0) ? { credit: roundMoney(gap) } : { debit: roundMoney(gap.neg()) }) }]),
+  ];
+  // Free goods (rate 0, at nothing on the shelf) carry no value, and post no entry: an entry has two lines or more.
+  const entry = entryLines.length < 2 ? null : await postEntry(ctx, { kind: 'supplier_return', businessDate: r.businessDate,
+    source: { table: SOURCE, id }, lines: entryLines });
   const tx = purchasingTx(ctx);
   for (const [i, l] of lines.entries()) {
     const m = moved[i];
-    await tx.update(supplierReturnLines).set({ rate: receipt.get(l.receiptLineId)?.rate ?? '0', unbilledQty: l.qty,
-      unbilledValue: m?.value ?? '0.00', movementId: m?.id ?? null }).where(eq(supplierReturnLines.id, l.id));
+    await tx.update(supplierReturnLines).set({ rate: rateOf(l), unbilledQty: l.qty, unbilledValue: accrued[i] ?? '0.00', movementId: m?.id ?? null })
+      .where(eq(supplierReturnLines.id, l.id));
   }
   await tx.update(supplierReturns).set({ status: 'posted', number, unbilledValue: value, postedEntryId: entry?.id ?? null })
     .where(eq(supplierReturns.id, id));
@@ -266,9 +278,8 @@ export async function listReturnsPage(ctx: Ctx, input: In<typeof listSupplierRet
     ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null };
 }
 
-/** GET /purchasing/returns/:id (purchasing:read): the return with its lines, each split. A draft's unbilled values are at
- * its receipt lines' rates, as posting would take them from a rejects place holding only those goods; once posted, they
- * are what its movements carried. */
+/** GET /purchasing/returns/:id (purchasing:read): the return with its lines, each split. Unbilled values are what Goods
+ * Received Not Billed gets back, the receipt line's rate × quantity, worked out on read while a draft, stored once posted. */
 export async function getReturnById(ctx: Ctx, { id }: In<typeof getSupplierReturn>): Promise<Out<typeof getSupplierReturn>> {
   const r = await returnOf(ctx, id, 'purchasing:read');
   const [shown] = await named(ctx, [r]);
