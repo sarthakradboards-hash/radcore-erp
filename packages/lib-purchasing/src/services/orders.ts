@@ -4,7 +4,7 @@
 // it. A placed PO's lines may change, but a raise past what was approved or the placer's limit is refused
 // (over_approved, the architect on RAD-136). It posts nothing to the books.
 import { after, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
-import { BUYS_FROM_KINDS, getCompanyProfile, getPartyById, holdPeriod, lockPeriod } from '@radcore/lib-accounts';
+import { getCompanyProfile, getPartyById, holdPeriod, lockPeriod } from '@radcore/lib-accounts';
 import { dec, indiaDate, type Money } from '@radcore/lib-common';
 import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax, type Totals } from '@radcore/lib-gst';
 import {
@@ -19,6 +19,7 @@ import type {
   updatePurchaseOrder,
 } from '../contract.ts';
 import { orderLimitOf } from './order-limits.ts';
+import { buyingFrom } from './suppliers.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -43,21 +44,6 @@ async function orderOf(ctx: Ctx, id: string, key: string, forUpdate = false): Pr
   if (row === undefined) throw notFound();
   ctx.see(key, { owner: row.createdBy });
   return row;
-}
-
-/** The supplier, if it's one we buy from and switched on (ADR-008 §5). Answers its name and state. */
-async function buyingFrom(ctx: Ctx, partyId: string): Promise<{ name: string; stateCode: string }> {
-  const party = await getPartyById(ctx, { id: partyId }).catch((e: unknown) => {
-    if (e instanceof AppError && e.code === 'not_found') {
-      throw new AppError('unknown_party', 'There is no such party', [{ path: ['supplierId'], code: 'unknown', message: 'Choose a supplier' }]);
-    }
-    throw e;
-  });
-  if (!party.active || !party.kinds.some((k) => (BUYS_FROM_KINDS as readonly string[]).includes(k))) {
-    throw new AppError('not_a_supplier', `${party.name} isn’t a supplier we buy from`,
-      [{ path: ['supplierId'], code: 'not_a_supplier', message: party.active ? 'Choose a supplier' : 'This party is switched off' }]);
-  }
-  return { name: party.name, stateCode: party.stateCode };
 }
 
 /** Each line's item exists, is switched on, and its quantity fits its unit (RC-162). */
@@ -127,8 +113,8 @@ async function writeLines(ctx: Ctx, orderId: string, lines: readonly LineIn[], p
 /** What the approver sees and approves (RAD-38): the supplier, the date and the lines, and their total with GST. */
 type Version = { supplierId: string; businessDate: string; lines: { itemId: string; qty: string; rate: string }[]; total: string | null };
 
-/** The PO approval's spec (ADR-008 §5): kind purchase-order, under purchasing:approve. Placing posts nothing, so it has
- * no lockFirst; approving places the PO. */
+/** The PO approval's spec (ADR-008 §5): kind purchase-order, under purchasing:approve. Approving places the PO, which
+ * checks its date against the year and the period lock, so it declares lockFirst (the architect on RAD-136). */
 export const orderApproval: ApprovalSpec<Version> = {
   kind: 'purchase-order',
   table: 'purchase_orders',

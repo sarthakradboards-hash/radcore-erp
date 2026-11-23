@@ -332,6 +332,11 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'POST /purchasing/orders/:id/cancel': 'purchasing:write',
   'GET /purchasing/order-limits': 'purchasing:read',
   'PUT /purchasing/order-limits': 'purchasing:approve',
+  'GET /purchasing/bills': 'purchasing:read',
+  'GET /purchasing/bills/:id': 'purchasing:read',
+  'POST /purchasing/bills': 'bills:write',
+  'PUT /purchasing/bills/:id': 'bills:write',
+  'DELETE /purchasing/bills/:id': 'bills:write',
   'GET /purchasing/orders/:id/pdf': 'purchasing:read',
 };
 
@@ -673,6 +678,11 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /purchasing/orders/:id/cancel': PURCHASING,
   'GET /purchasing/order-limits': ['lib-platform', 'lib-purchasing'],
   'PUT /purchasing/order-limits': ['lib-platform', 'lib-purchasing'],
+  'GET /purchasing/bills': PURCHASING,
+  'GET /purchasing/bills/:id': PURCHASING,
+  'POST /purchasing/bills': PURCHASING,
+  'PUT /purchasing/bills/:id': PURCHASING,
+  'DELETE /purchasing/bills/:id': PURCHASING,
   'GET /purchasing/orders/:id/pdf': PURCHASING,
   'POST /public/enquiries': CRM_DOORS,
   // Jobs, in JOB_PRINCIPALS' order.
