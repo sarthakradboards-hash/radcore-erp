@@ -1,8 +1,9 @@
 // ADR-006 §1 for a save that posts several documents (the architect on RAD-115), on PostgreSQL 16 as M2-05's
 // concurrency test: the quick bill takes every class of lock for its order, delivery, invoice and receipts first, in
-// §1's order (period, party, stock, then its series, journal first), so it never holds one while waiting on a plain
+// §1's order (period, party, stock, then its series in seriesOrder), so it never holds one while waiting on a plain
 // save that holds the next. A quick bill alongside a plain receipt, a plain delivery of the same item and a plain
-// invoice to the same party each finish (no 40P01), and the numbers they draw stay gapless.
+// invoice to the same party each finish (no 40P01), and the numbers they draw stay gapless. In a database of its own: the
+// run's rolled-back test wrappers draw several series in their files' own order, which these committed saves would meet.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
@@ -12,12 +13,12 @@ import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime'
 import { addDelivery, addInvoice, addOrder, confirmOrderNow, getDeliveryById, getOrderById, postDeliveryNow, postInvoiceNow, quickBill } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
+import { freshDatabase } from './test-database.ts';
 
-const url = process.env['TEST_DATABASE_URL'];
-const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
+const adminUrl = process.env['TEST_DATABASE_ADMIN_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156).
 const DATE = '2026-11-15';
@@ -28,19 +29,55 @@ const q = (s: string) => quantityString().parse(s);
 const m = (s: string) => moneyString().parse(s);
 const ROUNDS = 3;
 
-it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
-  expect.fail('TEST_DATABASE_URL is not set: in CI the quick bill concurrency tests must run, not skip');
+/**
+ * The file's own database, as a factory (RC-222: no shared `let`): made with its company profile, as test-database.ts
+ * makes the run's, in beforeAll, and dropped in afterAll. Its tests share it as every file shares its pool, and each
+ * builds its own party, item and place.
+ */
+function ownDatabase() {
+  let made: { pool: pg.Pool; su: pg.Pool; db: ReturnType<typeof createDatabase>; drop: () => Promise<void> } | undefined;
+  const opened = () => {
+    if (made === undefined) throw new Error('The database is made in beforeAll');
+    return made;
+  };
+  return {
+    async open() {
+      const fresh = await freshDatabase(adminUrl ?? '');
+      const pool = new pg.Pool({ connectionString: fresh.appUrl, max: 6 });
+      const su = new pg.Pool({ connectionString: fresh.superUrl, max: 2 });
+      made = { pool, su, db: createDatabase(pool), drop: fresh.drop };
+      const c = await su.connect();
+      try {
+        await c.query('begin');
+        await c.query("set local app.principal = 'system:test'");
+        await c.query(`insert into radcore.company (legal_name, gstin, address_line1, city, pincode)
+          values ('Radboards Pvt Ltd', '27AAPFU0939F1ZV', 'Plot 4, Bhosari MIDC', 'Pune', '411019')`);
+        await c.query('commit');
+      } finally {
+        c.release();
+      }
+    },
+    // Nothing to close if the database was never made, so beforeAll's own error is the one reported.
+    async close() {
+      if (made === undefined) return;
+      await made.pool.end();
+      await made.su.end();
+      await made.drop();
+    },
+    get su() { return opened().su; },
+    get db() { return opened().db; },
+  };
+}
+
+it.runIf(process.env['CI'] && !adminUrl)('has its test database in CI', () => {
+  expect.fail('TEST_DATABASE_ADMIN_URL is not set: in CI the quick bill concurrency tests must run, not skip');
 });
 
-describe.skipIf(!url || !superUrl)('a quick bill alongside plain saves', { timeout: 60_000 }, () => {
-  const pool = new pg.Pool({ connectionString: url, max: 6 });
-  const su = new pg.Pool({ connectionString: superUrl, max: 2 });
-  const db = createDatabase(pool);
-  afterAll(async () => {
-    await pool.end();
-    await su.end();
-  });
-  const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(db, WRITE, staff, randomUUID(), fn);
+describe.skipIf(!adminUrl)('a quick bill alongside plain saves', { timeout: 60_000 }, () => {
+  const own = ownDatabase();
+  beforeAll(() => own.open(), 120_000);
+  afterAll(() => own.close());
+  const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(own.db, WRITE, staff, randomUUID(), fn);
 
   /** A named customer with ample credit, an item rated 5% priced 50.00 on its list, and a store holding 100 in B1. */
   async function setup() {
@@ -59,8 +96,8 @@ describe.skipIf(!url || !superUrl)('a quick bill alongside plain saves', { timeo
         qty: q('100'), rate: unitPriceString().parse('30'), batches: [{ batchNo: 'B1', qty: q('100') }] }] });
       return { partyId, itemId, placeId };
     });
-    await priceListFrom(su, DATE, { [made.itemId]: '50' }, { partyId: made.partyId });
-    const { rows: [batch] } = await su.query<{ id: string }>('select id from radcore.batches where item_id = $1', [made.itemId]);
+    await priceListFrom(own.su, DATE, { [made.itemId]: '50' }, { partyId: made.partyId });
+    const { rows: [batch] } = await own.su.query<{ id: string }>('select id from radcore.batches where item_id = $1', [made.itemId]);
     return { ...made, batchId: batch?.id ?? '' };
   }
   type At = Awaited<ReturnType<typeof setup>>;
@@ -90,7 +127,7 @@ describe.skipIf(!url || !superUrl)('a quick bill alongside plain saves', { timeo
   const outcome = (r: PromiseSettledResult<unknown>) => (r.status === 'fulfilled' ? 'ok' : String((r.reason as { code?: string }).code ?? r.reason));
   /** The series whose committed numbers this year aren't exactly 1 to their counter's last: skipped or shared. */
   async function gaps(): Promise<string[]> {
-    const { rows } = await su.query<{ series: string; ok: boolean }>(`with drawn as (
+    const { rows } = await own.su.query<{ series: string; ok: boolean }>(`with drawn as (
         select 'sales.invoice' as series, number from radcore.invoices where number is not null
         union all select 'sales.delivery', number from radcore.deliveries where number is not null
         union all select 'sales.order', number from radcore.sales_orders where number is not null
@@ -109,7 +146,7 @@ describe.skipIf(!url || !superUrl)('a quick bill alongside plain saves', { timeo
    * number first would hold that turn, and the two would deadlock (40P01).
    */
   async function plainSaveAgainst(first: string, values: unknown[], quick: () => Promise<unknown>): Promise<string[]> {
-    const plain = await su.connect();
+    const plain = await own.su.connect();
     try {
       await plain.query('begin');
       await plain.query("set local app.principal = 'system:test'");
@@ -117,7 +154,7 @@ describe.skipIf(!url || !superUrl)('a quick bill alongside plain saves', { timeo
       const pid = (await plain.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
       let done = false;
       const saved = quick().finally(() => { done = true; });
-      const waiting = async () => (await su.query<{ n: number }>('select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
+      const waiting = async () => (await own.su.query<{ n: number }>('select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
         [pid])).rows[0]?.n ?? 0;
       await vi.waitFor(async () => expect(done || await waiting() > 0).toBe(true), { timeout: 10_000 });
       const turn = await plain.query("select pg_advisory_xact_lock(hashtextextended('numbering.accounts.journal', 0))")
