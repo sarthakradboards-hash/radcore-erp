@@ -38,6 +38,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp, listen } from '../apps/api/src/app.ts';
 import { apiRoutes } from '../apps/api/src/routes.ts';
 import { postedDelivery } from './delivered-fixture.ts';
+import { priceListFrom } from './price-list-fixture.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -57,7 +58,10 @@ const KEYS = PERMISSIONS.map((p) => p.key).filter((k) => !UNMASKING.has(k));
  * The GETs the sweep doesn't reach, each with why (the ratchet). A route here that the sweep does reach is fine: the
  * list is the floor, and a new GET must either be reached or be named here.
  */
-const NOT_REACHED: Readonly<Record<string, string>> = {};
+const NOT_REACHED: Readonly<Record<string, string>> = {
+  // shortcut: an approved version's price starts on its approval day, the run date, which no test reads (RC-156); reach it by reading the version's start date from the database.
+  'GET /price-lists/:id/price': 'an approved price starts on the run date, which this file never reads (RC-156)',
+};
 
 /** What each /:id route is called with: the seed's ids, by route. */
 type Ids = Record<string, string[]>;
@@ -367,6 +371,8 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
     // A booking: a serialised unit promised to a confirmed order line, with an advance.
     await step('booking', async () => {
       const d = await postedDelivery(run, su, DATE);
+      // The party's price for the scooter, so its order confirms without an override.
+      await priceListFrom(su, DATE, { [base.serial]: '70000' }, { partyId: d.partyId });
       const booked = await run(async (ctx) => {
         const { id: orderId } = await addOrder(ctx, { partyId: d.partyId, businessDate: DATE, notes: null, lines: [{ itemId: base.serial,
           qty: q('1'), rate: r('70000'), discountPercent: percentString({ max: '100' }).parse('0') }] });
