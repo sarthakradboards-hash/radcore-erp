@@ -17,7 +17,7 @@ import { defineRoute } from './route.ts';
 export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accounts/chart', '/accounts/journal',
   '/accounts/journal/[id]', '/accounts/journal/new', '/admin/audit', '/admin/company', '/admin/discount-limits', '/admin/gst-rates',
   '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/number-series', '/admin/parties', '/admin/parties/[id]',
-  '/admin/permissions', '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
+  '/admin/permissions', '/admin/po-limits', '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
   '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/crm/leads', '/crm/leads/[id]', '/crm/leads/new', '/crm/lists', '/crm/set-aside', '/crm/sources', '/invite', '/kit', '/l/invoice', '/password-reset',
   '/password-reset/new', '/purchases/approvals', '/purchases/orders', '/purchases/orders/[id]', '/purchases/orders/[id]/edit', '/purchases/orders/new', '/sales/approvals', '/sales/bookings', '/sales/bookings/[id]', '/sales/bookings/new', '/sales/credit-notes',
   '/sales/credit-notes/[id]', '/sales/credit-notes/new', '/sales/deliveries', '/sales/deliveries/[id]',

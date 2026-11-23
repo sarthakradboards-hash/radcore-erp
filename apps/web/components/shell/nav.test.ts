@@ -37,7 +37,7 @@ it('lists every admin page with the key its screen reads', () => {
     ['/admin/locations', 'locations:read'], ['/admin/items', 'items:read'],
     ['/admin/gst-rates', 'gst:read'], ['/admin/parties', 'parties:read'],
     ['/admin/price-lists', 'prices:read'], ['/admin/price-approvals', 'prices:approve'],
-    ['/admin/discount-limits', 'prices:read'],
+    ['/admin/discount-limits', 'prices:read'], ['/admin/po-limits', 'purchasing:approve'],
     ['/admin/settings', 'settings:read'], ['/admin/number-series', 'settings:read'],
   ]);
 });
