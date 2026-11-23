@@ -5,13 +5,13 @@
 // Posting, the three-way match against receipts and the approval join with M4-02's goods receipts (RAD-138 PR 3).
 import { after, purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
 import { getCompanyProfile, getPartyById } from '@radcore/lib-accounts';
-import { dec, indiaDate, percentString, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
+import { dec, indiaDate, percentString, roundMoney, type Money } from '@radcore/lib-common';
 import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax } from '@radcore/lib-gst';
 import {
   AppError, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, readyFile, type Ctx,
 } from '@radcore/lib-platform';
 import { checkQuantity, itemLabels } from '@radcore/lib-stock';
-import { and, asc, desc, eq, inArray, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createPurchaseBill, deletePurchaseBill, getPurchaseBill, listPurchaseBills, updatePurchaseBill } from '../contract.ts';
 import { receiptLinesFor } from './receipts.ts';
@@ -268,15 +268,3 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
   };
 }
 
-/** What posted bills not cancelled have billed of these receipt lines, by line (RAD-138): a receipt any of it was billed
- * on can't be cancelled (receipt_in_use, ADR-008 §6), and a bill bills at most what's left (over_received). */
-export async function billedQty(ctx: Ctx, receiptLineIds: readonly string[]): Promise<Map<string, Decimal>> {
-  const got = new Map(receiptLineIds.map((id) => [id, dec('0')]));
-  if (receiptLineIds.length === 0) return got;
-  const rows = await purchasingTx(ctx).select({ id: purchaseBillLines.receiptLineId, qty: sum(purchaseBillLines.qty) }).from(purchaseBillLines)
-    .innerJoin(purchaseBills, eq(purchaseBills.id, purchaseBillLines.billId))
-    .where(and(inArray(purchaseBillLines.receiptLineId, [...new Set(receiptLineIds)]), eq(purchaseBills.status, 'posted')))
-    .groupBy(purchaseBillLines.receiptLineId);
-  for (const r of rows) if (r.id !== null) got.set(r.id, dec(r.qty ?? '0'));
-  return got;
-}
