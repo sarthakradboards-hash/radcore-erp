@@ -41,7 +41,7 @@ it('words what an order line asked for and has had, and says nothing when the or
 it('says in words that the order is needed, on the order and on the lines', () => {
   const r = arrivalSchema.safeParse({ ...arrival, orderId: '', lines: [] });
   expect(r.success ? [] : r.error.issues.map((i) => [i.path.join('.'), i.message])).toEqual([
-    ['orderId', 'Choose a purchase order, then bring in its lines'], ['lines', 'Add at least one line: bring in the purchase order’s lines']]);
+    ['orderId', 'Choose a purchase order, then bring in its lines'], ['lines', 'Add at least one line: bring in the purchase orderâ€™s lines']]);
 });
 
 const received = [{ id: id(5), itemId: id(6), name: 'Hub motor', sku: 'HM-1', received: '5.000' }];

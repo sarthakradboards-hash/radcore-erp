@@ -47,7 +47,7 @@ export const inward = {
   'inward.form.line.received': 'Received',
   'inward.form.line.left': 'Ordered {ordered}, already received {received}.',
   'inward.form.remove': 'Remove line {n}',
-  'inward.form.lines.none': 'Add at least one line: bring in the purchase order’s lines',
+  'inward.form.lines.none': 'Add at least one line: bring in the purchase orderâ€™s lines',
   'inward.form.lines.max': 'At most 200 lines',
   'inward.form.save': 'Save the arrival',
   'inward.form.saved': 'Arrival saved',
