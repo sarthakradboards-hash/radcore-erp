@@ -20,7 +20,7 @@ import {
 } from './bill-checks.ts';
 import { billedQty } from './billed.ts';
 import { receiptLinesFor } from './receipt-lines.ts';
-import { returnedOf } from './received.ts';
+import { billDebited, returnedOf } from './received.ts';
 import { buyingFrom } from './suppliers.ts';
 
 type Line = typeof purchaseBillLines.$inferSelect;
@@ -77,10 +77,10 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
     // A posted receipt line has its QC figures (only a draft's are null).
     const accepted = dec(r.accepted ?? '0');
     const rejectedAll = dec(r.rejected ?? '0');
-    // Less rejects returned before they were billed (ADR-008 §7). RAD-140's return_billed has every return come before any
-    // bill on its PO line, and a return takes the rejects first (§8), then any accepted goods moved to rejects. What went
-    // back takes the top of each pool, so the shares below clear what's left of GRNB. shortcut: a return clears at its own
-    // rounding (qty × rate), so a fractional quantity could leave a paisa there; exact once a return records each pool's share.
+    // Less rejects returned before they were billed (ADR-008 §7). A return takes its unbilled part first (§8): the rejects,
+    // then any accepted goods moved to rejects, each from the top of its pool and clearing its share of what the pool
+    // accrued (debit-notes.ts), so with the shares below, taken from the bottom, the last document clears what's left of
+    // GRNB exactly. A return's billed part only comes once nothing is unbilled, so counting it here bills nothing more.
     const returned = back.get(r.id) ?? zero();
     const accLeft = accepted.minus(returned.gt(rejectedAll) ? returned.minus(rejectedAll) : zero());
     const left = accLeft.plus(rejectedAll.minus(minOf(returned, rejectedAll)));
@@ -343,7 +343,8 @@ async function undoDifference<T>(ctx: Ctx, b: Row, lines: readonly Line[], busin
 }
 
 /** POST /purchasing/bills/:id/cancel (bills:write): its entry and price difference mirrored, dated the cancellation's
- * day, only while nothing is applied to it (the database's guard_applied_cancel answers still_applied). */
+ * day, only while nothing is applied to it (the database's guard_applied_cancel answers still_applied), and not while a
+ * posted supplier return debits it (bill_returned, RAD-140). */
 export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<typeof cancelPurchaseBill>): Promise<Out<typeof cancelPurchaseBill>> {
   await holdPeriod(ctx, businessDate);
   await holdSources(ctx, await linesOf(ctx, (await billOf(ctx, id, 'bills:write')).id));
@@ -351,7 +352,8 @@ export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<t
   if (b.status !== 'posted') throw wrongStatus(b.status, 'cancelled');
   if (businessDate > indiaDate(new Date())) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < b.businessDate) throw refuse('date_before_source', `The bill is dated ${b.businessDate}`, ['businessDate']);
-  // shortcut: supplier returns (M4-05) debit a bill; they refuse bill_returned here when they land.
+  // A bill a posted supplier return debits stays: its debit note mirrors it (RAD-140). Cancel the return first.
+  if (await billDebited(ctx, id)) throw new AppError('bill_returned', 'A supplier return’s debit note is against this bill: cancel that return first');
   // The stock positions before any series' turn (ADR-006 §1, the auditor on #380): undoDifference holds them, then runs
   // the mirror (which draws the journal's number), then posts its own entry, which the mirror mustn't reverse.
   const own = await undoDifference(ctx, b, await linesOf(ctx, id), businessDate,

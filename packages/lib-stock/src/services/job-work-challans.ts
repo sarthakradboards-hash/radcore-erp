@@ -2,16 +2,17 @@
 // worker's own place (kind `job_work`, found by its party), posted at once through the engine, serialised inputs going
 // `sent_to_job_work`. Its entry moves Stock in Hand from our place to the job worker's, item by item (F16). Undone by
 // its mirror while no receipt answers it. A challan is its maker's (created_by) for record scope.
-import { after, jobWorkChallanLines, jobWorkChallans, jobWorkChallanStates, locations, stockTx } from '@radcore/db/stock';
+import { after, jobWorkChallanLines, jobWorkChallans, jobWorkChallanStates, locations, stockTx, units } from '@radcore/db/stock';
 import { getPartyById, holdPeriod, partyNames, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { addDays, dec, indiaDate, quantityString, roundMoney, roundQty } from '@radcore/lib-common';
 import {
   AppError, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, nextNumber, principalId, type Ctx,
 } from '@radcore/lib-platform';
-import { and, asc, desc, eq, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelJobWorkChallan, createJobWorkChallan, getJobWorkChallan, listJobWorkChallans } from '../contract.ts';
 import { postStock, reverseStock, type PostedMovement } from '../engine/stock.ts';
+import { serialKey } from '../engine/units.ts';
 import { batchNumbers, itemLabels } from './items.ts';
 import { accountedFor, answered } from './job-work-accounted.ts';
 import { checkLines, placeNames, placeOf, picksOf } from './moves-lines.ts';
@@ -177,6 +178,7 @@ export async function getChallanById(ctx: Ctx, { id }: In<typeof getJobWorkChall
   const [labels, places, parties, done] = [await itemLabels(ctx, lines.map((l) => l.itemId)), await placeNames(ctx, [c.fromId]),
     await partyNames(ctx, [c.partyId]), await accountedFor(ctx, lines.map((l) => l.id))];
   const batchNos = await batchNumbers(ctx, lines.flatMap((l) => picksOf<string>(l.picks).batches.flatMap((b) => (b.batchId === null ? [] : [b.batchId]))));
+  const out = await stillOut(ctx, c.toId, lines.flatMap((l) => picksOf<string>(l.picks).serials.map((serialNo) => ({ itemId: l.itemId, serialNo }))));
   return {
     id: c.id, number: c.number, fromId: c.fromId, fromName: places.get(c.fromId) ?? '', partyId: c.partyId, partyName: parties.get(c.partyId) ?? '',
     businessDate: c.businessDate, status: c.status as Status, ...ageOf(ctx, c), notes: c.notes, cancelReason: c.cancelReason,
@@ -185,9 +187,24 @@ export async function getChallanById(ctx: Ctx, { id }: In<typeof getJobWorkChall
       const d = done.get(l.id) ?? { used: roundQty('0', 3), back: roundQty('0', 3), lost: roundQty('0', 3) };
       return { id: l.id, lineNo: l.lineNo, itemId: l.itemId, sku: labels.get(l.itemId)?.sku ?? '', name: labels.get(l.itemId)?.name ?? '',
         qty: quantityString().parse(l.qty), serials: picks.serials, value: l.value,
+        serialsOut: picks.serials.filter((s) => out.has(`${l.itemId} ${serialKey(s)}`)),
         batches: picks.batches.map((b) => ({ batchId: b.batchId, batchNo: b.batchId === null ? null : batchNos.get(b.batchId) ?? null, qty: b.qty })),
         used: d.used, back: d.back, lost: d.lost,
         left: roundQty(dec(l.qty).minus(d.used).minus(d.back).minus(d.lost), 3) };
     }),
   };
+}
+
+/**
+ * Of the units a challan sent, those still ours at the job worker's place, as `item serialKey`: what a receipt can still
+ * account for. Read from where the units are, not from the receipts, so job-work-accounted.ts keeps to quantities.
+ * shortcut: a unit that came back and went out again on a later challan to the same job worker shows as out on both;
+ * upgrade to the unit's last sent_to_job_work event if a screen needs the difference.
+ */
+async function stillOut(ctx: Ctx, placeId: string, sent: readonly { itemId: string; serialNo: string }[]): Promise<Set<string>> {
+  if (sent.length === 0) return new Set();
+  const rows = await stockTx(ctx).select({ itemId: units.itemId, key: units.serialKey }).from(units)
+    .where(and(eq(units.locationId, placeId), eq(units.ownership, 'ours'), inArray(units.itemId, [...new Set(sent.map((u) => u.itemId))]),
+      inArray(units.serialKey, sent.map((u) => serialKey(u.serialNo)))));
+  return new Set(rows.map((r) => `${r.itemId} ${r.key}`));
 }

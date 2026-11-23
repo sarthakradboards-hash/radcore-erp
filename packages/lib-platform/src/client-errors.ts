@@ -37,7 +37,14 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accou
   '/sales/orders', '/sales/orders/[id]', '/sales/orders/[id]/edit', '/sales/orders/new', '/sales/quick-bill', '/sales/quotes', '/sales/quotes/[id]',
   '/sales/quotes/[id]/edit', '/sales/quotes/new', '/sales/test-rides', '/sales/test-rides/new',
   '/sign-in', '/stock/adjustments', '/stock/adjustments/[id]', '/stock/adjustments/[id]/edit', '/stock/adjustments/new', '/stock/approvals',
-  '/stock/counts', '/stock/counts/[id]', '/stock/counts/[id]/edit', '/stock/counts/new', '/stock/transfers', '/stock/transfers/[id]', '/stock/transfers/new'] as const;
+  '/stock/counts', '/stock/counts/[id]', '/stock/counts/[id]/edit', '/stock/counts/new',
+  '/stock/job-work',
+  '/stock/job-work/[id]',
+  '/stock/job-work/new',
+  '/stock/job-work/receipts',
+  '/stock/job-work/receipts/[id]',
+  '/stock/job-work/receipts/new',
+  '/stock/transfers', '/stock/transfers/[id]', '/stock/transfers/new'] as const;
 
 /** The error classes an alert may name; any other is counted as `Error`. */
 export const ERROR_CLASSES = ['TypeError', 'ReferenceError', 'RangeError', 'SyntaxError', 'ChunkLoadError'] as const;

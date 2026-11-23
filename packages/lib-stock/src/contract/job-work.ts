@@ -44,6 +44,8 @@ const challanHeader = z.object({
 const challanLine = z.object({
   id: idString(), lineNo: z.number().int().positive(), ...item, qty: quantityString(), batches: batchesOut, serials: z.array(z.string()),
   used: quantityString(), back: quantityString(), lost: quantityString(), left: quantityString(),
+  // Of `serials`, those still at the job worker's place: the ones a receipt can still account for (ui on RAD-144).
+  serialsOut: z.array(z.string()),
   value: cost(moneyString().nullable()),
 });
 const challan = challanHeader.extend({ notes: z.string().nullable(), cancelReason: z.string().nullable(), lines: z.array(challanLine) });

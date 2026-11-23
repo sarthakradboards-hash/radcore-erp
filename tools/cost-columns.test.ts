@@ -47,7 +47,13 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)' },
   // A supplier return's (RAD-140): the rejects sent back at the value Goods Received Not Billed accrued for them, the
   // return's own content under purchasing:read, as a receipt's rejected_value is.
-  supplier_returns: { unbilled_value: 'what went back against Goods Received Not Billed (purchasing:read)' },
+  supplier_returns: { unbilled_value: 'what went back against Goods Received Not Billed (purchasing:read)',
+    taxable: 'a debit note’s value at its bills’ rates (purchasing:read)', cgst: 'tax on a debit note (purchasing:read)',
+    sgst: 'tax on a debit note (purchasing:read)', igst: 'tax on a debit note (purchasing:read)', round_off: 'a debit note’s round-off (purchasing:read)',
+    total: 'a debit note’s total (purchasing:read)' },
+  supplier_return_debits: { qty: 'a quantity', rate: 'the bill line’s rate (purchasing:read)', gst_rate: 'a tax rate',
+    taxable: 'a billed part’s value at its bill’s rate (purchasing:read)', cgst: 'tax on it (purchasing:read)', sgst: 'tax on it (purchasing:read)',
+    igst: 'tax on it (purchasing:read)' },
   supplier_return_lines: { qty: 'a quantity', rate: 'the receipt line’s rate (purchasing:read)', unbilled_qty: 'a quantity',
     unbilled_value: 'the unbilled part’s value, as its receipt accrued it (purchasing:read)' },
   // A quote's and an order's amounts, frozen when sent or confirmed (RAD-112): what was offered, its tax and round-off;

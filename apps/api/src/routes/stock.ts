@@ -8,6 +8,7 @@ import {
   addCount, askCountApproval, cancelCountNow, changeCount, countApprovalSpec, dropCount, getCountById, listCountsPage,
   addAdjustment, adjustmentApprovalSpec, askAdjustmentApproval, cancelAdjustmentNow, changeAdjustment, dropAdjustment, getAdjustmentById,
   listAdjustmentsPage, addChallan, cancelChallanNow, getChallanById, listChallansPage, addReceipt, cancelReceiptNow, getReceiptById, listReceiptsPage,
+  getUnitById, listPositions, listUnitsPage,
 } from '@radcore/lib-stock';
 import {
   addLocation, attachItemPicture, checkBooksContract, createItem, createItemCategory, getItem, getOnHand, listItemCategories, listItems, listLocationKinds,
@@ -18,6 +19,7 @@ import {
   stockCountApproval, updateStockCount, cancelStockAdjustment, createStockAdjustment, deleteStockAdjustment, getStockAdjustment,
   listStockAdjustments, requestStockAdjustmentApproval, stockAdjustmentApproval, updateStockAdjustment, cancelJobWorkChallan, cancelJobWorkReceipt,
   createJobWorkChallan, createJobWorkReceipt, getJobWorkChallan, getJobWorkReceipt, listJobWorkChallans, listJobWorkReceipts,
+  getStockUnit, listStockOnHand, listStockUnits,
 } from '@radcore/lib-stock/contract';
 
 export default [
@@ -38,6 +40,9 @@ export default [
   defineRoute(addLocation, addPlace),
   defineRoute(updateLocation, updatePlace),
   defineRoute(getOnHand, onHand),
+  defineRoute(listStockOnHand, listPositions),
+  defineRoute(listStockUnits, listUnitsPage),
+  defineRoute(getStockUnit, getUnitById),
   // Transfers, counts and adjustments (M4-06, RAD-141; ADR-008 §9, §10).
   defineRoute(listStockTransfers, listTransfersPage),
   defineRoute(getStockTransfer, getTransferById),

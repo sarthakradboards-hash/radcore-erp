@@ -2,7 +2,7 @@
 // confirming the order stops at the dealer's credit limit and is let through by an override, stores delivers in parts, and each delivery
 // is invoiced with IGST (the dealer is in another state). One person per step, each signed in as their built-in role, and every test
 // ends with the books check (RAD-95).
-// Not here yet: the dealer's payment, set against both invoices (RAD-126's screens, M3-24, are not built), which comes in a second PR.
+// The dealer then pays through the Record a payment screen (RAD-126) and the receipts are applied over both invoices; the books check ends every test.
 // The overrides are decided through the route the approvals screen will call (RAD-125, #299), until that screen is on dev.
 import { randomUUID } from 'node:crypto';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
@@ -179,9 +179,12 @@ test.describe('sales, again', () => {
   });
 });
 
+/** Chooses an option of a select by its label, paging with "Show more" until it is listed (lists page by id, not newest first). */
 async function pickByLabel(page: Page, chooser: Locator, label: string) {
   const option = chooser.locator('option', { hasText: label });
-  for (let i = 0; i < 20 && (await option.count()) === 0; i++) {
+  const deadline = Date.now() + 90_000;
+  while ((await option.count()) === 0) {
+    if (Date.now() > deadline) throw new Error(`"${label}" is on no page of the chooser`);
     const more = page.getByRole('button', { name: 'Show more' });
     if (await more.isVisible()) await more.click(); else await page.waitForTimeout(300);
   }
@@ -331,6 +334,110 @@ test.describe('accounts, posting', () => {
       await expect(fact(page, 'Total').last()).toHaveText(e.total);
       await accessible(page);
     }
+  });
+});
+
+test.describe('accounts, collecting', () => {
+  test.use({ storageState: stateFor('accounts'), expectedStatuses: [422] });
+
+  /** Money as the screens write it. */
+  const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const dealerRow = (page: Page) => page.getByRole('row').filter({ hasText: DEALER.name });
+  /** Finds the dealer on To collect, paging with "Show more" (earlier journeys leave debtors behind). */
+  async function findDealer(page: Page) {
+    await page.goto('/accounts/collect');
+    const deadline = Date.now() + 60_000;
+    while ((await dealerRow(page).count()) === 0) {
+      const more = page.getByRole('button', { name: 'Show more' });
+      if (Date.now() > deadline || !(await more.isVisible())) break;
+      await more.click();
+      await page.waitForTimeout(300);
+    }
+  }
+  /** Records a receipt from the dealer through the screen; answers its number. */
+  async function receive(page: Page, amount: string, reference: string): Promise<string> {
+    await page.goto('/accounts/payments/new');
+    await pick(page, /^Customer/, DEALER.name);
+    await page.getByLabel('Amount', { exact: true }).fill(amount);
+    const bank = (await page.getByLabel('Money account').locator('option').allTextContents()).find((o) => /bank/i.test(o))!;
+    await page.getByLabel('Money account').selectOption({ label: bank });
+    await page.getByLabel('Reference (optional)').fill(reference);
+    await accessible(page);
+    await btn(page, 'Record it').click();
+    await expect(page.getByRole('heading', { level: 2, name: /^Receipt \S+/ })).toBeVisible();
+    return (await page.getByRole('heading', { level: 2 }).first().innerText()).replace('Receipt ', '').trim();
+  }
+  const apply = (page: Page) => page.locator('section[aria-labelledby="payment-apply"]');
+  const box = (page: Page, invoice: string) => apply(page).getByLabel(new RegExp(`^Apply to ${invoice}`));
+
+  test('the dealer owes both invoices: To collect lists 64,000.00, and the statement shows the two open bills', async ({ page }) => {
+    await findDealer(page);
+    await expect(dealerRow(page)).toBeVisible();
+    await expect(dealerRow(page).getByRole('cell').nth(1)).toHaveText(rupees(64000));
+    await dealerRow(page).getByRole('link').click();
+    await expect(page.getByRole('heading', { level: 1, name: `Statement: ${DEALER.name}` })).toBeVisible();
+    const bills = page.getByRole('region', { name: 'Open bills' }).first().getByRole('row');
+    for (const [i, amount] of [[0, 43520], [1, 20480]] as const) {
+      await expect(bills.nth(i + 1).getByRole('link', { name: run.invoiceNumbers[i]! })).toBeVisible();
+      await expect(bills.nth(i + 1).getByRole('cell').nth(3)).toHaveText(rupees(amount));
+      await expect(bills.nth(i + 1).getByRole('cell').nth(5)).toHaveText(rupees(amount));
+    }
+    await accessible(page);
+  });
+
+  test('records a receipt of 50,000.00 and applies it over the two invoices: refusals worded first, then 43,520.00 to the first and 6,480.00 to the second', async ({ page }) => {
+    const receipt = await receive(page, '50000', `UTR-${u}`);
+    await expect(page.getByText(`Receipt ${receipt} recorded.`).first()).toBeVisible();
+    await expect(apply(page)).toBeVisible();
+    await expect(box(page, run.invoiceNumbers[0]!)).toBeVisible();
+    await expect(box(page, run.invoiceNumbers[1]!)).toBeVisible();
+    // more than a bill has open, and more than the receipt has left
+    await box(page, run.invoiceNumbers[0]!).fill('43520');
+    await box(page, run.invoiceNumbers[1]!).fill('20481');
+    await expect(apply(page).getByText('Applied so far: ₹64,001.00 of ₹50,000.00.')).toBeVisible();
+    await apply(page).getByRole('button', { name: 'Apply it' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: /That is more than is left (to pay on a bill|of the receipt)\./ }).first()).toBeVisible();
+    // the right split
+    await box(page, run.invoiceNumbers[1]!).fill('6480');
+    await expect(apply(page).getByText('Applied so far: ₹50,000.00 of ₹50,000.00.')).toBeVisible();
+    await accessible(page);
+    await apply(page).getByRole('button', { name: 'Apply it' }).click();
+    await expect(status(page, 'Applied to 2 bill(s).').first()).toBeAttached();
+    await expect(apply(page)).toHaveCount(0);
+  });
+
+  test('after the first receipt the dealer owes 14,000.00, all of it on the second invoice', async ({ page }) => {
+    await findDealer(page);
+    await expect(dealerRow(page).getByRole('cell').nth(1)).toHaveText(rupees(14000));
+    await dealerRow(page).getByRole('link').click();
+    const bills = page.getByRole('region', { name: 'Open bills' }).first().getByRole('row');
+    await expect(bills).toHaveCount(2); // the header and one open bill
+    await expect(bills.nth(1).getByRole('link', { name: run.invoiceNumbers[1]! })).toBeVisible();
+    await expect(bills.nth(1).getByRole('cell').nth(5)).toHaveText(rupees(14000));
+    await accessible(page);
+  });
+
+  test('a second receipt of 14,000.00 settles it: nothing is left to collect from the dealer, and the Payments list shows both receipts', async ({ page }) => {
+    const receipt = await receive(page, '14000', `UTR2-${u}`);
+    await expect(box(page, run.invoiceNumbers[1]!)).toBeVisible();
+    await expect(apply(page).getByLabel(new RegExp(`^Apply to ${run.invoiceNumbers[0]!}`))).toHaveCount(0); // the first invoice is paid: not offered
+    await box(page, run.invoiceNumbers[1]!).fill('14000');
+    await apply(page).getByRole('button', { name: 'Apply it' }).click();
+    await expect(status(page, 'Applied to 1 bill(s).').first()).toBeAttached();
+    await findDealer(page);
+    await expect(dealerRow(page)).toHaveCount(0);
+    await page.goto('/accounts/payments');
+    await expect(page.getByRole('heading', { level: 1, name: 'Payments' })).toBeVisible();
+    const deadline = Date.now() + 60_000;
+    while ((await page.getByRole('row').filter({ hasText: receipt }).count()) === 0 && Date.now() < deadline) {
+      const more = page.getByRole('button', { name: 'Show more' });
+      if (!(await more.isVisible())) break;
+      await more.click();
+      await page.waitForTimeout(300);
+    }
+    await expect(page.getByRole('row').filter({ hasText: receipt })).toContainText(rupees(14000));
+    await expect(page.getByRole('row').filter({ hasText: `UTR-${u}` })).toContainText(rupees(50000));
+    await accessible(page);
   });
 });
 

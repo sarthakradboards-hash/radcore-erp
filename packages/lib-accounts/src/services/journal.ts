@@ -166,3 +166,14 @@ export async function reverseEntriesOf(ctx: Ctx, r: Readonly<{ source: Readonly<
   for (const e of open) out.push(await reverseEntry(ctx, { entryId: e.id, businessDate: r.businessDate, ...(r.reason === undefined ? {} : { reason: r.reason }) }));
   return out;
 }
+
+/** Which of these entries post to input GST (RAD-140): a purchase bill claimed its input GST exactly when its entry did
+ * (ADR-008 §7a, decided as it posted), so a debit note against it reverses only that, whatever the supplier is now.
+ * Answers entry ids only. */
+export async function claimedInputGst(ctx: Ctx, entryIds: readonly string[]): Promise<Set<string>> {
+  if (entryIds.length === 0) return new Set();
+  const rows = await accountsTx(ctx).select({ id: journalLines.entryId }).from(journalLines)
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .where(and(inArray(journalLines.entryId, [...new Set(entryIds)]), inArray(accounts.systemKey, ['input_cgst', 'input_sgst', 'input_igst'])));
+  return new Set(rows.map((r) => r.id));
+}

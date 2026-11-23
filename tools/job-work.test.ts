@@ -211,6 +211,24 @@ describe.skipIf(!url || !superUrl)('job work', () => {
   // Rule 55 (auditor-2 on #366; the architect on RAD-142): the challan prints the job worker and the goods' value in full
   // and logs the look at the party, whoever prints it, so the print is job_work:write's: operations, without
   // cost:read, gets the values on paper and masked on screen, and a stock:read-only role (sales) can't print it.
+  // Rule 55 (auditor-2 on #387): a challan whose goods cross a state line names the place of supply, the job worker's
+  // state; one within Maharashtra (the run's company, 27) doesn't.
+  it('names the place of supply only when the goods go to another state', async () => {
+    const at = await setup();
+    const elsewhere = await run(async (ctx) => {
+      const { id: partyId } = await addParty(ctx, { name: `Job worker ${tag()}`, kinds: ['supplier'], gstin: null, pan: null, composition: false,
+        stateCode: '29', phone: null, email: null, addressLine1: '2 Mill Road', addressLine2: null, city: 'Mysuru', pincode: '570001' });
+      await addPlace(ctx, { code: `L${tag()}`, name: `job_work ${tag()}`, kind: 'job_work', partyId });
+      return partyId;
+    });
+    const supplyOf = async (partyId: string) => {
+      const { id } = await send({ ...at, partyId }, '1');
+      const m = await run((ctx) => jobWorkChallanPrint.read(ctx, id));
+      return jobWorkChallanPrint.layout(m, 'a4').flatMap((b) => (b.kind === 'pairs' ? b.rows : [])).find(([label]) => label === 'Place of supply')?.[1];
+    };
+    expect([await supplyOf(at.partyId), await supplyOf(elsewhere)]).toEqual([undefined, 'Karnataka (29)']);
+  });
+
   it('prints the challan in full under job_work:write, logging the look, with the values masked only on screen', async () => {
     const at = await setup();
     const sent = await send(at, '4');
@@ -267,6 +285,20 @@ describe.skipIf(!url || !superUrl)('job work', () => {
 
   // #365's undo for job work's unit events (auditor-2 on #366): a serialised input comes home when its challan is
   // cancelled, and goes back to the job worker when a receipt that brought it home is.
+  // auditor-3's NIT on #393 (RAD-144): the challan says which units it sent are still out, and a receipt accounts only
+  // for units its line sent, not another challan's at the same job worker.
+  it('names the units still out, and refuses a unit another challan sent', async () => {
+    const serials = [`K-${tag()}`, `K-${tag()}`, `K-${tag()}`];
+    const at = await setup({ kits: '3', serials });
+    const sent = await send(at, '2', { serials: [serials[0] ?? '', serials[1] ?? ''] });
+    await send(at, '1', { serials: [serials[2] ?? ''] });
+    const line = await challanLine(sent.id);
+    expect((await run((ctx) => getChallanById(ctx, { id: sent.id }))).lines[0]?.serialsOut).toEqual([serials[0], serials[1]]);
+    expect(await code(receive(at, sent.id, line, { back: '1', backSerials: [serials[2] ?? ''] }))).toBe('not_on_challan');
+    await receive(at, sent.id, line, { back: '1', backSerials: [serials[0] ?? ''] });
+    expect((await run((ctx) => getChallanById(ctx, { id: sent.id }))).lines[0]?.serialsOut).toEqual([serials[1]]);
+  });
+
   it('undoes a serialised challan and a receipt of inputs back, and cancels a challan only while no receipt answers it', async () => {
     const serials = [`K-${tag()}`, `K-${tag()}`];
     const at = await setup({ kits: '2', serials });
