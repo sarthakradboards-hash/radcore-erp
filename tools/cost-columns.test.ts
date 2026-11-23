@@ -22,6 +22,16 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   leads: { value: 'a lead’s expected deal value, what it might sell for (leads:read)', score: 'a lead’s score, 0 to 100' },
   price_list_rates: { rate: 'a selling price (prices:read)' },
   stock_movements: { qty: 'a quantity' },
+  // A purchase order's (RAD-136): the rates agreed with the supplier and their tax. A purchasing document's own rates are
+  // its content under purchasing:read, not cost(), which stays on derived figures: averages, stock values and margins
+  // (the architect on RAD-136).
+  purchase_orders: { approved_total: 'the total a PO was approved for (purchasing:read)', taxable: 'a PO’s value (purchasing:read)',
+    cgst: 'tax on a PO (purchasing:read)', sgst: 'tax on a PO (purchasing:read)', igst: 'tax on a PO (purchasing:read)',
+    round_off: 'a PO’s round-off (purchasing:read)', total: 'a PO’s total (purchasing:read)' },
+  purchase_order_lines: { qty: 'a quantity', rate: 'a rate agreed with the supplier (purchasing:read)', gst_rate: 'a tax rate',
+    taxable: 'a line’s value (purchasing:read)', cgst: 'tax on a line (purchasing:read)', sgst: 'tax on a line (purchasing:read)',
+    igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)' },
+  purchase_order_limits: { max_total: 'a role’s PO limit (purchasing:read)' },
   // A quote's and an order's amounts, frozen when sent or confirmed (RAD-112): what was offered, its tax and round-off;
   // a line's, what was offered or ordered, at its selling rate and tax (sales:read).
   sales_quotes: { taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)', sgst: 'tax quoted (sales:read)',
