@@ -288,11 +288,10 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       await run((ctx) => cancelGoodsReceipt(ctx, { id: undone.id, businessDate: DATE, reason: 'Entered in error' }));
       const draft = await arriveOn('1');
       add(['GET /purchasing/receipts/:id'], posted.id, undone.id, draft.id);
-      // A draft bill for the posted receipt's line.
-      const received = (await run((ctx) => getReceiptById(ctx, { id: posted.id }))).lines[0]?.id ?? null;
+      // A draft bill on the PO line (a bill names its receipt line from RAD-138's posting PR).
       const bill = await run((ctx) => addBill(ctx, { supplierId: base.supplier, businessDate: DATE, supplierInvoiceNumber: `INV/${tag()}`,
         supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: m('210'), fileId: null, notes: null,
-        lines: [{ kind: 'goods', poLineId: lineId, receiptLineId: received, qty: q('2'), rate: r('100') }] }));
+        lines: [{ kind: 'goods', poLineId: lineId, receiptLineId: null, qty: q('2'), rate: r('100') }] }));
       add(['GET /purchasing/bills/:id'], bill.id);
     });
 
@@ -330,6 +329,8 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       'GET /parties/:id/statement': { from: DATE, to: DATE },
       'GET /sales/price': { partyId: party, itemId: item, on: DATE },
       'GET /gst/rates/in-force': { hsn: ids['hsn']?.[0] ?? '', on: DATE },
+      'GET /admin/audit': { filter: { occurred: { from: DATE, to: DATE } }, limit: 50 },
+      'GET /admin/security-events': { filter: { occurred: { from: DATE, to: DATE } }, limit: 50 },
       'GET /stock/on-hand': { itemId: item, locationId: ids['stores']?.[0] ?? '', limit: 50 },
     };
     return known[path] ?? {};
