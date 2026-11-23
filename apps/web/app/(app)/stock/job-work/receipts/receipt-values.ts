@@ -3,7 +3,7 @@
 // serialised input's units are each marked used, back or lost. Goods made are an item, a quantity, the job worker's charge rate
 // and, for a serialised output, its serials. A line with nothing entered is left out. Quantities are only added up here (dec,
 // exact); the server checks every total, batch and unit against the challan again (`over_challan`, `units_mismatch`, …).
-import { dec, quantityString } from '@radcore/lib-common';
+import { dec, quantityString, unitPriceString } from '@radcore/lib-common';
 import { createJobWorkReceipt } from '@radcore/lib-stock/contract';
 import { z } from 'zod';
 import { t } from '../../../../../lib/i18n/index.ts';
@@ -12,7 +12,6 @@ const serialsFromText = (text: string): string[] => text.split('\n').map((l) => 
 
 export const PARTS = ['used', 'back', 'lost'] as const;
 export type Part = (typeof PARTS)[number];
-export type Fate = '' | Part;
 
 /** What the form needs of a challan line: its id, the batches it sent, and its units. */
 export type ChallanLine = { id: string; batches: readonly { batchId: string | null }[]; serials: readonly string[] };
@@ -21,8 +20,10 @@ export type ChallanLine = { id: string; batches: readonly { batchId: string | nu
 export const batchKey = (batchId: string | null) => batchId ?? 'unknown';
 
 const qtyBox = z.string().trim().refine((v) => v === '' || quantityString().safeParse(v).success, t('stock.jobWork.err.qty'));
+// Checked on its own box: the contract's own check runs after untouched lines are left out, so its path would name the wrong line.
+const rateBox = z.string().trim().refine((v) => v === '' || unitPriceString().safeParse(v).success, t('stock.jobWork.err.rateBad'));
 const formLine = z.object({
-  made: z.object({ itemId: z.string(), qty: qtyBox, chargeRate: z.string().trim(), serialsText: z.string() }),
+  made: z.object({ itemId: z.string(), qty: qtyBox, chargeRate: rateBox, serialsText: z.string() }),
   used: z.record(z.string(), qtyBox), back: z.record(z.string(), qtyBox), lost: z.record(z.string(), qtyBox),
   fates: z.array(z.enum(['', 'used', 'back', 'lost'])),
 });

@@ -101,6 +101,9 @@ export default function JobWorkChallanPage() {
           ))}
         </ul>
       )}
+      {receipts.hasNextPage ? (
+        <button type="button" className="kit-button" disabled={receipts.isFetchingNextPage} onClick={receipts.fetchNextPage}>{t('stock.jobWork.moreReceipts')}</button>
+      ) : null}
       {mayWrite ? (
         <div className="kit-actions">
           {posted && c.open ? <Link className="kit-button kit-button-primary" href={`/stock/job-work/receipts/new?challan=${c.id}`}>{t('stock.jobWork.receive')}</Link> : null}

@@ -39,3 +39,14 @@ describe('the job work receipt form', () => {
     expect(noRate.error?.issues.map((i) => i.path)).toEqual([['lines', 0, 'made', 'chargeRate']]);
   });
 });
+
+describe('a bad charge rate', () => {
+  it('is refused on its own line, even with an earlier line left blank', () => {
+    const plain: ChallanLine = { id: id(1), batches: [{ batchId: id(11) }], serials: [] };
+    const other: ChallanLine = { id: id(3), batches: [{ batchId: id(13) }], serials: [] };
+    const schema = receiptSchema(id(9), [plain, other]);
+    const r = schema.safeParse({ ...base, lines: [blankReceiptLine(plain),
+      { ...blankReceiptLine(other), made: { itemId: id(20), qty: '2', chargeRate: '1,50', serialsText: '' }, used: { [id(13)]: '2' } }] });
+    expect(r.error?.issues.map((i) => i.path)).toEqual([['lines', 1, 'made', 'chargeRate']]);
+  });
+});
