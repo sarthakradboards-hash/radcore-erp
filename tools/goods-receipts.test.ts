@@ -3,17 +3,21 @@
 // its receipts, each in a committed transaction, as the routes run them.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
-import { percentString, quantityString, unitPriceString } from '@radcore/lib-common';
+import { percentString, quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addOrder, addReceipt, cancelOrder, cancelReceiptNow, changeOrder, closeOrder, getOrderById, getReceiptById, placeOrder, postReceipt,
   RECEIPT_SERIES,
 } from '@radcore/lib-purchasing';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
+import { getGoodsReceipt } from '@radcore/lib-purchasing/contract';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import purchasingRoutes from '../apps/api/src/routes/purchasing.ts';
 import { linesReceived, receivedOf } from '../packages/lib-purchasing/src/services/received.ts';
 import { turnsHeldBy } from './books-turn.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
@@ -167,6 +171,34 @@ describe.skipIf(!url || !superUrl)('goods receipts and QC', { timeout: 30_000 },
     const who = (b: { supplier_id: string }) => (b.supplier_id === at.supplierId ? 'A' : 'B');
     expect(batches.map((b) => `${who(b)} ${b.batch_no}`).toSorted()).toEqual([`B ${number}`, 'A L1', 'B L1', 'A l-2'].toSorted());
     expect(await entryOf(at, id)).toEqual(['Stock in Hand 2000.00 0.00', 'Goods Received Not Billed 0.00 2000.00']);
+  });
+
+  // e2e-playwright on #373: a posted receipt read through the real handler, whose output check holds it to the contract.
+  // Its batches carry their real ids, from its two movements; a draft's read the same way has none.
+  it('reads a draft and a posted receipt through the route, the posted one’s batches with their ids', async () => {
+    const at = await setup({ rate: '200', ordered: '3' });
+    const { id } = await arrive(at, '3');
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => at.staff, routes: purchasingRoutes }),
+      0, '127.0.0.1');
+    const read = async () => {
+      const sent = requestFor(getGoodsReceipt, { id });
+      const res = await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { headers: { origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin' } });
+      return { status: res.status, body: (await res.json()) as { lines?: { batches: { batchId: string; batchNo: string; accepted: string; rejected: string }[] }[] } };
+    };
+    try {
+      const draft = await read();
+      await inspect(at, id, { batches: [{ batchNo: 'L1', accepted: q('2'), rejected: q('0') }, { batchNo: 'L2', accepted: q('0'), rejected: q('1') }],
+        rejectReason: 'Torn bag', serials: [] });
+      const posted = await read();
+      const ids = (await pool.query<{ id: string; batch_no: string }>('select id, batch_no from radcore.batches where item_id = $1', [at.itemId])).rows;
+      const idOf = (no: string) => ids.find((b) => b.batch_no === no)?.id;
+      expect([draft.status, draft.body.lines?.[0]?.batches]).toEqual([200, []]);
+      expect([posted.status, posted.body.lines?.[0]?.batches]).toEqual([200, [
+        { batchId: idOf('L1'), batchNo: 'L1', accepted: '2.000', rejected: '0.000' }, { batchId: idOf('L2'), batchNo: 'L2', accepted: '0.000', rejected: '1.000' }]]);
+    } finally {
+      await server.stop();
+    }
   });
 
   // §5: no more than ordered, counting the PO line's other receipts, drafts included, with no tolerance.
