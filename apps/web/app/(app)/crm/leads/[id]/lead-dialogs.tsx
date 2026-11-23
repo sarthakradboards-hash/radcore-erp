@@ -1,10 +1,10 @@
 'use client';
 // What can be done to a lead (RAD-122 on RAD-109's contracts), each in its own dialog: a follow-up, a move to a stage,
 // a follow-up plan, a quick reply, its details, and handing it on. The server judges each (claiming an unowned lead,
-// stages, plans, who may hand one on); a dialog only words what it says.
+// stages, plans, who may hand one on, and to whom); a dialog only words what it says.
 import { formatDate, isMasked } from '@radcore/lib-common';
 import {
-  assignLead, followUpLead, getLead, getLeadLists, LEAD_STAGES, listLeads, moveLead, planLead, quickReply, updateLead,
+  assignLead, followUpLead, getLead, getLeadLists, LEAD_STAGES, listLeadHolders, listLeads, moveLead, planLead, quickReply, updateLead,
 } from '@radcore/lib-crm/contract';
 import { useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -13,7 +13,8 @@ import { CloseButton, Dialog } from '../../../../../components/ui/dialog/dialog.
 import { MaskedField, RadioField, SelectField, TextAreaField, TextField } from '../../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../../components/ui/form/form.tsx';
 import { announce } from '../../../../../components/ui/live-region.tsx';
-import { useApiMutation } from '../../../../../lib/api/query.ts';
+import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
+import { ApiError } from '../../../../../lib/api-client.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { LEAD_MESSAGES, stageName } from '../../shared.ts';
 
@@ -192,27 +193,40 @@ export function EditDialog({ lead, open, onOpenChange }: { lead: Lead } & Open) 
   );
 }
 
-const assignSchema = z.object({ to: z.enum(['me', 'nobody']) });
+const assignSchema = z.object({ to: z.string().min(1, t('crm.assign.pick')) });
+const NOBODY = 'nobody';
 
 /**
- * Hands a lead to this person or back to no one. Only someone who works every lead may: the server refuses the rest.
- * shortcut: no other people to pick until a list of who may hold leads exists (asked of backend-2 on RAD-122).
+ * Hands a lead to someone who may hold leads, or back to no one. The people offered are the server's (listLeadHolders),
+ * exactly whom it accepts; only someone who works every lead may read them or hand one on, so anyone else is told so.
  */
-export function AssignDialog({ id, meId, open, onOpenChange }: { id: string; meId: string } & Open) {
+export function AssignDialog({ id, open, onOpenChange }: { id: string } & Open) {
   const assign = useApiMutation(assignLead, { invalidates: refresh });
+  const holders = useApiQuery(listLeadHolders, {});
+  const forbidden = holders.error instanceof ApiError && holders.error.status === 403;
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={t('crm.assign.title')} description={t('crm.assign.body')}>
-      <Form schema={assignSchema} saved={false} messages={LEAD_MESSAGES} defaultValues={{ to: 'me' }}
-        onSubmit={async (v) => {
-          await assign.submit({ id, owner: v.to === 'me' ? meId : null });
-          onOpenChange(false);
-          later(t('crm.assign.done'));
-        }}>
-        <RadioField name="to" label={t('crm.owner')} options={[
-          { value: 'me', label: t('crm.assign.me') }, { value: 'nobody', label: t('crm.assign.nobody') },
-        ]} />
-        <Actions save={t('crm.action.assign')} />
-      </Form>
+      {holders.error !== null ? (
+        <>
+          <p role="alert" className="kit-form-alert">
+            {forbidden ? t('crm.assign.forbidden') : t('error.title')}
+            {forbidden ? null : <> <button type="button" className="kit-button" onClick={() => void holders.refetch()}>{t('error.retry')}</button></>}
+          </p>
+          <div className="kit-actions"><CloseButton>{t('crm.cancel')}</CloseButton></div>
+        </>
+      ) : holders.data === undefined ? <p>{t('loading')}</p> : (
+        <Form schema={assignSchema} saved={false} messages={LEAD_MESSAGES} defaultValues={{ to: '' }}
+          onSubmit={async (v) => {
+            await assign.submit({ id, owner: v.to === NOBODY ? null : v.to });
+            onOpenChange(false);
+            later(t('crm.assign.done'));
+          }}>
+          <SelectField name="to" label={t('crm.owner')} placeholder={t('crm.assign.pick')} options={[
+            ...holders.data.items.map((h) => ({ value: h.id, label: h.displayName })), { value: NOBODY, label: t('crm.assign.nobody') },
+          ]} />
+          <Actions save={t('crm.action.assign')} />
+        </Form>
+      )}
     </Dialog>
   );
 }

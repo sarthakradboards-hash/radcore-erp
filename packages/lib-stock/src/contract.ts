@@ -218,3 +218,4 @@ export const getOnHand = defineContract({
 // Transfers, counts and adjustments (M4-06, RAD-141), in a file of their own.
 export * from './contract/job-work.ts';
 export * from './contract/moves.ts';
+export * from './contract/reads.ts';
