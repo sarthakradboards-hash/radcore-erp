@@ -341,3 +341,4 @@ export const reverseCreditApplicationContract = defineContract({
 });
 
 export * from './contract-collect.ts';
+export * from './contract-payments.ts';
