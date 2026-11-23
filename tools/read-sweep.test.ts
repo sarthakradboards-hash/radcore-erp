@@ -17,7 +17,7 @@ import { createClientErrors, createSecrets, loadConfig, Settings, type Ctx, type
 import { createAuth, createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { PERMISSIONS } from '../packages/lib-platform/src/permissions.ts';
 import {
-  addOrder as addPurchaseOrder, addReceipt as addGoodsReceipt, cancelReceiptNow as cancelGoodsReceipt, getOrderById as getPurchaseOrder, getReceiptById,
+  addBill, addOrder as addPurchaseOrder, addReceipt as addGoodsReceipt, cancelReceiptNow as cancelGoodsReceipt, getOrderById as getPurchaseOrder, getReceiptById,
   placeOrder,
   postReceipt,
 } from '@radcore/lib-purchasing';
@@ -72,6 +72,32 @@ const NOT_REACHED: Readonly<Record<string, string>> = {
 /** What each /:id route is called with: the seed's ids, by route. */
 type Ids = Record<string, string[]>;
 
+const cfg = loadConfig(testSettings(), 'api');
+
+/** The api's own list, as main.ts mounts it; createAuth's store connects only when used. */
+async function apiList(): Promise<readonly Route[]> {
+  const log = { info: () => undefined, error: () => undefined };
+  const auth = await createAuth(cfg, log);
+  try {
+    return apiRoutes(auth, createClientErrors(log), createEnquiryForm({ outbound: { request: () => Promise.reject(new Error('no network in this test')) },
+      secret: 'unused' }));
+  } finally {
+    await auth.store.stop();
+  }
+}
+
+// Express answers with the first route whose pattern matches, in the order they're mounted, so a `/:id` mounted before a
+// fixed path of the same shape takes its requests: the sweep found GET /leads/holders answering as GET /leads/:id
+// ("holders" is not a record id, 400). No route may be matched by one mounted before it, whatever its method.
+it('mounts no route where an earlier one would answer for it', async () => {
+  const routes = (await apiList()).map((x) => ({ method: x.contract.method, path: x.contract.path }));
+  const pattern = (path: string) => new RegExp(`^${path.split('/').map((s) => (s.startsWith(':') ? '[^/]+' : s)).join('/')}$`);
+  const shadowed = routes.flatMap((later, j) => routes.slice(0, j)
+    .filter((first) => first.method === later.method && pattern(first.path).test(later.path))
+    .map((first) => `${later.method} ${later.path} is answered by ${first.path}`));
+  expect(shadowed).toEqual([]);
+});
+
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
   expect.fail('TEST_DATABASE_URL is not set: in CI the read sweep must run, not skip');
 });
@@ -80,7 +106,6 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
   const pool = new pg.Pool({ connectionString: url, max: 4 });
   const su = new pg.Pool({ connectionString: superUrl, max: 2 });
   const db = createDatabase(pool);
-  const cfg = loadConfig(testSettings(), 'api');
   afterAll(async () => {
     await pool.end();
     await su.end();
@@ -95,10 +120,15 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       await c.query("select set_config('app.principal', 'system:test', true)");
       await c.query("insert into radcore.roles (key, name, description, second_factor_required) values ($1, $1, 'Test', false)", [role]);
       if (limit !== undefined) await c.query('insert into radcore.purchase_order_limits (role, max_total) values ($1, $2)', [role, limit]);
-      const { rows } = await c.query<{ id: string }>("insert into radcore.users (email, display_name, role) values ($1, 'Sweep', $2) returning id",
-        [`sweep-${randomUUID()}@example.test`, role]);
+      // Active, as principalFor reads a person (the roles screen and /me do); its hash is never checked here.
+      const { rows } = await c.query<{ id: string }>(`insert into radcore.users (email, display_name, role, status, password_hash)
+        values ($1, 'Sweep', $2, 'active', 'unused') returning id`, [`sweep-${randomUUID()}@example.test`, role]);
+      const userId = rows[0]?.id ?? '';
+      // A live session of its own, which /me and the sessions list read.
+      const session = await c.query<{ id: string }>(`insert into radcore.sessions (user_id, token_hash, device, idle_expires_at, absolute_expires_at)
+        values ($1, $2, 'Test', now() + interval '1 hour', now() + interval '1 hour') returning id`, [userId, randomBytes(32).toString('hex')]);
       await c.query('commit');
-      return { kind: 'user', userId: rows[0]?.id ?? '', permissions: KEYS, role };
+      return { kind: 'user', userId, sessionId: session.rows[0]?.id ?? '', permissions: KEYS, role };
     } finally {
       c.release();
     }
@@ -154,6 +184,8 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
     add(['GET /parties/:id', 'GET /parties/:id/statement', 'GET /parties/:id/reminders', 'GET /sales/party-price-lists/:partyId'],
       base.customer, base.supplier);
     add(['GET /items/:id'], base.plain, base.serial);
+    add(['hsn'], base.hsn);
+    add(['stores'], base.stores);
 
     // Sales: two posted deliveries; an invoice posted on the first, a credit note waiting for approval, a quote, a return
     // of the second, and a receipt with its printout.
@@ -256,6 +288,12 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       await run((ctx) => cancelGoodsReceipt(ctx, { id: undone.id, businessDate: DATE, reason: 'Entered in error' }));
       const draft = await arriveOn('1');
       add(['GET /purchasing/receipts/:id'], posted.id, undone.id, draft.id);
+      // A draft bill for the posted receipt's line.
+      const received = (await run((ctx) => getReceiptById(ctx, { id: posted.id }))).lines[0]?.id ?? null;
+      const bill = await run((ctx) => addBill(ctx, { supplierId: base.supplier, businessDate: DATE, supplierInvoiceNumber: `INV/${tag()}`,
+        supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: m('210'), fileId: null, notes: null,
+        lines: [{ kind: 'goods', poLineId: lineId, receiptLineId: received, qty: q('2'), rate: r('100') }] }));
+      add(['GET /purchasing/bills/:id'], bill.id);
     });
 
     // Job work: a challan to the job worker, and a receipt bringing one back.
@@ -290,22 +328,12 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
     const known: Record<string, Record<string, unknown>> = {
       'GET /crm/cost-per-lead': { fromDate: DATE, toDate: DATE },
       'GET /parties/:id/statement': { from: DATE, to: DATE },
-      'GET /sales/price': { partyId: party, itemId: item, businessDate: DATE },
-      'GET /gst/rates/in-force': { on: DATE },
+      'GET /sales/price': { partyId: party, itemId: item, on: DATE },
+      'GET /gst/rates/in-force': { hsn: ids['hsn']?.[0] ?? '', on: DATE },
+      'GET /stock/on-hand': { itemId: item, locationId: ids['stores']?.[0] ?? '', limit: 50 },
     };
     return known[path] ?? {};
   };
-
-  async function apiList(): Promise<readonly Route[]> {
-    const log = { info: () => undefined, error: () => undefined };
-    const auth = await createAuth(cfg, log);
-    try {
-      return apiRoutes(auth, createClientErrors(log), createEnquiryForm({ outbound: { request: () => Promise.reject(new Error('no network in this test')) },
-        secret: 'unused' }));
-    } finally {
-      await auth.store.stop();
-    }
-  }
 
   it('answers every GET route without a 5xx, on one of each kind of document', async () => {
     const who = await person('100000000');
@@ -325,7 +353,9 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
           : (ids[key] ?? []).map((id) => ({ ...extra, [route.contract.params[0] ?? 'id']: id }));
         let reached = false;
         const why: string[] = [];
-        for (const input of calls) {
+        for (const given of calls) {
+          // A list's first page, with no filter, where the route takes one (lib-common's listInput).
+          const input = route.contract.input.safeParse(given).success ? given : { filter: {}, limit: 50, ...given };
           const checked = route.contract.input.safeParse(input);
           if (!checked.success) {
             why.push(`input: ${checked.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`);
