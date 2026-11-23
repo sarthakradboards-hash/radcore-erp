@@ -5,10 +5,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
 import { quantityString, unitPriceString } from '@radcore/lib-common';
-import { AppError, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, saveSetting, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addCategory, addChallan, addItem, addPlace, addReceipt, cancelChallanNow, cancelReceiptNow, getChallanById, listChallansPage,
+  addCategory, addChallan, addItem, addPlace, addReceipt, cancelChallanNow, cancelReceiptNow, getChallanById, listChallansPage, NEGATIVE_STOCK,
 } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
@@ -110,6 +110,41 @@ describe.skipIf(!url || !superUrl)('job work', () => {
     // Everything it sent is accounted for, so the challan is closed.
     const c = await run((ctx) => getChallanById(ctx, { id: sent.id }));
     expect([c.open, c.lines[0]?.left, c.lines[0]?.used, c.lines[0]?.lost]).toEqual([false, '0.000', '3.000', '1.000']);
+  });
+
+  // auditor-2's MUST on #381: goods made, and inputs back, into negative stock revalue, which the engine posts as its
+  // own entry, so the receipt's entry stays F16's and balances.
+  it('posts a receipt into negative stock, leaving the revaluation to the engine’s own entry', async () => {
+    const at = await setup();
+    const sent = await send(at, '4');
+    // A FRAME in at 5,000.00, its last `in` rate, so a shortfall is estimated at that (F15).
+    await run((ctx) => postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId: at.frame,
+      locationId: at.stores, qty: q('1'), rate: unitPriceString().parse('5000'), batches: [{ batchNo: 'F0', qty: q('1') }] }] }));
+    const f0 = (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1', [at.frame])).rows[0]?.id ?? '';
+    // Stores sells 3 FRAME and 2 KIT, holding 1 of each: −2 and −1. Negative stock is the company's setting, which other
+    // files turn on and off: it's saved in the sale's own save, so their writes wait for it and its commit check reads
+    // it; then off again. The receipt brings both back to 0 with it off.
+    try {
+      await run(async (ctx) => {
+        await saveSetting(ctx, NEGATIVE_STOCK, true);
+        await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, outs: [
+          { itemId: at.frame, locationId: at.stores, qty: q('3'), delivery: true, batches: [{ batchId: f0, qty: q('1') }, { batchId: null, qty: q('2') }] },
+          { itemId: at.kit, locationId: at.stores, qty: q('2'), delivery: true, batches: [{ batchId: at.batch, qty: q('1') }, { batchId: null, qty: q('1') }] },
+        ] });
+        // The engine reads the setting as the save began; the database's commit check reads the saved one.
+      }, staff, new Settings([{ key: 'stock.negative_stock', value: true }]));
+    } finally {
+      await run((ctx) => saveSetting(ctx, NEGATIVE_STOCK, null));
+    }
+    const back = await receive(at, sent.id, await challanLine(sent.id), { made: { qty: '2' }, used: '2', back: '1', lost: '1' });
+    // The frames revalue up (2 sold short at the 5,000.00 estimate, made at 1,150.00); the kit comes back at the
+    // 1,000.00 it sold at, so it has nothing to revalue.
+    const { rows } = await pool.query<{ item_id: string }>(`select item_id from radcore.stock_movements where source_id = $1 and direction = 'revalue'`,
+      [back.id]);
+    expect(rows.map((r) => r.item_id)).toEqual([at.frame]);
+    // Made 2,000.00 + 300.00 and back 1,000.00 in; used 2,000.00, lost and back 1,000.00 each out.
+    expect(await entryOf(back.id)).toEqual(['Job Work Charges to be Billed 0.00 300.00', 'Stock Adjustment 1000.00 0.00',
+      'Stock in Hand 3300.00 4000.00']);
   });
 
   // RC-130: a serialised output names each serial, and each becomes a unit received in the receipt's batch.
