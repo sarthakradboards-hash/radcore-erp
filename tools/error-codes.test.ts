@@ -20,9 +20,8 @@ import webhooks from '../apps/api/src/routes/hooks.ts';
 type Found = { file: string; line: number; code: string | null; text: string };
 
 /** Codes no mounted route can reach yet, each with why. The route that first reaches one declares it, and leaves here. */
-const NOT_YET_REACHED: Readonly<Record<string, string>> = {
-  transfer_same_location: 'stock transfers have no route yet: deliveries share the stock engine line check, but never transfer',
-};
+// transfer_same_location left with RAD-141's POST /stock/transfers, which declares it.
+const NOT_YET_REACHED: Readonly<Record<string, string>> = {};
 
 /** Every AppError code a source file raises: `code` null for one computed from something other than `<x>.code`. */
 export function codesIn(file: string, source: string): Found[] {
