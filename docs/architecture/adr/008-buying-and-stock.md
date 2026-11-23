@@ -242,6 +242,9 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
     open. What's left stays as credit with the supplier;
   - **the unbilled part** goes back against Goods Received Not Billed (F4), with no debit note.
   - So only billed rejects are ever debited (RC-129).
+- The goods leave at the rejects place's average; the supplier's side is at the receipt line's rate (unbilled) or the
+  bill's rates (billed), and any difference goes to Cost of Goods Sold, as a bill's price difference on goods no longer
+  on hand does (ADR-006 §4). Billed rejects go against the line's bills latest first (the architect on RAD-140).
 - **Units** go out with `returned_to_supplier`, their batches with them.
 - **The input GST reversal** posts with the return, the stricter reading. Whether it should wait for the supplier's
   own credit note is CA-52's question, and its answer changes timing, not shape.

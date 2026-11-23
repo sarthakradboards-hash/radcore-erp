@@ -12,7 +12,7 @@ import {
   AppError, decodeCursor, defineSeries, encodeCursor, holdSeries, listScope, momentKey, nextNumber, principalId, type Ctx,
 } from '@radcore/lib-platform';
 import {
-  batchKey, checkPlace, checkQuantity, holdStock, itemFlags, itemLabels, placeNames, postStock, reverseStock, serialKey, unitOwners,
+  batchKey, checkPlace, checkQuantity, holdStock, itemFlags, itemLabels, movementBatches, placeNames, postStock, reverseStock, serialKey, unitOwners,
   type StockIn,
 } from '@radcore/lib-stock';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
@@ -20,7 +20,7 @@ import { z } from 'zod';
 import type {
   cancelGoodsReceipt, createGoodsReceipt, deleteGoodsReceipt, getGoodsReceipt, listGoodsReceipts, postGoodsReceipt, updateGoodsReceipt,
 } from '../contract.ts';
-import { receivedOf, settleOrder } from './received.ts';
+import { receivedOf, returnedOf, settleOrder } from './received.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -278,8 +278,12 @@ export async function cancelReceiptNow(ctx: Ctx, { id, businessDate, reason }: I
   if (r.status !== 'posted') throw wrongStatus(r.status, 'cancelled');
   if (businessDate > today()) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < r.businessDate) throw refuse('date_before_source', `The receipt is dated ${r.businessDate}`, ['businessDate']);
-  // shortcut: bills (M4-03) and supplier returns (M4-05) aren't built yet, so nothing on a receipt can be billed or
-  // returned; RAD-138's billedQty, and M4-05's returns, refuse receipt_in_use here when they land.
+  // Goods sent back to the supplier on a posted return (RAD-140) are in use. shortcut: bills (M4-03) can't post yet, so
+  // nothing on a receipt can be billed; RAD-138's billedQty refuses receipt_in_use here when it lands.
+  const back = await returnedOf(ctx, (await linesOf(ctx, id)).map((l) => l.id), { drafts: false });
+  if ([...back.values()].some((q) => q.gt(0))) {
+    throw new AppError('receipt_in_use', 'Goods on this receipt have gone back to the supplier: cancel that return first');
+  }
   await reverseStock(ctx, { sourceTable: SOURCE, sourceId: id, businessDate }).catch((e: unknown) => {
     if (e instanceof AppError && ['not_enough_stock', 'units_mismatch', 'unit_held', 'not_reversible'].includes(e.code)) {
       throw new AppError('receipt_in_use', 'Goods on this receipt have moved on since, so it can’t be cancelled: return them instead');
@@ -344,6 +348,20 @@ export async function getReceiptById(ctx: Ctx, { id }: In<typeof getGoodsReceipt
     rate: purchaseOrderLines.rate }).from(purchaseOrderLines).where(inArray(purchaseOrderLines.id, lines.map((l) => l.orderLineId))))
     .map((o) => [o.id, o]));
   const labels = await itemLabels(ctx, lines.map((l) => l.itemId));
+  // A posted line's batches are its two movements', with their ids (e2e-playwright on #373: an empty id failed the
+  // contract, a 500 for every posted receipt). A draft's have none yet.
+  const moved = await movementBatches(ctx, lines.flatMap((l) => [l.acceptedMovementId, l.rejectedMovementId].filter((m): m is string => m !== null)));
+  const batchesOf = (l: (typeof lines)[number]) => {
+    const by = new Map<string, { batchId: string; batchNo: string; accepted: string; rejected: string }>();
+    for (const [part, movementId] of [['accepted', l.acceptedMovementId], ['rejected', l.rejectedMovementId]] as const) {
+      for (const b of movementId === null ? [] : moved.get(movementId) ?? []) {
+        if (b.batchId === null) continue;
+        const row = by.get(b.batchId) ?? { batchId: b.batchId, batchNo: b.batchNo ?? '', accepted: '0.000', rejected: '0.000' };
+        by.set(b.batchId, { ...row, [part]: b.qty });
+      }
+    }
+    return [...by.values()];
+  };
   return { ...(shown as NonNullable<typeof shown>), notes: r.notes, lines: lines.map((l) => {
     const qc = l.qc as Qc | null;
     // A posted line's batches and serials as the inspector named them, the receipt's number for those named none.
@@ -352,7 +370,7 @@ export async function getReceiptById(ctx: Ctx, { id }: In<typeof getGoodsReceipt
       name: labels.get(l.itemId)?.name ?? '', unit: labels.get(l.itemId)?.unit ?? '', rate: l.rate ?? ordered.get(l.orderLineId)?.rate ?? '0',
       ordered: ordered.get(l.orderLineId)?.qty ?? '0', received: l.received, accepted: l.accepted, rejected: l.rejected,
       acceptedValue: l.acceptedValue as Money | null, rejectedValue: l.rejectedValue as Money | null, rejectReason: l.rejectReason,
-      batches: (qc?.batches ?? []).map((b) => ({ batchId: '', batchNo: batchNo(b.batchNo), accepted: b.accepted, rejected: b.rejected })),
+      batches: batchesOf(l),
       serials: (qc?.serials ?? []).map((s) => ({ serialNo: s.serialNo, chassisNo: s.chassisNo, batchNo: batchNo(s.batchNo), rejected: s.rejected })) };
   }) };
 }
