@@ -343,7 +343,8 @@ async function undoDifference<T>(ctx: Ctx, b: Row, lines: readonly Line[], busin
 }
 
 /** POST /purchasing/bills/:id/cancel (bills:write): its entry and price difference mirrored, dated the cancellation's
- * day, only while nothing is applied to it (the database's guard_applied_cancel answers still_applied). */
+ * day, only while nothing is applied to it (the database's guard_applied_cancel answers still_applied), and not while a
+ * posted supplier return debits it (bill_returned, RAD-140). */
 export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<typeof cancelPurchaseBill>): Promise<Out<typeof cancelPurchaseBill>> {
   await holdPeriod(ctx, businessDate);
   await holdSources(ctx, await linesOf(ctx, (await billOf(ctx, id, 'bills:write')).id));
