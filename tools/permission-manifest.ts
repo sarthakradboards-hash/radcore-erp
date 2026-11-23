@@ -254,6 +254,14 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /stock/location-kinds': 'locations:read',
   'GET /stock/on-hand': 'stock:read',
   // Transfers, counts and adjustments (M4-06, RAD-141; ADR-008 §13).
+  'GET /stock/job-work/challans': 'stock:read',
+  'GET /stock/job-work/challans/:id': 'stock:read',
+  'POST /stock/job-work/challans': 'job_work:write',
+  'POST /stock/job-work/challans/:id/cancel': 'job_work:write',
+  'GET /stock/job-work/receipts': 'stock:read',
+  'GET /stock/job-work/receipts/:id': 'stock:read',
+  'POST /stock/job-work/receipts': 'job_work:write',
+  'POST /stock/job-work/receipts/:id/cancel': 'job_work:write',
   'GET /stock/transfers': 'stock:read',
   'GET /stock/transfers/:id': 'stock:read',
   'POST /stock/transfers': 'stock:move',
@@ -622,6 +630,14 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   // Stock's routes reach lib-stock and, through it, lib-platform.
   'GET /stock/location-kinds': STOCK,
   'GET /stock/on-hand': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/challans': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/challans/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/job-work/challans': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/job-work/challans/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/receipts': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/receipts/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/job-work/receipts': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/job-work/receipts/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/transfers': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/transfers/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/transfers': ['lib-accounts', 'lib-platform', 'lib-stock'],
@@ -653,9 +669,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /approvals/stock-adjustment/:id/decision': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/adjustments/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'PUT /stock/location-kinds/:kind': STOCK,
-  'GET /stock/locations': STOCK,
-  'POST /stock/locations': STOCK,
-  'PATCH /stock/locations/:id': STOCK,
+  // A job worker's place names its party (RAD-142), checked through lib-accounts.
+  'GET /stock/locations': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'POST /stock/locations': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'PATCH /stock/locations/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
   // The workbook's start route takes only its contract (the architect on RAD-92): lib-platform's own.
   'POST /platform/masters/exports': PLATFORM,
   // HR's routes reach lib-hr and, through it, lib-platform.

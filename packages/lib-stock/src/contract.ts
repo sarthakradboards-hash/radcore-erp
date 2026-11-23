@@ -146,19 +146,24 @@ export const listLocations = defineContract({
   output: listOf(location),
 });
 
-/** A new location. code_taken: another has this code, whatever its case or spacing. */
+// A job worker's own place names its party, exactly when its kind is `job_work`, one place each (ADR-008 §11, RAD-142).
+const JOB_WORKER_ERRORS = ['job_worker_required', 'not_a_job_work_place', 'unknown_party', 'job_worker_has_place'] as const;
+
+/** A new location. code_taken: another has this code, whatever its case or spacing. A job work place names its job
+ * worker (`partyId`), and no other kind does. */
 export const addLocation = defineContract({
   method: 'POST', path: '/stock/locations', auth: 'session', perm: 'locations:write', tx: write,
-  input: z.object({ code: locationCode(), name: locationName(), kind: locationKind }), output: z.object({ id: idString() }),
-  errors: ['code_taken'],
+  input: z.object({ code: locationCode(), name: locationName(), kind: locationKind, partyId: idString().nullable().optional() }),
+  output: z.object({ id: idString() }),
+  errors: ['code_taken', ...JOB_WORKER_ERRORS],
 });
 
 /** A location renamed, recoded, moved to another kind, or switched off or on. */
 export const updateLocation = defineContract({
   method: 'PATCH', path: '/stock/locations/:id', auth: 'session', perm: 'locations:write', tx: write,
   input: z.object({ id: idString(), code: locationCode().optional(), name: locationName().optional(),
-    kind: locationKind.optional(), active: z.boolean().optional() }),
-  output: z.object({}), errors: ['code_taken'],
+    kind: locationKind.optional(), partyId: idString().nullable().optional(), active: z.boolean().optional() }),
+  output: z.object({}), errors: ['code_taken', ...JOB_WORKER_ERRORS],
 });
 
 /** What the books check compares (ADR-006 §7). */
