@@ -11,8 +11,9 @@ export const TEST_RIDE_OUTCOMES = ['liked', 'not_interested', 'wants_another', '
 const outcome = z.enum(TEST_RIDE_OUTCOMES);
 const note = () => z.string().trim().min(1).max(2000);
 
-const ride = z.object({ id: idString(), leadId: idString(), itemId: idString(), serialNo: z.string(), scheduledAt: momentString(),
-  doneAt: momentString().nullable(), outcome: outcome.nullable(), note: z.string().nullable() });
+// The model's SKU and name, and the lead's name: null for a lead the reader may not open, under leads:read's own scope.
+const ride = z.object({ id: idString(), leadId: idString(), leadName: z.string().nullable(), itemId: idString(), sku: z.string(), name: z.string(),
+  serialNo: z.string(), scheduledAt: momentString(), doneAt: momentString().nullable(), outcome: outcome.nullable(), note: z.string().nullable() });
 
 /** Test rides, soonest first, a page at a time: a lead's, or a unit's, and the principal's own at `own` scope. */
 export const listTestRides = defineContract({
