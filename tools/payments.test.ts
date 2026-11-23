@@ -129,6 +129,15 @@ describe.skipIf(!url || !superUrl)('receipts, payments and refunds', { timeout: 
     }
   });
 
+  // e2e-2 on #348 (RAD-126): an amount of 0 is refused as itself, never as a TDS problem.
+  it('refuses an amount of 0 as amount_not_positive, with or without TDS', async () => {
+    const [p, bank] = [await party(), await systemId('bank')];
+    expect(await code(run((ctx) => recordPayment(ctx, { kind: 'receipt', partyId: p, businessDate: DAY, amount: m('0'), accountId: bank }))))
+      .toBe('amount_not_positive');
+    expect(await code(run((ctx) => recordPayment(ctx, { kind: 'payment', partyId: p, businessDate: DAY, amount: m('0'), tds: m('0'), accountId: bank }))))
+      .toBe('amount_not_positive');
+  });
+
   it('refunds an advance held for a document only through that document, never over the route (RAD-117)', async () => {
     const p = await party();
     const bank = await systemId('bank');

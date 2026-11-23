@@ -8,7 +8,8 @@ export default defineConfig({
   // Every file eslint.config.mjs's TABLE_FILES names, by name (tools/eslint-config.test.ts holds the two equal), and the views.
   schema: ['packages/db/src/columns.ts', 'packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/sales/tables-credit.ts',
     'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts', 'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
-    'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts', 'packages/db/src/purchasing/tables-bills.ts',
+    'packages/db/src/stock/tables-job-work.ts', 'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts',
+    'packages/db/src/purchasing/tables-bills.ts',
     'packages/db/views/index.ts'],
   out: 'packages/db/migrations',
   casing: 'snake_case',
