@@ -135,9 +135,9 @@ async function linesOf(ctx: Ctx, id: string) {
 }
 
 /** Posts an approved adjustment (F14), its lines judged again (the item's chassis flag may have changed). A found
- * serialised unit takes the adjustment's number as its batch (§10), so every adjustment draws its number at one point,
- * after the period and before its stock: two adjustments then take SA, then positions, in the same order and never
- * wait on each other in a circle (auditor-2 on #339). Nothing else draws SA. */
+ * serialised unit takes the adjustment's number as its batch (§10), so it's drawn as a batch-naming document draws its
+ * own (the architect on RAD-141): its stock first, then the JV and SA turns, then the number, then the posting. Nothing
+ * else draws SA. */
 async function postAdjustment(ctx: Ctx, id: string): Promise<void> {
   const tx = stockTx(ctx);
   const [a] = await tx.select().from(stockAdjustments).where(eq(stockAdjustments.id, id)).for('update');

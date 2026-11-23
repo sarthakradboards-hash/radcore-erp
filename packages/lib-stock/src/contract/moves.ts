@@ -65,8 +65,8 @@ export const getStockTransfer = defineContract({
  * out and come in under the same batches. Into a franchisee's place while `stock.franchisee_transfer_approval` is on
  * (Sarthak, default off), it's kept as a draft instead and sent for someone else's approval in the same save: `number`
  * null, and `approval` the request to decide. Refused to the same place (`transfer_same_location`), out of `rejected`
- * to a sellable place (`needs_qc`: M4-02's re-inspection under inward:qc is the only way back), and to or from a job
- * work place (`use_job_work`, §11).
+ * to anywhere but another rejects place (`needs_qc`: M4-02's re-inspection under inward:qc is the only way back to
+ * selling), and to or from a job work place (`use_job_work`, §11).
  */
 export const createStockTransfer = defineContract({
   method: 'POST', path: '/stock/transfers', auth: 'session', perm: 'stock:move', tx: write,
