@@ -322,9 +322,12 @@ which locks a booking's lead for its cancellation and answers nothing (RAD-117).
 answering only counts (RAD-110). The fifth is lib-purchasing's `services/received.ts`, which sums every posted receipt's
 accepted and rejected quantities by purchase order line, net of cancellations, and names the lines a receipt names, for
 receiving, closing and reopening a PO and for its edits (`over_ordered`, `po_received`), answering only quantities and
-ids (RAD-137). The sixth is lib-purchasing's `services/billed.ts`, which sums what posted bills have billed of each
-receipt line, net of cancellations, for a bill's `over_received` and a receipt's `receipt_in_use`, answering only
-quantities (RAD-138).
+ids (RAD-137). The sixth is lib-stock's `services/job-work-accounted.ts`, which sums every posted job-work receipt's
+used, returned and lost quantities by challan line, and says whether a posted receipt answers a challan, for
+`over_challan`, a challan's accounted quantities and its cancellation (`challan_answered`), answering only quantities
+and yes or no (RAD-142). The seventh is lib-purchasing's `services/billed.ts`, which sums what posted bills have billed
+of each receipt line, net of cancellations, for a bill's `over_received` and a receipt's `receipt_in_use`, answering
+only quantities (RAD-138).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:

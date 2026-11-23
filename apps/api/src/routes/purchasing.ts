@@ -1,5 +1,6 @@
 // lib-purchasing's routes (ADR-001 §6): declarations only. Purchase orders, their approval and the PO limits (RAD-136);
-// goods receipts (RAD-137); purchase bills (RAD-138): drafts, posting, its approval and cancelling.
+// goods receipts (RAD-137); purchase bills (RAD-138): drafts, posting, its approval and cancelling; supplier returns
+// (RAD-140).
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
   addBill, addOrder, addReceipt, billApproval, cancelBillNow, cancelOrder, cancelReceiptNow, changeBill, changeOrder, changeReceipt, closeOrder, dropBill, dropOrder,
@@ -7,11 +8,18 @@ import {
   placeOrder, postBillNow, postReceipt, setOrderLimit,
 } from '@radcore/lib-purchasing';
 import {
+  addReturn, cancelReturnNow, changeReturn, dropReturn, getReturnById, listReturnsPage, postReturn,
+} from '@radcore/lib-purchasing';
+import {
   cancelGoodsReceipt, cancelPurchaseBill, cancelPurchaseOrder, closePurchaseOrder, createGoodsReceipt, createPurchaseBill, createPurchaseOrder, deleteGoodsReceipt,
   deletePurchaseBill, deletePurchaseOrder, getGoodsReceipt, getPurchaseBill, getPurchaseOrder, listGoodsReceipts, listPurchaseBills,
   listPurchaseOrderLimits, listPurchaseOrders, placePurchaseOrder, postGoodsReceipt, postPurchaseBill, purchaseBillApproval, purchaseOrderApproval,
   setPurchaseOrderLimit,
   updateGoodsReceipt, updatePurchaseBill, updatePurchaseOrder,
+} from '@radcore/lib-purchasing/contract';
+import {
+  cancelSupplierReturn, createSupplierReturn, deleteSupplierReturn, getSupplierReturn, listSupplierReturns, postSupplierReturn,
+  updateSupplierReturn,
 } from '@radcore/lib-purchasing/contract';
 
 export default [
@@ -41,4 +49,11 @@ export default [
   defineRoute(postPurchaseBill, postBillNow),
   ...defineApproval(purchaseBillApproval, billApproval),
   defineRoute(cancelPurchaseBill, cancelBillNow),
+  defineRoute(listSupplierReturns, listReturnsPage),
+  defineRoute(getSupplierReturn, getReturnById),
+  defineRoute(createSupplierReturn, addReturn),
+  defineRoute(updateSupplierReturn, changeReturn),
+  defineRoute(deleteSupplierReturn, dropReturn),
+  defineRoute(postSupplierReturn, postReturn),
+  defineRoute(cancelSupplierReturn, cancelReturnNow),
 ];

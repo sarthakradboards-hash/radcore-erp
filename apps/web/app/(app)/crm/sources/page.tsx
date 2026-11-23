@@ -5,6 +5,7 @@
 // (RC-212). The server refuses ignoring one a person typed (source_not_ignorable); the screen offers it only on a door.
 import { createLeadSource, listLeadSources, updateLeadSource } from '@radcore/lib-crm/contract';
 import { useState } from 'react';
+import { useMe } from '../../../../components/shell/session-provider.tsx';
 import type { z } from 'zod';
 import { CloseButton, Dialog } from '../../../../components/ui/dialog/dialog.tsx';
 import { Menu } from '../../../../components/ui/dialog/menu.tsx';
@@ -22,7 +23,8 @@ const later = (text: string) => setTimeout(() => announce(text), 0);
 const channelName = (c: Source['channel']) => t(`crm.enquiry.source.${c}`);
 
 export default function LeadSourcesPage() {
-  const q = useApiQuery(listLeadSources, {});
+  const maySetUp = useMe().permissions.includes('leads:setup');
+  const q = useApiQuery(listLeadSources, {}, { enabled: maySetUp });
   const [editing, setEditing] = useState<Source | 'new' | null>(null);
   const close = (open: boolean) => { if (!open) setEditing(null); };
   const refresh = { invalidates: [listLeadSources] };
@@ -36,6 +38,7 @@ export default function LeadSourcesPage() {
       <Menu label={t('crm.actionsFor', { name: s.name })} items={[{ label: t('crm.edit'), onSelect: () => setEditing(s) }]} />
     ) },
   ];
+  if (!maySetUp) return <><h1>{t('crm.sources.title')}</h1><p className="admin-notice">{t('crm.setup.cannot')}</p></>;
   return (
     <>
       <h1>{t('crm.sources.title')}</h1>

@@ -1,6 +1,8 @@
 // Items, their categories and units of measure (M2-10, RAD-89; ADR-001 §5: lib-stock's). Every write is audited by
 // the tables' triggers. A quantity follows its item's unit (RC-162): checkQuantity is what every stock document calls.
-import { after, batches, itemCategories, itemPictures, items, searchWords, stockMovements, stockTx, units, unitsOfMeasure } from '@radcore/db/stock';
+import {
+  after, batches, itemCategories, itemPictures, items, searchWords, stockMovementBatches, stockMovements, stockTx, units, unitsOfMeasure,
+} from '@radcore/db/stock';
 import type { Rate } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, readyFile, viewLinks, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
@@ -148,12 +150,36 @@ export async function itemFlags(ctx: Ctx, ids: readonly string[]): Promise<Map<s
   return new Map(rows.map((r) => [r.id, { serialised: r.serialised, hasChassis: r.hasChassis }]));
 }
 
+/** Each movement's batches, by movement id: the batch (null for "batch unknown"), its number and the quantity, for
+ * another library showing what a posted document's lines brought in (a goods receipt's, RAD-137). One read. */
+export async function movementBatches(ctx: Ctx, movementIds: readonly string[]):
+  Promise<Map<string, { batchId: string | null; batchNo: string | null; qty: string }[]>> {
+  const out = new Map<string, { batchId: string | null; batchNo: string | null; qty: string }[]>();
+  if (movementIds.length === 0) return out;
+  const rows = await stockTx(ctx).select({ movementId: stockMovementBatches.movementId, batchId: stockMovementBatches.batchId,
+    batchNo: batches.batchNo, qty: stockMovementBatches.qty }).from(stockMovementBatches)
+    .leftJoin(batches, eq(batches.id, stockMovementBatches.batchId))
+    .where(inArray(stockMovementBatches.movementId, [...new Set(movementIds)])).orderBy(asc(batches.batchNo));
+  for (const r of rows) out.set(r.movementId, [...(out.get(r.movementId) ?? []), { batchId: r.batchId, batchNo: r.batchNo, qty: r.qty }]);
+  return out;
+}
+
 /** Each batch's number, by id, for another library showing the batches its lines picked (lib-sales' deliveries and
  * returns, ui-2's return form on #293). An id that names no batch is left out. */
 export async function batchNumbers(ctx: Ctx, ids: readonly string[]): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
   const rows = await stockTx(ctx).select({ id: batches.id, batchNo: batches.batchNo }).from(batches).where(inArray(batches.id, [...ids]));
   return new Map(rows.map((r) => [r.id, r.batchNo]));
+}
+
+/** Each batch's number, item and supplier, by id, for a supplier return checking it sends back that supplier's own
+ * batches of the item (lib-purchasing, RAD-140). An id that names no batch is left out. */
+export async function batchOwners(ctx: Ctx, ids: readonly string[]):
+  Promise<Map<string, { batchNo: string; itemId: string; supplierId: string | null }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await stockTx(ctx).select({ id: batches.id, batchNo: batches.batchNo, itemId: batches.itemId, supplierId: batches.supplierId })
+    .from(batches).where(inArray(batches.id, [...ids]));
+  return new Map(rows.map(({ id, ...b }) => [id, b]));
 }
 
 /** Each item's purchase price, by id, for a sale's below-cost check when nothing is on hand (RAD-111; lib-sales'

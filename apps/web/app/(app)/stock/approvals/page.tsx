@@ -5,7 +5,8 @@
 // was asked, and anything posting re-checks (stock, serials, chassis numbers); the screen only words those refusals.
 import { formatMoment } from '@radcore/lib-common';
 import {
-  getStockAdjustment, getStockCount, listStockAdjustments, listStockCounts, stockAdjustmentApproval, stockCountApproval,
+  getStockAdjustment, getStockCount, getStockTransfer, listStockAdjustments, listStockCounts, listStockTransfers, stockAdjustmentApproval,
+  stockCountApproval, stockTransferApproval,
 } from '@radcore/lib-stock/contract';
 import Link from 'next/link';
 import { useId, useState } from 'react';
@@ -20,6 +21,7 @@ import { STOCK_MESSAGES } from '../shared.tsx';
 const KINDS = [
   { key: 'count', approval: stockCountApproval, href: (id: string) => `/stock/counts/${id}`, refresh: [getStockCount, listStockCounts] },
   { key: 'adjustment', approval: stockAdjustmentApproval, href: (id: string) => `/stock/adjustments/${id}`, refresh: [getStockAdjustment, listStockAdjustments] },
+  { key: 'transfer', approval: stockTransferApproval, href: (id: string) => `/stock/transfers/${id}`, refresh: [getStockTransfer, listStockTransfers] },
 ] as const;
 type Kind = (typeof KINDS)[number];
 type Pending = { id: string; recordId: string; requestedAt: string; requestedBy: { displayName: string | null } };

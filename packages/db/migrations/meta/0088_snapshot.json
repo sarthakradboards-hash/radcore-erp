@@ -1,5 +1,5 @@
 {
-  "id": "5280c122-0812-411b-beed-ea81c16f4dd6",
+  "id": "78bfc7d3-9908-4741-9df8-cc95e1da29c7",
   "prevId": "6f79cfec-f86c-405c-804d-1c5564a404a3",
   "version": "7",
   "dialect": "postgresql",
@@ -10992,6 +10992,12 @@
             "as": "upper(btrim(code))",
             "type": "stored"
           }
+        },
+        "party_id": {
+          "name": "party_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -11024,9 +11030,39 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "ux_locations_party": {
+          "name": "ux_locations_party",
+          "columns": [
+            {
+              "expression": "party_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "locations_party_id_parties_id_fk": {
+          "name": "locations_party_id_parties_id_fk",
+          "tableFrom": "locations",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "party_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -11042,6 +11078,10 @@
         "ck_locations_kind": {
           "name": "ck_locations_kind",
           "value": "\"radcore\".\"locations\".\"kind\" in ('store', 'stores', 'service_bay', 'franchisee', 'rejected', 'demo', 'job_work', 'in_transit')"
+        },
+        "ck_locations_job_worker": {
+          "name": "ck_locations_job_worker",
+          "value": "(\"radcore\".\"locations\".\"kind\" = 'job_work') = (\"radcore\".\"locations\".\"party_id\" is not null)"
         }
       },
       "isRLSEnabled": false
@@ -16491,6 +16531,1187 @@
       },
       "isRLSEnabled": false
     },
+    "radcore.job_work_challan_lines": {
+      "name": "job_work_challan_lines",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "challan_id": {
+          "name": "challan_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "line_no": {
+          "name": "line_no",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "qty": {
+          "name": "qty",
+          "type": "numeric(18, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "picks": {
+          "name": "picks",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ux_job_work_challan_lines_line": {
+          "name": "ux_job_work_challan_lines_line",
+          "columns": [
+            {
+              "expression": "challan_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "line_no",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_challan_lines_item": {
+          "name": "ix_job_work_challan_lines_item",
+          "columns": [
+            {
+              "expression": "item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "job_work_challan_lines_challan_id_job_work_challans_id_fk": {
+          "name": "job_work_challan_lines_challan_id_job_work_challans_id_fk",
+          "tableFrom": "job_work_challan_lines",
+          "tableTo": "job_work_challans",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "challan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "job_work_challan_lines_item_id_items_id_fk": {
+          "name": "job_work_challan_lines_item_id_items_id_fk",
+          "tableFrom": "job_work_challan_lines",
+          "tableTo": "items",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_job_work_challan_lines_qty": {
+          "name": "ck_job_work_challan_lines_qty",
+          "value": "\"radcore\".\"job_work_challan_lines\".\"qty\" > 0 and \"radcore\".\"job_work_challan_lines\".\"qty\" <> 'NaN'"
+        },
+        "ck_job_work_challan_lines_value": {
+          "name": "ck_job_work_challan_lines_value",
+          "value": "\"radcore\".\"job_work_challan_lines\".\"value\" >= 0 and \"radcore\".\"job_work_challan_lines\".\"value\" <> 'NaN'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.job_work_challan_states": {
+      "name": "job_work_challan_states",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "challan_id": {
+          "name": "challan_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "closed": {
+          "name": "closed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "ix_job_work_challan_states_closed": {
+          "name": "ix_job_work_challan_states_closed",
+          "columns": [
+            {
+              "expression": "closed",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "job_work_challan_states_challan_id_job_work_challans_id_fk": {
+          "name": "job_work_challan_states_challan_id_job_work_challans_id_fk",
+          "tableFrom": "job_work_challan_states",
+          "tableTo": "job_work_challans",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "challan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "radcore.job_work_challans": {
+      "name": "job_work_challans",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "from_id": {
+          "name": "from_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_id": {
+          "name": "to_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "party_id": {
+          "name": "party_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "number": {
+          "name": "number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "posted_entry_id": {
+          "name": "posted_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_reason": {
+          "name": "cancel_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_entry_id": {
+          "name": "cancel_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_job_work_challans_date": {
+          "name": "ix_job_work_challans_date",
+          "columns": [
+            {
+              "expression": "business_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_challans_party": {
+          "name": "ix_job_work_challans_party",
+          "columns": [
+            {
+              "expression": "party_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_challans_from": {
+          "name": "ix_job_work_challans_from",
+          "columns": [
+            {
+              "expression": "from_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_challans_to": {
+          "name": "ix_job_work_challans_to",
+          "columns": [
+            {
+              "expression": "to_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_challans_created_by": {
+          "name": "ix_job_work_challans_created_by",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_challans_posted_entry": {
+          "name": "ix_job_work_challans_posted_entry",
+          "columns": [
+            {
+              "expression": "posted_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_challans_cancel_entry": {
+          "name": "ix_job_work_challans_cancel_entry",
+          "columns": [
+            {
+              "expression": "cancel_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "job_work_challans_from_id_locations_id_fk": {
+          "name": "job_work_challans_from_id_locations_id_fk",
+          "tableFrom": "job_work_challans",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "from_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "job_work_challans_to_id_locations_id_fk": {
+          "name": "job_work_challans_to_id_locations_id_fk",
+          "tableFrom": "job_work_challans",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "to_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "job_work_challans_party_id_parties_id_fk": {
+          "name": "job_work_challans_party_id_parties_id_fk",
+          "tableFrom": "job_work_challans",
+          "tableTo": "parties",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "party_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "job_work_challans_posted_entry_id_journal_entries_id_fk": {
+          "name": "job_work_challans_posted_entry_id_journal_entries_id_fk",
+          "tableFrom": "job_work_challans",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "posted_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "job_work_challans_cancel_entry_id_journal_entries_id_fk": {
+          "name": "job_work_challans_cancel_entry_id_journal_entries_id_fk",
+          "tableFrom": "job_work_challans",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "cancel_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "job_work_challans_number_unique": {
+          "name": "job_work_challans_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ck_job_work_challans_notes": {
+          "name": "ck_job_work_challans_notes",
+          "value": "char_length(\"radcore\".\"job_work_challans\".\"notes\") <= 500"
+        },
+        "ck_job_work_challans_cancel_reason": {
+          "name": "ck_job_work_challans_cancel_reason",
+          "value": "char_length(\"radcore\".\"job_work_challans\".\"cancel_reason\") <= 500"
+        },
+        "ck_job_work_challans_status": {
+          "name": "ck_job_work_challans_status",
+          "value": "\"radcore\".\"job_work_challans\".\"status\" in ('draft', 'posted', 'cancelled')"
+        },
+        "ck_job_work_challans_places": {
+          "name": "ck_job_work_challans_places",
+          "value": "\"radcore\".\"job_work_challans\".\"from_id\" <> \"radcore\".\"job_work_challans\".\"to_id\""
+        },
+        "ck_job_work_challans_posted": {
+          "name": "ck_job_work_challans_posted",
+          "value": "(\"radcore\".\"job_work_challans\".\"status\" = 'draft') = (\"radcore\".\"job_work_challans\".\"number\" is null) and (\"radcore\".\"job_work_challans\".\"status\" <> 'draft' or \"radcore\".\"job_work_challans\".\"posted_entry_id\" is null)"
+        },
+        "ck_job_work_challans_cancelled": {
+          "name": "ck_job_work_challans_cancelled",
+          "value": "(\"radcore\".\"job_work_challans\".\"status\" = 'cancelled') = (\"radcore\".\"job_work_challans\".\"cancelled_at\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.job_work_receipt_lines": {
+      "name": "job_work_receipt_lines",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "receipt_id": {
+          "name": "receipt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "line_no": {
+          "name": "line_no",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "challan_line_id": {
+          "name": "challan_line_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "made_item_id": {
+          "name": "made_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "made_qty": {
+          "name": "made_qty",
+          "type": "numeric(18, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "charge_rate": {
+          "name": "charge_rate",
+          "type": "numeric(18, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "made_serials": {
+          "name": "made_serials",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "used": {
+          "name": "used",
+          "type": "numeric(18, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_picks": {
+          "name": "used_picks",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "back": {
+          "name": "back",
+          "type": "numeric(18, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "back_picks": {
+          "name": "back_picks",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lost": {
+          "name": "lost",
+          "type": "numeric(18, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lost_picks": {
+          "name": "lost_picks",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_value": {
+          "name": "used_value",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "charge": {
+          "name": "charge",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lost_value": {
+          "name": "lost_value",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ux_job_work_receipt_lines_line": {
+          "name": "ux_job_work_receipt_lines_line",
+          "columns": [
+            {
+              "expression": "receipt_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "line_no",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_receipt_lines_challan_line": {
+          "name": "ix_job_work_receipt_lines_challan_line",
+          "columns": [
+            {
+              "expression": "challan_line_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_receipt_lines_made_item": {
+          "name": "ix_job_work_receipt_lines_made_item",
+          "columns": [
+            {
+              "expression": "made_item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "job_work_receipt_lines_receipt_id_job_work_receipts_id_fk": {
+          "name": "job_work_receipt_lines_receipt_id_job_work_receipts_id_fk",
+          "tableFrom": "job_work_receipt_lines",
+          "tableTo": "job_work_receipts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "receipt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "job_work_receipt_lines_made_item_id_items_id_fk": {
+          "name": "job_work_receipt_lines_made_item_id_items_id_fk",
+          "tableFrom": "job_work_receipt_lines",
+          "tableTo": "items",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "made_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fk_job_work_receipt_lines_challan_line": {
+          "name": "fk_job_work_receipt_lines_challan_line",
+          "tableFrom": "job_work_receipt_lines",
+          "tableTo": "job_work_challan_lines",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "challan_line_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_job_work_receipt_lines_made_qty": {
+          "name": "ck_job_work_receipt_lines_made_qty",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"made_qty\" > 0 and \"radcore\".\"job_work_receipt_lines\".\"made_qty\" <> 'NaN'"
+        },
+        "ck_job_work_receipt_lines_charge_rate": {
+          "name": "ck_job_work_receipt_lines_charge_rate",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"charge_rate\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"charge_rate\" <> 'NaN'"
+        },
+        "ck_job_work_receipt_lines_used": {
+          "name": "ck_job_work_receipt_lines_used",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"used\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"used\" <> 'NaN'"
+        },
+        "ck_job_work_receipt_lines_back": {
+          "name": "ck_job_work_receipt_lines_back",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"back\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"back\" <> 'NaN'"
+        },
+        "ck_job_work_receipt_lines_lost": {
+          "name": "ck_job_work_receipt_lines_lost",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"lost\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"lost\" <> 'NaN'"
+        },
+        "ck_job_work_receipt_lines_used_value": {
+          "name": "ck_job_work_receipt_lines_used_value",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"used_value\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"used_value\" <> 'NaN'"
+        },
+        "ck_job_work_receipt_lines_charge": {
+          "name": "ck_job_work_receipt_lines_charge",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"charge\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"charge\" <> 'NaN'"
+        },
+        "ck_job_work_receipt_lines_lost_value": {
+          "name": "ck_job_work_receipt_lines_lost_value",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"lost_value\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"lost_value\" <> 'NaN'"
+        },
+        "ck_job_work_receipt_lines_made": {
+          "name": "ck_job_work_receipt_lines_made",
+          "value": "(\"radcore\".\"job_work_receipt_lines\".\"made_item_id\" is null) = (\"radcore\".\"job_work_receipt_lines\".\"made_qty\" is null) and (\"radcore\".\"job_work_receipt_lines\".\"made_item_id\" is null) = (\"radcore\".\"job_work_receipt_lines\".\"charge_rate\" is null)"
+        },
+        "ck_job_work_receipt_lines_parts": {
+          "name": "ck_job_work_receipt_lines_parts",
+          "value": "\"radcore\".\"job_work_receipt_lines\".\"used\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"back\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"lost\" >= 0 and \"radcore\".\"job_work_receipt_lines\".\"used\" + \"radcore\".\"job_work_receipt_lines\".\"back\" + \"radcore\".\"job_work_receipt_lines\".\"lost\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.job_work_receipts": {
+      "name": "job_work_receipts",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "challan_id": {
+          "name": "challan_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location_id": {
+          "name": "location_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "charges": {
+          "name": "charges",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "number": {
+          "name": "number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "posted_entry_id": {
+          "name": "posted_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_reason": {
+          "name": "cancel_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_entry_id": {
+          "name": "cancel_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_job_work_receipts_date": {
+          "name": "ix_job_work_receipts_date",
+          "columns": [
+            {
+              "expression": "business_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_receipts_challan": {
+          "name": "ix_job_work_receipts_challan",
+          "columns": [
+            {
+              "expression": "challan_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_receipts_location": {
+          "name": "ix_job_work_receipts_location",
+          "columns": [
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_receipts_created_by": {
+          "name": "ix_job_work_receipts_created_by",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_receipts_posted_entry": {
+          "name": "ix_job_work_receipts_posted_entry",
+          "columns": [
+            {
+              "expression": "posted_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_job_work_receipts_cancel_entry": {
+          "name": "ix_job_work_receipts_cancel_entry",
+          "columns": [
+            {
+              "expression": "cancel_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "job_work_receipts_challan_id_job_work_challans_id_fk": {
+          "name": "job_work_receipts_challan_id_job_work_challans_id_fk",
+          "tableFrom": "job_work_receipts",
+          "tableTo": "job_work_challans",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "challan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "job_work_receipts_location_id_locations_id_fk": {
+          "name": "job_work_receipts_location_id_locations_id_fk",
+          "tableFrom": "job_work_receipts",
+          "tableTo": "locations",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "location_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "job_work_receipts_posted_entry_id_journal_entries_id_fk": {
+          "name": "job_work_receipts_posted_entry_id_journal_entries_id_fk",
+          "tableFrom": "job_work_receipts",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "posted_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "job_work_receipts_cancel_entry_id_journal_entries_id_fk": {
+          "name": "job_work_receipts_cancel_entry_id_journal_entries_id_fk",
+          "tableFrom": "job_work_receipts",
+          "tableTo": "journal_entries",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "cancel_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "job_work_receipts_number_unique": {
+          "name": "job_work_receipts_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ck_job_work_receipts_charges": {
+          "name": "ck_job_work_receipts_charges",
+          "value": "\"radcore\".\"job_work_receipts\".\"charges\" >= 0 and \"radcore\".\"job_work_receipts\".\"charges\" <> 'NaN'"
+        },
+        "ck_job_work_receipts_notes": {
+          "name": "ck_job_work_receipts_notes",
+          "value": "char_length(\"radcore\".\"job_work_receipts\".\"notes\") <= 500"
+        },
+        "ck_job_work_receipts_cancel_reason": {
+          "name": "ck_job_work_receipts_cancel_reason",
+          "value": "char_length(\"radcore\".\"job_work_receipts\".\"cancel_reason\") <= 500"
+        },
+        "ck_job_work_receipts_status": {
+          "name": "ck_job_work_receipts_status",
+          "value": "\"radcore\".\"job_work_receipts\".\"status\" in ('draft', 'posted', 'cancelled')"
+        },
+        "ck_job_work_receipts_posted": {
+          "name": "ck_job_work_receipts_posted",
+          "value": "(\"radcore\".\"job_work_receipts\".\"status\" = 'draft') = (\"radcore\".\"job_work_receipts\".\"number\" is null) and (\"radcore\".\"job_work_receipts\".\"status\" <> 'draft' or \"radcore\".\"job_work_receipts\".\"posted_entry_id\" is null)"
+        },
+        "ck_job_work_receipts_cancelled": {
+          "name": "ck_job_work_receipts_cancelled",
+          "value": "(\"radcore\".\"job_work_receipts\".\"status\" = 'cancelled') = (\"radcore\".\"job_work_receipts\".\"cancelled_at\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "radcore.purchase_order_limits": {
       "name": "purchase_order_limits",
       "schema": "radcore",
@@ -17844,12 +19065,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "receipt_line_id": {
-          "name": "receipt_line_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "item_id": {
           "name": "item_id",
           "type": "uuid",
@@ -17889,12 +19104,6 @@
         "amount": {
           "name": "amount",
           "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revalued_qty": {
-          "name": "revalued_qty",
-          "type": "numeric(18, 3)",
           "primaryKey": false,
           "notNull": false
         },
@@ -17978,21 +19187,6 @@
           "method": "btree",
           "with": {}
         },
-        "ix_purchase_bill_lines_receipt_line": {
-          "name": "ix_purchase_bill_lines_receipt_line",
-          "columns": [
-            {
-              "expression": "receipt_line_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "ix_purchase_bill_lines_item": {
           "name": "ix_purchase_bill_lines_item",
           "columns": [
@@ -18038,20 +19232,6 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "purchase_bill_lines_receipt_line_id_goods_receipt_lines_id_fk": {
-          "name": "purchase_bill_lines_receipt_line_id_goods_receipt_lines_id_fk",
-          "tableFrom": "purchase_bill_lines",
-          "tableTo": "goods_receipt_lines",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "receipt_line_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
         "purchase_bill_lines_item_id_items_id_fk": {
           "name": "purchase_bill_lines_item_id_items_id_fk",
           "tableFrom": "purchase_bill_lines",
@@ -18086,10 +19266,6 @@
         "ck_purchase_bill_lines_amount": {
           "name": "ck_purchase_bill_lines_amount",
           "value": "\"radcore\".\"purchase_bill_lines\".\"amount\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"amount\" <> 'NaN'"
-        },
-        "ck_purchase_bill_lines_revalued_qty": {
-          "name": "ck_purchase_bill_lines_revalued_qty",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"revalued_qty\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"revalued_qty\" <> 'NaN'"
         },
         "ck_purchase_bill_lines_gst_rate": {
           "name": "ck_purchase_bill_lines_gst_rate",
@@ -18126,10 +19302,6 @@
         "ck_purchase_bill_lines_goods": {
           "name": "ck_purchase_bill_lines_goods",
           "value": "(\"radcore\".\"purchase_bill_lines\".\"kind\" = 'goods') = (\"radcore\".\"purchase_bill_lines\".\"po_line_id\" is not null and \"radcore\".\"purchase_bill_lines\".\"item_id\" is not null and \"radcore\".\"purchase_bill_lines\".\"qty\" is not null\n    and \"radcore\".\"purchase_bill_lines\".\"rate\" is not null) and (\"radcore\".\"purchase_bill_lines\".\"kind\" = 'charge') = (\"radcore\".\"purchase_bill_lines\".\"charge\" is not null and \"radcore\".\"purchase_bill_lines\".\"description\" is not null and \"radcore\".\"purchase_bill_lines\".\"hsn\" is not null\n    and \"radcore\".\"purchase_bill_lines\".\"amount\" is not null)"
-        },
-        "ck_purchase_bill_lines_receipt": {
-          "name": "ck_purchase_bill_lines_receipt",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"receipt_line_id\" is null or \"radcore\".\"purchase_bill_lines\".\"kind\" = 'goods'"
         },
         "ck_purchase_bill_lines_charge": {
           "name": "ck_purchase_bill_lines_charge",

@@ -24,8 +24,8 @@ const LOCKS = 'packages/db/src/locks.ts';
 // A module's tables, and a second file per document family once its tables.ts would pass E2's cap (the architect on RAD-114).
 const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/sales/tables-credit.ts',
   'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts', 'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
-  'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts', 'packages/db/src/purchasing/tables-bills.ts',
-  'packages/db/src/columns.ts'];
+  'packages/db/src/stock/tables-job-work.ts', 'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts',
+  'packages/db/src/purchasing/tables-bills.ts', 'packages/db/src/purchasing/tables-returns.ts', 'packages/db/src/columns.ts'];
 // The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.
 export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${TS}`, `apps/api/src/**/*.${TS}`,
   `apps/worker/src/**/*.${TS}`, `apps/web/**/*.${TS}`];
@@ -260,7 +260,8 @@ OPTIONS['radcore/e7-scope-on-owned-reads'] = { tables: [...SCOPED_TABLES,
     'packages/lib-crm/src/services/enquiry-counts.ts': 'counts a campaign’s or source’s enquiries over an India-date range for cost per lead, whoever owns the lead, as counts keyed by campaign and source ids the caller holds through campaigns:read (the architect on RAD-110)',
     'packages/lib-crm/src/services/lead-locks.ts': 'locks one lead by an id taken from a booking the caller has already locked within its scope, for the booking’s cancellation, and answers nothing (the architect on RAD-117)',
     'packages/lib-purchasing/src/services/billed.ts': 'sums what posted purchase bills have billed of each goods receipt line, net of cancellations, for a bill’s over_received and a receipt’s receipt_in_use, as quantities keyed by receipt-line ids the caller had in scope (the architect on RAD-138)',
-    'packages/lib-purchasing/src/services/received.ts': 'sums every posted receipt’s accepted and rejected quantities by purchase order line, net of cancellations, and names the lines a receipt names, for receiving, closing and reopening a PO and for its edits, as quantities and ids keyed by ids the caller had in scope (the architect on RAD-137)',
+    'packages/lib-stock/src/services/job-work-accounted.ts': 'sums every posted job work receipt’s used, back and lost quantities by challan line, and says whether any posted receipt answers a challan, for receiving against a challan, its list and page, and its cancellation, as quantities and a yes or no keyed by ids the caller had in scope (RAD-142, as received.ts for RAD-137)',
+    'packages/lib-purchasing/src/services/received.ts': 'sums every posted receipt’s accepted and rejected quantities by purchase order line, net of cancellations and of posted supplier returns (RAD-140), and names the lines a receipt names, for receiving, closing and reopening a PO and for its edits, as quantities and ids keyed by ids the caller had in scope (the architect on RAD-137)',
     'packages/lib-sales/src/services/booking-holds.ts': 'locks and updates the live bookings of an order or of order lines that the delivery, delivery cancel or order service has already locked within the principal’s scope, and tells a cancelled booking whether its lead has another live booking, whoever made it (the architect on RAD-117)',
     'packages/lib-sales/src/services/delivered.ts': 'sums every posted delivery, return and credit note for a party’s credit exposure, an order’s remaining quantities and an invoice’s open credit, as aggregates keyed by ids the caller had in scope (the architect on RAD-112 and RAD-114)',
   } };

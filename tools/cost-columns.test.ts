@@ -45,6 +45,11 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   purchase_bill_lines: { qty: 'a quantity', revalued_qty: 'a quantity', rate: 'a rate the supplier billed (purchasing:read)', amount: 'a charge on the goods (purchasing:read)',
     gst_rate: 'a tax rate', taxable: 'a line’s value (purchasing:read)', cgst: 'tax on a line (purchasing:read)', sgst: 'tax on a line (purchasing:read)',
     igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)' },
+  // A supplier return's (RAD-140): the rejects sent back at the value Goods Received Not Billed accrued for them, the
+  // return's own content under purchasing:read, as a receipt's rejected_value is.
+  supplier_returns: { unbilled_value: 'what went back against Goods Received Not Billed (purchasing:read)' },
+  supplier_return_lines: { qty: 'a quantity', rate: 'the receipt line’s rate (purchasing:read)', unbilled_qty: 'a quantity',
+    unbilled_value: 'the unbilled part’s value, as its receipt accrued it (purchasing:read)' },
   // A quote's and an order's amounts, frozen when sent or confirmed (RAD-112): what was offered, its tax and round-off;
   // a line's, what was offered or ordered, at its selling rate and tax (sales:read).
   sales_quotes: { taxable: 'a selling value (sales:read)', cgst: 'tax quoted (sales:read)', sgst: 'tax quoted (sales:read)',
@@ -86,6 +91,11 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   stock_transfer_lines: { qty: 'a quantity' },
   stock_count_lines: { found: 'a quantity', book: 'a quantity', difference: 'a quantity' },
   stock_adjustment_lines: { qty: 'a quantity' },
+  // Job work's quantities, and the job worker's charge (RAD-142): the document's own figures (ADR-008 §11).
+  job_work_challan_lines: { qty: 'a quantity' },
+  job_work_receipt_lines: { made_qty: 'a quantity', used: 'a quantity', back: 'a quantity', lost: 'a quantity',
+    charge_rate: 'the job worker’s charge rate (stock:read)', charge: 'the job worker’s charge (stock:read)' },
+  job_work_receipts: { charges: 'the job worker’s charges (stock:read)' },
   // The books: who may read them is journal:read's question, which the architect is ruling on (auditor-2 on #224).
   journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)' },
 };

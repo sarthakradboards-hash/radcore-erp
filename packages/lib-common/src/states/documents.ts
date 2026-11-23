@@ -18,6 +18,9 @@ export const STATE_TRANSITIONS: Readonly<Record<string, readonly (readonly [from
   purchase_orders: [['draft', 'placed'], ['placed', 'closed'], ['closed', 'placed'], ['draft', 'cancelled'], ['placed', 'cancelled']],
   goods_receipts: [['draft', 'posted'], ['posted', 'cancelled']],
   purchase_bills: [['draft', 'posted'], ['posted', 'cancelled']],
+  supplier_returns: [['draft', 'posted'], ['posted', 'cancelled']],
+  job_work_challans: [['draft', 'posted'], ['posted', 'cancelled']],
+  job_work_receipts: [['draft', 'posted'], ['posted', 'cancelled']],
 };
 
 /** A quote's statuses (ADR-007 §1): it posts nothing, so its service moves it and a CHECK holds the values. */

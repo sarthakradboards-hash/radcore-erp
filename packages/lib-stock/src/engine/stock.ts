@@ -14,7 +14,7 @@
 // The document posts its own entry from the movements answered here; the engine posts only the revaluations it makes,
 // as the document's one `revaluation` entry (§1, F15).
 import {
-  batches, stockMovementBatches, stockMovements, stockPositions, stockTx, unitEvents,
+  batches, items, stockMovementBatches, stockMovements, stockPositions, stockTx, unitEvents,
 } from '@radcore/db/stock';
 import { holdPeriod, postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, roundMoney, roundQty, roundRate, type Money, type Quantity, type Rate } from '@radcore/lib-common';
@@ -150,15 +150,21 @@ async function byDate(ctx: Ctx, itemId: string, locationId: string) {
 }
 
 /** The location's last `in` rate for the item: negative stock's estimate (§4). A transfer in carries no rate, so its
- * value over its quantity stands for one, and a location stocked only by transfers still has an estimate.
- * shortcut: the item's purchase price is the fallback once items carry one (purchasing, M4); until then, none. */
+ * value over its quantity stands for one, and a location stocked only by transfers still has an estimate. Where the
+ * location has had none, the item's purchase price (§4, the architect on RAD-144); with neither, no estimate. */
 async function estimate(ctx: Ctx, itemId: string, locationId: string): Promise<string | undefined> {
   const [row] = await stockTx(ctx).select({ rate: stockMovements.rate, qty: stockMovements.qty, value: stockMovements.value })
     .from(stockMovements)
     .where(and(eq(stockMovements.itemId, itemId), eq(stockMovements.locationId, locationId), eq(stockMovements.direction, 'in')))
     .orderBy(desc(stockMovements.postedAt), desc(stockMovements.id)).limit(1);
-  if (row === undefined) return undefined;
+  if (row === undefined) return purchasePriceOf(ctx, itemId);
   return row.rate ?? dec(row.value).div(dec(row.qty)).toFixed();
+}
+
+/** The item's purchase price, the last fallback for a rate to value goods at (§4), if it has one. */
+export async function purchasePriceOf(ctx: Ctx, itemId: string): Promise<string | undefined> {
+  const [item] = await stockTx(ctx).select({ price: items.purchasePrice }).from(items).where(eq(items.id, itemId)).limit(1);
+  return item?.price ?? undefined;
 }
 
 /** An issue's value (§4): all of what's on hand when it empties the location, else round(V × q / Q, 2). A delivery in
@@ -385,6 +391,9 @@ export async function reverseStock(ctx: Ctx, p: { sourceTable: string; sourceId:
     else if (kind === 'moved') {
       const before = e.condition === null ? undefined : await conditionBefore(ctx, e);
       undone.push({ ...unit, outMovementId: mirrorIn, inMovementId: mirrorOut, ...(before === undefined ? {} : { condition: before }) });
+    } else if (kind === 'sent_to_job_work' || kind === 'received_from_job_work') {
+      // Job work's moves, undone by each other: back out of where the move put it, into where it came from (RAD-142).
+      undone.push({ ...unit, outMovementId: mirrorIn, inMovementId: mirrorOut });
     } else if (kind === 'returned_to_supplier') undone.push({ ...unit, outMovementId: mirrorIn });
     // Back in, in the batch and condition it left with (units keeps both while it's gone).
     else undone.push({ ...unit, inMovementId: mirrorOut, ...(await goneUnit(ctx, e.itemId, e.serialNo)) });

@@ -489,7 +489,7 @@ profile (M2-02), and the place of supply decides (CA-08). A line's rate is the o
 | Goods receipt, after QC | accepted goods into their location, rejects into Rejected, at the order rate | Dr Stock in Hand, Cr Goods Received Not Billed | M4-02 |
 | Purchase bill for goods | the price difference, as a revaluation (§4) | Dr Goods Received Not Billed (what was accrued), Dr Input GST (where claimable, M4-04), the difference (§4), Cr Creditors, Cr TDS Payable (where due at the bill, M5-10) | M4-03 |
 | Purchase bill for services, or an expense | - | Dr the expense, Dr Input GST (where claimable, M5-02), Cr Creditors, Bank or Cash, Cr TDS Payable | M4-03, M5-02 |
-| Supplier return, not yet billed | out of Rejected, at its value | Dr Goods Received Not Billed, Cr Stock in Hand | M4-05 |
+| Supplier return, not yet billed | out of Rejected, at its average | Dr Goods Received Not Billed (the receipt line's rate × quantity), Cr Stock in Hand (the value out), and any difference to Cost of Goods Sold (§4) | M4-05 |
 | Supplier return, billed (a debit note) | out of Rejected, at its value | Dr Creditors, Cr Stock in Hand, Cr Input GST | M4-05 |
 | Delivery | out, at the location's average | Dr Goods Delivered Not Invoiced, Cr Stock in Hand | M3-08 |
 | Delivery return (taken back before invoicing, all or part) | in, at the line's share of the value it went out at (§4) | Dr Stock in Hand, Cr Goods Delivered Not Invoiced | M3-08 |
@@ -605,6 +605,13 @@ each, plus GST.
 - After: Rejected 0 at 0.00; Goods Received Not Billed 0.00.
 - Variant, the reject billed at 62,000.00 plus GST: Dr Creditors 65,100.00; Cr Stock in Hand (Rejected)
   62,000.00; Cr Input CGST 1,550.00; Cr Input SGST 1,550.00.
+- Variant, rejects of two rates (the architect on RAD-140): Rejected holds 2 SCOOTER at 122,000.00, one from receipt A
+  at 62,000.00 and one from receipt B at 60,000.00, neither billed.
+  - A's return: Rejected out 1, round(122,000.00 × 1 / 2, 2) = 61,000.00. Entry `supplier_return`: Dr Goods Received
+    Not Billed 62,000.00; Cr Stock in Hand (Rejected) 61,000.00; Cr Cost of Goods Sold 1,000.00.
+  - B's return later: out 61,000.00. Dr Goods Received Not Billed 60,000.00; Dr Cost of Goods Sold 1,000.00; Cr Stock
+    in Hand (Rejected) 61,000.00.
+  - After both: Rejected 0 at 0.00, Goods Received Not Billed 0.00 for both lines, and Cost of Goods Sold nets to 0.
 
 **F5. Delivery** (M3-08). Start: SCOOTER at Showroom, 4 at 245,000.00 (average 61,250.00). Unit S-0003 is
 delivered.
