@@ -3,16 +3,20 @@
 // then its documents, each in a committed transaction, as the routes run them. Counts and adjustments are approved by
 // someone else, whose account is made before the test's requests (approver_too_new).
 import { randomBytes, randomUUID } from 'node:crypto';
-import { JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
-import { quantityString, unitPriceString } from '@radcore/lib-common';
-import { AppError, approvedFor, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { addParty, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
+import { quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
+import { AppError, approvedFor, decideApproval, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addAdjustment, addCategory, addCount, addItem, addPlace, addTransfer, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, askCountApproval,
   cancelAdjustmentNow, cancelTransferNow, dropTransfer, requalifyTransfer, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
 } from '@radcore/lib-stock';
+import { getStockAdjustment, getStockCount, getStockTransfer } from '@radcore/lib-stock/contract';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import stockRoutes from '../apps/api/src/routes/stock.ts';
 import { turnsHeldBy } from './books-turn.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -55,7 +59,12 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
       const { id: itemId } = await addItem(ctx, { sku: `M-${tag()}`, name: 'Scooter', categoryId, hsn: '8711', unit: 'NOS', barcode: null,
         serialised: o.serials !== undefined, hasChassis: false, purchasePrice: unitPriceString().parse('1') });
       const places: string[] = [];
-      for (const kind of kinds) places.push((await addPlace(ctx, { code: `L${tag()}`, name: `${kind} ${tag()}`, kind })).id);
+      for (const kind of kinds) {
+        // A job work place is a job worker's own (ADR-008 §11, RAD-142).
+        const partyId = kind !== 'job_work' ? null : (await addParty(ctx, { name: `Job worker ${tag()}`, kinds: ['supplier'], gstin: null, pan: null,
+          composition: false, stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null })).id;
+        places.push((await addPlace(ctx, { code: `L${tag()}`, name: `${kind} ${tag()}`, kind, partyId })).id);
+      }
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins: [{ itemId, locationId: places[0] ?? '',
         qty: q(o.stock), rate: unitPriceString().parse(o.rate), batches: (o.batches ?? [{ batchNo: 'B1', qty: o.stock }]).map((b) => ({ batchNo: b.batchNo, qty: q(b.qty) })),
         ...(o.serials === undefined ? {} : { units: o.serials.map((serialNo) => ({ serialNo })) }) }] });
@@ -261,6 +270,36 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
     expect(done.number).toMatch(/^ST\//);
     expect(passed).toEqual([{ location_id: store, condition: 'used' }, 'used', { qty: '1', value: '61250.00' }]);
     expect([await unitOf(), await onHand(at.itemId, rejects)]).toEqual([{ location_id: rejects, condition: 'new' }, { qty: '1', value: '61250.00' }]);
+  });
+
+  // e2e-playwright on #373: a posted document's read goes through the real handler, whose output check holds it to the
+  // contract, so a field typed tighter than the service answers is a 500. A posted transfer (serialised), a posted count
+  // with a shortage (a negative difference) and a posted adjustment each read back 200.
+  it('reads a posted transfer, count and adjustment through the routes', async () => {
+    const boss = await approver();
+    const serials = [`S-${tag()}`, `S-${tag()}`, `S-${tag()}`];
+    const at = await setup(['stores', 'store'], { stock: '3', rate: '61250', serials });
+    const [stores, store] = at.places as [string, string];
+    const moved = await run((ctx) => addTransfer(ctx, { fromId: stores, toId: store, businessDate: DATE, reason: 'To the floor',
+      lines: [line(at.itemId, '1', at.batchId, [serials[0] ?? ''])] }));
+    const countedAt = await countedAfter(at.itemId);
+    const counted = await run((ctx) => addCount(ctx, { locationId: stores, countedAt, businessDate: DATE, reason: 'Month end',
+      lines: [{ itemId: at.itemId, batchId: at.batchId, qty: q('1'), serials: [serials[1] ?? ''] }] }));
+    await decide(countApprovalSpec, boss, await run((ctx) => askCountApproval(ctx, { id: counted.id })));
+    const adjusted = await run((ctx) => addAdjustment(ctx, { locationId: store, businessDate: DATE, reason: 'Found in the bay',
+      lines: [{ itemId: at.itemId, direction: 'in', qty: q('1'), condition: 'new', batches: [], serials: [{ serialNo: `N-${tag()}`, chassisNo: null }] }] }));
+    await decide(adjustmentApprovalSpec, boss, await run((ctx) => askAdjustmentApproval(ctx, { id: adjusted.id })));
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => staff, routes: stockRoutes }),
+      0, '127.0.0.1');
+    try {
+      const status = async (sent: { path: string }) => (await fetch(`http://127.0.0.1:${server.port}${sent.path}`,
+        { headers: { origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin' } })).status;
+      expect([await status(requestFor(getStockTransfer, { id: moved.id })), await status(requestFor(getStockCount, { id: counted.id })),
+        await status(requestFor(getStockAdjustment, { id: adjusted.id }))]).toEqual([200, 200, 200]);
+    } finally {
+      await server.stop();
+    }
   });
 
   // Sarthak's setting: into a franchisee's store, off posts at once; on, it waits for someone else's approval.

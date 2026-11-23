@@ -3,7 +3,7 @@
 // table, so a role sees every one or none.
 import { accounts, accountsTx, after, parties, paymentAllocations, payments } from '@radcore/db/accounts';
 import { dec, roundMoney, sum } from '@radcore/lib-common';
-import { AppError, decodeCursor, encodeCursor, momentKey, type Ctx } from '@radcore/lib-platform';
+import { AppError, decodeCursor, encodeCursor, isoMoment, momentKey, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { getPaymentContract, listPaymentsContract } from '../contract.ts';
@@ -27,7 +27,8 @@ const shown = (r: Awaited<ReturnType<ReturnType<typeof select>['execute']>>[numb
   id: r.id, kind: r.kind as Row['kind'], status: r.status as Row['status'], number: r.number, partyId: r.partyId, partyName: r.partyName,
   businessDate: r.businessDate, amount: roundMoney(r.amount), tds: roundMoney(r.tds), accountId: r.accountId, accountName: r.accountName,
   reference: r.reference, refundOf: r.refundOf, credit: r.creditTable === null || r.creditId === null ? null : { table: r.creditTable, id: r.creditId },
-  recordedAt: r.recordedAt,
+  // The column's text keeps the page key's microseconds (momentKey); the answer carries it as an ISO moment (momentString).
+  recordedAt: isoMoment(r.recordedAt),
 });
 
 /** GET /payments (payments:read): newest first, a page at a time. */

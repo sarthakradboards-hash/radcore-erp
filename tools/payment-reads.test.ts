@@ -3,11 +3,15 @@
 // payment answers what it's applied to (its live allocations) and what's left of it. Each test uses a party of its own.
 import { randomUUID } from 'node:crypto';
 import { getPaymentById, listPaymentsPage, openFinancialYear, recordPayment } from '@radcore/lib-accounts';
-import { moneyString } from '@radcore/lib-common';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { getPaymentContract, listPaymentsContract } from '@radcore/lib-accounts/contract';
+import { testSettings } from '@radcore/test-helpers';
+import { moneyString, requestFor } from '@radcore/lib-common';
+import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import accountRoutes from '../apps/api/src/routes/accounts.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -96,5 +100,29 @@ describe.skipIf(!url || !superUrl)('reading receipts, payments and refunds', { t
     expect([one.narration, one.allocations.map((a) => [a.id, a.amount]), one.allocated, one.refunded, one.left])
       .toEqual(['Advance for two scooters', [[kept, '1200.00']], '1200.00', '500.00', '3300.00']);
     expect(await code(read((ctx) => getPaymentById(ctx, { id: randomUUID() })))).toBe('not_found');
+  });
+
+  // e2e-playwright on #369: over the real handler, a list and a get answer 200 with recordedAt as an ISO moment, so the
+  // contract's output check passes (it answered 500 while recordedAt was the column's own text).
+  it('answers GET /payments and GET /payments/:id over the real handler, recordedAt an ISO moment', async () => {
+    const [p, account] = [await party(), await bank()];
+    const { id } = await write((ctx) => recordPayment(ctx, { kind: 'receipt', partyId: p, businessDate: DAY, amount: m('1200.00'), accountId: account }));
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => READER, routes: accountRoutes }),
+      0, '127.0.0.1');
+    try {
+      const call = async (sent: { method: string; path: string }) => {
+        const res = await fetch(`http://127.0.0.1:${String(server.port)}${sent.path}`, { method: sent.method,
+          headers: { origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin' } });
+        return { status: res.status, body: (await res.json()) as { items?: { id: string; recordedAt: string }[]; recordedAt?: string } };
+      };
+      const list = await call(requestFor(listPaymentsContract, { filter: { partyId: p }, limit: 10 }));
+      const one = await call(requestFor(getPaymentContract, { id }));
+      expect([list.status, list.body.items?.map((i) => i.id), one.status]).toEqual([200, [id], 200]);
+      expect([list.body.items?.[0]?.recordedAt, one.body.recordedAt]).toEqual([expect.stringMatching(/^\d{4}-\d\d-\d\dT[\d:.]+Z$/),
+        expect.stringMatching(/^\d{4}-\d\d-\d\dT[\d:.]+Z$/)]);
+    } finally {
+      await server.stop();
+    }
   });
 });

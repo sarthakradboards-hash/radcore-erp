@@ -75,12 +75,12 @@ export const createJobWorkChallan = defineContract({
   errors: ['unknown_party', 'no_job_work_place', 'use_job_work', 'needs_qc', ...LINE_ERRORS, ...POSTING_ERRORS],
 });
 /** Undoes a challan with no receipt answering it (`challan_answered` otherwise): its mirror, dated the cancellation's
- * day, on or after the challan's. */
+ * day, on or after the challan's; refused once a unit it sent has moved on since (`goods_moved_on`). */
 export const cancelJobWorkChallan = defineContract({
   method: 'POST', path: '/stock/job-work/challans/:id/cancel', auth: 'session', perm: 'job_work:write', tx: write,
   input: cancelIn, output: z.object({}),
-  errors: ['wrong_status', 'challan_answered', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked', 'account_inactive',
-    'not_enough_stock'],
+  errors: ['wrong_status', 'challan_answered', 'goods_moved_on', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked',
+    'account_inactive', 'not_enough_stock'],
 });
 /** The challan as Rule 55 asks: the job worker's name, address, state and GSTIN in full (a statutory print). */
 export const printJobWorkChallan = printContract('/stock/job-work/challans/:id/pdf', 'stock:read', 'job_work_challans', ['wrong_status']);

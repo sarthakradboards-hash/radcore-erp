@@ -39,6 +39,10 @@ export const COST_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.
   stock_transfer_lines: Object.freeze(['value']),
   stock_count_lines: Object.freeze(['value']),
   stock_adjustment_lines: Object.freeze(['value']),
+  // What a challan's inputs went at, and a receipt's inputs used and lost (RAD-142, ADR-008 §11). The job worker's
+  // charge isn't a cost: it's the document's own figure, which operations sees (RC-164).
+  job_work_challan_lines: Object.freeze(['value']),
+  job_work_receipt_lines: Object.freeze(['used_value', 'lost_value']),
 });
 
 /** listAuditTrail (audit:read): newest first, within a date range of at most AUDIT_RANGE_MAX_DAYS India days. */

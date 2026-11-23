@@ -9,10 +9,13 @@ import { serialKey } from './units.ts';
 // What undoes each unit event a cancelled document's movements carried, and where the unit must be for it: a delivery's
 // unit is still the customer's; a move's is still where the move put it; a unit received is still ours where it came
 // in; one scrapped or sent back to its supplier is still gone. Anything else has moved on since (`units_mismatch`).
-const UNDO: Readonly<Record<string, { kind: 'delivered' | 'delivery_returned' | 'moved' | 'returned_to_supplier' | 'received';
+const UNDO: Readonly<Record<string, { kind: 'delivered' | 'delivery_returned' | 'moved' | 'returned_to_supplier' | 'received' | 'sent_to_job_work'
+  | 'received_from_job_work';
   at: 'customer' | 'in' | 'gone' }>> = {
   delivered: { kind: 'delivery_returned', at: 'customer' }, delivery_returned: { kind: 'delivered', at: 'in' },
   returned: { kind: 'delivered', at: 'in' }, moved: { kind: 'moved', at: 'in' },
+  // Job work's moves undo each other: a challan's unit comes back from the job worker, a receipt's goes back (RAD-142).
+  sent_to_job_work: { kind: 'received_from_job_work', at: 'in' }, received_from_job_work: { kind: 'sent_to_job_work', at: 'in' },
   // A unit received, then the receipt (or the adjustment that found it) cancelled, leaves as it came: gone, so the
   // same serial can be received again (ADR-008 §6). returned_to_supplier, not scrapped: both make it gone, and a
   // receipt's unit does go back to whoever sent it; neither is a write-off of goods we held.
