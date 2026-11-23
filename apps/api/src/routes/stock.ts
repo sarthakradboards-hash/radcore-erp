@@ -4,7 +4,7 @@ import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
   addCategory, addItem, addItemPicture, addPlace, changeItem, checkBooks, dropItemPicture, getItemById, listCategories, listItemsPage,
   listKinds, listPlaces, listUnits, onHand, renameCategory, setKindLabel, updatePlace,
-  addTransfer, askTransferApproval, cancelTransferNow, dropTransfer, getTransferById, listTransfersPage, transferApprovalSpec,
+  addTransfer, askTransferApproval, cancelTransferNow, dropTransfer, getTransferById, listTransfersPage, requalifyTransfer, transferApprovalSpec,
   addCount, askCountApproval, cancelCountNow, changeCount, countApprovalSpec, dropCount, getCountById, listCountsPage,
   addAdjustment, adjustmentApprovalSpec, askAdjustmentApproval, cancelAdjustmentNow, changeAdjustment, dropAdjustment, getAdjustmentById,
   listAdjustmentsPage,
@@ -12,7 +12,8 @@ import {
 import {
   addLocation, attachItemPicture, checkBooksContract, createItem, createItemCategory, getItem, getOnHand, listItemCategories, listItems, listLocationKinds,
   listLocations, listUnitsOfMeasure, removeItemPicture, renameItemCategory, setLocationKindLabel, updateItem, updateLocation,
-  cancelStockTransfer, createStockTransfer, deleteStockTransfer, getStockTransfer, listStockTransfers, requestStockTransferApproval,
+  cancelStockTransfer, createStockTransfer, deleteStockTransfer, getStockTransfer, listStockTransfers, requalifyStockTransfer,
+  requestStockTransferApproval,
   stockTransferApproval, cancelStockCount, createStockCount, deleteStockCount, getStockCount, listStockCounts, requestStockCountApproval,
   stockCountApproval, updateStockCount, cancelStockAdjustment, createStockAdjustment, deleteStockAdjustment, getStockAdjustment,
   listStockAdjustments, requestStockAdjustmentApproval, stockAdjustmentApproval, updateStockAdjustment,
@@ -40,6 +41,8 @@ export default [
   defineRoute(listStockTransfers, listTransfersPage),
   defineRoute(getStockTransfer, getTransferById),
   defineRoute(createStockTransfer, addTransfer),
+  // Before /stock/transfers/:id's routes, so `requalify` is never read as an id.
+  defineRoute(requalifyStockTransfer, requalifyTransfer),
   defineRoute(deleteStockTransfer, dropTransfer),
   defineRoute(requestStockTransferApproval, askTransferApproval),
   ...defineApproval(stockTransferApproval, transferApprovalSpec),
