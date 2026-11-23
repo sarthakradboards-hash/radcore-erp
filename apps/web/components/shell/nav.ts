@@ -26,6 +26,7 @@ export const ADMIN_PAGES = [
   { href: '/admin/price-lists', label: 'admin.nav.prices', perm: 'prices:read' },
   { href: '/admin/price-approvals', label: 'admin.nav.priceApprovals', perm: 'prices:approve' },
   { href: '/admin/discount-limits', label: 'admin.nav.discounts', perm: 'prices:read' },
+  { href: '/admin/po-limits', label: 'purchases.nav.limits', perm: 'purchasing:read' },
   { href: '/admin/settings', label: 'admin.nav.settings', perm: 'settings:read' },
   { href: '/admin/number-series', label: 'admin.nav.series', perm: 'settings:read' },
 ] as const satisfies readonly NavPage[];
@@ -65,9 +66,10 @@ export const CRM_PAGES = [
   { href: '/crm/ad-spend', label: 'crm.nav.adSpend', perm: 'campaigns:read' },
 ] as const satisfies readonly NavPage[];
 
-/** The purchasing area's pages (RAD-143): purchase orders first; the approval queue for those who decide. */
+/** The purchasing area's pages (RAD-143): purchase orders first, then the goods receipts (RAD-143); the approval queue for those who decide. */
 export const PURCHASES_PAGES = [
   { href: '/purchases/orders', label: 'purchases.nav.orders', perm: 'purchasing:read' },
+  { href: '/purchases/receipts', label: 'inward.nav.receipts', perm: 'purchasing:read' },
   { href: '/purchases/approvals', label: 'purchases.nav.approvals', perm: 'purchasing:approve' },
 ] as const satisfies readonly NavPage[];
 

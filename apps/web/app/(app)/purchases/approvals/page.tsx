@@ -39,6 +39,8 @@ function Figures({ id }: { id: string }) {
 
 function Review({ request }: { request: Pending }) {
   const q = useApiQuery(getApproval, { id: request.id });
+  // Approve only once the figures it places are on screen: a PO that can't be read can still be rejected (auditor-3 on #337).
+  const shown = useApiQuery(getPurchaseOrder, { id: request.recordId }).data !== undefined;
   const decided = useApiMutation(decide, { invalidates: [listPending, getApproval, getPurchaseOrder, listPurchaseOrders] });
   const [acting, setActing] = useState<'approve' | 'reject' | null>(null);
   const close = (open: boolean) => { if (!open) setActing(null); };
@@ -54,7 +56,7 @@ function Review({ request }: { request: Pending }) {
       <Figures id={a.recordId} />
       {a.status !== 'pending' ? <p>{t(`purchases.approvals.status.${a.status}`)}</p> : (
         <div className="kit-actions">
-          {a.changed ? null : (
+          {a.changed || !shown ? null : (
             <button type="button" className="kit-button kit-button-primary" onClick={() => setActing('approve')}>{t('purchases.approvals.approve')}</button>
           )}
           <button type="button" className="kit-button" onClick={() => setActing('reject')}>{t('purchases.approvals.reject')}</button>

@@ -133,12 +133,12 @@ export async function addReceipt(ctx: Ctx, input: In<typeof createJobWorkReceipt
   const used = await outOf('used');
   const lost = await outOf('lost');
   const home = input_.filter((l) => positive(l.back));
-  // A move into negative stock also revalues, which the engine posts as its own entry (ADR-006 §4): this receipt's
-  // entry takes only the goods' ins and outs (auditor-2's MUST on #381).
-  const back = home.length === 0 ? [] : (await postStock(ctx, { sourceTable: SOURCE, sourceId: row.id, businessDate: input.businessDate,
+  const back = home.length === 0 ? [] : await postStock(ctx, { sourceTable: SOURCE, sourceId: row.id, businessDate: input.businessDate,
     transfers: home.map((l) => ({ itemId: l.itemId, from: c.toId, to: input.locationId, sourceLineId: l.id, qty: l.back.qty, batches: l.back.batches,
-      units: l.back.serials.map((serialNo) => ({ serialNo })), unitEvent: 'received_from_job_work' as const })) })).filter((m) => m.direction !== 'revalue');
-  // The goods made: at the inputs used plus the charge (F16), in a batch the receipt's number names (RC-130).
+      units: l.back.serials.map((serialNo) => ({ serialNo })), unitEvent: 'received_from_job_work' as const })) });
+  // The goods made: at the inputs used plus the charge (F16), in a batch the receipt's number names (RC-130). Goods
+  // received into negative stock also revalue, which the engine posts as its own entry (ADR-006 §4), so the entry takes
+  // only the ins (auditor-2's MUST on #381); a transfer never revalues.
   const charges = input_.map((l) => (l.made === null ? roundMoney('0') : roundMoney(dec(l.made.qty).times(l.made.chargeRate))));
   const madeLines = input_.flatMap((l, n) => (l.made === null ? [] : [{ l, made: l.made, value: roundMoney(dec(used.get(l.id)?.value ?? '0').plus(charges[n] ?? '0')) }]));
   const made = madeLines.length === 0 ? [] : (await postStock(ctx, { sourceTable: SOURCE, sourceId: row.id, businessDate: input.businessDate,

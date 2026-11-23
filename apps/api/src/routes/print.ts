@@ -1,10 +1,12 @@
 // The printouts' routes (RAD-120): declarations only. Each renders on lib-platform's print pool in its `before`
 // step, so it mounts only where the api's secrets library is, as every before step does.
 import { definePrintRoute } from '@radcore/lib-platform';
-import { purchaseOrderPrint } from '@radcore/lib-purchasing';
-import { printPurchaseOrder } from '@radcore/lib-purchasing/contract';
+import { purchaseOrderPrint, supplierReturnPrint } from '@radcore/lib-purchasing';
+import { printPurchaseOrder, printSupplierReturn } from '@radcore/lib-purchasing/contract';
 import { challanPrint, invoicePrint, quotePrint, receiptPrint } from '@radcore/lib-sales';
 import { printChallan, printInvoice, printQuote, printReceipt } from '@radcore/lib-sales/contract';
+import { jobWorkChallanPrint } from '@radcore/lib-stock';
+import { printJobWorkChallan } from '@radcore/lib-stock/contract';
 
 export default [
   definePrintRoute(printInvoice, invoicePrint),
@@ -12,4 +14,6 @@ export default [
   definePrintRoute(printQuote, quotePrint),
   definePrintRoute(printReceipt, receiptPrint),
   definePrintRoute(printPurchaseOrder, purchaseOrderPrint),
+  definePrintRoute(printSupplierReturn, supplierReturnPrint),
+  definePrintRoute(printJobWorkChallan, jobWorkChallanPrint),
 ];

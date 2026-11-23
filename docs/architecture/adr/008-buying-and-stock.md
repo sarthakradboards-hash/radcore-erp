@@ -242,6 +242,9 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
     open. What's left stays as credit with the supplier;
   - **the unbilled part** goes back against Goods Received Not Billed (F4), with no debit note.
   - So only billed rejects are ever debited (RC-129).
+- The goods leave at the rejects place's average; the supplier's side is at the receipt line's rate (unbilled) or the
+  bill's rates (billed), and any difference goes to Cost of Goods Sold, as a bill's price difference on goods no longer
+  on hand does (ADR-006 §4). Billed rejects go against the line's bills latest first (the architect on RAD-140).
 - **Units** go out with `returned_to_supplier`, their batches with them.
 - **The input GST reversal** posts with the return, the stricter reading. Whether it should wait for the supplier's
   own credit note is CA-52's question, and its answer changes timing, not shape.
@@ -321,7 +324,9 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
   location.
 - **The challan** sends inputs from a location of ours to the job worker's (ADR-006 §6, F16). Serialised inputs go with
   `sent_to_job_work`, and batches go with them. It's the delivery challan Rule 55 asks for goods sent for job work, so
-  it prints the job worker's name, address, state and GSTIN in full.
+  it prints the job worker's name, address, state and GSTIN in full, and the goods' value, which Rule 55 also asks for,
+  in full whoever prints it; so its print is under `job_work:write`, not `stock:read`, and on screen the values stay
+  `cost()` (RAD-142).
 - **No challan sends from a `rejected` place** (`needs_qc`, as a plain transfer is refused, §9; RAD-141). What a job
   worker makes or sends back comes into our stock, so rejects sent out would come back sellable without QC.
 - **The receipt** names the challan lines it answers, and says, for each:

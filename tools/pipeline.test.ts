@@ -9,7 +9,7 @@ import {
 } from '@radcore/lib-crm';
 import { listLeads } from '@radcore/lib-crm/contract';
 import { addDays, moneyString, piiPlan, requestFor } from '@radcore/lib-common';
-import { holdsKey, loadConfig, myNotificationsPage, peopleHolding, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, holdsKey, loadConfig, myNotificationsPage, peopleHolding, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
@@ -281,18 +281,23 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
       await gate;
     });
     await tookIt;
-    const ravi = as(taker(raviId), (ctx) => followUpDone(ctx, { id }));
+    // Its outcome handled from the start: refused while this test still awaits Asha, it would otherwise be an unhandled
+    // rejection that fails the whole run (backend-3 on #385, RAD-76).
+    const ravi = as(taker(raviId), (ctx) => followUpDone(ctx, { id })).then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : e));
     // Ravi saw it unowned and now waits on Asha's row lock: a lock request for the very transaction that holds this
     // lead's row (its xmax, Asha's uncommitted claim), so another test file's lock wait can't end this early, which let
     // Ravi read Asha's committed claim (not_found). Bounded, as #252's waits are.
-    await vi.waitFor(async () => {
-      const [w] = await owner<{ n: number }>(`select count(*)::int as n from pg_locks where not granted and locktype = 'transactionid'
-        and transactionid = (select xmax from radcore.leads where id = $1)`, [id]);
-      expect(w?.n).toBeGreaterThanOrEqual(1);
-    }, { timeout: 15_000, interval: 50 });
-    release();
-    await asha;
-    await expect(ravi).rejects.toMatchObject({ code: 'lead_taken' });
+    try {
+      await vi.waitFor(async () => {
+        const [w] = await owner<{ n: number }>(`select count(*)::int as n from pg_locks where not granted and locktype = 'transactionid'
+          and transactionid = (select xmax from radcore.leads where id = $1)`, [id]);
+        expect(w?.n).toBeGreaterThanOrEqual(1);
+      }, { timeout: 15_000, interval: 50 });
+    } finally {
+      release();
+    }
+    const [mine, theirs] = await Promise.allSettled([asha, ravi]);
+    expect([mine.status, theirs.status === 'fulfilled' ? theirs.value : theirs.reason]).toEqual(['fulfilled', 'lead_taken']);
     expect(await owner('select owner, stage from radcore.leads where id = $1', [id])).toEqual([{ owner: `user:${ashaId}`, stage: 'contacted' }]);
   });
 

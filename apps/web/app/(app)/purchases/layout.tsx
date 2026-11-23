@@ -1,4 +1,4 @@
-// The purchasing area (RAD-143): purchase orders and their approvals. Every route behind it checks its own permission
+// The purchasing area (RAD-143): purchase orders and their approvals, and the goods receipts and their QC. Every route behind it checks its own permission
 // on the server (purchasing:*); the shell's menu shows the area by permission.
 import type { ReactNode } from 'react';
 import { PURCHASES_PAGES } from '../../../components/shell/nav.ts';

@@ -47,6 +47,10 @@ describe.skipIf(!url || !superUrl)('deliveries still to invoice', () => {
       await c.query('begin');
       await c.query("select set_config('app.principal', 'system:test', true)");
       await c.query("set local session_replication_role = 'replica'");
+      // The parties exist, though no key checks it here: these rows are committed, and a list another file reads names
+      // each document's party (the read sweep met "There is no such party" on the sales lists).
+      await c.query(`insert into radcore.parties (id, name, state_code, customer) values ($1, 'Delivered left', '27', true),
+        ($2, 'Delivered left', '27', true)`, [party, other]);
       const delivery = async (partyId: string, status: string, lines: (readonly [string, string] | null)[]) => {
         const id = randomUUID();
         await c.query(`insert into radcore.deliveries (id, status, number, order_id, party_id, location_id, business_date, owner, cancel_entry_id)

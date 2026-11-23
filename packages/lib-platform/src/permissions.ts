@@ -94,8 +94,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'sales:counter_credit', module: 'Sales', label: 'Ask to leave a balance on a counter sale', allOnly: true },
   // Purchasing (ADR-008 §13, RAD-136): ordinary catalogue keys, scoped by each document's maker, with no second factor,
   // since none moves money (D-19). Approving is someone else's, under its own key.
-  { key: 'purchasing:read', module: 'Purchasing', label: 'See purchase orders, goods receipts and bills',
-    records: ['@radcore/db/purchasing#purchaseOrders', '@radcore/db/purchasing#goodsReceipts', '@radcore/db/purchasing#purchaseBills'] },
+  { key: 'purchasing:read', module: 'Purchasing', label: 'See purchase orders, goods receipts, bills and supplier returns',
+    records: ['@radcore/db/purchasing#purchaseOrders', '@radcore/db/purchasing#goodsReceipts', '@radcore/db/purchasing#purchaseBills',
+      '@radcore/db/purchasing#supplierReturns'] },
   { key: 'purchasing:write', module: 'Purchasing', label: 'Draft, place, change, close short and cancel purchase orders',
     records: ['@radcore/db/purchasing#purchaseOrders'] },
   { key: 'purchasing:approve', module: 'Purchasing', label: 'Approve a purchase order above its placer’s limit, and set the limits' },
@@ -108,6 +109,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // is M3-12's (D-19). Records by who entered each (created_by).
   { key: 'bills:write', module: 'Purchasing', label: 'Enter, post and cancel supplier bills', records: ['@radcore/db/purchasing#purchaseBills'] },
   { key: 'bills:approve', module: 'Purchasing', label: 'Approve a supplier bill over the tolerance' },
+  // Rejects back to their supplier (ADR-008 §8, §13, RAD-140): the stores send them, accounts raise the debit notes.
+  { key: 'supplier_returns:write', module: 'Purchasing', label: 'Return rejects to their supplier, raise debit notes, and undo a return',
+    records: ['@radcore/db/purchasing#supplierReturns'] },
   // Vehicle bookings (M3-13, RAD-117; ADR-007 §5): a booking holds a unit and takes its advance. Scoped by who made it.
   // Refunding a cancelled booking's advance is keyed by how much of what's left (Sarthak, 20 Nov): all of it needs
   // refund_full, a part refund_part; each moves money out, so each needs the second factor (D-19).

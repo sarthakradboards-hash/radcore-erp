@@ -4,16 +4,18 @@
 // makes its own items, places and job worker, so the shuffled order doesn't matter.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
-import { quantityString, unitPriceString } from '@radcore/lib-common';
-import { AppError, loadConfig, saveSetting, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { formatMoney, quantityString, unitPriceString } from '@radcore/lib-common';
+import { AppError, createSecrets, loadConfig, saveSetting, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addCategory, addChallan, addItem, addPlace, addReceipt, cancelChallanNow, cancelReceiptNow, getChallanById, listChallansPage, NEGATIVE_STOCK,
+  addCategory, addChallan, addItem, addPlace, addReceipt, cancelChallanNow, cancelReceiptNow, getChallanById, jobWorkChallanPrint, listChallansPage,
+  NEGATIVE_STOCK,
 } from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp, listen } from '../apps/api/src/app.ts';
+import printRoutes from '../apps/api/src/routes/print.ts';
 import stockRoutes from '../apps/api/src/routes/stock.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -112,8 +114,8 @@ describe.skipIf(!url || !superUrl)('job work', () => {
     expect([c.open, c.lines[0]?.left, c.lines[0]?.used, c.lines[0]?.lost]).toEqual([false, '0.000', '3.000', '1.000']);
   });
 
-  // auditor-2's MUST on #381: goods made, and inputs back, into negative stock revalue, which the engine posts as its
-  // own entry, so the receipt's entry stays F16's and balances.
+  // auditor-2's MUST on #381: goods made into negative stock revalue, which the engine posts as its own entry, so the
+  // receipt's entry stays F16's and balances. Only goods received revalue: inputs back are a transfer, which never does.
   it('posts a receipt into negative stock, leaving the revaluation to the engine’s own entry', async () => {
     const at = await setup();
     const sent = await send(at, '4');
@@ -137,8 +139,8 @@ describe.skipIf(!url || !superUrl)('job work', () => {
       await run((ctx) => saveSetting(ctx, NEGATIVE_STOCK, null));
     }
     const back = await receive(at, sent.id, await challanLine(sent.id), { made: { qty: '2' }, used: '2', back: '1', lost: '1' });
-    // The frames revalue up (2 sold short at the 5,000.00 estimate, made at 1,150.00); the kit comes back at the
-    // 1,000.00 it sold at, so it has nothing to revalue.
+    // The frames revalue up (2 sold short at the 5,000.00 estimate, made at 1,150.00); the kit comes back on a
+    // transfer, which doesn't revalue.
     const { rows } = await pool.query<{ item_id: string }>(`select item_id from radcore.stock_movements where source_id = $1 and direction = 'revalue'`,
       [back.id]);
     expect(rows.map((r) => r.item_id)).toEqual([at.frame]);
@@ -205,6 +207,42 @@ describe.skipIf(!url || !superUrl)('job work', () => {
     await receive(at, sent.id, await challanLine(sent.id), { back: '1' });
     expect([(await list(1, { open: true })).length, (await list(1))[0]?.pastReturnDays]).toEqual([0, false]);
   });
+
+  // Rule 55 (auditor-2 on #366; the architect on RAD-142): the challan prints the job worker and the goods' value in full
+  // and logs the look at the party, whoever prints it, so the print is job_work:write's: operations, without
+  // cost:read, gets the values on paper and masked on screen, and a stock:read-only role (sales) can't print it.
+  it('prints the challan in full under job_work:write, logging the look, with the values masked only on screen', async () => {
+    const at = await setup();
+    const sent = await send(at, '4');
+    const operations: Principal = { kind: 'user', userId: randomUUID(), permissions: ['stock:read', 'job_work:write'] };
+    const sales: Principal = { kind: 'user', userId: randomUUID(), permissions: ['stock:read', 'sales:read'] };
+    let who = operations;
+    const config = loadConfig(testSettings(), 'api');
+    const app = createApp(config, { info: () => undefined, error: () => undefined },
+      { db, authenticate: async () => who, routes: [...printRoutes, ...stockRoutes], secrets: createSecrets(config.secrets) });
+    const server = await listen(app, 0, '127.0.0.1');
+    const get = (path: string) => fetch(`http://127.0.0.1:${server.port}${path}`, { headers: { origin: config.publicOrigin } });
+    const pdf = `/stock/job-work/challans/${sent.id}/pdf?input=${encodeURIComponent(JSON.stringify({ paper: 'a4' }))}`;
+    const looks = async (table: string, id: string) => (await su.query('select created_by from radcore.access_log where record_table = $1 and record_id = $2',
+      [table, id])).rows;
+    try {
+      const printed = await get(pdf);
+      expect([printed.status, printed.headers.get('content-type'), Buffer.from(await printed.arrayBuffer()).subarray(0, 5).toString()])
+        .toEqual([200, 'application/pdf', '%PDF-']);
+      expect([await looks('job_work_challans', sent.id), await looks('parties', at.partyId)])
+        .toEqual([[{ created_by: `user:${operations.userId}` }], [{ created_by: `user:${operations.userId}` }]]);
+      const screen = await (await get(`/stock/job-work/challans/${sent.id}`)).json() as { lines: { value: unknown }[] };
+      expect(typeof screen.lines[0]?.value === 'object' && screen.lines[0]?.value !== null && 'masked' in screen.lines[0].value).toBe(true);
+      who = sales;
+      const refused = await get(pdf);
+      expect([refused.status, (await refused.json() as { code: string }).code]).toEqual([403, 'forbidden']);
+    } finally {
+      await server.stop();
+    }
+    const m = await run((ctx) => jobWorkChallanPrint.read(ctx, sent.id), operations);
+    const table = jobWorkChallanPrint.layout(m, 'a4').find((b) => b.kind === 'table');
+    expect([m.jobWorker.address, table?.kind === 'table' ? table.rows[0]?.[5] : undefined]).toEqual(['1 Works Road, Pune 411019', formatMoney('4000.00')]);
+  }, 60_000);
 
   // RC-164: operations sees the documents' quantities and the job worker's charges, but not stock values.
   it('shows operations the charges but not the values, through the API', async () => {
