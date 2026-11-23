@@ -101,6 +101,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /accounts': 'journal:read',
   'GET /money-accounts': 'money_accounts:read',
   // Receipts, payments and refunds (RAD-116); cash past the day's limit waits for payments:approve.
+  'GET /payments': 'payments:read',
+  'GET /payments/:id': 'payments:read',
   'POST /payments': 'payments:write',
   'POST /payments/:id/cancel': 'payments:write',
   'POST /payments/:id/allocations': 'payments:write',
@@ -451,6 +453,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'PUT /parties/:id/credit': ['lib-accounts', 'lib-platform'],
   'GET /accounts': ['lib-accounts', 'lib-platform'],
   'GET /money-accounts': ['lib-accounts', 'lib-platform'],
+  'GET /payments': ['lib-accounts', 'lib-platform'],
+  'GET /payments/:id': ['lib-accounts', 'lib-platform'],
   'POST /payments': ['lib-accounts', 'lib-platform'],
   'POST /payments/:id/cancel': ['lib-accounts', 'lib-platform'],
   'POST /payments/:id/allocations': ['lib-accounts', 'lib-platform'],
