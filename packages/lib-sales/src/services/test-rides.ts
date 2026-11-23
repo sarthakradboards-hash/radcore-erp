@@ -1,12 +1,13 @@
 // Test rides (M3-13, RAD-117; the architect's rulings): a lead the person may open takes a demo unit of ours out. Rides
 // are records, not locks, so a unit's several rides a day all stand; each records its outcome once, when it's done.
 import { after, salesTx, testRides } from '@radcore/db/sales';
-import { leadOpens } from '@radcore/lib-crm';
+import { leadNames, leadOpens } from '@radcore/lib-crm';
 import { AppError, decodeCursor, encodeCursor, listScope, momentKey, type Ctx } from '@radcore/lib-platform';
 import { unitFor } from '@radcore/lib-stock';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { listTestRides, recordTestRide, scheduleTestRide, TEST_RIDE_OUTCOMES } from '../contract.ts';
+import { labelled } from './document-lines.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -30,9 +31,10 @@ export async function listTestRidesPage(ctx: Ctx, input: In<typeof listTestRides
     listScope(ctx, 'bookings:read', testRides.createdBy),
     after([testRides.scheduledAt, testRides.id], key && [key.at, key.id], 'asc'),
   )).orderBy(asc(testRides.scheduledAt), asc(testRides.id)).limit(input.limit + 1);
-  const page = rows.slice(0, input.limit);
+  const page = await labelled(ctx, rows.slice(0, input.limit));
+  const leadsNamed = await leadNames(ctx, page.map((r) => r.leadId));
   const last = page.at(-1);
-  return { items: page.map(shown), next: rows.length > input.limit && last ? encodeCursor({ at: last.scheduledAt, id: last.id }) : null };
+  return { items: page.map((r) => ({ ...shown(r), leadName: leadsNamed.get(r.leadId) ?? null })), next: rows.length > input.limit && last ? encodeCursor({ at: last.scheduledAt, id: last.id }) : null };
 }
 
 /** POST /sales/test-rides (bookings:write). */
