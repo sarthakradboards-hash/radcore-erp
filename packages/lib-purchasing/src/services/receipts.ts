@@ -382,6 +382,12 @@ export async function receiptLinesFor(ctx: Ctx, lineIds: readonly string[], o: {
     // Scoped in the query, so a receipt the caller can't see is neither answered nor locked (auditor-2 on #367).
     .where(and(inArray(goodsReceiptLines.id, [...lineIds]), listScope(ctx, 'purchasing:read', goodsReceipts.createdBy)))
     .orderBy(asc(goodsReceipts.id), asc(goodsReceiptLines.lineNo));
-  // Their POs are already locked by the bill (§12), so this takes only their receipts in turn.
-  return o.forUpdate ? q.for('update') : q;
+  if (!o.forUpdate) return q;
+  // Their POs are already held by the bill, FOR SHARE (§12), so this takes only the receipts' own rows, in id order: a
+  // FOR UPDATE on the join would take the POs too, and two bills on one PO would deadlock (the auditor on #380).
+  const receiptIds = [...new Set((await q).map((r) => r.receiptId))].sort();
+  if (receiptIds.length > 0) {
+    await tx.select({ id: goodsReceipts.id }).from(goodsReceipts).where(inArray(goodsReceipts.id, receiptIds)).orderBy(asc(goodsReceipts.id)).for('update');
+  }
+  return q;
 }

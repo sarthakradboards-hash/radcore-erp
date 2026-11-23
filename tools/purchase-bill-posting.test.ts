@@ -14,7 +14,7 @@ import {
   addBill, addOrder, addReceipt, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
   postReceipt,
 } from '@radcore/lib-purchasing';
-import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
+import { addCategory, addItem, addPlace, requalifyTransfer } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
@@ -236,6 +236,41 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     // Still counted for them (billed.ts reads every posted bill): one more is over_received.
     const { id: second } = await draft(at, { lines: [goods(at, '1', '62000')], total: '65100' }, own);
     expect(await code(post(at, second, own))).toBe('over_received');
+  });
+
+  // The auditor on #380: a bill takes its POs FOR SHARE and only its receipts FOR UPDATE, so while another bill on the
+  // same PO holds it FOR SHARE (as both do, mid-save), this one still posts: a FOR UPDATE on the receipts' join would also
+  // take the PO, wait on that share, and the two bills would deadlock.
+  it('posts a bill while another save holds its PO FOR SHARE, as a second bill on that PO does', async () => {
+    const at = await setup();
+    const { id } = await draft(at, { lines: [goods(at, '2', '62000')], total: '130200' });
+    const holder = new pg.Client({ connectionString: superUrl });
+    await holder.connect();
+    try {
+      await holder.query('begin');
+      await holder.query('select id from radcore.purchase_orders where id = $1 for share', [at.orderId]);
+      expect(await code(post(at, id))).toBe('ok');
+      await holder.query('commit');
+    } finally {
+      await holder.end();
+    }
+  });
+
+  // The auditor on #380: once the reject has left its rejects place (requalified into Stores, #372), its difference goes
+  // where the goods are now, by ADR-006 §4, instead of refusing the bill nothing_to_revalue.
+  it('sends a requalified reject’s difference to where it went, not to its emptied rejects place', async () => {
+    const at = await setup();
+    const batchId = (await pool.query<{ id: string }>(`select b.id from radcore.batches b join radcore.stock_movements m on m.item_id = b.item_id
+      where b.item_id = $1 and m.location_id = $2 and b.batch_no <> 'OPEN' limit 1`, [at.itemId, at.places.rejected])).rows[0]?.id ?? null;
+    await run((ctx) => requalifyTransfer(ctx, { fromId: at.places.rejected, toId: at.places.stores, businessDate: DATE, reason: 'Panel fixed',
+      condition: 'new', lines: [{ itemId: at.itemId, qty: q('1'), batches: [{ batchId, qty: q('1') }], serials: [] }] }), at.staff);
+    // All 3 billed at 62,500.00 (0.81% over, within the tolerance): 1,500.00 over what was accrued, all to Stores, which
+    // holds the 2 opening, the 2 accepted and the requalified 1.
+    const { id } = await draft(at, { lines: [goods(at, '3', '62500')], total: '196875' });
+    expect(await code(post(at, id))).toBe('ok');
+    expect(await position(at.itemId, at.places.stores)).toEqual({ qty: '5', value: '307500.00' });
+    expect(await position(at.itemId, at.places.rejected)).toEqual({ qty: '0', value: '0.00' });
+    expect(await grni(at)).toBe('0.00');
   });
 
   it('keeps a billed receipt (receipt_in_use), and cancels a bill back, its price difference and entry mirrored, its number reusable', async () => {

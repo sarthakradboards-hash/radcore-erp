@@ -4,7 +4,7 @@ export {
   listItemsPage, purchasePrices, listUnits, renameCategory,
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
-export { onHand, sellableOnHand } from './services/on-hand.ts';
+export { onHand, quantitiesAt, sellableOnHand } from './services/on-hand.ts';
 export { SELL_DAMAGED_UNITS } from './engine/units.ts';
 export { checkBooks } from './services/books-check.ts';
 export { averageCost } from './services/cost.ts';

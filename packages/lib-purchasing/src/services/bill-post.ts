@@ -10,9 +10,9 @@
 //     for what's gone (ADR-006 §4); a billed reject's onto its rejects place
 import { purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purchasing';
 import { getPartyById, holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
-import { dec, indiaDate, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
+import { dec, indiaDate, roundMoney, roundQty, type Decimal, type Money } from '@radcore/lib-common';
 import { AppError, holdSeries, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
-import { holdStock, postStock, reverseStock, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
+import { holdStock, postStock, quantitiesAt, reverseStock, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import type { cancelPurchaseBill, postPurchaseBill } from '../contract.ts';
 import {
@@ -131,21 +131,37 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
   const goodsAt = j.accruals.map((a) => lines.indexOf(a.line));
   const chargeShares = spread(chargeCost, goodsAt.map((i) => dec(j.amounts.lines[i]?.taxable ?? '0')));
   const byItem = new Map<string, { d: Decimal; billed: Decimal }>();
+  const add = (itemId: string, d: Decimal, billed: Decimal) => {
+    const item = byItem.get(itemId) ?? { d: zero(), billed: zero() };
+    byItem.set(itemId, { d: item.d.plus(d), billed: item.billed.plus(billed) });
+  };
   const revalues: StockRevalue[] = [];
+  const rejects: { itemId: string; locationId: string; lineId: string; d: Decimal; qty: Decimal }[] = [];
   for (const [k, a] of j.accruals.entries()) {
     const d = costOf(goodsAt[k] ?? 0).plus(chargeShares[k] ?? zero()).minus(a.value);
     const qty = a.accepted.plus(a.rejected);
     const dRejected = a.rejected.isZero() || qty.isZero() ? zero() : dec(roundMoney(d.times(a.rejected).div(qty)));
-    // A billed reject's difference goes onto its rejects place, so it's worth what was billed (§7).
-    if (!dRejected.isZero()) revalues.push({ itemId: a.r.itemId, locationId: a.r.rejectsLocationId, sourceLineId: a.line.id, value: roundMoney(dRejected) });
-    const item = byItem.get(a.r.itemId) ?? { d: zero(), billed: zero() };
-    byItem.set(a.r.itemId, { d: item.d.plus(d.minus(dRejected)), billed: item.billed.plus(a.accepted) });
+    if (!a.rejected.isZero()) rejects.push({ itemId: a.r.itemId, locationId: a.r.rejectsLocationId, lineId: a.line.id, d: dRejected, qty: a.rejected });
+    add(a.r.itemId, d.minus(dRejected), a.accepted);
   }
-  // The accepted goods' difference, by item, across the sellable places holding it, under their positions' locks.
+  // The positions it may revalue, under their locks: the sellable places holding each item, and each reject's place.
   const items = [...byItem.keys()];
   const seen = await sellableOnHand(ctx, items);
   await holdStock(ctx, [...items.flatMap((itemId) => (seen.get(itemId) ?? []).map((p) => ({ itemId, locationId: p.locationId }))),
-    ...revalues.map((r) => ({ itemId: r.itemId, locationId: r.locationId }))]);
+    ...rejects.map((r) => ({ itemId: r.itemId, locationId: r.locationId }))]);
+  // A billed reject's difference goes onto what its rejects place still holds, so it's worth what was billed (§7). What's
+  // left it since (requalified into stock, or written off) takes the rest, with the accepted goods, by ADR-006 §4 (the
+  // auditor on #380).
+  const stillThere = await quantitiesAt(ctx, rejects);
+  for (const r of rejects) {
+    const key = `${r.itemId} ${r.locationId}`;
+    const there = dec(stillThere.get(key) ?? '0');
+    const used = there.lt(r.qty) ? (there.gt(0) ? there : zero()) : r.qty;
+    stillThere.set(key, roundQty(there.minus(used), 3));
+    const toRejects = used.eq(r.qty) ? r.d : dec(roundMoney(r.d.times(used).div(r.qty)));
+    if (!toRejects.isZero()) revalues.push({ itemId: r.itemId, locationId: r.locationId, sourceLineId: r.lineId, value: roundMoney(toRejects) });
+    add(r.itemId, r.d.minus(toRejects), r.qty.minus(used));
+  }
   const on = await sellableOnHand(ctx, items);
   let cogs = zero();
   for (const [itemId, { d, billed }] of byItem) {

@@ -3,7 +3,7 @@
 // posting checks every batch and unit again (RA007, RA008), so a unit someone takes meanwhile is refused there.
 import { batches, items, locations, stockMovementBatches, stockMovements, stockTx, units } from '@radcore/db/stock';
 import { partyNames } from '@radcore/lib-accounts';
-import { dec, LOCATION_KIND_CODES, LOCATION_KINDS, UNIT_CONDITIONS, type Quantity } from '@radcore/lib-common';
+import { dec, LOCATION_KIND_CODES, LOCATION_KINDS, roundQty, UNIT_CONDITIONS, type Quantity } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, gt, inArray, isNull, like, or, sum as total } from 'drizzle-orm';
 import { z } from 'zod';
@@ -84,5 +84,19 @@ export async function sellableOnHand(ctx: Ctx, itemIds: readonly string[]): Prom
     const [itemId = '', locationId = ''] = key.split(' ');
     if (dec(qty).gt(0)) out.get(itemId)?.push({ locationId, qty });
   }
+  return out;
+}
+
+/** What's on hand at each of these positions, keyed `itemId locationId` (RAD-138): a billed reject's price difference
+ * goes onto what its rejects place still holds (ADR-008 §7). Quantities only. Called after the positions are locked. */
+export async function quantitiesAt(ctx: Ctx, positions: readonly { itemId: string; locationId: string }[]): Promise<Map<string, Quantity>> {
+  const out = new Map(positions.map((p) => [`${p.itemId} ${p.locationId}`, roundQty('0', 3)]));
+  if (positions.length === 0) return out;
+  const rows = await stockTx(ctx).select({ itemId: stockMovements.itemId, locationId: stockMovements.locationId,
+    direction: stockMovements.direction, qty: total(stockMovements.qty) }).from(stockMovements)
+    .where(and(inArray(stockMovements.itemId, [...new Set(positions.map((p) => p.itemId))]),
+      inArray(stockMovements.locationId, [...new Set(positions.map((p) => p.locationId))])))
+    .groupBy(stockMovements.itemId, stockMovements.locationId, stockMovements.direction);
+  for (const [key, own] of Map.groupBy(rows, (r) => `${r.itemId} ${r.locationId}`)) if (out.has(key)) out.set(key, netQty(own));
   return out;
 }
