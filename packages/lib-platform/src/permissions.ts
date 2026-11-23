@@ -45,6 +45,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'accounts:write', module: 'Journal', label: 'Change the chart of accounts: codes, and switching accounts off and on' },
   // The accounts a payment may name, for a screen's picker (RAD-116, the architect): no balance, so no second factor.
   { key: 'money_accounts:read', module: 'Payments', label: 'See the cash and bank accounts a payment may use', allOnly: true },
+  // Receipts, payments and refunds as a list and one by one (RAD-116, for RAD-126): all-only, as receipts:print, since
+  // payments isn't a scoped table. No balance on it, so not receivables:read, and no second factor: it moves nothing.
+  { key: 'payments:read', module: 'Payments', label: 'See receipts, payments and refunds', allOnly: true },
   { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
   // One posted receipt, printed by its id (the architect on RAD-120): no balance on it, so not receivables:read; all-only,
