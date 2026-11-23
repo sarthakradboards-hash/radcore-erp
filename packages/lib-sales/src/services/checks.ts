@@ -11,11 +11,12 @@
 // The arithmetic is checks-rules.ts's. An override goes through defineApproval (RAD-38) with overrideApproval below.
 import { dec, type DecimalInput, type Money } from '@radcore/lib-common';
 import { DEFAULT_CREDIT_DAYS, getPartyById, partyReceivable } from '@radcore/lib-accounts';
-import { roleOf, type ApprovalSpec, type ApprovalVersion, type Ctx } from '@radcore/lib-platform';
+import { AppError, roleOf, versionHash, type ApprovalSpec, type ApprovalVersion, type Ctx } from '@radcore/lib-platform';
 import { averageCost, purchasePrices } from '@radcore/lib-stock';
 import type { z } from 'zod';
 import type { saleCheck } from '../contract/checks.ts';
 import { costResult, creditResult, discountPercent, issuesOf, noListRate, overDiscount, type CheckIssue } from './checks-rules.ts';
+import { counterCustomer } from './delivered.ts';
 import { discountLimitOf } from './discounts.ts';
 
 /** The stages a sale is checked at (RC-061). */
@@ -61,10 +62,13 @@ export type SaleCheckResult = z.input<typeof saleCheck>;
 /** Checks a sale at one stage. It reads, and changes nothing. */
 export async function checkSale(ctx: Ctx, s: SaleCheck): Promise<SaleCheckResult> {
   const party = await getPartyById(ctx, { id: s.partyId });
-  const owed = await partyReceivable(ctx, s.partyId, s.on);
+  // The Counter customer's bill is paid in full before it's confirmed (walk_in_pays_in_full), so it has no credit to judge:
+  // nothing owed, nothing added, and its history isn't read (delivered.ts's counterCustomer says why that holds).
+  const walkIn = await counterCustomer(ctx, s.partyId);
+  const owed = walkIn ? { outstanding: '0.00', oldestUnpaid: null } : await partyReceivable(ctx, s.partyId, s.on);
   const notInvoiced = dec(s.notInvoiced ?? '0').toFixed(2);
   const outstanding = dec(owed.outstanding).minus(dec(s.paidNow ?? '0')).toFixed(2);
-  const credit = creditResult({ limit: party.creditLimit, outstanding, notInvoiced, adds: s.adds,
+  const credit = creditResult({ limit: party.creditLimit, outstanding, notInvoiced, adds: walkIn ? '0.00' : s.adds,
     creditDays: party.creditDays ?? ctx.settings.get(DEFAULT_CREDIT_DAYS), oldestUnpaid: owed.oldestUnpaid, on: s.on });
   const priced = s.lines.filter((l) => l.rate !== null);
   const limit = priced.length === 0 ? '0' : await discountLimitOf(ctx, await roleOf(ctx, s.pricedBy));
@@ -120,7 +124,7 @@ export function overrideApproval(o: Readonly<{
   read: (ctx: Ctx, documentId: string, opts: { forUpdate: boolean }) => Promise<{ figures: ApprovalVersion; sale: SaleCheck } | null>;
   approved: ApprovalSpec<OverrideVersion>['approved'];
   rejected: ApprovalSpec<OverrideVersion>['rejected'];
-}>): ApprovalSpec<OverrideVersion> {
+}>): ApprovalSpec<OverrideVersion> & { judged(ctx: Ctx, id: string): Promise<Judged | null> } {
   return {
     kind: o.kind,
     table: o.table,
@@ -130,7 +134,28 @@ export function overrideApproval(o: Readonly<{
       if (doc === null) return null;
       return { figures: doc.figures, issues: (await checkSale(ctx, doc.sale)).issues };
     },
+    /** What approving records on the document: the version's hash, and what the party would owe after it (RAD-135).
+     * shortcut: the figure is the decision's, worked out as it's decided, not the one the approver was shown, so a
+     * balance grown in between is recorded at the larger figure (a small window; the architect on #338). Upgrade by
+     * passing the shown figure on decide. */
+    async judged(ctx, id) {
+      const doc = await o.read(ctx, id, { forUpdate: false });
+      if (doc === null) return null;
+      const r = await checkSale(ctx, doc.sale);
+      return { overrideVersion: versionHash({ figures: doc.figures, issues: r.issues }), overrideAfter: r.credit.after };
+    },
     approved: o.approved,
     rejected: o.rejected,
   };
+}
+
+/** The columns an approval sets on its document, beside each other. */
+export type Judged = { overrideVersion: string; overrideAfter: string };
+
+/** An approved over_limit holds only for what the party would owe as it was judged (the architect on RAD-135): owing more
+ * now, or no figure recorded, is asked again. A later change of the limit moves neither. */
+export function refuseGrown(approvedAfter: string | null, r: SaleCheckResult, what: string): void {
+  if (!r.issues.some((i) => i.code === 'over_limit')) return;
+  if (approvedAfter !== null && dec(r.credit.after).lte(dec(approvedAfter))) return;
+  throw new AppError('version_changed', `The party owes more than when this ${what} was approved: ask for its approval again`);
 }

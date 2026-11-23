@@ -1,24 +1,25 @@
-// RAD-114 PR 2 (M3-10; ADR-007 §6; ADR-006 §4, §6, F9, F25, F26; RC-126, RC-128, RC-207; CA-10) on a real
+// RAD-114 PR 2 (M3-10; ADR-007 §6; ADR-006 §4, §6, F9, F25, F26; RC-110, RC-126, RC-128, RC-207; CA-10) on a real
 // PostgreSQL, as the runtime login: credit notes. Each test's deliveries are committed; its invoices and notes post
 // inside one transaction that is rolled back, under the committed company profile
 // (tools/test-database.ts) and never rewrites it. Every note is approved by someone else, whose decision runs in that same transaction as
 // them (actingAs): the request is the maker's, the approval the approver's, as two requests would be.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addParty, allocatePayment, applyCredit, cashLimitSpec, journalEntryById, journalPage, openFinancialYear, paidOf, recordPayment, reverseCreditApplication, setCreditTerms,
+  addParty, allocatePayment, applyCredit, cashLimitSpec, journalEntryById, journalPage, openFinancialYear, paidOf, PAYMENT_SERIES, recordPayment,
+  reverseCreditApplication, setCreditTerms,
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addCreditNote, addDelivery, addInvoice, addOrder, askCreditNoteApproval, cancelCreditNoteNow, cancelInvoiceNow, confirmOrderNow,
+  addCreditNote, addDelivery, addInvoice, addOrder, askCreditNoteApproval, cancelCreditNoteNow, cancelInvoiceNow, confirmOrderNow, CREDIT_NOTE_SERIES,
   creditNoteApprovalSpec, dropCreditNote, getCreditNoteById, getDeliveryById, getInvoiceById, getOrderById, postDeliveryNow, postInvoiceNow,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { rawOf } from '../packages/db/src/tx.ts';
 import { mayUse } from '../packages/lib-platform/src/scope.ts';
 import { takeBooksTurn } from './books-turn.ts';
@@ -52,7 +53,7 @@ const rows = async <T>(ctx: Ctx, query: ReturnType<typeof sql>) => ((await rawOf
 
 describe.skipIf(!url || !superUrl)('credit notes', () => {
   const pool = new pg.Pool({ connectionString: url, max: 3 });
-  const su = new pg.Pool({ connectionString: superUrl, max: 1 });
+  const su = new pg.Pool({ connectionString: superUrl, max: 2 });
   const db = createDatabase(pool);
   afterAll(async () => {
     await pool.end();
@@ -180,7 +181,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       after: { qty: '4', value: '247250.00' }, paid: { allocated: '0.00', credited: '84000.00', paid: '84000.00' } });
   });
 
-  // F9's variant and ADR-007 §6's cap: a value-only discount, with no movement; then no more than is left of the line.
+  // RC-110, F9's variant and ADR-007 §6's cap: a price discount is a credit note, value only, with no movement; then no
+  // more than is left of the line.
   it('credits a discount with no movement, and never more than is left of the invoice line', async () => {
     const approver = await approverWith(['credit_notes:approve']);
     const at = await setup({ stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
@@ -206,8 +208,9 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       stale: ['0.00', null, 'A credit note can’t exceed what’s left of its invoice'] });
   });
 
-  // F25, CA-10: an invoice of FY 2025-26, deadline 30 November 2026 by default. With the setting earlier, the same note
-  // is late and its tax goes to GST Borne on Late Credit Notes; Output GST isn't touched.
+  // RC-110, F25, CA-10: output tax is cut only within section 34's limit. An invoice of FY 2025-26, deadline 30 November
+  // 2026 by default. With the setting earlier, the same note is late and its tax goes to GST Borne on Late Credit Notes;
+  // Output GST isn't touched.
   it('posts a note past section 34’s limit to GST Borne on Late Credit Notes (F25)', async () => {
     const approver = await approverWith(['credit_notes:approve']);
     const at = await setup({ on: '2026-03-10', stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
@@ -294,6 +297,43 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
       return { note: note.status, waiting: refund?.status, requestedBy: request?.by === principalId(approver), ownCash, after: after?.status };
     });
     expect(out).toEqual({ note: 'posted', waiting: 'draft', requestedBy: true, ownCash: 'own_request', after: 'posted' });
+  });
+
+  // ADR-006 §1 for a save that posts several documents (the architect on RAD-115): a note with a counter refund draws CN
+  // and PV, against key order, so it takes JV's, PV's and CN's turns up front, after its stock. Forced: while another
+  // save holds PV's turn, the approval waits on it before drawing CN, so CN's turn is free; then both post, numbered.
+  it('takes its series’ turns up front, in order, when its counter refund draws a second number', async () => {
+    const approver = await approverWith(['credit_notes:approve']);
+    const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
+    const asked = await run(async (ctx) => {
+      const inv = await invoice(ctx, at);
+      const cash = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'cash'`))[0]?.id ?? '';
+      const receipt = await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('1221'), accountId: cash });
+      await allocatePayment(ctx, { id: receipt.id, businessDate: DATE, lines: [{ documentTable: 'invoices', documentId: inv.id, amount: m('1221') }] });
+      const { id } = await goodsBack(ctx, at, inv, '1', { refund: { amount: '407', accountId: cash } });
+      return { noteId: id, ...await askCreditNoteApproval(ctx, { id }) };
+    });
+    const holder = await su.connect();
+    try {
+      await holder.query('begin');
+      await holder.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`numbering.${PAYMENT_SERIES.key}`]);
+      const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]?.pid;
+      const approved = failure(run((ctx) => decideApproval(ctx, creditNoteApprovalSpec, asked.id, { decision: 'approve',
+        versionHash: asked.versionHash }), approver));
+      await vi.waitFor(async () => expect((await su.query<{ n: number }>(
+        // At least one: another file's save may wait on PV's turn too.
+        'select count(*)::int n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.n).toBeGreaterThan(0), { timeout: 10_000 });
+      const free = (await su.query<{ free: boolean }>('select pg_try_advisory_xact_lock(hashtextextended($1, 0)) as free',
+        [`numbering.${CREDIT_NOTE_SERIES.key}`])).rows[0]?.free;
+      await holder.query('commit');
+      const done = await approved;
+      const { rows: [posted] } = await su.query<{ note: string | null; refund: string | null }>(`select n.number as note, p.number as refund
+        from radcore.credit_notes n join radcore.payments p on p.credit_table = 'credit_notes' and p.credit_id = n.id where n.id = $1`, [asked.noteId]);
+      expect([free, done, posted?.note != null, posted?.refund != null]).toEqual([true, 'ok', true, true]);
+    } finally {
+      await holder.query('rollback').catch(() => undefined);
+      holder.release();
+    }
   });
 
   // RC-128: a serialised unit sold on the invoice comes back `returned`: ours again, its sale cleared. RC-207: the

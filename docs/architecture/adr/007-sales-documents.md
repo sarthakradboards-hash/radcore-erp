@@ -8,7 +8,8 @@
 - Builds on: [ADR-005](005-database.md) §6 (business date), §7a (allocations), §7b (posted documents);
   [ADR-006](006-ledger.md) §1 (lock order), §3 (entries and numbers), §4 to §6 (stock, units, postings), §8
   (figures); [ADR-001](001-layers.md) §8b (approvals).
-- Source: the register (RC-022, RC-061, RC-110, RC-111, RC-113, RC-125, RC-126, RC-127, RC-131, RC-207); CA
+- Source: the register (RC-022, RC-061, RC-110, RC-111, RC-113, RC-122, RC-125, RC-126, RC-127, RC-131, RC-190,
+  RC-207, RC-208); CA
   questions CA-08 to CA-11, CA-24, CA-33, CA-35, CA-43, CA-44 and CA-47
   (docs/source/10-Questions-for-CA-and-Counsel.md).
 
@@ -39,7 +40,10 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
 
 - **Quotes and orders post nothing,** so they carry no ledger guard. Their services move their states, and a CHECK
   holds the status values. A confirmed order's lines change only through the order service, which runs M3-07's
-  checks again. An order is **closed** when every line is delivered, or **closed short** when a person closes it
+  checks again. **An edit those checks would refuse is refused** (`change_over_checks`, naming each issue, RAD-112),
+  and the order keeps its lines; an edit that passes saves at once. There's no pending copy of the lines: more goods
+  go on a new order through an override, and a refused price or discount means closing short (with a reason) and
+  raising a new order. An order is **closed** when every line is delivered, or **closed short** when a person closes it
   with lines still undelivered. The undelivered quantities are released, and a reason is kept (RC-125). A posted
   delivery return that brings a line back below what was ordered reopens an order its deliveries closed
   (`closed → confirmed`), so the goods can go again; an order a person closed short stays closed (RAD-112).
@@ -47,6 +51,8 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
   invoice's are. They're computed on read while a draft, and stored, with each line's rate and the place of supply,
   when a quote is sent or an order confirmed, then never recomputed: the order's credit check uses that stored
   total. An order line's delivered and invoiced quantities are read from `delivered.ts`, never stored (RAD-125).
+  Sending a quote or confirming an order is refused while the company profile has no state
+  (`company_profile_incomplete`), since the place of supply needs it (RAD-112).
 - **A delivery** comes from a sellable place only (`place_not_sellable`, ADR-006 §4). Selling a demo or rejected
   unit is a transfer to a sellable place first (M4-06). A delivery made against an order is owned, for record
   scope (ADR-001 §6a), by the order's owner, copied when it's made; one with no order by its maker; and a return
@@ -56,7 +62,9 @@ stricter reading, and the setting that changes it is named. The CA's answers cha
   approval's `approved` step posts it (ADR-001 §8b). Every credit note is approved, whatever its amount (Sarthak,
   19 Nov).
 - **A refund** is a payment out to the customer (lib-accounts, §6), not a document of its own.
-- **A vehicle booking** (M3-13) posts nothing itself. Its advance is a receipt (§5).
+- **A vehicle booking** (M3-13) posts nothing itself. Its advance is a receipt (§5), and the booking is §12.
+- **The quick bill** (M3-11) is no document of its own: one save makes the receipts, order, delivery and invoice
+  through each one's own service (§11).
 
 ### 2. Database guards (ADR-005 §7b, RA004)
 
@@ -88,6 +96,7 @@ that posts it (ADR-006 §1). A draft has no number, so drafts thrown away leave 
 | `sales.credit_note` | CN | posted | 5 |
 | `accounts.receipt` | RV | posted | 5 |
 | `accounts.payment` | PV | posted | 5 |
+| `sales.booking` | BK | made | 5 |
 
 - **The financial year is the business date's.** That date is bounded (§4), so the year is always an open one.
 - **The format** is `PREFIX/YY-YY/NNNNN`, for example `INV/26-27/00042`. A year keeps the prefix its first number
@@ -210,8 +219,8 @@ removal, so a delivery for a sale is invoiced the same day by default:
   - An unregistered buyer's name, address and state are required when the invoice reaches Rs 50,000 (Rule 46). Taxable
     value or invoice value waits on CA-43; the default is invoice value, the stricter reading. Both are settings:
     `sales.b2c_details_limit` (50,000.00) and `sales.b2c_details_basis` (`invoice_value` or `taxable_value`).
-  - A counter sale below that limit may go to the seeded party **Counter customer** (system key `walk_in`). A
-    Debtors line always names a party (ADR-006 §2).
+  - A counter sale below that limit may go to the seeded party **Counter customer** (system key `walk_in`), only
+    through the quick bill (§11). A Debtors line always names a party (ADR-006 §2).
 - **Place of supply** decides CGST and SGST against IGST, from the company's state and the buyer's (or ship-to)
   state (CA-08).
 - **Each posted line copies its GST rate (and rate source) at posting, never looking it up later.** That's the rate
@@ -274,18 +283,127 @@ locking its own documents and before the check, so two sales to one party can't 
   depends on who reads them, so the maker, the approver and whoever confirms or posts see the same issues. An
   edit, or a limit changed while a request waits, makes the request stale, and the maker asks again.
 
+### 10. Invoice links and payment reminders (M3-14, M3-15)
+
+- **An invoice link** (RAD-118) is made, listed and revoked under `invoices:share`, a key of its own, scoped as
+  invoices are. Its defaults are admin, owner and accounts at `all`, and sales and counter at `own`; it needs no
+  second factor. Revoking reaches any link on an invoice the person may share.
+  - Only a posted invoice is shared. A cancelled invoice's link answers as an expired one does.
+  - The link shows the invoice as issued, buyer's name, address, state and GSTIN in full (Rule 46), from its frozen
+    copy. It shows no phone, email, note or cost, and reads through `linkRecord` (ADR-001 §6a).
+  - Estimate links are M6-14's, with their approval step.
+- **A payment reminder** (RAD-119) carries one link, to the party's open invoice that falls due first, whether or
+  not it's overdue yet (Sarthak, 21 Nov, "One, oldest invoice"), made fresh for each reminder.
+  - Open bills that aren't invoices (an opening balance, a manual journal) are passed over for the first one that
+    is. Only when no open bill is an invoice is there no link (`noLink: 'not_an_invoice'`).
+  - A sender without `invoices:share` on that invoice still sends the reminder, with no link (`noLink:
+    'no_share_key'`).
+  - The token is only in the answer (ADR-001 §7a), never in `payment_reminders` or its audit rows.
+
+### 11. The quick bill (M3-11, RC-190)
+
+The counter sale is one save, `POST /sales/quick-bills` under `invoices:write`. It calls each stage's own service in
+one transaction, never a copy of it, so any refusal on the way rolls all of it back (RAD-115).
+- **Keys, up front.** The save, the hold and the complete (below) each check `sales:write`, `deliveries:write` and
+  `invoices:write` before writing anything, so one refusal names every key missing. Its receipts go through
+  lib-accounts' route-less `recordCounterReceipt`, not `payments:write`: receipts only, never a payment out or a
+  refund, at most the bill (`overpaid`), and each applied to the bill's invoice before the save ends.
+- **The order of the save.** First every lock for the whole bill, by ADR-006 §1: the period, a held bill's order
+  and its hold (at complete), the party, the stock positions and units, then every series it draws, in that
+  section's series order. Then the receipts; the order, confirmed; its whole delivery from one place, posted; its
+  invoice of exactly that delivery, posted; and each receipt applied to it. The receipts come first so that each
+  stage's credit check sees only what's left unpaid (§9).
+- **Payments.** Cash is one receipt into the `cash` account. A card payment goes to `sales.card_account`, an active
+  cash or bank account; unset, it's the seeded **Card settlements** account, which a manual journal empties into the
+  bank, with the machine's fee as an expense. A card records only the machine's approval code, in
+  `payments.reference` (at most 40 characters, also a bank payment's UTR or cheque number). The code is required
+  (`approval_code_required`), and no reference may be card digits: a Luhn-valid number of 13 to 19 digits is refused
+  (`looks_like_card_number`).
+- **The cash limit (§8).** Every walk-in shares the Counter customer, so its cash is judged one bill at a time,
+  never summed over the day; any other party's cash sums its day, as on POST /payments. Past the limit the bill is
+  refused (`cash_over_limit`), never put on credit, and the rest is taken another way.
+- **Tax.** The invoice is shipped to the shop (the company's name, address and state), since the goods are handed
+  over at the counter, so the place of supply is the shop's state whoever buys: CA-08's default until it's answered.
+  The Counter customer's own state follows the company profile's.
+- **The Counter customer** (`parties.system_key` `walk_in`) buys only through the quick bill: a quote or order for
+  it is refused (`counter_customer_only`), the party pickers leave it out, and it can't be changed by hand
+  (`system_party`). It never holds a balance: its bill is paid in full (`walk_in_pays_in_full`), judged on the
+  order's total and again on the posted invoice's. So its credit check reads none of its history, which grows with
+  every walk-in; its discount and below-cost checks run as anyone's do.
+- **A walk-in who leaves a balance** (Sarthak, 22 Nov, "Allow with approval") is billed to a named customer instead,
+  given with the hold (below), since the balance needs an approval. Naming one needs `sales:counter_credit`
+  (all-only; by default admin, counter and sales), `parties:write`, and `parties:contact`, since it checks the phone:
+  a customer with that phone already is to be chosen (`buyer_has_party`), else a new unregistered one is made in the
+  shop's state with no credit limit. A bill at or above `sales.b2c_details_limit` needs the buyer's address, city
+  and PIN code too (`buyer_details_required`). The unpaid part is then over the limit, and approved as any credit is
+  (§9).
+- **Hold, then complete** (Sarthak, 22 Nov). A bill whose checks need an override (a discount, a price below cost,
+  credit) is refused by the save (`needs_override`) and held instead:
+  - `POST /sales/quick-bills/hold` saves its order as a draft, keeps the place, the picks and the planned payments
+    (method and amount, and a bank payment's account and reference; a card's code comes when it's charged) in
+    `quick_bill_holds`, and asks for the order's
+    override, judged with the planned payments taken off (`paidNow`). A bill that needs none is refused
+    (`no_override_needed`).
+  - Once it's approved, `POST /sales/quick-bills/:orderId/complete`, at the order's scope, takes the planned payments,
+    each card with its code now, confirms the order on its approval, and posts its whole delivery and its invoice
+    through that same approval. They pass only on issues of the approved kinds and no worse; anything new is
+    `needs_override`.
+  - The approval holds only for what was owed when it was given: its `approved` step records the credit figure on
+    the hold, outside the hash, and complete refuses `version_changed` if the party owes more now (RAD-135).
+  - The hold goes with the complete, so a second is `not_held`. A held order changes only through the quick bill
+    (`quick_bill_held`); a rejected or abandoned one is thrown away by deleting its draft order, hold and all.
+  - `GET /sales/quick-bills/held` lists them oldest first, at the order's scope as completing one is, with each
+    planned payment's method and amount, never its reference.
+- **The preview** (`POST /sales/quick-bills/preview`, read only) prices and taxes the lines as the save will, so its
+  total is the posted one; it says what the payments leave, and names the codes of the checks the save would raise.
+  It takes no lock or number, writes nothing, and answers no cost or balance, only the codes.
+
+### 12. Vehicle bookings and test rides (M3-13, RC-122, RC-127, RC-208)
+
+- **A booking** (`vehicle_bookings`, numbered when it's made) holds one unit for a confirmed order line of quantity
+  1 (`booking_one_unit`), one live booking a line (`line_booked`), with an optional lead the maker may read.
+  - The unit is ours, at a sellable place, new or used, or damaged where `stock.sell_damaged_units` allows (ADR-006
+    §5); else `unit_unavailable`. One promised to another line is `unit_held`.
+  - The booking promises the unit to its line (a `reserved` unit event), so stock and every picker see the hold.
+  - It takes an advance above 0 (`advance_required`), a receipt held for it (§5), and more while it's booked. It
+    stores no advance figures: what's taken and what's left are read live from its receipts (`heldLeft`).
+- **The lock order** (ADR-006 §1): the period, the order, the booking, its lead, the party, the unit, numbering.
+- **States:** booked → delivered or cancelled. The line's delivery locks its live bookings in the documents step,
+  before the units, marks a finished line's booking delivered, and ends the promise under the same unit lock. A
+  cancelled delivery puts the booking back to booked, with the unit that came back promised to the line again.
+- **While a booking is live** its order can't be cancelled or closed short (`booking_live`): the booking is
+  cancelled first, so its advance is explained. Its lines can't be rewritten while any booking names one, cancelled
+  or not; extras or another vehicle go on a new order. The refusal names the line, not the booking, since whoever
+  changes the order may hold no bookings key (`booking-holds.ts`, ADR-001 §6a's E7 exemption).
+- **Cancelling** takes a reason, releases the unit's promise, and says what's refunded (§5).
+- **The lead.** A booking converts its lead. A cancellation sends it back to `interested`, with a follow-up on the
+  cancellation's date, only when it has no other live booking; the lead is locked right after the booking and
+  judged under that lock.
+- **Test rides** (`test_rides`) take one of our demo units (else `not_demo`) out for a lead the person may open.
+  They're records, not locks, so a unit's several rides in a day all stand. Each records its outcome once (`liked`,
+  `not_interested`, `wants_another`, `no_show` or `cancelled`), and before its time only `cancelled`.
+- **The delivery checklist** (RC-208), kept on a delivered booking: inspected, briefed, warranty registered, a photo
+  and a delivery note, each file a ready upload of its own kind (`wrong_file_kind`). The invoice never waits for it,
+  since section 31 ties the invoice to the goods' removal; the bookings list filters the incomplete ones instead.
+- **Keys**, without the second factor: `bookings:read` (bookings, rides and the checklist's files) and
+  `bookings:write` (booking, its advances, cancelling, rides and the checklist). By default sales and counter hold
+  them at `own`, and admin, owner and accounts at `all`. The refund keys are §5's.
+
 ## Consequences
 
-- M3-07 to M3-13 build to §1 to §9, and each document adds its own rows to `state_transitions` in its migration.
+- M3-07 to M3-13 build to §1 to §12, and each document adds its own rows to `state_transitions` in its migration.
 - ADR-006 gains three rows in §6 (advance, refund, late credit note), the `late_cn_gst` account in §2, and figures
-  F23 to F26 in §8. M3-10's owner migration seeds `late_cn_gst`, and M3-11's seeds the Counter customer party.
+  F23 to F26 in §8. M3-10's owner migration seeds `late_cn_gst`, and M3-11's seeds the Counter customer party and
+  the Card settlements account.
 - New settings: `sales.invoice_lag_days` (0), `sales.credit_note_tax_deadline` (30 November), the two cash limits,
   `sales.b2c_details_limit` (50,000.00) and `sales.b2c_details_basis` (`invoice_value`). Each is the strict default
   until its CA answer. Also `accounts.default_credit_days` (0), lib-accounts' as the owner of parties' terms, which
-  M3-15's To collect reads too; and `sales.default_price_list` (unset), the list for a party with none of its own.
+  M3-15's To collect reads too; `sales.default_price_list` (unset), the list for a party with none of its own; and
+  `sales.card_account` (unset, meaning Card settlements).
 - New keys, each with the second factor (D-19): `sales:override` (M3-08), `bookings:refund_full` and
   `bookings:refund_part` (M3-13), and `bookings:forfeit` with CA-47's posting. Without it (Sarthak, 20 Nov):
-  `invoices:write` and `invoices:cancel` (M3-09).
+  `invoices:write` and `invoices:cancel` (M3-09); also `bookings:read` and `bookings:write` (M3-13), and
+  `sales:counter_credit` (M3-11, all-only).
 - New error codes for the services: `date_in_future`, `date_before_source`, `invoice_too_late` and `exceeds_invoice`.
   The database's own guards stay RA003 and RA004.
 - CA-47 (GST on a forfeited advance) and CA-50 (cess on goods sold) are added to the CA questions.
@@ -304,3 +422,5 @@ locking its own documents and before the check, so two sales to one party can't 
   role (20 Nov). With a key per choice, a role can refund in full without being able to keep any of an advance.
 - **No limit set means no limit.** It would let a new party buy on credit before anyone decided it should. Sarthak
   chose the other way (20 Nov): credit is given by setting a limit.
+- **A walk-in's balance left on the Counter customer.** It needs no name at the counter, but every walk-in shares
+  that party, so nobody could be asked to pay it. A balance goes on a named customer instead (§11).

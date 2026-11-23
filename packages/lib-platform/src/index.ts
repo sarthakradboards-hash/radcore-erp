@@ -50,7 +50,7 @@ export { createLog, type Fields, type Log, type LogOptions } from './log/logger.
 export { describeError, type ErrorDescription } from './log/safe-error.ts';
 export { routeOf, scrubText } from './log/scrub.ts';
 export { createSecrets, expiringBefore, SecretPlaceMismatch, type SecretPlace, type Secrets } from './secrets.ts';
-export { declaredSeriesKeys, defineSeries, nextNumber, type Series } from './numbering.ts';
+export { declaredSeriesKeys, defineSeries, holdSeries, nextNumber, seriesOrder, type Series } from './numbering.ts';
 export { changeSeriesPrefix, changeSetting, createSettingsScreens, listSeriesOf, listSettingsOf } from './settings-admin.ts';
 export { declaredSettingKeys, defineSetting, type SettingDef, type SettingInput } from './define-setting.ts';
 export { settingRow, Settings, type SettingRow } from './settings.ts';

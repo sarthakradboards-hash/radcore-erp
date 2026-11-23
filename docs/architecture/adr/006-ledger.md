@@ -66,7 +66,12 @@ half covers every sum and comparison in them, and they round half up, as lib-com
    `(item_id, supplier_id, batch_key)` order (§4a);
 5. the units, `ORDER BY id FOR UPDATE` (§5);
 6. the numbering series (M2-04), last. A number is drawn only once every check has passed, and the series row is
-   held for the shortest time.
+   held for the shortest time. A save draws the journal series (`accounts.journal`) before any other, and its other
+   series in ascending key order; each draw takes its series' turn first, a transaction advisory lock (lib-platform's
+   `nextNumber`), since a year's first number creates the counter row, which can't be locked before it exists. A save
+   that posts several documents takes each class of lock for all of them first, in this order, its series last:
+   journal first, then by key (`holdSeries`, with lib-stock's `holdStock` for steps 4 and 5; the architect on RAD-115).
+   The quick bill does; a booking with its advance and a credit note with its refund follow under their own tickets.
 
 The stock lock is a row in `stock_positions (item_id, location_id)`, never the item row. A `FOR UPDATE` on `items`
 also blocks every insert that references the item by foreign key, which is how v1 blocked unrelated saves. The
@@ -449,6 +454,18 @@ serialised)`: only a serialised item can have it.
   service answers `chassis_numbers_recorded`, and a trigger on `items` refuses it too (RA008). Once a vehicle has
   its number, the product is a registered vehicle, and turning the flag off would let the next one leave without
   one. A flag set by mistake can still be turned off before any number is entered.
+
+**Damaged units, and what a sale says about a unit's condition (RAD-112).**
+- **Selling a damaged unit is a setting,** `stock.sell_damaged_units`, off by default (Sarthak, 21 Nov). Off: a
+  `damaged` unit is left out of the picker and refused at posting (`unit_damaged`). On: it's offered, marked.
+- **An invoice line says any condition that isn't `new`:** `demo`, `used` or `damaged`, so used or ex-demo goods never
+  pass as new (Consumer Protection Act 2019). It isn't a setting. The condition is the unit's own at the moment it
+  left, recorded on its `delivered` event from the locked unit row, never a value the caller passes, and frozen on
+  the invoice line (`unit_condition`).
+- **A serialised delivery line holds units of one condition** (`mixed_condition` at posting, checked under the units'
+  locks), so an invoice that bills part of a line copies that one condition exactly.
+- **Stock on hand,** by place, batch and serial, is read through `GET /stock/on-hand` under `stock:read`. Its serials
+  leave out a unit promised to another order line, and mark one promised to the line being picked (`heldForThis`).
 
 ### 6. What each document posts
 
