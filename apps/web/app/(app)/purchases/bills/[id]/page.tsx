@@ -77,6 +77,7 @@ export default function PurchaseBillPage() {
         <div className="kit-actions">
           {draft && !b.awaitingApproval
             ? <button type="button" className="kit-button kit-button-primary" onClick={() => setDialog('post')}>{t('purchases.bill.post')}</button> : null}
+          {draft ? <Link className="kit-button" href={`/purchases/bills/${id}/edit`}>{t('purchases.edit')}</Link> : null}
           {draft ? <button type="button" className="kit-button" onClick={() => setDialog('delete')}>{t('purchases.delete')}</button> : null}
           {b.status === 'posted' ? <button type="button" className="kit-button" onClick={() => setDialog('cancel')}>{t('purchases.bill.cancel')}</button> : null}
         </div>

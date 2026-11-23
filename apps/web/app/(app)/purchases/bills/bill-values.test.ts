@@ -7,12 +7,12 @@ const filled = { ...blankBill(), supplierId: id(1), businessDate: '2026-11-24', 
 
 describe('the purchase bill form', () => {
   it('sends goods lines without their screen-only fields, empty boxes as none, and the GSTIN in capitals', () => {
-    const r = billSchema.parse({ ...filled, supplierGstin: '27abcde1234f1z5', lines: [
+    const r = billSchema.parse({ ...filled, supplierGstin: '27aapfu0939f1zv', lines: [
       { kind: 'goods', label: '48 V battery (BAT-48V), PO/26-27/00007', poLineId: id(11), receiptId: id(30), receiptLineId: id(31), qty: '10', rate: '1200' },
       { kind: 'goods', label: 'Cable', poLineId: id(12), receiptId: '', receiptLineId: '', qty: '5', rate: '40' },
       { ...blankCharge(), description: 'Road freight', hsn: '996511', amount: '900.00' },
     ] });
-    expect(r).toMatchObject({ supplierGstin: '27ABCDE1234F1Z5', fileId: null, notes: null });
+    expect(r).toMatchObject({ supplierGstin: '27AAPFU0939F1ZV', fileId: null, notes: null });
     expect(r.lines).toEqual([
       { kind: 'goods', poLineId: id(11), receiptLineId: id(31), qty: '10', rate: '1200' },
       { kind: 'goods', poLineId: id(12), receiptLineId: null, qty: '5', rate: '40' },
