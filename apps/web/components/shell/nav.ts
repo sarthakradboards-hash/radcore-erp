@@ -78,6 +78,7 @@ export const STOCK_PAGES = [
   { href: '/stock/counts', label: 'stock.nav.counts', perm: 'stock:read' },
   { href: '/stock/adjustments', label: 'stock.nav.adjustments', perm: 'stock:read' },
   { href: '/stock/transfers', label: 'stock.nav.transfers', perm: 'stock:read' },
+  { href: '/stock/job-work', label: 'stock.nav.jobWork', perm: 'stock:read' },
   { href: '/stock/approvals', label: 'stock.nav.approvals', perm: 'stock:approve' },
 ] as const satisfies readonly NavPage[];
 
