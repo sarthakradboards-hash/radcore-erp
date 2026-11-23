@@ -57,6 +57,7 @@ export default function PartyStatementPage() {
         <dt>{t('books.collect.st.oldest')}</dt><dd>{owed.oldestDue === null ? '' : formatDate(owed.oldestDue)}</dd>
         <dt>{t('books.collect.st.notOnBill')}</dt><dd>{formatMoney(owed.notOnABill)}</dd>
       </dl>
+      <p className="kit-field-hint">{t('books.collect.st.notOnBill.note')}</p>
 
       <section aria-labelledby={billsId}>
         <h2 id={billsId}>{t('books.collect.bills')}</h2>
