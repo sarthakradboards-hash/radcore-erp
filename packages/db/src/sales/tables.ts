@@ -92,6 +92,9 @@ export const salesOrders = radcoreTable('sales_orders', {
   // The version an override of its checks was approved for (sales:override, M3-07): confirming takes it while the
   // order and its issues still hash to it.
   overrideVersion: text(),
+  // What the party would owe after it, as its override was judged (RAD-135): over_limit approved, a balance grown past
+  // this is asked again. Set with overrideVersion, kept out of its hash.
+  overrideAfter: money({ signed: true }),
   ...frozenTotals(),
 }, (t) => [
   ...totalsChecks('sales_orders', t),
@@ -146,6 +149,9 @@ export const deliveries = radcoreTable('deliveries', {
   owner: text().notNull(),
   // The version an override of its credit check was approved for (sales:override, M3-07), as an order's.
   overrideVersion: text(),
+  // What the party would owe after it, as its override was judged (RAD-135): over_limit approved, a balance grown past
+  // this is asked again. Set with overrideVersion, kept out of its hash.
+  overrideAfter: money({ signed: true }),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
   cancelledAt: timestamp({ withTimezone: true }),
   cancelledBy: text(),
@@ -296,6 +302,9 @@ export const invoices = radcoreTable('invoices', {
   total: money().notNull().default('0'),
   // The version an override of its checks was approved for (sales:override, M3-07), as a delivery's.
   overrideVersion: text(),
+  // What the party would owe after it, as its override was judged (RAD-135): over_limit approved, a balance grown past
+  // this is asked again. Set with overrideVersion, kept out of its hash.
+  overrideAfter: money({ signed: true }),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
   cancelledAt: timestamp({ withTimezone: true }),
   cancelledBy: text(),
