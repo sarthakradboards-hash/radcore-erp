@@ -5,6 +5,8 @@ import { purchaseOrderPrint } from '@radcore/lib-purchasing';
 import { printPurchaseOrder } from '@radcore/lib-purchasing/contract';
 import { challanPrint, invoicePrint, quotePrint, receiptPrint } from '@radcore/lib-sales';
 import { printChallan, printInvoice, printQuote, printReceipt } from '@radcore/lib-sales/contract';
+import { jobWorkChallanPrint } from '@radcore/lib-stock';
+import { printJobWorkChallan } from '@radcore/lib-stock/contract';
 
 export default [
   definePrintRoute(printInvoice, invoicePrint),
@@ -12,4 +14,5 @@ export default [
   definePrintRoute(printQuote, quotePrint),
   definePrintRoute(printReceipt, receiptPrint),
   definePrintRoute(printPurchaseOrder, purchaseOrderPrint),
+  definePrintRoute(printJobWorkChallan, jobWorkChallanPrint),
 ];
