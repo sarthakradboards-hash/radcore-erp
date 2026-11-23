@@ -1,6 +1,8 @@
 // Items, their categories and units of measure (M2-10, RAD-89; ADR-001 §5: lib-stock's). Every write is audited by
 // the tables' triggers. A quantity follows its item's unit (RC-162): checkQuantity is what every stock document calls.
-import { after, batches, itemCategories, itemPictures, items, searchWords, stockMovements, stockTx, units, unitsOfMeasure } from '@radcore/db/stock';
+import {
+  after, batches, itemCategories, itemPictures, items, searchWords, stockMovementBatches, stockMovements, stockTx, units, unitsOfMeasure,
+} from '@radcore/db/stock';
 import type { Rate } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, readyFile, viewLinks, type Ctx } from '@radcore/lib-platform';
 import { and, asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
@@ -146,6 +148,20 @@ export async function itemFlags(ctx: Ctx, ids: readonly string[]): Promise<Map<s
   const rows = await stockTx(ctx).select({ id: items.id, serialised: items.serialised, hasChassis: items.hasChassis }).from(items)
     .where(inArray(items.id, [...ids]));
   return new Map(rows.map((r) => [r.id, { serialised: r.serialised, hasChassis: r.hasChassis }]));
+}
+
+/** Each movement's batches, by movement id: the batch (null for "batch unknown"), its number and the quantity, for
+ * another library showing what a posted document's lines brought in (a goods receipt's, RAD-137). One read. */
+export async function movementBatches(ctx: Ctx, movementIds: readonly string[]):
+  Promise<Map<string, { batchId: string | null; batchNo: string | null; qty: string }[]>> {
+  const out = new Map<string, { batchId: string | null; batchNo: string | null; qty: string }[]>();
+  if (movementIds.length === 0) return out;
+  const rows = await stockTx(ctx).select({ movementId: stockMovementBatches.movementId, batchId: stockMovementBatches.batchId,
+    batchNo: batches.batchNo, qty: stockMovementBatches.qty }).from(stockMovementBatches)
+    .leftJoin(batches, eq(batches.id, stockMovementBatches.batchId))
+    .where(inArray(stockMovementBatches.movementId, [...new Set(movementIds)])).orderBy(asc(batches.batchNo));
+  for (const r of rows) out.set(r.movementId, [...(out.get(r.movementId) ?? []), { batchId: r.batchId, batchNo: r.batchNo, qty: r.qty }]);
+  return out;
 }
 
 /** Each batch's number, by id, for another library showing the batches its lines picked (lib-sales' deliveries and
