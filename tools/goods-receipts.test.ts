@@ -8,11 +8,13 @@ import { putGstRate } from '@radcore/lib-gst';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addOrder, addReceipt, cancelOrder, cancelReceiptNow, changeOrder, getOrderById, getReceiptById, placeOrder, postReceipt, RECEIPT_SERIES,
+  addOrder, addReceipt, cancelOrder, cancelReceiptNow, changeOrder, closeOrder, getOrderById, getReceiptById, placeOrder, postReceipt,
+  RECEIPT_SERIES,
 } from '@radcore/lib-purchasing';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { linesReceived, receivedOf } from '../packages/lib-purchasing/src/services/received.ts';
 import { turnsHeldBy } from './books-turn.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
@@ -193,6 +195,46 @@ describe.skipIf(!url || !superUrl)('goods receipts and QC', { timeout: 30_000 },
     const late = await code(run((ctx) => cancelReceiptNow(ctx, { id: again, businessDate: DATE, reason: 'Too late' }), at.staff));
     expect([closed, o.status, o.lines[0]?.received, (await run((ctx) => getReceiptById(ctx, { id }), at.staff)).status, late])
       .toEqual(['closed', 'placed', '0.000', 'cancelled', 'receipt_in_use']);
+  });
+
+  // The architect on RAD-137, E7: a PO's received count is every posted receipt's, whoever made it. A stores user at
+  // `own` scope, who made the PO, still can't receive past what a colleague's receipt brought in; and received.ts
+  // answers only quantities and ids, never a receipt's fields.
+  it('counts a colleague’s receipt against an own-scope user’s draft (over_ordered), and answers only quantities and ids', async () => {
+    const at = await setup({ rate: '200', ordered: '5' });
+    const own: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS, ...(at.staff.kind === 'user' && at.staff.role !== undefined
+      ? { role: at.staff.role } : {}), ownScope: ['purchasing:read', 'purchasing:write', 'inward:write', 'inward:qc'] };
+    const po = await at.order(at.supplierId, '5').then(async (p) => p);
+    // The colleague (all scope) brings in 3 against a PO the own-scope user made.
+    const mine = await run(async (ctx) => {
+      const { id } = await addOrder(ctx, { supplierId: at.supplierId, businessDate: DATE, expectedBy: null, notes: null,
+        lines: [{ itemId: at.itemId, qty: q('5'), rate: unitPriceString().parse('200') }] });
+      await placeOrder(ctx, { id });
+      return { id, lineId: (await getOrderById(ctx, { id })).lines[0]?.id ?? '' };
+    }, own);
+    const { id } = await arrive(at, '3', mine);
+    await inspect(at, id, { batches: [{ batchNo: null, accepted: q('3'), rejected: q('0') }], rejectReason: null, serials: [] });
+    const draftAs = (received: string) => code(run((ctx) => addReceipt(ctx, { orderId: mine.id, businessDate: DATE, locationId: at.stores,
+      rejectsLocationId: at.rejects, supplierRef: null, notes: null, lines: [{ orderLineId: mine.lineId, received: q(received) }] }), own));
+    const shapes = await run(async (ctx) => {
+      const got = await receivedOf(ctx, [mine.lineId, po.lineId], { drafts: false });
+      const named = await linesReceived(ctx, [mine.lineId, po.lineId]);
+      return { keys: [...got.keys()].toSorted(), values: [...got.values()].map((v) => v.toFixed(3)), named: [...named] };
+    }, own);
+    expect([await draftAs('3'), await draftAs('2')]).toEqual(['over_ordered', 'ok']);
+    expect(shapes).toEqual({ keys: [mine.lineId, po.lineId].toSorted(), values: [mine.lineId, po.lineId].toSorted()
+      .map((k) => (k === mine.lineId ? '3.000' : '0.000')), named: [mine.lineId] });
+  });
+
+  // The architect on RAD-137 (1): a PO closed short, with its reason, stays closed when its receipt is cancelled.
+  it('leaves a PO closed short closed when its receipt is cancelled', async () => {
+    const at = await setup({ rate: '200', ordered: '4' });
+    const { id } = await arrive(at, '2');
+    await inspect(at, id, { batches: [{ batchNo: null, accepted: q('2'), rejected: q('0') }], rejectReason: null, serials: [] });
+    await run((ctx) => closeOrder(ctx, { id: at.po.id, reason: 'The rest isn’t coming' }), at.staff);
+    await run((ctx) => cancelReceiptNow(ctx, { id, businessDate: DATE, reason: 'Entered in error' }), at.staff);
+    const o = await run((ctx) => getOrderById(ctx, { id: at.po.id }), at.staff);
+    expect([o.status, o.closedReason, o.lines[0]?.received]).toEqual(['closed', 'The rest isn’t coming', '0.000']);
   });
 
   // §5 and #340's owed check: a placed PO keeps what has come in: no line below it, and no cancelling once goods came.

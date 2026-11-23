@@ -9,7 +9,6 @@ import type {
   attachItemPicture, createItem, createItemCategory, getItem, listItemCategories, listItems, listUnitsOfMeasure, removeItemPicture,
   renameItemCategory, updateItem,
 } from '../contract.ts';
-import { serialKey } from '../engine/units.ts';
 import { quantityFits } from '../rules/quantity.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -147,15 +146,6 @@ export async function itemFlags(ctx: Ctx, ids: readonly string[]): Promise<Map<s
   const rows = await stockTx(ctx).select({ id: items.id, serialised: items.serialised, hasChassis: items.hasChassis }).from(items)
     .where(inArray(items.id, [...ids]));
   return new Map(rows.map((r) => [r.id, { serialised: r.serialised, hasChassis: r.hasChassis }]));
-}
-
-/** Who holds each of an item's serials now (ADR-006 §5): `ours`, `customer` or `gone`, keyed by serialKey; a serial
- * never seen is left out. One read, for a receipt's serial_sold and serial_in_stock before the database's RA008. */
-export async function unitOwners(ctx: Ctx, itemId: string, serials: readonly string[]): Promise<Map<string, string>> {
-  if (serials.length === 0) return new Map();
-  const rows = await stockTx(ctx).select({ key: units.serialKey, ownership: units.ownership }).from(units)
-    .where(and(eq(units.itemId, itemId), inArray(units.serialKey, serials.map(serialKey))));
-  return new Map(rows.map((r) => [r.key, r.ownership]));
 }
 
 /** Each batch's number, by id, for another library showing the batches its lines picked (lib-sales' deliveries and

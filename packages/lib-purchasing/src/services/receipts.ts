@@ -374,8 +374,9 @@ export async function receiptLinesFor(ctx: Ctx, lineIds: readonly string[], o: {
     locationId: goodsReceipts.locationId, rejectsLocationId: goodsReceipts.rejectsLocationId, owner: goodsReceipts.createdBy })
     .from(goodsReceiptLines).innerJoin(goodsReceipts, eq(goodsReceipts.id, goodsReceiptLines.receiptId))
     .innerJoin(purchaseOrders, eq(purchaseOrders.id, goodsReceipts.orderId))
-    .where(inArray(goodsReceiptLines.id, [...lineIds])).orderBy(asc(goodsReceipts.id), asc(goodsReceiptLines.lineNo));
+    // Scoped in the query, so a receipt the caller can't see is neither answered nor locked (auditor-2 on #367).
+    .where(and(inArray(goodsReceiptLines.id, [...lineIds]), listScope(ctx, 'purchasing:read', goodsReceipts.createdBy)))
+    .orderBy(asc(goodsReceipts.id), asc(goodsReceiptLines.lineNo));
   // Their POs are already locked by the bill (§12), so this takes only their receipts in turn.
-  const rows = o.forUpdate ? await q.for('update') : await q;
-  return rows.filter((row) => ctx.can('purchasing:read', { owner: row.owner }));
+  return o.forUpdate ? q.for('update') : q;
 }

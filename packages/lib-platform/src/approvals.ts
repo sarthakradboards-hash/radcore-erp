@@ -117,8 +117,10 @@ export async function awaitingApproval<V extends ApprovalVersion>(ctx: Ctx, spec
   return new Set(rows.map((r) => r.recordId));
 }
 
-/** Which of these records an approval was given for: a request of this kind for it was approved (a posted franchisee
- * transfer's, RAD-141). */
+/** Which of these records an approval was ever given for: a request of this kind for it was approved (a posted
+ * franchisee transfer's, RAD-141). Sound only for a spec whose approved() makes its record final (posts or places it),
+ * so no later request can arise for it; a kind whose record can be asked about again after approving needs the latest
+ * request's status instead (backend's owner read on #367). */
 export async function approvedFor<V extends ApprovalVersion>(ctx: Ctx, spec: ApprovalSpec<V>, recordIds: readonly string[]):
   Promise<ReadonlySet<string>> {
   if (recordIds.length === 0) return new Set();

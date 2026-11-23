@@ -5,11 +5,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
 import { quantityString, unitPriceString } from '@radcore/lib-common';
-import { AppError, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, approvedFor, decideApproval, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addAdjustment, addCategory, addCount, addItem, addPlace, addTransfer, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, askCountApproval,
-  cancelAdjustmentNow, cancelTransferNow, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
+  cancelAdjustmentNow, cancelTransferNow, dropTransfer, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
 } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -182,6 +182,24 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
       await draft({ itemId: at.itemId, direction: 'in', qty: q('1'), condition: null, batches: [],
         serials: [{ serialNo: `N-${tag()}`, chassisNo: null }] }),
     ]).toEqual(['serials_mismatch', 'condition_required']);
+  });
+
+  // backend's owner read on #367: approvedFor answers only records with an approved request, not one pending, refused
+  // or superseded (its draft thrown away), and nothing for no ids.
+  it('names only the approved transfers (approvedFor)', async () => {
+    const boss = await approver();
+    const at = await setup(['stores', 'franchisee'], { stock: '4', rate: '100' });
+    const [stores, franchisee] = at.places as [string, string];
+    const on = new Settings([{ key: 'stock.franchisee_transfer_approval', value: true }]);
+    const send = () => run((ctx) => addTransfer(ctx, { fromId: stores, toId: franchisee, businessDate: DATE, reason: 'Test',
+      lines: [line(at.itemId, '1', at.batchId)] }), staff, on);
+    const [approved, pending, refused, dropped] = [await send(), await send(), await send(), await send()];
+    await decide(transferApprovalSpec, boss, approved.approval ?? { id: '', versionHash: '' });
+    await run((ctx) => decideApproval(ctx, transferApprovalSpec, refused.approval?.id ?? '', { decision: 'reject', reason: 'Not this week' }), boss);
+    await run((ctx) => dropTransfer(ctx, { id: dropped.id }));
+    const named = await run((ctx) => approvedFor(ctx, transferApprovalSpec, [approved.id, pending.id, refused.id, dropped.id]));
+    const none = await run((ctx) => approvedFor(ctx, transferApprovalSpec, []));
+    expect([[...named], none.size]).toEqual([[approved.id], 0]);
   });
 
   // Sarthak's setting: into a franchisee's store, off posts at once; on, it waits for someone else's approval.

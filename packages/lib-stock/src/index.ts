@@ -1,7 +1,7 @@
 // lib-stock's entry (ADR-001 §2): its services, for the api's route file and for other libraries.
 export {
   addCategory, addItem, addItemPicture, batchNumbers, changeItem, checkQuantity, dropItemPicture, getItemById, itemFlags, itemLabels, listCategories,
-  listItemsPage, purchasePrices, listUnits, renameCategory, unitOwners,
+  listItemsPage, purchasePrices, listUnits, renameCategory,
 } from './services/items.ts';
 export { quantityFits } from './rules/quantity.ts';
 export { onHand } from './services/on-hand.ts';
@@ -13,7 +13,7 @@ export { addPlace, checkPlace, listPlaces, updatePlace } from './services/locati
 export { placeNames } from './services/moves-lines.ts';
 export { stockSheets } from './sheets.ts';
 export {
-  postUnitEvents, releasePromises, serialKey, soldCondition, soldUnits, unitFor, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent,
+  postUnitEvents, releasePromises, serialKey, soldCondition, soldUnits, unitFor, unitOwners, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent,
   type UnitChange, type UnitOnLine,
 } from './engine/units.ts';
 export {
