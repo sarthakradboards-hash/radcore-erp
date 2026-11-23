@@ -153,7 +153,7 @@ export const requestStockCountApproval = defineContract({
 });
 /** The count approval routes (RAD-38): approving posts the differences (F14, F21). */
 export const stockCountApproval = approvalContracts('stock-count', 'stock:approve',
-  ['wrong_status', 'serial_elsewhere', 'serial_unknown', ...POSTING_ERRORS]);
+  ['wrong_status', 'serial_elsewhere', 'serial_unknown', 'unknown_batch', ...POSTING_ERRORS]);
 /** Cancels a posted count: its mirror, dated the cancellation's day. */
 export const cancelStockCount = defineContract({
   method: 'POST', path: '/stock/counts/:id/cancel', auth: 'session', perm: 'stock:approve', tx: write,
@@ -219,7 +219,7 @@ export const requestStockAdjustmentApproval = defineContract({
 /** The adjustment approval routes (RAD-38): approving posts it (F14). */
 // A found unit's chassis number is judged again as it posts: the item's flag may have changed since the draft.
 export const stockAdjustmentApproval = approvalContracts('stock-adjustment', 'stock:approve',
-  ['wrong_status', 'serial_elsewhere', 'chassis_required', 'chassis_not_allowed', ...POSTING_ERRORS]);
+  ['wrong_status', 'serial_elsewhere', 'chassis_required', 'chassis_not_allowed', 'unknown_batch', ...POSTING_ERRORS]);
 /** Cancels a posted adjustment: its mirror, dated the cancellation's day. */
 export const cancelStockAdjustment = defineContract({
   method: 'POST', path: '/stock/adjustments/:id/cancel', auth: 'session', perm: 'stock:approve', tx: write,

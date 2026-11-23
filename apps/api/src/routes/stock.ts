@@ -1,13 +1,21 @@
 // lib-stock's routes (ADR-001 §6): declarations only. Items, their categories and units of measure (RAD-89), and
 // locations and their kinds' labels (RAD-92), the books check (RAD-95), and stock on hand (RAD-112).
-import { defineRoute } from '@radcore/lib-platform';
+import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
   addCategory, addItem, addItemPicture, addPlace, changeItem, checkBooks, dropItemPicture, getItemById, listCategories, listItemsPage,
   listKinds, listPlaces, listUnits, onHand, renameCategory, setKindLabel, updatePlace,
+  addTransfer, askTransferApproval, cancelTransferNow, dropTransfer, getTransferById, listTransfersPage, transferApprovalSpec,
+  addCount, askCountApproval, cancelCountNow, changeCount, countApprovalSpec, dropCount, getCountById, listCountsPage,
+  addAdjustment, adjustmentApprovalSpec, askAdjustmentApproval, cancelAdjustmentNow, changeAdjustment, dropAdjustment, getAdjustmentById,
+  listAdjustmentsPage,
 } from '@radcore/lib-stock';
 import {
   addLocation, attachItemPicture, checkBooksContract, createItem, createItemCategory, getItem, getOnHand, listItemCategories, listItems, listLocationKinds,
   listLocations, listUnitsOfMeasure, removeItemPicture, renameItemCategory, setLocationKindLabel, updateItem, updateLocation,
+  cancelStockTransfer, createStockTransfer, deleteStockTransfer, getStockTransfer, listStockTransfers, requestStockTransferApproval,
+  stockTransferApproval, cancelStockCount, createStockCount, deleteStockCount, getStockCount, listStockCounts, requestStockCountApproval,
+  stockCountApproval, updateStockCount, cancelStockAdjustment, createStockAdjustment, deleteStockAdjustment, getStockAdjustment,
+  listStockAdjustments, requestStockAdjustmentApproval, stockAdjustmentApproval, updateStockAdjustment,
 } from '@radcore/lib-stock/contract';
 
 export default [
@@ -28,4 +36,28 @@ export default [
   defineRoute(addLocation, addPlace),
   defineRoute(updateLocation, updatePlace),
   defineRoute(getOnHand, onHand),
+  // Transfers, counts and adjustments (M4-06, RAD-141; ADR-008 §9, §10).
+  defineRoute(listStockTransfers, listTransfersPage),
+  defineRoute(getStockTransfer, getTransferById),
+  defineRoute(createStockTransfer, addTransfer),
+  defineRoute(deleteStockTransfer, dropTransfer),
+  defineRoute(requestStockTransferApproval, askTransferApproval),
+  ...defineApproval(stockTransferApproval, transferApprovalSpec),
+  defineRoute(cancelStockTransfer, cancelTransferNow),
+  defineRoute(listStockCounts, listCountsPage),
+  defineRoute(getStockCount, getCountById),
+  defineRoute(createStockCount, addCount),
+  defineRoute(updateStockCount, changeCount),
+  defineRoute(deleteStockCount, dropCount),
+  defineRoute(requestStockCountApproval, askCountApproval),
+  ...defineApproval(stockCountApproval, countApprovalSpec),
+  defineRoute(cancelStockCount, cancelCountNow),
+  defineRoute(listStockAdjustments, listAdjustmentsPage),
+  defineRoute(getStockAdjustment, getAdjustmentById),
+  defineRoute(createStockAdjustment, addAdjustment),
+  defineRoute(updateStockAdjustment, changeAdjustment),
+  defineRoute(deleteStockAdjustment, dropAdjustment),
+  defineRoute(requestStockAdjustmentApproval, askAdjustmentApproval),
+  ...defineApproval(stockAdjustmentApproval, adjustmentApprovalSpec),
+  defineRoute(cancelStockAdjustment, cancelAdjustmentNow),
 ];
