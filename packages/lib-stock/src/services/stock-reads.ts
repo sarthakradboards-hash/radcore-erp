@@ -59,8 +59,8 @@ export async function listPositions(ctx: Ctx, input: In<typeof listStockOnHand>)
 }
 
 type Pair = { itemId: string; locationId: string };
-const pairsWhere = (page: readonly Pair[]) => and(inArray(stockMovements.itemId, page.map((p) => p.itemId)),
-  inArray(stockMovements.locationId, page.map((p) => p.locationId)));
+// The page's own pairs, not every item with every place on it (auditor-2 and backend-3 on #394): one match per row.
+const pairsWhere = (page: readonly Pair[]) => or(...page.map((p) => and(eq(stockMovements.itemId, p.itemId), eq(stockMovements.locationId, p.locationId))));
 
 /** Each position's value: in, plus revaluations (signed), less out. */
 async function positionValues(ctx: Ctx, page: readonly Pair[]): Promise<Map<string, string>> {
