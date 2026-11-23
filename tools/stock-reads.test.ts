@@ -39,7 +39,8 @@ describe.skipIf(!url)('the stock reads', () => {
     const server = await listen(app, 0, '127.0.0.1');
     try {
       const res = await fetch(`http://127.0.0.1:${server.port}${path}?input=${encodeURIComponent(JSON.stringify(input))}`,
-        { headers: { origin: config.publicOrigin } });
+        // As the screens' browser sends it: only a same-origin request sees a cost unmasked (ADR-005 §7c).
+        { headers: { origin: config.publicOrigin, 'sec-fetch-site': 'same-origin' } });
       return { status: res.status, body: await res.json() as T };
     } finally {
       await server.stop();
