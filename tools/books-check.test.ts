@@ -7,7 +7,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { quantityString, unitPriceString } from '@radcore/lib-common';
 import type { Ctx, Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { addCategory, addItem, addPlace, checkBooks } from '@radcore/lib-stock';
+import { checkBooks } from '@radcore/lib-service';
+import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
@@ -76,6 +77,36 @@ describe.skipIf(!url || !superUrl)('the books check', { timeout: 30_000 }, () =>
       await c.query('begin');
       await c.query('set local session_replication_role = replica');
       await c.query('delete from radcore.stock_movements where id = $1', [bad]);
+      await c.query('commit');
+      c.release();
+    }
+    expect(await check()).toEqual({ problems: [] });
+  });
+
+  // RAD-95's GRNI piece (ADR-006 §7, the architect's ruling): a Goods Received Not Billed line no receipt, bill or return
+  // accounts for is found, in total, and as at a date before it the dated comparison leaves it out.
+  it('finds Goods Received Not Billed the receipt lines don’t account for, and as at an earlier date doesn’t', async () => {
+    const c = await su.connect();
+    const later = '2032-12-02';
+    const entry = randomUUID();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      await c.query('set local session_replication_role = replica');
+      await c.query(`insert into radcore.journal_entries (id, number, kind, business_date, source_table, source_id)
+        values ($1, $2, 'opening', $3, 'files', $4)`, [entry, `T-${tag()}`, later, randomUUID()]);
+      await c.query(`insert into radcore.journal_lines (entry_id, line_no, entry_kind, business_date, account_id, account_control_kind, debit, credit)
+        select $1, n, 'opening', $2, a.id, a.control_kind, case when n = 1 then 1 else 0 end, case when n = 2 then 1 else 0 end
+        from radcore.accounts a join (values ('grni', 1), ('opening_equity', 2)) k(key, n) on k.key = a.system_key`, [entry, later]);
+      await c.query('commit');
+      const grni = (r: { problems: { check: string }[] }) => r.problems.filter((p) => p.check.startsWith('grni')).map((p) => p.check);
+      expect(grni(await check())).toEqual(['grni']);
+      expect(grni(await check(DAY))).toEqual([]);
+    } finally {
+      await c.query('begin');
+      await c.query('set local session_replication_role = replica');
+      await c.query('delete from radcore.journal_lines where entry_id = $1', [entry]);
+      await c.query('delete from radcore.journal_entries where id = $1', [entry]);
       await c.query('commit');
       c.release();
     }

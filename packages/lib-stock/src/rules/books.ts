@@ -23,7 +23,7 @@ export type BooksFigures = {
    * line's accrual and what's left of it once bills and unbilled returns have cleared theirs. */
   readonly grni: { readonly books: string; readonly lines: readonly GrniLine[] };
 };
-export type GrniLine = { readonly itemId: string; readonly receipt: string; readonly accrued: string; readonly open: string };
+type GrniLine = { readonly receiptLineId: string; readonly accrued: string; readonly open: string };
 export type BooksProblem = { check: BooksCheck; itemId: string | null; locationId: string | null; message: string };
 
 const keyOf = (p: Place) => `${p.itemId}|${p.locationId}`;
@@ -64,8 +64,8 @@ export function booksProblems(f: BooksFigures): BooksProblem[] {
   for (const l of f.grni.lines) {
     open = open.plus(dec(l.open));
     if (dec(l.open).lt(0) || dec(l.open).gt(dec(l.accrued))) {
-      problems.push({ check: 'grni_line', itemId: l.itemId, locationId: null, message: `A line of ${l.receipt} accrued ${roundMoney(l.accrued)} to `
-        + `Goods Received Not Billed, but bills and returns have cleared it to ${roundMoney(l.open)}` });
+      problems.push({ check: 'grni_line', itemId: null, locationId: null, message: `Receipt line ${l.receiptLineId} accrued `
+        + `${roundMoney(l.accrued)} to Goods Received Not Billed, but bills and returns have cleared it to ${roundMoney(l.open)}` });
     }
   }
   if (!open.eq(dec(f.grni.books))) {

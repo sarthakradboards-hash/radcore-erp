@@ -11,7 +11,7 @@ import { putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addBill, addOrder, addReceipt, addReturn, BILL_SERIES, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
+  addBill, addOrder, addReceipt, addReturn, BILL_SERIES, grniByReceiptLine, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
   postReceipt, postReturn,
 } from '@radcore/lib-purchasing';
 import { addCategory, addItem, addPlace, requalifyTransfer } from '@radcore/lib-stock';
@@ -213,6 +213,9 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     const { id } = await draft(at, { lines: [goods(at, '3', '62000')], total: '195300' });
     await post(at, id);
     expect(await grni(at, [back])).toBe('0.00');
+    // The books check's figures for that receipt line (RAD-95): 248,000.00 accrued, all of it cleared by the return and bill.
+    expect((await run((ctx) => grniByReceiptLine(ctx), at.staff)).filter((l) => l.receiptLineId === at.receiptLineId))
+      .toEqual([{ receiptLineId: at.receiptLineId, accrued: '248000.00', open: '0.00' }]);
   });
 
   it('waits for bills:approve on a line 2.01% over its PO rate, posts one 2.00% over, and someone else’s approval posts it', async () => {

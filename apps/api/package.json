@@ -21,6 +21,7 @@
     "@radcore/lib-platform": "*",
     "@radcore/lib-purchasing": "*",
     "@radcore/lib-sales": "*",
+    "@radcore/lib-service": "*",
     "@radcore/lib-stock": "*",
     "express": "5.3.0"
   },

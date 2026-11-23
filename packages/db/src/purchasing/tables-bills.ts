@@ -83,6 +83,8 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   // Of a goods line's quantity, how much its price difference went to stock for at posting (ADR-006 §4's q): a cancel
   // takes that share back by the same split, as the goods stand then (the architect on RAD-138).
   revaluedQty: qty(),
+  // What posting cleared of its receipt line's Goods Received Not Billed, for the books check (ADR-006 §7, RAD-95).
+  grniValue: money(),
   gstRate: percent(), gstRateSource: boundedText({ max: 200 }), taxable: money(), cgst: money(), sgst: money(), igst: money(), lineTotal: money(),
 }, (t) => [
   check('ck_purchase_bill_lines_kind', sql`${t.kind} in ('goods', 'charge')`),
@@ -91,6 +93,7 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
     and ${t.rate} is not null) and (${t.kind} = 'charge') = (${t.charge} is not null and ${t.description} is not null and ${t.hsn} is not null
     and ${t.amount} is not null)`),
   check('ck_purchase_bill_lines_receipt', sql`${t.receiptLineId} is null or ${t.kind} = 'goods'`),
+  check('ck_purchase_bill_lines_grni', sql`${t.grniValue} is null or ${t.receiptLineId} is not null`),
   check('ck_purchase_bill_lines_charge', sql`${t.charge} is null or ${t.charge} in ('freight', 'packing', 'insurance', 'other')`),
   check('ck_purchase_bill_lines_hsn', sql`${t.hsn} is null or ${t.hsn} ~ '^[0-9]{4}([0-9]{2}){0,2}$'`),
   check('ck_purchase_bill_lines_frozen', sql`num_nulls(${t.gstRate}, ${t.gstRateSource}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst},
