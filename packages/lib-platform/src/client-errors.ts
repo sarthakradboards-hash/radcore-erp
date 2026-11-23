@@ -20,7 +20,7 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accou
   '/admin/permissions',
   '/admin/po-limits',
   '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
-  '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/crm/board', '/crm/leads', '/crm/leads/[id]', '/crm/leads/new', '/crm/lists', '/crm/set-aside', '/crm/sources', '/invite', '/kit', '/l/invoice', '/password-reset',
+  '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/crm/ad-spend', '/crm/board', '/crm/campaigns', '/crm/leads', '/crm/leads/[id]', '/crm/leads/new', '/crm/lists', '/crm/set-aside', '/crm/sources', '/invite', '/kit', '/l/invoice', '/password-reset',
   '/password-reset/new', '/purchases/approvals', '/purchases/orders', '/purchases/orders/[id]', '/purchases/orders/[id]/edit', '/purchases/orders/new', '/sales/approvals', '/sales/bookings', '/sales/bookings/[id]', '/sales/bookings/new', '/sales/credit-notes',
   '/sales/credit-notes/[id]', '/sales/credit-notes/new', '/sales/deliveries', '/sales/deliveries/[id]',
   '/sales/deliveries/[id]/edit', '/sales/deliveries/new', '/sales/delivery-returns',
