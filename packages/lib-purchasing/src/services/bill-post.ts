@@ -287,15 +287,16 @@ export async function postBillNow(ctx: Ctx, { id }: In<typeof postPurchaseBill>)
  * mirror's stock lines to where the value really comes back from, so each position's movements and lines still agree
  * (RA007).
  */
-async function undoDifference(ctx: Ctx, b: Row, lines: readonly Line[], businessDate: string): Promise<void> {
+async function undoDifference<T>(ctx: Ctx, b: Row, lines: readonly Line[], businessDate: string, mirror: () => Promise<T>): Promise<T> {
   const original = await revaluesOf(ctx, SOURCE, b.id);
-  if (original.length === 0) return;
+  if (original.length === 0) return mirror();
   const items = [...new Set(original.map((r) => r.itemId))];
   const seen = await sellableOnHand(ctx, items);
   const sellableAt = (itemId: string) => new Set((seen.get(itemId) ?? []).map((p) => p.locationId));
   // The rejects places it revalued count while they still hold the item.
   const others = original.filter((r) => !sellableAt(r.itemId).has(r.locationId)).map((r) => ({ itemId: r.itemId, locationId: r.locationId }));
   await holdStock(ctx, [...items.flatMap((itemId) => (seen.get(itemId) ?? []).map((p) => ({ itemId, locationId: p.locationId }))), ...others]);
+  const mirrored = await mirror();
   const [on, there] = [await sellableOnHand(ctx, items), await quantitiesAt(ctx, others)];
   const revalues: StockRevalue[] = [];
   let cogs = zero();
@@ -329,6 +330,7 @@ async function undoDifference(ctx: Ctx, b: Row, lines: readonly Line[], business
   if (entryLines.length > 0) {
     await postEntry(ctx, { kind: 'revaluation', businessDate, source: { table: SOURCE, id: b.id }, lines: entryLines });
   }
+  return mirrored;
 }
 
 /** POST /purchasing/bills/:id/cancel (bills:write): its entry and price difference mirrored, dated the cancellation's
@@ -341,8 +343,10 @@ export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<t
   if (businessDate > indiaDate(new Date())) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < b.businessDate) throw refuse('date_before_source', `The bill is dated ${b.businessDate}`, ['businessDate']);
   // shortcut: supplier returns (M4-05) debit a bill; they refuse bill_returned here when they land.
-  const [own] = await reverseEntriesOf(ctx, { source: { table: SOURCE, id }, businessDate, reason });
-  await undoDifference(ctx, b, await linesOf(ctx, id), businessDate);
+  // The stock positions before any series' turn (ADR-006 §1, the auditor on #380): undoDifference holds them, then runs
+  // the mirror (which draws the journal's number), then posts its own entry, which the mirror mustn't reverse.
+  const own = await undoDifference(ctx, b, await linesOf(ctx, id), businessDate,
+    async () => (await reverseEntriesOf(ctx, { source: { table: SOURCE, id }, businessDate, reason }))[0]);
   await purchasingTx(ctx).update(purchaseBills).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
     cancelReason: reason, cancelEntryId: own?.id ?? null }).where(eq(purchaseBills.id, id));
   return {};

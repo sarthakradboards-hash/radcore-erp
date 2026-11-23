@@ -5,18 +5,19 @@
 // sellable places holding the item, and to cost of goods sold for what's gone; a line past the tolerance waits for
 // someone else's approval under bills:approve, which posts it.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
+import { addParty, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
 import { gstinCheckChar, moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addBill, addOrder, addReceipt, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
+  addBill, addOrder, addReceipt, BILL_SERIES, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
   postReceipt,
 } from '@radcore/lib-purchasing';
 import { addCategory, addItem, addPlace, requalifyTransfer } from '@radcore/lib-stock';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { turnsHeldBy } from './books-turn.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -318,6 +319,30 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     const after = await position(at.itemId, at.places.stores);
     expect([before?.qty, after?.qty, (Number(before?.value) - Number(after?.value)).toFixed(2)]).toEqual(['1', '1', '500.00']);
     expect(await undoneBy(at, id)).toEqual(['Cost of Goods Sold 0.00 500.00', 'Stock in Hand 500.00 0.00']);
+  });
+
+  // ADR-006 §1 (the auditor on #380): a cancel holds the stock positions before any series' turn, so while another save
+  // holds the item's Stores position, the cancel waits on it holding no journal turn.
+  it('waits for the item’s stock before it takes the journal’s turn when cancelling', async () => {
+    const at = await setup();
+    const { id } = await draft(at, { lines: [goods(at, '2', '62500')], total: '131250' });
+    await post(at, id);
+    const holder = await su.connect();
+    try {
+      await holder.query('begin');
+      await holder.query('select 1 from radcore.stock_positions where item_id = $1 and location_id = $2 for update', [at.itemId, at.places.stores]);
+      const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]?.pid;
+      const cancelling = code(run((ctx) => cancelBillNow(ctx, { id, businessDate: DATE, reason: 'Wrong supplier' }), at.staff));
+      await vi.waitFor(async () => expect((await su.query<{ n: number }>(
+        'select count(*)::int n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.n).toBe(1), { timeout: 10_000 });
+      const waiter = (await su.query<{ pid: number }>('select pid from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.pid;
+      const held = await turnsHeldBy(su, waiter, [JOURNAL_SERIES.key, BILL_SERIES.key]);
+      await holder.query('commit');
+      expect([held, await cancelling]).toEqual([0, 'ok']);
+    } finally {
+      await holder.query('rollback').catch(() => undefined);
+      holder.release();
+    }
   });
 
   it('keeps a billed receipt (receipt_in_use), and cancels a bill back, its price difference and entry mirrored, its number reusable', async () => {
