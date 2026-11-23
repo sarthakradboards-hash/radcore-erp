@@ -2,7 +2,7 @@
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid,
   type AnyPgColumn } from 'drizzle-orm/pg-core';
-import { boundedText, id, money, radcoreTable, trigramIndex } from '../columns.ts';
+import { boundedText, createdMoment, id, money, radcoreTable, trigramIndex } from '../columns.ts';
 import { publicLinks } from '../platform/tables.ts';
 
 /**
@@ -227,7 +227,7 @@ export const parties = radcoreTable('parties', {
  * (RV or PV) and the entry, and only cancelling changes a posted one, by a mirror entry dated the cancellation's day.
  */
 export const payments = radcoreTable('payments', {
-  id: id(),
+  id: id(), createdAt: createdMoment(),
   kind: text().notNull(),
   status: text().notNull().default('draft'),
   number: text().unique(),

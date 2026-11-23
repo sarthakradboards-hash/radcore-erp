@@ -102,7 +102,7 @@ describe.skipIf(!url || !superUrl)('purchase orders', () => {
     expect(placed.number).toMatch(/^PO\/\d{2}-\d{2}\/\d{5}$/);
     const o = await run((ctx) => getOrderById(ctx, { id }), maker);
     expect([o.status, o.total, o.amounts.taxable, o.approvedTotal, o.awaitingApproval]).toEqual(['placed', '105000.00', '100000.00', null, false]);
-    expect(o.lines.map((l) => [l.qty, l.received, l.amounts.lineTotal, l.name])).toEqual([['2.000', '0', '105000.00', 'Battery pack']]);
+    expect(o.lines.map((l) => [l.qty, l.received, l.amounts.lineTotal, l.name])).toEqual([['2.000', '0.000', '105000.00', 'Battery pack']]);
     expect(await code(run((ctx) => placeOrder(ctx, { id }), maker))).toBe('wrong_status');
   });
 

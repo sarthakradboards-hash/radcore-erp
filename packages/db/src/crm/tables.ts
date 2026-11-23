@@ -1,7 +1,7 @@
 // lib-crm's tables (ADR-001 §3, §5). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
 import { isNull, sql } from 'drizzle-orm';
 import { boolean, check, date, index, primaryKey, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, money, radcoreTable } from '../columns.ts';
+import { boundedText, createdMoment, id, money, radcoreTable } from '../columns.ts';
 import { webhookDeliveries } from '../platform/tables.ts';
 
 // The CRM's own lists, which leads:setup keeps up (M3-05, RAD-109; the architect: a list people keep up isn't a
@@ -77,7 +77,8 @@ export const leadSources = radcoreTable('lead_sources', {
  * tagging an enquiry. An ended one's token still records the enquiry, with no campaign (the architect).
  */
 export const campaigns = radcoreTable('campaigns', {
-  id: id(),
+  // Text, as the list's keyset cursor needs it (#316, #325; e2e-2 on #355).
+  id: id(), createdAt: createdMoment(),
   name: boundedText({ max: 80 }).notNull(),
   nameKey: text().notNull().generatedAlwaysAs(sql`lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))`),
   sourceId: uuid().notNull().references(() => leadSources.id, { onDelete: 'restrict' }),
@@ -94,7 +95,8 @@ export const campaigns = radcoreTable('campaigns', {
  * nothing to the books. The Meta or Google bill is booked through purchases, so nothing is counted twice.
  */
 export const adSpend = radcoreTable('ad_spend', {
-  id: id(),
+  // Text, as the list's keyset cursor needs it (#316, #325): a Date's milliseconds would repeat or skip rows.
+  id: id(), createdAt: createdMoment(),
   campaignId: uuid().references(() => campaigns.id, { onDelete: 'restrict' }),
   sourceId: uuid().references(() => leadSources.id, { onDelete: 'restrict' }),
   fromDate: date({ mode: 'string' }).notNull(),
@@ -199,7 +201,8 @@ export const leadSetAsides = radcoreTable('lead_set_asides', {
   name: boundedText({ max: 120 }),
   email: boundedText({ max: 254 }),
   message: boundedText({ max: 2000 }),
-  receivedAt: timestamp({ withTimezone: true }).notNull(),
+  // Text, as the list's keyset cursor needs it (#316, #325).
+  receivedAt: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
 }, (t) => [
   index('ix_lead_set_asides_received').on(t.receivedAt, t.id),
   index('ix_lead_set_asides_source').on(t.sourceId),

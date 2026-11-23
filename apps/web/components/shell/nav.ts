@@ -35,6 +35,8 @@ export const ADMIN_PAGES = [
 export const ACCOUNTS_PAGES = [
   { href: '/accounts/journal', label: 'books.nav.journal', perm: 'journal:read' },
   { href: '/accounts/chart', label: 'books.nav.chart', perm: 'journal:read' },
+  { href: '/accounts/collect', label: 'books.nav.collect', perm: 'receivables:read' },
+  { href: '/accounts/payments/new', label: 'books.nav.pay', perm: 'payments:write' },
 ] as const satisfies readonly NavPage[];
 
 /** The sales area's pages (RAD-125): quotes first, as an order usually starts from one. */
@@ -56,6 +58,7 @@ export const SALES_PAGES = [
 /** The CRM area's pages (RAD-122): leads first, as the sales team works them most. */
 export const CRM_PAGES = [
   { href: '/crm/leads', label: 'crm.nav.leads', perm: 'leads:read' },
+  { href: '/crm/board', label: 'crm.nav.board', perm: 'leads:read' },
   { href: '/crm/lists', label: 'crm.nav.lists', perm: 'leads:setup' },
   { href: '/crm/sources', label: 'crm.nav.sources', perm: 'leads:setup' },
   { href: '/crm/set-aside', label: 'crm.nav.setAside', perm: 'leads:setup' },
@@ -67,12 +70,21 @@ export const PURCHASES_PAGES = [
   { href: '/purchases/approvals', label: 'purchases.nav.approvals', perm: 'purchasing:approve' },
 ] as const satisfies readonly NavPage[];
 
+/** The stock area's pages (RAD-144): counts first, as stores work them most; the queue for those who approve. */
+export const STOCK_PAGES = [
+  { href: '/stock/counts', label: 'stock.nav.counts', perm: 'stock:read' },
+  { href: '/stock/adjustments', label: 'stock.nav.adjustments', perm: 'stock:read' },
+  { href: '/stock/transfers', label: 'stock.nav.transfers', perm: 'stock:read' },
+  { href: '/stock/approvals', label: 'stock.nav.approvals', perm: 'stock:approve' },
+] as const satisfies readonly NavPage[];
+
 export const NAV: readonly NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
   // The owner holds audit:read alone (RAD-35), so Admin opens on the audit trail for them.
   { label: 'nav.sales', pages: SALES_PAGES, section: '/sales' },
   { label: 'nav.crm', pages: CRM_PAGES, section: '/crm' },
   { label: 'nav.purchases', pages: PURCHASES_PAGES, section: '/purchases' },
+  { label: 'nav.stock', pages: STOCK_PAGES, section: '/stock' },
   { label: 'nav.accounts', pages: ACCOUNTS_PAGES, section: '/accounts' },
   { label: 'nav.admin', pages: ADMIN_PAGES, section: '/admin' },
 ];
