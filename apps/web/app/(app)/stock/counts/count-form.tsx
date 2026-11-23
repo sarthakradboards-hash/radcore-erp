@@ -5,6 +5,7 @@
 // found. It's checked with the contract's own schema, so it refuses what the server would.
 import { indiaDate } from '@radcore/lib-common';
 import { createStockCount, getItem, getOnHand, listItems } from '@radcore/lib-stock/contract';
+import { useEffect, useRef } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
@@ -61,10 +62,17 @@ function ItemBox({ index }: { index: number }) {
 /** The batch a line counts: one with stock at the place in the books, or none named. A convenience: the server checks it's
  * the item's (unknown_batch). */
 function BatchBox({ index }: { index: number }) {
-  const { control } = useFormContext<CountInput>();
+  const { control, setValue } = useFormContext<CountInput>();
   const locationId = useWatch({ control, name: 'locationId' });
   const itemId = useWatch({ control, name: `lines.${index}.itemId` });
   const current = useWatch({ control, name: `lines.${index}.batchId` });
+  // A new item leaves no batch of the old one (auditor-3 on #352): not on the first render, so an edit keeps its batch.
+  const seenItem = useRef(itemId);
+  useEffect(() => {
+    if (seenItem.current === itemId) return;
+    seenItem.current = itemId;
+    setValue(`lines.${index}.batchId`, '');
+  }, [itemId, index, setValue]);
   const onHand = useApiQuery(getOnHand, { itemId, locationId, limit: 1 }, { enabled: itemId !== '' && locationId !== '' }).data;
   const named = (onHand?.batches ?? []).filter((b) => b.batchId !== null).map((b) => ({ value: b.batchId as string, label: b.batchNo ?? '' }));
   if (current !== '' && !named.some((o) => o.value === current)) named.push({ value: current, label: t('stock.line.batch') });

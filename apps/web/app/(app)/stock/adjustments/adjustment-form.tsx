@@ -6,6 +6,7 @@
 // judges stock, batches, serials and chassis numbers again as it posts.
 import { indiaDate, UNIT_CONDITIONS } from '@radcore/lib-common';
 import { createStockAdjustment, getItem, listItems } from '@radcore/lib-stock/contract';
+import { useEffect, useRef } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { RadioField, SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
@@ -32,7 +33,9 @@ const line = z.object({
     return z.NEVER;
   }
   const serials = l.direction === 'in' ? unitsFromText(l.unitsText) : l.serials.map((serialNo) => ({ serialNo, chassisNo: null }));
-  return { itemId: l.itemId, direction: l.direction, qty: l.qty.trim(), batches, serials, condition: l.condition === '' ? null : l.condition };
+  // A condition is a found unit's: an out line sends none, whatever its box last held (auditor-3 on #352).
+  return { itemId: l.itemId, direction: l.direction, qty: l.qty.trim(), batches, serials,
+    condition: l.direction === 'in' && l.condition !== '' ? l.condition : null };
 }).pipe(contractLine);
 
 const adjustmentSchema = z.object({
@@ -50,9 +53,20 @@ export const newAdjustment = (): AdjustmentInput => ({ locationId: '', businessD
 const useItems = (query: string) => useApiSearch(listItems, query, { params: { filter: { active: true } } });
 
 function LineFields({ index, onSplit }: { index: number; onSplit: () => void }) {
-  const { control } = useFormContext<AdjustmentInput>();
+  const { control, setValue } = useFormContext<AdjustmentInput>();
   const itemId = useWatch({ control, name: `lines.${index}.itemId` });
   const direction = useWatch({ control, name: `lines.${index}.direction` });
+  // A new item or direction leaves none of the old one's picks, serials, units or condition (auditor-3 on #352, as #320's
+  // ItemBox): not on the first render, so an edit keeps what was saved, and kept when an earlier line is removed.
+  const seen = useRef({ itemId, direction });
+  useEffect(() => {
+    if (seen.current.itemId === itemId && seen.current.direction === direction) return;
+    seen.current = { itemId, direction };
+    setValue(`lines.${index}.pick`, {});
+    setValue(`lines.${index}.serials`, []);
+    setValue(`lines.${index}.unitsText`, '');
+    setValue(`lines.${index}.condition`, '');
+  }, [itemId, direction, index, setValue]);
   const locationId = useWatch({ control, name: 'locationId' });
   const item = useApiQuery(getItem, { id: itemId }, { enabled: itemId !== '' }).data ?? null;
   return (
