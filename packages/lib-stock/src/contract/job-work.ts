@@ -82,8 +82,11 @@ export const cancelJobWorkChallan = defineContract({
   errors: ['wrong_status', 'challan_answered', 'goods_moved_on', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked',
     'account_inactive', 'not_enough_stock'],
 });
-/** The challan as Rule 55 asks: the job worker's name, address, state and GSTIN in full (a statutory print). */
-export const printJobWorkChallan = printContract('/stock/job-work/challans/:id/pdf', 'stock:read', 'job_work_challans', ['wrong_status']);
+/**
+ * The challan as Rule 55 asks: the job worker's name, address, state and GSTIN, and the goods' value, in full (a
+ * statutory print). Under job_work:write, since the values print whoever prints it (the architect on RAD-142).
+ */
+export const printJobWorkChallan = printContract('/stock/job-work/challans/:id/pdf', 'job_work:write', 'job_work_challans', ['wrong_status']);
 
 // ---- Receipts ----
 

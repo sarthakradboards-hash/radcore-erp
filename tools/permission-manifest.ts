@@ -256,6 +256,7 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   // Transfers, counts and adjustments (M4-06, RAD-141; ADR-008 §13).
   'GET /stock/job-work/challans': 'stock:read',
   'GET /stock/job-work/challans/:id': 'stock:read',
+  'GET /stock/job-work/challans/:id/pdf': 'job_work:write',
   'POST /stock/job-work/challans': 'job_work:write',
   'POST /stock/job-work/challans/:id/cancel': 'job_work:write',
   'GET /stock/job-work/receipts': 'stock:read',
@@ -632,6 +633,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /stock/on-hand': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/job-work/challans': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/job-work/challans/:id': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /stock/job-work/challans/:id/pdf': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/job-work/challans': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'POST /stock/job-work/challans/:id/cancel': ['lib-accounts', 'lib-platform', 'lib-stock'],
   'GET /stock/job-work/receipts': ['lib-accounts', 'lib-platform', 'lib-stock'],
