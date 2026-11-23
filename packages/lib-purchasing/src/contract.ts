@@ -4,3 +4,5 @@
 export * from './contract/orders.ts';
 // Goods receipts and QC (M4-02, RAD-137).
 export * from './contract/receipts.ts';
+// Purchase bills (M4-03, RAD-138).
+export * from './contract/bills.ts';

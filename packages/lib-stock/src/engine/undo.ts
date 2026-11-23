@@ -14,7 +14,8 @@ const UNDO: Readonly<Record<string, { kind: 'delivered' | 'delivery_returned' | 
   delivered: { kind: 'delivery_returned', at: 'customer' }, delivery_returned: { kind: 'delivered', at: 'in' },
   returned: { kind: 'delivered', at: 'in' }, moved: { kind: 'moved', at: 'in' },
   // A unit received, then the receipt (or the adjustment that found it) cancelled, leaves as it came: gone, so the
-  // same serial can be received again (ADR-008 §6).
+  // same serial can be received again (ADR-008 §6). returned_to_supplier, not scrapped: both make it gone, and a
+  // receipt's unit does go back to whoever sent it; neither is a write-off of goods we held.
   received: { kind: 'returned_to_supplier', at: 'in' },
   scrapped: { kind: 'received', at: 'gone' }, returned_to_supplier: { kind: 'received', at: 'gone' },
 };
