@@ -9,7 +9,7 @@ import {
 } from '@radcore/lib-crm';
 import { listLeads } from '@radcore/lib-crm/contract';
 import { addDays, moneyString, piiPlan, requestFor } from '@radcore/lib-common';
-import { loadConfig, myNotificationsPage, type Ctx, type Principal } from '@radcore/lib-platform';
+import { holdsKey, loadConfig, myNotificationsPage, peopleHolding, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
@@ -340,5 +340,20 @@ describe.skipIf(!url || !superUrl)('pipeline', { timeout: 30_000 }, () => {
     expect(await owner('select owner from radcore.leads where id = $1', [id])).toEqual([{ owner: null }]);
     await as(taker(raviId), (ctx) => updateLeadDetails(ctx, { id, notes: 'Calling today' }));
     expect(await owner('select owner, notes from radcore.leads where id = $1', [id])).toEqual([{ owner: `user:${raviId}`, notes: 'Calling today' }]);
+  });
+
+  // lib-platform's peopleHolding is holdsKey's rule for many people (backend's condition on RAD-109): the picker lists
+  // exactly whom the hand-on would accept. A salesperson's role sees leads at `own`; an accounts clerk's doesn't at all.
+  it('lists as lead holders exactly the people holdsKey passes for leads:read', async () => {
+    const active = async (role: string) => (await owner<{ id: string }>(`insert into radcore.users (email, display_name, role, status, password_hash)
+      values ($1, $2, $3, 'active', 'test') returning id`, [`${letters()}@example.test`, `Person ${letters()}`, role]))[0]?.id ?? '';
+    const bare = `t_${letters()}`;
+    await owner("insert into radcore.roles (key, name, description) values ($1, $2, 'No keys at all')", [bare, `Bare ${letters()}`]);
+    const people = { ownScope: await active('sales'), invited: await person(), withoutKey: await active('accounts'), noGrants: await active(bare) };
+    const out = await as(manager(randomUUID()), async (ctx) => {
+      const listed = new Set((await peopleHolding(ctx, 'leads:read')).map((p) => p.id));
+      return Promise.all(Object.entries(people).map(async ([who, id]) => [who, listed.has(id), await holdsKey(ctx, id, 'leads:read') === true]));
+    });
+    expect(out).toEqual([['ownScope', true, true], ['invited', false, false], ['withoutKey', false, false], ['noGrants', false, false]]);
   });
 });

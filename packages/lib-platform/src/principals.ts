@@ -43,8 +43,10 @@ export async function isActiveUser(ctx: Ctx, userId: string): Promise<boolean> {
 }
 
 /**
- * The active people whose role holds `key`, by name: for a library that offers a choice of person (who may hold a
- * lead, RAD-109), since it can't read the users table itself. Only ids and display names, as principalsOf answers.
+ * The people holdsKey passes for `key`, by name: an active user whose role grants it, at any scope, own or all. For a
+ * library that offers a choice of person (who may hold a lead, RAD-109) to match the check its save makes, since it
+ * can't read the users table itself. Only ids and display names, as principalsOf answers: no email, no role. By display
+ * name (never null), then id, so the order is stable.
  * shortcut: not paged, as a dealership's staff is tens of people; page it if a role ever lists hundreds.
  */
 export async function peopleHolding(ctx: Ctx, key: string): Promise<{ id: string; displayName: string }[]> {
