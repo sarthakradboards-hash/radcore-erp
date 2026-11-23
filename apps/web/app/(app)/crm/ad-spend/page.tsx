@@ -17,6 +17,7 @@ import { DataTable, type Column } from '../../../../components/ui/table/data-tab
 import { useApiList, useApiMutation, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { CRM_MESSAGES } from '../shared.ts';
+import { recordSchema } from './record-schema.ts';
 
 type Cost = z.output<typeof costPerLead.output>['campaigns'][number];
 type Spend = z.output<typeof listAdSpend.output>['items'][number];
@@ -55,23 +56,6 @@ function CostTable({ caption, rows }: { caption: string; rows: readonly Cost[] }
   );
 }
 
-const spendShape = recordAdSpend.input.shape;
-const recordSchema = z.object({
-  on: z.enum(['campaign', 'source']), campaignId: z.string(), sourceId: z.string(),
-  fromDate: spendShape.fromDate, toDate: spendShape.toDate, note: z.string().trim(),
-  // Checked here, before the contract pipe: its refine reads the amount as a decimal and throws on "" (e2e-2 on #355).
-  amount: z.string().trim().min(1, t('crm.adSpend.amountNeeded')).pipe(spendShape.amount),
-}).transform((v, ctx) => {
-  const target = v.on === 'campaign' ? v.campaignId : v.sourceId;
-  if (target === '') {
-    ctx.addIssue({ code: 'custom', path: [v.on === 'campaign' ? 'campaignId' : 'sourceId'], message: t(v.on === 'campaign' ? 'crm.adSpend.campaign.pick' : 'crm.adSpend.source.pick') });
-    return z.NEVER;
-  }
-  const rest = { fromDate: v.fromDate, toDate: v.toDate, amount: v.amount, note: v.note === '' ? null : v.note };
-  const out: z.input<typeof recordAdSpend.input> = v.on === 'campaign' ? { ...rest, campaignId: target } : { ...rest, sourceId: target };
-  return out;
-}).pipe(recordAdSpend.input);
-
 /** The campaign or source box, as the spend is on one or the other. */
 function Target({ campaigns, sources }: { campaigns: { value: string; label: string }[]; sources: { value: string; label: string }[] }) {
   const on = useWatch({ control: useFormContext().control, name: 'on' }) as unknown;
@@ -86,8 +70,10 @@ export default function AdSpendPage() {
   const [range, setRange] = useState({ fromDate: monthStart(), toDate: today() });
   const cost = useApiQuery(costPerLead, range);
   const entries = useApiList(listAdSpend, { filter: {} });
+  // shortcut: names for the first 200 campaigns only (spend on a later one reads "Unknown"), have listAdSpend send names past 200.
   const campaigns = useApiList(listCampaigns, { filter: {} }, { limit: 200 }).items;
-  const sources = useApiQuery(listLeadSources, {}, { enabled: permissions.includes('leads:setup') }).data?.sources ?? [];
+  const maySetUp = permissions.includes('leads:setup');
+  const sources = useApiQuery(listLeadSources, {}, { enabled: maySetUp }).data?.sources ?? [];
   const [recording, setRecording] = useState(false);
   const record = useApiMutation(recordAdSpend, { invalidates: [listAdSpend, costPerLead] });
   const nameOf = (s: Spend) => (s.campaignId !== null ? campaigns.find((c) => c.id === s.campaignId)?.name : sources.find((x) => x.id === s.sourceId)?.name)
@@ -125,9 +111,12 @@ export default function AdSpendPage() {
           <Form schema={recordSchema} saved={false} messages={CRM_MESSAGES}
             defaultValues={{ on: 'campaign', campaignId: '', sourceId: '', fromDate: monthStart(), toDate: today(), amount: '', note: '' }}
             onSubmit={async (v) => { await record.submit(v); setRecording(false); setTimeout(() => announce(t('crm.adSpend.recorded')), 0); }}>
-            <RadioField name="on" label={t('crm.adSpend.on')} options={[
-              { value: 'campaign', label: t('crm.adSpend.on.campaign') }, { value: 'source', label: t('crm.adSpend.on.source') },
-            ]} />
+            {/* Sources are listed only to leads:setup, so only they are offered spend on a source (auditor-3 on #355). */}
+            {maySetUp ? (
+              <RadioField name="on" label={t('crm.adSpend.on')} options={[
+                { value: 'campaign', label: t('crm.adSpend.on.campaign') }, { value: 'source', label: t('crm.adSpend.on.source') },
+              ]} />
+            ) : null}
             <Target campaigns={campaigns.map((c) => ({ value: c.id, label: c.name }))} sources={sources.map((s) => ({ value: s.id, label: s.name }))} />
             <TextField name="fromDate" label={t('crm.adSpend.from')} type="date" />
             <TextField name="toDate" label={t('crm.adSpend.to')} type="date" />
