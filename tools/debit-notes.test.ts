@@ -4,7 +4,7 @@
 // returns. The unbilled part goes back against Goods Received Not Billed first, the billed part against its bills latest
 // first at their rates; the debit note is applied to them, and undoing the return opens them again.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, journalEntryById, journalPage, openFinancialYear, paidOf } from '@radcore/lib-accounts';
+import { addParty, allocatePayment, journalEntryById, journalPage, openFinancialYear, paidOf, recordPayment } from '@radcore/lib-accounts';
 import { gstinCheckChar, moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -24,7 +24,7 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156).
 const DATE = '2026-11-15';
 const KEYS = ['purchasing:read', 'purchasing:write', 'inward:write', 'inward:qc', 'bills:write', 'supplier_returns:write', 'parties:write',
-  'parties:manage', 'items:write', 'locations:write', 'cost:read', 'gst:write', 'journal:read', 'stock:read', 'payments:read'];
+  'parties:manage', 'items:write', 'locations:write', 'cost:read', 'gst:write', 'journal:read', 'stock:read', 'payments:read', 'payments:write'];
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const letters = (n: number) => [...randomBytes(n)].map((b) => String.fromCharCode(65 + (b % 26))).join('');
@@ -79,11 +79,11 @@ describe.skipIf(!url || !superUrl)('debit notes', { timeout: 60_000 }, () => {
   };
 
   /** F2's start: a PO for `accepted + rejected` SCOOTERs at 62,000.00, received with the rejects in Rejected. */
-  async function setup(accepted: string, rejected: string) {
+  async function setup(accepted: string, rejected: string, o: { registered: boolean } = { registered: true }) {
     const staff = await person();
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
-      const supplierGstin = gstin();
+      const supplierGstin = o.registered ? gstin() : null;
       const { id: supplierId } = await addParty(ctx, { name: `Supplier ${tag()}`, kinds: ['supplier'], gstin: supplierGstin, pan: null, composition: false,
         stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
@@ -181,6 +181,39 @@ describe.skipIf(!url || !superUrl)('debit notes', { timeout: 60_000 }, () => {
     // B revalued the reject to what it billed, so it leaves at 63,000.00 and nothing goes to Cost of Goods Sold.
     expect(await entryOf(at, id)).toEqual(['Creditors 66150.00 0.00', 'Input CGST 0.00 1575.00', 'Input SGST 0.00 1575.00',
       'Stock in Hand 0.00 63000.00'].sort());
+  });
+
+  // auditor-2 on #396: the reversal follows what the bill claimed, as its entry posted it. A supplier that turns composition
+  // after the bill still has the bill's GST reversed; an unregistered supplier's bill claimed none, so none is reversed
+  // (its GST was part of the reject's cost, F3's rule, and leaves with it).
+  it('reverses input GST as the bill claimed it: after the supplier turns composition, and none for an unregistered one', async () => {
+    const at = await setup('2', '1');
+    await bill(at, '3', '62000');
+    await asSu(async (c) => { await c.query('update radcore.parties set composition = true where id = $1', [at.supplierId]); });
+    const { id } = await giveBack(at, '1');
+    const plain = await setup('2', '1', { registered: false });
+    await bill(plain, '3', '62000');
+    const { id: other } = await giveBack(plain, '1');
+    expect([await entryOf(at, id), await entryOf(plain, other)]).toEqual([
+      ['Creditors 65100.00 0.00', 'Input CGST 0.00 1550.00', 'Input SGST 0.00 1550.00', 'Stock in Hand 0.00 62000.00'].sort(),
+      ['Creditors 65100.00 0.00', 'Stock in Hand 0.00 65100.00'].sort()]);
+  });
+
+  // §8: applied only while the bill has anything open. Paid 150,000.00 of its 195,300.00, the bill takes 45,300.00 of the
+  // 65,100.00 note; the rest stays as credit with the supplier.
+  it('applies to a part-paid bill only what is open on it', async () => {
+    const at = await setup('2', '1');
+    const billId = await bill(at, '3', '62000');
+    const bank = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'bank'")).rows[0]?.id ?? '';
+    await run(async (ctx) => {
+      const { id: paymentId } = await recordPayment(ctx, { kind: 'payment', partyId: at.supplierId, businessDate: DATE, amount: moneyString().parse('150000'),
+        accountId: bank });
+      await allocatePayment(ctx, { id: paymentId, businessDate: DATE, lines: [{ documentTable: 'purchase_bills', documentId: billId,
+        amount: moneyString().parse('150000') }] });
+    }, at.staff);
+    const { id } = await giveBack(at, '1');
+    const r = await run((ctx) => getReturnById(ctx, { id }), at.staff);
+    expect([r.applications.map((a) => a.amount), await paid(at, billId)]).toEqual([['45300.00'], '195300.00']);
   });
 
   // RC-129 and §7: undoing the return reverses its debit note's application, so the bill is open again; until then the

@@ -4,7 +4,7 @@
 // that bill line's rate and GST rate. The billed parts are the debit note: numbered DBN, registered as a payable credit
 // (ADR-005 §7a) and applied to the bills it debits while they have anything open; what's left stays with the supplier.
 import { purchaseBillLines, purchaseBills, purchasingTx, supplierReturnDebits } from '@radcore/db/purchasing';
-import { applyCredit, creditApplicationsOf, getCompanyProfile, paidOf, reverseCreditApplication } from '@radcore/lib-accounts';
+import { applyCredit, claimedInputGst, creditApplicationsOf, getCompanyProfile, paidOf, reverseCreditApplication } from '@radcore/lib-accounts';
 import { dec, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
 import { lineTax, totalsOf, type LineTax } from '@radcore/lib-gst';
 import { AppError, defineSeries, type Ctx } from '@radcore/lib-platform';
@@ -33,7 +33,7 @@ async function billPartsOf(ctx: Ctx, receiptLineIds: readonly string[], o: { for
   if (receiptLineIds.length === 0) return [];
   const tx = purchasingTx(ctx);
   const rows = await tx.select({ billId: purchaseBills.id, billNumber: purchaseBills.number, billDate: purchaseBills.businessDate,
-    owner: purchaseBills.createdBy, gstin: purchaseBills.supplierGstin, placeOfSupply: purchaseBills.placeOfSupply, total: purchaseBills.total,
+    owner: purchaseBills.createdBy, entryId: purchaseBills.postedEntryId, placeOfSupply: purchaseBills.placeOfSupply, total: purchaseBills.total,
     billLineId: purchaseBillLines.id, receiptLineId: purchaseBillLines.receiptLineId, qty: purchaseBillLines.qty, rate: purchaseBillLines.rate,
     gstRate: purchaseBillLines.gstRate })
     .from(purchaseBillLines).innerJoin(purchaseBills, eq(purchaseBills.id, purchaseBillLines.billId))
@@ -44,10 +44,11 @@ async function billPartsOf(ctx: Ctx, receiptLineIds: readonly string[], o: { for
   if (o.forUpdate && ids.length > 0) {
     await tx.select({ id: purchaseBills.id }).from(purchaseBills).where(inArray(purchaseBills.id, ids)).orderBy(asc(purchaseBills.id)).for('update');
   }
+  // Input GST is reversed only where the bill claimed it (§7a): as its own entry posted it, not as the supplier is now.
+  const claimed = await claimedInputGst(ctx, rows.flatMap((r) => (r.entryId === null ? [] : [r.entryId])));
   return rows.map((r) => ({ billId: r.billId, billNumber: r.billNumber ?? '', billDate: r.billDate, billLineId: r.billLineId,
     receiptLineId: r.receiptLineId ?? '', qty: dec(r.qty ?? '0'), rate: r.rate ?? '0', gstRate: r.gstRate, placeOfSupply: r.placeOfSupply ?? '',
-    // Input GST was claimed only from a registered supplier whose GSTIN is on the bill (§7a): only that is reversed.
-    claimable: r.gstin !== null, total: r.total ?? '0' }));
+    claimable: r.entryId !== null && claimed.has(r.entryId), total: r.total ?? '0' }));
 }
 
 type Debit = { billId: string; billNumber: string; billDate: string; billLineId: string; qty: Decimal; rate: string; gstRate: string | null;
@@ -59,10 +60,9 @@ type ReturnLine = { id: string; receiptLineId: string; qty: string };
  * Each return line split (§8): the unbilled part first, at most what's left unbilled of its receipt line (what came in,
  * less what posted bills billed, less what posted returns sent back unbilled), then the rest against its bills latest
  * first, each bill line at most what it billed less what earlier returns debited. A part past both is `over_received`.
- * `composition`: a composition supplier's bill claimed no input GST (§7a), so its debit note reverses none.
  */
 export async function splitLines(ctx: Ctx, lines: readonly ReturnLine[], received: ReadonlyMap<string, string>,
-  o: { forUpdate: boolean; composition: boolean }): Promise<Split[]> {
+  o: { forUpdate: boolean }): Promise<Split[]> {
   const ids = lines.map((l) => l.receiptLineId);
   const parts = await billPartsOf(ctx, ids, o);
   const billed = await billedQty(ctx, ids);
@@ -90,7 +90,7 @@ export async function splitLines(ctx: Ctx, lines: readonly ReturnLine[], receive
       used.set(p.billLineId, (used.get(p.billLineId) ?? zero()).plus(take));
       rest = rest.minus(take);
       debits.push({ billId: p.billId, billNumber: p.billNumber, billDate: p.billDate, billLineId: p.billLineId, qty: take, rate: p.rate,
-        gstRate: p.gstRate, claimable: p.claimable && !o.composition, billTotal: p.total, placeOfSupply: p.placeOfSupply,
+        gstRate: p.gstRate, claimable: p.claimable, billTotal: p.total, placeOfSupply: p.placeOfSupply,
         tax: lineTax({ qty: take, rate: p.rate, discountPercent: '0', gstPercent: p.gstRate ?? '0' }, p.placeOfSupply === company?.stateCode) });
     }
     if (rest.gt(0)) {

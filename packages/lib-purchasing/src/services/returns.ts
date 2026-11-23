@@ -181,8 +181,7 @@ export async function postReturn(ctx: Ctx, { id }: In<typeof postSupplierReturn>
     if (r.businessDate < came) throw refuse('date_before_source', `Those goods came in on ${came}`, ['lines', n, 'receiptLineId']);
   }
   // Each line split, unbilled first, then against its bills latest first, which are locked here, after the return (§12).
-  const { composition } = await buyingFrom(ctx, r.partyId);
-  const splits = await splitLines(ctx, lines, receivedBy(receipt), { forUpdate: true, composition });
+  const splits = await splitLines(ctx, lines, receivedBy(receipt), { forUpdate: true });
   for (const [n, s] of splits.entries()) {
     for (const d of s.debits) {
       if (r.businessDate < d.billDate) throw refuse('date_before_source', `Bill ${d.billNumber} is dated ${d.billDate}`, ['lines', n, 'receiptLineId']);
@@ -310,10 +309,9 @@ export async function listReturnsPage(ctx: Ctx, input: In<typeof listSupplierRet
 type BilledOut = Out<typeof getSupplierReturn>['lines'][number]['billed'][number];
 
 /** A draft's split as posting would make it today, or why it can't be worked out yet (§8). */
-async function draftSplit(ctx: Ctx, r: Row, lines: readonly Line[], receipt: ReadonlyMap<string, ReceiptLine>) {
+async function draftSplit(ctx: Ctx, lines: readonly Line[], receipt: ReadonlyMap<string, ReceiptLine>) {
   try {
-    const { composition } = await buyingFrom(ctx, r.partyId);
-    return { splits: await splitLines(ctx, lines, receivedBy(receipt), { forUpdate: false, composition }), note: null };
+    return { splits: await splitLines(ctx, lines, receivedBy(receipt), { forUpdate: false }), note: null };
   } catch (e) {
     if (e instanceof AppError) return { splits: null, note: e.message };
     throw e;
@@ -331,7 +329,7 @@ export async function getReturnById(ctx: Ctx, { id }: In<typeof getSupplierRetur
   const receipt = new Map((await receiptLinesFor(ctx, lines.map((l) => l.receiptLineId), { forUpdate: false })).map((x) => [x.id, x]));
   const labels = await itemLabels(ctx, lines.map((l) => l.itemId));
   const numbers = await batchOwners(ctx, lines.flatMap((l) => (l.picks as Picks).batches.map((b) => b.batchId)));
-  const draft = r.status === 'draft' ? await draftSplit(ctx, r, lines, receipt) : null;
+  const draft = r.status === 'draft' ? await draftSplit(ctx, lines, receipt) : null;
   const stored = r.status === 'draft' ? [] : await storedDebits(ctx, id);
   const billedOf = (lineId: string): BilledOut[] => (draft === null
     ? stored.filter((d) => d.lineId === lineId).map((d) => ({ billId: d.billId, billNumber: d.billNumber, billLineId: d.billLineId, qty: d.qty,
