@@ -4,14 +4,15 @@
 // profile set there (company.test.ts needs the row unset), and the approver decides in that same transaction (actingAs).
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addParty, openFinancialYear, partyReceivable, postEntry, recordPayment, setCreditTerms, systemAccountId, systemPartyId, toCollectPage,
+  addParty, JOURNAL_SERIES, openFinancialYear, partyReceivable, postEntry, RECEIPT_SERIES, recordPayment, setCreditTerms, systemAccountId, systemPartyId,
+  toCollectPage,
 } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, sightOf, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, decideApproval, listPendingApprovals, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, holdSeries, listPendingApprovals, principalId, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  askOrderOverride, completeBillNow, confirmOrderNow, dropOrder, getInvoiceById, heldBillsPage, holdBillNow, orderOverride,
+  askOrderOverride, completeBillNow, confirmOrderNow, dropOrder, getInvoiceById, heldBillsPage, holdBillNow, ORDER_SERIES, orderOverride,
 } from '@radcore/lib-sales';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import { sql } from 'drizzle-orm';
@@ -55,7 +56,11 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     await su.end();
   });
   const run = <T>(fn: (ctx: Ctx) => Promise<T>, as: Principal = staff) => runInTransaction(db, WRITE, as, randomUUID(), fn);
-  const failure = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code : String(e)));
+  // A refusal's code; anything else (a 40P01) fails the test where it happened, not as 25P02 later (auditor-2 on #389).
+  const failure = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => {
+    if (e instanceof AppError) return e.code;
+    throw e;
+  });
   // The counter role's own grants; and an approver committed before any request they decide (approver_too_new).
   const counter = async (): Promise<Principal> => {
     const { rows } = await su.query<{ permission: string; scope: string }>("select permission, scope from radcore.role_grants where role = 'counter'");
@@ -119,6 +124,10 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     businessDate: DATE, locationId: at.placeId, notes: null, payments, lines: [{ itemId: at.itemId, qty: q(qty), rate: unitPriceString().parse(rate),
       discountPercent: percentString({ max: '100' }).parse('0'), batches: [{ batchId: at.batchId, qty: q(qty) }], serials: [] }] });
   const complete = (ctx: Ctx, orderId: string, approvalCodes: string[] = []) => completeBillNow(ctx, { orderId, businessDate: DATE, approvalCodes });
+  // A test that draws a journal or receipt number before completing a bill takes the order's turn first, in ADR-006 §1's
+  // order, as completing does: else it holds the journal's turn and wants the order's, against another file's save that
+  // holds the order's and draws the journal (40P01 on #389, RAD-76). Only then, so the turns aren't held all test long.
+  const orderTurnFirst = (ctx: Ctx) => holdSeries(ctx, [ORDER_SERIES, JOURNAL_SERIES, RECEIPT_SERIES]);
   const cash = (amount: string): Pay => ({ method: 'cash', amount: m(amount) });
 
   // 3 PADs: 1,221.00. 200.00 paid now leaves 1,021.00 owed, over a 500.00 limit: held, approved, then sold as held.
@@ -146,6 +155,7 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
       const outside = await failure(confirmOrderNow(ctx, { id: h.orderId }));
       const noCode = await failure(complete(ctx, h.orderId));
       // The party pays 700.00 more in between: it's under its limit now, so the approved issues aren't the ones it has.
+      await orderTurnFirst(ctx);
       await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('700'), accountId: await systemAccountId(ctx, 'cash') });
       return [outside, noCode, await failure(complete(ctx, h.orderId, ['A1B2C3']))];
     });
@@ -225,6 +235,7 @@ describe.skipIf(!url || !superUrl)('held quick bills', { timeout: 60_000 }, () =
     const out = await atCounter(at, async (ctx, approve) => {
       const h = await hold(ctx, at, '1', [cash('100')], at.partyId);
       await approve(h);
+      await orderTurnFirst(ctx);
       await postEntry(ctx, { kind: 'invoice', businessDate: DATE, source: { table: 'invoices', id: randomUUID() },
         lines: [{ account: { system: 'debtors' }, partyId: at.partyId, debit: m('5000') }, { account: { system: 'sales' }, credit: m('5000') }] });
       const grown = await failure(complete(ctx, h.orderId));
