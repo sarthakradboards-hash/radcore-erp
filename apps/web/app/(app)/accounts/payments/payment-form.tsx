@@ -17,7 +17,8 @@ import { PAYMENT_KINDS, paymentSchema, type PaymentInput, type PaymentValues } f
 
 const OWN = ['invalid_tds', 'exceeds_receipt', 'refund_through_owner', 'not_money_account', 'account_inactive', 'series_full', 'looks_like_card_number',
   'exceeds_payment', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted', 'document_missing', 'not_allocatable', 'not_posted',
-  'date_before_source', 'forbidden'] as const;
+  'date_before_source', 'forbidden', 'has_refunds', 'has_allocations', 'refund_needs_receipt', 'receipt_not_posted', 'refund_other_party', 'not_draft',
+  'already_reversed', 'amount_not_positive'] as const;
 export const PAYMENT_MESSAGES: Partial<Record<string, string>> = {
   ...JOURNAL_MESSAGES, ...Object.fromEntries(OWN.map((c) => [c, t(`books.pay.err.${c}`)])),
 };
