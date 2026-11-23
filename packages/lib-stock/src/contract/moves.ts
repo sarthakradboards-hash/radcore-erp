@@ -45,6 +45,8 @@ const transferHeader = z.object({
 const transfer = transferHeader.extend({
   // Where its approval stands: only a transfer into a franchisee's place, while the setting is on, ever has one.
   approval: z.enum(['none', 'pending', 'approved']),
+  // A re-inspection's: rejects back to selling, its units in the condition found (§9); null for any other transfer.
+  requalified: z.enum(['new', 'used']).nullable(),
   lines: z.array(z.object({ ...lineOut, qty: quantityString(), batches: batchesOut, serials: z.array(z.string()),
     value: cost(money().nullable()) })),
 });
@@ -89,6 +91,21 @@ export const requestStockTransferApproval = defineContract({
 /** The transfer approval routes (RAD-38): approving posts it, as creating one does when no approval is needed. */
 export const stockTransferApproval = approvalContracts('stock-transfer', 'stock:approve',
   ['wrong_status', 'transfer_same_location', 'needs_qc', 'use_job_work', 'location_inactive', ...POSTING_ERRORS]);
+/**
+ * A re-inspection (§9, the architect on RAD-137): rejects inspected again and moved from a rejects place to a sellable
+ * one, under inward:qc, the key that does QC at receipt, with a reason; posted at once, numbered from the transfers'
+ * series. Its serialised units take the condition found, `new` or `used` (condition_changed); batch goods keep their
+ * batches. The goods move at the value they carry, so they join the selling average only now (RC-205). Into one of our
+ * own places only (`requalify_to_own_place`): a franchisee's store is a plain transfer after, with its approval. The plain
+ * transfer keeps refusing rejects (`needs_qc`). It's undone by the plain cancel, its units back in their condition.
+ */
+export const requalifyStockTransfer = defineContract({
+  method: 'POST', path: '/stock/transfers/requalify', auth: 'session', perm: 'inward:qc', tx: write,
+  input: z.object({ fromId: idString(), toId: idString(), businessDate: dateString(), reason: reason(), condition: z.enum(['new', 'used']),
+    lines: lines(moveLineIn) }),
+  output: z.object({ id: idString(), number: z.string() }),
+  errors: ['not_a_rejects_place', 'place_not_sellable', 'requalify_to_own_place', 'transfer_same_location', ...LINE_ERRORS, ...POSTING_ERRORS],
+});
 /** Undoes a posted transfer (RC-124): its mirror at the same values, dated the cancellation's day; refused once the
  * goods have left where it put them, or a unit on it has moved since (`goods_moved_on`). */
 export const cancelStockTransfer = defineContract({

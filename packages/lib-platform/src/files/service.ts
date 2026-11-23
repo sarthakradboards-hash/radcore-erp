@@ -116,3 +116,4 @@ export const statementFileService = fileServices('statement');
 export const importFileService = fileServices('import');
 export const deliveryPhotoFileService = fileServices('delivery_photo');
 export const deliveryNoteFileService = fileServices('delivery_note');
+export const purchaseBillFileService = fileServices('purchase_bill');

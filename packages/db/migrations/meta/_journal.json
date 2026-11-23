@@ -603,6 +603,20 @@
       "when": 1795427885122,
       "tag": "0085_goods_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795429949926,
+      "tag": "0086_requalified_transfers",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795431454961,
+      "tag": "0087_purchase_bills",
+      "breakpoints": true
     }
   ]
 }

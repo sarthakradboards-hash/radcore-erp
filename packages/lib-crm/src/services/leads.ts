@@ -86,7 +86,7 @@ export async function captureEnquiry(ctx: Ctx, c: Capture): Promise<{ id?: strin
   // An ignored source's enquiry is stored and set aside: no lead, no join to the number's lead, no one told (RC-212).
   if (source.ignored) {
     await crmTx(ctx).insert(leadSetAsides).values({ sourceId: source.id, campaignId: source.campaignId, phone, name: c.name ?? null,
-      email: c.email === undefined ? null : normaliseEmail(c.email), message, receivedAt });
+      email: c.email === undefined ? null : normaliseEmail(c.email), message, receivedAt: receivedAt.toISOString() });
     return { repeat: false };
   }
   const on = indiaDate(receivedAt);

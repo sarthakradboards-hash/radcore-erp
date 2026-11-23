@@ -3,7 +3,7 @@
 // argument. Each posts through lib-stock's engine, and its posting and cancellation are guarded by #185's generic
 // guards (guard_posted_document, guard_document_line), attached in its migration.
 import { sql } from 'drizzle-orm';
-import { check, date, index, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, date, index, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { journalEntries } from '../accounts/tables.ts';
 import { boundedText, createdMoment, id, json, money, qty, radcoreTable } from '../columns.ts';
 import { batches, items, locations } from './tables.ts';
@@ -31,9 +31,14 @@ export const stockTransfers = radcoreTable('stock_transfers', {
   id: id(), createdAt: createdMoment(),
   fromId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
   toId: uuid().notNull().references(() => locations.id, { onDelete: 'restrict' }),
+  // A re-inspection (ADR-008 §9, the architect on RAD-137): rejects back to a sellable place under inward:qc, its
+  // serialised units in the condition the inspection found.
+  requalified: boolean().notNull().default(false),
+  condition: text(),
   ...posting(),
 }, (t) => [
   check('ck_stock_transfers_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
+  check('ck_stock_transfers_requalified', sql`${t.requalified} = (${t.condition} is not null) and coalesce(${t.condition}, 'new') in ('new', 'used')`),
   check('ck_stock_transfers_places', sql`${t.fromId} <> ${t.toId}`),
   check('ck_stock_transfers_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} <> 'draft' or ${t.postedEntryId} is null)`),
   check('ck_stock_transfers_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),

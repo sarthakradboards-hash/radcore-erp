@@ -57,6 +57,7 @@ export const SALES_PAGES = [
 /** The CRM area's pages (RAD-122): leads first, as the sales team works them most. */
 export const CRM_PAGES = [
   { href: '/crm/leads', label: 'crm.nav.leads', perm: 'leads:read' },
+  { href: '/crm/board', label: 'crm.nav.board', perm: 'leads:read' },
   { href: '/crm/lists', label: 'crm.nav.lists', perm: 'leads:setup' },
   { href: '/crm/sources', label: 'crm.nav.sources', perm: 'leads:setup' },
   { href: '/crm/set-aside', label: 'crm.nav.setAside', perm: 'leads:setup' },
