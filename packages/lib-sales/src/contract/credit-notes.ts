@@ -118,6 +118,6 @@ export const cancelCreditNote = defineContract({
   method: 'POST', path: '/sales/credit-notes/:id/cancel', auth: 'session', perm: 'credit_notes:cancel', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),
   errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive', 'still_applied',
-    'not_enough_stock', 'units_mismatch'],
+    'not_enough_stock', 'units_mismatch', 'already_reversed', 'not_reversible'],
   dbErrors: { 'RA006:document_still_applied': { code: 'still_applied', message: 'This credit note is still applied or refunded: reverse that first' } },
 });
