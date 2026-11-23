@@ -47,7 +47,8 @@ const billedOut = z.object({
 const lineOut = z.object({
   id: idString(), lineNo: z.number().int().positive(), receiptLineId: idString(),
   /** Its receipt and PO line, for a reader who may see that receipt (E7); null otherwise. */
-  receiptId: idString().nullable(), receiptNumber: z.string().nullable(), orderLineId: idString().nullable(), itemId: idString(), sku: z.string(), name: z.string(), unit: z.string(), qty: quantityString(),
+  receiptId: idString().nullable(), receiptNumber: z.string().nullable(), orderLineId: idString().nullable(),
+  itemId: idString(), sku: z.string(), name: z.string(), unit: z.string(), qty: quantityString(),
   batches: z.array(z.object({ batchId: idString(), batchNo: z.string(), qty: quantityString() })), serials: z.array(z.string()),
   /** The receipt line's rate, and its unbilled part's quantity and value: what Goods Received Not Billed gets back. */
   rate: unitPriceString(), unbilledQty: quantityString(), unbilledValue: money(),
