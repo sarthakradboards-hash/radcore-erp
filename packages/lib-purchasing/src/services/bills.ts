@@ -5,15 +5,16 @@
 // Posting, the three-way match against receipts and the approval join with M4-02's goods receipts (RAD-138 PR 3).
 import { after, purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
 import { getCompanyProfile, getPartyById } from '@radcore/lib-accounts';
-import { dec, indiaDate, percentString, roundMoney, type Money } from '@radcore/lib-common';
+import { dec, indiaDate, percentString, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
 import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax } from '@radcore/lib-gst';
 import {
   AppError, decodeCursor, defineSeries, defineSetting, encodeCursor, listScope, momentKey, readyFile, type Ctx,
 } from '@radcore/lib-platform';
 import { checkQuantity, itemLabels } from '@radcore/lib-stock';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createPurchaseBill, deletePurchaseBill, getPurchaseBill, listPurchaseBills, updatePurchaseBill } from '../contract.ts';
+import { receiptLinesFor } from './receipts.ts';
 import { buyingFrom } from './suppliers.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -82,6 +83,8 @@ async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLine>> {
   }
   const goods = b.lines.flatMap((l, n) => (l.kind === 'goods' ? [{ l, n }] : []));
   const po = await poLinesOf(ctx, goods.map((g) => g.l.poLineId));
+  const received = new Map((await receiptLinesFor(ctx, goods.flatMap((g) => (g.l.receiptLineId === null ? [] : [g.l.receiptLineId])),
+    { forUpdate: false })).map((r) => [r.id, r]));
   for (const { l, n } of goods) {
     const line = po.get(l.poLineId);
     if (line === undefined) throw refuseAt('unknown_po_line', 'There is no such purchase order line', ['lines', n, 'poLineId']);
@@ -89,9 +92,14 @@ async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLine>> {
       throw refuseAt('po_not_placed', `That purchase order is ${line.status}: only a placed one is billed`, ['lines', n, 'poLineId']);
     }
     if (line.partyId !== b.supplierId) throw refuseAt('other_supplier', 'That purchase order is another supplier’s', ['lines', n, 'poLineId']);
-    // shortcut: goods receipts arrive with M4-02 (RAD-137), so no receipt line can be named yet; RAD-138's posting PR
-    // checks the receipt line against this PO line.
-    if (l.receiptLineId !== null) throw refuseAt('unknown_receipt_line', 'There is no such goods receipt line', ['lines', n, 'receiptLineId']);
+    if (l.receiptLineId !== null) {
+      // The receipt line it bills, once the goods are in: posted, and for this very PO line (ADR-008 §7).
+      const r = received.get(l.receiptLineId);
+      if (r === undefined) throw refuseAt('unknown_receipt_line', 'There is no such goods receipt line', ['lines', n, 'receiptLineId']);
+      if (r.status !== 'posted') throw refuseAt('receipt_not_posted', `That goods receipt is ${r.status}: only a posted one is billed`,
+        ['lines', n, 'receiptLineId']);
+      if (r.orderLineId !== l.poLineId) throw refuseAt('not_this_po_line', 'That goods receipt line is for another order line', ['lines', n, 'receiptLineId']);
+    }
     await checkQuantity(ctx, line.itemId, l.qty).catch((e: unknown) => {
       throw e instanceof AppError ? refuseAt(e.code, e.message, ['lines', n, 'qty']) : e;
     });
@@ -105,7 +113,8 @@ async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], po
   const tx = purchasingTx(ctx);
   await tx.delete(purchaseBillLines).where(eq(purchaseBillLines.billId, billId));
   await tx.insert(purchaseBillLines).values(lines.map((l, i) => (l.kind === 'goods'
-    ? { billId, lineNo: i + 1, kind: 'goods', poLineId: l.poLineId, itemId: po.get(l.poLineId)?.itemId ?? '', qty: l.qty, rate: l.rate }
+    ? { billId, lineNo: i + 1, kind: 'goods', poLineId: l.poLineId, receiptLineId: l.receiptLineId, itemId: po.get(l.poLineId)?.itemId ?? '', qty: l.qty,
+      rate: l.rate }
     : { billId, lineNo: i + 1, kind: 'charge', charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount })));
 }
 
@@ -252,9 +261,22 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
       const p = po.get(l.poLineId ?? '');
       const over = overPoRate(l.rate ?? '0', p?.rate ?? '0');
       const item = labels.get(l.itemId ?? '');
-      return { kind: 'goods' as const, id: l.id, lineNo: l.lineNo, poLineId: l.poLineId ?? '', receiptLineId: null, itemId: l.itemId ?? '',
+      return { kind: 'goods' as const, id: l.id, lineNo: l.lineNo, poLineId: l.poLineId ?? '', receiptLineId: l.receiptLineId, itemId: l.itemId ?? '',
         sku: item?.sku ?? '', name: item?.name ?? '', unit: item?.unit ?? '', qty: l.qty ?? '0', rate: l.rate ?? '0', poRate: p?.rate ?? '0',
         poNumber: p?.orderNumber ?? '', overPoRate: over, overTolerance: over === null || dec(over).gt(tolerance), amounts: a };
     }),
   };
+}
+
+/** What posted bills not cancelled have billed of these receipt lines, by line (RAD-138): a receipt any of it was billed
+ * on can't be cancelled (receipt_in_use, ADR-008 §6), and a bill bills at most what's left (over_received). */
+export async function billedQty(ctx: Ctx, receiptLineIds: readonly string[]): Promise<Map<string, Decimal>> {
+  const got = new Map(receiptLineIds.map((id) => [id, dec('0')]));
+  if (receiptLineIds.length === 0) return got;
+  const rows = await purchasingTx(ctx).select({ id: purchaseBillLines.receiptLineId, qty: sum(purchaseBillLines.qty) }).from(purchaseBillLines)
+    .innerJoin(purchaseBills, eq(purchaseBills.id, purchaseBillLines.billId))
+    .where(and(inArray(purchaseBillLines.receiptLineId, [...new Set(receiptLineIds)]), eq(purchaseBills.status, 'posted')))
+    .groupBy(purchaseBillLines.receiptLineId);
+  for (const r of rows) if (r.id !== null) got.set(r.id, dec(r.qty ?? '0'));
+  return got;
 }
