@@ -19,7 +19,8 @@ import {
   amountsOf, BILL_SERIES, BILL_TOLERANCE, billOf, checkDraft, holdOrders, overPoRate, wrongStatus, type BillIn, type In, type Out, type Row,
 } from './bill-checks.ts';
 import { billedQty } from './billed.ts';
-import { receiptLinesFor } from './receipts.ts';
+import { receiptLinesFor } from './receipt-lines.ts';
+import { returnedOf } from './received.ts';
 import { buyingFrom } from './suppliers.ts';
 
 type Line = typeof purchaseBillLines.$inferSelect;
@@ -64,6 +65,7 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
   if (b.fileId === null) throw refuse('bill_file_required', 'Attach the supplier’s bill before posting it', ['fileId']);
   const byId = new Map(receipts.map((r) => [r.id, r]));
   const used = await billedQty(ctx, receiptIdsOf(lines));
+  const back = await returnedOf(ctx, receiptIdsOf(lines), { drafts: false });
   const accruals: Accrual[] = [];
   for (const [n, line] of lines.entries()) {
     if (line.kind !== 'goods') continue;
@@ -75,13 +77,20 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
     // A posted receipt line has its QC figures (only a draft's are null).
     const accepted = dec(r.accepted ?? '0');
     const rejectedAll = dec(r.rejected ?? '0');
-    if (before.plus(qty).gt(accepted.plus(rejectedAll))) {
-      throw refuse('over_received', `Only ${accepted.plus(rejectedAll).minus(before).toFixed()} of that receipt line is left to bill`, ['lines', n, 'qty']);
+    // Less rejects returned before they were billed (ADR-008 §7). RAD-140's return_billed has every return come before any
+    // bill on its PO line, and a return takes the rejects first (§8), then any accepted goods moved to rejects. What went
+    // back takes the top of each pool, so the shares below clear what's left of GRNB. shortcut: a return clears at its own
+    // rounding (qty × rate), so a fractional quantity could leave a paisa there; exact once a return records each pool's share.
+    const returned = back.get(r.id) ?? zero();
+    const accLeft = accepted.minus(returned.gt(rejectedAll) ? returned.minus(rejectedAll) : zero());
+    const left = accLeft.plus(rejectedAll.minus(minOf(returned, rejectedAll)));
+    if (before.plus(qty).gt(left)) {
+      throw refuse('over_received', `Only ${left.minus(before).toFixed()} of that receipt line is left to bill`, ['lines', n, 'qty']);
     }
     // The accepted goods are billed first, the rejects only beyond them (F3, F4).
-    const accBefore = minOf(before, accepted);
-    const acc = minOf(qty, accepted.minus(accBefore));
-    const rejBefore = before.gt(accepted) ? before.minus(accepted) : zero();
+    const accBefore = minOf(before, accLeft);
+    const acc = minOf(qty, accLeft.minus(accBefore));
+    const rejBefore = before.gt(accLeft) ? before.minus(accLeft) : zero();
     const rej = qty.minus(acc);
     const value = accrued(r.acceptedValue ?? '0', accepted, accBefore, accBefore.plus(acc))
       .plus(accrued(r.rejectedValue ?? '0', rejectedAll, rejBefore, rejBefore.plus(rej)));

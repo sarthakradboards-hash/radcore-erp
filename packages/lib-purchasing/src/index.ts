@@ -4,8 +4,9 @@ export {
 } from './services/orders.ts';
 export { listOrderLimits, ORDER_LIMIT_DEFAULT, orderLimitOf, setOrderLimit } from './services/order-limits.ts';
 export {
-  addReceipt, cancelReceiptNow, changeReceipt, dropReceipt, getReceiptById, listReceiptsPage, postReceipt, RECEIPT_SERIES, receiptLinesFor,
+  addReceipt, cancelReceiptNow, changeReceipt, dropReceipt, getReceiptById, listReceiptsPage, postReceipt, RECEIPT_SERIES,
 } from './services/receipts.ts';
+export { receiptLinesFor } from './services/receipt-lines.ts';
 export { purchaseOrderPrint } from './print/order.ts';
 export {
   addReturn, cancelReturnNow, changeReturn, dropReturn, getReturnById, listReturnsPage, postReturn, RETURN_SERIES,

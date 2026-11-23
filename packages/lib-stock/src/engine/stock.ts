@@ -63,8 +63,7 @@ export type StockTransfer = { readonly itemId: string; readonly from: string; re
   readonly sourceLineId?: string | null; readonly qty: Quantity; readonly batches: readonly BatchOut[];
   readonly units?: readonly UnitOnLine[]; readonly unitEvent?: MoveUnitEvent };
 
-/** A change to a position's value with no units, signed (a bill's price difference, ADR-006 §4, M4-03): its caller posts
- * the journal lines for it, so the engine's own revaluation entry leaves it out. */
+/** A signed change to a position's value with no units (a bill's price difference, ADR-006 §4): its caller posts the entry. */
 export type StockRevalue = { readonly itemId: string; readonly locationId: string; readonly sourceLineId?: string | null; readonly value: Money };
 
 /** One document's stock: the document it comes from, its business date, and its lines in the order they post. */
@@ -279,11 +278,8 @@ export async function postStock(ctx: Ctx, p: StockPosting): Promise<PostedMoveme
   for (const r of p.revalues ?? []) {
     // Value 0 at quantity 0 (ADR-006 §7): a position that holds nothing, or a change taking its value below 0, is refused.
     const at = position(await byDate(ctx, r.itemId, r.locationId));
-    if (!at.qty.gt(0) || at.value.plus(dec(r.value)).lt(0)) {
-      throw new AppError('nothing_to_revalue', 'There is no stock there to take the price difference');
-    }
-    await write({ itemId: r.itemId, locationId: r.locationId, sourceLineId: r.sourceLineId, direction: 'revalue', qty: NO_UNITS,
-      value: roundMoney(r.value) }, []);
+    if (!at.qty.gt(0) || at.value.plus(dec(r.value)).lt(0)) throw new AppError('nothing_to_revalue', 'There is no stock there to take the price difference');
+    await write({ ...r, direction: 'revalue', qty: NO_UNITS, value: roundMoney(r.value) }, []);
   }
   // The hold ends when the line is done, whatever serial left (RC-122): each unit still promised to it, and not just
   // delivered, is released.

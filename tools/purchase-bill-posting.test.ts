@@ -11,8 +11,8 @@ import { putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addBill, addOrder, addReceipt, BILL_SERIES, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
-  postReceipt,
+  addBill, addOrder, addReceipt, addReturn, BILL_SERIES, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
+  postReceipt, postReturn,
 } from '@radcore/lib-purchasing';
 import { addCategory, addItem, addPlace, requalifyTransfer } from '@radcore/lib-stock';
 import pg from 'pg';
@@ -26,7 +26,8 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156).
 const DATE = '2026-11-15';
 const KEYS = ['purchasing:read', 'purchasing:write', 'inward:write', 'inward:qc', 'bills:write', 'parties:write', 'parties:manage', 'items:write',
-  'locations:write', 'cost:read', 'gst:write', 'journal:read', 'stock:read'];
+  'locations:write', 'cost:read', 'gst:write', 'journal:read', 'stock:read',
+  'supplier_returns:write'];
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const letters = (n: number) => [...randomBytes(n)].map((b) => String.fromCharCode(65 + (b % 26))).join('');
@@ -104,6 +105,12 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
       const ins = Object.entries(stock).filter(([, n]) => n !== '0').map(([k, n]) => ({ itemId, locationId: places[k as 'stores'], qty: q(n),
         rate: unitPriceString().parse('60000'), batches: [{ batchNo: 'OPEN', qty: q(n) }] }));
       if (ins.length > 0) await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, ins });
+      return { supplierId, supplierGstin, itemId, places };
+    }, staff);
+    // The order and receipt in a transaction of their own, so the opening stock's journal turn isn't held while the PO
+    // draws its number: other files' setups take the PO's turn, then the journal's.
+    const { supplierId, itemId, places } = made;
+    const bought = await run(async (ctx) => {
       const { id: orderId } = await addOrder(ctx, { supplierId, businessDate: DATE, expectedBy: null, notes: null,
         lines: [{ itemId, qty: q(o.ordered), rate: unitPriceString().parse('62000') }] });
       await placeOrder(ctx, { id: orderId });
@@ -114,9 +121,9 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
       const receiptLineId = (await getReceiptById(ctx, { id: receiptId })).lines[0]?.id ?? '';
       await postReceipt(ctx, { id: receiptId, lines: [{ lineId: receiptLineId, batches: [{ batchNo: null, accepted: q(o.received.accepted),
         rejected: q(o.received.rejected) }], serials: [], rejectReason: o.received.rejected === '0' ? null : 'Dented panel' }] });
-      return { supplierId, supplierGstin, itemId, places, orderId, poLineId, receiptId, receiptLineId };
+      return { orderId, poLineId, receiptId, receiptLineId };
     }, staff);
-    return { ...made, staff };
+    return { ...made, ...bought, staff };
   }
   const dec2 = (a: string, b: string) => String(Number(a) + Number(b));
   type At = Awaited<ReturnType<typeof setup>>;
@@ -140,9 +147,9 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     const id = page.items.find((e) => e.source.id === billId && e.reversesEntryId === null)?.id ?? '';
     return (await journalEntryById(ctx, { id })).lines.map((l) => `${l.account.name} ${l.debit} ${l.credit}`).sort();
   }, at.staff);
-  const grni = async (at: At) => (await pool.query<{ v: string }>(`select coalesce(sum(l.credit - l.debit), 0)::numeric(18, 2)::text as v
+  const grni = async (at: At, more: string[] = []) => (await pool.query<{ v: string }>(`select coalesce(sum(l.credit - l.debit), 0)::numeric(18, 2)::text as v
     from radcore.journal_lines l join radcore.accounts a on a.id = l.account_id join radcore.journal_entries e on e.id = l.entry_id
-    where a.system_key = 'grni' and e.source_id = any($1::uuid[])`, [[at.receiptId, ...(await billIds(at))]])).rows[0]?.v;
+    where a.system_key = 'grni' and e.source_id = any($1::uuid[])`, [[at.receiptId, ...more, ...(await billIds(at))]])).rows[0]?.v;
   const billIds = async (at: At) => (await pool.query<{ id: string }>('select id from radcore.purchase_bills where party_id = $1', [at.supplierId]))
     .rows.map((r) => r.id);
 
@@ -191,6 +198,21 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     // Nothing is left on that receipt line: one more is over_received.
     const { id: more } = await draft(at, { lines: [goods(at, '1', '62000')], total: '65100' });
     expect(await code(post(at, more))).toBe('over_received');
+  });
+
+  it('bills a receipt line less the rejects returned before it was billed, and GRNB ends at exactly 0 (ADR-008 §7)', async () => {
+    const at = await setup({ stock: {}, ordered: '4', received: { accepted: '2', rejected: '2' } });
+    const batchId = (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1 limit 1', [at.itemId])).rows[0]?.id ?? '';
+    const { id: back } = await run((ctx) => addReturn(ctx, { supplierId: at.supplierId, businessDate: DATE, locationId: at.places.rejected,
+      reason: 'Dented', notes: null, lines: [{ receiptLineId: at.receiptLineId, qty: q('1'), batches: [{ batchId, qty: q('1') }], serials: [] }] }),
+    at.staff);
+    await run((ctx) => postReturn(ctx, { id: back }), at.staff);
+    // 4 came in and 1 went back: 4 is over_received, 3 posts.
+    const { id: all } = await draft(at, { lines: [goods(at, '4', '62000')], total: '260400' });
+    expect(await code(post(at, all))).toBe('over_received');
+    const { id } = await draft(at, { lines: [goods(at, '3', '62000')], total: '195300' });
+    await post(at, id);
+    expect(await grni(at, [back])).toBe('0.00');
   });
 
   it('waits for bills:approve on a line 2.01% over its PO rate, posts one 2.00% over, and someone else’s approval posts it', async () => {

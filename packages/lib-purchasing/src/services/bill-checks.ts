@@ -10,7 +10,7 @@ import { checkQuantity, itemLabels } from '@radcore/lib-stock';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createPurchaseBill, getPurchaseBill } from '../contract.ts';
-import { receiptLinesFor } from './receipts.ts';
+import { receiptLinesFor } from './receipt-lines.ts';
 import { buyingFrom } from './suppliers.ts';
 
 export type In<C extends { input: z.ZodType }> = z.output<C['input']>;

@@ -279,14 +279,12 @@ export async function cancelReceiptNow(ctx: Ctx, { id, businessDate, reason }: I
   if (r.status !== 'posted') throw wrongStatus(r.status, 'cancelled');
   if (businessDate > today()) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < r.businessDate) throw refuse('date_before_source', `The receipt is dated ${r.businessDate}`, ['businessDate']);
-  // A receipt any of it was billed on stays (RAD-138): its bill clears what it accrued. So does one with goods sent back
-  // to the supplier on a posted return (RAD-140).
+  // A receipt any of it was billed on (RAD-138) or sent back on a posted return (RAD-140) stays: cancel those first.
   const ids = (await linesOf(ctx, id)).map((l) => l.id);
   if ([...(await billedQty(ctx, ids)).values()].some((q) => q.gt(0))) {
     throw new AppError('receipt_in_use', 'Goods on this receipt have been billed, so it can’t be cancelled: cancel the bill first');
   }
-  const back = await returnedOf(ctx, ids, { drafts: false });
-  if ([...back.values()].some((q) => q.gt(0))) {
+  if ([...(await returnedOf(ctx, ids, { drafts: false })).values()].some((q) => q.gt(0))) {
     throw new AppError('receipt_in_use', 'Goods on this receipt have gone back to the supplier: cancel that return first');
   }
   await reverseStock(ctx, { sourceTable: SOURCE, sourceId: id, businessDate }).catch((e: unknown) => {
@@ -378,36 +376,4 @@ export async function getReceiptById(ctx: Ctx, { id }: In<typeof getGoodsReceipt
       batches: batchesOf(l),
       serials: (qc?.serials ?? []).map((s) => ({ serialNo: s.serialNo, chassisNo: s.chassisNo, batchNo: batchNo(s.batchNo), rejected: s.rejected })) };
   }) };
-}
-
-/**
- * For a purchase bill (M4-03, backend's RAD-138), reached by no route: posted receipt lines as the bill matches them,
- * with what each accrued to Goods Received Not Billed at receipt (`acceptedValue`, `rejectedValue`), which the bill
- * clears exactly. Locked when `forUpdate`, after their POs and before the bill (ADR-008 §12): receipts in id order.
- */
-export async function receiptLinesFor(ctx: Ctx, lineIds: readonly string[], o: { forUpdate: boolean }) {
-  if (lineIds.length === 0) return [];
-  const tx = purchasingTx(ctx);
-  const q = tx.select({ id: goodsReceiptLines.id, receiptId: goodsReceipts.id, receiptNumber: goodsReceipts.number,
-    receiptDate: goodsReceipts.businessDate, status: goodsReceipts.status, supplierId: goodsReceipts.partyId, orderId: goodsReceipts.orderId,
-    orderNumber: purchaseOrders.number, orderLineId: goodsReceiptLines.orderLineId, itemId: goodsReceiptLines.itemId,
-    received: goodsReceiptLines.received, accepted: goodsReceiptLines.accepted, rejected: goodsReceiptLines.rejected, rate: goodsReceiptLines.rate,
-    acceptedValue: goodsReceiptLines.acceptedValue, rejectedValue: goodsReceiptLines.rejectedValue,
-    acceptedMovementId: goodsReceiptLines.acceptedMovementId, rejectedMovementId: goodsReceiptLines.rejectedMovementId,
-    locationId: goodsReceipts.locationId, rejectsLocationId: goodsReceipts.rejectsLocationId, owner: goodsReceipts.createdBy })
-    .from(goodsReceiptLines).innerJoin(goodsReceipts, eq(goodsReceipts.id, goodsReceiptLines.receiptId))
-    .innerJoin(purchaseOrders, eq(purchaseOrders.id, goodsReceipts.orderId))
-    // Scoped in the query, so a receipt the caller can't see is neither answered nor locked (auditor-2 on #367).
-    .where(and(inArray(goodsReceiptLines.id, [...lineIds]), listScope(ctx, 'purchasing:read', goodsReceipts.createdBy)))
-    .orderBy(asc(goodsReceipts.id), asc(goodsReceiptLines.lineNo));
-  if (!o.forUpdate) return q;
-  // Their POs are already held by the bill, FOR SHARE (§12), so this takes only the receipts' own rows, in id order: a
-  // FOR UPDATE on the join would take the POs too, and two bills on one PO would deadlock (the auditor on #380).
-  const receiptIds = [...new Set((await q).map((r) => r.receiptId))].sort();
-  if (receiptIds.length > 0) {
-    await tx.select({ id: goodsReceipts.id }).from(goodsReceipts).where(inArray(goodsReceipts.id, receiptIds)).orderBy(asc(goodsReceipts.id)).for('update');
-  }
-  // Read again under the lock (awaiting `q` runs it anew), so each receipt's status is the one now held, not the one
-  // seen before the lock (backend-3 on #380): don't fold this into the read above.
-  return await q;
 }
