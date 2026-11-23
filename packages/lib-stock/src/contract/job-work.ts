@@ -124,7 +124,8 @@ export const getJobWorkReceipt = defineContract({
  * - `back`: unused, returned to `locationId`, `received_from_job_work`;
  * - `lost`: to Stock Adjustment, units `scrapped`.
  * Altogether at most what the challan line sent, less what earlier receipts accounted for (`over_challan`). Goods made
- * need inputs used (`made_without_use`). The charge accrues to Job Work Charges to be Billed, cleared by the job
+ * need inputs used (`made_without_use`), and inputs used need goods made (`used_without_made`): an input either went
+ * into what was made, came back, or was lost (§11). The charge accrues to Job Work Charges to be Billed, cleared by the job
  * worker's purchase bill (ADR-008 §7).
  */
 export const createJobWorkReceipt = defineContract({
@@ -138,7 +139,7 @@ export const createJobWorkReceipt = defineContract({
     })),
   }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['unknown_challan', 'wrong_status', 'not_on_challan', 'over_challan', 'made_without_use', 'use_job_work', 'needs_qc',
+  errors: ['unknown_challan', 'wrong_status', 'not_on_challan', 'over_challan', 'made_without_use', 'used_without_made', 'use_job_work', 'needs_qc',
     'date_before_source', ...LINE_ERRORS, ...POSTING_ERRORS],
 });
 /** Undoes a receipt while what it brought in is still where it went (`goods_moved_on` otherwise): its mirror, dated

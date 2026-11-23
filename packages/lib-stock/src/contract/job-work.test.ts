@@ -26,7 +26,7 @@ describe('the job work contracts', () => {
     expect(jobWork.cancelJobWorkChallan.errors).toEqual(expect.arrayContaining(['challan_answered', 'date_before_source']));
     // A serialised output without its serials, more than the challan line sent, and a date before the challan (RC-130).
     expect(jobWork.createJobWorkReceipt.errors).toEqual(expect.arrayContaining(['units_mismatch', 'over_challan', 'not_on_challan',
-      'made_without_use', 'date_before_source', 'series_full']));
+      'made_without_use', 'used_without_made', 'date_before_source', 'series_full']));
     expect(jobWork.cancelJobWorkReceipt.errors).toEqual(expect.arrayContaining(['goods_moved_on', 'charges_billed']));
     expect(jobWork.printJobWorkChallan.errors).toContain('wrong_status');
   });
