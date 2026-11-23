@@ -32,6 +32,7 @@ export {
   addChallan, cancelChallanNow, getChallanById, JOB_WORK_CHALLAN_SERIES, JOB_WORK_RETURN_DAYS, listChallansPage,
 } from './services/job-work-challans.ts';
 export { addReceipt, cancelReceiptNow, getReceiptById, JOB_WORK_RECEIPT_SERIES, listReceiptsPage } from './services/job-work-receipts.ts';
+export { jobWorkChallanPrint } from './print/challan.ts';
 export { NEGATIVE_STOCK, batchKey, holdStock, postStock, reverseStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
