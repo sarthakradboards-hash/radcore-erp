@@ -18,7 +18,6 @@ import { CountCards, RelatedRecords, StatusBar } from '../../../../../components
 import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
-import { PlaceName } from '../../../sales/deliveries/shared.tsx';
 import { RECEIPT_MESSAGES, ReceiptLines, receiptNumber, receiptSteps } from '../shared.tsx';
 
 const later = (text: string) => setTimeout(() => announce(text), 0);
@@ -62,8 +61,8 @@ export default function ReceiptPage() {
       <dl className="admin-facts" aria-label={t('inward.rec.facts')}>
         <dt>{t('inward.rec.supplier')}</dt><dd>{receipt.supplierName}</dd>
         <dt>{t('inward.rec.date')}</dt><dd>{formatDate(receipt.businessDate)}</dd>
-        <dt>{t('inward.rec.place')}</dt><dd><PlaceName id={receipt.locationId} /></dd>
-        <dt>{t('inward.rec.rejects')}</dt><dd><PlaceName id={receipt.rejectsLocationId} /></dd>
+        <dt>{t('inward.rec.place')}</dt><dd>{receipt.locationName}</dd>
+        <dt>{t('inward.rec.rejects')}</dt><dd>{receipt.rejectsLocationName}</dd>
         <dt>{t('inward.rec.supplierRef')}</dt><dd>{receipt.supplierRef ?? t('inward.rec.none')}</dd>
         <dt>{t('inward.rec.notes')}</dt><dd>{receipt.notes ?? t('inward.rec.none')}</dd>
         {receipt.value === null ? null : <><dt>{t('inward.rec.value')}</dt><dd>{formatMoney(receipt.value)}</dd></>}

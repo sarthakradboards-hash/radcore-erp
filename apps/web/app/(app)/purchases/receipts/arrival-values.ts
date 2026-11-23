@@ -22,7 +22,7 @@ const line = z.object({
 }).transform((l) => ({ orderLineId: l.orderLineId, received: l.received }));
 
 export const arrivalSchema = z.object({
-  orderId: z.string().min(1, t('inward.form.order.none')).pipe(shape.orderId),
+  orderId: z.string().min(1, t('inward.form.order.required')).pipe(shape.orderId),
   businessDate: shape.businessDate,
   locationId: z.string().min(1, t('inward.form.place.none')).pipe(shape.locationId),
   rejectsLocationId: z.string().min(1, t('inward.form.place.none')).pipe(shape.rejectsLocationId),
@@ -43,4 +43,10 @@ export const NEW_ARRIVAL: ArrivalInput = {
 export const leftToCome = (ordered: string, received: string): string => {
   const left = dec(ordered).minus(received);
   return left.gt(0) ? asWritten(left.toString()) : '';
+};
+
+/** The hint under a line's quantity: what its order line asked for and has had so far. Empty when the order couldn't be read. */
+export const orderLineInfo = (order: { lines: readonly { id: string; qty: string; received: string }[] } | undefined, orderLineId: string): string => {
+  const l = order?.lines.find((x) => x.id === orderLineId);
+  return l === undefined ? '' : t('inward.form.line.left', { ordered: asWritten(l.qty), received: asWritten(l.received) });
 };

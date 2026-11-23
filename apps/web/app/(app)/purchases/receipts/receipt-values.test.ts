@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { arrivalSchema, leftToCome } from './arrival-values.ts';
+import { arrivalSchema, leftToCome, orderLineInfo } from './arrival-values.ts';
 import { qcSchema, qcStart } from './qc-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -29,6 +29,19 @@ it('starts the quantity at what is left on the order line, and at nothing when n
   expect(leftToCome('10.000', '4.000')).toBe('6');
   expect(leftToCome('10', '10')).toBe('');
   expect(leftToCome('10', '12')).toBe('');
+});
+
+it('words what an order line asked for and has had, and says nothing when the order could not be read', () => {
+  const order = { lines: [{ id: id(4), qty: '10.000', received: '4.000' }] };
+  expect(orderLineInfo(order, id(4))).toBe('Ordered 10, already received 4.');
+  expect(orderLineInfo(order, id(9))).toBe('');
+  expect(orderLineInfo(undefined, id(4))).toBe('');
+});
+
+it('says in words that the order is needed, on the order and on the lines', () => {
+  const r = arrivalSchema.safeParse({ ...arrival, orderId: '', lines: [] });
+  expect(r.success ? [] : r.error.issues.map((i) => [i.path.join('.'), i.message])).toEqual([
+    ['orderId', 'Choose a purchase order, then bring in its lines'], ['lines', 'Add at least one line: bring in the purchase order’s lines']]);
 });
 
 const received = [{ id: id(5), itemId: id(6), name: 'Hub motor', sku: 'HM-1', received: '5.000' }];

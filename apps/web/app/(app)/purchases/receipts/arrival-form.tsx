@@ -8,43 +8,53 @@ import { getPurchaseOrder, listPurchaseOrders } from '@radcore/lib-purchasing/co
 import { useState } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
-import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
+import { Form, SubmitButton, useFieldName } from '../../../../components/ui/form/form.tsx';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
-import { asWritten } from '../../admin/decimal.ts';
-import { arrivalSchema, leftToCome, type ArrivalInput, type ArrivalLine, type ArrivalValues } from './arrival-values.ts';
+import { arrivalSchema, leftToCome, orderLineInfo, type ArrivalInput, type ArrivalLine, type ArrivalValues } from './arrival-values.ts';
 import { RECEIPT_MESSAGES, usePlaceChoices } from './shared.tsx';
 
 /** Brings an order's lines in: a choice among the placed orders, and the button that adds its lines. */
-function AddOrder({ append, hasLines }: { append: (lines: ArrivalLine[]) => void; hasLines: boolean }) {
-  const { control, setValue } = useFormContext<ArrivalInput>();
+function AddOrder({ append, hasLines, fixed }: { append: (lines: ArrivalLine[]) => void; hasLines: boolean; fixed: boolean }) {
+  const { control, setValue, getFieldState, formState } = useFormContext<ArrivalInput>();
+  // The chooser is a field of the form (its error shows here, not as the kit's "report it" alert for a name nothing shows).
+  useFieldName('orderId');
   const chosen = useWatch({ control, name: 'orderId' });
-  const [orderId, setOrderId] = useState('');
+  const [picked, setPicked] = useState('');
+  // A change keeps the draft's order: only its own lines can be brought back.
+  const orderId = fixed ? chosen : picked;
+  const error = getFieldState('orderId', formState).error?.message;
   const orders = useApiList(listPurchaseOrders, { filter: { status: 'placed' } });
   const order = useApiQuery(getPurchaseOrder, { id: orderId }, { enabled: orderId !== '' }).data;
   // An arrival is against one order: once its lines are in, another order's can't be added until they are removed.
   if (chosen !== '' && hasLines) return null;
   return (
     <div className="kit-field">
-      <label htmlFor="arrival-order">{t('inward.form.order')}</label>
-      <p className="kit-field-hint">{t('inward.form.order.hint')}</p>
-      <select id="arrival-order" value={orderId} onChange={(e) => setOrderId(e.target.value)}>
-        <option value="">{t('inward.form.order.none')}</option>
-        {orders.items.map((o) => (
-          <option key={o.id} value={o.id}>{t('inward.form.order.option', { number: o.number ?? '', supplier: o.supplierName })}</option>
-        ))}
-      </select>
-      {orders.error !== null ? <p role="alert" className="kit-form-alert">{t('inward.form.err.read')}</p> : null}
-      {orders.hasNextPage ? <button type="button" className="kit-button" onClick={orders.fetchNextPage}>{t('kit.table.more')}</button> : null}
+      {fixed ? <p>{t('inward.form.order.fixed')}</p> : (
+        <>
+          <label htmlFor="arrival-order">{t('inward.form.order')}</label>
+          <p id="arrival-order-hint" className="kit-field-hint">{t('inward.form.order.hint')}</p>
+          <select id="arrival-order" value={picked} onChange={(e) => setPicked(e.target.value)} aria-invalid={error !== undefined}
+            aria-describedby={error === undefined ? 'arrival-order-hint' : 'arrival-order-hint arrival-order-error'}>
+            <option value="">{t('inward.form.order.none')}</option>
+            {orders.items.map((o) => (
+              <option key={o.id} value={o.id}>{t('inward.form.order.option', { number: o.number ?? '', supplier: o.supplierName })}</option>
+            ))}
+          </select>
+          {error === undefined ? null : <p id="arrival-order-error" className="kit-field-error">{error}</p>}
+          {orders.error !== null ? <p role="alert" className="kit-form-alert">{t('inward.form.err.read')}</p> : null}
+          {orders.hasNextPage ? <button type="button" className="kit-button" onClick={orders.fetchNextPage}>{t('kit.table.more')}</button> : null}
+        </>
+      )}
       <button type="button" className="kit-button" disabled={order === undefined}
         onClick={() => {
           if (order === undefined) return;
           setValue('orderId', order.id);
           append(order.lines.filter((l) => dec(l.qty).gt(l.received)).map((l) => ({
             orderLineId: l.id, label: `${l.name} (${l.sku})`, received: leftToCome(l.qty, l.received),
-            info: t('inward.form.line.left', { ordered: asWritten(l.qty), received: asWritten(l.received) }),
+            info: orderLineInfo(order, l.id),
           })));
-          setOrderId('');
+          setPicked('');
         }}>{t('inward.form.order.add')}</button>
     </div>
   );
@@ -57,13 +67,16 @@ function AgainstOrder({ id }: { id: string }) {
 }
 
 // One useFieldArray for the lines, shared with the order chooser: a second one on the same name wouldn't see the first's.
-function Lines() {
-  const { control } = useFormContext<ArrivalInput>();
+function Lines({ fixed }: { fixed: boolean }) {
+  const { control, getFieldState, formState } = useFormContext<ArrivalInput>();
+  // `lines` is a field of the form too: the error for no line shows on the note below, never as the "report it" alert.
+  useFieldName('lines');
+  const linesError = getFieldState('lines', formState).error?.message;
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
   const orderId = useWatch({ control, name: 'orderId' });
   return (
     <>
-      <AddOrder append={append} hasLines={fields.length > 0} />
+      <AddOrder append={append} hasLines={fields.length > 0} fixed={fixed} />
       {orderId !== '' && fields.length > 0 ? <AgainstOrder id={orderId} /> : null}
       {fields.map((f, i) => (
         <fieldset key={f.id}>
@@ -74,13 +87,14 @@ function Lines() {
         </fieldset>
       ))}
       {fields.length === 0 ? <p>{t('inward.form.order.none.lines')}</p> : null}
+      {linesError === undefined ? null : <p className="kit-field-error">{linesError}</p>}
     </>
   );
 }
 
 /** The form. `initial` is what it starts from. */
-export function ArrivalForm({ labelledBy, initial, submit, onSubmit }: {
-  labelledBy: string; initial: ArrivalInput; submit: string; onSubmit: (values: ArrivalValues) => Promise<unknown>;
+export function ArrivalForm({ labelledBy, initial, submit, fixedOrder = false, onSubmit }: {
+  labelledBy: string; initial: ArrivalInput; submit: string; fixedOrder?: boolean; onSubmit: (values: ArrivalValues) => Promise<unknown>;
 }) {
   const accepted = usePlaceChoices(initial.locationId, 'sellable');
   const rejects = usePlaceChoices(initial.rejectsLocationId, 'rejected');
@@ -95,7 +109,7 @@ export function ArrivalForm({ labelledBy, initial, submit, onSubmit }: {
         placeholder={t('inward.form.place.none')} options={rejects.options} />
       <TextField name="supplierRef" label={t('inward.form.supplierRef')} hint={t('inward.form.supplierRef.hint')} autoComplete="off" />
       <TextAreaField name="notes" label={t('inward.form.notes')} />
-      <Lines />
+      <Lines fixed={fixedOrder} />
       <SubmitButton>{submit}</SubmitButton>
     </Form>
   );
