@@ -9,7 +9,7 @@ import { AppError, approvedFor, decideApproval, Settings, type Ctx, type Princip
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addAdjustment, addCategory, addCount, addItem, addPlace, addTransfer, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, askCountApproval,
-  cancelAdjustmentNow, cancelTransferNow, dropTransfer, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
+  cancelAdjustmentNow, cancelTransferNow, dropTransfer, requalifyTransfer, countApprovalSpec, getCountById, getTransferById, transferApprovalSpec,
 } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -200,6 +200,30 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
     const named = await run((ctx) => approvedFor(ctx, transferApprovalSpec, [approved.id, pending.id, refused.id, dropped.id]));
     const none = await run((ctx) => approvedFor(ctx, transferApprovalSpec, []));
     expect([[...named], none.size]).toEqual([[approved.id], 0]);
+  });
+
+  // §9, the architect on RAD-137: a re-inspection under inward:qc moves rejects back to a sellable place, numbered ST, its
+  // unit in the condition found; only out of a rejects place, only into a sellable one, and the plain transfer still
+  // refuses (needs_qc). The plain cancel undoes it, the unit back in rejects in the condition it had before.
+  it('requalifies rejects back to selling under inward:qc, and undoes it, the unit’s condition put back', async () => {
+    const serial = `S-${tag()}`;
+    const at = await setup(['rejected', 'store', 'demo'], { stock: '1', rate: '61250', serials: [serial] });
+    const [rejects, store, demo] = at.places as [string, string, string];
+    const qc: Principal = { kind: 'user', userId: randomUUID(), permissions: [...KEYS, 'inward:qc'] };
+    const requalify = (fromId: string, toId: string) => run((ctx) => requalifyTransfer(ctx, { fromId, toId, businessDate: DATE,
+      reason: 'Inspected again: only the packaging was damaged', condition: 'used', lines: [line(at.itemId, '1', at.batchId, [serial])] }), qc);
+    const unitOf = async () => (await pool.query<{ location_id: string; condition: string }>(
+      'select location_id, condition from radcore.units where item_id = $1 and serial_no = $2', [at.itemId, serial])).rows[0];
+    const refused = [await code(requalify(store, demo)), await code(requalify(rejects, demo)),
+      await code(run((ctx) => addTransfer(ctx, { fromId: rejects, toId: store, businessDate: DATE, reason: 'Back to selling',
+        lines: [line(at.itemId, '1', at.batchId, [serial])] })))];
+    const done = await requalify(rejects, store);
+    const passed = [await unitOf(), (await run((ctx) => getTransferById(ctx, { id: done.id }))).requalified, await onHand(at.itemId, store)];
+    await run((ctx) => cancelTransferNow(ctx, { id: done.id, businessDate: DATE, reason: 'Passed in error' }));
+    expect(refused).toEqual(['not_a_rejects_place', 'place_not_sellable', 'needs_qc']);
+    expect(done.number).toMatch(/^ST\//);
+    expect(passed).toEqual([{ location_id: store, condition: 'used' }, 'used', { qty: '1', value: '61250.00' }]);
+    expect([await unitOf(), await onHand(at.itemId, rejects)]).toEqual([{ location_id: rejects, condition: 'new' }, { qty: '1', value: '61250.00' }]);
   });
 
   // Sarthak's setting: into a franchisee's store, off posts at once; on, it waits for someone else's approval.
