@@ -155,14 +155,14 @@ export async function quickReplyText(ctx: Ctx, { id, replyId }: In<typeof quickR
   return { text: fillReply(reply.body, { name: lead.name, owner }) };
 }
 
-/** POST /leads/:id/owner (leads:write at `all`): hands a lead to an active person whose role sees leads, or back to no
- * one. Its new owner is told of a follow-up already due. */
 /** GET /leads/holders (leads:write at `all`): the people a lead may be handed to, as assignLeadOwner accepts them. */
 export async function leadHolders(ctx: Ctx): Promise<Out<typeof listLeadHolders>> {
   if (!ctx.can('leads:write', { owner: '' })) throw new AppError('forbidden', 'Only someone who works every lead may hand one on');
   return { items: await peopleHolding(ctx, 'leads:read') };
 }
 
+/** POST /leads/:id/owner (leads:write at `all`): hands a lead to an active person whose role sees leads, or back to no
+ * one. Its new owner is told of a follow-up already due. */
 export async function assignLeadOwner(ctx: Ctx, { id, owner }: In<typeof assignLead>): Promise<Out<typeof assignLead>> {
   if (!ctx.can('leads:write', { owner: '' })) throw new AppError('forbidden', 'Only someone who works every lead may hand one on');
   const tx = crmTx(ctx);
