@@ -22,6 +22,7 @@ import { BILL_SERIES, BILL_TOLERANCE } from './services/bill-checks.ts';
 import { ORDER_LIMIT_DEFAULT } from './services/order-limits.ts';
 import { ORDER_SERIES } from './services/orders.ts';
 import { RECEIPT_SERIES as received } from './services/receipts.ts';
+import { DEBIT_NOTE_SERIES as debited } from './services/debit-notes.ts';
 import { RETURN_SERIES as returned } from './services/returns.ts';
 export const settings: readonly SettingDef<unknown>[] = [ORDER_LIMIT_DEFAULT, BILL_TOLERANCE];
-export const series: readonly Series[] = [ORDER_SERIES, received, BILL_SERIES, returned];
+export const series: readonly Series[] = [ORDER_SERIES, received, BILL_SERIES, returned, debited];

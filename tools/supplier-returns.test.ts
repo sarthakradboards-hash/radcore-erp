@@ -9,7 +9,7 @@ import { putGstRate } from '@radcore/lib-gst';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
-  addBill, addOrder, addReceipt, addReturn, cancelReceiptNow, cancelReturnNow, closeOrder, getOrderById, getReceiptById, getReturnById, placeOrder,
+  addOrder, addReceipt, addReturn, cancelReceiptNow, cancelReturnNow, closeOrder, getOrderById, getReceiptById, getReturnById, placeOrder,
   postReceipt, postReturn,
 } from '@radcore/lib-purchasing';
 import { addCategory, addItem, addPlace } from '@radcore/lib-stock';
@@ -22,7 +22,7 @@ const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 // A fixed past day, so no test reads the run date (RC-156).
 const DATE = '2026-11-15';
-const KEYS = ['purchasing:read', 'purchasing:write', 'inward:write', 'inward:qc', 'supplier_returns:write', 'bills:write', 'parties:write', 'parties:manage',
+const KEYS = ['purchasing:read', 'purchasing:write', 'inward:write', 'inward:qc', 'supplier_returns:write', 'parties:write', 'parties:manage',
   'items:write', 'locations:write', 'cost:read', 'gst:write', 'journal:read', 'stock:read'];
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
@@ -184,28 +184,6 @@ describe.skipIf(!url || !superUrl)('supplier returns', { timeout: 30_000 }, () =
     await run((ctx) => postReturn(ctx, { id }), maker);
     await at.receive('1', [`S-0009-${tag()}`], []);
     expect(await code(run((ctx) => cancelReturnNow(ctx, { id, businessDate: DATE, reason: 'Too late' }), own))).toBe('replacement_received');
-  });
-
-  // The coordinator, 23 Nov: until the debit note lands, goods on a PO line a posted bill names aren't returned
-  // (return_billed), so no return credits Goods Received Not Billed for billed goods, whichever PR merges first.
-  it('refuses a return of goods on a posted bill (return_billed) until the debit note lands', async () => {
-    const at = await received();
-    const before = await code(draft(at));
-    const { id: billId } = await run((ctx) => addBill(ctx, { supplierId: at.supplierId, businessDate: DATE, supplierInvoiceNumber: `INV-${tag()}`,
-      supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: '124000.00' as never, fileId: null, notes: null,
-      lines: [{ kind: 'goods', poLineId: at.poLineId, receiptLineId: null, qty: q('2'), rate: unitPriceString().parse('62000') }] }), at.staff);
-    // Bills post with RAD-138 PR 3; posted here by hand, as that will.
-    const c = await su.connect();
-    try {
-      await c.query('begin');
-      await c.query("select set_config('app.principal', 'system:test', true)");
-      await c.query(`update radcore.purchase_bills set status = 'posted', number = $2, place_of_supply = '27', taxable = 124000, cgst = 0,
-        sgst = 0, igst = 0, round_off = 0, total = 124000 where id = $1`, [billId, `PB/T/${tag()}`]);
-      await c.query('commit');
-    } finally {
-      c.release();
-    }
-    expect([before, await code(draft(at))]).toEqual(['ok', 'return_billed']);
   });
 
   // RC-129: a return is undone. Its mirror puts the reject back at Rejected at its value, the unit `received` there, and

@@ -27,7 +27,7 @@ export const supplierReturns = radcoreTable('supplier_returns', {
   reason: boundedText({ max: 500 }).notNull(),
   notes: boundedText({ max: 500 }),
   unbilledValue: money(),
-  debitNoteNumber: text().unique(),
+  debitNoteNumber: text(),
   placeOfSupply: text(), taxable: money(), cgst: money(), sgst: money(), igst: money(), roundOff: money({ signed: true }), total: money(),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
   cancelledAt: timestamp({ withTimezone: true }),
@@ -44,6 +44,7 @@ export const supplierReturns = radcoreTable('supplier_returns', {
   check('ck_supplier_returns_debit', sql`num_nulls(${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst}, ${t.roundOff}, ${t.total}) in (0, 6)
     and (${t.status} <> 'draft' or ${t.total} is null) and (${t.debitNoteNumber} is null or ${t.total} is not null)
     and (${t.total} is null or (${t.total} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.roundOff} and abs(${t.roundOff}) < 1))`),
+  uniqueIndex('ux_supplier_returns_debit_note_number').on(t.debitNoteNumber),
   index('ix_supplier_returns_date').on(t.businessDate, t.createdAt, t.id),
   index('ix_supplier_returns_party').on(t.partyId),
   index('ix_supplier_returns_location').on(t.locationId),

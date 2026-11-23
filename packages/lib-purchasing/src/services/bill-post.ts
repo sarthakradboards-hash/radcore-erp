@@ -20,7 +20,7 @@ import {
 } from './bill-checks.ts';
 import { billedQty } from './billed.ts';
 import { receiptLinesFor } from './receipt-lines.ts';
-import { returnedOf } from './received.ts';
+import { billDebited, returnedOf } from './received.ts';
 import { buyingFrom } from './suppliers.ts';
 
 type Line = typeof purchaseBillLines.$inferSelect;
@@ -351,7 +351,8 @@ export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<t
   if (b.status !== 'posted') throw wrongStatus(b.status, 'cancelled');
   if (businessDate > indiaDate(new Date())) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < b.businessDate) throw refuse('date_before_source', `The bill is dated ${b.businessDate}`, ['businessDate']);
-  // shortcut: supplier returns (M4-05) debit a bill; they refuse bill_returned here when they land.
+  // A bill a posted supplier return debits stays: its debit note mirrors it (RAD-140). Cancel the return first.
+  if (await billDebited(ctx, id)) throw new AppError('bill_returned', 'A supplier return’s debit note is against this bill: cancel that return first');
   // The stock positions before any series' turn (ADR-006 §1, the auditor on #380): undoDifference holds them, then runs
   // the mirror (which draws the journal's number), then posts its own entry, which the mirror mustn't reverse.
   const own = await undoDifference(ctx, b, await linesOf(ctx, id), businessDate,

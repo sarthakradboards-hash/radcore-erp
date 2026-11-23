@@ -490,7 +490,7 @@ profile (M2-02), and the place of supply decides (CA-08). A line's rate is the o
 | Purchase bill for goods | the price difference, as a revaluation (§4) | Dr Goods Received Not Billed (what was accrued), Dr Input GST (where claimable, M4-04), the difference (§4), Cr Creditors, Cr TDS Payable (where due at the bill, M5-10) | M4-03 |
 | Purchase bill for services, or an expense | - | Dr the expense, Dr Input GST (where claimable, M5-02), Cr Creditors, Bank or Cash, Cr TDS Payable | M4-03, M5-02 |
 | Supplier return, not yet billed | out of Rejected, at its average | Dr Goods Received Not Billed (the receipt line's rate × quantity), Cr Stock in Hand (the value out), and any difference to Cost of Goods Sold (§4) | M4-05 |
-| Supplier return, billed (a debit note) | out of Rejected, at its value | Dr Creditors, Cr Stock in Hand, Cr Input GST | M4-05 |
+| Supplier return, billed (a debit note) | out of Rejected, at its average | Dr Creditors (at the bills' rates, with GST), Cr Input GST (what the bills claimed), Cr Stock in Hand (the value out), and any difference to Cost of Goods Sold (§4) | M4-05 |
 | Delivery | out, at the location's average | Dr Goods Delivered Not Invoiced, Cr Stock in Hand | M3-08 |
 | Delivery return (taken back before invoicing, all or part) | in, at the line's share of the value it went out at (§4) | Dr Stock in Hand, Cr Goods Delivered Not Invoiced | M3-08 |
 | Invoice | - | Dr Debtors, Cr Sales, Cr Output GST and cess, Cr TCS Payable (if due), Dr or Cr Round Off; and, for the delivered lines it bills, Dr Cost of Goods Sold, Cr Goods Delivered Not Invoiced | M3-09 |

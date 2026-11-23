@@ -1,5 +1,5 @@
 {
-  "id": "6f6b7300-1d94-410e-860d-e95f1eb9c07c",
+  "id": "6641a1bd-6051-46f4-ba72-c7e58c145bf4",
   "prevId": "333a2036-61f7-48b7-81d8-eca0b6e6857e",
   "version": "7",
   "dialect": "postgresql",
@@ -20514,6 +20514,21 @@
         }
       },
       "indexes": {
+        "ux_supplier_returns_debit_note_number": {
+          "name": "ux_supplier_returns_debit_note_number",
+          "columns": [
+            {
+              "expression": "debit_note_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "ix_supplier_returns_date": {
           "name": "ix_supplier_returns_date",
           "columns": [
@@ -20682,13 +20697,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "number"
-          ]
-        },
-        "supplier_returns_debitNoteNumber_unique": {
-          "name": "supplier_returns_debitNoteNumber_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "debit_note_number"
           ]
         }
       },

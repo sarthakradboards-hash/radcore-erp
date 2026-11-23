@@ -40,7 +40,7 @@ CREATE UNIQUE INDEX "ux_supplier_return_debits_line" ON "radcore"."supplier_retu
 CREATE INDEX "ix_supplier_return_debits_return" ON "radcore"."supplier_return_debits" USING btree ("return_id");--> statement-breakpoint
 CREATE INDEX "ix_supplier_return_debits_bill" ON "radcore"."supplier_return_debits" USING btree ("bill_id");--> statement-breakpoint
 CREATE INDEX "ix_supplier_return_debits_bill_line" ON "radcore"."supplier_return_debits" USING btree ("bill_line_id");--> statement-breakpoint
-ALTER TABLE "radcore"."supplier_returns" ADD CONSTRAINT "supplier_returns_debitNoteNumber_unique" UNIQUE("debit_note_number");--> statement-breakpoint
+CREATE UNIQUE INDEX "ux_supplier_returns_debit_note_number" ON "radcore"."supplier_returns" USING btree ("debit_note_number");--> statement-breakpoint
 ALTER TABLE "radcore"."supplier_returns" ADD CONSTRAINT "ck_supplier_returns_taxable" CHECK ("radcore"."supplier_returns"."taxable" >= 0 and "radcore"."supplier_returns"."taxable" <> 'NaN');--> statement-breakpoint
 ALTER TABLE "radcore"."supplier_returns" ADD CONSTRAINT "ck_supplier_returns_cgst" CHECK ("radcore"."supplier_returns"."cgst" >= 0 and "radcore"."supplier_returns"."cgst" <> 'NaN');--> statement-breakpoint
 ALTER TABLE "radcore"."supplier_returns" ADD CONSTRAINT "ck_supplier_returns_sgst" CHECK ("radcore"."supplier_returns"."sgst" >= 0 and "radcore"."supplier_returns"."sgst" <> 'NaN');--> statement-breakpoint
