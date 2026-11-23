@@ -59,7 +59,7 @@ describe.skipIf(!url || !superUrl)('lead capture', { timeout: 30_000 }, () => {
     const phone = mobile();
     const made = await as(asha, (ctx) => captureEnquiry(ctx, { phone, name: 'Kiran', source: 'walk_in', receivedAt: at('2033-03-10') }));
     expect(made.repeat).toBe(false);
-    expect(await lead(asha, made.id ?? '')).toMatchObject({ phone: `+91${phone}`, name: 'Kiran', owner: `user:${ashaId}`,
+    expect(await lead(asha, made.id ?? '')).toMatchObject({ phone: `+91${phone}`, name: 'Kiran', owner: { kind: 'user', id: ashaId },
       followUpOn: '2033-03-10', notes: null, enquiries: [{ source: 'walk_in', message: null, receivedAt: '2033-03-10T06:00:00.000Z' }] });
   });
 

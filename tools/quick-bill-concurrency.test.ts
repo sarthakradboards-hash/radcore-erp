@@ -45,6 +45,14 @@ function ownDatabase() {
       const fresh = await freshDatabase(adminUrl ?? '');
       const pool = new pg.Pool({ connectionString: fresh.appUrl, max: 6 });
       const su = new pg.Pool({ connectionString: fresh.superUrl, max: 2 });
+      // close()'s forced drop terminates any connection still open on the database (57P01): one still closing, or left
+      // broken by a refused save, would otherwise reach pg's 'error' event with no listener and fail the whole run.
+      // Only that error is ours to expect; anything else is still thrown.
+      for (const p of [pool, su]) {
+        p.on('error', (e: Error & { code?: string }) => {
+          if (e.code !== '57P01') throw e;
+        });
+      }
       made = { pool, su, db: createDatabase(pool), drop: fresh.drop };
       const c = await su.connect();
       try {

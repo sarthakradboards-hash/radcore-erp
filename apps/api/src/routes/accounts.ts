@@ -1,11 +1,11 @@
 // lib-accounts' routes (ADR-001 §6): declarations only. The company profile (RAD-88), parties (RAD-90), and the chart
 // of accounts and journal (RAD-86), and what parties owe (RAD-119).
 import {
-  addParty, allocatePayment, applyCredit, cancelPayment, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
+  addParty, allocatePayment, applyCredit, cancelPayment, getPaymentById, listPaymentsPage, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
   partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
 } from '@radcore/lib-accounts';
 import {
-  allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, reverseAllocationContract,
+  allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
   reverseCreditApplicationContract, createParty, getCompany, recordPaymentContract, getJournal, getParty, listAccounts, listMoneyAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
   getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
 } from '@radcore/lib-accounts/contract';
@@ -27,6 +27,8 @@ export default [
   defineRoute(setPartyCredit, setCreditTerms),
   defineRoute(listAccounts, chartOfAccounts),
   defineRoute(listMoneyAccounts, listMoneyAccountsNow),
+  defineRoute(listPaymentsContract, listPaymentsPage),
+  defineRoute(getPaymentContract, getPaymentById),
   defineRoute(recordPaymentContract, recordPayment),
   defineRoute(cancelPaymentContract, cancelPayment),
   defineRoute(allocatePaymentContract, allocatePayment),
