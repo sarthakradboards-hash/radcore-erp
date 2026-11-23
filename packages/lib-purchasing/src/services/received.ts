@@ -4,8 +4,8 @@
 // person closed short, with a reason, stays as it is (as ADR-007 §1 has sales orders do). A posted supplier return
 // takes what it sent back off its PO lines, so the replacement comes in on the same PO (RAD-140, Sarthak, 23 Nov).
 import {
-  goodsReceiptLines, goodsReceipts, purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx, supplierReturnLines,
-  supplierReturns,
+  goodsReceiptLines, goodsReceipts, purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx, supplierReturnDebits,
+  supplierReturnLines, supplierReturns,
 } from '@radcore/db/purchasing';
 import { dec, type Decimal } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';
@@ -52,14 +52,13 @@ export async function returnedOf(ctx: Ctx, receiptLineIds: readonly string[], o:
 }
 
 /** Which of these PO lines a bill not cancelled, draft or posted, names (RAD-138): such a line can't be removed or given
- * another item (`po_billed`), since the bill line names it by a restrict foreign key. With `posted`, only posted bills
- * count (a supplier return's guard until its debit note, RAD-140). */
-export async function linesBilled(ctx: Ctx, orderLineIds: readonly string[], o: { posted?: boolean } = {}): Promise<Set<string>> {
+ * another item (`po_billed`), since the bill line names it by a restrict foreign key. */
+export async function linesBilled(ctx: Ctx, orderLineIds: readonly string[]): Promise<Set<string>> {
   if (orderLineIds.length === 0) return new Set();
   const rows = await purchasingTx(ctx).select({ id: purchaseBillLines.poLineId }).from(purchaseBillLines)
     .innerJoin(purchaseBills, eq(purchaseBills.id, purchaseBillLines.billId))
     .where(and(inArray(purchaseBillLines.poLineId, [...new Set(orderLineIds)]),
-      o.posted === true ? eq(purchaseBills.status, 'posted') : ne(purchaseBills.status, 'cancelled')));
+      ne(purchaseBills.status, 'cancelled')));
   return new Set(rows.flatMap((r) => (r.id === null ? [] : [r.id])));
 }
 
@@ -70,6 +69,40 @@ export async function linesReceived(ctx: Ctx, orderLineIds: readonly string[]): 
     .innerJoin(goodsReceipts, eq(goodsReceipts.id, goodsReceiptLines.receiptId))
     .where(and(inArray(goodsReceiptLines.orderLineId, [...orderLineIds]), ne(goodsReceipts.status, 'cancelled')));
   return new Set(rows.map((r) => r.id));
+}
+
+/** Each receipt line's quantity posted supplier returns sent back unbilled (RAD-140): what's left unbilled of it is what
+ * came in, less what bills billed, less this. A line nothing went back on is 0. */
+export async function unbilledReturnedOf(ctx: Ctx, receiptLineIds: readonly string[]): Promise<Map<string, Decimal>> {
+  const back = new Map(receiptLineIds.map((id) => [id, dec('0')]));
+  if (receiptLineIds.length === 0) return back;
+  const rows = await purchasingTx(ctx).select({ id: supplierReturnLines.receiptLineId, qty: sum(supplierReturnLines.unbilledQty) })
+    .from(supplierReturnLines).innerJoin(supplierReturns, eq(supplierReturns.id, supplierReturnLines.returnId))
+    .where(and(inArray(supplierReturnLines.receiptLineId, [...new Set(receiptLineIds)]), eq(supplierReturns.status, 'posted')))
+    .groupBy(supplierReturnLines.receiptLineId);
+  for (const r of rows) back.set(r.id, dec(r.qty ?? '0'));
+  return back;
+}
+
+/** Each bill line's quantity posted supplier returns have debited (RAD-140), so a later return debits only what's left of
+ * it. A line nothing was debited on is 0. */
+export async function debitedOf(ctx: Ctx, billLineIds: readonly string[]): Promise<Map<string, Decimal>> {
+  const got = new Map(billLineIds.map((id) => [id, dec('0')]));
+  if (billLineIds.length === 0) return got;
+  const rows = await purchasingTx(ctx).select({ id: supplierReturnDebits.billLineId, qty: sum(supplierReturnDebits.qty) })
+    .from(supplierReturnDebits).innerJoin(supplierReturns, eq(supplierReturns.id, supplierReturnDebits.returnId))
+    .where(and(inArray(supplierReturnDebits.billLineId, [...new Set(billLineIds)]), eq(supplierReturns.status, 'posted')))
+    .groupBy(supplierReturnDebits.billLineId);
+  for (const r of rows) got.set(r.id, dec(r.qty ?? '0'));
+  return got;
+}
+
+/** Whether a posted supplier return debits this bill (RAD-140): such a bill can't be cancelled (`bill_returned`). */
+export async function billDebited(ctx: Ctx, billId: string): Promise<boolean> {
+  const [row] = await purchasingTx(ctx).select({ id: supplierReturnDebits.id }).from(supplierReturnDebits)
+    .innerJoin(supplierReturns, eq(supplierReturns.id, supplierReturnDebits.returnId))
+    .where(and(eq(supplierReturnDebits.billId, billId), eq(supplierReturns.status, 'posted'))).limit(1);
+  return row !== undefined;
 }
 
 /** Each receipt line's PO and PO line, by id, whoever made the receipt: for a supplier return the caller already holds

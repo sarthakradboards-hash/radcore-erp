@@ -80,9 +80,7 @@ const supplierReturn = header.extend({
 // What a draft's save can refuse: its supplier, its rejects place, its lines' receipt lines, their quantities and serials.
 const DRAFT_ERRORS = ['date_in_future', 'unknown_party', 'not_a_supplier', 'unknown_location', 'location_inactive', 'not_a_rejects_place',
   'unknown_receipt_line', 'receipt_not_posted', 'other_supplier', 'quantity_too_precise', 'qty_not_positive', 'over_received',
-  'unknown_batch', 'batches_mismatch', 'serials_mismatch', 'serial_twice', 'not_serialised', 'wrong_status',
-  // Until the debit note lands (RAD-140's next PR): goods on a PO line a posted bill names aren't returned yet.
-  'return_billed'] as const;
+  'unknown_batch', 'batches_mismatch', 'serials_mismatch', 'serial_twice', 'not_serialised', 'wrong_status'] as const;
 // What posting adds: the dates (§4: not before its receipts, nor the bills it debits), the stock engine's and the
 // ledger's refusals as the goods go out, the bills' tax, and its numbers.
 const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'date_before_source', 'account_inactive', 'not_enough_stock',
