@@ -5,6 +5,8 @@
 // - it answers only money sums keyed by receipt-line id: never a name, rate, quantity, document id or maker;
 // - only the books check calls it, under journal:read.
 // As at a date, a document counts from its own business date (its posting's) until its cancellation entry's date.
+// shortcut: it reads every receipt, bill and return line on each check; bound it by date, or keep a per-line summary
+// table, once the books check's time grows with the years of documents (the auditor on #398).
 import { goodsReceiptLines, goodsReceipts, purchaseBillLines, purchaseBills, purchasingTx, supplierReturnLines, supplierReturns } from '@radcore/db/purchasing';
 import { entryDates } from '@radcore/lib-accounts';
 import { dec, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
