@@ -21,7 +21,7 @@ import type {
   cancelSupplierReturn, createSupplierReturn, deleteSupplierReturn, getSupplierReturn, listSupplierReturns, postSupplierReturn,
   updateSupplierReturn,
 } from '../contract.ts';
-import { lockOrdersFor, receivedOf, returnedOf, settleOrder } from './received.ts';
+import { linesBilled, lockOrdersFor, receiptSources, receivedOf, returnedOf, settleOrders } from './received.ts';
 import { receiptLinesFor } from './receipts.ts';
 import { buyingFrom } from './suppliers.ts';
 
@@ -103,6 +103,16 @@ async function checkDraft(ctx: Ctx, d: Draft, o: { except?: string; posting: boo
     }
     asked.set(r.id, (asked.get(r.id) ?? dec('0')).plus(dec(l.qty)));
   }
+  // shortcut: a return here sends back only unbilled goods; its billed part, a debit note at its bills' rates, is RAD-140's
+  // next PR. Until then a return of goods on a PO line a posted bill names is refused, so none credits Goods Received
+  // Not Billed for billed goods whichever lands first (the coordinator, 23 Nov). That PR removes this guard.
+  const billed = await linesBilled(ctx, [...receipt.values()].map((r) => r.orderLineId), { posted: true });
+  for (const [n, l] of d.lines.entries()) {
+    if (billed.has((receipt.get(l.receiptLineId) as ReceiptLine).orderLineId)) {
+      throw refuse('return_billed', 'These goods are on a posted bill: returning billed goods, with their debit note, comes next',
+        ['lines', n, 'receiptLineId']);
+    }
+  }
   const back = await returnedOf(ctx, [...asked.keys()], { drafts: !o.posting, ...(o.except === undefined ? {} : { except: o.except }) });
   for (const [n, l] of d.lines.entries()) {
     const r = receipt.get(l.receiptLineId) as ReceiptLine;
@@ -152,7 +162,10 @@ export async function dropReturn(ctx: Ctx, { id }: In<typeof deleteSupplierRetur
 }
 
 /** The POs these receipt lines came in on, locked first (§12), to settle once the return posts or is cancelled. */
-const lockOrders = (ctx: Ctx, receipt: Iterable<ReceiptLine>) => lockOrdersFor(ctx, [...receipt].map((r) => r.orderId));
+const lockOrders = async (ctx: Ctx, lines: readonly Line[]) => {
+  const sources = await receiptSources(ctx, lines.map((l) => l.receiptLineId));
+  return { sources, orders: await lockOrdersFor(ctx, [...sources.values()].map((x) => x.orderId)) };
+};
 
 /** POST /purchasing/returns/:id/post (supplier_returns:write): the goods back to their supplier (§8, F4). */
 export async function postReturn(ctx: Ctx, { id }: In<typeof postSupplierReturn>): Promise<Out<typeof postSupplierReturn>> {
@@ -161,7 +174,7 @@ export async function postReturn(ctx: Ctx, { id }: In<typeof postSupplierReturn>
   if (seen.status !== 'draft') throw wrongStatus(seen.status, 'posted');
   await holdPeriod(ctx, seen.businessDate);
   const first = await linesOf(ctx, id);
-  const orders = await lockOrders(ctx, await receiptLinesFor(ctx, first.map((l) => l.receiptLineId), { forUpdate: false }));
+  const { orders } = await lockOrders(ctx, first);
   await receiptLinesFor(ctx, first.map((l) => l.receiptLineId), { forUpdate: true });
   const r = await returnOf(ctx, id, 'supplier_returns:write', true);
   if (r.status !== 'draft') throw wrongStatus(r.status, 'posted');
@@ -207,7 +220,7 @@ export async function postReturn(ctx: Ctx, { id }: In<typeof postSupplierReturn>
   }
   await tx.update(supplierReturns).set({ status: 'posted', number, unbilledValue: value, postedEntryId: entry?.id ?? null })
     .where(eq(supplierReturns.id, id));
-  for (const o of orders) await settleOrder(ctx, o);
+  await settleOrders(ctx, orders);
   return { number, debitNoteNumber: null };
 }
 
@@ -218,17 +231,16 @@ export async function cancelReturnNow(ctx: Ctx, { id, businessDate, reason }: In
   await holdPeriod(ctx, businessDate);
   await returnOf(ctx, id, 'supplier_returns:write');
   const first = await linesOf(ctx, id);
-  // Scoped to the canceller, as posting is: a receipt they can't see is neither answered nor locked.
-  const receipt = await receiptLinesFor(ctx, first.map((l) => l.receiptLineId), { forUpdate: false });
-  const orders = await lockOrders(ctx, receipt);
+  // Every receipt line the return names, whoever made the receipt: the return is the canceller's, so its POs are locked,
+  // checked and settled whatever the canceller may read (auditor-2 on #379).
+  const { sources, orders } = await lockOrders(ctx, first);
   const r = await returnOf(ctx, id, 'supplier_returns:write', true);
   if (r.status !== 'posted') throw wrongStatus(r.status, 'cancelled');
   if (businessDate > today()) throw refuse('date_in_future', 'A cancellation can’t be dated after today', ['businessDate']);
   if (businessDate < r.businessDate) throw refuse('date_before_source', `The return is dated ${r.businessDate}`, ['businessDate']);
-  const byLine = new Map(receipt.map((x) => [x.id, x]));
   const back = new Map<string, ReturnType<typeof dec>>();
   for (const l of first) {
-    const orderLineId = byLine.get(l.receiptLineId)?.orderLineId;
+    const orderLineId = sources.get(l.receiptLineId)?.orderLineId;
     if (orderLineId !== undefined) back.set(orderLineId, (back.get(orderLineId) ?? dec('0')).plus(dec(l.qty)));
   }
   const got = await receivedOf(ctx, [...back.keys()], { drafts: false });
@@ -243,7 +255,7 @@ export async function cancelReturnNow(ctx: Ctx, { id, businessDate, reason }: In
   const [own] = r.postedEntryId === null ? [] : await reverseEntriesOf(ctx, { source: { table: SOURCE, id }, businessDate, reason });
   await purchasingTx(ctx).update(supplierReturns).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
     cancelReason: reason, cancelEntryId: own?.id ?? null }).where(eq(supplierReturns.id, id));
-  for (const o of orders) await settleOrder(ctx, o);
+  await settleOrders(ctx, orders);
   return {};
 }
 

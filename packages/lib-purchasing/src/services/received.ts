@@ -52,12 +52,14 @@ export async function returnedOf(ctx: Ctx, receiptLineIds: readonly string[], o:
 }
 
 /** Which of these PO lines a bill not cancelled, draft or posted, names (RAD-138): such a line can't be removed or given
- * another item (`po_billed`), since the bill line names it by a restrict foreign key. */
-export async function linesBilled(ctx: Ctx, orderLineIds: readonly string[]): Promise<Set<string>> {
+ * another item (`po_billed`), since the bill line names it by a restrict foreign key. With `posted`, only posted bills
+ * count (a supplier return's guard until its debit note, RAD-140). */
+export async function linesBilled(ctx: Ctx, orderLineIds: readonly string[], o: { posted?: boolean } = {}): Promise<Set<string>> {
   if (orderLineIds.length === 0) return new Set();
   const rows = await purchasingTx(ctx).select({ id: purchaseBillLines.poLineId }).from(purchaseBillLines)
     .innerJoin(purchaseBills, eq(purchaseBills.id, purchaseBillLines.billId))
-    .where(and(inArray(purchaseBillLines.poLineId, [...new Set(orderLineIds)]), ne(purchaseBills.status, 'cancelled')));
+    .where(and(inArray(purchaseBillLines.poLineId, [...new Set(orderLineIds)]),
+      o.posted === true ? eq(purchaseBills.status, 'posted') : ne(purchaseBills.status, 'cancelled')));
   return new Set(rows.flatMap((r) => (r.id === null ? [] : [r.id])));
 }
 
@@ -70,13 +72,32 @@ export async function linesReceived(ctx: Ctx, orderLineIds: readonly string[]): 
   return new Set(rows.map((r) => r.id));
 }
 
+/** Each receipt line's PO and PO line, by id, whoever made the receipt: for a supplier return the caller already holds
+ * in its scope, so its PO is locked, checked and settled whoever can see that receipt (RAD-140, auditor-2 on #379). */
+export async function receiptSources(ctx: Ctx, receiptLineIds: readonly string[]): Promise<Map<string, { orderId: string; orderLineId: string }>> {
+  if (receiptLineIds.length === 0) return new Map();
+  const rows = await purchasingTx(ctx).select({ id: goodsReceiptLines.id, orderId: goodsReceipts.orderId, orderLineId: goodsReceiptLines.orderLineId })
+    .from(goodsReceiptLines).innerJoin(goodsReceipts, eq(goodsReceipts.id, goodsReceiptLines.receiptId))
+    .where(inArray(goodsReceiptLines.id, [...new Set(receiptLineIds)]));
+  return new Map(rows.map(({ id, ...r }) => [id, r]));
+}
+
 /** Locks these POs in id order (ADR-008 §12: purchase orders first) for a document whose posting or cancelling settles
- * them (a supplier return, RAD-140), whoever made them: the caller's own document is in its scope. */
-export async function lockOrdersFor(ctx: Ctx, orderIds: readonly string[]) {
+ * them (a supplier return, RAD-140), whoever made them, and answers their ids. */
+export async function lockOrdersFor(ctx: Ctx, orderIds: readonly string[]): Promise<string[]> {
   const ids = [...new Set(orderIds)].sort();
   if (ids.length === 0) return [];
-  return purchasingTx(ctx).select({ id: purchaseOrders.id, status: purchaseOrders.status, closeReason: purchaseOrders.closeReason })
-    .from(purchaseOrders).where(inArray(purchaseOrders.id, ids)).orderBy(asc(purchaseOrders.id)).for('update');
+  const rows = await purchasingTx(ctx).select({ id: purchaseOrders.id }).from(purchaseOrders).where(inArray(purchaseOrders.id, ids))
+    .orderBy(asc(purchaseOrders.id)).for('update');
+  return rows.map((r) => r.id);
+}
+
+/** Settles each of these POs (`settleOrder`), read again under the lock `lockOrdersFor` took. */
+export async function settleOrders(ctx: Ctx, orderIds: readonly string[]): Promise<void> {
+  if (orderIds.length === 0) return;
+  const rows = await purchasingTx(ctx).select({ id: purchaseOrders.id, status: purchaseOrders.status, closeReason: purchaseOrders.closeReason })
+    .from(purchaseOrders).where(inArray(purchaseOrders.id, [...orderIds]));
+  for (const o of rows) await settleOrder(ctx, o);
 }
 
 /** Closes a placed PO once every line has all it ordered, and opens again one its receipts closed (no reason) once a
