@@ -202,6 +202,24 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
     expect([[...named], none.size]).toEqual([[approved.id], 0]);
   });
 
+  // The architect on RAD-144: a found unit of an item that has never come in anywhere is valued at its purchase price,
+  // the last fallback before no_estimate (ADR-006 §4's estimate falls back the same way).
+  it('values a found unit of an item never received at its purchase price', async () => {
+    const boss = await approver();
+    const made = await run(async (ctx) => {
+      await openFinancialYear(ctx, DATE);
+      const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
+      const { id: itemId } = await addItem(ctx, { sku: `M-${tag()}`, name: 'Scooter', categoryId, hsn: '8711', unit: 'NOS', barcode: null,
+        serialised: true, hasChassis: false, purchasePrice: unitPriceString().parse('58000') });
+      const { id: store } = await addPlace(ctx, { code: `L${tag()}`, name: `store ${tag()}`, kind: 'store' });
+      const { id } = await addAdjustment(ctx, { locationId: store, businessDate: DATE, reason: 'Found in the bay', lines: [{ itemId,
+        direction: 'in', qty: q('1'), condition: 'new', batches: [], serials: [{ serialNo: `N-${tag()}`, chassisNo: null }] }] });
+      return { itemId, store, id };
+    });
+    await decide(adjustmentApprovalSpec, boss, await run((ctx) => askAdjustmentApproval(ctx, { id: made.id })));
+    expect(await onHand(made.itemId, made.store)).toEqual({ qty: '1', value: '58000.00' });
+  });
+
   // §9, the architect on RAD-137: a re-inspection under inward:qc moves rejects back to a sellable place, numbered ST, its
   // unit in the condition found; only out of a rejects place, only into a sellable one, and the plain transfer still
   // refuses (needs_qc). The plain cancel undoes it, the unit back in rejects in the condition it had before.

@@ -1,30 +1,33 @@
 // What a count's differences and an adjustment post (M4-06, RAD-141; ADR-008 §10; ADR-006 §6, F14, F21): goods out at
-// the location's average, goods in at it, or at the item's last `in` rate where the location holds none (`no_estimate`
-// when there's neither), against the existing `stock_adjustment` account. The entry is netted by account, item and
+// the location's average, goods in at it, or at the item's last `in` rate where the location holds none, else its
+// purchase price (`no_estimate` when there's none of these), against the existing `stock_adjustment` account. The entry is netted by account, item and
 // location, so a difference between batches alone posts none (F21).
 import { stockMovements, stockTx } from '@radcore/db/stock';
 import { postEntry, type JournalLine } from '@radcore/lib-accounts';
 import { dec, quantityString, roundMoney, type Money, type Rate, type UnitCondition } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
-import { postStock, type PostedMovement, type StockIn, type StockOut } from '../engine/stock.ts';
+import { postStock, purchasePriceOf, type PostedMovement, type StockIn, type StockOut } from '../engine/stock.ts';
 import { averageCost } from './cost.ts';
 
 export type MoveOut = { lineId: string; itemId: string; qty: string; batches: { batchId: string | null; qty: string }[]; serials: string[] };
 export type MoveIn = { lineId: string; itemId: string; qty: string; batches: { batchId: string | null; qty: string }[];
   units: { serialNo: string; condition: UnitCondition | null; chassisNo: string | null }[] };
 
-/** The rate a gain comes in at: the location's average, else the item's last `in` rate anywhere (ADR-008 §10). */
+/** The rate a gain comes in at: the location's average, else the item's last `in` rate anywhere (ADR-008 §10), else its
+ * purchase price (the architect on RAD-144, as ADR-006 §4's estimate falls back). */
 async function gainRate(ctx: Ctx, itemId: string, locationId: string): Promise<Rate> {
   const average = await averageCost(ctx, itemId, locationId);
   if (average !== null) return average;
   const [last] = await stockTx(ctx).select({ rate: stockMovements.rate }).from(stockMovements)
     .where(and(eq(stockMovements.itemId, itemId), eq(stockMovements.direction, 'in'), isNotNull(stockMovements.rate)))
     .orderBy(desc(stockMovements.postedAt), desc(stockMovements.id)).limit(1);
-  if (last?.rate == null) {
-    throw new AppError('no_estimate', 'This item has never come in anywhere, so there’s no cost to bring it in at: receive it instead');
+  if (last?.rate != null) return last.rate as Rate;
+  const price = await purchasePriceOf(ctx, itemId);
+  if (price === undefined) {
+    throw new AppError('no_estimate', 'This item has never come in and has no purchase price, so there’s no cost to bring it in at: set one, or receive it');
   }
-  return last.rate as Rate;
+  return price as Rate;
 }
 
 /** Posts the outs and ins at `locationId`, a serialised shortage `scrapped` and a found unit `received` (with `batchNo`

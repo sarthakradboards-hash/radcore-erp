@@ -68,7 +68,7 @@ describe('estimatedIssue', () => {
   });
   it('refuses with no rate to estimate by', () => {
     expect(outcome(() => estimatedIssue(at('7', '1400'), q('10'), undefined)))
-      .toBe('no_estimate: There’s no rate to estimate the stock not yet received / qty no_estimate Only 7 on hand, and no earlier receipt here');
+      .toBe('no_estimate: There’s no rate to estimate the stock not yet received / qty no_estimate Only 7 on hand, no earlier receipt here and no purchase price');
   });
 });
 
