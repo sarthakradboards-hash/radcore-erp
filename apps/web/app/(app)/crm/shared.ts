@@ -24,11 +24,7 @@ export function shownStep(steps: readonly { step: number }[], planStep: number |
 
 export const stageName = (s: Stage) => t(`crm.stage.${s}`);
 
-/**
- * Whose a lead is, as far as the screen can say: the server sends the owner as a principal (`user:<id>`) without a
- * name, so another person's lead reads "Someone else".
- * shortcut: no owner names until listLeads and getLead send them (asked of backend-2 on RAD-122); then show the name.
- */
+/** Whose a lead is: "You", "No one", or the owner's name as the server sends it ("Someone else" if it has none). */
 export function ownerText(owner: { kind: string; id: string; displayName: string | null } | null, meId: string): string {
   if (owner === null) return t('crm.owner.nobody');
   if (owner.kind === 'user' && owner.id === meId) return t('crm.owner.you');
@@ -40,4 +36,14 @@ export function leadName(name: string | null, phone: { masked: string } | string
   if (name !== null) return name;
   const end = (typeof phone === 'string' ? phone : phone.masked).replace(/^•+/, '').slice(-4);
   return end === '' ? t('crm.lead.noName') : t('crm.lead.unnamed', { end });
+}
+
+/** The lead id a board drop carries, or undefined for anything else dropped here (another page's drag, or bad data). */
+export function droppedId(raw: string): string | undefined {
+  try {
+    const id = raw === '' ? undefined : (JSON.parse(raw) as { id?: unknown } | null)?.id;
+    return typeof id === 'string' ? id : undefined;
+  } catch {
+    return undefined;
+  }
 }

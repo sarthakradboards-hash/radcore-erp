@@ -1,5 +1,5 @@
-// The public enquiry page (RAD-122 on RAD-107's form door): the website links to it or frames it, and a campaign's link
-// or QR code opens it with its token. No sign-in, no menu. Its CSP alone allows Cloudflare Turnstile (proxy.ts); every
+// The public enquiry page (RAD-122 on RAD-107's form door): the website links here; it isn't framed (Sarthak: link only;
+// frame-ancestors 'none'). A campaign's link or QR code opens it with its token. No sign-in, no menu. Its CSP alone allows Cloudflare Turnstile (proxy.ts); every
 // other page keeps none. The site key is web's own setting (TURNSTILE_SITE_KEY), read here on the server; without it the
 // page says the form isn't available rather than offering one that can't send.
 import { Suspense } from 'react';
