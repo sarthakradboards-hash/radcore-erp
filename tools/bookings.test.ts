@@ -338,33 +338,46 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect((await stageOf(one))?.stage).toBe('converted');
   });
 
-  // ADR-006 §1 (the architect on RAD-115): a cancel with a refund releases its unit before the refund's series. So, with
-  // a delivery's locks taken by hand (the unit, then the journal's turn once the cancel waits on it), both finish; a
-  // cancel that refunded first would hold the journal's turn at the unit, and the two would deadlock (40P01).
-  it('cancels with a refund while a delivery holds its unit, holding no series as it waits', async () => {
-    const s = [`S-${tag()}`];
-    const at = await setup({ serials: s });
-    const made = await book(at.lines[0]?.orderLineId ?? '', s[0] ?? '', '10000');
-    const bank = await systemId('bank');
+  /** A plain save's locks taken by hand (ADR-006 §1, the architect on RAD-115): the unit, then, once `save` waits on it,
+   * the journal's series turn, as a delivery of that unit takes them. Answers how the turn and the save ended: with
+   * §1's order `save` waits holding no series and both finish; one holding the journal's turn would deadlock (40P01). */
+  async function againstUnitHolder(serialNo: string, save: () => Promise<string>): Promise<string[]> {
     const plain = await su.connect();
     try {
       await plain.query('begin');
       await plain.query("set local app.principal = 'system:test'");
-      await plain.query('select 1 from radcore.units where serial_no = $1 for update', [s[0]]);
+      await plain.query('select 1 from radcore.units where serial_no = $1 for update', [serialNo]);
       const pid = (await plain.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
       let done = false;
-      const saved = failure(run((ctx) => cancelBookingNow(ctx, { id: made.id, businessDate: DATE, reason: 'Test',
-        refund: { amount: m('10000'), accountId: bank } }))).finally(() => { done = true; });
+      const saved = save().finally(() => { done = true; });
       const waiting = async () => (await su.query<{ n: number }>('select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
         [pid])).rows[0]?.n ?? 0;
       await vi.waitFor(async () => expect(done || await waiting() > 0).toBe(true), { timeout: 10_000 });
       const turn = await plain.query("select pg_advisory_xact_lock(hashtextextended('numbering.accounts.journal', 0))")
         .then(() => 'ok', (e: unknown) => String((e as { code?: string }).code ?? e));
       await plain.query(turn === 'ok' ? 'commit' : 'rollback');
-      expect([turn, await saved]).toEqual(['ok', 'ok']);
+      return [turn, await saved];
     } finally {
       plain.release();
     }
+  }
+
+  // A cancel with a refund releases its unit before the refund's series (the real gap this closes; mutation-checked).
+  it('cancels with a refund while a delivery holds its unit, holding no series as it waits', async () => {
+    const s = [`S-${tag()}`];
+    const at = await setup({ serials: s });
+    const made = await book(at.lines[0]?.orderLineId ?? '', s[0] ?? '', '10000');
+    const bank = await systemId('bank');
+    expect(await againstUnitHolder(s[0] ?? '', () => failure(run((ctx) => cancelBookingNow(ctx, { id: made.id, businessDate: DATE, reason: 'Test',
+      refund: { amount: m('10000'), accountId: bank } }))))).toEqual(['ok', 'ok']);
+  });
+
+  // A booking with its advance takes its series (JV, RV, BK) only after its unit, so it meets a delivery, or a quick
+  // bill's delivery, of that unit the same way (auditor-2 on #353, the architect's RAD-115 list).
+  it('books a unit a delivery holds, holding no series as it waits, and takes its advance after', async () => {
+    const s = [`S-${tag()}`];
+    const at = await setup({ serials: s });
+    expect(await againstUnitHolder(s[0] ?? '', () => failure(book(at.lines[0]?.orderLineId ?? '', s[0] ?? '', '10000')))).toEqual(['ok', 'ok']);
   });
 
   it('refunds all of what’s left only with refund_full, part with refund_part, and never more than is left', async () => {
