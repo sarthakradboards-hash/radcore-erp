@@ -11,7 +11,7 @@
 // The arithmetic is checks-rules.ts's. An override goes through defineApproval (RAD-38) with overrideApproval below.
 import { dec, type DecimalInput, type Money } from '@radcore/lib-common';
 import { DEFAULT_CREDIT_DAYS, getPartyById, partyReceivable } from '@radcore/lib-accounts';
-import { roleOf, type ApprovalSpec, type ApprovalVersion, type Ctx } from '@radcore/lib-platform';
+import { AppError, roleOf, versionHash, type ApprovalSpec, type ApprovalVersion, type Ctx } from '@radcore/lib-platform';
 import { averageCost, purchasePrices } from '@radcore/lib-stock';
 import type { z } from 'zod';
 import type { saleCheck } from '../contract/checks.ts';
@@ -124,7 +124,7 @@ export function overrideApproval(o: Readonly<{
   read: (ctx: Ctx, documentId: string, opts: { forUpdate: boolean }) => Promise<{ figures: ApprovalVersion; sale: SaleCheck } | null>;
   approved: ApprovalSpec<OverrideVersion>['approved'];
   rejected: ApprovalSpec<OverrideVersion>['rejected'];
-}>): ApprovalSpec<OverrideVersion> {
+}>): ApprovalSpec<OverrideVersion> & { judged(ctx: Ctx, id: string): Promise<Judged | null> } {
   return {
     kind: o.kind,
     table: o.table,
@@ -134,7 +134,28 @@ export function overrideApproval(o: Readonly<{
       if (doc === null) return null;
       return { figures: doc.figures, issues: (await checkSale(ctx, doc.sale)).issues };
     },
+    /** What approving records on the document: the version's hash, and what the party would owe after it (RAD-135).
+     * shortcut: the figure is the decision's, worked out as it's decided, not the one the approver was shown, so a
+     * balance grown in between is recorded at the larger figure (a small window; the architect on #338). Upgrade by
+     * passing the shown figure on decide. */
+    async judged(ctx, id) {
+      const doc = await o.read(ctx, id, { forUpdate: false });
+      if (doc === null) return null;
+      const r = await checkSale(ctx, doc.sale);
+      return { overrideVersion: versionHash({ figures: doc.figures, issues: r.issues }), overrideAfter: r.credit.after };
+    },
     approved: o.approved,
     rejected: o.rejected,
   };
+}
+
+/** The columns an approval sets on its document, beside each other. */
+export type Judged = { overrideVersion: string; overrideAfter: string };
+
+/** An approved over_limit holds only for what the party would owe as it was judged (the architect on RAD-135): owing more
+ * now, or no figure recorded, is asked again. A later change of the limit moves neither. */
+export function refuseGrown(approvedAfter: string | null, r: SaleCheckResult, what: string): void {
+  if (!r.issues.some((i) => i.code === 'over_limit')) return;
+  if (approvedAfter !== null && dec(r.credit.after).lte(dec(approvedAfter))) return;
+  throw new AppError('version_changed', `The party owes more than when this ${what} was approved: ask for its approval again`);
 }

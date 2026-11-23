@@ -13,7 +13,10 @@
       "@radcore/db/sales#salesOrders",
       "@radcore/db/sales#salesQuotes",
       "@radcore/db/sales#testRides",
-      "@radcore/db/sales#vehicleBookings"
+      "@radcore/db/sales#vehicleBookings",
+      "@radcore/db/stock#stockAdjustments",
+      "@radcore/db/stock#stockCounts",
+      "@radcore/db/stock#stockTransfers"
     ],
     "exempt": {
       "packages/lib-crm/src/services/enquiry-counts.ts": "counts a campaign’s or source’s enquiries over an India-date range for cost per lead, whoever owns the lead, as counts keyed by campaign and source ids the caller holds through campaigns:read (the architect on RAD-110)",

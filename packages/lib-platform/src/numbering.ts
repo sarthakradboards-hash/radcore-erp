@@ -57,8 +57,7 @@ export const seriesOrder = (keys: readonly string[]): string[] =>
  * Takes the turns of every series a save that posts several documents will draw (the quick bill; a booking with its
  * advance), in seriesOrder, after its period, documents, party and stock locks and before its first document posts.
  * A single document's save needs none: it draws the journal (postEntry) and then its own, which is already the order.
- * Known exception, not to be held together: a credit note with a counter refund draws sales.credit_note and then
- * accounts.payment, against key order. It's safe only while no holdSeries caller holds both (backend on RAD-115).
+ * A credit note with a counter refund holds its three (RAD-114), since it draws sales.credit_note before accounts.payment.
  */
 export async function holdSeries(ctx: Ctx, series: readonly Series[]): Promise<void> {
   await takeTurns(ctx.tx, seriesOrder(series.map((s) => s.key)).map(turnOf));

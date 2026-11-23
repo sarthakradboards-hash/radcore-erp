@@ -15,7 +15,7 @@ import { ApiError } from '../../../../lib/api-client.ts';
 import { useApiList, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { issueWords } from '../issue-words.ts';
-import { holdChoiceState, quickBillSchema, type QuickBillInput, type Refusal } from './quick-bill-values.ts';
+import { approvalIssues, holdChoiceState, quickBillSchema, type QuickBillInput, type Refusal } from './quick-bill-values.ts';
 import { QUICK_BILL_MESSAGES } from './shared.ts';
 
 /** A value that follows another after it has stood still for `ms`: a bill is previewed when the cashier pauses, not on each key. */
@@ -57,12 +57,13 @@ export function Preview({ onFigures }: { onFigures: (figures: { total: string; l
         <dt>{t('sales.quick.done.paid')}</dt><dd>{formatMoney(data.paid)}</dd>
         <dt>{t('sales.quick.done.left')}</dt><dd>{formatMoney(data.left)}</dd>
       </dl>
-      {data.issues.length === 0 ? null : (
+      {approvalIssues(data.issues).length === 0 ? null : (
         <>
           <p>{t('sales.quick.preview.issues')}</p>
-          <ul>{data.issues.map((c) => <li key={c}>{issueWords(c)}</li>)}</ul>
+          <ul>{approvalIssues(data.issues).map((c) => <li key={c}>{issueWords(c)}</li>)}</ul>
         </>
       )}
+      {data.issues.includes('walk_in_pays_in_full') ? <p>{issueWords('walk_in_pays_in_full')}</p> : null}
     </section>
   );
 }
