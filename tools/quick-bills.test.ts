@@ -425,9 +425,9 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
   });
 
   // RAD-115's save under 2 seconds (the architect's option (a)): a walk-in bill reads no more of the books with a longer
-  // history. The rows each one reads, from PostgreSQL's per-transaction table counters, grow by less than one row for
-  // the 30 bills added between the two (fetches count other saves' dead rows too, so not exactly equal); reading the
-  // history grows them by hundreds. Clocks are no test's business (RC-156); the timings at 500 and 5,000 are on the ticket.
+  // history. The rows each one reads, from PostgreSQL's per-transaction table counters, grow by under 300 for the 30
+  // bills added between the two: fetches count other saves' dead rows too, so a loaded run adds dozens, while reading
+  // the history grows them by about 650 (mutation-checked). Clocks are no test's business (RC-156); the timings at 500 and 5,000 are on the ticket.
   it('reads no more of the walk-in’s history as it grows', async () => {
     const at = await setup({ rate: '345', stock: '40' });
     const out = await atCounter(at, async (ctx) => {
@@ -444,6 +444,6 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
       for (let n = 0; n < 30; n += 1) await bill(ctx, at, '1', [cash('362')]);
       return [early, await one()];
     });
-    expect((out[1] ?? 0) - (out[0] ?? 0)).toBeLessThan(30);
+    expect((out[1] ?? 0) - (out[0] ?? 0)).toBeLessThan(300);
   });
 });

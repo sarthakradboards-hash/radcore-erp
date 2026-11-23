@@ -42,7 +42,7 @@ const wrongStatus = (status: string) => new AppError('wrong_status', `This deliv
 /** The delivery, locked when it's to be written, within the principal's scope for `permission` (else not_found). */
 export async function deliveryOf(ctx: Ctx, id: string, permission: string, forUpdate = false) {
   const sel = salesTx(ctx).select({ ...header, owner: deliveries.owner, createdBy: deliveries.createdBy,
-    overrideVersion: deliveries.overrideVersion }).from(deliveries).where(eq(deliveries.id, id));
+    overrideVersion: deliveries.overrideVersion, overrideAfter: deliveries.overrideAfter }).from(deliveries).where(eq(deliveries.id, id));
   const [row] = forUpdate ? await sel.for('update') : await sel;
   if (row === undefined) throw new AppError('not_found', 'There is no such delivery');
   // Its order's owner's, whoever made it (ADR-007 §1).
@@ -160,7 +160,7 @@ export async function changeDelivery(ctx: Ctx, { id, ...input }: In<typeof updat
   const lines = await checkedLines(ctx, order.id, input.lines);
   const tx = salesTx(ctx);
   await tx.update(deliveries).set({ orderId: order.id, partyId: order.partyId, owner: order.owner, locationId: input.locationId, businessDate: input.businessDate,
-    notes: input.notes, overrideVersion: null }).where(eq(deliveries.id, id));
+    notes: input.notes, overrideVersion: null, overrideAfter: null }).where(eq(deliveries.id, id));
   await tx.delete(deliveryLines).where(eq(deliveryLines.deliveryId, id));
   await tx.insert(deliveryLines).values(lines.map((l) => ({ ...l, deliveryId: id })));
   return {};

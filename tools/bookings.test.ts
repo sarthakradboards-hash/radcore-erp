@@ -175,7 +175,7 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     const at = await setup({ serials: [demo, fresh] });
     await run((ctx) => postUnitEvents(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE,
       changes: [{ kind: 'condition_changed', itemId: at.itemId, serialNo: demo, condition: 'demo' }] }));
-    const lead = await leadOf(staff);
+    const lead = (await run((ctx) => captureEnquiry(ctx, { phone: mobile(), source: 'manual', name: 'Asha Rao' }), staff)).id ?? '';
     const ride = (serialNo: string, o: { leadId?: string; as?: Principal; at?: string } = {}) => run((ctx) => scheduleRide(ctx,
       { leadId: o.leadId ?? lead, itemId: at.itemId, serialNo, scheduledAt: o.at ?? '2026-11-16T05:30:00.000Z' }), o.as);
     expect(await failure(ride(fresh))).toBe('not_demo');
@@ -193,6 +193,12 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     const rides = await run((ctx) => listTestRidesPage(ctx, { filter: { leadId: lead }, limit: 10 }));
     expect(rides.items.map((r) => [r.id, r.outcome])).toEqual(expect.arrayContaining([[first.id, 'liked'], [again.id, 'cancelled']]));
     expect(rides.items.at(-1)).toMatchObject({ id: later.id, outcome: null, doneAt: null });
+    // Each row names the model and the lead (RAD-117's labels): the lead's name only for a reader who may open it.
+    const { rows: [item] } = await su.query<{ sku: string; name: string }>('select sku, name from radcore.items where id = $1', [at.itemId]);
+    expect(rides.items.map((r) => [r.sku, r.name, r.leadName])).toEqual(rides.items.map(() => [item?.sku, item?.name, 'Asha Rao']));
+    const ownLeadsOnly = person([], ['leads:read']);
+    const theirs = await run((ctx) => listTestRidesPage(ctx, { filter: { leadId: lead }, limit: 10 }), ownLeadsOnly);
+    expect(theirs.items.map((r) => [r.sku, r.leadName])).toEqual(theirs.items.map(() => [item?.sku, null]));
     // Done needs an outcome, and an outcome a ride that's done, in the table too.
     const c = await su.connect();
     try {
@@ -228,6 +234,18 @@ describe.skipIf(!url || !superUrl)('vehicle bookings', { timeout: 60_000 }, () =
     expect(await failure(book(b?.orderLineId ?? '', s[1] ?? '', '0'))).toBe('advance_required');
     const two = await setup({ serials: [`S-${tag()}`], qty: '2' });
     expect(await failure(book(two.lines[0]?.orderLineId ?? '', 'X', '1000'))).toBe('booking_one_unit');
+  });
+
+  // RAD-117's labels: a booking's item by its SKU and name, in the list and on its page, as documents' lines are.
+  it('names a booking’s item by its SKU and name, in the list and on its page', async () => {
+    const s = [`S-${tag()}`];
+    const at = await setup({ serials: s });
+    const line = at.lines[0];
+    const made = await book(line?.orderLineId ?? '', s[0] ?? '', '10000');
+    const { rows: [item] } = await su.query<{ sku: string; name: string }>('select sku, name from radcore.items where id = $1', [at.itemId]);
+    const listed = await run((ctx) => listBookingsPage(ctx, { filter: { orderId: line?.orderId ?? '' }, limit: 10 }));
+    const shown = await run((ctx) => getBookingById(ctx, { id: made.id }));
+    expect([listed.items.map((b) => [b.sku, b.name]), [shown.sku, shown.name]]).toEqual([[[item?.sku, item?.name]], [item?.sku, item?.name]]);
   });
 
   it('books a damaged unit only where stock.sell_damaged_units is on (auditor-2 on #286)', async () => {
