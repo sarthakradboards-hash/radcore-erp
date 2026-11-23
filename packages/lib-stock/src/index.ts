@@ -27,6 +27,10 @@ export {
   addAdjustment, ADJUSTMENT_SERIES, adjustmentApprovalSpec, askAdjustmentApproval, cancelAdjustmentNow, changeAdjustment, dropAdjustment,
   getAdjustmentById, listAdjustmentsPage,
 } from './services/adjustments.ts';
+export {
+  addChallan, cancelChallanNow, getChallanById, JOB_WORK_CHALLAN_SERIES, JOB_WORK_RETURN_DAYS, listChallansPage,
+} from './services/job-work-challans.ts';
+export { addReceipt, cancelReceiptNow, getReceiptById, JOB_WORK_RECEIPT_SERIES, listReceiptsPage } from './services/job-work-receipts.ts';
 export { NEGATIVE_STOCK, batchKey, holdStock, postStock, reverseStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockTransfer } from './engine/stock.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
@@ -36,6 +40,8 @@ import { SELL_DAMAGED_UNITS as sellDamaged } from './engine/units.ts';
 import { KIND_LABELS } from './location-kinds.ts';
 import { ADJUSTMENT_SERIES as adjusted } from './services/adjustments.ts';
 import { COUNT_SERIES as counted } from './services/counts.ts';
+import { JOB_WORK_CHALLAN_SERIES as sent, JOB_WORK_RETURN_DAYS as returnDays } from './services/job-work-challans.ts';
+import { JOB_WORK_RECEIPT_SERIES as received } from './services/job-work-receipts.ts';
 import { FRANCHISEE_TRANSFER_APPROVAL as franchisee, TRANSFER_SERIES as moved } from './services/transfers.ts';
-export const settings: readonly SettingDef<unknown>[] = [negative, sellDamaged, franchisee, ...Object.values(KIND_LABELS)];
-export const series: readonly Series[] = [moved, counted, adjusted];
+export const settings: readonly SettingDef<unknown>[] = [negative, sellDamaged, franchisee, returnDays, ...Object.values(KIND_LABELS)];
+export const series: readonly Series[] = [moved, counted, adjusted, sent, received];

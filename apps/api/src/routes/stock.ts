@@ -7,7 +7,7 @@ import {
   addTransfer, askTransferApproval, cancelTransferNow, dropTransfer, getTransferById, listTransfersPage, transferApprovalSpec,
   addCount, askCountApproval, cancelCountNow, changeCount, countApprovalSpec, dropCount, getCountById, listCountsPage,
   addAdjustment, adjustmentApprovalSpec, askAdjustmentApproval, cancelAdjustmentNow, changeAdjustment, dropAdjustment, getAdjustmentById,
-  listAdjustmentsPage,
+  listAdjustmentsPage, addChallan, cancelChallanNow, getChallanById, listChallansPage, addReceipt, cancelReceiptNow, getReceiptById, listReceiptsPage,
 } from '@radcore/lib-stock';
 import {
   addLocation, attachItemPicture, checkBooksContract, createItem, createItemCategory, getItem, getOnHand, listItemCategories, listItems, listLocationKinds,
@@ -15,7 +15,8 @@ import {
   cancelStockTransfer, createStockTransfer, deleteStockTransfer, getStockTransfer, listStockTransfers, requestStockTransferApproval,
   stockTransferApproval, cancelStockCount, createStockCount, deleteStockCount, getStockCount, listStockCounts, requestStockCountApproval,
   stockCountApproval, updateStockCount, cancelStockAdjustment, createStockAdjustment, deleteStockAdjustment, getStockAdjustment,
-  listStockAdjustments, requestStockAdjustmentApproval, stockAdjustmentApproval, updateStockAdjustment,
+  listStockAdjustments, requestStockAdjustmentApproval, stockAdjustmentApproval, updateStockAdjustment, cancelJobWorkChallan, cancelJobWorkReceipt,
+  createJobWorkChallan, createJobWorkReceipt, getJobWorkChallan, getJobWorkReceipt, listJobWorkChallans, listJobWorkReceipts,
 } from '@radcore/lib-stock/contract';
 
 export default [
@@ -58,6 +59,15 @@ export default [
   defineRoute(updateStockAdjustment, changeAdjustment),
   defineRoute(deleteStockAdjustment, dropAdjustment),
   defineRoute(requestStockAdjustmentApproval, askAdjustmentApproval),
+  // Job work (M4-07, RAD-142; ADR-008 §11). The challan's print comes with the print routes.
+  defineRoute(listJobWorkChallans, listChallansPage),
+  defineRoute(getJobWorkChallan, getChallanById),
+  defineRoute(createJobWorkChallan, addChallan),
+  defineRoute(cancelJobWorkChallan, cancelChallanNow),
+  defineRoute(listJobWorkReceipts, listReceiptsPage),
+  defineRoute(getJobWorkReceipt, getReceiptById),
+  defineRoute(createJobWorkReceipt, addReceipt),
+  defineRoute(cancelJobWorkReceipt, cancelReceiptNow),
   ...defineApproval(stockAdjustmentApproval, adjustmentApprovalSpec),
   defineRoute(cancelStockAdjustment, cancelAdjustmentNow),
 ];
