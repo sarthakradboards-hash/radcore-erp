@@ -66,9 +66,10 @@ export const CRM_PAGES = [
   { href: '/crm/ad-spend', label: 'crm.nav.adSpend', perm: 'campaigns:read' },
 ] as const satisfies readonly NavPage[];
 
-/** The purchasing area's pages (RAD-143): purchase orders first; the approval queue for those who decide. */
+/** The purchasing area's pages (RAD-143): purchase orders first, then the goods receipts (RAD-143); the approval queue for those who decide. */
 export const PURCHASES_PAGES = [
   { href: '/purchases/orders', label: 'purchases.nav.orders', perm: 'purchasing:read' },
+  { href: '/purchases/receipts', label: 'inward.nav.receipts', perm: 'purchasing:read' },
   { href: '/purchases/approvals', label: 'purchases.nav.approvals', perm: 'purchasing:approve' },
 ] as const satisfies readonly NavPage[];
 
