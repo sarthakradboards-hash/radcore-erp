@@ -117,6 +117,16 @@ export async function awaitingApproval<V extends ApprovalVersion>(ctx: Ctx, spec
   return new Set(rows.map((r) => r.recordId));
 }
 
+/** Which of these records an approval was given for: a request of this kind for it was approved (a posted franchisee
+ * transfer's, RAD-141). */
+export async function approvedFor<V extends ApprovalVersion>(ctx: Ctx, spec: ApprovalSpec<V>, recordIds: readonly string[]):
+  Promise<ReadonlySet<string>> {
+  if (recordIds.length === 0) return new Set();
+  const rows = await platformTx(ctx).select({ recordId: approvals.recordId }).from(approvals)
+    .where(and(eq(approvals.kind, spec.kind), eq(approvals.status, 'approved'), inArray(approvals.recordId, [...recordIds])));
+  return new Set(rows.map((r) => r.recordId));
+}
+
 /** A request with the record as it is now: `changed` when it no longer hashes to the version requested. */
 export async function showApproval<V extends ApprovalVersion>(ctx: Ctx, spec: ApprovalSpec<V>, id: string) {
   const [request] = await platformTx(ctx).select({ id: approvals.id, recordId: approvals.recordId, status: approvals.status,

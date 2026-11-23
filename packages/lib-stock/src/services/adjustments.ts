@@ -4,7 +4,7 @@
 // `received` with the adjustment's number as its batch. An adjustment is its maker's (created_by).
 import { after, batches, items, stockAdjustmentLines, stockAdjustments, stockTx, units } from '@radcore/db/stock';
 import { holdPeriod, JOURNAL_SERIES, lockPeriod, reverseEntriesOf } from '@radcore/lib-accounts';
-import { quantityString, type UnitCondition } from '@radcore/lib-common';
+import { dec, quantityString, type UnitCondition } from '@radcore/lib-common';
 import {
   AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, holdSeries, listScope, momentKey, nextNumber, principalId, requestApproval,
   withdrawPending, type ApprovalSpec, type Ctx,
@@ -61,6 +61,14 @@ async function checkAdjustment(ctx: Ctx, input: Pick<AdjustmentIn, 'locationId' 
     }
     const item = flags.get(l.itemId);
     if (l.serials.length > 0 && item?.serialised !== true) throw refuse('not_serialised', 'This item has no serials', ['lines', n, 'serials']);
+    // A serialised line names a serial for each unit, and a found one the condition it's in, from the draft on (auditor-2
+    // on #339), not only as it posts.
+    if (item?.serialised === true && !dec(String(l.serials.length)).eq(dec(l.qty))) {
+      throw refuse('serials_mismatch', 'Name a serial for each unit', ['lines', n, 'serials']);
+    }
+    if (item?.serialised === true && l.direction === 'in' && l.condition === null) {
+      throw refuse('condition_required', 'Say what condition the found units are in', ['lines', n, 'condition']);
+    }
     const keys = l.serials.map((s) => serialKey(s.serialNo));
     if (new Set(keys).size !== keys.length) throw refuse('serial_twice', 'A serial is named once', ['lines', n, 'serials']);
     for (const [s, serial] of l.serials.entries()) {

@@ -22,7 +22,8 @@ export {
 } from './auth/sessions.ts';
 export { requestPasswordReset } from './auth/reset-email.ts';
 export {
-  awaitingApproval, decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash, withdrawPending,
+  approvedFor, awaitingApproval, decideApproval, defineApproval, listPendingApprovals, requestApproval, showApproval, versionHash,
+  withdrawPending,
   type ApprovalSpec,
   type ApprovalVersion, type Decision,
 } from './approvals.ts';

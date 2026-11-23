@@ -171,6 +171,19 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
       { serial_no: serials[0], ownership: 'ours', batch_id: at.batchId, condition: 'new' }, { qty: '2', value: '122500.00' }]);
   });
 
+  // auditor-2 on #339: a serialised adjustment names a serial for each unit, and a found one its condition, as a draft.
+  it('refuses a draft adjustment short of serials (serials_mismatch) or a found unit with no condition (condition_required)', async () => {
+    const at = await setup(['store'], { stock: '2', rate: '61250', serials: [`S-${tag()}`, `S-${tag()}`] });
+    const [store] = at.places as [string];
+    const draft = (line: Parameters<typeof addAdjustment>[1]['lines'][number]) => code(run((ctx) => addAdjustment(ctx, { locationId: store,
+      businessDate: DATE, reason: 'Test', lines: [line] })));
+    expect([
+      await draft({ itemId: at.itemId, direction: 'out', qty: q('2'), condition: null, batches: [{ batchId: at.batchId, qty: q('2') }], serials: [] }),
+      await draft({ itemId: at.itemId, direction: 'in', qty: q('1'), condition: null, batches: [],
+        serials: [{ serialNo: `N-${tag()}`, chassisNo: null }] }),
+    ]).toEqual(['serials_mismatch', 'condition_required']);
+  });
+
   // Sarthak's setting: into a franchisee's store, off posts at once; on, it waits for someone else's approval.
   it('waits for approval into a franchisee only while stock.franchisee_transfer_approval is on', async () => {
     const boss = await approver();
@@ -188,8 +201,11 @@ describe.skipIf(!url || !superUrl)('stock transfers, counts and adjustments', ()
     const own = await code(decide(transferApprovalSpec, staff, waiting.approval ?? { id: '', versionHash: '' }));
     await decide(transferApprovalSpec, boss, waiting.approval ?? { id: '', versionHash: '' });
     const after = await run((ctx) => getTransferById(ctx, { id: waiting.id }));
+    // A posted transfer shows the approval it was posted by; one posted at once shows none (auditor-2 on #339).
+    const shown = [(await run((ctx) => getTransferById(ctx, { id: off.id }))).approval, after.approval];
     expect([off.number?.startsWith('ST/'), off.approval, waiting.number, before, own, after.status, after.number?.startsWith('ST/'),
-      plain.number?.startsWith('ST/'), plain.approval]).toEqual([true, null, null, { qty: '1', value: '100.00' }, 'own_request', 'posted', true, true, null]);
+      plain.number?.startsWith('ST/'), plain.approval, shown]).toEqual([true, null, null, { qty: '1', value: '100.00' }, 'own_request', 'posted', true,
+      true, null, ['none', 'approved']]);
   });
 
   // F14, RC-123: a count lists the pads twice (two shelves); they're one line; nothing posts until someone else approves.

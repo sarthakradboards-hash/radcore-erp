@@ -10,6 +10,7 @@ export { checkBooks } from './services/books-check.ts';
 export { averageCost } from './services/cost.ts';
 export { listKinds, setKindLabel } from './services/location-kinds.ts';
 export { addPlace, checkPlace, listPlaces, updatePlace } from './services/locations.ts';
+export { placeNames } from './services/moves-lines.ts';
 export { stockSheets } from './sheets.ts';
 export {
   postUnitEvents, releasePromises, serialKey, soldCondition, soldUnits, unitFor, type InUnitEvent, type MoveUnitEvent, type OutUnitEvent,

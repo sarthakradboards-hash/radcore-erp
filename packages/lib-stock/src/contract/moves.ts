@@ -181,9 +181,10 @@ const adjustmentIn = z.object({
     serials: z.array(z.object({ serialNo: z.string().trim().min(1).max(60), chassisNo: z.string().trim().min(1).max(40).nullable() }))
       .max(1000) })),
 });
-// A found unit's chassis number: needed where the item keeps one, refused where it doesn't (F22).
+// A found unit's chassis number: needed where the item keeps one, refused where it doesn't (F22). A serialised line names
+// a serial for each unit, and a found one its condition, as a draft too (auditor-2 on #339).
 const ADJUSTMENT_ERRORS = [...LINE_ERRORS, 'unknown_batch', 'serial_twice', 'not_serialised', 'serial_elsewhere', 'chassis_required',
-  'chassis_not_allowed'] as const;
+  'chassis_not_allowed', 'serials_mismatch', 'condition_required'] as const;
 
 /** Stock adjustments, newest first, a page at a time. */
 export const listStockAdjustments = defineContract({
@@ -219,7 +220,8 @@ export const requestStockAdjustmentApproval = defineContract({
 /** The adjustment approval routes (RAD-38): approving posts it (F14). */
 // A found unit's chassis number is judged again as it posts: the item's flag may have changed since the draft.
 export const stockAdjustmentApproval = approvalContracts('stock-adjustment', 'stock:approve',
-  ['wrong_status', 'serial_elsewhere', 'chassis_required', 'chassis_not_allowed', 'unknown_batch', ...POSTING_ERRORS]);
+  ['wrong_status', 'serial_elsewhere', 'chassis_required', 'chassis_not_allowed', 'unknown_batch', 'serials_mismatch', 'condition_required',
+    ...POSTING_ERRORS]);
 /** Cancels a posted adjustment: its mirror, dated the cancellation's day. */
 export const cancelStockAdjustment = defineContract({
   method: 'POST', path: '/stock/adjustments/:id/cancel', auth: 'session', perm: 'stock:approve', tx: write,

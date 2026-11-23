@@ -37,8 +37,9 @@ export const goodsReceipts = radcoreTable('goods_receipts', {
 }, (t) => [
   check('ck_goods_receipts_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
   check('ck_goods_receipts_places', sql`${t.locationId} <> ${t.rejectsLocationId}`),
+  // A posted receipt has its number and value; its entry, unless nothing on it had value (free goods, rate 0).
   check('ck_goods_receipts_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.value} is null)
-    and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
+    and (${t.status} <> 'draft' or ${t.postedEntryId} is null)`),
   check('ck_goods_receipts_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
   index('ix_goods_receipts_date').on(t.businessDate, t.createdAt, t.id),
   index('ix_goods_receipts_order').on(t.orderId),
