@@ -47,14 +47,15 @@ describe.skipIf(!url)('the stock reads', () => {
     }
   }
 
-  /** PAD (two batches, 5 at 600.00 in all) and BIKE (serialised, 2 units at 1,000.00) into place A; 1 PAD and 1 BIKE moved to B. */
+  /** PAD (two batches, 5 at 600.00 in all), BIKE (serialised, 2 units at 1,000.00) and ZERO (1) into place A; 1 PAD, 1 BIKE
+   * and the ZERO moved to B, so A holds no ZERO. */
   async function setup() {
     const t = tag();
     const made = await run(async (ctx) => {
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${t}` });
       const item = async (sku: string, serialised: boolean) => (await addItem(ctx, { sku: `${sku}-${t}`, name: `${sku} ${t}`, categoryId, hsn: '8714',
         unit: 'NOS', barcode: null, serialised, hasChassis: false })).id;
-      const [pad, bike] = [await item('PAD', false), await item('BIKE', true)];
+      const [pad, bike, zero] = [await item('PAD', false), await item('BIKE', true), await item('ZERO', false)];
       const place = async (code: string) => (await addPlace(ctx, { code: `${code}${t}`, name: `Place ${code}${t}`, kind: 'stores', partyId: null })).id;
       const [a, b] = [await place('A'), await place('B')];
       const serials = [`SA-${t}`, `SB-${t}`];
@@ -62,10 +63,11 @@ describe.skipIf(!url)('the stock reads', () => {
         { itemId: pad, locationId: a, qty: q('3'), rate: r('100'), batches: [{ batchNo: 'P1', qty: q('3') }] },
         { itemId: pad, locationId: a, qty: q('2'), rate: r('150'), batches: [{ batchNo: 'P2', qty: q('2') }] },
         { itemId: bike, locationId: a, qty: q('2'), rate: r('1000'), batches: [{ batchNo: 'K1', qty: q('2') }],
-          units: serials.map((serialNo) => ({ serialNo })) }] });
-      return { t, pad, bike, a, b, serials };
+          units: serials.map((serialNo) => ({ serialNo })) },
+        { itemId: zero, locationId: a, qty: q('1'), rate: r('50'), batches: [{ batchNo: 'Z1', qty: q('1') }] }] });
+      return { t, pad, bike, zero, a, b, serials };
     });
-    const { pad, bike, a, b, serials } = made;
+    const { pad, bike, zero, a, b, serials } = made;
     // The move in a save of its own, once the batches it names are committed.
     await run(async (ctx) => {
       const lot = async (itemId: string, no: string) => (await pool.query<{ id: string }>('select id from radcore.batches where item_id = $1 and batch_no = $2',
@@ -73,7 +75,8 @@ describe.skipIf(!url)('the stock reads', () => {
       await postDocument(ctx, { sourceTable: SOURCE_TABLE, sourceId: randomUUID(), businessDate: DATE, transfers: [
         { itemId: pad, from: a, to: b, sourceLineId: null, qty: q('1'), batches: [{ batchId: await lot(pad, 'P1'), qty: q('1') }] },
         { itemId: bike, from: a, to: b, sourceLineId: null, qty: q('1'), batches: [{ batchId: await lot(bike, 'K1'), qty: q('1') }],
-          units: [{ serialNo: serials[1] ?? '' }], unitEvent: 'moved' }] });
+          units: [{ serialNo: serials[1] ?? '' }], unitEvent: 'moved' },
+        { itemId: zero, from: a, to: b, sourceLineId: null, qty: q('1'), batches: [{ batchId: await lot(zero, 'Z1'), qty: q('1') }] }] });
     });
     return made;
   }
@@ -83,12 +86,14 @@ describe.skipIf(!url)('the stock reads', () => {
     const input = (after?: string) => ({ filter: { search: at.t }, limit: 3, ...(after === undefined ? {} : { after }) });
     const first = await get<Page<Position>>(staff, '/stock/positions', input());
     const second = await get<Page<Position>>(staff, '/stock/positions', input(first.body.next ?? ''));
-    expect([first.status, first.body.items.length, second.body.next]).toEqual([200, 3, null]);
+    expect([first.status, first.body.items.length, second.body.items.length, second.body.next]).toEqual([200, 3, 2, null]);
     const rows = [...first.body.items, ...second.body.items];
     // By SKU (BIKE before PAD), then place code (A before B); batches by number.
     expect(rows.map((p) => [p.sku, p.locationName, p.qty, p.batches.map((b) => `${b.batchNo ?? '?'} ${b.qty}`)])).toEqual([
       [`BIKE-${at.t}`, `Place A${at.t}`, '1.000', ['K1 1.000']], [`BIKE-${at.t}`, `Place B${at.t}`, '1.000', ['K1 1.000']],
       [`PAD-${at.t}`, `Place A${at.t}`, '4.000', ['P1 2.000', 'P2 2.000']], [`PAD-${at.t}`, `Place B${at.t}`, '1.000', ['P1 1.000']],
+      // ZERO is all at B now: A's position nets to nothing and isn't listed.
+      [`ZERO-${at.t}`, `Place B${at.t}`, '1.000', ['Z1 1.000']],
     ]);
     // The values: BIKE's 1,000.00 a place; PAD's 600.00 split between the places by the move.
     const value = (p: Position | undefined) => Number(p?.value);
@@ -97,7 +102,7 @@ describe.skipIf(!url)('the stock reads', () => {
     expect(masked.body.items.map((p) => typeof p.value === 'object' && p.value !== null && 'masked' in p.value)).toEqual([true, true]);
     // One place's positions only.
     expect((await get<Page<Position>>(staff, '/stock/positions', { filter: { locationId: at.b }, limit: 10 })).body.items.map((p) => p.sku))
-      .toEqual([`BIKE-${at.t}`, `PAD-${at.t}`]);
+      .toEqual([`BIKE-${at.t}`, `PAD-${at.t}`, `ZERO-${at.t}`]);
   });
 
   it('lists the units by serial a page at a time, finds one by its prefix, and shows its trail', async () => {
