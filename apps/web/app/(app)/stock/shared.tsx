@@ -17,7 +17,7 @@ const CODES = ['unknown_location', 'location_inactive', 'unknown_item', 'quantit
   'counted_in_future', 'unknown_batch', 'serial_twice', 'not_serialised', 'serial_elsewhere', 'serial_unknown', 'chassis_required',
   'chassis_not_allowed', 'wrong_status', 'year_not_open', 'period_locked', 'account_inactive', 'not_enough_stock', 'batches_mismatch',
   'units_mismatch', 'unit_held', 'no_estimate', 'date_before_source', 'goods_moved_on', 'own_request', 'approver_too_new',
-  'version_changed', 'not_pending'] as const;
+  'version_changed', 'not_pending', 'transfer_same_location', 'needs_qc', 'use_job_work'] as const;
 /** The stock contracts' refusals in the screen's words, for Form's, ReasonDialog's and ConfirmDialog's `messages`. */
 export const STOCK_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`stock.err.${c}`)]));
 
