@@ -3,7 +3,7 @@
 // generic guards (its migration attaches them), and these CHECKs hold the values. Its tax is worked out on read while a
 // draft and stored when it's posted. Its goods lines name PO lines, and the receipt line each bills once the goods are in.
 import { isNull, sql } from 'drizzle-orm';
-import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { check, date, foreignKey, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { journalEntries, parties } from '../accounts/tables.ts';
 import { boundedText, createdMoment, id, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
 import { files } from '../platform/tables.ts';
@@ -76,7 +76,7 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   // The receipt line a goods line bills (M4-02): null while the bill has come before the goods; posting needs it.
   receiptLineId: uuid().references(() => goodsReceiptLines.id, { onDelete: 'restrict' }),
   // The job-work receipt line a job worker's charge bills (ADR-008 §11, RAD-142); a line names this or a receipt line.
-  jobWorkReceiptLineId: uuid().references(() => jobWorkReceiptLines.id, { onDelete: 'restrict' }),
+  jobWorkReceiptLineId: uuid(),
   itemId: uuid().references(() => items.id, { onDelete: 'restrict' }),
   qty: qty({ line: true }),
   rate: unitPrice(),
@@ -116,5 +116,8 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   index('ix_purchase_bill_lines_po_line').on(t.poLineId),
   index('ix_purchase_bill_lines_receipt_line').on(t.receiptLineId),
   index('ix_purchase_bill_lines_job_work_line').on(t.jobWorkReceiptLineId),
+  // Named, since drizzle's own name for it is past PostgreSQL's 63 bytes.
+  foreignKey({ name: 'fk_purchase_bill_lines_job_work_line', columns: [t.jobWorkReceiptLineId], foreignColumns: [jobWorkReceiptLines.id] })
+    .onDelete('restrict'),
   index('ix_purchase_bill_lines_item').on(t.itemId),
 ]);

@@ -1,7 +1,7 @@
 ALTER TABLE "radcore"."purchase_bill_lines" DROP CONSTRAINT "ck_purchase_bill_lines_kind";--> statement-breakpoint
 ALTER TABLE "radcore"."purchase_bill_lines" ADD COLUMN "job_work_receipt_line_id" uuid;--> statement-breakpoint
 ALTER TABLE "radcore"."purchase_bill_lines" ADD COLUMN "jwcb_value" numeric(18, 2);--> statement-breakpoint
-ALTER TABLE "radcore"."purchase_bill_lines" ADD CONSTRAINT "purchase_bill_lines_job_work_receipt_line_id_job_work_receipt_lines_id_fk" FOREIGN KEY ("job_work_receipt_line_id") REFERENCES "radcore"."job_work_receipt_lines"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "radcore"."purchase_bill_lines" ADD CONSTRAINT "fk_purchase_bill_lines_job_work_line" FOREIGN KEY ("job_work_receipt_line_id") REFERENCES "radcore"."job_work_receipt_lines"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "ix_purchase_bill_lines_job_work_line" ON "radcore"."purchase_bill_lines" USING btree ("job_work_receipt_line_id");--> statement-breakpoint
 ALTER TABLE "radcore"."purchase_bill_lines" ADD CONSTRAINT "ck_purchase_bill_lines_jwcb_value" CHECK ("radcore"."purchase_bill_lines"."jwcb_value" >= 0 and "radcore"."purchase_bill_lines"."jwcb_value" <> 'NaN');--> statement-breakpoint
 ALTER TABLE "radcore"."purchase_bill_lines" ADD CONSTRAINT "ck_purchase_bill_lines_job_work" CHECK (("radcore"."purchase_bill_lines"."kind" = 'job_work') = ("radcore"."purchase_bill_lines"."job_work_receipt_line_id" is not null and "radcore"."purchase_bill_lines"."item_id" is not null

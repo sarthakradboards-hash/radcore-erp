@@ -1,5 +1,5 @@
 {
-  "id": "46178eb5-2846-489b-bede-ee72c2e54354",
+  "id": "86a955f0-61f3-4061-a7b5-4c65af6eb13e",
   "prevId": "037676f8-9b90-486b-8ae9-240acbfb4740",
   "version": "7",
   "dialect": "postgresql",
@@ -19306,20 +19306,6 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "purchase_bill_lines_job_work_receipt_line_id_job_work_receipt_lines_id_fk": {
-          "name": "purchase_bill_lines_job_work_receipt_line_id_job_work_receipt_lines_id_fk",
-          "tableFrom": "purchase_bill_lines",
-          "tableTo": "job_work_receipt_lines",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "job_work_receipt_line_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
         "purchase_bill_lines_item_id_items_id_fk": {
           "name": "purchase_bill_lines_item_id_items_id_fk",
           "tableFrom": "purchase_bill_lines",
@@ -19327,6 +19313,20 @@
           "schemaTo": "radcore",
           "columnsFrom": [
             "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fk_purchase_bill_lines_job_work_line": {
+          "name": "fk_purchase_bill_lines_job_work_line",
+          "tableFrom": "purchase_bill_lines",
+          "tableTo": "job_work_receipt_lines",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "job_work_receipt_line_id"
           ],
           "columnsTo": [
             "id"
