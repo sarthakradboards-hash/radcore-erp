@@ -5,19 +5,22 @@
 // sellable places holding the item, and to cost of goods sold for what's gone; a line past the tolerance waits for
 // someone else's approval under bills:approve, which posts it.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
+import { addParty, allocatePayment, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear, recordPayment } from '@radcore/lib-accounts';
 import { gstinCheckChar, moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, decideApproval, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addBill, addOrder, addReceipt, addReturn, BILL_SERIES, grniByReceiptLine, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
   postReceipt, postReturn,
 } from '@radcore/lib-purchasing';
 import { addCategory, addItem, addPlace, requalifyTransfer } from '@radcore/lib-stock';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { turnsHeldBy } from './books-turn.ts';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import purchasingRoutes from '../apps/api/src/routes/purchasing.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -27,7 +30,7 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const DATE = '2026-11-15';
 const KEYS = ['purchasing:read', 'purchasing:write', 'inward:write', 'inward:qc', 'bills:write', 'parties:write', 'parties:manage', 'items:write',
   'locations:write', 'cost:read', 'gst:write', 'journal:read', 'stock:read',
-  'supplier_returns:write'];
+  'supplier_returns:write', 'payments:read', 'payments:write'];
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const letters = (n: number) => [...randomBytes(n)].map((b) => String.fromCharCode(65 + (b % 26))).join('');
@@ -216,6 +219,44 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     // The books check's figures for that receipt line (RAD-95): 248,000.00 accrued, all of it cleared by the return and bill.
     expect((await run((ctx) => grniByReceiptLine(ctx), at.staff)).filter((l) => l.receiptLineId === at.receiptLineId))
       .toEqual([{ receiptLineId: at.receiptLineId, accrued: '248000.00', open: '0.00' }]);
+  });
+
+  // The architect on RAD-143: the bill list's open amount and `open` filter, for applying a payment out on screen. F3's
+  // bill (131,250.00) with 100,000.00 of a payment allocated to it reads 31,250.00 open, through the real route; paid in
+  // full, it leaves the open list; a draft is never on it.
+  it('lists a supplier’s open bills with what is left to pay on each, through the route', async () => {
+    const at = await setup();
+    const { id } = await draft(at, { lines: [goods(at, '2', '62500')], total: '131250' });
+    await post(at, id);
+    await draft(at, { lines: [goods(at, '1', '62000')], total: '65100' });
+    const bank = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'bank'")).rows[0]?.id ?? '';
+    const pay = (amount: string) => run(async (ctx) => {
+      const { id: paymentId } = await recordPayment(ctx, { kind: 'payment', partyId: at.supplierId, businessDate: DATE, amount: moneyString().parse(amount),
+        accountId: bank });
+      await allocatePayment(ctx, { id: paymentId, businessDate: DATE, lines: [{ documentTable: 'purchase_bills', documentId: id,
+        amount: moneyString().parse(amount) }] });
+    }, at.staff);
+    await pay('100000');
+    const config = loadConfig(testSettings(), 'api');
+    const app = createApp(config, { info: () => undefined, error: () => undefined }, { db, authenticate: async () => at.staff, routes: purchasingRoutes });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      const list = async (filter: object) => {
+        const res = await fetch(`http://127.0.0.1:${server.port}/purchasing/bills?input=${encodeURIComponent(JSON.stringify({ filter, limit: 50 }))}`,
+          { headers: { origin: config.publicOrigin } });
+        expect(res.status).toBe(200);
+        return ((await res.json()) as { items: { id: string; status: string; open: string | null }[] }).items;
+      };
+      const all = await list({ supplierId: at.supplierId });
+      expect(all.map((b) => [b.status, b.open]).sort()).toEqual([['draft', null], ['posted', '31250.00']]);
+      expect((await list({ supplierId: at.supplierId, open: true })).map((b) => [b.id, b.open])).toEqual([[id, '31250.00']]);
+      const page = await fetch(`http://127.0.0.1:${server.port}/purchasing/bills/${id}`, { headers: { origin: config.publicOrigin } });
+      expect(((await page.json()) as { open: string }).open).toBe('31250.00');
+      await pay('31250');
+      expect(await list({ supplierId: at.supplierId, open: true })).toEqual([]);
+    } finally {
+      await server.stop();
+    }
   });
 
   it('waits for bills:approve on a line 2.01% over its PO rate, posts one 2.00% over, and someone else’s approval posts it', async () => {
