@@ -36,6 +36,7 @@ export {
 } from './services/job-work-challans.ts';
 export { addReceipt, cancelReceiptNow, getReceiptById, JOB_WORK_RECEIPT_SERIES, listReceiptsPage } from './services/job-work-receipts.ts';
 export { jobWorkLinesFor } from './services/job-work-lines.ts';
+export { jobWorkChargesByLine } from './services/job-work-charges.ts';
 export { jobWorkChallanPrint } from './print/challan.ts';
 export { NEGATIVE_STOCK, batchKey, holdStock, postStock, reverseStock, type BatchIn, type BatchOut, type PostedMovement, type StockIn, type StockOut, type StockPosting, type StockRevalue, type StockTransfer } from './engine/stock.ts';
 

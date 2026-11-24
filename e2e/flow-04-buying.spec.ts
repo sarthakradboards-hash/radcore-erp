@@ -2,8 +2,8 @@
 // at 0, so every order does); an admin, a different person, approves it from the approvals screen, which places it; stores records the arrival
 // against it, and QC splits it into accepted and rejected, which posts the receipt and moves the goods: the accepted into the sellable place,
 // the rejects into the rejects place. One person per step, each signed in as their built-in role, and every test ends with the books check (RAD-95).
-// Then the supplier's bills: the match view, one posted at once within the tolerance, one past it approved by someone else. Not here yet: the supplier
-// return (RAD-140's debit note, when ui's returns screens land).
+// Then the supplier's bills: the match view, one posted at once within the tolerance, one past it approved by someone else. Last, the rejects go
+// back to the supplier: the supplier billed them too, so the return is settled on a debit note applied to that bill, and cancelling it undoes both.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear } from '@radcore/lib-accounts';
 import { indiaDate, percentString } from '@radcore/lib-common';
@@ -213,7 +213,7 @@ test.describe('stores, receiving', () => {
 // The supplier's bills. The draft is made through the API (the bill form, ui's #404, is in review) with a supplier's bill file that is
 // already "ready" (a fixture row, as the repo's own bill tests make it: the upload and its check are the files specs' own), then the
 // journey goes through the screens: the match view, posting within the tolerance, and a bill past it waiting for someone else's approval.
-const bills = { first: '', second: '', firstNumber: '' };
+const bills = { first: '', second: '', third: '', firstNumber: '', thirdNumber: '' };
 
 /** A POST as the person `request` is signed in as. */
 async function post<T>(request: APIRequestContext, path: string, data: unknown): Promise<T> {
@@ -225,7 +225,7 @@ async function post<T>(request: APIRequestContext, path: string, data: unknown):
 /** A purchase bill's file, ready (the supplier's own paper), made as the owner of the database. */
 async function readyBillFile(): Promise<string> {
   const id = randomUUID();
-  const su = new pg.Client({ connectionString: process.env['E2E_SEED_DATABASE_URL'] });
+  const su = new pg.Client({ connectionString: process.env['E2E_SEED_DATABASE_URL'] ?? 'postgres://radcore@127.0.0.1:5432/radcore_e2e' });
   await su.connect();
   try {
     await su.query('begin');
@@ -252,6 +252,8 @@ test.describe('accounts, billing', () => {
     // 8 chargers accepted at 500.00 = 4,000.00, GST 18%: 4,720.00. 4 batteries at 1,500.00 (the order says 1,000.00) = 6,000.00, GST: 7,080.00.
     bills.first = `/purchases/bills/${await draft(receipt.lines[0]!, '8', '500.00', '4720.00', 1)}`;
     bills.second = `/purchases/bills/${await draft(receipt.lines[1]!, '4', '1500.00', '7080.00', 2)}`;
+    // the supplier billed the 2 rejected chargers as well, at 500.00 = 1,000.00, GST 18%: 1,180.00 (it is the rejects' return that this bill makes debitable)
+    bills.third = `/purchases/bills/${await draft(receipt.lines[0]!, '2', '500.00', '1180.00', 3)}`;
   });
 
   test('the first bill’s page shows the three-way match, within tolerance; Post it posts it at once and it draws its number', async ({ page }) => {
@@ -325,6 +327,104 @@ test.describe('accounts, after billing', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Purchase bills' })).toBeVisible();
     await expect(page.getByRole('row').filter({ hasText: `INV-${u}-1` })).toContainText(bills.firstNumber);
     await expect(page.getByRole('row').filter({ hasText: `INV-${u}-2` })).toBeVisible();
+    await accessible(page);
+  });
+
+  test('the third bill, for the 2 rejects, is within tolerance and posts at once', async ({ page }) => {
+    await page.goto(bills.third);
+    await expect(page.getByRole('heading', { level: 1, name: `Draft bill for invoice INV-${u}-3` })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Goods against their purchase orders and receipts' }).getByRole('row').nth(1)).toContainText('Within tolerance');
+    await btn(page, 'Post it').click();
+    await dialog(page).getByRole('button', { name: 'Post it' }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: /^Purchase bill \S+/ })).toBeVisible();
+    bills.thirdNumber = (await page.getByRole('heading', { level: 1 }).innerText()).replace('Purchase bill ', '').trim();
+    await expect(fact(page, 'Total').last()).toHaveText('₹1,180.00');
+    await accessible(page);
+  });
+});
+
+// The rejects go back. They are in the rejects place, and the supplier has billed them (the third bill), so the return is settled on a debit note
+// for what was billed, applied to that bill, and what leaves the rejects place is the 2 chargers.
+const back = { url: '', number: '', debitNumber: '' };
+
+test.describe('stores, sending the rejects back', () => {
+  test.use({ storageState: stateFor('stores') });
+
+  test('drafts a return of the 2 cracked chargers from the receipt: the screen shows them as billed, and the debit note before it is numbered', async ({ page, request }) => {
+    const onHand = async (itemId: string, locationId: string) =>
+      Number((await api<{ position: string }>(request, `/stock/on-hand?input=${enc({ itemId, locationId, limit: 5 })}`)).position);
+    expect(await onHand(ITEMS[0]!.id, PLACES.rejects.id), 'the rejects are in the rejects place').toBe(2);
+    await page.goto('/purchases/returns/new');
+    await pick(page, /^Supplier/, SUPPLIER.name);
+    await page.getByLabel('Rejects place', { exact: true }).selectOption({ label: PLACES.rejects.name });
+    await page.getByLabel('Why they go back').fill('Cracked cases');
+    const receiptOption = page.getByLabel('Add rejects from a goods receipt').locator('option', { hasText: run.receiptNumber });
+    await expect(receiptOption).toHaveCount(1, { timeout: 15_000 });
+    await page.getByLabel('Add rejects from a goods receipt').selectOption({ label: (await receiptOption.innerText()).trim() });
+    await expect(page.getByText(`${ITEMS[0]!.name} (${ITEMS[0]!.sku}): 2 rejected`)).toBeVisible();
+    await btn(page, 'Send these back').click();
+    await expect(page.getByRole('group', { name: /^Line 1: / })).toBeVisible();
+    await accessible(page);
+    await btn(page, 'Save the draft').click();
+    await expect(page).toHaveURL(/\/purchases\/returns\/[0-9a-f-]{36}$/);
+    back.url = new URL(page.url()).pathname;
+    await expect(page.getByRole('heading', { level: 1, name: 'Draft supplier return' })).toBeVisible();
+    await expect(fact(page, 'Supplier')).toHaveText(SUPPLIER.name);
+    await expect(fact(page, 'Rejects place')).toHaveText(PLACES.rejects.name);
+    await expect(fact(page, 'Why they go back')).toHaveText('Cracked cases');
+    // all 2 were billed (the third bill), at its rate: 2 x 500.00 = 1,000.00 + GST 90.00 + 90.00; nothing is back against goods not yet billed
+    const row = page.getByRole('row').filter({ hasText: ITEMS[0]!.sku });
+    await expect(row).toContainText(run.receiptNumber);
+    await expect(row).toContainText(bills.thirdNumber);
+    await expect(row).toContainText('₹1,000.00');
+    await expect(fact(page, 'Back against goods not yet billed')).toHaveText('₹0.00');
+    const note = page.locator('dl[aria-label="Debit note"]');
+    await expect(note.locator('dt', { hasText: /^Number$/ }).locator('xpath=following-sibling::dd[1]')).toHaveText('Numbered when the return posts');
+    await expect(note.locator('dt', { hasText: /^CGST$/ }).locator('xpath=following-sibling::dd[1]')).toHaveText('₹90.00');
+    await expect(note.locator('dt', { hasText: /^SGST$/ }).locator('xpath=following-sibling::dd[1]')).toHaveText('₹90.00');
+    await expect(note.locator('dt', { hasText: /^Total$/ }).locator('xpath=following-sibling::dd[1]')).toHaveText('₹1,180.00');
+    await accessible(page);
+    expect(await onHand(ITEMS[0]!.id, PLACES.rejects.id), 'a draft moves nothing').toBe(2);
+  });
+
+  test('posting it takes the 2 out of the rejects place, numbers the return and its debit note, and applies the note to the bill', async ({ page, request }) => {
+    await page.goto(back.url);
+    await btn(page, 'Post it').click();
+    await dialog(page).getByRole('button', { name: 'Post it' }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(status(page, /^Return \S+ posted, with debit note \S+/).first()).toBeAttached();
+    await expect(page.getByRole('heading', { level: 1, name: /^Supplier return \S+/ })).toBeVisible();
+    back.number = (await page.getByRole('heading', { level: 1 }).innerText()).replace('Supplier return ', '').trim();
+    await expect(bar(page).getByRole('listitem')).toHaveText(['Draft (done)', 'Posted (now)']);
+    const note = page.locator('dl[aria-label="Debit note"]');
+    back.debitNumber = (await note.locator('dt', { hasText: /^Number$/ }).locator('xpath=following-sibling::dd[1]').innerText()).trim();
+    expect(back.debitNumber).not.toBe('Numbered when the return posts');
+    await expect(page.getByText(new RegExp(`^${bills.thirdNumber}: ₹1,180\\.00, on `))).toBeVisible();
+    await accessible(page);
+    const rejects = Number((await api<{ position: string }>(request, `/stock/on-hand?input=${enc({ itemId: ITEMS[0]!.id, locationId: PLACES.rejects.id, limit: 5 })}`)).position);
+    expect(rejects, 'the cracked chargers have left').toBe(0);
+  });
+
+  test('the returns list shows the posted return', async ({ page }) => {
+    await page.goto('/purchases/returns');
+    await expect(page.getByRole('heading', { level: 1, name: 'Supplier returns' })).toBeVisible();
+    await expect(page.getByRole('row').filter({ hasText: back.number })).toBeVisible({ timeout: 15_000 });
+    await accessible(page);
+  });
+
+  test('cancelling the return with a reason puts the 2 back in the rejects place and reverses the debit note', async ({ page, request }) => {
+    await page.goto(back.url);
+    await btn(page, 'Cancel it').click();
+    await dialog(page).getByLabel('Reason').fill('Supplier will collect them instead');
+    await accessible(page);
+    await dialog(page).getByRole('button', { name: 'Cancel it' }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(status(page, 'Return cancelled').first()).toBeAttached();
+    await expect(bar(page).getByRole('listitem')).toHaveText(['Draft (done)', 'Posted (done)', 'Cancelled (now)']);
+    await expect(page.getByText('reversed')).toBeVisible();
+    const rejects = Number((await api<{ position: string }>(request, `/stock/on-hand?input=${enc({ itemId: ITEMS[0]!.id, locationId: PLACES.rejects.id, limit: 5 })}`)).position);
+    expect(rejects, 'the rejects are back').toBe(2);
     await accessible(page);
   });
 });

@@ -60,6 +60,9 @@ const header = z.object({
   supplierInvoiceNumber: z.string(), supplierInvoiceDate: dateString(), total: money(),
   /** Whether a request for its approval is waiting: a line or the charges past the tolerance. */
   awaitingApproval: z.boolean(),
+  /** What's still to pay on a posted bill: its total less the payments allocated and debit notes applied to it (ADR-008
+   * §7, ADR-005 §7a). Null while a draft, and for a cancelled bill (RAD-143, the architect). */
+  open: money(),
 });
 const bill = header.extend({
   /** The GSTIN as printed on the supplier's bill: the party's own, or none for an unregistered supplier. */
@@ -102,7 +105,8 @@ const posted = z.object({ status: z.enum(['posted', 'pending_approval']), number
 /** Purchase bills, newest first, a page at a time; the principal's own where that's their scope. */
 export const listPurchaseBills = defineContract({
   method: 'GET', path: '/purchasing/bills', auth: 'session', perm: 'purchasing:read', tx: read,
-  input: listInput(z.object({ status: status.optional(), supplierId: idString().optional() })),
+  // `open`: only posted bills with something still to pay, for applying a payment out to them (RAD-143).
+  input: listInput(z.object({ status: status.optional(), supplierId: idString().optional(), open: z.literal(true).optional() })),
   output: listOf(header),
 });
 /** One purchase bill, with its lines, how each stands against its PO rate, and its amounts. */

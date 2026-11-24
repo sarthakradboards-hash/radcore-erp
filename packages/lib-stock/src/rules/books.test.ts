@@ -14,6 +14,7 @@ const healthy: BooksFigures = {
   ledger: [{ itemId: A, locationId: STORES, qty: '5', value: '1000.00' }, { itemId: A, locationId: DEMO, qty: '1', value: '200.00' }],
   current: [{ itemId: A, locationId: STORES, qty: '5', value: '1000.00' }, { itemId: A, locationId: DEMO, qty: '1', value: '200.00' }],
   batches: [{ itemId: A, locationId: STORES, qty: '5' }, { itemId: A, locationId: DEMO, qty: '1' }],
+  jwcb: { books: '450.00', lines: [{ jobWorkLineId: LINE, accrued: '450.00', open: '450.00' }] },
   grni: { books: '62000.00', lines: [{ receiptLineId: LINE, accrued: '186000.00', open: '62000.00' },
     { receiptLineId: 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f', accrued: '500.00', open: '0.00' }] },
 };
@@ -22,7 +23,8 @@ const checks = (f: Partial<BooksFigures>) => booksProblems({ ...healthy, ...f })
 describe('the books check’s comparison', () => {
   it('finds nothing wrong with books that agree', () => {
     expect(booksProblems(healthy)).toEqual([]);
-    expect(booksProblems({ trial: { debit: '0', credit: '0.00' }, books: [], ledger: [], current: [], batches: [], grni: { books: '0', lines: [] } })).toEqual([]);
+    expect(booksProblems({ trial: { debit: '0', credit: '0.00' }, books: [], ledger: [], current: [], batches: [], grni: { books: '0', lines: [] },
+      jwcb: { books: '0', lines: [] } })).toEqual([]);
   });
 
   it('finds debits that differ from credits', () => {
@@ -59,6 +61,16 @@ describe('the books check’s comparison', () => {
     expect(checks({ grni: { books: '-0.01', lines: [line('-0.01')] } })).toEqual([['grni_line', null]]);
     expect(checks({ grni: { books: '100.01', lines: [line('100.01')] } })).toEqual([['grni_line', null]]);
     expect(checks({ grni: { books: '100', lines: [line('100.00')] } })).toEqual([]);
+  });
+
+  it('finds Job Work Charges to be Billed whose open job-work lines don’t add up to the books, or a line cleared past its charge', () => {
+    expect(checks({ jwcb: { books: '450.01', lines: healthy.jwcb.lines } })).toEqual([['jwcb', null]]);
+    const line = (open: string) => ({ jobWorkLineId: LINE, accrued: '450.00', open });
+    expect(checks({ jwcb: { books: '-0.01', lines: [line('-0.01')] } })).toEqual([['jwcb_line', null]]);
+    expect(checks({ jwcb: { books: '450.01', lines: [line('450.01')] } })).toEqual([['jwcb_line', null]]);
+    expect(booksProblems({ ...healthy, jwcb: { books: '0', lines: [line('-1')] } }).map((p) => p.message)).toEqual([
+      `Job-work receipt line ${LINE} accrued 450.00 to Job Work Charges to be Billed, but bills have cleared it to -1.00`,
+      'Job Work Charges to be Billed shows 0.00, but the job-work lines left to bill come to -1.00']);
   });
 
   it('says what it found in words a person can act on', () => {
