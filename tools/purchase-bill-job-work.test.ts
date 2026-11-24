@@ -214,8 +214,11 @@ describe.skipIf(!url || !superUrl)('a job worker’s bill', { timeout: 60_000 },
     const undone = await setup();
     await run((ctx) => cancelReceiptNow(ctx, { id: undone.receiptId, businessDate: DATE, reason: 'Entered twice' }), undone.staff);
     expect((await run((ctx) => jobWorkChargesByLine(ctx), at.staff)).some((c) => c.jobWorkLineId === undone.line)).toBe(false);
-    const books = await runInTransaction(db, { readOnly: true, isolation: 'repeatable read' }, at.staff, randomUUID(), (ctx) => checkBooks(ctx, {}));
-    expect(books.problems.filter((p) => p.check.startsWith('jwcb'))).toEqual([]);
+    // As at this file's day, so books-check.test.ts's planted 2032 line, committed for a moment from another file, can't
+    // show here; and the line problems only for this test's own lines (the auditor on #410).
+    const books = await runInTransaction(db, { readOnly: true, isolation: 'repeatable read' }, at.staff, randomUUID(), (ctx) => checkBooks(ctx, { asAt: DATE }));
+    expect(books.problems.filter((p) => p.check === 'jwcb' || (p.check === 'jwcb_line' && [at.line, undone.line].some((l) => p.message.includes(l)))))
+      .toEqual([]);
   });
 
   // backend-2 on #408 (ADR-008 §12, as #370's POs): a draft's save holds the job-work receipts it names before itself, so a
