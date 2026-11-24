@@ -77,16 +77,17 @@ export default function PurchaseBillPage() {
         <div className="kit-actions">
           {draft && !b.awaitingApproval
             ? <button type="button" className="kit-button kit-button-primary" onClick={() => setDialog('post')}>{t('purchases.bill.post')}</button> : null}
+          {draft ? <Link className="kit-button" href={`/purchases/bills/${id}/edit`}>{t('purchases.edit')}</Link> : null}
           {draft ? <button type="button" className="kit-button" onClick={() => setDialog('delete')}>{t('purchases.delete')}</button> : null}
           {b.status === 'posted' ? <button type="button" className="kit-button" onClick={() => setDialog('cancel')}>{t('purchases.bill.cancel')}</button> : null}
         </div>
       ) : null}
 
       <ConfirmDialog open={dialog === 'post'} onOpenChange={shut} messages={PURCHASE_MESSAGES} title={t('purchases.bill.post.title')}
-        body={t('purchases.bill.post.body')} action={t('purchases.bill.post')} done={t('purchases.sentForApproval')}
+        body={t('purchases.bill.post.body')} action={t('purchases.bill.post')} done={t('purchases.bill.sentForApproval')}
         onConfirm={async () => {
           const r = await post.submit({ id });
-          return r.status === 'posted' && r.number !== null ? t('purchases.bill.posted', { number: r.number }) : t('purchases.sentForApproval');
+          return r.status === 'posted' && r.number !== null ? t('purchases.bill.posted', { number: r.number }) : t('purchases.bill.sentForApproval');
         }} />
       <ConfirmDialog open={dialog === 'delete'} onOpenChange={shut} messages={PURCHASE_MESSAGES} title={t('purchases.bill.delete.title')}
         body={t('purchases.bill.delete.body')} action={t('purchases.delete')} done={t('purchases.deleted')}

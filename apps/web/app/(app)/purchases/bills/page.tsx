@@ -6,6 +6,7 @@ import { listPurchaseBills } from '@radcore/lib-purchasing/contract';
 import Link from 'next/link';
 import { useState } from 'react';
 import type { z } from 'zod';
+import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
@@ -24,6 +25,7 @@ const columns: Column<Row>[] = [
 ];
 
 export default function PurchaseBillsPage() {
+  const mayWrite = useMe().permissions.includes('bills:write');
   const [show, setShow] = useState<Show>('all');
   const list = useApiList(listPurchaseBills, { filter: show === 'all' ? {} : { status: show } });
   return (
@@ -34,6 +36,7 @@ export default function PurchaseBillsPage() {
         <ChoiceButtons<Show> label={t('purchases.col.status')} value={show} onChange={setShow} options={[
           { value: 'all', label: t('purchases.bill.all') }, ...(['draft', 'posted', 'cancelled'] as const).map((s) => ({ value: s, label: billStatusName(s) })),
         ]} />
+        {mayWrite ? <Link className="kit-button kit-button-primary" href="/purchases/bills/new">{t('purchases.bill.new')}</Link> : null}
       </div>
       <DataTable caption={t('purchases.bills.title')} columns={columns} rowKey={(r) => r.id} list={list} empty={t('purchases.bills.empty')} />
     </>
