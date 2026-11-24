@@ -75,7 +75,7 @@ it('shows Sales on sales:read, opening quotes, and marks it current on its pages
 
 it('shows Purchases on purchasing:read, opening the orders, with the goods receipts among its pages and current on them (RAD-143)', () => {
   expect(PURCHASES_PAGES.map((p) => [p.href, p.perm])).toEqual([['/purchases/orders', 'purchasing:read'], ['/purchases/receipts', 'purchasing:read'],
-    ['/purchases/bills', 'purchasing:read'], ['/purchases/approvals', 'purchasing:approve'], ['/purchases/bills/approvals', 'bills:approve']]);
+    ['/purchases/bills', 'purchasing:read'], ['/purchases/returns', 'purchasing:read'], ['/purchases/approvals', 'purchasing:approve'], ['/purchases/bills/approvals', 'bills:approve']]);
   // Someone who only approves bills is taken straight to their queue.
   expect(menuFor(NAV, ['bills:approve']).find((e) => e.label === 'nav.purchases')?.href).toBe('/purchases/bills/approvals');
   const purchases = menuFor(NAV, ['purchasing:read']).find((e) => e.label === 'nav.purchases');

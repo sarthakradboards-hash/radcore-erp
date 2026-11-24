@@ -71,6 +71,7 @@ export const PURCHASES_PAGES = [
   { href: '/purchases/orders', label: 'purchases.nav.orders', perm: 'purchasing:read' },
   { href: '/purchases/receipts', label: 'inward.nav.receipts', perm: 'purchasing:read' },
   { href: '/purchases/bills', label: 'purchases.nav.bills', perm: 'purchasing:read' },
+  { href: '/purchases/returns', label: 'purchases.nav.returns', perm: 'purchasing:read' },
   { href: '/purchases/approvals', label: 'purchases.nav.approvals', perm: 'purchasing:approve' },
   { href: '/purchases/bills/approvals', label: 'purchases.nav.billApprovals', perm: 'bills:approve' },
 ] as const satisfies readonly NavPage[];
