@@ -15,7 +15,8 @@ type Order = z.output<typeof getPurchaseOrder.output>;
 const CODES = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_party', 'not_a_supplier', 'unknown_item', 'item_inactive',
   'quantity_too_precise', 'wrong_status', 'no_gst_rate', 'company_profile_incomplete', 'version_changed', 'series_full',
   'over_approved', 'fixed_once_placed', 'po_received', 'own_request', 'approver_too_new', 'not_pending',
-  'supplier_date_after_bill', 'gstin_mismatch', 'unknown_po_line', 'po_not_placed', 'other_supplier', 'unknown_receipt_line', 'receipt_not_posted', 'not_this_po_line', 'wrong_file_kind', 'not_ready', 'upload_refused', 'duplicate_bill', 'date_before_source', 'bill_file_required', 'goods_not_received', 'over_received', 'total_mismatch', 'nothing_to_revalue', 'account_inactive', 'still_applied', 'bill_returned'] as const;
+  'supplier_date_after_bill', 'gstin_mismatch', 'unknown_po_line', 'po_not_placed', 'other_supplier', 'unknown_receipt_line', 'receipt_not_posted', 'not_this_po_line', 'wrong_file_kind', 'not_ready', 'upload_refused', 'duplicate_bill', 'date_before_source', 'bill_file_required', 'goods_not_received', 'over_received', 'total_mismatch', 'nothing_to_revalue', 'account_inactive', 'still_applied', 'bill_returned',
+  'unknown_location', 'location_inactive', 'not_a_rejects_place', 'qty_not_positive', 'unknown_batch', 'batches_mismatch', 'serials_mismatch', 'serial_twice', 'not_serialised', 'not_enough_stock', 'units_mismatch', 'unit_held', 'unit_batch', 'no_estimate', 'replacement_received', 'not_reversible', 'already_reversed'] as const;
 /** The purchasing contracts' refusals in the screen's words, for Form's, ReasonDialog's and ConfirmDialog's `messages`. */
 export const PURCHASE_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`purchases.err.${c}`)]));
 

@@ -7,7 +7,7 @@ export {
   addReceipt, cancelReceiptNow, changeReceipt, dropReceipt, getReceiptById, listReceiptsPage, postReceipt, RECEIPT_SERIES,
 } from './services/receipts.ts';
 export { receiptLinesFor } from './services/receipt-lines.ts';
-export { grniByReceiptLine } from './services/grni.ts';
+export { grniByReceiptLine, jwcbClearedByLine } from './services/grni.ts';
 export { purchaseOrderPrint } from './print/order.ts';
 export {
   addReturn, cancelReturnNow, changeReturn, dropReturn, getReturnById, listReturnsPage, postReturn, RETURN_SERIES,
