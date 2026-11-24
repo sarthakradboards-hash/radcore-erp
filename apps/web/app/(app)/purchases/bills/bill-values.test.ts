@@ -27,3 +27,11 @@ describe('the purchase bill form', () => {
     expect(late.error?.issues.map((i) => i.path)).toEqual([['supplierInvoiceDate']]);
   });
 });
+
+describe('a job worker’s charge line', () => {
+  it('sends its job-work receipt line, quantity, rate and SAC, and is refused without a SAC on its own box', () => {
+    const jw = { kind: 'job_work' as const, label: 'Painted frame (FRM-PNT), JWR/26-27/00001', jobWorkReceiptLineId: id(41), qty: '8', rate: '150.00', hsn: '998898' };
+    expect(billSchema.parse({ ...filled, lines: [jw] }).lines).toEqual([{ kind: 'job_work', jobWorkReceiptLineId: id(41), qty: '8', rate: '150.00', hsn: '998898' }]);
+    expect(billSchema.safeParse({ ...filled, lines: [{ ...jw, hsn: '' }] }).error?.issues.map((i) => i.path)).toEqual([['lines', 0, 'hsn']]);
+  });
+});

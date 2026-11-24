@@ -27,8 +27,10 @@ const tax = (a: Bill['lines'][number]['amounts']) => [a.cgst, a.sgst, a.igst].fi
 export function MatchView({ bill }: { bill: Bill }) {
   const goodsId = useId();
   const chargesId = useId();
+  const jobWorkId = useId();
   const goods = bill.lines.filter((l) => l.kind === 'goods');
   const charges = bill.lines.filter((l) => l.kind === 'charge');
+  const jobWork = bill.lines.filter((l) => l.kind === 'job_work');
   return (
     <>
       <div className="kit-table">
@@ -88,6 +90,49 @@ export function MatchView({ bill }: { bill: Bill }) {
                 {charges.map((l) => (
                   <tr key={l.id}>
                     <td>{t(`purchases.bill.charge.${l.charge}`)}: {l.description}</td>
+                    <td>{l.hsn}</td>
+                    <td className="kit-numeric">{money(l.amounts.taxable)}</td>
+                    <td className="kit-numeric">{tax(l.amounts)}</td>
+                    <td className="kit-numeric">{money(l.amounts.lineTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {jobWork.length === 0 ? null : (
+        // A job worker's charges (#408), against the charge rate their job-work receipt recorded. Its four reference fields are
+        // null for a reader who can't see that receipt, so they show nothing then.
+        <div className="kit-table">
+          <div className="kit-table-scroll" role="region" aria-labelledby={jobWorkId} tabIndex={0}>
+            <table>
+              <caption id={jobWorkId}>{t('purchases.bill.jobWork')}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{t('purchases.bill.jobWork.made')}</th>
+                  <th scope="col">{t('purchases.bill.jobWork.receipt')}</th>
+                  <th scope="col" className="kit-numeric">{t('purchases.bill.col.qty')}</th>
+                  <th scope="col" className="kit-numeric">{t('purchases.bill.jobWork.chargeRate')}</th>
+                  <th scope="col" className="kit-numeric">{t('purchases.bill.col.rate')}</th>
+                  <th scope="col" className="kit-numeric">{t('purchases.bill.jobWork.over')}</th>
+                  <th scope="col">{t('purchases.bill.col.verdict')}</th>
+                  <th scope="col">{t('purchases.bill.col.hsn')}</th>
+                  <th scope="col" className="kit-numeric">{t('sales.amounts.taxable')}</th>
+                  <th scope="col" className="kit-numeric">{t('purchases.bill.col.gst')}</th>
+                  <th scope="col" className="kit-numeric">{t('purchases.bill.col.lineTotal')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobWork.map((l) => (
+                  <tr key={l.id}>
+                    <td>{l.name} ({l.sku})</td>
+                    <td>{l.receiptNumber ?? ''}</td>
+                    <td className="kit-numeric">{asWritten(l.qty)} {l.unit}</td>
+                    <td className="kit-numeric">{l.chargeRate === null ? '' : asPrice(l.chargeRate)}</td>
+                    <td className="kit-numeric">{asPrice(l.rate)}</td>
+                    <td className="kit-numeric">{l.overChargeRate === null ? '' : `${asWritten(l.overChargeRate)}%`}</td>
+                    <td>{l.overTolerance === null ? '' : l.overTolerance ? <strong>{t('purchases.bill.pastTolerance')}</strong> : t('purchases.bill.withinTolerance')}</td>
                     <td>{l.hsn}</td>
                     <td className="kit-numeric">{money(l.amounts.taxable)}</td>
                     <td className="kit-numeric">{tax(l.amounts)}</td>

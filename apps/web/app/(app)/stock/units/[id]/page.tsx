@@ -15,7 +15,7 @@ const PAGES: Partial<Record<string, string>> = {
   goods_receipts: '/purchases/receipts', deliveries: '/sales/deliveries', delivery_returns: '/sales/delivery-returns',
   invoices: '/sales/invoices', stock_transfers: '/stock/transfers', stock_adjustments: '/stock/adjustments', stock_counts: '/stock/counts',
   job_work_challans: '/stock/job-work', job_work_receipts: '/stock/job-work/receipts', sales_orders: '/sales/orders',
-  credit_notes: '/sales/credit-notes', purchase_bills: '/purchases/bills',
+  credit_notes: '/sales/credit-notes', purchase_bills: '/purchases/bills', supplier_returns: '/purchases/returns',
 };
 
 export default function StockUnitPage() {
