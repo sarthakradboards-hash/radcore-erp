@@ -437,7 +437,7 @@ test.describe('accounts, paying the supplier', () => {
     await expect(page.getByRole('heading', { level: 2, name: /^Payment \S+/ })).toBeVisible();
     paid.number = (await page.getByRole('heading', { level: 2 }).first().innerText()).replace('Payment ', '').trim();
     await expect(page.locator('#main').getByText(`Payment ${paid.number} recorded.`)).toBeVisible();
-    await expect(page.locator('#main').getByText('₹11,800.00')).toBeVisible();
+    await expect(page.locator('#main').getByText('₹11,800.00', { exact: true })).toBeVisible();
     await accessible(page);
   });
 
