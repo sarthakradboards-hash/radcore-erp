@@ -6,7 +6,7 @@ import { getCompanyProfile } from '@radcore/lib-accounts';
 import { dec, indiaDate, percentString } from '@radcore/lib-common';
 import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax } from '@radcore/lib-gst';
 import { AppError, defineSeries, defineSetting, listScope, momentKey, readyFile, type Ctx } from '@radcore/lib-platform';
-import { checkQuantity, itemLabels } from '@radcore/lib-stock';
+import { checkQuantity, itemLabels, jobWorkLinesFor } from '@radcore/lib-stock';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createPurchaseBill, getPurchaseBill } from '../contract.ts';
@@ -64,9 +64,11 @@ export async function poLinesOf(ctx: Ctx, ids: readonly string[]): Promise<Map<s
   return new Map(rows.filter((r) => ctx.can('purchasing:read', { owner: r.owner })).map((r) => [r.id, r]));
 }
 
+export type JobWorkLine = Awaited<ReturnType<typeof jobWorkLinesFor>>[number];
 /** A draft's checks (ADR-008 §4, §7): the dates, the supplier and the GSTIN printed on its bill, each goods line's PO
- * line (placed or closed, the supplier's own), its quantity, and the file. Answers each goods line's PO line. */
-export async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLine>> {
+ * line (placed or closed, the supplier's own), each job worker's charge's receipt line (posted, the job worker's own, with
+ * goods made), their quantities, and the file. Answers each goods line's PO line and each charge's job-work line. */
+export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string, PoLine>; made: Map<string, JobWorkLine> }> {
   if (b.businessDate > today()) throw refuseAt('date_in_future', 'The date is after today', ['businessDate']);
   if (b.supplierInvoiceDate > b.businessDate) {
     throw refuseAt('supplier_date_after_bill', 'The supplier’s date is after the bill’s own', ['supplierInvoiceDate']);
@@ -100,11 +102,32 @@ export async function checkDraft(ctx: Ctx, b: BillIn): Promise<Map<string, PoLin
       throw e instanceof AppError ? refuseAt(e.code, e.message, ['lines', n, 'qty']) : e;
     });
   }
+  const jobWork = b.lines.flatMap((l, n) => (l.kind === 'job_work' ? [{ l, n }] : []));
+  const made = new Map((await jobWorkLinesFor(ctx, jobWork.map((x) => x.l.jobWorkReceiptLineId), { lock: false })).map((r) => [r.id, r]));
+  for (const { l, n } of jobWork) {
+    const at = ['lines', n, 'jobWorkReceiptLineId'];
+    const r = made.get(l.jobWorkReceiptLineId);
+    // Only a line that made goods has a charge to bill (ADR-008 §11).
+    if (r?.madeItemId == null) throw refuseAt('unknown_receipt_line', 'There is no such job-work receipt line with goods made', at);
+    if (r.status !== 'posted') throw refuseAt('receipt_not_posted', `That job-work receipt is ${r.status}: only a posted one is billed`, at);
+    if (r.partyId !== b.supplierId) throw refuseAt('other_supplier', 'That job work was another job worker’s', at);
+    await checkQuantity(ctx, r.madeItemId, l.qty).catch((e: unknown) => {
+      throw e instanceof AppError ? refuseAt(e.code, e.message, ['lines', n, 'qty']) : e;
+    });
+  }
   if (b.fileId !== null) await readyFile(ctx, 'purchase_bill', b.fileId, { wrongKind: ['fileId'] });
-  return po;
+  return { po, made };
 }
 
 export const poLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'goods' ? [l.poLineId] : []));
+export const jobWorkLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'job_work' ? [l.jobWorkReceiptLineId] : []));
+
+/** The job-work receipts these lines name, FOR SHARE in id order, after the POs and before the bill (ADR-008 §12): a
+ * receipt's cancel holds its row FOR UPDATE while charges_billed reads which bills name it, so a draft naming its lines
+ * waits for it, and it for the draft (backend-2 on #408, as #370's POs). */
+export async function holdJobWork(ctx: Ctx, jobWorkLineIds: readonly string[]): Promise<void> {
+  await jobWorkLinesFor(ctx, jobWorkLineIds, { lock: 'share' });
+}
 
 /** The POs these PO lines are on, locked FOR SHARE in id order, before the bill (ADR-008 §12: POs, then receipts, then
  * bills). A placed PO's change holds its row FOR UPDATE while it checks which lines bills name (po_billed), so a draft
@@ -130,12 +153,13 @@ export async function amountsOf(ctx: Ctx, supplierState: string, on: string, lin
   const labels = await itemLabels(ctx, lines.flatMap((l) => (l.itemId === null ? [] : [l.itemId])));
   const taxed: Taxed[] = [];
   for (const [n, l] of lines.entries()) {
+    // A job worker's charge is a service, taxed at its own SAC, not its made item's HSN.
     const hsn = l.kind === 'goods' ? labels.get(l.itemId ?? '')?.hsn ?? '' : l.hsn ?? '';
     const rate = await gstRateFor(ctx, hsn, on).catch((e: unknown) => {
       throw e instanceof AppError ? refuseAt(e.code, e.message, ['lines', n]) : e;
     });
-    const t = l.kind === 'goods' ? lineTax({ qty: l.qty ?? '0', rate: l.rate ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState)
-      : lineTax({ qty: '1', rate: l.amount ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState);
+    const t = l.kind === 'charge' ? lineTax({ qty: '1', rate: l.amount ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState)
+      : lineTax({ qty: l.qty ?? '0', rate: l.rate ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState);
     taxed.push({ ...t, gstRate: rate.rate, gstRateSource: rate.source });
   }
   return { placeOfSupply: place.state, lines: taxed, totals: totalsOf(taxed) };
