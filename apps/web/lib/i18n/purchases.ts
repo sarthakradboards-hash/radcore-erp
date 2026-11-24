@@ -283,6 +283,8 @@ export const purchases = {
   'purchases.bill.pickPo': 'Choose a purchase order',
   'purchases.bill.noPos': 'This supplier has no placed purchase order',
   'purchases.bill.addPoLines': 'Add its lines',
+  'purchases.bill.poClosed': '{number} (all received)',
+  'purchases.bill.poClosedShort': 'This purchase order was closed short, so it has nothing more to bill.',
   'purchases.bill.receipt': 'Goods receipt',
   'purchases.bill.receipt.hint': 'The receipt that brought these goods. Leave it until they’re in.',
   'purchases.bill.receipt.none': 'Not in yet',

@@ -14,7 +14,7 @@ import { ApiError } from '../../../../lib/api-client.ts';
 import { useApiList, useApiMutation, useApiQuery, useApiSearch } from '../../../../lib/api/query.ts';
 import { BucketRefused, postToBucket } from '../../../../lib/files/post-to-bucket.ts';
 import { t } from '../../../../lib/i18n/index.ts';
-import { asPrice } from '../../admin/decimal.ts';
+import { asPrice, asWritten } from '../../admin/decimal.ts';
 import { PickedField } from '../../sales/picked-field.tsx';
 import { PURCHASE_MESSAGES } from '../shared.tsx';
 import { billSchema, blankCharge, type BillInput, type BillLineInput } from './bill-values.ts';
@@ -41,7 +41,7 @@ function BillFile() {
       setState({ busy: false, problem: '' });
     } catch (e) {
       setState({ busy: false, problem: e instanceof BucketRefused ? t('purchases.bill.file.err.bucket')
-        : e instanceof ApiError ? (e.envelope.issues[0]?.message ?? e.envelope.message) : t('purchases.bill.file.err.offline') });
+        : e instanceof ApiError ? (PURCHASE_MESSAGES[e.code] ?? e.envelope.issues[0]?.message ?? e.envelope.message) : t('purchases.bill.file.err.offline') });
     }
   };
   return (
@@ -56,24 +56,32 @@ function BillFile() {
   );
 }
 
-/** Adds one goods line for each line of a placed PO of the supplier's. */
+/** Adds one goods line for each line of a PO of the supplier's: a placed one, or one its receipts closed, since a PO closes as
+ * soon as all its goods are in, and that's the usual bill (e2e-playwright on #404). One closed short has nothing to bill. */
 function AddFromPo({ onAdd }: { onAdd: (lines: BillLineInput[]) => void }) {
   const { control } = useFormContext<BillInput>();
   const supplierId = useWatch({ control, name: 'supplierId' });
-  // shortcut: the supplier's first 50 placed POs, newest first; a search is owed if a supplier has more open at once.
-  const pos = useApiList(listPurchaseOrders, { filter: { supplierId, status: 'placed' } }, { limit: 50, enabled: supplierId !== '' });
+  // shortcut: the supplier's 50 newest placed and 50 newest closed POs; a search by number is owed if a supplier has more.
+  const placed = useApiList(listPurchaseOrders, { filter: { supplierId, status: 'placed' } }, { limit: 50, enabled: supplierId !== '' });
+  const closed = useApiList(listPurchaseOrders, { filter: { supplierId, status: 'closed' } }, { limit: 50, enabled: supplierId !== '' });
+  const pos = [...placed.items, ...closed.items];
   const [poId, setPoId] = useState('');
   const po = useApiQuery(getPurchaseOrder, { id: poId }, { enabled: poId !== '' }).data;
+  const closedShort = po !== undefined && po.status === 'closed' && po.closedReason !== null;
   const selectId = useId();
+  // Another supplier's POs aren't offered, so a PO picked for the last one goes.
+  const seen = useRef(supplierId);
+  useEffect(() => { if (seen.current !== supplierId) { seen.current = supplierId; setPoId(''); } }, [supplierId]);
   if (supplierId === '') return <p>{t('purchases.bill.pickSupplierFirst')}</p>;
   return (
     <div className="admin-toolbar">
       <label htmlFor={selectId}>{t('purchases.bill.fromPo')}</label>
       <select id={selectId} className="kit-select" value={poId} onChange={(e) => setPoId(e.currentTarget.value)}>
-        <option value="">{pos.items.length === 0 ? t('purchases.bill.noPos') : t('purchases.bill.pickPo')}</option>
-        {pos.items.map((p) => <option key={p.id} value={p.id}>{p.number}</option>)}
+        <option value="">{pos.length === 0 ? t('purchases.bill.noPos') : t('purchases.bill.pickPo')}</option>
+        {pos.map((p) => <option key={p.id} value={p.id}>{p.status === 'closed' ? t('purchases.bill.poClosed', { number: p.number ?? '' }) : p.number}</option>)}
       </select>
-      <button type="button" className="kit-button" disabled={po === undefined}
+      {closedShort ? <p role="alert" className="kit-form-alert">{t('purchases.bill.poClosedShort')}</p> : null}
+      <button type="button" className="kit-button" disabled={po === undefined || closedShort}
         onClick={() => { if (po !== undefined) { onAdd(po.lines.map((l) => ({ kind: 'goods', label: `${l.name} (${l.sku}), ${po.number ?? ''}`,
           poLineId: l.id, receiptId: '', receiptLineId: '', qty: '', rate: asPrice(l.rate) }))); setPoId(''); } }}>
         {t('purchases.bill.addPoLines')}
@@ -109,14 +117,23 @@ function ReceiptPick({ index }: { index: number }) {
           ...receipts.items.map((r) => ({ value: r.id, label: `${r.number ?? ''}, ${r.orderNumber ?? ''}` }))]} />
       {receipt !== undefined && found === undefined ? <p role="alert" className="kit-form-alert">{t('purchases.bill.receipt.noLine')}</p> : null}
       {found === undefined || found.accepted === null ? null
-        : <p className="kit-hint">{t('purchases.bill.receipt.accepted', { qty: found.accepted, rate: asPrice(found.rate) })}</p>}
+        : <p className="kit-hint">{t('purchases.bill.receipt.accepted', { qty: asWritten(found.accepted), rate: asPrice(found.rate) })}</p>}
     </>
   );
 }
 
 function Lines() {
-  const { control } = useFormContext<BillInput>();
-  const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
+  const { control, getValues } = useFormContext<BillInput>();
+  const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
+  // Another supplier's POs can't be on this bill, so changing the supplier drops its goods lines; charges stay. Not on the first
+  // render, so a saved draft keeps its own (auditor-3 on #404).
+  const supplierId = useWatch({ control, name: 'supplierId' });
+  const seen = useRef(supplierId);
+  useEffect(() => {
+    if (seen.current === supplierId) return;
+    seen.current = supplierId;
+    replace(getValues('lines').filter((l) => l.kind === 'charge'));
+  }, [supplierId, replace, getValues]);
   const kinds = CHARGE_KINDS.map((k) => ({ value: k, label: t(`purchases.bill.charge.${k}`) }));
   return (
     <>

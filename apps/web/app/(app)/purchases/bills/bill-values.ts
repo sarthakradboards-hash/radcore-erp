@@ -7,7 +7,7 @@ import { createPurchaseBill, type getPurchaseBill } from '@radcore/lib-purchasin
 import { indiaDate } from '@radcore/lib-common';
 import { z } from 'zod';
 import { t } from '../../../../lib/i18n/index.ts';
-import { asPrice } from '../../admin/decimal.ts';
+import { asPrice, asWritten } from '../../admin/decimal.ts';
 
 const CHARGES = ['freight', 'packing', 'insurance', 'other'] as const;
 
@@ -67,7 +67,7 @@ export function billToForm(b: z.output<typeof getPurchaseBill.output>): BillInpu
     fileId: b.fileId ?? '', notes: b.notes ?? '',
     lines: b.lines.map((l) => (l.kind === 'goods'
       ? { kind: 'goods', label: `${l.name} (${l.sku}), ${l.poNumber}`, poLineId: l.poLineId, receiptId: '', receiptLineId: l.receiptLineId ?? '',
-        qty: l.qty, rate: asPrice(l.rate) }
+        qty: asWritten(l.qty), rate: asPrice(l.rate) }
       : { kind: 'charge', charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount })),
   };
 }
