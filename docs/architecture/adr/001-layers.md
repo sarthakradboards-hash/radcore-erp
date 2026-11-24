@@ -79,7 +79,7 @@ lib-common's single `.` entry is already browser-safe.
 | lib-payroll | payroll runs, payslips, salary history, advances |
 | lib-purchasing | purchase orders, goods receipt and QC, purchase bills, supplier returns and debit notes, imports and landed cost |
 | lib-sales | price lists, credit and price checks, quotes, orders, deliveries, invoices, credit notes, quick bill, vehicle bookings and test rides, invoice and estimate links, printouts |
-| lib-service | job cards, warranty rules, fault codes, supplier warranty claims |
+| lib-service | job cards, warranty rules, fault codes, supplier warranty claims; the books check across modules (§7) |
 
 Each module keeps its own dashboard. A flow that writes into several modules lives in the lowest library that may
 depend on all of them, and calls their services. For example, the quick bill lives in lib-sales and calls
@@ -327,7 +327,9 @@ used, returned and lost quantities by challan line, and says whether a posted re
 `over_challan`, a challan's accounted quantities and its cancellation (`challan_answered`), answering only quantities
 and yes or no (RAD-142). The seventh is lib-purchasing's `services/billed.ts`, which sums what posted bills have billed
 of each receipt line, net of cancellations, for a bill's `over_received` and a receipt's `receipt_in_use`, answering
-only quantities (RAD-138).
+only quantities (RAD-138). The eighth is lib-purchasing's `services/grni.ts`, which sums every posted receipt, bill and
+return line's Goods Received Not Billed money by receipt line, net of cancellations, for the books check (§7),
+answering only sums (RAD-95).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:

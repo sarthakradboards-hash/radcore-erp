@@ -216,11 +216,14 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
   const number = await nextNumber(ctx, BILL_SERIES, b.businessDate);
   const entry = await postEntry(ctx, { kind: 'purchase_bill', businessDate: b.businessDate, source: { table: SOURCE, id: b.id }, lines: entryLines });
   const tx = purchasingTx(ctx);
+  // Each goods line keeps what it cleared of Goods Received Not Billed, for the books check (ADR-006 §7, RAD-95).
+  const cleared = new Map(j.accruals.map((x) => [x.line.id, roundMoney(x.value)]));
   for (const [i, l] of lines.entries()) {
     const a = j.amounts.lines[i];
     if (a !== undefined) {
       await tx.update(purchaseBillLines).set({ gstRate: a.gstRate, gstRateSource: a.gstRateSource, taxable: a.taxable, cgst: a.cgst, sgst: a.sgst,
-        igst: a.igst, lineTotal: a.lineTotal, ...(l.kind === 'goods' ? { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3) } : {}) })
+        igst: a.igst, lineTotal: a.lineTotal, ...(l.kind === 'goods' ? { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3),
+          grniValue: cleared.get(l.id) ?? null } : {}) })
         .where(eq(purchaseBillLines.id, l.id));
     }
   }

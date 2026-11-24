@@ -39,6 +39,22 @@ export async function stockInHand(ctx: Ctx, asAt?: string): Promise<{ itemId: st
     value: dec(r.debit ?? '0').minus(dec(r.credit ?? '0')).toString() }));
 }
 
+/** For the books check (ADR-006 §7): a system account's debits and credits, as at `asAt` (every line when it's left out). */
+export async function systemBalance(ctx: Ctx, key: string, asAt?: string): Promise<{ debit: string; credit: string }> {
+  const [row] = await accountsTx(ctx).select({ debit: sum(journalLines.debit), credit: sum(journalLines.credit) }).from(journalLines)
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .where(and(eq(accounts.systemKey, key), asAt === undefined ? undefined : lte(journalLines.businessDate, asAt)));
+  return { debit: row?.debit ?? '0', credit: row?.credit ?? '0' };
+}
+
+/** For the books check as at a date (ADR-006 §7): each journal entry's business date, by id. */
+export async function entryDates(ctx: Ctx, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await accountsTx(ctx).select({ id: journalEntries.id, date: journalEntries.businessDate }).from(journalEntries)
+    .where(inArray(journalEntries.id, [...new Set(ids)]));
+  return new Map(rows.map((r) => [r.id, r.date]));
+}
+
 /**
  * PATCH /accounts/:id: an account's code, and switching it off or on (the architect on RAD-86). Switching off reads
  * the balance with the period lock's row held FOR UPDATE, ADR-006 §1's step 1: postings hold it FOR SHARE, so the

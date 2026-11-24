@@ -458,7 +458,7 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'POST /item-categories': STOCK,
   'PATCH /item-categories/:id': STOCK,
   // The books check reads lib-accounts' side through its exports.
-  'GET /books/check': ['lib-accounts', 'lib-platform', 'lib-stock'],
+  'GET /books/check': ['lib-accounts', 'lib-gst', 'lib-platform', 'lib-purchasing', 'lib-service', 'lib-stock'],
   'GET /items': STOCK,
   'GET /items/:id': STOCK,
   'POST /items': STOCK,
