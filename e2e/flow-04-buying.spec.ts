@@ -4,7 +4,7 @@
 // the rejects into the rejects place. One person per step, each signed in as their built-in role, and every test ends with the books check (RAD-95).
 // Then the supplier's bills: the match view, one posted at once within the tolerance, one past it approved by someone else. Last, the rejects go
 // back to the supplier: the supplier billed them too, so the return is settled on a debit note applied to that bill. Then accounts pays the supplier what is
-// left on the bills, through Record a payment, and applies it to the first two bills; last, the return is cancelled, which puts the debit note's bill back to owing.
+// left on the bills, through Record a payment, and applies it to the first two bills, one from the screen it was recorded on and one from the payment's own page; last, the return is cancelled, which puts the debit note's bill back to owing.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear } from '@radcore/lib-accounts';
 import { indiaDate, percentString } from '@radcore/lib-common';
@@ -416,8 +416,8 @@ test.describe('stores, sending the rejects back', () => {
 });
 
 // The payment. What the supplier is owed after the debit note: the first bill 4,720.00 and the second 7,080.00 (the third, 1,180.00, is cleared by the
-// debit note's 1,180.00), 11,800.00 in all. It is recorded through the Record a payment screen (a payment to a supplier). Applying it to the bills is
-// API-only: no screen offers it, as the apply form is a receipt's, over a customer's open bills.
+// debit note's 1,180.00), 11,800.00 in all. It is recorded through the Record a payment screen (a payment to a supplier), which offers to apply it to the
+// supplier's open bills at once; the first bill is paid there, and the second from the payment's own page (Apply to bills), where the first no longer shows.
 const paid = { number: '', url: '' };
 
 test.describe('accounts, paying the supplier', () => {
@@ -437,30 +437,40 @@ test.describe('accounts, paying the supplier', () => {
     await expect(page.getByRole('heading', { level: 2, name: /^Payment \S+/ })).toBeVisible();
     paid.number = (await page.getByRole('heading', { level: 2 }).first().innerText()).replace('Payment ', '').trim();
     await expect(page.locator('#main').getByText(`Payment ${paid.number} recorded.`)).toBeVisible();
-    await expect(page.locator('#main').getByText('₹11,800.00')).toBeVisible();
+    await expect(page.locator('#main').getByText('₹11,800.00', { exact: true })).toBeVisible();
+    // the supplier's two open bills are offered (the third is cleared by the debit note); the first is paid now and the second later
+    const apply = page.locator('section[aria-labelledby="payment-apply"]');
+    await expect(apply.getByLabel(new RegExp('^Apply to ')).filter({ visible: true })).toHaveCount(2);
+    await apply.getByLabel(new RegExp(`^Apply to .*INV-${u}-1`)).fill('4720');
     await accessible(page);
+    await btn(page, 'Apply it').click();
+    await expect(status(page, 'Applied to 1 bill(s).').first()).toBeAttached();
   });
 
-  test('applies it to the first two bills (through the API): 4,720.00 and 7,080.00, nothing left', async ({ page, request }) => {
+  test('the payment’s page shows 4,720.00 applied; Apply to bills pays the second bill’s 7,080.00 from there, nothing left', async ({ page }) => {
     await page.goto('/accounts/payments');
     await page.getByRole('link', { name: paid.number }).click();
     await expect(page).toHaveURL(/\/accounts\/payments\/[0-9a-f-]{36}$/);
     paid.url = new URL(page.url()).pathname;
     await expect(page.getByRole('heading', { level: 1, name: `Payment ${paid.number}` })).toBeVisible();
-    await expect(page.getByText('It is not applied to any bill.')).toBeVisible();
-    const billId = (url: string) => url.split('/').pop()!;
-    await post(request, `/payments/${paid.url.split('/').pop()}/allocations`, { businessDate: today(), lines: [
-      { documentTable: 'purchase_bills', documentId: billId(bills.first), amount: '4720.00' },
-      { documentTable: 'purchase_bills', documentId: billId(bills.second), amount: '7080.00' },
-    ] });
-    await page.reload();
     await expect(fact(page, 'Party')).toHaveText(SUPPLIER.name);
     const cell = (label: string) => page.locator('dl[aria-label="In numbers"]').locator('div').filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd');
     await expect(cell('Amount')).toHaveText('₹11,800.00');
+    await expect(cell('Applied to bills')).toHaveText('₹4,720.00');
+    await expect(cell('Left')).toHaveText('₹7,080.00');
+    await accessible(page);
+    await btn(page, 'Apply to bills').click();
+    // the first bill is paid, so only the second is offered
+    await expect(dialog(page).getByLabel(new RegExp('^Apply to ')).filter({ visible: true })).toHaveCount(1);
+    await dialog(page).getByLabel(new RegExp(`^Apply to .*INV-${u}-2`)).fill('7080');
+    await accessible(page);
+    await dialog(page).getByRole('button', { name: 'Apply it' }).click();
+    await expect(dialog(page)).toHaveCount(0);
     await expect(cell('Applied to bills')).toHaveText('₹11,800.00');
     await expect(cell('Left')).toHaveText('₹0.00');
     await expect(page.getByRole('row').filter({ hasText: '₹4,720.00' })).toHaveCount(1);
     await expect(page.getByRole('row').filter({ hasText: '₹7,080.00' })).toHaveCount(1);
+    await expect(btn(page, 'Apply to bills')).toHaveCount(0);
     await accessible(page);
   });
 });
