@@ -264,6 +264,7 @@ export const purchases = {
   'purchases.bill.new.title': 'Enter a supplier’s bill',
   'purchases.bill.edit.title': 'Change the draft bill for invoice {invoice}',
   'purchases.bill.backToBill': 'Back to the bill',
+  'purchases.bill.jobWorkNotHere': 'This draft bills a job worker’s charges, which can’t be changed on this screen yet. Delete it and enter it again, or ask for help.',
   'purchases.bill.notDraft': 'Only a draft bill can be changed. This one has been posted or cancelled.',
   'purchases.bill.saveDraft': 'Save the draft',
   'purchases.bill.saved': 'Draft saved',

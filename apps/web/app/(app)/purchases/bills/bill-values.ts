@@ -43,7 +43,7 @@ export const billSchema = z.object({
   fileId: z.string(),
   notes: z.string().trim(),
   lines: z.array(formLine).min(1, t('purchases.bill.err.lines')),
-}).transform((v) => ({
+}).transform((v): z.input<typeof createPurchaseBill.input> => ({
   supplierId: v.supplierId, businessDate: v.businessDate, supplierInvoiceNumber: v.supplierInvoiceNumber,
   supplierInvoiceDate: v.supplierInvoiceDate, supplierGstin: orNull(v.supplierGstin), statedTotal: v.statedTotal,
   fileId: orNull(v.fileId), notes: orNull(v.notes),
@@ -59,15 +59,19 @@ export const blankBill = (): BillInput => ({
 });
 export const blankCharge = (): BillLineInput => ({ kind: 'charge', charge: 'freight', description: '', hsn: '', amount: '' });
 
+/** Whether a draft bills a job worker's charges, which this form doesn't edit yet: saving it would drop those lines. */
+export const billsJobWork = (b: z.output<typeof getPurchaseBill.output>) => b.lines.some((l) => l.kind === 'job_work');
+
 /** A saved draft, back into the form. */
 export function billToForm(b: z.output<typeof getPurchaseBill.output>): BillInput {
   return {
     supplierId: b.supplierId, businessDate: b.businessDate, supplierInvoiceNumber: b.supplierInvoiceNumber,
     supplierInvoiceDate: b.supplierInvoiceDate, supplierGstin: b.supplierGstin ?? '', statedTotal: b.statedTotal,
     fileId: b.fileId ?? '', notes: b.notes ?? '',
-    lines: b.lines.map((l) => (l.kind === 'goods'
-      ? { kind: 'goods', label: `${l.name} (${l.sku}), ${l.poNumber}`, poLineId: l.poLineId, receiptId: '', receiptLineId: l.receiptLineId ?? '',
-        qty: asWritten(l.qty), rate: asPrice(l.rate) }
-      : { kind: 'charge', charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount })),
+    // A job worker's charge line (#408) isn't edited here; the edit page shows such a draft without the form (billsJobWork).
+    lines: b.lines.flatMap((l): BillLineInput[] => (l.kind === 'goods'
+      ? [{ kind: 'goods', label: `${l.name} (${l.sku}), ${l.poNumber}`, poLineId: l.poLineId, receiptId: '', receiptLineId: l.receiptLineId ?? '',
+        qty: asWritten(l.qty), rate: asPrice(l.rate) }]
+      : l.kind === 'charge' ? [{ kind: 'charge', charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount }] : [])),
   };
 }

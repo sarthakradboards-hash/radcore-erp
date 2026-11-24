@@ -8,7 +8,7 @@ import { announce } from '../../../../../../components/ui/live-region.tsx';
 import { useApiMutation, useApiQuery } from '../../../../../../lib/api/query.ts';
 import { t } from '../../../../../../lib/i18n/index.ts';
 import { BillForm } from '../../bill-form.tsx';
-import { billToForm } from '../../bill-values.ts';
+import { billsJobWork, billToForm } from '../../bill-values.ts';
 
 export default function EditPurchaseBillPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +20,7 @@ export default function EditPurchaseBillPage() {
   if (q.error !== null) return <>{back}<p role="alert" className="kit-form-alert">{t('purchases.bill.missing')}</p></>;
   if (b === undefined) return <p>{t('loading')}</p>;
   if (b.status !== 'draft') return <>{back}<p>{t('purchases.bill.notDraft')}</p></>;
+  if (billsJobWork(b)) return <>{back}<p>{t('purchases.bill.jobWorkNotHere')}</p></>;
   return (
     <>
       {back}
