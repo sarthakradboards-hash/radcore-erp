@@ -3,7 +3,8 @@
 // against it, and QC splits it into accepted and rejected, which posts the receipt and moves the goods: the accepted into the sellable place,
 // the rejects into the rejects place. One person per step, each signed in as their built-in role, and every test ends with the books check (RAD-95).
 // Then the supplier's bills: the match view, one posted at once within the tolerance, one past it approved by someone else. Last, the rejects go
-// back to the supplier: the supplier billed them too, so the return is settled on a debit note applied to that bill, and cancelling it undoes both.
+// back to the supplier: the supplier billed them too, so the return is settled on a debit note applied to that bill. Then accounts pays the supplier what is
+// left on the bills, through Record a payment, and applies it to the first two bills; last, the return is cancelled, which puts the debit note's bill back to owing.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear } from '@radcore/lib-accounts';
 import { indiaDate, percentString } from '@radcore/lib-common';
@@ -412,6 +413,60 @@ test.describe('stores, sending the rejects back', () => {
     await expect(page.getByRole('row').filter({ hasText: back.number })).toBeVisible({ timeout: 15_000 });
     await accessible(page);
   });
+});
+
+// The payment. What the supplier is owed after the debit note: the first bill 4,720.00 and the second 7,080.00 (the third, 1,180.00, is cleared by the
+// debit note's 1,180.00), 11,800.00 in all. It is recorded through the Record a payment screen (a payment to a supplier). Applying it to the bills is
+// API-only: no screen offers it, as the apply form is a receipt's, over a customer's open bills.
+const paid = { number: '', url: '' };
+
+test.describe('accounts, paying the supplier', () => {
+  test.use({ storageState: stateFor('accounts') });
+
+  test('records a payment of 11,800.00 to the supplier from the bank, through the screen', async ({ page }) => {
+    await page.goto('/accounts/payments/new');
+    await expect(page.getByRole('heading', { level: 1, name: 'Record a payment' })).toBeVisible();
+    await page.getByLabel('A payment: money paid to a supplier').check();
+    await pick(page, /^Supplier/, SUPPLIER.name);
+    await page.getByLabel('Amount', { exact: true }).fill('11800');
+    const bank = (await page.getByLabel('Money account').locator('option').allTextContents()).find((o) => /bank/i.test(o))!;
+    await page.getByLabel('Money account').selectOption({ label: bank });
+    await page.getByLabel(/^Reference/).fill(`UTR-${u}-PAY`);
+    await accessible(page);
+    await btn(page, 'Record it').click();
+    await expect(page.getByRole('heading', { level: 2, name: /^Payment \S+/ })).toBeVisible();
+    paid.number = (await page.getByRole('heading', { level: 2 }).first().innerText()).replace('Payment ', '').trim();
+    await expect(page.locator('#main').getByText(`Payment ${paid.number} recorded.`)).toBeVisible();
+    await expect(page.locator('#main').getByText('₹11,800.00')).toBeVisible();
+    await accessible(page);
+  });
+
+  test('applies it to the first two bills (through the API): 4,720.00 and 7,080.00, nothing left', async ({ page, request }) => {
+    await page.goto('/accounts/payments');
+    await page.getByRole('link', { name: paid.number }).click();
+    await expect(page).toHaveURL(/\/accounts\/payments\/[0-9a-f-]{36}$/);
+    paid.url = new URL(page.url()).pathname;
+    await expect(page.getByRole('heading', { level: 1, name: `Payment ${paid.number}` })).toBeVisible();
+    await expect(page.getByText('It is not applied to any bill.')).toBeVisible();
+    const billId = (url: string) => url.split('/').pop()!;
+    await post(request, `/payments/${paid.url.split('/').pop()}/allocations`, { businessDate: today(), lines: [
+      { documentTable: 'purchase_bills', documentId: billId(bills.first), amount: '4720.00' },
+      { documentTable: 'purchase_bills', documentId: billId(bills.second), amount: '7080.00' },
+    ] });
+    await page.reload();
+    await expect(fact(page, 'Party')).toHaveText(SUPPLIER.name);
+    const cell = (label: string) => page.locator('dl[aria-label="In numbers"]').locator('div').filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd');
+    await expect(cell('Amount')).toHaveText('₹11,800.00');
+    await expect(cell('Applied to bills')).toHaveText('₹11,800.00');
+    await expect(cell('Left')).toHaveText('₹0.00');
+    await expect(page.getByRole('row').filter({ hasText: '₹4,720.00' })).toHaveCount(1);
+    await expect(page.getByRole('row').filter({ hasText: '₹7,080.00' })).toHaveCount(1);
+    await accessible(page);
+  });
+});
+
+test.describe('stores, taking the return back', () => {
+  test.use({ storageState: stateFor('stores') });
 
   test('cancelling the return with a reason puts the 2 back in the rejects place and reverses the debit note', async ({ page, request }) => {
     await page.goto(back.url);
@@ -422,7 +477,7 @@ test.describe('stores, sending the rejects back', () => {
     await expect(dialog(page)).toHaveCount(0);
     await expect(status(page, 'Return cancelled').first()).toBeAttached();
     await expect(bar(page).getByRole('listitem')).toHaveText(['Draft (done)', 'Posted (done)', 'Cancelled (now)']);
-    await expect(page.getByText('reversed')).toBeVisible();
+    await expect(page.getByText(new RegExp(`^${bills.thirdNumber}: ₹1,180\\.00, on .*, reversed$`))).toBeVisible();
     const rejects = Number((await api<{ position: string }>(request, `/stock/on-hand?input=${enc({ itemId: ITEMS[0]!.id, locationId: PLACES.rejects.id, limit: 5 })}`)).position);
     expect(rejects, 'the rejects are back').toBe(2);
     await accessible(page);
