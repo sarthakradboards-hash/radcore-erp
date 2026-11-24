@@ -16,7 +16,8 @@ import {
   dropDelivery,
   getDeliveryById, getOrderById, listDeliveriesPage, listToInvoicePage, postDeliveryNow, postDeliveryReturnNow,
 } from '@radcore/lib-sales';
-import { NEGATIVE_STOCK, addCategory, addItem, addPlace, checkBooks } from '@radcore/lib-stock';
+import { checkBooks } from '@radcore/lib-service';
+import { NEGATIVE_STOCK, addCategory, addItem, addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { priceListFrom } from './price-list-fixture.ts';

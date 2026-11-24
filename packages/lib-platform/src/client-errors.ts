@@ -44,7 +44,10 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accou
   '/stock/job-work/receipts',
   '/stock/job-work/receipts/[id]',
   '/stock/job-work/receipts/new',
-  '/stock/transfers', '/stock/transfers/[id]', '/stock/transfers/new'] as const;
+  '/stock/on-hand',
+  '/stock/transfers', '/stock/transfers/[id]', '/stock/transfers/new',
+  '/stock/units',
+  '/stock/units/[id]'] as const;
 
 /** The error classes an alert may name; any other is counted as `Error`. */
 export const ERROR_CLASSES = ['TypeError', 'ReferenceError', 'RangeError', 'SyntaxError', 'ChunkLoadError'] as const;

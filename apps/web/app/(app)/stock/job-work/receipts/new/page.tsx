@@ -78,7 +78,8 @@ function To() {
 function ReceiptForm({ challan }: { challan: Challan }) {
   const router = useRouter();
   const create = useApiMutation(createJobWorkReceipt, { invalidates: [listJobWorkReceipts, getJobWorkChallan, listJobWorkChallans] });
-  const open = useMemo(() => challan.lines.filter((l) => dec(l.left).gt(0)), [challan]);
+  // A line's units to mark are those still at the job worker's place (serialsOut, #399), not every unit it sent (auditor-3 on #393).
+  const open = useMemo(() => challan.lines.filter((l) => dec(l.left).gt(0)).map((l) => ({ ...l, serials: l.serialsOut })), [challan]);
   const schema = useMemo(() => receiptSchema(challan.id, open), [challan.id, open]);
   if (open.length === 0) return <p>{t('stock.jobWork.receipt.nothingLeft')}</p>;
   return (
