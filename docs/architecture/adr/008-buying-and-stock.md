@@ -192,7 +192,7 @@ Flow 5: goods arrive and are counted, but aren't in stock until QC has split the
   - a partial unique index on `(party_id, supplier_invoice_fy, supplier_invoice_key)` for bills that aren't
     cancelled holds it, mapped through `dbErrors` to `duplicate_bill`. A cancelled bill's number can be entered again.
 - **Matched three ways (RC-056).** Each goods line names the receipt line it bills, and through it the PO line. A
-  job worker's charge line names a job-work receipt line instead (§11); a CHECK holds each line to one source:
+  job worker's charge line names a job-work receipt line instead (§11); a CHECK holds each line to at most one source:
   - **quantity:** at most what that receipt line received, accepted plus rejected, less what's already billed and
     less rejects returned before they were billed. More is refused (`over_received`), with no tolerance. A line bills
     the receipt line's accepted goods first, and its rejects only beyond them, so billing the 2 accepted of F2's 3
