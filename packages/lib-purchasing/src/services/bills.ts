@@ -11,7 +11,7 @@ import { itemLabels, jobWorkLinesFor } from '@radcore/lib-stock';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import type { createPurchaseBill, deletePurchaseBill, getPurchaseBill, listPurchaseBills, updatePurchaseBill } from '../contract.ts';
 import {
-  amountsOf, BILL_TOLERANCE, billOf, checkDraft, holdOrders, overPoRate, PAGE_KEY, poLineIdsOf, poLinesOf, wrongStatus,
+  amountsOf, BILL_TOLERANCE, billOf, checkDraft, holdJobWork, holdOrders, jobWorkLineIdsOf, overPoRate, PAGE_KEY, poLineIdsOf, poLinesOf, wrongStatus,
   type BillIn, type BillOut, type In, type LineAmounts, type LineIn, type Out, type Status,
 } from './bill-checks.ts';
 import { billApproval } from './bill-post.ts';
@@ -41,6 +41,7 @@ const header = (b: BillIn) => ({ partyId: b.supplierId, businessDate: b.business
 /** POST /purchasing/bills (bills:write): a new draft. */
 export async function addBill(ctx: Ctx, input: In<typeof createPurchaseBill>): Promise<Out<typeof createPurchaseBill>> {
   await holdOrders(ctx, poLineIdsOf(input.lines));
+  await holdJobWork(ctx, jobWorkLineIdsOf(input.lines));
   const checked = await checkDraft(ctx, input);
   const [row] = await purchasingTx(ctx).insert(purchaseBills).values(header(input)).returning({ id: purchaseBills.id });
   if (row === undefined) throw new Error('the purchase bill was not stored');
@@ -53,8 +54,10 @@ export async function changeBill(ctx: Ctx, { id, ...input }: In<typeof updatePur
   // §12: the draft read unlocked to learn the POs it names now, then those and the new ones locked, then the bill.
   const seen = await billOf(ctx, id, 'bills:write');
   if (seen.status !== 'draft') throw wrongStatus(seen.status, 'changed');
-  const named = await purchasingTx(ctx).select({ id: purchaseBillLines.poLineId }).from(purchaseBillLines).where(eq(purchaseBillLines.billId, id));
+  const named = await purchasingTx(ctx).select({ id: purchaseBillLines.poLineId, jobWork: purchaseBillLines.jobWorkReceiptLineId })
+    .from(purchaseBillLines).where(eq(purchaseBillLines.billId, id));
   await holdOrders(ctx, [...named.flatMap((l) => (l.id === null ? [] : [l.id])), ...poLineIdsOf(input.lines)]);
+  await holdJobWork(ctx, [...named.flatMap((l) => (l.jobWork === null ? [] : [l.jobWork])), ...jobWorkLineIdsOf(input.lines)]);
   const b = await billOf(ctx, id, 'bills:write', true);
   if (b.status !== 'draft') throw wrongStatus(b.status, 'changed');
   const checked = await checkDraft(ctx, input);
@@ -110,7 +113,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
   const po = await poLinesOf(ctx, lines.flatMap((l) => (l.poLineId === null ? [] : [l.poLineId])));
   const labels = await itemLabels(ctx, lines.flatMap((l) => (l.itemId === null ? [] : [l.itemId])));
   const made = new Map((await jobWorkLinesFor(ctx, lines.flatMap((l) => (l.jobWorkReceiptLineId === null ? [] : [l.jobWorkReceiptLineId])),
-    { forUpdate: false })).map((r) => [r.id, r]));
+    { lock: false })).map((r) => [r.id, r]));
   const tolerance = dec(ctx.settings.get(BILL_TOLERANCE));
   const none = { cgst: null, sgst: null, igst: null };
   let amounts: BillOut['amounts'];
@@ -156,12 +159,13 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
       }
       const item = labels.get(l.itemId ?? '');
       if (l.kind === 'job_work') {
+        // Unseen where the reader can't see the receipt (the auditor on #408): null, never a made-up 0.
         const r = made.get(l.jobWorkReceiptLineId ?? '');
-        const over = overPoRate(l.rate ?? '0', r?.chargeRate ?? '0');
+        const over = r === undefined ? null : overPoRate(l.rate ?? '0', r.chargeRate ?? '0');
         return { kind: 'job_work' as const, id: l.id, lineNo: l.lineNo, jobWorkReceiptLineId: l.jobWorkReceiptLineId ?? '', itemId: l.itemId ?? '',
           sku: item?.sku ?? '', name: item?.name ?? '', unit: item?.unit ?? '', qty: l.qty ?? '0', rate: l.rate ?? '0', hsn: l.hsn ?? '',
-          chargeRate: r?.chargeRate ?? '0', receiptNumber: r?.receiptNumber ?? '', overChargeRate: over,
-          overTolerance: over === null || dec(over).gt(tolerance), amounts: a };
+          chargeRate: r?.chargeRate ?? null, receiptNumber: r?.receiptNumber ?? null, overChargeRate: over,
+          overTolerance: r === undefined ? null : over === null || dec(over).gt(tolerance), amounts: a };
       }
       const p = po.get(l.poLineId ?? '');
       const over = overPoRate(l.rate ?? '0', p?.rate ?? '0');

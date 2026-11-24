@@ -41,7 +41,7 @@ const receiptIdsOf = (lines: readonly Line[]) => lines.flatMap((l) => (l.receipt
 async function holdSources(ctx: Ctx, lines: readonly Line[]): Promise<ReceiptLine[]> {
   await holdOrders(ctx, lines.flatMap((l) => (l.poLineId === null ? [] : [l.poLineId])));
   const receipts = await receiptLinesFor(ctx, receiptIdsOf(lines), { forUpdate: true });
-  await jobWorkLinesFor(ctx, lines.flatMap((l) => (l.jobWorkReceiptLineId === null ? [] : [l.jobWorkReceiptLineId])), { forUpdate: true });
+  await jobWorkLinesFor(ctx, lines.flatMap((l) => (l.jobWorkReceiptLineId === null ? [] : [l.jobWorkReceiptLineId])), { lock: 'update' });
   return receipts;
 }
 

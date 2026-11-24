@@ -27,7 +27,7 @@ BEGIN
       JOIN radcore.purchase_bills b ON b.id = bl.bill_id
       JOIN radcore.job_work_receipt_lines rl ON rl.id = bl.job_work_receipt_line_id
      WHERE rl.receipt_id = NEW.id AND b.status <> 'cancelled') THEN
-    RAISE EXCEPTION 'job_work_receipts % has its charges on a purchase bill: cancel the bill first', NEW.id
+    RAISE EXCEPTION 'job_work_receipts % has its charges on a purchase bill: cancel or delete the bill first', NEW.id
       USING ERRCODE = 'RA006', CONSTRAINT = 'job_work_charges_billed';
   END IF;
   RETURN NEW;

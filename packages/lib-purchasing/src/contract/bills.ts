@@ -46,10 +46,10 @@ const lineOut = z.discriminatedUnion('kind', [
     overPoRate: z.string().nullable(), overTolerance: z.boolean(), amounts: lineAmounts }),
   chargeIn.extend({ id: idString(), lineNo: z.number().int().positive(), amounts: lineAmounts }),
   /** Its made item, the receipt's number and charge rate, and how far its rate is above that, as a goods line's is above
-   * its PO's. */
+   * its PO's. Those four are null for a reader who can't see the job-work receipt (stock:read, by its maker). */
   jobWorkIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(), name: z.string(),
-    unit: z.string(), chargeRate: unitPriceString(), receiptNumber: z.string(), overChargeRate: z.string().nullable(), overTolerance: z.boolean(),
-    amounts: lineAmounts }),
+    unit: z.string(), chargeRate: unitPriceString().nullable(), receiptNumber: z.string().nullable(), overChargeRate: z.string().nullable(),
+    overTolerance: z.boolean().nullable(), amounts: lineAmounts }),
 ]);
 const lines = () => z.array(lineIn).min(1, 'Add at least one line').max(200, 'At most 200 lines');
 /** The bill's totals, to the rupee, with `note` saying what's missing while a draft's tax can't be worked out. */

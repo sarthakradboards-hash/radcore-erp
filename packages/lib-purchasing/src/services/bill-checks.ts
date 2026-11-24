@@ -103,7 +103,7 @@ export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string,
     });
   }
   const jobWork = b.lines.flatMap((l, n) => (l.kind === 'job_work' ? [{ l, n }] : []));
-  const made = new Map((await jobWorkLinesFor(ctx, jobWork.map((x) => x.l.jobWorkReceiptLineId), { forUpdate: false })).map((r) => [r.id, r]));
+  const made = new Map((await jobWorkLinesFor(ctx, jobWork.map((x) => x.l.jobWorkReceiptLineId), { lock: false })).map((r) => [r.id, r]));
   for (const { l, n } of jobWork) {
     const at = ['lines', n, 'jobWorkReceiptLineId'];
     const r = made.get(l.jobWorkReceiptLineId);
@@ -120,6 +120,14 @@ export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string,
 }
 
 export const poLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'goods' ? [l.poLineId] : []));
+export const jobWorkLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'job_work' ? [l.jobWorkReceiptLineId] : []));
+
+/** The job-work receipts these lines name, FOR SHARE in id order, after the POs and before the bill (ADR-008 §12): a
+ * receipt's cancel holds its row FOR UPDATE while charges_billed reads which bills name it, so a draft naming its lines
+ * waits for it, and it for the draft (backend-2 on #408, as #370's POs). */
+export async function holdJobWork(ctx: Ctx, jobWorkLineIds: readonly string[]): Promise<void> {
+  await jobWorkLinesFor(ctx, jobWorkLineIds, { lock: 'share' });
+}
 
 /** The POs these PO lines are on, locked FOR SHARE in id order, before the bill (ADR-008 §12: POs, then receipts, then
  * bills). A placed PO's change holds its row FOR UPDATE while it checks which lines bills name (po_billed), so a draft

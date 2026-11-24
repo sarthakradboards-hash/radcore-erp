@@ -7,12 +7,15 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, journalEntryById, journalPage, openFinancialYear } from '@radcore/lib-accounts';
 import { gstinCheckChar, moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { addBill, cancelBillNow, getBillById, postBillNow } from '@radcore/lib-purchasing';
 import { addCategory, addChallan, addItem, addPlace, addReceipt, cancelReceiptNow, getChallanById, getReceiptById } from '@radcore/lib-stock';
+import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import stockRoutes from '../apps/api/src/routes/stock.ts';
 import { postDocument, SOURCE_TABLE } from './stock-posting.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -132,6 +135,10 @@ describe.skipIf(!url || !superUrl)('a job worker’s bill', { timeout: 60_000 },
     expect(await jwcbOf(id)).toEqual(['450.00']);
     const b = await run((ctx) => getBillById(ctx, { id }), at.staff);
     expect(b.lines[0]).toMatchObject({ kind: 'job_work', itemId: at.frame, chargeRate: '150.000000', overTolerance: false });
+    // A reader who can't see the job-work receipt gets nulls for what it says, not a made-up 0 (the auditor on #408).
+    const blind: Principal = { ...at.staff, permissions: ['purchasing:read'] };
+    expect((await run((ctx) => getBillById(ctx, { id }), blind)).lines[0]).toMatchObject({ chargeRate: null, receiptNumber: null,
+      overChargeRate: null, overTolerance: null });
   });
 
   it('bills a line no further than it made, and puts a difference within the tolerance on the frames still held', async () => {
@@ -168,9 +175,42 @@ describe.skipIf(!url || !superUrl)('a job worker’s bill', { timeout: 60_000 },
     // A draft names it too: the guard counts every bill that isn't cancelled.
     expect(await code(undo())).toBe('job_work_charges_billed');
     await post(at, id);
-    expect(await code(undo())).toBe('job_work_charges_billed');
+    // Through the route, the guard's refusal is the declared charges_billed (the auditor on #408), not a 500.
+    const config = loadConfig(testSettings(), 'api');
+    const app = createApp(config, { info: () => undefined, error: () => undefined }, { db, authenticate: async () => at.staff, routes: stockRoutes });
+    const server = await listen(app, 0, '127.0.0.1');
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/stock/job-work/receipts/${at.receiptId}/cancel`, { method: 'POST',
+        headers: { origin: config.publicOrigin, 'content-type': 'application/json', 'idempotency-key': randomUUID() },
+        body: JSON.stringify({ businessDate: DATE, reason: 'Entered against the wrong challan' }) });
+      expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([422, 'charges_billed']);
+    } finally {
+      await server.stop();
+    }
     await run((ctx) => cancelBillNow(ctx, { id, businessDate: DATE, reason: 'Billed in error' }), at.staff);
     expect(await code(undo())).toBe('ok');
+  });
+
+  // backend-2 on #408 (ADR-008 §12, as #370's POs): a draft's save holds the job-work receipts it names before itself, so a
+  // receipt's cancel holding its row (FOR UPDATE, while charges_billed reads the bills) and the draft take turns.
+  it('waits for a receipt’s cancel holding the receipt before saving a draft that names its charges', async () => {
+    const at = await setup();
+    const holder = new pg.Client({ connectionString: superUrl });
+    await holder.connect();
+    try {
+      await holder.query('begin');
+      await holder.query('select id from radcore.job_work_receipts where id = $1 for update', [at.receiptId]);
+      const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid ?? 0;
+      const saving = draft(at, [charge(at, '1', '150')], '177');
+      // The save waits on the held receipt: a row lock's wait shows as one on its holder.
+      const waiting = async () => (await su.query<{ n: number }>(`select count(*)::int as n from pg_stat_activity
+        where $1 = any(pg_blocking_pids(pid))`, [pid])).rows[0]?.n ?? 0;
+      while ((await waiting()) === 0);
+      await holder.query('commit');
+      expect(await code(saving)).toBe('ok');
+    } finally {
+      await holder.end();
+    }
   });
 
   it('holds each line to one source in the database: a goods receipt line or a job-work receipt line, never both', async () => {

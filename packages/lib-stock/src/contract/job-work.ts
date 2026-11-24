@@ -156,5 +156,5 @@ export const cancelJobWorkReceipt = defineContract({
   errors: ['wrong_status', 'goods_moved_on', 'charges_billed', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked',
     'account_inactive', 'not_enough_stock'],
   // A bill that isn't cancelled names its charges (ADR-008 §11): the database's guard, since lib-stock can't read bills.
-  dbErrors: { 'RA006:job_work_charges_billed': { code: 'charges_billed', message: 'A purchase bill names this receipt’s charges: cancel the bill first' } },
+  dbErrors: { 'RA006:job_work_charges_billed': { code: 'charges_billed', message: 'A purchase bill names this receipt’s charges: cancel or delete the bill first' } },
 });
