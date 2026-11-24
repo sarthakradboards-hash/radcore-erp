@@ -1,12 +1,11 @@
 // Keeping stock right (RAD-146, M4, flow 7), in a real browser: stores moves goods from the stockroom to the showroom with a reason, and it
 // posts at once; stores counts the stockroom and finds fewer than the books say, but the difference does not post until the owner, another
-// person, approves it; the admin asks for an adjustment, is refused when he tries to approve his own, the owner rejects it with a reason, it is
+// person, approves it; the admin asks for an adjustment, is refused when trying to approve their own request, the owner rejects it with a reason, it is
 // sent again and approved; and a transfer is undone by its mirror, unless the goods have moved on since. Stock is received through the real
 // stock engine (e2e/seed-stock.ts), and after every step the quantity in each place is read both on the screen and from the API. Every test
 // ends with the books check (RAD-95).
 // Not here yet: job work (the second part of the ticket).
-import { randomBytes } from 'node:crypto';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { openFinancialYear } from '@radcore/lib-accounts';
 import { indiaDate, percentString } from '@radcore/lib-common';
 import { putGstRate } from '@radcore/lib-gst';
@@ -185,7 +184,7 @@ test.describe('owner, approving the count', () => {
 test.describe('admin, adjusting', () => {
   test.use({ storageState: stateFor('admin'), expectedStatuses: [403, 409, 422] });
 
-  test('asks for 2 out of the showroom, cracked on display; deciding his own request is refused', async ({ page, request }) => {
+  test('asks for 2 out of the showroom, cracked on display; deciding their own request is refused', async ({ page, request }) => {
     await page.goto('/stock/adjustments/new');
     await page.getByLabel('Place', { exact: true }).selectOption({ label: PLACES.showroom.name });
     await page.getByLabel('Reason').fill('Two cracked on display');
@@ -201,7 +200,7 @@ test.describe('admin, adjusting', () => {
     await dialog(page).getByRole('button', { name: 'Send for approval' }).click();
     await expect(dialog(page)).toHaveCount(0);
     await expect(page.getByText('This is waiting for someone else’s approval. Nothing has changed in stock yet; approving it posts it.')).toBeVisible();
-    // he holds the approval key, but this is his own request
+    // the admin holds the approval key, but this is their own request
     await page.goto('/stock/approvals');
     const adjustments = page.getByRole('region', { name: 'Adjustments' });
     await adjustments.getByRole('button', { name: /^Review what .* asked$/ }).last().click();
