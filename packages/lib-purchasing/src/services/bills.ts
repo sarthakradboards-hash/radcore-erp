@@ -4,11 +4,12 @@
 // lines at the rates in force on the supplier's invoice date (RC-056), and how each line stands against its PO rate.
 // Posting, the three-way match against receipts and the approval join with M4-02's goods receipts (RAD-138 PR 3).
 import { after, purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purchasing';
-import { getPartyById } from '@radcore/lib-accounts';
+import { vDocumentPaid } from '@radcore/db/views';
+import { getPartyById, paidOf } from '@radcore/lib-accounts';
 import { dec, roundMoney, type Money } from '@radcore/lib-common';
 import { AppError, awaitingApproval, decodeCursor, encodeCursor, listScope, withdrawPending, type Ctx } from '@radcore/lib-platform';
 import { itemLabels, jobWorkLinesFor } from '@radcore/lib-stock';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, or } from 'drizzle-orm';
 import type { createPurchaseBill, deletePurchaseBill, getPurchaseBill, listPurchaseBills, updatePurchaseBill } from '../contract.ts';
 import {
   amountsOf, BILL_TOLERANCE, billOf, checkDraft, holdJobWork, holdOrders, jobWorkLineIdsOf, overPoRate, PAGE_KEY, poLineIdsOf, poLinesOf, wrongStatus,
@@ -76,14 +77,24 @@ export async function dropBill(ctx: Ctx, { id }: In<typeof deletePurchaseBill>):
   return {};
 }
 
+/** A posted bill's total less what's been paid on it; null while a draft or once cancelled. */
+const openOf = (status: string, total: string | null, paid: string | null): Money | null =>
+  (status !== 'posted' || total === null ? null : roundMoney(dec(total).minus(dec(paid ?? '0'))));
+
 /** GET /purchasing/bills (purchasing:read): newest first, a page at a time, the principal's own where that's their scope. */
 export async function listBillsPage(ctx: Ctx, input: In<typeof listPurchaseBills>): Promise<Out<typeof listPurchaseBills>> {
   const key = input.after === undefined ? undefined : decodeCursor(PAGE_KEY, input.after);
   const rows = await purchasingTx(ctx).select({ id: purchaseBills.id, number: purchaseBills.number, partyId: purchaseBills.partyId,
     businessDate: purchaseBills.businessDate, status: purchaseBills.status, supplierInvoiceNumber: purchaseBills.supplierInvoiceNumber,
-    supplierInvoiceDate: purchaseBills.supplierInvoiceDate, total: purchaseBills.total, createdAt: purchaseBills.createdAt })
-    .from(purchaseBills).where(and(
+    supplierInvoiceDate: purchaseBills.supplierInvoiceDate, total: purchaseBills.total, createdAt: purchaseBills.createdAt,
+    paid: vDocumentPaid.paid })
+    // What's been paid on each, from lib-accounts' allocations through their view (ADR-001 §2, the architect on RAD-143).
+    .from(purchaseBills).leftJoin(vDocumentPaid, and(eq(vDocumentPaid.documentTable, 'purchase_bills'), eq(vDocumentPaid.documentId, purchaseBills.id)))
+    .where(and(
       input.filter.status === undefined ? undefined : eq(purchaseBills.status, input.filter.status),
+      // Posted, with its total above what's been paid on it: the bills a payment out can still be applied to.
+      input.filter.open === true ? and(eq(purchaseBills.status, 'posted'), or(and(isNull(vDocumentPaid.paid), gt(purchaseBills.total, '0')),
+        gt(purchaseBills.total, vDocumentPaid.paid))) : undefined,
       input.filter.supplierId === undefined ? undefined : eq(purchaseBills.partyId, input.filter.supplierId),
       listScope(ctx, 'purchasing:read', purchaseBills.createdBy),
       after([purchaseBills.businessDate, purchaseBills.createdAt, purchaseBills.id], key && [key.date, key.at, key.id], 'desc'),
@@ -99,7 +110,7 @@ export async function listBillsPage(ctx: Ctx, input: In<typeof listPurchaseBills
     items: page.map((r) => ({ id: r.id, number: r.number, supplierId: r.partyId, supplierName: names.get(r.partyId) ?? '',
       businessDate: r.businessDate, status: r.status as Status, supplierInvoiceNumber: r.supplierInvoiceNumber,
       supplierInvoiceDate: r.supplierInvoiceDate, total: r.total as Money | null,
-      awaitingApproval: waiting.has(r.id) })),
+      awaitingApproval: waiting.has(r.id), open: openOf(r.status, r.total, r.paid) })),
     next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null,
   };
 }
@@ -149,7 +160,8 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
   return {
     id: b.id, number: b.number, supplierId: b.partyId, supplierName: supplier.name, businessDate: b.businessDate, status: b.status as Status,
     supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate, total: b.total as Money | null,
-    awaitingApproval: (await awaitingApproval(ctx, billApproval, [id])).has(id), supplierGstin: b.supplierGstin, statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes, amounts,
+    awaitingApproval: (await awaitingApproval(ctx, billApproval, [id])).has(id),
+    open: openOf(b.status, b.total, (await paidOf(ctx, 'purchase_bills', [id])).get(id)?.paid ?? null), supplierGstin: b.supplierGstin, statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes, amounts,
     chargesOverTolerance, cancelReason: b.cancelReason,
     lines: lines.map((l, i) => {
       const a = lineAmounts[i] ?? empty;
