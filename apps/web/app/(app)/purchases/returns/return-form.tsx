@@ -7,7 +7,7 @@ import { dec } from '@radcore/lib-common';
 import { listParties } from '@radcore/lib-accounts/contract';
 import { getGoodsReceipt, listGoodsReceipts } from '@radcore/lib-purchasing/contract';
 import { listLocations } from '@radcore/lib-stock/contract';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useController, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
@@ -94,7 +94,16 @@ function Units({ index, options }: { index: number; options: readonly string[] }
 
 function Lines() {
   const { control } = useFormContext<ReturnInput>();
-  const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
+  const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
+  // Another supplier's receipts can't be on this return, so changing the supplier empties its lines (auditor-3 on #404's form);
+  // not on the first render, so a saved draft keeps its own.
+  const supplierId = useWatch({ control, name: 'supplierId' });
+  const seen = useRef(supplierId);
+  useEffect(() => {
+    if (seen.current === supplierId) return;
+    seen.current = supplierId;
+    replace([]);
+  }, [supplierId, replace]);
   return (
     <>
       <AddFromReceipt onAdd={(l) => append(l)} />
