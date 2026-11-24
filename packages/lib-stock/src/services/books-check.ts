@@ -1,18 +1,13 @@
-// The books check (M2-07, RAD-95, ADR-006 §7, RC-063). It lives in lib-stock, the lowest library that reads both the
-// stock ledger and the books (ADR-001 §3). Each side is its own module's read: lib-accounts' trial balance and Stock in
-// Hand, and this library's ledger and batches. The route runs it in one REPEATABLE READ snapshot, so every figure is
-// from the same moment; rules/books.ts compares them.
+// The books check's stock figures (M2-07, RAD-95, ADR-006 §7, RC-063): lib-accounts' trial balance and Stock in Hand,
+// and this library's ledger and batches. lib-service's checkBooks, the lowest library that reads every side (ADR-001
+// §3), adds the other modules' figures and runs rules/books.ts over them, in one REPEATABLE READ snapshot.
 import { stockMovementBatches, stockMovements, stockTx } from '@radcore/db/stock';
 import { stockInHand, trialBalance } from '@radcore/lib-accounts';
 import { dec, type Decimal } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';
 import { and, eq, lte, sum } from 'drizzle-orm';
-import type { z } from 'zod';
-import type { checkBooksContract } from '../contract.ts';
-import { booksProblems } from '../rules/books.ts';
+import type { BooksFigures } from '../rules/books.ts';
 
-type In = z.output<(typeof checkBooksContract)['input']>;
-type Out = z.input<(typeof checkBooksContract)['output']>;
 type Net = { itemId: string; locationId: string; qty: Decimal; value: Decimal };
 
 /** Each item and place's rows, summed by direction, netted: an `out` takes its quantity and value away. A `revalue`
@@ -37,8 +32,8 @@ async function ledgerAt(ctx: Ctx, asAt?: string) {
     .groupBy(stockMovements.itemId, stockMovements.locationId, stockMovements.direction));
 }
 
-/** GET /books/check: what disagrees, none when the books are healthy. */
-export async function checkBooks(ctx: Ctx, { asAt }: In): Promise<Out> {
+/** The stock side of the books check, as at `asAt` (every posting when it's left out): every figure but GRNI's. */
+export async function stockBooksFigures(ctx: Ctx, asAt?: string): Promise<Omit<BooksFigures, 'grni'>> {
   const trial = await trialBalance(ctx, asAt);
   const books = await stockInHand(ctx, asAt);
   const ledger = await ledgerAt(ctx, asAt);
@@ -47,5 +42,5 @@ export async function checkBooks(ctx: Ctx, { asAt }: In): Promise<Out> {
     direction: stockMovements.direction, qty: sum(stockMovementBatches.qty) }).from(stockMovementBatches)
     .innerJoin(stockMovements, and(eq(stockMovements.id, stockMovementBatches.movementId), eq(stockMovements.itemId, stockMovementBatches.itemId)))
     .groupBy(stockMovements.itemId, stockMovements.locationId, stockMovements.direction));
-  return { problems: booksProblems({ trial, books, ledger, current, batches }) };
+  return { trial, books, ledger, current, batches };
 }

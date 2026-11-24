@@ -2,7 +2,7 @@
 // locations and their kinds' labels (RAD-92), the books check (RAD-95), and stock on hand (RAD-112).
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import {
-  addCategory, addItem, addItemPicture, addPlace, changeItem, checkBooks, dropItemPicture, getItemById, listCategories, listItemsPage,
+  addCategory, addItem, addItemPicture, addPlace, changeItem, dropItemPicture, getItemById, listCategories, listItemsPage,
   listKinds, listPlaces, listUnits, onHand, renameCategory, setKindLabel, updatePlace,
   addTransfer, askTransferApproval, cancelTransferNow, dropTransfer, getTransferById, listTransfersPage, requalifyTransfer, transferApprovalSpec,
   addCount, askCountApproval, cancelCountNow, changeCount, countApprovalSpec, dropCount, getCountById, listCountsPage,
@@ -10,6 +10,7 @@ import {
   listAdjustmentsPage, addChallan, cancelChallanNow, getChallanById, listChallansPage, addReceipt, cancelReceiptNow, getReceiptById, listReceiptsPage,
   getUnitById, listPositions, listUnitsPage,
 } from '@radcore/lib-stock';
+import { checkBooks } from '@radcore/lib-service';
 import {
   addLocation, attachItemPicture, checkBooksContract, createItem, createItemCategory, getItem, getOnHand, listItemCategories, listItems, listLocationKinds,
   listLocations, listUnitsOfMeasure, removeItemPicture, renameItemCategory, setLocationKindLabel, updateItem, updateLocation,

@@ -1,8 +1,9 @@
 // The books check's comparison (RAD-95, ADR-006 §7, RC-063): pure, on figures one snapshot read. As at a date, the
 // trial balance balances and Stock in Hand equals the stock ledger for every item and place. On the current position,
-// an empty place holds no value and its batches add up to its quantity. Healthy books answer no problems.
-// shortcut: §7's GRNI, GDNI, job-work and party comparisons, and serialised units, join as their documents and
-// `units` land (M2-06, M3, M4); the check then moves to the lowest library that reads them all (ADR-001 §3).
+// an empty place holds no value and its batches add up to its quantity. Goods Received Not Billed: each receipt line's
+// open amount lies between 0 and what it accrued, and they add up to the books (lib-service reads them, ADR-001 §3).
+// Healthy books answer no problems.
+// shortcut: §7's GDNI, job-work and party comparisons, and serialised units, join as their documents and `units` land.
 import { dec, roundMoney } from '@radcore/lib-common';
 import type { BooksCheck } from '../contract.ts';
 
@@ -18,7 +19,11 @@ export type BooksFigures = {
   readonly current: readonly (Place & { readonly qty: string; readonly value: string })[];
   /** The batches' quantities per item and place now. */
   readonly batches: readonly (Place & { readonly qty: string })[];
+  /** Goods Received Not Billed as at the date: the account's balance (credits less debits), and each posted receipt
+   * line's accrual and what's left of it once bills and unbilled returns have cleared theirs. */
+  readonly grni: { readonly books: string; readonly lines: readonly GrniLine[] };
 };
+type GrniLine = { readonly receiptLineId: string; readonly accrued: string; readonly open: string };
 export type BooksProblem = { check: BooksCheck; itemId: string | null; locationId: string | null; message: string };
 
 const keyOf = (p: Place) => `${p.itemId}|${p.locationId}`;
@@ -54,6 +59,18 @@ export function booksProblems(f: BooksFigures): BooksProblem[] {
       problems.push({ check: 'batches', itemId: p.itemId, locationId: p.locationId,
         message: `This place holds ${dec(p.left).toString()}, but its batches add up to ${dec(p.right).toString()}` });
     }
+  }
+  let open = dec('0');
+  for (const l of f.grni.lines) {
+    open = open.plus(dec(l.open));
+    if (dec(l.open).lt(0) || dec(l.open).gt(dec(l.accrued))) {
+      problems.push({ check: 'grni_line', itemId: null, locationId: null, message: `Receipt line ${l.receiptLineId} accrued `
+        + `${roundMoney(l.accrued)} to Goods Received Not Billed, but bills and returns have cleared it to ${roundMoney(l.open)}` });
+    }
+  }
+  if (!open.eq(dec(f.grni.books))) {
+    problems.push({ check: 'grni', itemId: null, locationId: null,
+      message: `Goods Received Not Billed shows ${roundMoney(f.grni.books)}, but the receipt lines left to bill come to ${roundMoney(open.toString())}` });
   }
   return problems;
 }

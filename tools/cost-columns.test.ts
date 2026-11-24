@@ -42,7 +42,8 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   purchase_bills: { stated_total: 'the total the supplier’s bill states (purchasing:read)', taxable: 'a bill’s value (purchasing:read)',
     cgst: 'tax on a bill (purchasing:read)', sgst: 'tax on a bill (purchasing:read)', igst: 'tax on a bill (purchasing:read)',
     round_off: 'a bill’s round-off (purchasing:read)', total: 'a bill’s total (purchasing:read)' },
-  purchase_bill_lines: { qty: 'a quantity', revalued_qty: 'a quantity', rate: 'a rate the supplier billed (purchasing:read)', amount: 'a charge on the goods (purchasing:read)',
+  purchase_bill_lines: { qty: 'a quantity', revalued_qty: 'a quantity',
+    grni_value: 'what the line cleared of Goods Received Not Billed, as its receipt accrued it (purchasing:read)', rate: 'a rate the supplier billed (purchasing:read)', amount: 'a charge on the goods (purchasing:read)',
     gst_rate: 'a tax rate', taxable: 'a line’s value (purchasing:read)', cgst: 'tax on a line (purchasing:read)', sgst: 'tax on a line (purchasing:read)',
     igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)' },
   // A supplier return's (RAD-140): the rejects sent back at the value Goods Received Not Billed accrued for them, the
