@@ -40,11 +40,11 @@ export default function NewPaymentPage() {
           <h2 id="payment-done">{t(`books.pay.done.kind.${done.kind}`)} {done.number ?? ''}</h2>
           <p>{done.status === 'posted' ? t('books.pay.done.posted', { kind: t(`books.pay.done.kind.${done.kind}`), number: done.number ?? '' }) : t('books.pay.done.waiting', { kind: t(`books.pay.done.kind.${done.kind}`) })}</p>
           <p>{formatMoney(done.amount)}</p>
-          {done.kind === 'receipt' && done.status === 'posted' && applied === null ? (
+          {done.status === 'posted' && applied === null ? (
             <section aria-labelledby="payment-apply">
               <h3 id="payment-apply">{t('books.pay.allocate.title')}</h3>
-              <p>{t('books.pay.allocate.intro')}</p>
-              <AllocateForm paymentId={done.id} partyId={done.partyId} amount={done.amount} onDone={setApplied} />
+              <p>{t(done.kind === 'payment' ? 'books.pay.allocate.intro.pay' : 'books.pay.allocate.intro')}</p>
+              <AllocateForm kind={done.kind} paymentId={done.id} partyId={done.partyId} amount={done.amount} onDone={setApplied} />
             </section>
           ) : null}
           {applied === null ? null : <p role="status">{t('books.pay.allocate.done', { n: String(applied) })}</p>}
