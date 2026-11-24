@@ -49,7 +49,8 @@ export function returnToForm(r: z.output<typeof getSupplierReturn.output>): Retu
     supplierId: r.supplierId, businessDate: r.businessDate, locationId: r.locationId, reason: r.reason, notes: r.notes ?? '',
     lines: r.lines.map((l) => ({
       receiptLineId: l.receiptLineId, label: `${l.name} (${l.sku})${l.receiptNumber === null ? '' : `, ${l.receiptNumber}`}`,
-      batchOptions: l.batches.map((b) => ({ batchId: b.batchId, batchNo: b.batchNo, qty: b.qty })), serialOptions: l.serials,
+      // A saved line knows its own batches but not what was rejected in them, so its boxes say no total.
+      batchOptions: l.batches.map((b) => ({ batchId: b.batchId, batchNo: b.batchNo, qty: '' })), serialOptions: l.serials,
       batches: Object.fromEntries(l.batches.map((b) => [b.batchId, b.qty])), serials: l.serials,
     })),
   };

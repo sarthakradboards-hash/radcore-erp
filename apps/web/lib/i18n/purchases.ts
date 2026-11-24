@@ -307,6 +307,7 @@ export const purchases = {
   'purchases.return.addLine': 'Send these back',
   'purchases.return.line': 'Line {n}: {label}',
   'purchases.return.batch': 'From batch {batch} ({qty} rejected)',
+  'purchases.return.batch.saved': 'From batch {batch}',
   'purchases.return.units': 'Units going back',
   'purchases.return.removeLine': 'Remove line {n}',
   'purchases.return.lines': 'What goes back, and how it’s settled',

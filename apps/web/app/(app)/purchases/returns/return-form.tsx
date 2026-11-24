@@ -35,13 +35,15 @@ function RejectsPlace() {
 function AddFromReceipt({ onAdd }: { onAdd: (l: ReturnLineInput) => void }) {
   const { control } = useFormContext<ReturnInput>();
   const supplierId = useWatch({ control, name: 'supplierId' });
+  const onReturn = useWatch({ control, name: 'lines' }).map((l) => l.receiptLineId);
   // shortcut: the supplier's 50 newest posted receipts; older rejects need a search here.
   const receipts = useApiList(listGoodsReceipts, { filter: { supplierId, status: 'posted' } }, { limit: 50, enabled: supplierId !== '' });
   const [receiptId, setReceiptId] = useState('');
   const receipt = useApiQuery(getGoodsReceipt, { id: receiptId }, { enabled: receiptId !== '' }).data;
   const selectId = useId();
   if (supplierId === '') return <p>{t('purchases.return.pickSupplierFirst')}</p>;
-  const withRejects = (receipt?.lines ?? []).filter((l) => l.rejected !== null && !dec(l.rejected).isZero());
+  // A receipt line already on this return isn't offered again: one line each, as the server counts it.
+  const withRejects = (receipt?.lines ?? []).filter((l) => l.rejected !== null && !dec(l.rejected).isZero() && !onReturn.includes(l.id));
   return (
     <div>
       <div className="admin-toolbar">
@@ -112,7 +114,7 @@ function Lines() {
           <legend>{t('purchases.return.line', { n: String(i + 1), label: f.label })}</legend>
           {f.batchOptions.map((b) => (
             <TextField key={b.batchId} name={`lines.${i}.batches.${b.batchId}`} inputMode="decimal" autoComplete="off"
-              label={t('purchases.return.batch', { batch: b.batchNo, qty: asWritten(b.qty) })} />
+              label={b.qty === '' ? t('purchases.return.batch.saved', { batch: b.batchNo }) : t('purchases.return.batch', { batch: b.batchNo, qty: asWritten(b.qty) })} />
           ))}
           {f.serialOptions.length === 0 ? null : <Units index={i} options={f.serialOptions} />}
           <button type="button" className="kit-button" onClick={() => remove(i)}>{t('purchases.return.removeLine', { n: String(i + 1) })}</button>
