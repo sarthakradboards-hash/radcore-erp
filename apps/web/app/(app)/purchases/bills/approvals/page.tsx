@@ -29,6 +29,7 @@ function Figures({ id }: { id: string }) {
   if (q.error !== null) return <p role="alert" className="kit-form-alert">{t('purchases.bill.approvals.cannotRead')}</p>;
   if (b === undefined) return <p>{t('loading')}</p>;
   const past = b.lines.flatMap((l) => (l.kind === 'goods' && l.overTolerance ? [l] : []));
+  const pastJobWork = b.lines.flatMap((l) => (l.kind === 'job_work' && l.overTolerance === true ? [l] : []));
   return (
     <>
       <dl className="admin-facts" aria-label={t('purchases.approvals.figures')}>
@@ -37,11 +38,15 @@ function Figures({ id }: { id: string }) {
         <dt>{t('purchases.bill.statedTotal')}</dt><dd>{formatMoney(b.statedTotal)}</dd>
         <dt>{t('purchases.bill.workedTotal')}</dt><dd>{b.amounts.total === null ? t('purchases.none') : formatMoney(b.amounts.total)}</dd>
       </dl>
-      {past.length === 0 ? null : (
+      {past.length === 0 && pastJobWork.length === 0 ? null : (
         <ul aria-label={t('purchases.bill.approvals.why')}>
           {past.map((l) => (
             <li key={l.id}>{t(l.overPoRate === null ? 'purchases.bill.approvals.freeLine' : 'purchases.bill.approvals.line',
               { name: l.name, over: l.overPoRate === null ? '' : asWritten(l.overPoRate), po: l.poNumber })}</li>
+          ))}
+          {pastJobWork.map((l) => (
+            <li key={l.id}>{t('purchases.bill.approvals.jobWorkLine', { name: l.name, over: l.overChargeRate === null ? '' : asWritten(l.overChargeRate),
+              receipt: l.receiptNumber ?? '' })}</li>
           ))}
         </ul>
       )}

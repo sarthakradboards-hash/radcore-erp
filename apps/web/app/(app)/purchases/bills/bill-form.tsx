@@ -6,6 +6,7 @@
 import { listParties } from '@radcore/lib-accounts/contract';
 import { getGoodsReceipt, getPurchaseOrder, listGoodsReceipts, listPurchaseOrders } from '@radcore/lib-purchasing/contract';
 import { purchaseBillFiles } from '@radcore/lib-platform/contract';
+import { getJobWorkReceipt, listJobWorkReceipts } from '@radcore/lib-stock/contract';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
@@ -89,6 +90,40 @@ function AddFromPo({ onAdd }: { onAdd: (lines: BillLineInput[]) => void }) {
   );
 }
 
+/** Adds a job worker's charges (#408): the lines of one of their posted job-work receipts that made goods, each at its charge
+ * rate until the bill says otherwise. Lines already on the bill aren't offered again. The SAC is the bill's to give. */
+function AddFromJobWork({ onAdd }: { onAdd: (lines: BillLineInput[]) => void }) {
+  const { control } = useFormContext<BillInput>();
+  const supplierId = useWatch({ control, name: 'supplierId' });
+  const onBill = useWatch({ control, name: 'lines' }).flatMap((l) => (l.kind === 'job_work' ? [l.jobWorkReceiptLineId] : []));
+  // shortcut: the job worker's 50 newest posted receipts; a search is owed past that. Read under stock:read, so a bill writer
+  // without it sees none here.
+  const receipts = useApiList(listJobWorkReceipts, { filter: { partyId: supplierId, status: 'posted' } }, { limit: 50, enabled: supplierId !== '' });
+  const [receiptId, setReceiptId] = useState('');
+  const receipt = useApiQuery(getJobWorkReceipt, { id: receiptId }, { enabled: receiptId !== '' }).data;
+  const seen = useRef(supplierId);
+  useEffect(() => { if (seen.current !== supplierId) { seen.current = supplierId; setReceiptId(''); } }, [supplierId]);
+  const selectId = useId();
+  if (supplierId === '' || receipts.items.length === 0) return null;
+  const made = (receipt?.lines ?? []).filter((l) => l.made !== null && !onBill.includes(l.id));
+  return (
+    <div className="admin-toolbar">
+      <label htmlFor={selectId}>{t('purchases.bill.fromJobWork')}</label>
+      <select id={selectId} className="kit-select" value={receiptId} onChange={(e) => setReceiptId(e.currentTarget.value)}>
+        <option value="">{t('purchases.bill.pickJobWork')}</option>
+        {receipts.items.map((r) => <option key={r.id} value={r.id}>{r.number}, {r.challanNumber}</option>)}
+      </select>
+      {receipt !== undefined && made.length === 0 ? <p>{t('purchases.bill.jobWorkNothing')}</p> : null}
+      <button type="button" className="kit-button" disabled={receipt === undefined || made.length === 0}
+        onClick={() => { if (receipt !== undefined) { onAdd(made.flatMap((l) => (l.made === null ? [] : [{ kind: 'job_work' as const,
+          label: `${l.made.name} (${l.made.sku}), ${receipt.number}`, jobWorkReceiptLineId: l.id, qty: asWritten(l.made.qty),
+          rate: asPrice(l.made.chargeRate), hsn: '' }]))); setReceiptId(''); } }}>
+        {t('purchases.bill.addJobWork')}
+      </button>
+    </div>
+  );
+}
+
 /** The receipt line for this goods line: pick the receipt that brought the goods, and its line for this PO line is found. */
 function ReceiptPick({ index }: { index: number }) {
   const { control, setValue } = useFormContext<BillInput>();
@@ -137,6 +172,7 @@ function Lines() {
   return (
     <>
       <AddFromPo onAdd={(ls) => append(ls)} />
+      <AddFromJobWork onAdd={(ls) => append(ls)} />
       {fields.map((f, i) => (
         <fieldset key={f.id}>
           {f.kind === 'goods' ? (
@@ -145,6 +181,13 @@ function Lines() {
               <ReceiptPick index={i} />
               <TextField name={`lines.${i}.qty`} label={t('purchases.bill.col.qty')} inputMode="decimal" autoComplete="off" />
               <TextField name={`lines.${i}.rate`} label={t('purchases.bill.col.rate')} hint={t('purchases.bill.rate.hint')} inputMode="decimal" autoComplete="off" />
+            </>
+          ) : f.kind === 'job_work' ? (
+            <>
+              <legend>{t('purchases.bill.jobWorkLine', { n: String(i + 1), label: f.label })}</legend>
+              <TextField name={`lines.${i}.qty`} label={t('purchases.bill.col.qty')} inputMode="decimal" autoComplete="off" />
+              <TextField name={`lines.${i}.rate`} label={t('purchases.bill.col.rate')} hint={t('purchases.bill.jobWorkRate.hint')} inputMode="decimal" autoComplete="off" />
+              <TextField name={`lines.${i}.hsn`} label={t('purchases.bill.sac')} inputMode="numeric" autoComplete="off" />
             </>
           ) : (
             <>
