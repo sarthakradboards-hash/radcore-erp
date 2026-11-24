@@ -56,8 +56,9 @@ function BillFile() {
   );
 }
 
-/** Adds one goods line for each line of a PO of the supplier's: a placed one, or one its receipts closed, since a PO closes as
- * soon as all its goods are in, and that's the usual bill (e2e-playwright on #404). One closed short has nothing to bill. */
+/** Adds one goods line for each line of a PO of the supplier's, placed or closed: a PO closes as soon as all its goods are in,
+ * and one closed short usually has goods in to bill too, so both are offered (e2e-playwright and auditor-3 on #404). The server
+ * holds each line to what came in (`over_received`). */
 function AddFromPo({ onAdd }: { onAdd: (lines: BillLineInput[]) => void }) {
   const { control } = useFormContext<BillInput>();
   const supplierId = useWatch({ control, name: 'supplierId' });
@@ -67,7 +68,6 @@ function AddFromPo({ onAdd }: { onAdd: (lines: BillLineInput[]) => void }) {
   const pos = [...placed.items, ...closed.items];
   const [poId, setPoId] = useState('');
   const po = useApiQuery(getPurchaseOrder, { id: poId }, { enabled: poId !== '' }).data;
-  const closedShort = po !== undefined && po.status === 'closed' && po.closedReason !== null;
   const selectId = useId();
   // Another supplier's POs aren't offered, so a PO picked for the last one goes.
   const seen = useRef(supplierId);
@@ -80,8 +80,7 @@ function AddFromPo({ onAdd }: { onAdd: (lines: BillLineInput[]) => void }) {
         <option value="">{pos.length === 0 ? t('purchases.bill.noPos') : t('purchases.bill.pickPo')}</option>
         {pos.map((p) => <option key={p.id} value={p.id}>{p.status === 'closed' ? t('purchases.bill.poClosed', { number: p.number ?? '' }) : p.number}</option>)}
       </select>
-      {closedShort ? <p role="alert" className="kit-form-alert">{t('purchases.bill.poClosedShort')}</p> : null}
-      <button type="button" className="kit-button" disabled={po === undefined || closedShort}
+      <button type="button" className="kit-button" disabled={po === undefined}
         onClick={() => { if (po !== undefined) { onAdd(po.lines.map((l) => ({ kind: 'goods', label: `${l.name} (${l.sku}), ${po.number ?? ''}`,
           poLineId: l.id, receiptId: '', receiptLineId: '', qty: '', rate: asPrice(l.rate) }))); setPoId(''); } }}>
         {t('purchases.bill.addPoLines')}
