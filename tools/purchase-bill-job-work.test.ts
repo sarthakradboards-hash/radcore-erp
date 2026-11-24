@@ -9,8 +9,11 @@ import { gstinCheckChar, moneyString, percentString, quantityString, unitPriceSt
 import { putGstRate } from '@radcore/lib-gst';
 import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
-import { addBill, cancelBillNow, getBillById, postBillNow } from '@radcore/lib-purchasing';
-import { addCategory, addChallan, addItem, addPlace, addReceipt, cancelReceiptNow, getChallanById, getReceiptById } from '@radcore/lib-stock';
+import { addBill, cancelBillNow, getBillById, jwcbClearedByLine, postBillNow } from '@radcore/lib-purchasing';
+import { checkBooks } from '@radcore/lib-service';
+import {
+  addCategory, addChallan, addItem, addPlace, addReceipt, cancelReceiptNow, getChallanById, getReceiptById, jobWorkChargesByLine,
+} from '@radcore/lib-stock';
 import { testSettings } from '@radcore/test-helpers';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -189,6 +192,30 @@ describe.skipIf(!url || !superUrl)('a job worker’s bill', { timeout: 60_000 },
     }
     await run((ctx) => cancelBillNow(ctx, { id, businessDate: DATE, reason: 'Billed in error' }), at.staff);
     expect(await code(undo())).toBe('ok');
+  });
+
+  // RAD-95's JWCB piece (ADR-006 §7, the architect's ruling): what the books check reads for a job-work line, through a
+  // charge billed in two parts, a cancelled bill and a cancelled receipt, with no JWCB problem left in the books.
+  it('gives the books check each job-work line’s charge and what bills cleared of it, net of cancellations', async () => {
+    const at = await setup();
+    const figures = async () => {
+      const [charges, cleared] = await run(async (ctx) => [await jobWorkChargesByLine(ctx), await jwcbClearedByLine(ctx)] as const, at.staff);
+      return [charges.find((c) => c.jobWorkLineId === at.line)?.charge ?? null, cleared.get(at.line) ?? null];
+    };
+    expect(await figures()).toEqual(['450.00', null]);
+    await post(at, (await draft(at, [charge(at, '2', '150')], '354')).id);
+    const wrong = (await draft(at, [charge(at, '1', '150')], '177')).id;
+    await post(at, wrong);
+    await run((ctx) => cancelBillNow(ctx, { id: wrong, businessDate: DATE, reason: 'Billed in error' }), at.staff);
+    expect(await figures()).toEqual(['450.00', '300.00']);
+    await post(at, (await draft(at, [charge(at, '1', '150')], '177')).id);
+    expect(await figures()).toEqual(['450.00', '450.00']);
+    // A receipt cancelled before any bill: its line's charge no longer counts.
+    const undone = await setup();
+    await run((ctx) => cancelReceiptNow(ctx, { id: undone.receiptId, businessDate: DATE, reason: 'Entered twice' }), undone.staff);
+    expect((await run((ctx) => jobWorkChargesByLine(ctx), at.staff)).some((c) => c.jobWorkLineId === undone.line)).toBe(false);
+    const books = await runInTransaction(db, { readOnly: true, isolation: 'repeatable read' }, at.staff, randomUUID(), (ctx) => checkBooks(ctx, {}));
+    expect(books.problems.filter((p) => p.check.startsWith('jwcb'))).toEqual([]);
   });
 
   // backend-2 on #408 (ADR-008 §12, as #370's POs): a draft's save holds the job-work receipts it names before itself, so a

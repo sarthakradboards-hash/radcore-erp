@@ -329,6 +329,9 @@ and yes or no (RAD-142). The seventh is lib-purchasing's `services/billed.ts`, w
 of each receipt line, and the charges of each job-work receipt line (RAD-142), net of cancellations, for a bill's
 `over_received` and a receipt's `receipt_in_use`, answering only quantities (RAD-138). The eighth is lib-purchasing's
 `services/grni.ts`, which sums every posted receipt, bill and return line's Goods Received Not Billed money by receipt
+line, and the Job Work Charges to be Billed money its bills cleared by job-work receipt line (`jwcb_value`), net of
+cancellations, for the books check (§7), answering only sums (RAD-95). The ninth is lib-stock's
+`services/job-work-charges.ts`, which sums every posted job-work receipt line's Job Work Charges to be Billed money by
 line, net of cancellations, for the books check (§7), answering only sums (RAD-95).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
