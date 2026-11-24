@@ -211,18 +211,13 @@ test.describe('stores, receiving', () => {
   });
 });
 
-// The supplier's bills. The draft is made through the API (the bill form, ui's #404, is in review) with a supplier's bill file that is
-// already "ready" (a fixture row, as the repo's own bill tests make it: the upload and its check are the files specs' own), then the
-// journey goes through the screens: the match view, posting within the tolerance, and a bill past it waiting for someone else's approval.
+// The supplier's bills, entered through the bill form. Attaching the supplier's own paper is the one step not done for real: the upload goes to a bucket
+// (S3), which the e2e run does not have, and its check is the files specs' own. So the three calls of the attach (the presign, the post to the bucket and
+// the confirm) are answered in the browser, with a fixture file row that is already "ready" (as the repo's own bill tests make it); the draft then
+// goes through the form to the real API, which accepts the file by its id. Then the match view, posting within the tolerance, and a bill past it
+// waiting for someone else's approval.
 const bills = { first: '', second: '', third: '', firstNumber: '', thirdNumber: '' };
 
-/** A POST as the person `request` is signed in as. */
-async function post<T>(request: APIRequestContext, path: string, data: unknown): Promise<T> {
-  const origin = `http://127.0.0.1:${process.env['E2E_WEB_PORT'] ?? 3100}`;
-  const res = await request.post(`/api${path}`, { data, headers: { 'idempotency-key': randomUUID(), origin } });
-  expect(res.status(), `post ${path}: ${await res.text()}`).toBe(200);
-  return (await res.json()) as T;
-}
 /** A purchase bill's file, ready (the supplier's own paper), made as the owner of the database. */
 async function readyBillFile(): Promise<string> {
   const id = randomUUID();
@@ -238,23 +233,57 @@ async function readyBillFile(): Promise<string> {
   return id;
 }
 
+const BUCKET = 'http://127.0.0.1:8333/radcore-files';
+/** Answers the three calls of attaching a supplier's bill in the browser, with a ready file row as the file the presign names. */
+async function answerAttach(page: Page): Promise<void> {
+  const id = await readyBillFile();
+  await page.route('**/api/files/purchase-bill', (route) => (route.request().method() === 'POST'
+    ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id, url: BUCKET, fields: { key: `purchase_bill/${id}` } }) })
+    : route.continue()));
+  await page.route(BUCKET, (route) => route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' } }));
+  await page.route(`**/api/files/purchase-bill/${id}/confirm`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'checking' }) }));
+}
+/** Enters one bill through the form: for the item's PO line and the receipt that brought it, so many at the rate the supplier billed. Answers its page's path. */
+async function enterBill(page: Page, bill: { n: number; item: number; qty: string; rate: string; total: string }): Promise<string> {
+  await answerAttach(page);
+  await page.goto('/purchases/bills/new');
+  await pick(page, /^Supplier/, SUPPLIER.name);
+  await page.getByLabel('Supplier’s invoice number').fill(`INV-${u}-${bill.n}`);
+  await page.getByLabel('Supplier’s invoice date').fill(today());
+  await page.getByLabel('Total on the supplier’s bill').fill(bill.total);
+  await page.getByLabel('Supplier’s bill', { exact: true }).setInputFiles({ name: 'bill.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 e2e') });
+  await expect(page.getByText('Their bill is attached. Choose another file to replace it.')).toBeVisible();
+  const po = page.getByLabel('Add the lines of a purchase order');
+  const option = po.locator('option', { hasText: run.poNumber });
+  await expect(option).toHaveCount(1, { timeout: 15_000 });
+  await po.selectOption({ label: (await option.innerText()).trim() });
+  await btn(page, 'Add its lines').click();
+  // the order has both items; this bill is for one of them
+  await expect(page.getByRole('group', { name: /^Line 2: / })).toBeVisible();
+  await btn(page, bill.item === 0 ? 'Remove line 2' : 'Remove line 1').click();
+  const line = page.getByRole('group', { name: /^Line 1: / });
+  await expect(line).toContainText(ITEMS[bill.item]!.name);
+  const receipt = line.getByLabel('Goods receipt');
+  await expect(receipt.locator('option', { hasText: run.receiptNumber })).toHaveCount(1, { timeout: 15_000 });
+  await receipt.selectOption({ label: (await receipt.locator('option', { hasText: run.receiptNumber }).innerText()).trim() });
+  await line.getByLabel('Quantity').fill(bill.qty);
+  await line.getByLabel(/^Billed rate/).fill(bill.rate);
+  await accessible(page);
+  await btn(page, 'Save the draft').click();
+  await expect(page).toHaveURL(/\/purchases\/bills\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole('heading', { level: 1, name: `Draft bill for invoice INV-${u}-${bill.n}` })).toBeVisible();
+  return new URL(page.url()).pathname;
+}
+
 test.describe('accounts, billing', () => {
   test.use({ storageState: stateFor('accounts') });
 
-  test('drafts a bill for each receipt line, the first at the order’s rate and the second well above it (through the API)', async ({ request }) => {
-    const receiptId = run.receiptUrl.split('/').pop()!;
-    const receipt = await api<{ supplierId: string; lines: { id: string; orderLineId: string; name: string }[] }>(request, `/purchasing/receipts/${receiptId}`);
-    expect(receipt.lines).toHaveLength(2);
-    const draft = async (line: { id: string; orderLineId: string }, qty: string, rate: string, total: string, n: number) =>
-      (await post<{ id: string }>(request, '/purchasing/bills', {
-        supplierId: receipt.supplierId, businessDate: today(), supplierInvoiceNumber: `INV-${u}-${n}`, supplierInvoiceDate: today(), supplierGstin: null,
-        statedTotal: total, fileId: await readyBillFile(), notes: null,
-        lines: [{ kind: 'goods', poLineId: line.orderLineId, receiptLineId: line.id, qty, rate }] })).id;
+  test('enters a bill for each receipt line through the form, the first at the order’s rate and the second well above it', async ({ page }) => {
     // 8 chargers accepted at 500.00 = 4,000.00, GST 18%: 4,720.00. 4 batteries at 1,500.00 (the order says 1,000.00) = 6,000.00, GST: 7,080.00.
-    bills.first = `/purchases/bills/${await draft(receipt.lines[0]!, '8', '500.00', '4720.00', 1)}`;
-    bills.second = `/purchases/bills/${await draft(receipt.lines[1]!, '4', '1500.00', '7080.00', 2)}`;
+    bills.first = await enterBill(page, { n: 1, item: 0, qty: '8', rate: '500.00', total: '4720.00' });
+    bills.second = await enterBill(page, { n: 2, item: 1, qty: '4', rate: '1500.00', total: '7080.00' });
     // the supplier billed the 2 rejected chargers as well, at 500.00 = 1,000.00, GST 18%: 1,180.00 (it is the rejects' return that this bill makes debitable)
-    bills.third = `/purchases/bills/${await draft(receipt.lines[0]!, '2', '500.00', '1180.00', 3)}`;
+    bills.third = await enterBill(page, { n: 3, item: 0, qty: '2', rate: '500.00', total: '1180.00' });
   });
 
   test('the first bill’s page shows the three-way match, within tolerance; Post it posts it at once and it draws its number', async ({ page }) => {
