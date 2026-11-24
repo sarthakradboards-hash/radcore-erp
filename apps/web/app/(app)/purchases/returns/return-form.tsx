@@ -41,6 +41,9 @@ function AddFromReceipt({ onAdd }: { onAdd: (l: ReturnLineInput) => void }) {
   const [receiptId, setReceiptId] = useState('');
   const receipt = useApiQuery(getGoodsReceipt, { id: receiptId }, { enabled: receiptId !== '' }).data;
   const selectId = useId();
+  // A receipt picked for the last supplier goes with them (auditor-3 on #406).
+  const seen = useRef(supplierId);
+  useEffect(() => { if (seen.current !== supplierId) { seen.current = supplierId; setReceiptId(''); } }, [supplierId]);
   if (supplierId === '') return <p>{t('purchases.return.pickSupplierFirst')}</p>;
   // A receipt line already on this return isn't offered again: one line each, as the server counts it.
   const withRejects = (receipt?.lines ?? []).filter((l) => l.rejected !== null && !dec(l.rejected).isZero() && !onReturn.includes(l.id));
