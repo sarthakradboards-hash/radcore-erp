@@ -4,7 +4,7 @@
 // sent again and approved; and a transfer is undone by its mirror, unless the goods have moved on since. Stock is received through the real
 // stock engine (e2e/seed-stock.ts), and after every step the quantity in each place is read both on the screen and from the API. Every test
 // ends with the books check (RAD-95).
-// Not here yet: job work (the second part of the ticket).
+// Job work is its own journey: flow-07-job-work.spec.ts.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { openFinancialYear } from '@radcore/lib-accounts';
 import { indiaDate, percentString } from '@radcore/lib-common';

@@ -3,33 +3,56 @@
 // database directly (triggers and foreign keys off for the seed alone) since posting them one by one would take
 // minutes. Its credit check reads under 50 ms. A timing test: it runs when RADCORE_TIMING is set, locally, and its
 // figures go on the ticket, as a shared CI runner's timings say little. It measures with the monotonic clock
-// (process.hrtime), a duration, never the run date (RC-156).
+// (process.hrtime), a duration, never the run date (RC-156). Its seed commits documents with triggers off and Debtors
+// lines with no other side, so it runs in a database of its own (RAD-79's freshDatabase), dropped when it ends: in the
+// run's shared one, every other file's whole-database books check and read sweep met them (RAD-95, RAD-148).
 import { randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, partyReceivable } from '@radcore/lib-accounts';
 import type { Ctx, Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { checkSale } from '@radcore/lib-sales';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { deliveredNotInvoiced } from '../packages/lib-sales/src/services/delivered.ts';
+import { freshDatabase } from './test-database.ts';
 
-const url = process.env['TEST_DATABASE_URL'];
-const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
+const adminUrl = process.env['TEST_DATABASE_ADMIN_URL'];
 const READ = { readOnly: true, isolation: 'read committed' } as const;
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const AS: Principal = { kind: 'user', userId: randomUUID(), permissions: ['parties:write', 'parties:read', 'sales:read'] };
 // A year no other file posts in.
 const FY = '2035-04-01';
 
-describe.skipIf(!url || !superUrl || !process.env['RADCORE_TIMING'])('the credit check with a long history', { timeout: 300_000 }, () => {
-  const pool = new pg.Pool({ connectionString: url, max: 2 });
-  const su = new pg.Pool({ connectionString: superUrl, max: 1 });
-  const db = createDatabase(pool);
-  afterAll(async () => {
-    await pool.end();
-    await su.end();
-  });
-  const run = <R>(fn: (ctx: Ctx) => Promise<R>, spec: typeof WRITE | typeof READ = WRITE) => runInTransaction(db, spec, AS, randomUUID(), fn);
+/** The file's own database, as a factory (RC-222: no shared `let`), made in beforeAll and dropped in afterAll. */
+function ownDatabase() {
+  let made: { pool: pg.Pool; su: pg.Pool; db: ReturnType<typeof createDatabase>; drop: () => Promise<void> } | undefined;
+  return {
+    async open() {
+      const fresh = await freshDatabase(adminUrl ?? '');
+      const pool = new pg.Pool({ connectionString: fresh.appUrl, max: 2 });
+      const su = new pg.Pool({ connectionString: fresh.superUrl, max: 1 });
+      // The forced drop ends any connection still open (57P01), which is ours to expect; anything else is still thrown.
+      for (const p of [pool, su]) p.on('error', (e: Error & { code?: string }) => { if (e.code !== '57P01') throw e; });
+      made = { pool, su, db: createDatabase(pool), drop: fresh.drop };
+    },
+    get() {
+      if (made === undefined) throw new Error('The database is made in beforeAll');
+      return made;
+    },
+    async close() {
+      if (made === undefined) return;
+      await made.pool.end();
+      await made.su.end();
+      await made.drop();
+    },
+  };
+}
+
+describe.skipIf(!adminUrl || !process.env['RADCORE_TIMING'])('the credit check with a long history', { timeout: 300_000 }, () => {
+  const own = ownDatabase();
+  beforeAll(() => own.open(), 300_000);
+  afterAll(() => own.close());
+  const run = <R>(fn: (ctx: Ctx) => Promise<R>, spec: typeof WRITE | typeof READ = WRITE) => runInTransaction(own.get().db, spec, AS, randomUUID(), fn);
 
   it('checks a party with 10,000 documents in under 50 ms', async () => {
     const partyId = await run(async (ctx) => {
@@ -37,7 +60,7 @@ describe.skipIf(!url || !superUrl || !process.env['RADCORE_TIMING'])('the credit
       return (await addParty(ctx, { name: `Long history ${randomUUID().slice(0, 6)}`, kinds: ['dealer'], gstin: null, pan: null,
         composition: false, stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null })).id;
     });
-    const c = await su.connect();
+    const c = await own.get().su.connect();
     try {
       await c.query('begin');
       await c.query("select set_config('app.principal', 'system:test', true)");

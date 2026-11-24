@@ -49,7 +49,9 @@ export default function PaymentPage() {
   const p = q.data;
   if (p === undefined) return <>{back}<p>{t('loading')}</p></>;
   const posted = p.status === 'posted';
-  const hasLeft = p.kind === 'receipt' && posted && dec(p.left).gt(0);
+  // A receipt or a payment with something left is applied to bills; only a receipt is refunded.
+  const canApply = p.kind !== 'refund' && posted && dec(p.left).gt(0);
+  const canRefund = p.kind === 'receipt' && canApply;
   const links = [
     // The statement is read with receivables:read: a person without it isn't offered a page that would refuse them.
     ...(p.kind === 'payment' || !permissions.includes('receivables:read') ? [] : [{ label: t('books.pay.rec.statement'), href: `/accounts/collect/${p.partyId}` }]),
@@ -121,16 +123,16 @@ export default function PaymentPage() {
 
       <div className="kit-actions">
         {p.kind === 'receipt' && posted ? <PrintButtons contract={printReceipt} id={id} /> : null}
-        {mayWrite && hasLeft ? <button type="button" className="kit-button" onClick={() => setDialog('apply')}>{t('books.pay.apply')}</button> : null}
-        {mayWrite && hasLeft ? <button type="button" className="kit-button" onClick={() => setDialog('refund')}>{t('books.pay.refund')}</button> : null}
+        {mayWrite && canApply ? <button type="button" className="kit-button" onClick={() => setDialog('apply')}>{t('books.pay.apply')}</button> : null}
+        {mayWrite && canRefund ? <button type="button" className="kit-button" onClick={() => setDialog('refund')}>{t('books.pay.refund')}</button> : null}
         {mayWrite && posted ? <button type="button" className="kit-button" onClick={() => setDialog('cancel')}>{t('books.pay.cancel')}</button> : null}
       </div>
 
       {dialog === 'cancel' ? <CancelPayment id={id} onClose={() => setDialog(null)} /> : null}
       {dialog === 'refund' && p.number !== null ? <RefundReceipt receipt={{ id, number: p.number, partyId: p.partyId }} onClose={() => setDialog(null)} /> : null}
       {dialog === 'apply' ? (
-        <Dialog open onOpenChange={(open) => { if (!open) setDialog(null); }} title={t('books.pay.allocate.title')} description={t('books.pay.allocate.intro')}>
-          <AllocateForm paymentId={id} partyId={p.partyId} amount={p.left} onDone={() => setDialog(null)} />
+        <Dialog open onOpenChange={(open) => { if (!open) setDialog(null); }} title={t('books.pay.allocate.title')} description={t(p.kind === 'payment' ? 'books.pay.allocate.intro.pay' : 'books.pay.allocate.intro')}>
+          <AllocateForm kind={p.kind === 'payment' ? 'payment' : 'receipt'} paymentId={id} partyId={p.partyId} amount={p.left} onDone={() => setDialog(null)} />
           <div className="kit-actions"><CloseButton>{t('books.pay.close')}</CloseButton></div>
         </Dialog>
       ) : null}
