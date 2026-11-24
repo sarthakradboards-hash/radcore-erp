@@ -206,9 +206,8 @@ async function closeIfDone(ctx: Ctx, challanId: string, lines: ReadonlyMap<strin
 
 /**
  * POST /stock/job-work/receipts/:id/cancel (job_work:write): its mirror, dated `businessDate`, which opens its challan's
- * lines again; refused once what it brought in has moved on (`goods_moved_on`).
- * shortcut: `charges_billed` is declared but never raised yet: no purchase bill names a receipt's charges until M4-03's
- * bills do; that ticket adds the check here.
+ * lines again; refused once what it brought in has moved on (`goods_moved_on`), or while a bill that isn't cancelled
+ * names its charges (`charges_billed`, the database's guard_job_work_charges_billed: lib-stock can't read bills).
  */
 export async function cancelReceiptNow(ctx: Ctx, { id, businessDate, reason }: In<typeof cancelJobWorkReceipt>): Promise<Out<typeof cancelJobWorkReceipt>> {
   await holdPeriod(ctx, businessDate);

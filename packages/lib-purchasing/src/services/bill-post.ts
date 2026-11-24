@@ -1,7 +1,8 @@
 // Posting a purchase bill (M4-03, RAD-138; ADR-008 §7, §7a, §12; ADR-006 §4, §6, F3): matched three ways, each goods line
 // against the receipt line it bills and through it the PO line, then posted in one save. Its approval, past the tolerance,
 // posts it too; cancelling mirrors it.
-//   locks (§12): the period FOR SHARE → its POs FOR SHARE → its receipts → the bill → the stock positions → the series
+//   locks (§12): the period FOR SHARE → its POs FOR SHARE → its receipts → its job-work receipts (RAD-142) → the bill
+//     → the stock positions → the series
 //   Goods Received Not Billed: cleared by exactly what the billed quantities accrued at receipt, accepted goods first
 //     (F3, F4): a line taking a receipt line from b0 to b1 of its quantity q, worth v at receipt, clears
 //     round(v × b1 / q) − round(v × b0 / q), so the bill that takes the last of it clears what's left, exactly
@@ -12,12 +13,13 @@ import { purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purc
 import { getPartyById, holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, indiaDate, roundMoney, roundQty, type Decimal, type Money } from '@radcore/lib-common';
 import { AppError, holdSeries, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
-import { holdStock, postStock, quantitiesAt, revaluesOf, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
+import { holdStock, jobWorkLinesFor, postStock, quantitiesAt, revaluesOf, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import type { cancelPurchaseBill, postPurchaseBill } from '../contract.ts';
 import {
   amountsOf, BILL_SERIES, BILL_TOLERANCE, billOf, checkDraft, holdOrders, overPoRate, wrongStatus, type BillIn, type In, type Out, type Row,
 } from './bill-checks.ts';
+import { accrued, jobWorkAccruals, type Accrual } from './bill-job-work.ts';
 import { billedQty } from './billed.ts';
 import { receiptLinesFor } from './receipt-lines.ts';
 import { billDebited, returnedOf } from './received.ts';
@@ -34,10 +36,13 @@ const linesOf = (ctx: Ctx, id: string) => purchasingTx(ctx).select().from(purcha
   .orderBy(asc(purchaseBillLines.lineNo));
 const receiptIdsOf = (lines: readonly Line[]) => lines.flatMap((l) => (l.receiptLineId === null ? [] : [l.receiptLineId]));
 
-/** §12's step 2 for a bill: its POs FOR SHARE, then its receipts, in id order, before the bill itself. */
+/** §12's step 2 for a bill: its POs FOR SHARE, then its goods receipts, then its job-work receipts, each in id order,
+ * before the bill itself. */
 async function holdSources(ctx: Ctx, lines: readonly Line[]): Promise<ReceiptLine[]> {
   await holdOrders(ctx, lines.flatMap((l) => (l.poLineId === null ? [] : [l.poLineId])));
-  return receiptLinesFor(ctx, receiptIdsOf(lines), { forUpdate: true });
+  const receipts = await receiptLinesFor(ctx, receiptIdsOf(lines), { forUpdate: true });
+  await jobWorkLinesFor(ctx, lines.flatMap((l) => (l.jobWorkReceiptLineId === null ? [] : [l.jobWorkReceiptLineId])), { forUpdate: true });
+  return receipts;
 }
 
 /** The stored draft as its save sent it, for the draft's checks again. */
@@ -46,14 +51,11 @@ const inputOf = (b: Row, lines: readonly Line[]): BillIn => ({ supplierId: b.par
   statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes,
   lines: lines.map((l) => (l.kind === 'goods'
     ? { kind: 'goods' as const, poLineId: l.poLineId ?? '', receiptLineId: l.receiptLineId, qty: (l.qty ?? '0') as never, rate: (l.rate ?? '0') as never }
-    : { kind: 'charge' as const, charge: (l.charge ?? 'other') as 'other', description: l.description ?? '', hsn: l.hsn ?? '', amount: (l.amount ?? '0') as Money })) });
+    : l.kind === 'job_work'
+      ? { kind: 'job_work' as const, jobWorkReceiptLineId: l.jobWorkReceiptLineId ?? '', qty: (l.qty ?? '0') as never, rate: (l.rate ?? '0') as never,
+        hsn: l.hsn ?? '' }
+      : { kind: 'charge' as const, charge: (l.charge ?? 'other') as 'other', description: l.description ?? '', hsn: l.hsn ?? '', amount: (l.amount ?? '0') as Money })) });
 
-/** A share of what a receipt line accrued, for billing it from `from` to `to` of its `qty`: telescoping, so the last bill
- * clears exactly what's left. */
-const accrued = (value: string, qty: Decimal, from: Decimal, to: Decimal): Decimal =>
-  (qty.isZero() ? zero() : dec(roundMoney(dec(value).times(to).div(qty))).minus(dec(roundMoney(dec(value).times(from).div(qty)))));
-
-type Accrual = { line: Line; n: number; r: ReceiptLine; accepted: Decimal; rejected: Decimal; value: Decimal };
 type Judged = Awaited<ReturnType<typeof judge>>;
 
 /** Everything posting checks and works out, under the locks: the draft's checks again, the file, each goods line's
@@ -61,7 +63,7 @@ type Judged = Awaited<ReturnType<typeof judge>>;
  * whether a line or the charges are past the tolerance. */
 async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonly ReceiptLine[]) {
   if (b.status !== 'draft') throw wrongStatus(b.status, 'posted');
-  const po = await checkDraft(ctx, inputOf(b, lines));
+  const { po, made } = await checkDraft(ctx, inputOf(b, lines));
   if (b.fileId === null) throw refuse('bill_file_required', 'Attach the supplier’s bill before posting it', ['fileId']);
   const byId = new Map(receipts.map((r) => [r.id, r]));
   const used = await billedQty(ctx, receiptIdsOf(lines));
@@ -95,8 +97,9 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
     const value = accrued(r.acceptedValue ?? '0', accepted, accBefore, accBefore.plus(acc))
       .plus(accrued(r.rejectedValue ?? '0', rejectedAll, rejBefore, rejBefore.plus(rej)));
     used.set(r.id, before.plus(qty));
-    accruals.push({ line, n, r, accepted: acc, rejected: rej, value });
+    accruals.push({ line, n, itemId: r.itemId, rejectsLocationId: r.rejectsLocationId, accepted: acc, rejected: rej, value, jobWork: false });
   }
+  accruals.push(...await jobWorkAccruals(ctx, b, lines, made));
   const supplier = await buyingFrom(ctx, b.partyId);
   const amounts = await amountsOf(ctx, supplier.stateCode, b.supplierInvoiceDate, lines);
   if (dec(amounts.totals.total).minus(dec(b.statedTotal)).abs().gte(1)) {
@@ -104,12 +107,14 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
   }
   const tolerance = dec(ctx.settings.get(BILL_TOLERANCE));
   const lineOver = lines.some((l) => {
-    if (l.kind !== 'goods') return false;
-    const over = overPoRate(l.rate ?? '0', po.get(l.poLineId ?? '')?.rate ?? '0');
+    if (l.kind === 'charge') return false;
+    // A job worker's charge against its receipt's charge rate, as goods against their PO's (the architect on RAD-142).
+    const against = l.kind === 'job_work' ? made.get(l.jobWorkReceiptLineId ?? '')?.chargeRate : po.get(l.poLineId ?? '')?.rate;
+    const over = overPoRate(l.rate ?? '0', against ?? '0');
     return over === null || dec(over).gt(tolerance);
   });
   const taxableOf = (kind: string) => lines.reduce((s, l, i) => (l.kind === kind ? s.plus(dec(amounts.lines[i]?.taxable ?? '0')) : s), zero());
-  const [goods, charges] = [taxableOf('goods'), taxableOf('charge')];
+  const [goods, charges] = [taxableOf('goods').plus(taxableOf('job_work')), taxableOf('charge')];
   const chargesOver = !charges.isZero() && (goods.isZero() || charges.times(100).div(goods).gt(tolerance));
   // Input GST is claimed only from a regular registered supplier whose GSTIN is on the bill (§7a, until CA-04).
   const claimable = b.supplierGstin !== null && !supplier.composition;
@@ -155,8 +160,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     const d = costOf(goodsAt[k] ?? 0).plus(chargeShares[k] ?? zero()).minus(a.value);
     const qty = a.accepted.plus(a.rejected);
     const dRejected = a.rejected.isZero() || qty.isZero() ? zero() : dec(roundMoney(d.times(a.rejected).div(qty)));
-    if (!a.rejected.isZero()) rejects.push({ itemId: a.r.itemId, locationId: a.r.rejectsLocationId, lineId: a.line.id, d: dRejected, qty: a.rejected });
-    add(a.r.itemId, d.minus(dRejected), a.accepted, a.line.id);
+    if (!a.rejected.isZero()) rejects.push({ itemId: a.itemId, locationId: a.rejectsLocationId, lineId: a.line.id, d: dRejected, qty: a.rejected });
+    add(a.itemId, d.minus(dRejected), a.accepted, a.line.id);
   }
   // The positions it may revalue, under their locks: the sellable places holding each item, and each reject's place.
   const items = [...byItem.keys()];
@@ -203,7 +208,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
   const signed = (account: JournalLine['account'], v: Decimal, more: Partial<JournalLine> = {}): JournalLine[] =>
     (v.isZero() ? [] : [{ account, ...more, ...(v.gt(0) ? { debit: roundMoney(v) } : { credit: roundMoney(v.abs()) }) }]);
   const entryLines: JournalLine[] = [
-    ...signed({ system: 'grni' }, j.accruals.reduce((s, a) => s.plus(a.value), zero())),
+    ...signed({ system: 'grni' }, j.accruals.reduce((s, a) => (a.jobWork ? s : s.plus(a.value)), zero())),
+    ...signed({ system: 'jw_accrued' }, j.accruals.reduce((s, a) => (a.jobWork ? s.plus(a.value) : s), zero())),
     ...moved.flatMap((m) => signed({ system: 'stock' }, dec(m.value), { itemId: m.itemId, locationId: m.locationId })),
     ...signed({ system: 'cogs' }, cogs),
     ...(j.claimable ? [...signed({ system: 'input_cgst' }, dec(t.cgst)), ...signed({ system: 'input_sgst' }, dec(t.sgst)),
@@ -216,14 +222,15 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
   const number = await nextNumber(ctx, BILL_SERIES, b.businessDate);
   const entry = await postEntry(ctx, { kind: 'purchase_bill', businessDate: b.businessDate, source: { table: SOURCE, id: b.id }, lines: entryLines });
   const tx = purchasingTx(ctx);
-  // Each goods line keeps what it cleared of Goods Received Not Billed, for the books check (ADR-006 §7, RAD-95).
+  // Each line keeps what it cleared of Goods Received Not Billed or Job Work Charges to be Billed, for the books check
+  // (ADR-006 §7, RAD-95).
   const cleared = new Map(j.accruals.map((x) => [x.line.id, roundMoney(x.value)]));
   for (const [i, l] of lines.entries()) {
     const a = j.amounts.lines[i];
     if (a !== undefined) {
       await tx.update(purchaseBillLines).set({ gstRate: a.gstRate, gstRateSource: a.gstRateSource, taxable: a.taxable, cgst: a.cgst, sgst: a.sgst,
-        igst: a.igst, lineTotal: a.lineTotal, ...(l.kind === 'goods' ? { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3),
-          grniValue: cleared.get(l.id) ?? null } : {}) })
+        igst: a.igst, lineTotal: a.lineTotal, ...(l.kind === 'charge' ? {} : { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3),
+          [l.kind === 'goods' ? 'grniValue' : 'jwcbValue']: cleared.get(l.id) ?? null }) })
         .where(eq(purchaseBillLines.id, l.id));
     }
   }
@@ -234,8 +241,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
 
 /** What the approver sees and approves (RAD-38): the supplier's bill as entered, its lines and its total. */
 type Version = { supplierId: string; businessDate: string; supplierInvoiceNumber: string; supplierInvoiceDate: string; statedTotal: string;
-  fileId: string | null; lines: { kind: string; poLineId: string | null; receiptLineId: string | null; qty: string | null; rate: string | null;
-    hsn: string | null; amount: string | null }[]; total: string | null };
+  fileId: string | null; lines: { kind: string; poLineId: string | null; receiptLineId: string | null; jobWorkReceiptLineId: string | null;
+    qty: string | null; rate: string | null; hsn: string | null; amount: string | null }[]; total: string | null };
 
 /** The bills' approval (ADR-008 §7): kind purchase-bill, under bills:approve. Approving posts the bill, so its locks come
  * first (§12): the period, then the bill's POs and receipts, before the engine locks the bill. */
@@ -256,7 +263,8 @@ export const billApproval: ApprovalSpec<Version> = {
     const worked = await amountsOf(ctx, party.stateCode, b.supplierInvoiceDate, lines).catch(() => null);
     return { supplierId: b.partyId, businessDate: b.businessDate, supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate,
       statedTotal: b.statedTotal, fileId: b.fileId, total: worked?.totals.total ?? null,
-      lines: lines.map((l) => ({ kind: l.kind, poLineId: l.poLineId, receiptLineId: l.receiptLineId, qty: l.qty, rate: l.rate, hsn: l.hsn, amount: l.amount })) };
+      lines: lines.map((l) => ({ kind: l.kind, poLineId: l.poLineId, receiptLineId: l.receiptLineId, jobWorkReceiptLineId: l.jobWorkReceiptLineId,
+        qty: l.qty, rate: l.rate, hsn: l.hsn, amount: l.amount })) };
   },
   async lockFirst(ctx, id) {
     await lockPeriod(ctx);

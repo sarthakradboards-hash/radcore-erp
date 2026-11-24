@@ -7,24 +7,33 @@ import { after, purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/
 import { getPartyById } from '@radcore/lib-accounts';
 import { dec, roundMoney, type Money } from '@radcore/lib-common';
 import { AppError, awaitingApproval, decodeCursor, encodeCursor, listScope, withdrawPending, type Ctx } from '@radcore/lib-platform';
-import { itemLabels } from '@radcore/lib-stock';
+import { itemLabels, jobWorkLinesFor } from '@radcore/lib-stock';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import type { createPurchaseBill, deletePurchaseBill, getPurchaseBill, listPurchaseBills, updatePurchaseBill } from '../contract.ts';
 import {
   amountsOf, BILL_TOLERANCE, billOf, checkDraft, holdOrders, overPoRate, PAGE_KEY, poLineIdsOf, poLinesOf, wrongStatus,
-  type BillIn, type BillOut, type In, type LineAmounts, type LineIn, type Out, type PoLine, type Status,
+  type BillIn, type BillOut, type In, type LineAmounts, type LineIn, type Out, type Status,
 } from './bill-checks.ts';
 import { billApproval } from './bill-post.ts';
 
-/** Writes a draft's lines afresh, numbered from 1 in the order sent; a goods line takes its PO line's item. */
-async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], po: ReadonlyMap<string, PoLine>): Promise<void> {
+/** Writes a draft's lines afresh, numbered from 1 in the order sent; a goods line takes its PO line's item, a job
+ * worker's charge its receipt line's made item. */
+async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], { po, made }: Checked): Promise<void> {
   const tx = purchasingTx(ctx);
   await tx.delete(purchaseBillLines).where(eq(purchaseBillLines.billId, billId));
-  await tx.insert(purchaseBillLines).values(lines.map((l, i) => (l.kind === 'goods'
-    ? { billId, lineNo: i + 1, kind: 'goods', poLineId: l.poLineId, receiptLineId: l.receiptLineId, itemId: po.get(l.poLineId)?.itemId ?? '', qty: l.qty,
-      rate: l.rate }
-    : { billId, lineNo: i + 1, kind: 'charge', charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount })));
+  await tx.insert(purchaseBillLines).values(lines.map((l, i) => {
+    const at = { billId, lineNo: i + 1, kind: l.kind };
+    if (l.kind === 'goods') {
+      return { ...at, poLineId: l.poLineId, receiptLineId: l.receiptLineId, itemId: po.get(l.poLineId)?.itemId ?? '', qty: l.qty, rate: l.rate };
+    }
+    if (l.kind === 'job_work') {
+      return { ...at, jobWorkReceiptLineId: l.jobWorkReceiptLineId, itemId: made.get(l.jobWorkReceiptLineId)?.madeItemId ?? '', qty: l.qty,
+        rate: l.rate, hsn: l.hsn };
+    }
+    return { ...at, charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount };
+  }));
 }
+type Checked = Awaited<ReturnType<typeof checkDraft>>;
 
 const header = (b: BillIn) => ({ partyId: b.supplierId, businessDate: b.businessDate, supplierInvoiceNumber: b.supplierInvoiceNumber,
   supplierInvoiceDate: b.supplierInvoiceDate, supplierGstin: b.supplierGstin, statedTotal: b.statedTotal, fileId: b.fileId, notes: b.notes });
@@ -32,10 +41,10 @@ const header = (b: BillIn) => ({ partyId: b.supplierId, businessDate: b.business
 /** POST /purchasing/bills (bills:write): a new draft. */
 export async function addBill(ctx: Ctx, input: In<typeof createPurchaseBill>): Promise<Out<typeof createPurchaseBill>> {
   await holdOrders(ctx, poLineIdsOf(input.lines));
-  const po = await checkDraft(ctx, input);
+  const checked = await checkDraft(ctx, input);
   const [row] = await purchasingTx(ctx).insert(purchaseBills).values(header(input)).returning({ id: purchaseBills.id });
   if (row === undefined) throw new Error('the purchase bill was not stored');
-  await writeLines(ctx, row.id, input.lines, po);
+  await writeLines(ctx, row.id, input.lines, checked);
   return { id: row.id };
 }
 
@@ -48,9 +57,9 @@ export async function changeBill(ctx: Ctx, { id, ...input }: In<typeof updatePur
   await holdOrders(ctx, [...named.flatMap((l) => (l.id === null ? [] : [l.id])), ...poLineIdsOf(input.lines)]);
   const b = await billOf(ctx, id, 'bills:write', true);
   if (b.status !== 'draft') throw wrongStatus(b.status, 'changed');
-  const po = await checkDraft(ctx, input);
+  const checked = await checkDraft(ctx, input);
   await purchasingTx(ctx).update(purchaseBills).set(header(input)).where(eq(purchaseBills.id, id));
-  await writeLines(ctx, id, input.lines, po);
+  await writeLines(ctx, id, input.lines, checked);
   return {};
 }
 
@@ -100,6 +109,8 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
   const supplier = await getPartyById(ctx, { id: b.partyId });
   const po = await poLinesOf(ctx, lines.flatMap((l) => (l.poLineId === null ? [] : [l.poLineId])));
   const labels = await itemLabels(ctx, lines.flatMap((l) => (l.itemId === null ? [] : [l.itemId])));
+  const made = new Map((await jobWorkLinesFor(ctx, lines.flatMap((l) => (l.jobWorkReceiptLineId === null ? [] : [l.jobWorkReceiptLineId])),
+    { forUpdate: false })).map((r) => [r.id, r]));
   const tolerance = dec(ctx.settings.get(BILL_TOLERANCE));
   const none = { cgst: null, sgst: null, igst: null };
   let amounts: BillOut['amounts'];
@@ -110,7 +121,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
       throw e;
     });
     if (worked instanceof AppError) {
-      const taxable = lines.map((l) => (l.kind === 'goods' ? roundMoney(dec(l.qty ?? '0').times(dec(l.rate ?? '0'))) : roundMoney(l.amount ?? '0')));
+      const taxable = lines.map((l) => (l.kind !== 'charge' ? roundMoney(dec(l.qty ?? '0').times(dec(l.rate ?? '0'))) : roundMoney(l.amount ?? '0')));
       amounts = { placeOfSupply: null, taxable: roundMoney(taxable.reduce((s, t) => s.plus(dec(t)), dec('0'))), ...none, roundOff: null, total: null,
         note: worked.code === 'company_profile_incomplete' ? 'Set the company’s state to work out the GST' : worked.message };
       lineAmounts = taxable.map((t) => ({ gstRate: null, gstRateSource: null, taxable: t, ...none, lineTotal: null }));
@@ -128,7 +139,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
       igst: l.igst, lineTotal: l.lineTotal }));
   }
   // The charges as a share of the goods' taxable value: past the tolerance, the bill needs approval (ADR-008 §7).
-  const goodsValue = lines.reduce((s, l, i) => (l.kind === 'goods' ? s.plus(dec(lineAmounts[i]?.taxable ?? '0')) : s), dec('0'));
+  const goodsValue = lines.reduce((s, l, i) => (l.kind !== 'charge' ? s.plus(dec(lineAmounts[i]?.taxable ?? '0')) : s), dec('0'));
   const charges = lines.reduce((s, l, i) => (l.kind === 'charge' ? s.plus(dec(lineAmounts[i]?.taxable ?? '0')) : s), dec('0'));
   const chargesOverTolerance = !charges.isZero() && (goodsValue.isZero() || charges.times(100).div(goodsValue).gt(tolerance));
   const empty = { gstRate: null, gstRateSource: null, taxable: '0.00', ...none, lineTotal: null };
@@ -143,9 +154,17 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
         return { kind: 'charge' as const, id: l.id, lineNo: l.lineNo, charge: l.charge as 'freight', description: l.description ?? '', hsn: l.hsn ?? '',
           amount: l.amount as Money, amounts: a };
       }
+      const item = labels.get(l.itemId ?? '');
+      if (l.kind === 'job_work') {
+        const r = made.get(l.jobWorkReceiptLineId ?? '');
+        const over = overPoRate(l.rate ?? '0', r?.chargeRate ?? '0');
+        return { kind: 'job_work' as const, id: l.id, lineNo: l.lineNo, jobWorkReceiptLineId: l.jobWorkReceiptLineId ?? '', itemId: l.itemId ?? '',
+          sku: item?.sku ?? '', name: item?.name ?? '', unit: item?.unit ?? '', qty: l.qty ?? '0', rate: l.rate ?? '0', hsn: l.hsn ?? '',
+          chargeRate: r?.chargeRate ?? '0', receiptNumber: r?.receiptNumber ?? '', overChargeRate: over,
+          overTolerance: over === null || dec(over).gt(tolerance), amounts: a };
+      }
       const p = po.get(l.poLineId ?? '');
       const over = overPoRate(l.rate ?? '0', p?.rate ?? '0');
-      const item = labels.get(l.itemId ?? '');
       return { kind: 'goods' as const, id: l.id, lineNo: l.lineNo, poLineId: l.poLineId ?? '', receiptLineId: l.receiptLineId, itemId: l.itemId ?? '',
         sku: item?.sku ?? '', name: item?.name ?? '', unit: item?.unit ?? '', qty: l.qty ?? '0', rate: l.rate ?? '0', poRate: p?.rate ?? '0',
         poNumber: p?.orderNumber ?? '', overPoRate: over, overTolerance: over === null || dec(over).gt(tolerance), amounts: a };

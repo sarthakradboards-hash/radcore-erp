@@ -7,6 +7,7 @@ import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid, type 
 import { journalEntries, parties } from '../accounts/tables.ts';
 import { boundedText, createdMoment, id, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
 import { files } from '../platform/tables.ts';
+import { jobWorkReceiptLines } from '../stock/tables-job-work.ts';
 import { items } from '../stock/tables.ts';
 import { purchaseOrderLines } from './tables-orders.ts';
 import { goodsReceiptLines } from './tables-receipts.ts';
@@ -63,8 +64,9 @@ export const purchaseBills = radcoreTable('purchase_bills', {
   index('ix_purchase_bills_cancel_entry').on(t.cancelEntryId),
 ]);
 
-/** A bill's line (ADR-008 §7): goods (a PO line's item, how many, at what rate before tax, as the supplier billed it)
- * or a charge on the goods (freight, packing, insurance: its taxable amount and HSN or SAC), spread over the goods. */
+/** A bill's line (ADR-008 §7): goods (a PO line's item, how many, at what rate before tax, as the supplier billed it),
+ * a charge on the goods (freight, packing, insurance: its taxable amount and HSN or SAC), spread over the goods, or a
+ * job worker's charge (a job-work receipt line's made item, how many, at what rate, with its SAC; RAD-142). */
 export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   id: id(),
   billId: uuid().notNull().references((): AnyPgColumn => purchaseBills.id, { onDelete: 'cascade' }),
@@ -73,6 +75,8 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   poLineId: uuid().references(() => purchaseOrderLines.id, { onDelete: 'restrict' }),
   // The receipt line a goods line bills (M4-02): null while the bill has come before the goods; posting needs it.
   receiptLineId: uuid().references(() => goodsReceiptLines.id, { onDelete: 'restrict' }),
+  // The job-work receipt line a job worker's charge bills (ADR-008 §11, RAD-142); a line names this or a receipt line.
+  jobWorkReceiptLineId: uuid().references(() => jobWorkReceiptLines.id, { onDelete: 'restrict' }),
   itemId: uuid().references(() => items.id, { onDelete: 'restrict' }),
   qty: qty({ line: true }),
   rate: unitPrice(),
@@ -85,15 +89,23 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   revaluedQty: qty(),
   // What posting cleared of its receipt line's Goods Received Not Billed, for the books check (ADR-006 §7, RAD-95).
   grniValue: money(),
+  // What posting cleared of its job-work receipt line's Job Work Charges to be Billed, for the books check (RAD-95).
+  jwcbValue: money(),
   gstRate: percent(), gstRateSource: boundedText({ max: 200 }), taxable: money(), cgst: money(), sgst: money(), igst: money(), lineTotal: money(),
 }, (t) => [
-  check('ck_purchase_bill_lines_kind', sql`${t.kind} in ('goods', 'charge')`),
+  check('ck_purchase_bill_lines_kind', sql`${t.kind} in ('goods', 'charge', 'job_work')`),
   // A goods line names its PO line and item, with a quantity and rate; a charge, its kind, words, HSN and amount.
   check('ck_purchase_bill_lines_goods', sql`(${t.kind} = 'goods') = (${t.poLineId} is not null and ${t.itemId} is not null and ${t.qty} is not null
     and ${t.rate} is not null) and (${t.kind} = 'charge') = (${t.charge} is not null and ${t.description} is not null and ${t.hsn} is not null
     and ${t.amount} is not null)`),
   check('ck_purchase_bill_lines_receipt', sql`${t.receiptLineId} is null or ${t.kind} = 'goods'`),
   check('ck_purchase_bill_lines_grni', sql`${t.grniValue} is null or ${t.receiptLineId} is not null`),
+  // A job worker's charge names its job-work receipt line, its made item, a quantity, rate and SAC, and never a PO or
+  // goods receipt line: each line names one source at most (the architect on RAD-142).
+  check('ck_purchase_bill_lines_job_work', sql`(${t.kind} = 'job_work') = (${t.jobWorkReceiptLineId} is not null and ${t.itemId} is not null
+    and ${t.qty} is not null and ${t.rate} is not null and ${t.hsn} is not null)`),
+  check('ck_purchase_bill_lines_one_source', sql`num_nonnulls(${t.receiptLineId}, ${t.jobWorkReceiptLineId}) <= 1`),
+  check('ck_purchase_bill_lines_jwcb', sql`${t.jwcbValue} is null or ${t.jobWorkReceiptLineId} is not null`),
   check('ck_purchase_bill_lines_charge', sql`${t.charge} is null or ${t.charge} in ('freight', 'packing', 'insurance', 'other')`),
   check('ck_purchase_bill_lines_hsn', sql`${t.hsn} is null or ${t.hsn} ~ '^[0-9]{4}([0-9]{2}){0,2}$'`),
   check('ck_purchase_bill_lines_frozen', sql`num_nulls(${t.gstRate}, ${t.gstRateSource}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst},
@@ -103,5 +115,6 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   uniqueIndex('ux_purchase_bill_lines_line').on(t.billId, t.lineNo),
   index('ix_purchase_bill_lines_po_line').on(t.poLineId),
   index('ix_purchase_bill_lines_receipt_line').on(t.receiptLineId),
+  index('ix_purchase_bill_lines_job_work_line').on(t.jobWorkReceiptLineId),
   index('ix_purchase_bill_lines_item').on(t.itemId),
 ]);

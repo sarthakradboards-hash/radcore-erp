@@ -191,7 +191,8 @@ Flow 5: goods arrive and are counted, but aren't in stock until QC has split the
     different numbers;
   - a partial unique index on `(party_id, supplier_invoice_fy, supplier_invoice_key)` for bills that aren't
     cancelled holds it, mapped through `dbErrors` to `duplicate_bill`. A cancelled bill's number can be entered again.
-- **Matched three ways (RC-056).** Each goods line names the receipt line it bills, and through it the PO line:
+- **Matched three ways (RC-056).** Each goods line names the receipt line it bills, and through it the PO line. A
+  job worker's charge line names a job-work receipt line instead (§11); a CHECK holds each line to one source:
   - **quantity:** at most what that receipt line received, accepted plus rejected, less what's already billed and
     less rejects returned before they were billed. More is refused (`over_received`), with no tolerance. A line bills
     the receipt line's accepted goods first, and its rejects only beyond them, so billing the 2 accepted of F2's 3
@@ -346,8 +347,18 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
     (`over_challan`). A challan is closed when everything it sent is accounted for, and can be cancelled only while no
     receipt answers it.
 - **The charge** accrues to Job Work Charges to be Billed. **The job worker's bill** is a purchase bill (§7) whose
-  lines name the receipt's charges. It clears the accrual, with any difference by ADR-006 §4's rule, under the same
-  tolerance.
+  lines name the receipt's charges (RAD-142):
+  - **the line** (`purchase_bill_lines.job_work_receipt_line_id`, kind `job_work`) bills the receipt line's made
+    goods at the job worker's rate, taxed at its own SAC, at most what that line made less what's billed
+    (`over_received`);
+  - **posting** clears what that quantity accrued, as goods lines clear Goods Received Not Billed (its share, so the
+    last bill clears what's left), Dr Input GST where claimable, Cr Creditors; the difference goes by ADR-006 §4's
+    rule to the made item's stock where it's still on hand, else Cost of Goods Sold;
+  - **the tolerance** holds its rate to the receipt's charge rate, as a goods line's to its PO's, under the same
+    `bills:approve`;
+  - **a receipt whose charges a bill names** (one that isn't cancelled, drafts too) can't be cancelled
+    (`charges_billed`). lib-stock can't read bills, so it's the database's guard: a trigger on `job_work_receipts`,
+    mapped through `dbErrors`.
 - **Section 143:** inputs not back within a year are a deemed supply. The job work list shows each open challan's age
   and flags those past `stock.job_work_return_days` (365). What tax then falls due is CA-51's question.
 - **Costs stay masked for operations.** Job work screens show the documents' own quantities and charges. Stock values
@@ -358,15 +369,16 @@ builds this and changes only the rule, not the shape, when CA-04 answers.
 Every save here takes ADR-006 §1's one order:
 1. the company profile and period lock rows, `FOR SHARE` (a posting approval's `lockFirst`);
 2. the documents, in **one order by table whichever is being saved:** `purchase_orders`, `goods_receipts`,
-   `supplier_returns`, `purchase_bills`; then `job_work_challans`, `job_work_receipts`; each table's rows by id
-   (ADR-005 §7a: by table, never by id across tables).
+   `supplier_returns`, `job_work_challans`, `job_work_receipts`, `purchase_bills`; each table's rows by id (ADR-005
+   §7a: by table, never by id across tables). Job work comes before bills because a job worker's bill locks its
+   receipts before itself (§11), and nothing locks a bill and then a job-work document (the architect on RAD-142).
    - **Returns before bills** is ADR-005 §7a's credits-first rule: a return's billed part is a payable credit applied
      to its bill (§8), and the credit-application trigger locks the credit, then the charge. So the return's own
      posting, a later credit application, and the reversal before a return is cancelled all take the return, then
      the bill.
    - The service reads the draft unlocked to learn its sources, locks them all in that order, then checks the
-     draft's status again. So a receipt locks its PO, then itself; a bill its POs and receipts, then itself; a
-     return its receipts, itself, then their bills. No two saves wait on each other in a circle.
+     draft's status again. So a receipt locks its PO, then itself; a bill its POs, receipts and job-work receipts, then
+     itself; a return its receipts, itself, then their bills. No two saves wait on each other in a circle.
    - **Transfers, counts and adjustments** touch no other document, so each locks only itself, after these.
 3. no party lock: no check here counts a supplier's balance. A payment to one takes its own, at payment (ADR-007 §8);
 4. the stock positions, then new batch rows, in §4a's order;
