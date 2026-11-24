@@ -326,10 +326,10 @@ ids (RAD-137). The sixth is lib-stock's `services/job-work-accounted.ts`, which 
 used, returned and lost quantities by challan line, and says whether a posted receipt answers a challan, for
 `over_challan`, a challan's accounted quantities and its cancellation (`challan_answered`), answering only quantities
 and yes or no (RAD-142). The seventh is lib-purchasing's `services/billed.ts`, which sums what posted bills have billed
-of each receipt line, net of cancellations, for a bill's `over_received` and a receipt's `receipt_in_use`, answering
-only quantities (RAD-138). The eighth is lib-purchasing's `services/grni.ts`, which sums every posted receipt, bill and
-return line's Goods Received Not Billed money by receipt line, net of cancellations, for the books check (§7),
-answering only sums (RAD-95).
+of each receipt line, and the charges of each job-work receipt line (RAD-142), net of cancellations, for a bill's
+`over_received` and a receipt's `receipt_in_use`, answering only quantities (RAD-138). The eighth is lib-purchasing's
+`services/grni.ts`, which sums every posted receipt, bill and return line's Goods Received Not Billed money by receipt
+line, net of cancellations, for the books check (§7), answering only sums (RAD-95).
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:

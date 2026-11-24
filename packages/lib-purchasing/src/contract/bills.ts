@@ -29,7 +29,11 @@ const goodsIn = z.object({ kind: z.literal('goods'), poLineId: idString(), recei
  * the goods' cost, spread over the goods lines by value. */
 const chargeIn = z.object({ kind: z.literal('charge'), charge: z.enum(['freight', 'packing', 'insurance', 'other']),
   description: z.string().trim().min(1).max(100), hsn: hsn(), amount: moneyString() });
-const lineIn = z.discriminatedUnion('kind', [goodsIn, chargeIn]);
+/** A job worker's charge (ADR-008 §11, RAD-142): the job-work receipt line whose made goods it bills, how many, at what
+ * rate before tax, and the service's SAC, as the job worker's bill says. */
+const jobWorkIn = z.object({ kind: z.literal('job_work'), jobWorkReceiptLineId: idString(), qty: quantityString(), rate: unitPriceString(),
+  hsn: hsn() });
+const lineIn = z.discriminatedUnion('kind', [goodsIn, chargeIn, jobWorkIn]);
 /** A line's tax, worked out by lib-gst from the bill's own lines at the rates in force on the supplier's invoice date,
  * never at the PO's (RC-056): on read while a draft, stored when posted. */
 const lineAmounts = z.object({ gstRate: z.string().nullable(), gstRateSource: z.string().nullable(), taxable: moneyString(), cgst: money(), sgst: money(), igst: money(),
@@ -41,6 +45,11 @@ const lineOut = z.discriminatedUnion('kind', [
      * Null for a free item's line (a PO rate of 0) billed at a price: there's no percentage, and it's past the tolerance. */
     overPoRate: z.string().nullable(), overTolerance: z.boolean(), amounts: lineAmounts }),
   chargeIn.extend({ id: idString(), lineNo: z.number().int().positive(), amounts: lineAmounts }),
+  /** Its made item, the receipt's number and charge rate, and how far its rate is above that, as a goods line's is above
+   * its PO's. Those four are null for a reader who can't see the job-work receipt (stock:read, by its maker). */
+  jobWorkIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(), name: z.string(),
+    unit: z.string(), chargeRate: unitPriceString().nullable(), receiptNumber: z.string().nullable(), overChargeRate: z.string().nullable(),
+    overTolerance: z.boolean().nullable(), amounts: lineAmounts }),
 ]);
 const lines = () => z.array(lineIn).min(1, 'Add at least one line').max(200, 'At most 200 lines');
 /** The bill's totals, to the rupee, with `note` saying what's missing while a draft's tax can't be worked out. */

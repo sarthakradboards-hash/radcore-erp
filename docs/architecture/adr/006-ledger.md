@@ -507,7 +507,7 @@ profile (M2-02), and the place of supply decides (CA-08). A line's rate is the o
 | Stock count or adjustment | in or out, at the location's average | Dr or Cr Stock in Hand, against Stock Adjustment | M4-06 |
 | Job work challan | from Stores to the job worker's location, at the same value | Dr Stock in Hand (job worker), Cr Stock in Hand (Stores) | M4-07 |
 | Job work receipt | inputs out of the job worker's location; goods made, in at the inputs used plus the charge; unused inputs back at their value | the charge: Dr Stock in Hand, Cr Job Work Charges to be Billed; lost inputs: Dr Stock Adjustment, Cr Stock in Hand | M4-07 |
-| Job worker's bill | any difference over the accrual, as a revaluation (§4) | Dr Job Work Charges to be Billed (what was accrued), the difference (§4), Dr Input GST, Cr Creditors, Cr TDS Payable | M4-07 |
+| Job worker's bill | any difference over the accrual, as a revaluation (§4) on the made item | Dr Job Work Charges to be Billed (what was accrued, its share as goods clear GRNI), the difference (§4), Dr Input GST (where claimable), Cr Creditors, Cr TDS Payable (M5-10) | M4-07, RAD-142 |
 | Receipt into negative stock | a revaluation (§4) | Dr Cost of Goods Sold, Cr Stock in Hand, or the reverse | M2-05 |
 | Salary advance | - | Dr Staff Advances, Cr Bank or Cash | M6-07 |
 | Salaries approved | - | Dr Salaries, Dr Employer PF and ESIC, Cr Salaries Payable, Cr PF, ESIC, PT and TDS Payable, Cr Staff Advances (recovered) | M6-06, M6-08 |
