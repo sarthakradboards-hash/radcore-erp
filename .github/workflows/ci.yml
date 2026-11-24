@@ -34,8 +34,9 @@ jobs:
       - name: Lockfile integrity and advisories, before install (C8, C5)
         run: node tools/deps/cli.ts --only C8,C5
       - run: npm ci
+      # Tried again only on the registry's unreadable answer (FETCH_ERROR), three tries in all (RAD-62).
       - name: Registry signatures (C10)
-        run: npm audit signatures
+        run: node tools/deps/audit-signatures.ts
       - name: Install scripts, only those tools/install-scripts.json marks for rebuild (ADR-003 §6)
         run: |
           pkgs=$(node -p "Object.entries(require('./tools/install-scripts.json').packages).filter(([, v]) => v.rebuild).map(([k]) => k).join(' ')")
