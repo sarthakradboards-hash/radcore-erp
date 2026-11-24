@@ -2,8 +2,8 @@
 // at 0, so every order does); an admin, a different person, approves it from the approvals screen, which places it; stores records the arrival
 // against it, and QC splits it into accepted and rejected, which posts the receipt and moves the goods: the accepted into the sellable place,
 // the rejects into the rejects place. One person per step, each signed in as their built-in role, and every test ends with the books check (RAD-95).
-// Not here yet, added as the screens land: the supplier's bill and its match to the receipt (RAD-143's bill screens), and the supplier return
-// (RAD-140's debit note).
+// Then the supplier's bills: the match view, one posted at once within the tolerance, one past it approved by someone else. Not here yet: the supplier
+// return (RAD-140's debit note, when ui's returns screens land).
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear } from '@radcore/lib-accounts';
 import { indiaDate, percentString } from '@radcore/lib-common';
@@ -206,6 +206,125 @@ test.describe('stores, receiving', () => {
   test('the order shows what came: everything on it has arrived, so its last receipt closes it', async ({ page }) => {
     await page.goto(run.poUrl);
     await expect(bar(page).getByRole('listitem')).toHaveText(['Draft (done)', 'Placed (done)', 'Closed (now)']);
+    await accessible(page);
+  });
+});
+
+// The supplier's bills. The draft is made through the API (the bill form, ui's #404, is in review) with a supplier's bill file that is
+// already "ready" (a fixture row, as the repo's own bill tests make it: the upload and its check are the files specs' own), then the
+// journey goes through the screens: the match view, posting within the tolerance, and a bill past it waiting for someone else's approval.
+const bills = { first: '', second: '', firstNumber: '' };
+
+/** A POST as the person `request` is signed in as. */
+async function post<T>(request: APIRequestContext, path: string, data: unknown): Promise<T> {
+  const origin = `http://127.0.0.1:${process.env['E2E_WEB_PORT'] ?? 3100}`;
+  const res = await request.post(`/api${path}`, { data, headers: { 'idempotency-key': randomUUID(), origin } });
+  expect(res.status(), `post ${path}: ${await res.text()}`).toBe(200);
+  return (await res.json()) as T;
+}
+/** A purchase bill's file, ready (the supplier's own paper), made as the owner of the database. */
+async function readyBillFile(): Promise<string> {
+  const id = randomUUID();
+  const su = new pg.Client({ connectionString: process.env['E2E_SEED_DATABASE_URL'] });
+  await su.connect();
+  try {
+    await su.query('begin');
+    await su.query("set local app.principal = 'system:e2e-seed'");
+    await su.query(`insert into radcore.files (id, kind, store_key, filename, content_type, size, status)
+      values ($1, 'purchase_bill', $2, 'bill.pdf', 'application/pdf', 2048, 'ready')`, [id, `purchase_bill/${id}`]);
+    await su.query('commit');
+  } finally { await su.end(); }
+  return id;
+}
+
+test.describe('accounts, billing', () => {
+  test.use({ storageState: stateFor('accounts') });
+
+  test('drafts a bill for each receipt line, the first at the order’s rate and the second well above it (through the API)', async ({ request }) => {
+    const receiptId = run.receiptUrl.split('/').pop()!;
+    const receipt = await api<{ supplierId: string; lines: { id: string; orderLineId: string; name: string }[] }>(request, `/purchasing/receipts/${receiptId}`);
+    expect(receipt.lines).toHaveLength(2);
+    const draft = async (line: { id: string; orderLineId: string }, qty: string, rate: string, total: string, n: number) =>
+      (await post<{ id: string }>(request, '/purchasing/bills', {
+        supplierId: receipt.supplierId, businessDate: today(), supplierInvoiceNumber: `INV-${u}-${n}`, supplierInvoiceDate: today(), supplierGstin: null,
+        statedTotal: total, fileId: await readyBillFile(), notes: null,
+        lines: [{ kind: 'goods', poLineId: line.orderLineId, receiptLineId: line.id, qty, rate }] })).id;
+    // 8 chargers accepted at 500.00 = 4,000.00, GST 18%: 4,720.00. 4 batteries at 1,500.00 (the order says 1,000.00) = 6,000.00, GST: 7,080.00.
+    bills.first = `/purchases/bills/${await draft(receipt.lines[0]!, '8', '500.00', '4720.00', 1)}`;
+    bills.second = `/purchases/bills/${await draft(receipt.lines[1]!, '4', '1500.00', '7080.00', 2)}`;
+  });
+
+  test('the first bill’s page shows the three-way match, within tolerance; Post it posts it at once and it draws its number', async ({ page }) => {
+    await page.goto(bills.first);
+    await expect(page.getByRole('heading', { level: 1, name: `Draft bill for invoice INV-${u}-1` })).toBeVisible();
+    await expect(bar(page).getByRole('listitem')).toHaveText(['Draft (now)', 'Posted']);
+    await expect(fact(page, 'Supplier')).toHaveText(SUPPLIER.name);
+    await expect(fact(page, 'Supplier’s bill')).toHaveText('Attached');
+    const match = page.getByRole('region', { name: 'Goods against their purchase orders and receipts' }).getByRole('row').nth(1);
+    await expect(match).toContainText(ITEMS[0]!.name);
+    await expect(match).toContainText(run.poNumber);
+    await expect(match).toContainText('Received');
+    await expect(match).toContainText('Within tolerance');
+    await expect(page.getByText('₹4,720.00').first()).toBeVisible(); // the supplier's total, and the one worked out
+    await accessible(page);
+    await btn(page, 'Post it').click();
+    await dialog(page).getByRole('button', { name: 'Post it' }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: /^Purchase bill \S+/ })).toBeVisible();
+    bills.firstNumber = (await page.getByRole('heading', { level: 1 }).innerText()).replace('Purchase bill ', '').trim();
+    await expect(bar(page).getByRole('listitem')).toHaveText(['Draft (done)', 'Posted (now)']);
+    await expect(fact(page, 'CGST')).toHaveText('₹360.00');
+    await expect(fact(page, 'SGST')).toHaveText('₹360.00');
+    await expect(fact(page, 'Total').last()).toHaveText('₹4,720.00');
+    await accessible(page);
+  });
+
+  test('the second bill is past the tolerance: the match says so, and Post it asks for approval instead of posting', async ({ page }) => {
+    await page.goto(bills.second);
+    const match = page.getByRole('region', { name: 'Goods against their purchase orders and receipts' }).getByRole('row').nth(1);
+    await expect(match).toContainText(ITEMS[1]!.name);
+    await expect(match).toContainText('Past tolerance');
+    await expect(match).toContainText('50%');
+    await btn(page, 'Post it').click();
+    await dialog(page).getByRole('button', { name: 'Post it' }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(status(page, 'Above your limit, so it’s waiting for approval').first()).toBeAttached();
+    await expect(page.getByText('This bill is waiting for someone else’s approval')).toBeVisible();
+    await expect(btn(page, 'Post it')).toHaveCount(0);
+    await accessible(page);
+  });
+});
+
+test.describe('admin, approving the bill', () => {
+  test.use({ storageState: stateFor('admin') });
+
+  test('the approvals screen names the line past the tolerance and the totals; approving posts the bill', async ({ page }) => {
+    await page.goto('/purchases/bills/approvals');
+    await expect(page.getByRole('heading', { level: 1, name: 'Purchase bill approvals' })).toBeVisible();
+    await page.getByRole('button', { name: /^Review the purchase order .* asked about/ }).last().click(); // the newest request: this bill's
+    await expect(page.getByText(`INV-${u}-2`).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(`${ITEMS[1]!.name} on ${run.poNumber}: 50% above its PO rate`)).toBeVisible();
+    await expect(page.getByText('₹7,080.00').first()).toBeVisible();
+    await accessible(page);
+    await btn(page, 'Approve and post').first().click();
+    await dialog(page).getByRole('button', { name: 'Approve and post' }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(status(page, 'Approved and posted').first()).toBeAttached();
+  });
+});
+
+test.describe('accounts, after billing', () => {
+  test.use({ storageState: stateFor('accounts') });
+
+  test('the second bill is posted and the Purchase bills list shows both, newest first', async ({ page }) => {
+    await page.goto(bills.second);
+    await expect(page.getByRole('heading', { level: 1, name: /^Purchase bill \S+/ })).toBeVisible();
+    await expect(bar(page).getByRole('listitem')).toHaveText(['Draft (done)', 'Posted (now)']);
+    await expect(fact(page, 'Total').last()).toHaveText('₹7,080.00');
+    await page.goto('/purchases/bills');
+    await expect(page.getByRole('heading', { level: 1, name: 'Purchase bills' })).toBeVisible();
+    await expect(page.getByRole('row').filter({ hasText: `INV-${u}-1` })).toContainText(bills.firstNumber);
+    await expect(page.getByRole('row').filter({ hasText: `INV-${u}-2` })).toBeVisible();
     await accessible(page);
   });
 });
