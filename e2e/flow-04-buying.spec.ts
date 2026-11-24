@@ -288,7 +288,7 @@ test.describe('accounts, billing', () => {
     await btn(page, 'Post it').click();
     await dialog(page).getByRole('button', { name: 'Post it' }).click();
     await expect(dialog(page)).toHaveCount(0);
-    await expect(status(page, 'Above your limit, so it’s waiting for approval').first()).toBeAttached();
+    await expect(status(page, 'Past the tolerance, so it’s waiting for someone else’s approval').first()).toBeAttached();
     await expect(page.getByText('This bill is waiting for someone else’s approval')).toBeVisible();
     await expect(btn(page, 'Post it')).toHaveCount(0);
     await accessible(page);
