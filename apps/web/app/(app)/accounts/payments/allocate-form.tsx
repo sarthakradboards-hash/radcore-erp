@@ -25,6 +25,8 @@ type Bill = { table: string; id: string; label: string };
 const SUPPLIER_MESSAGES: Partial<Record<string, string>> = {
   ...PAYMENT_MESSAGES, party_mismatch: t('books.pay.err.pay.party_mismatch'), side_mismatch: t('books.pay.err.pay.side_mismatch'),
   document_not_posted: t('books.pay.err.pay.document_not_posted'), not_posted: t('books.pay.err.pay.not_posted'),
+  exceeds_payment: t('books.pay.err.pay.exceeds_payment'), not_allocatable: t('books.pay.err.pay.not_allocatable'),
+  date_before_source: t('books.pay.err.pay.date_before_source'),
 };
 
 /** What the amounts entered add up to, beside the money's own amount. */
