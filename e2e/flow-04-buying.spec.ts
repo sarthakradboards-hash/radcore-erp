@@ -477,7 +477,7 @@ test.describe('stores, taking the return back', () => {
     await expect(dialog(page)).toHaveCount(0);
     await expect(status(page, 'Return cancelled').first()).toBeAttached();
     await expect(bar(page).getByRole('listitem')).toHaveText(['Draft (done)', 'Posted (done)', 'Cancelled (now)']);
-    await expect(page.getByText('reversed')).toBeVisible();
+    await expect(page.getByText(new RegExp(`^${bills.thirdNumber}: ₹1,180\\.00, on .*, reversed$`))).toBeVisible();
     const rejects = Number((await api<{ position: string }>(request, `/stock/on-hand?input=${enc({ itemId: ITEMS[0]!.id, locationId: PLACES.rejects.id, limit: 5 })}`)).position);
     expect(rejects, 'the rejects are back').toBe(2);
     await accessible(page);
