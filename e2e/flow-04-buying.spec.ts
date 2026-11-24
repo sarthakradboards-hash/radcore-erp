@@ -301,7 +301,7 @@ test.describe('admin, approving the bill', () => {
   test('the approvals screen names the line past the tolerance and the totals; approving posts the bill', async ({ page }) => {
     await page.goto('/purchases/bills/approvals');
     await expect(page.getByRole('heading', { level: 1, name: 'Purchase bill approvals' })).toBeVisible();
-    await page.getByRole('button', { name: /^Review the purchase order .* asked about/ }).last().click(); // the newest request: this bill's
+    await page.getByRole('button', { name: /^Review the bill .* asked about/ }).last().click(); // the newest request: this bill's
     await expect(page.getByText(`INV-${u}-2`).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(`${ITEMS[1]!.name} on ${run.poNumber}: 50% above its PO rate`)).toBeVisible();
     await expect(page.getByText('₹7,080.00').first()).toBeVisible();
