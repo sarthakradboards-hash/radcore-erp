@@ -60,6 +60,11 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'journal:read', module: 'Journal', label: 'See the chart of accounts and the journal' },
   { key: 'journal:post', module: 'Journal', label: 'Post a manual journal', secondFactor: true },
   { key: 'journal:reverse', module: 'Journal', label: 'Reverse a journal entry', secondFactor: true },
+  // Bank statements (M5-11, ADR-009 §9, §11): company rows, not owned records, so all-only. Importing needs
+  // statement_files:write too, for the upload itself; reconciling posts bank charges (M5-13), so the second factor.
+  { key: 'bank:read', module: 'Bank', label: 'See bank statement lines, matches and the reconciliation statement', allOnly: true },
+  { key: 'bank:reconcile', module: 'Bank', label: 'Import bank statements, match and unmatch, and book bank charges', allOnly: true,
+    secondFactor: true },
   { key: 'prices:read', module: 'Prices', label: 'See price lists and discount limits' },
   { key: 'prices:write', module: 'Prices', label: 'Draft price lists, which price nothing until approved' },
   { key: 'prices:approve', module: 'Prices', label: 'Approve another person’s price list, and set discount limits', secondFactor: true },

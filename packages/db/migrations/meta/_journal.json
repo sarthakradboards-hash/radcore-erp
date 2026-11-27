@@ -666,6 +666,13 @@
       "when": 1795765419368,
       "tag": "0094_bill_input_credit",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795770443517,
+      "tag": "0095_bank_statements",
+      "breakpoints": true
     }
   ]
 }

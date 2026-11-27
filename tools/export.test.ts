@@ -56,6 +56,7 @@ describe.skipIf(!url)('an export, start to download', () => {
       uploaded.set(key, await readFile(path, 'utf8'));
       return { key, size: 1 };
     }),
+    readFile: async () => { throw new Error('not used here'); },
     downloadUrl: async (key, name) => `https://files.test/${key}?name=${name}`,
     viewUrl: async (key) => `https://files.test/${key}?view`,
     verifyUpload: async () => ({ size: 0, contentType: '' }),

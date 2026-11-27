@@ -13,6 +13,9 @@ export {
   type HeldFor,
 } from './services/payments.ts';
 export { getPaymentById, listPaymentsPage } from './services/payment-reads.ts';
+export {
+  importStatement, readStatementFile, statementFormatOf, statementImportById, statementImportJob, statementLinesPage, storeStatement, undoStatementImport,
+} from './services/bank-statements.ts';
 export { partyReceivable } from './services/receivables.ts';
 export { listMoneyAccountsNow } from './services/money-accounts.ts';
 // A receipt for its printout (RAD-120): lib-sales' template prints it.

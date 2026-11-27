@@ -3,11 +3,13 @@
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, getPaymentById, listPaymentsPage, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
   partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
+  importStatement, statementFormatOf, statementImportById, statementLinesPage, undoStatementImport,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
   reverseCreditApplicationContract, createParty, getCompany, recordPaymentContract, getJournal, getParty, listAccounts, listMoneyAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
   getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
+  getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementLinesContract, undoStatementImportContract,
 } from '@radcore/lib-accounts/contract';
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import { remindWithLink } from '@radcore/lib-sales';
@@ -41,4 +43,10 @@ export default [
   defineRoute(getJournal, journalEntryById),
   defineRoute(postJournal, postManual),
   defineRoute(reverseJournal, reverseJournalEntry),
+  // Bank statements (RAD-159): the import is queued here and done by the worker.
+  defineRoute(getStatementFormatContract, statementFormatOf),
+  defineRoute(importStatementContract, importStatement),
+  defineRoute(getStatementImportContract, statementImportById),
+  defineRoute(undoStatementImportContract, undoStatementImport),
+  defineRoute(listStatementLinesContract, statementLinesPage),
 ];

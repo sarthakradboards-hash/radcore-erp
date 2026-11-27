@@ -4,10 +4,11 @@
 // this list, and the permission manifest test (RAD-37) checks it against its own table.
 import { defineExportJob, type JobDefinition } from '@radcore/lib-platform';
 import { inviteEmailJob, passwordResetEmailJob } from '@radcore/lib-platform/runtime';
+import accounts from './jobs/accounts.ts';
 import crm from './jobs/crm.ts';
 import platform from './jobs/platform.ts';
 import { masters } from './masters.ts';
 
 // Each module's job file in ./jobs/ default-exports its defineJob list; spread them in here.
 export const workerJobs = (start: Parameters<typeof passwordResetEmailJob>[0]): readonly JobDefinition[] =>
-  [...platform, ...crm, defineExportJob([masters]), passwordResetEmailJob(start), inviteEmailJob(start)];
+  [...platform, ...accounts, ...crm, defineExportJob([masters]), passwordResetEmailJob(start), inviteEmailJob(start)];
