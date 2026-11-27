@@ -4,6 +4,7 @@
 // draft and stored when it's posted. Its goods lines name PO lines, and the receipt line each bills once the goods are in.
 import { isNull, sql } from 'drizzle-orm';
 import { check, date, foreignKey, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { expenseCategoryAccounts } from '../accounts/tables-expenses.ts';
 import { journalEntries, parties } from '../accounts/tables.ts';
 import { boundedText, createdMoment, id, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
 import { files } from '../platform/tables.ts';
@@ -98,10 +99,18 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   // A reverse-charge line's tax by head (ADR-010 §4, RAD-153): we owe it, not the supplier, so its own heads are 0. Null
   // on any other line and on a draft.
   rcmCgst: money(), rcmSgst: money(), rcmIgst: money(),
+  // A charge's expense category and one of its accounts (ADR-009 §2, RAD-152): whether its credit is blocked, and, on a
+  // bill of charges only, the account it posts to. Required there at posting (charge_needs_category).
+  expenseCategoryId: uuid(), expenseAccountId: uuid(),
 }, (t) => [
   check('ck_purchase_bill_lines_rcm', sql`num_nulls(${t.rcmCgst}, ${t.rcmSgst}, ${t.rcmIgst}) in (0, 3) and (${t.rcmCgst} is null
     or (${t.kind} = 'charge' and ${t.gstRate} is not null and ${t.cgst} = 0 and ${t.sgst} = 0 and ${t.igst} = 0
       and ${t.rcmCgst} = ${t.rcmSgst} and (${t.rcmIgst} = 0 or ${t.rcmCgst} = 0)))`),
+  check('ck_purchase_bill_lines_expense_category', sql`num_nulls(${t.expenseCategoryId}, ${t.expenseAccountId}) in (0, 2)
+    and (${t.expenseCategoryId} is null or ${t.kind} = 'charge')`),
+  index('ix_purchase_bill_lines_expense_category').on(t.expenseCategoryId, t.expenseAccountId),
+  foreignKey({ name: 'fk_purchase_bill_lines_expense_category', columns: [t.expenseCategoryId, t.expenseAccountId],
+    foreignColumns: [expenseCategoryAccounts.categoryId, expenseCategoryAccounts.accountId] }).onDelete('restrict'),
   check('ck_purchase_bill_lines_credit', sql`num_nulls(${t.creditCgst}, ${t.creditSgst}, ${t.creditIgst}) in (0, 3)
     and (${t.creditCgst} is null or ${t.gstRate} is not null) and (${t.creditReason} is null or ${t.creditCgst} is not null)`),
   // All the line's tax (a reverse-charge line's, the tax we owe), or none and why.

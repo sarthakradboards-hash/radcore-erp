@@ -66,5 +66,5 @@ SELECT radcore.audit_attach('parties',
 SELECT radcore.audit_attach('purchase_bill_lines', keep => array['bill_id', 'line_no', 'kind', 'po_line_id', 'receipt_line_id',
   'job_work_receipt_line_id', 'item_id', 'qty', 'rate', 'charge', 'description', 'hsn', 'amount', 'revalued_qty', 'grni_value', 'jwcb_value',
   'gst_rate', 'gst_rate_source', 'taxable', 'cgst', 'sgst', 'igst', 'line_total', 'credit_cgst', 'credit_sgst', 'credit_igst', 'credit_reason',
-  'rcm_cgst', 'rcm_sgst', 'rcm_igst'],
+  'expense_category_id', 'expense_account_id', 'rcm_cgst', 'rcm_sgst', 'rcm_igst'],
   owner => 'bill_id', owner_table => 'purchase_bills');

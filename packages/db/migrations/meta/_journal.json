@@ -712,8 +712,15 @@
     {
       "idx": 101,
       "version": "7",
-      "when": 1795776401997,
-      "tag": "0101_reverse_charge",
+      "when": 1795776356509,
+      "tag": "0102_bill_charge_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1795777141875,
+      "tag": "0103_reverse_charge",
       "breakpoints": true
     }
   ]

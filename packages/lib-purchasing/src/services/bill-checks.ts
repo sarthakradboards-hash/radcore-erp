@@ -2,7 +2,7 @@
 // the principal's scope, a draft's checks (dates, supplier and GSTIN, PO and receipt lines, file), the POs' locks, and
 // the tax worked out from the bill's own lines at the supplier's invoice date (RC-056).
 import { purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
-import { getCompanyProfile } from '@radcore/lib-accounts';
+import { categoryPairs, getCompanyProfile } from '@radcore/lib-accounts';
 import { dec, indiaDate, percentString, roundMoney, type Money } from '@radcore/lib-common';
 import { gstRateFor, isReverseCharge, lineTax, placeOfSupply, rcmRulesOn, totalsOf, type LineTax, type RcmParty } from '@radcore/lib-gst';
 import { AppError, defineSeries, defineSetting, listScope, momentKey, readyFile, type Ctx } from '@radcore/lib-platform';
@@ -68,7 +68,7 @@ export type JobWorkLine = Awaited<ReturnType<typeof jobWorkLinesFor>>[number];
 /** A draft's checks (ADR-008 §4, §7): the dates, the supplier and the GSTIN printed on its bill, each goods line's PO
  * line (placed or closed, the supplier's own), each job worker's charge's receipt line (posted, the job worker's own, with
  * goods made), their quantities, and the file. Answers each goods line's PO line and each charge's job-work line. */
-export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string, PoLine>; made: Map<string, JobWorkLine> }> {
+export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string, PoLine>; made: Map<string, JobWorkLine>; blocked: boolean[] }> {
   if (b.businessDate > today()) throw refuseAt('date_in_future', 'The date is after today', ['businessDate']);
   if (b.supplierInvoiceDate > b.businessDate) {
     throw refuseAt('supplier_date_after_bill', 'The supplier’s date is after the bill’s own', ['supplierInvoiceDate']);
@@ -118,7 +118,24 @@ export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string,
     });
   }
   if (b.fileId !== null) await readyFile(ctx, 'purchase_bill', b.fileId, { wrongKind: ['fileId'] });
-  return { po, made };
+  return { po, made, blocked: await chargeCategories(ctx, b.lines) };
+}
+
+/** Each line's category rule (ADR-009 §2, RAD-152): a charge naming its expense category and one of that category's
+ * switched-on accounts, both or neither; true where the category's credit is blocked. */
+async function chargeCategories(ctx: Ctx, lines: readonly LineIn[]): Promise<boolean[]> {
+  const named = lines.flatMap((l, n) => (l.kind === 'charge' && (l.expenseCategoryId != null || l.expenseAccountId != null) ? [{ l, n }] : []));
+  const pairs = await categoryPairs(ctx, named.flatMap(({ l }) => (l.kind === 'charge' && l.expenseCategoryId != null && l.expenseAccountId != null
+    ? [{ categoryId: l.expenseCategoryId, accountId: l.expenseAccountId }] : [])));
+  const blocked = lines.map(() => false);
+  for (const { l, n } of named) {
+    if (l.kind !== 'charge') continue;
+    const pair = pairs.get(`${l.expenseCategoryId ?? ''}:${l.expenseAccountId ?? ''}`);
+    if (pair === undefined) throw refuseAt('not_in_category', 'Name an expense category and one of the accounts it posts to', ['lines', n, 'expenseAccountId']);
+    if (!pair.active) throw refuseAt('category_inactive', 'That expense category or account is switched off', ['lines', n, 'expenseCategoryId']);
+    blocked[n] = pair.blocked;
+  }
+  return blocked;
 }
 
 export const poLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'goods' ? [l.poLineId] : []));
@@ -175,6 +192,20 @@ export async function amountsOf(ctx: Ctx, supplier: RcmParty & { stateCode: stri
     }
   }
   return { placeOfSupply: place.state, intraState: place.intraState, lines: taxed, totals: totalsOf(taxed) };
+}
+
+/** The bill's stated total against the worked-out one, within a rupee: total_mismatch, or rcm_bill_has_tax when the
+ * supplier charged the tax we owe under reverse charge (ADR-010 §4), which its bill then states and ours doesn't. */
+export function checkStated(a: Awaited<ReturnType<typeof amountsOf>>, stated: string): void {
+  const off = (more: Money | '0') => dec(a.totals.total).plus(dec(more)).minus(dec(stated)).abs().gte(1);
+  if (!off('0')) return;
+  const ours = roundMoney(a.lines.reduce((s, l) => (l.reverseCharge === null ? s
+    : s.plus(dec(l.reverseCharge.cgst)).plus(dec(l.reverseCharge.sgst)).plus(dec(l.reverseCharge.igst))), dec('0')));
+  if (!dec(ours).isZero() && !off(ours)) {
+    throw refuseAt('rcm_bill_has_tax', 'The supplier’s bill charges GST on a reverse-charge service: that tax is ours to pay, so ask for a bill without it',
+      ['statedTotal']);
+  }
+  throw refuseAt('total_mismatch', `The bill works out at ${a.totals.total}, not the ${stated} it states: put it right with the supplier`, ['statedTotal']);
 }
 
 /** How far a billed rate is above its PO rate, in percent to two places (0 at or below it); null for a free item's line
