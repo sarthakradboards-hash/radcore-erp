@@ -670,7 +670,14 @@
     {
       "idx": 95,
       "version": "7",
-      "when": 1795769934108,
+      "when": 1795769649095,
+      "tag": "0095_period_lock",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795770510725,
       "tag": "0096_expense_categories",
       "breakpoints": true
     }

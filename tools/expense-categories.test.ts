@@ -28,6 +28,8 @@ it('refuses a blocked category with no clause, an allowed one with a clause, and
   expect(createExpenseCategory.input.safeParse({ name: 'Staff welfare', credit: 'blocked', blockedClause: '(b)(i)', accountIds }).success).toBe(true);
   expect(createExpenseCategory.input.safeParse({ name: 'Travel', credit: 'allowed', blockedClause: '(b)', accountIds }).success).toBe(false);
   expect(createExpenseCategory.input.safeParse({ name: 'Travel', credit: 'blocked', blockedClause: '(z)', accountIds }).success).toBe(false);
+  // Only (b) has sub-clauses (the auditor on #425).
+  expect(createExpenseCategory.input.safeParse({ name: 'Travel', credit: 'blocked', blockedClause: '(h)(i)', accountIds }).success).toBe(false);
   expect(createExpenseCategory.input.safeParse({ name: 'Travel', credit: 'blocked', blockedClause: '(b)', accountIds: [...accountIds, ...accountIds] }).success).toBe(false);
   expect(setExpenseCategory.input.safeParse({ id: randomUUID(), credit: 'blocked', reason: 'CA-05' }).success).toBe(false);
   expect(setExpenseCategory.input.safeParse({ id: randomUUID(), credit: 'allowed', reason: 'CA-05' }).success).toBe(true);

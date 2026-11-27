@@ -13,7 +13,7 @@ CREATE TABLE "radcore"."expense_categories" (
 	CONSTRAINT "ck_expense_categories_name" CHECK (char_length("radcore"."expense_categories"."name") <= 80),
 	CONSTRAINT "ck_expense_categories_credit" CHECK ("radcore"."expense_categories"."credit" in ('allowed', 'blocked')),
 	CONSTRAINT "ck_expense_categories_clause" CHECK (("radcore"."expense_categories"."credit" = 'blocked') = ("radcore"."expense_categories"."blocked_clause" is not null)
-    and ("radcore"."expense_categories"."blocked_clause" is null or "radcore"."expense_categories"."blocked_clause" ~ '^\((a|aa|ab|b|c|d|e|f|fa|g|h|i)\)(\((i|ii|iii)\))?$'))
+    and ("radcore"."expense_categories"."blocked_clause" is null or "radcore"."expense_categories"."blocked_clause" ~ '^\((a|aa|ab|c|d|e|f|fa|g|h|i)\)$|^\(b\)(\((i|ii|iii)\))?$'))
 );
 --> statement-breakpoint
 CREATE TABLE "radcore"."expense_category_accounts" (

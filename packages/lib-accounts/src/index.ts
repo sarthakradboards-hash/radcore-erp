@@ -14,6 +14,9 @@ export {
   type HeldFor,
 } from './services/payments.ts';
 export { getPaymentById, listPaymentsPage } from './services/payment-reads.ts';
+export {
+  askToUnlock, closeYear, lockPeriodForMove, moveLockForward, periodState, periodUnlockSpec, YEAR_END_CHECKLIST, type BooksCheck,
+} from './services/period-lock.ts';
 export { partyReceivable } from './services/receivables.ts';
 export { listMoneyAccountsNow } from './services/money-accounts.ts';
 // A receipt for its printout (RAD-120): lib-sales' template prints it.
@@ -34,7 +37,8 @@ export { BUYS_FROM_KINDS, SELLS_TO_KINDS } from './contract.ts';
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
 import { JOURNAL_SERIES as journal } from './services/journal.ts';
+import { YEAR_END_CHECKLIST as yearEnd } from './services/period-lock.ts';
 import { CASH_PAYMENT_LIMIT as cashOut, CASH_RECEIPT_LIMIT as cashIn, DEFAULT_CREDIT_DAYS as creditDays, PAYMENT_SERIES as paid,
   RECEIPT_SERIES as received } from './services/payments.ts';
-export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays];
+export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays, yearEnd];
 export const series: readonly Series[] = [journal, received, paid];

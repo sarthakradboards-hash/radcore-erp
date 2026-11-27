@@ -1,5 +1,5 @@
 {
-  "id": "e7171277-abba-4a9e-aa6d-02d6cf5b05a5",
+  "id": "13179b0c-af2b-41db-b94f-8d16e27f2314",
   "prevId": "ffc2280e-b346-4c7f-a2bd-0f4e61c68c96",
   "version": "7",
   "dialect": "postgresql",
@@ -159,15 +159,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "id",
-            "control_kind"
-          ]
-        },
-        "ux_accounts_id_type_control_kind": {
-          "name": "ux_accounts_id_type_control_kind",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "type",
             "control_kind"
           ]
         }
@@ -6269,7 +6260,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -6356,7 +6347,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -20885,8 +20876,8 @@
       },
       "isRLSEnabled": false
     },
-    "radcore.expense_categories": {
-      "name": "expense_categories",
+    "radcore.period_unlock_requests": {
+      "name": "period_unlock_requests",
       "schema": "radcore",
       "columns": {
         "created_at": {
@@ -20924,82 +20915,60 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "name": {
-          "name": "name",
+        "kind": {
+          "name": "kind",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "name_key": {
-          "name": "name_key",
+        "through": {
+          "name": "through",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
-            "type": "stored"
-          }
+          "notNull": true
         },
-        "credit": {
-          "name": "credit",
-          "type": "text",
+        "lock_was": {
+          "name": "lock_was",
+          "type": "date",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'blocked'"
+          "notNull": true
         },
-        "blocked_clause": {
-          "name": "blocked_clause",
-          "type": "text",
+        "applied_at": {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         }
       },
-      "indexes": {
-        "ux_expense_categories_name_key": {
-          "name": "ux_expense_categories_name_key",
-          "columns": [
-            {
-              "expression": "name_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_expense_categories_name": {
-          "name": "ck_expense_categories_name",
-          "value": "char_length(\"radcore\".\"expense_categories\".\"name\") <= 80"
+        "ck_period_unlock_requests_reason": {
+          "name": "ck_period_unlock_requests_reason",
+          "value": "char_length(\"radcore\".\"period_unlock_requests\".\"reason\") <= 500"
         },
-        "ck_expense_categories_credit": {
-          "name": "ck_expense_categories_credit",
-          "value": "\"radcore\".\"expense_categories\".\"credit\" in ('allowed', 'blocked')"
+        "ck_period_unlock_requests_kind": {
+          "name": "ck_period_unlock_requests_kind",
+          "value": "\"radcore\".\"period_unlock_requests\".\"kind\" in ('move_back', 'reopen_year')"
         },
-        "ck_expense_categories_clause": {
-          "name": "ck_expense_categories_clause",
-          "value": "(\"radcore\".\"expense_categories\".\"credit\" = 'blocked') = (\"radcore\".\"expense_categories\".\"blocked_clause\" is not null)\n    and (\"radcore\".\"expense_categories\".\"blocked_clause\" is null or \"radcore\".\"expense_categories\".\"blocked_clause\" ~ '^\\((a|aa|ab|b|c|d|e|f|fa|g|h|i)\\)(\\((i|ii|iii)\\))?$')"
+        "ck_period_unlock_requests_back": {
+          "name": "ck_period_unlock_requests_back",
+          "value": "\"radcore\".\"period_unlock_requests\".\"through\" < \"radcore\".\"period_unlock_requests\".\"lock_was\""
         }
       },
       "isRLSEnabled": false
     },
-    "radcore.expense_category_accounts": {
-      "name": "expense_category_accounts",
+    "radcore.year_closes": {
+      "name": "year_closes",
       "schema": "radcore",
       "columns": {
         "created_at": {
@@ -21030,51 +20999,75 @@
           "notNull": true,
           "default": "nullif(current_setting('app.principal', true), '')"
         },
-        "category_id": {
-          "name": "category_id",
+        "id": {
+          "name": "id",
           "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "fy_start": {
+          "name": "fy_start",
+          "type": "date",
           "primaryKey": false,
           "notNull": true
         },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
+        "ticks": {
+          "name": "ticks",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
-        "account_type": {
-          "name": "account_type",
-          "type": "text",
+        "reopened_at": {
+          "name": "reopened_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'expense'"
+          "notNull": false
         },
-        "account_control_kind": {
-          "name": "account_control_kind",
-          "type": "text",
+        "reopened_by": {
+          "name": "reopened_by",
+          "type": "uuid",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'none'"
+          "notNull": false
         }
       },
       "indexes": {
-        "ix_expense_category_accounts_account": {
-          "name": "ix_expense_category_accounts_account",
+        "ux_year_closes_live": {
+          "name": "ux_year_closes_live",
           "columns": [
             {
-              "expression": "account_id",
+              "expression": "fy_start",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
+            }
+          ],
+          "isUnique": true,
+          "where": "\"radcore\".\"year_closes\".\"reopened_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_year_closes_fy_start": {
+          "name": "ix_year_closes_fy_start",
+          "columns": [
             {
-              "expression": "account_type",
+              "expression": "fy_start",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_year_closes_reopened_by": {
+          "name": "ix_year_closes_reopened_by",
+          "columns": [
             {
-              "expression": "account_control_kind",
+              "expression": "reopened_by",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -21087,54 +21080,42 @@
         }
       },
       "foreignKeys": {
-        "expense_category_accounts_category_id_expense_categories_id_fk": {
-          "name": "expense_category_accounts_category_id_expense_categories_id_fk",
-          "tableFrom": "expense_category_accounts",
-          "tableTo": "expense_categories",
+        "year_closes_fy_start_financial_years_start_fk": {
+          "name": "year_closes_fy_start_financial_years_start_fk",
+          "tableFrom": "year_closes",
+          "tableTo": "financial_years",
           "schemaTo": "radcore",
           "columnsFrom": [
-            "category_id"
+            "fy_start"
+          ],
+          "columnsTo": [
+            "start"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "year_closes_reopened_by_period_unlock_requests_id_fk": {
+          "name": "year_closes_reopened_by_period_unlock_requests_id_fk",
+          "tableFrom": "year_closes",
+          "tableTo": "period_unlock_requests",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "reopened_by"
           ],
           "columnsTo": [
             "id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
-        },
-        "fk_expense_category_accounts_account": {
-          "name": "fk_expense_category_accounts_account",
-          "tableFrom": "expense_category_accounts",
-          "tableTo": "accounts",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "account_id",
-            "account_type",
-            "account_control_kind"
-          ],
-          "columnsTo": [
-            "id",
-            "type",
-            "control_kind"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "pk_expense_category_accounts": {
-          "name": "pk_expense_category_accounts",
-          "columns": [
-            "category_id",
-            "account_id"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_expense_category_accounts_ordinary": {
-          "name": "ck_expense_category_accounts_ordinary",
-          "value": "\"radcore\".\"expense_category_accounts\".\"account_type\" = 'expense' and \"radcore\".\"expense_category_accounts\".\"account_control_kind\" = 'none'"
+        "ck_year_closes_reopened": {
+          "name": "ck_year_closes_reopened",
+          "value": "(\"radcore\".\"year_closes\".\"reopened_at\" is null) = (\"radcore\".\"year_closes\".\"reopened_by\" is null)"
         }
       },
       "isRLSEnabled": false

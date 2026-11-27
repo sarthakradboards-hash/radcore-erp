@@ -9,7 +9,7 @@ const write = { readOnly: false, isolation: 'read committed' } as const;
 
 export const EXPENSE_CREDIT = ['allowed', 'blocked'] as const;
 /** A clause of section 17(5) as a blocked category names it: (a) to (i), and (b)'s sub-clauses, as "(b)(i)". */
-const clause = () => z.string().regex(/^\((a|aa|ab|b|c|d|e|f|fa|g|h|i)\)(\((i|ii|iii)\))?$/, 'Name the clause of section 17(5), such as (b)(i)');
+const clause = () => z.string().regex(/^\((a|aa|ab|c|d|e|f|fa|g|h|i)\)$|^\(b\)(\((i|ii|iii)\))?$/, 'Name the clause of section 17(5), such as (b)(i)');
 const name = () => z.string().trim().min(1, 'Name it').max(80);
 const accountIds = () => z.array(idString()).min(1, 'Name at least one expense account').max(50)
   .refine((ids) => new Set(ids).size === ids.length, 'Name each account once');

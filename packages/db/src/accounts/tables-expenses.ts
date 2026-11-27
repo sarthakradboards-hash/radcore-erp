@@ -17,9 +17,9 @@ export const expenseCategories = radcoreTable('expense_categories', {
   active: boolean().notNull().default(true),
 }, (t) => [
   check('ck_expense_categories_credit', sql`${t.credit} in ('allowed', 'blocked')`),
-  // 17(5)'s clauses, (a) to (i), and (b)'s sub-clauses, as "(b)(i)".
+  // 17(5)'s clauses, (a) to (i), and only (b)'s sub-clauses, as "(b)(i)".
   check('ck_expense_categories_clause', sql`(${t.credit} = 'blocked') = (${t.blockedClause} is not null)
-    and (${t.blockedClause} is null or ${t.blockedClause} ~ '^\\((a|aa|ab|b|c|d|e|f|fa|g|h|i)\\)(\\((i|ii|iii)\\))?$')`),
+    and (${t.blockedClause} is null or ${t.blockedClause} ~ '^\\((a|aa|ab|c|d|e|f|fa|g|h|i)\\)$|^\\(b\\)(\\((i|ii|iii)\\))?$')`),
   uniqueIndex('ux_expense_categories_name_key').on(t.nameKey),
 ]);
 

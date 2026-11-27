@@ -23,3 +23,11 @@ export async function drawCounter(tx: Tx, o: { turn: string; series: string; fin
     on conflict (series, financial_year) do update set last = radcore.number_counters.last returning last, prefix`);
   return (result as unknown as { rows: { last: number; prefix: string }[] }).rows[0];
 }
+
+/**
+ * Moves the period lock (M5-09, RAD-157): the app login holds no write on period_lock, so this one SECURITY DEFINER
+ * function is the way (migration 0095). Only lib-accounts' period-lock service calls it, holding the row FOR UPDATE.
+ */
+export async function setPeriodLock(tx: Tx, through: string): Promise<void> {
+  await rawOf(tx).execute(sql`select radcore.set_period_lock(${through}::date)`);
+}
