@@ -1,10 +1,10 @@
 // Uploaded files' routes (RAD-43): declarations only. Each kind has its own read and write permissions.
 import {
-  defineRoute, deliveryNoteFileService, deliveryPhotoFileService, importFileService, itemPictureFileService, photoFileService, purchaseBillFileService,
+  defineRoute, deliveryNoteFileService, deliveryPhotoFileService, importFileService, itemPictureFileService, photoFileService, purchaseBillFileService, expenseBillFileService,
   resumeFileService, statementFileService,
 } from '@radcore/lib-platform';
 import {
-  deliveryNoteFiles, deliveryPhotoFiles, importFiles, itemPictureFiles, photoFiles, purchaseBillFiles, resumeFiles, statementFiles,
+  deliveryNoteFiles, deliveryPhotoFiles, importFiles, itemPictureFiles, photoFiles, purchaseBillFiles, expenseBillFiles, resumeFiles, statementFiles,
 } from '@radcore/lib-platform/contract';
 
 export default [
@@ -34,4 +34,8 @@ export default [
   defineRoute(purchaseBillFiles.startUpload, purchaseBillFileService.startUpload),
   defineRoute(purchaseBillFiles.confirmUpload, purchaseBillFileService.confirmUpload),
   defineRoute(purchaseBillFiles.downloadLink, purchaseBillFileService.downloadLink),
+  // An expense's bill as it came (RAD-152), under the expenses keys.
+  defineRoute(expenseBillFiles.startUpload, expenseBillFileService.startUpload),
+  defineRoute(expenseBillFiles.confirmUpload, expenseBillFileService.confirmUpload),
+  defineRoute(expenseBillFiles.downloadLink, expenseBillFileService.downloadLink),
 ];

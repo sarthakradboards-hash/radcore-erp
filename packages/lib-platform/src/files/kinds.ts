@@ -23,6 +23,9 @@ export const FILE_KINDS = {
   // can be shown. Kept with the bills keys: entered under bills:write, seen by whoever reads purchasing.
   purchase_bill: { maxBytes: 10 * MB, types: ['application/pdf', 'image/jpeg', 'image/png'],
     perms: { read: 'purchasing:read', write: 'bills:write' } },
+  // An expense's bill as it came (RAD-152, ADR-009 §3): an expense posts only with it. Kept with the expenses keys.
+  expense_bill: { maxBytes: 10 * MB, types: ['application/pdf', 'image/jpeg', 'image/png'],
+    perms: { read: 'expenses:read', write: 'expenses:write' } },
 } as const satisfies Record<string, { maxBytes: number; types: readonly string[]; view?: true;
   perms?: { read: string; write: string } }>;
 

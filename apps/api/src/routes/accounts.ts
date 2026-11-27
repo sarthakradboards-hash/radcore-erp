@@ -2,6 +2,7 @@
 // of accounts and journal (RAD-86), what parties owe (RAD-119), and the period lock and year close (RAD-157).
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, getPaymentById, listPaymentsPage, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
+  addExpense, cancelExpenseNow, changeExpense, dropExpenseDraft, expenseCashSpec, getExpenseById, listExpensesPage, postExpenseNow,
   addAccount, addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
   askToUnlock, moveLockForward, periodState, periodUnlockSpec, cancelTransfer, recordTransfer, transferById, transfersPage,
   importStatement, statementFormatOf, statementImportById, statementLinesPage, undoStatementImport,
@@ -9,6 +10,7 @@ import {
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
   reverseCreditApplicationContract, createParty, getCompany, recordPaymentContract, getJournal, getParty, listAccounts, listMoneyAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
+  cancelExpense, createExpense, dropExpense, expenseCashApproval, getExpense, listExpenses, postExpense, replaceExpense,
   createAccount, createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
   askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval,
   getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementLinesContract, undoStatementImportContract,
@@ -49,6 +51,14 @@ export default [
   ...defineApproval(cashLimitApproval, cashLimitSpec),
   defineRoute(createAccount, addAccount),
   defineRoute(setAccount, changeAccount),
+  defineRoute(listExpenses, listExpensesPage),
+  defineRoute(getExpense, getExpenseById),
+  defineRoute(createExpense, addExpense),
+  defineRoute(replaceExpense, changeExpense),
+  defineRoute(dropExpense, dropExpenseDraft),
+  defineRoute(postExpense, postExpenseNow),
+  defineRoute(cancelExpense, cancelExpenseNow),
+  ...defineApproval(expenseCashApproval, expenseCashSpec),
   defineRoute(listExpenseCategories, expenseCategoriesList),
   defineRoute(createExpenseCategory, addExpenseCategory),
   defineRoute(setExpenseCategory, changeExpenseCategory),
