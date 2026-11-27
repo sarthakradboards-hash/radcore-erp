@@ -5,15 +5,17 @@
 // Contact fields the server masked for this person (no parties:contact) show read-only and are never sent (RAD-40).
 // An overseas supplier (RAD-169 on RAD-153, ADR-010 §4) has no GSTIN, PAN or composition and is in state 96: ticking it
 // clears and hides those boxes and sets the state; the contract's own rules still say what's wrong, in place.
-import { GST_STATES, isMasked } from '@radcore/lib-common';
+import { GST_STATES, isMasked, stateName } from '@radcore/lib-common';
 import { createParty, PARTY_KINDS, partyTaxIssues } from '@radcore/lib-accounts/contract';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import {
   CheckboxField, CheckboxesField, MaskedField, SelectField, TextField,
 } from '../../../../components/ui/form/fields.tsx';
 import { t } from '../../../../lib/i18n/index.ts';
+import { MESSAGES } from '../shared.tsx';
+import { OTHER_COUNTRY, overseasChange, type TaxBoxes } from './overseas.ts';
 
 const shape = createParty.input.shape;
 /** A box the person may leave empty: empty is the contract's null. */
@@ -30,8 +32,11 @@ export const newPartySchema = z.object(fields).superRefine((p, c) => {
 // An edit sends what changed; the server checks the tax rules on the party as it will be.
 export const editPartySchema = z.object(fields).partial();
 
-/** GST's code for a place outside India: an overseas supplier's state. */
-const OTHER_COUNTRY = '96';
+/** A party's state in words; 96, other country, is an overseas supplier's. */
+export const partyStateName = (code: string) =>
+  code === OTHER_COUNTRY ? t('admin.parties.state.96') : stateName(code) ?? code;
+/** The admin words, but a refused party never names its tax boxes: for an overseas supplier they're hidden. */
+export const PARTY_MESSAGES = { ...MESSAGES, invalid_input: t('admin.parties.err.invalid') };
 const STATES = Object.entries(GST_STATES).sort(([, a], [, b]) => a.localeCompare(b))
   .map(([code, name]) => ({ value: code, label: `${name} (${code})` }));
 /** A party's kinds as words: "Customer, Supplier". */
@@ -47,17 +52,17 @@ function Contact({ name, label, ...native }: { name: string; label: string } & P
 
 export function PartyFields() {
   const { watch, setValue } = useFormContext();
+  const kept = useRef<TaxBoxes | null>(null);
   const kinds = watch('kinds') as readonly string[] | undefined;
   const overseas = watch('overseas') === true;
   useEffect(() => {
     // Only the person's own tick acts: a saved overseas party loads as it is.
     const sub = watch((v, { name }) => {
       if (name !== 'overseas') return;
-      if (v['overseas'] === true) {
-        for (const f of ['gstin', 'pan']) setValue(f, '');
-        setValue('composition', false);
-        setValue('stateCode', OTHER_COUNTRY);
-      } else setValue('stateCode', '');
+      const change = overseasChange(v['overseas'] === true,
+        { gstin: v['gstin'], pan: v['pan'], composition: v['composition'], stateCode: v['stateCode'] }, kept.current);
+      kept.current = change.kept;
+      for (const [f, value] of Object.entries(change.set)) setValue(f, value);
     });
     return () => sub.unsubscribe();
   }, [watch, setValue]);

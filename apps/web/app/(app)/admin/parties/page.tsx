@@ -3,7 +3,6 @@
 // or GSTIN and filtered by kind and by in use or switched off. Contact details show masked to a person without
 // parties:contact (RAD-40's <Pii>). parties:write adds a party (then opens it); its page edits it and sets credit.
 import { createParty, listParties, PARTY_KINDS } from '@radcore/lib-accounts/contract';
-import { stateName } from '@radcore/lib-common';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -16,9 +15,9 @@ import { Pii } from '../../../../components/ui/masked.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList, useApiMutation } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
-import { ChoiceButtons, MESSAGES } from '../shared.tsx';
+import { ChoiceButtons } from '../shared.tsx';
 import type { Party } from '../types.ts';
-import { kindsText, newPartySchema, PartyFields } from './party-fields.tsx';
+import { kindsText, newPartySchema, PARTY_MESSAGES, PartyFields, partyStateName } from './party-fields.tsx';
 
 type Kind = (typeof PARTY_KINDS)[number];
 type Show = 'active' | 'inactive' | 'all';
@@ -27,7 +26,7 @@ const columns: Column<Party>[] = [
   { id: 'name', header: t('admin.parties.name'), cell: (p) => <Link href={`/admin/parties/${p.id}`}>{p.name}</Link> },
   { id: 'kinds', header: t('admin.parties.kinds'), cell: (p) => kindsText(p.kinds) },
   { id: 'gstin', header: t('admin.parties.gstin'), cell: (p) => p.gstin ?? t('admin.parties.unregistered') },
-  { id: 'state', header: t('admin.parties.state'), cell: (p) => stateName(p.stateCode) ?? p.stateCode },
+  { id: 'state', header: t('admin.parties.state'), cell: (p) => partyStateName(p.stateCode) },
   { id: 'phone', header: t('admin.parties.phone'), cell: (p) => <Pii value={p.phone ?? ''} /> },
   { id: 'city', header: t('admin.parties.city'), cell: (p) => <Pii value={p.city ?? ''} /> },
   { id: 'status', header: t('admin.locations.col.status'), cell: (p) => t(p.active ? 'admin.locations.active' : 'admin.locations.inactive') },
@@ -68,7 +67,7 @@ export default function PartiesPage() {
       <DataTable caption={t('admin.parties.title')} columns={columns} rowKey={(p) => p.id} list={list} empty={t('admin.parties.empty')} />
 
       <Dialog open={adding} onOpenChange={setAdding} title={t('admin.parties.add')} description={t('admin.parties.add.hint')}>
-        <Form schema={newPartySchema} saved={false} messages={MESSAGES}
+        <Form schema={newPartySchema} saved={false} messages={PARTY_MESSAGES}
           defaultValues={{ name: '', kinds: [], gstin: '', pan: '', stateCode: '', composition: false, overseas: false, phone: '', email: '',
             addressLine1: '', addressLine2: '', city: '', pincode: '' }}
           onSubmit={async (v) => {

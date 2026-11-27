@@ -4,7 +4,7 @@
 // contact field stays read-only and is never sent. Credit days and limit are set only with parties:manage, which needs
 // the second sign-in factor, and take a reason (setPartyCredit is the only way to set them).
 import { getParty, listParties, setPartyCredit, updateParty } from '@radcore/lib-accounts/contract';
-import { formatMoney, stateName } from '@radcore/lib-common';
+import { formatMoney } from '@radcore/lib-common';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
@@ -16,7 +16,7 @@ import { Pii } from '../../../../../components/ui/masked.tsx';
 import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog, MESSAGES } from '../../shared.tsx';
-import { editPartySchema, kindsText, PartyFields } from '../party-fields.tsx';
+import { editPartySchema, kindsText, PARTY_MESSAGES, PartyFields, partyStateName } from '../party-fields.tsx';
 import { PartyPriceList } from './price-list.tsx';
 
 const credit = setPartyCredit.input.shape;
@@ -62,7 +62,7 @@ export default function PartyPage() {
         <dt>{t('admin.parties.kinds')}</dt><dd>{kindsText(p.kinds)}</dd>
         <dt>{t('admin.parties.gstin')}</dt><dd>{p.gstin ?? t('admin.parties.unregistered')}</dd>
         <dt>{t('admin.parties.pan')}</dt><dd>{p.pan ?? t('admin.items.none')}</dd>
-        <dt>{t('admin.parties.state')}</dt><dd>{stateName(p.stateCode) ?? p.stateCode} ({p.stateCode})</dd>
+        <dt>{t('admin.parties.state')}</dt><dd>{partyStateName(p.stateCode)} ({p.stateCode})</dd>
         <dt>{t('admin.parties.composition')}</dt><dd>{t(p.composition ? 'admin.parties.yes' : 'admin.parties.no')}</dd>
         <dt>{t('admin.parties.phone')}</dt><dd><Pii value={p.phone ?? t('admin.items.none')} /></dd>
         <dt>{t('admin.parties.email')}</dt><dd><Pii value={p.email ?? t('admin.items.none')} /></dd>
@@ -84,7 +84,7 @@ export default function PartyPage() {
           </div>
           <h2 id="party-form">{t('admin.parties.edit')}</h2>
           {/* Keyed on the saved party, so after a save the form starts from what's saved. */}
-          <Form key={JSON.stringify(p)} aria-labelledby="party-form" schema={editPartySchema} messages={MESSAGES}
+          <Form key={JSON.stringify(p)} aria-labelledby="party-form" schema={editPartySchema} messages={PARTY_MESSAGES}
             saved={t('admin.parties.saved')}
             defaultValues={{
               name: p.name, kinds: p.kinds, gstin: p.gstin ?? '', pan: p.pan ?? '', stateCode: p.stateCode, composition: p.composition, overseas: p.overseas,

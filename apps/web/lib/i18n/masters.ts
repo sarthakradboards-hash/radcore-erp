@@ -173,6 +173,8 @@ export const masters = {
   'admin.parties.overseas': 'Overseas supplier (services, in rupees)',
   'admin.parties.overseas.hint': 'A supplier abroad whose services we pay for in rupees. We pay its GST under reverse charge, so it has no GSTIN or PAN here.',
   'admin.parties.overseas.state': 'State: Other country (96)',
+  'admin.parties.state.96': 'Other country',
+  'admin.parties.err.invalid': 'Check the boxes marked below.',
   'admin.parties.yes': 'Yes',
   'admin.parties.no': 'No',
   'admin.parties.phone': 'Phone',
