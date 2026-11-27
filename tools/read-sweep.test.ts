@@ -442,8 +442,9 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
         select 'statement', $1, 'statement.csv', 'text/csv', 10, 'ready' from p returning id`, [`statement/${randomUUID()}`]);
       const imported = await q(`insert into radcore.statement_imports (account_id, file_id, status, new_lines, present_lines, refusals)
         select $1, $2, 'imported', 1, 0, '[]'::jsonb from p returning id`, [bank, file]);
-      await q(`insert into radcore.bank_statement_lines (account_id, import_id, row_no, value_date, narration, reference, direction, amount, balance)
-        select $1, $2, 2, $3, 'NEFT', '', 'in', 100, 100 from p`, [bank, imported, DATE]);
+      const line = await q(`insert into radcore.bank_statement_lines (account_id, import_id, row_no, value_date, narration, reference, direction,
+        amount, balance) select $1, $2, 2, $3, 'NEFT', '', 'in', 100, 100 from p returning id`, [bank, imported, DATE]);
+      add(['GET /bank/statement-lines/:id/candidates'], line);
       add(['GET /bank/accounts/:id/statement-format'], bank);
       add(['GET /bank/statement-imports/:id'], imported);
     });

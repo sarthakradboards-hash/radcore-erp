@@ -144,6 +144,8 @@ export const purchases = {
   'purchases.err.period_locked': 'That date is in a locked period.',
   'purchases.err.unknown_party': 'That supplier isn’t in RadCore.',
   'purchases.err.not_a_supplier': 'That party isn’t a supplier, or is switched off.',
+  'purchases.err.overseas_services_only': 'That supplier is an overseas supplier of services: it takes no purchase orders and no goods lines.',
+  'purchases.err.rcm_bill_has_tax': 'This service is under reverse charge: its GST is ours to pay, so ask the supplier for a bill without it.',
   'purchases.err.unknown_item': 'That item isn’t in RadCore.',
   'purchases.err.item_inactive': 'That item is switched off.',
   'purchases.err.quantity_too_precise': 'That quantity has more decimal places than the item’s unit allows.',

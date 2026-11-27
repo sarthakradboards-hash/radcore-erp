@@ -60,7 +60,7 @@ export const undoStatementImportContract = defineContract({
   method: 'POST', path: '/bank/statement-imports/:id/undo', auth: 'session', perm: 'bank:reconcile', tx: write,
   input: z.object({ id: idString(), reason: reason() }),
   output: z.object({}),
-  errors: ['not_imported'],
+  errors: ['not_imported', 'statement_in_use'],
 });
 
 /** GET /bank/statement-lines (bank:read): an account's statement lines, newest first, a page at a time. */
@@ -70,5 +70,51 @@ export const listStatementLinesContract = defineContract({
   output: listOf(z.object({
     id: idString(), accountId: idString(), importId: idString(), rowNo: z.number().int(), valueDate: dateString(), narration: z.string(),
     reference: z.string(), direction: z.enum(['in', 'out']), amount: moneyString(), balance: moneyString({ signed: true }),
+    /** The live match it's in (RAD-165), or null. */
+    matchId: idString().nullable(),
   })),
+});
+
+// Matching (M5-13, RAD-165; ADR-009 §12): what a match can meet, by name, and what the database refuses at commit.
+const MATCH_DB_ERRORS = {
+  'RA006:match_unbalanced': { code: 'match_unbalanced', message: 'The statement lines and the book lines don’t come to the same amount' },
+  'RA006:match_other_account': { code: 'not_this_account', message: 'A match joins lines of one bank account' },
+  'RA006:match_entry_reversed': { code: 'entry_reversed', message: 'A book line here belongs to a cancelled or reversing entry' },
+  '23505:ux_bank_match_statement_lines_line': { code: 'already_matched', message: 'A line here is already matched: unmatch it first' },
+  '23505:ux_bank_match_journal_lines_line': { code: 'already_matched', message: 'A line here is already matched: unmatch it first' },
+} as const;
+/** For a document's cancel: a matched entry isn't reversed, by name or, as a backstop, by the database. */
+export const BANK_MATCHED_DB_ERROR = {
+  'RA006:bank_matched': { code: 'bank_matched', message: 'This is matched to the bank statement: unmatch it first' },
+} as const;
+
+/** GET /bank/statement-lines/:id/candidates (bank:read): the book lines a statement line may match, best first: the
+ * same signed amount on its account, dated within `accounts.bank_match_days`, unmatched and live, ranked by reference, then the
+ * party's name in the narration (`whole`, or a `word` of five letters or more), then the nearest date. */
+export const listMatchCandidatesContract = defineContract({
+  method: 'GET', path: '/bank/statement-lines/:id/candidates', auth: 'session', perm: 'bank:read', tx: read,
+  input: z.object({ id: idString() }),
+  output: z.object({ candidates: z.array(z.object({
+    journalLineId: idString(), entryId: idString(), entryNumber: z.string(), kind: z.string(), businessDate: dateString(),
+    source: z.object({ table: z.string(), id: idString() }), reference: z.string().nullable(), party: z.string().nullable(),
+    byReference: z.boolean(), byParty: z.enum(['whole', 'word']).nullable(), daysApart: z.number().int().min(0),
+  })) }),
+});
+
+/** POST /bank/matches (bank:reconcile): one or more statement lines with one or more book lines of one bank account,
+ * their signed totals equal (RC-210). */
+export const matchLinesContract = defineContract({
+  method: 'POST', path: '/bank/matches', auth: 'session', perm: 'bank:reconcile', tx: write,
+  input: z.object({ statementLineIds: z.array(idString()).min(1).max(50), journalLineIds: z.array(idString()).min(1).max(50) }),
+  output: z.object({ id: idString() }),
+  errors: ['already_matched', 'entry_reversed', 'match_unbalanced', 'not_this_account'],
+  dbErrors: MATCH_DB_ERRORS,
+});
+
+/** POST /bank/matches/:id/unmatch (bank:reconcile): undoes a match, with the reason, at any time. */
+export const unmatchContract = defineContract({
+  method: 'POST', path: '/bank/matches/:id/unmatch', auth: 'session', perm: 'bank:reconcile', tx: write,
+  input: z.object({ id: idString(), reason: reason() }),
+  output: z.object({}),
+  errors: ['not_matched'],
 });
