@@ -3,7 +3,7 @@
 // generic guards (its migration attaches them), and these CHECKs hold the values. Its tax is worked out on read while a
 // draft and stored when it's posted. Its goods lines name PO lines, and the receipt line each bills once the goods are in.
 import { isNull, sql } from 'drizzle-orm';
-import { check, date, foreignKey, index, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { check, date, foreignKey, index, numeric, smallint, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { expenseCategoryAccounts } from '../accounts/tables-expenses.ts';
 import { journalEntries, parties } from '../accounts/tables.ts';
 import { boundedText, createdMoment, id, money, percent, qty, radcoreTable, unitPrice } from '../columns.ts';
@@ -40,7 +40,7 @@ export const purchaseBills = radcoreTable('purchase_bills', {
   // The TDS held back at posting (ADR-009 §4, RAD-158), and so what the supplier is owed: the invoice's total less it.
   // Allocations read `owed` (allocatable_documents.amount_column; the architect on RAD-158).
   tds: money().notNull().default('0'),
-  owed: money().generatedAlwaysAs(sql`total - tds`),
+  owed: numeric({ precision: 18, scale: 2 }).generatedAlwaysAs(sql`total - tds`),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
   cancelledAt: timestamp({ withTimezone: true }),
   cancelledBy: text(),
@@ -54,6 +54,7 @@ export const purchaseBills = radcoreTable('purchase_bills', {
   check('ck_purchase_bills_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
   check('ck_purchase_bills_frozen', sql`num_nulls(${t.placeOfSupply}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst}, ${t.roundOff}, ${t.total}) in (0, 7)
     and coalesce(${t.placeOfSupply}, '00') ~ '^[0-9]{2}$'`),
+  check('ck_purchase_bills_owed', sql`${t.owed} >= 0 and ${t.owed} <> 'NaN'`),
   check('ck_purchase_bills_tds_within', sql`${t.total} is null and ${t.tds} = 0 or ${t.tds} <= ${t.total}`),
   check('ck_purchase_bills_identity', sql`${t.total} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.roundOff}
     and abs(${t.roundOff}) < 1 and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
