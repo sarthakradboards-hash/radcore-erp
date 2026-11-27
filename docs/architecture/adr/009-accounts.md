@@ -43,18 +43,20 @@ lists each rule with the CA question that confirms it.
 
 This replaces ADR-008 §7a's interim rule. A bill line's or expense line's input GST is claimed only when every test
 passes, and otherwise the tax is part of the cost: through the price difference on a goods bill (ADR-008 §7), or on
-the line's own account for a service bill or an expense.
+the line's own account for a service bill's charge or an expense.
 - **The supplier's kind (CA-04).** A party is `regular` (a GSTIN, not composition), `composition`, or `unregistered`
   (no GSTIN), read from the columns parties already have. The setting `gst.credit_from` lists the kinds whose bills
   carry credit, by default `['regular']`. A bill's GSTIN as printed must be the party's (ADR-008 §7). SEZ and overseas
   kinds come with D-10's foreign suppliers in M9.
 - **Blocked credit (CA-05).** Each expense category (§3) says `credit: allowed | blocked`, and a blocked one names its
-  section 17(5) clause. A new category starts blocked. A service bill's lines name an expense category too (M5-02 adds
-  the column), so the same rule covers them. Goods bought for stock aren't blocked.
+  section 17(5) clause. A new category starts blocked. On a service bill (a bill with no `goods` lines), each `charge`
+  line names an expense category too (M5-02 adds the column), so the same rule covers it. `goods` lines aren't blocked,
+  and `job_work` lines post to Job Work Charges to be Billed (ADR-008 §11), not to a category.
 - **The state and the tax heads.** CGST and SGST are claimed only from a supplier in the company's state, and IGST only
   from one in another state. A hotel in Karnataka that charges its own CGST and SGST gives a Maharashtra GSTIN no
-  credit (F28). Where lib-gst works the tax out (goods bills), the heads always match; where they're typed as printed
-  (expenses, service bills), a mismatch means no credit.
+  credit (F28). A purchase bill's tax is always lib-gst's (ADR-008 §7), worked out from the supplier's state, so its
+  heads always match. A service taxed where it's used, not where we are (a hotel, an event venue), is entered as an
+  expense, where the heads are typed as printed and a mismatch means no credit.
 - **What the line records:** the credit claimed by head, and, where none, why (`supplier_kind`, `blocked`, `state`).
   ADR-010's 3B tables read the claimed and the ineligible amounts from here.
 - **Not enforced in M5 (CA-12):** section 16(4)'s cut-off, matching to GSTR-2B, Rule 37's 180-day reversal and Rules
@@ -68,8 +70,8 @@ the line's own account for a service bill or an expense.
 - **Categories.** `expense_categories` (name, `credit`, the 17(5) clause when blocked, a default TDS section, `active`)
   and `expense_category_accounts (category_id, account_id)`, the accounts each may post to. An allowed account is an
   ordinary expense account: a composite foreign key to `accounts (id, type, control_kind)` (M5-02 adds that unique
-  key), with the row's copies held by CHECK to `expense` and `none`, so a category can never point at Bank, a control account or an income account.
-  Categories are set up under `accounts:write`, like the chart.
+  key), with the row's copies held by CHECK to `expense` and `none`, so a category can never point at Bank, a control
+  account or an income account. Categories are set up under `accounts:write`, like the chart.
 - **An expense** is a document in lib-accounts, numbered from `accounts.expense` (`EX`): the business date, the
   supplier's invoice number and date, the supplier (required whenever it's on credit or claims credit), the GSTIN as
   printed (`gstin_mismatch` if not the party's), and how it's paid: from a bank or cash account at once, or on credit
@@ -94,26 +96,34 @@ the line's own account for a service bill or an expense.
   H), `other`, or `any`), and `tds_rates (section_id, effective_from, rate, rate_no_pan, single_limit, yearly_limit,
   source, note)`, unique on `(section_id, effective_from)`. Never deleted: a later row supersedes, and a wrong row is
   corrected in place, audited with its reason. Edited under `tds:write`. The migration seeds the payment types CA-18
-  lists (contractors, professional and technical fees, rent of building and of machinery, commission, interest,
-  purchase of goods), each row naming its source and marked unconfirmed until the CA signs it (D-08).
+  lists (contractors, professional and technical fees, rent of building and of machinery, commission, interest), each
+  row naming its source and marked unconfirmed until the CA signs it (D-08).
+  - **A limit's kind.** Each rate row says `limit_kind`: `whole` (once over the yearly limit, the whole year's base is
+    taxed, as for contractors) or `excess` (only the year's base over the yearly limit is taxed). Purchase of goods
+    (194Q, 393 in the 2025 Act) is `excess`, and also needs the buyer's turnover last year over Rs 10 crore, so it
+    isn't seeded until CA-18 says it applies; then it's a row, not code.
+  - **Rent's monthly limit** is `single_limit`, since rent is billed by the month; CA-18 confirms.
 - **Which section.** A supplier party may name a default section, and so may an expense category. A bill or expense
   line takes the party's, else the category's; the person can change it, and clearing a default needs a reason.
 - **When (CA-19):** at booking, the earlier of credit and payment. A purchase bill (services, a job worker's bill) or
-  an expense deducts when it posts. An advance paid before any bill deducts at the payment (ADR-006 §6), and a bill it's
-  applied to deducts that much less.
+  an expense deducts when it posts. An advance paid before any bill deducts at the payment (ADR-006 §6). A bill posted
+  with advances applied records its base less the advances' TDS base, so the year's base counts the money once.
+  Applying an advance to a bill already posted changes neither row.
 - **The base (CA-19):** the taxable value before GST, where the bill shows GST separately.
 - **How much,** for the payee, section and financial year:
-  - if the year's base so far, this booking included, is over the yearly limit: each of the year's bookings at the
-    rate in force on its own date, less what's already deducted this year, and never below zero. So the booking that
-    crosses the limit catches up the earlier ones (F29), and a rate change mid-year doesn't reprice them;
+  - if the year's base so far, this booking included, is over the yearly limit: each of the year's rows at the rate
+    it recorded (see the record, below) on its base (for `excess`, only the year's base over the limit), less what's
+    already deducted this year, and never below zero. So the booking that crosses the limit catches up the earlier
+    ones (F29), and a later rate or PAN change doesn't reprice them;
   - otherwise, if this booking alone is over the single limit: the rate in force on its date, on this booking;
   - otherwise nothing;
   - never more than the booking's amount payable. What's left is deducted at the payee's next booking, by the same sum.
 - **No PAN (CA-20):** a payee with no PAN, or one marked inoperative (`parties.pan_inoperative`), is deducted at the
-  row's `rate_no_pan`.
+  row's `rate_no_pan`, judged at each booking: an earlier row keeps the rate it recorded.
 - **Rounding (CA-21):** to the nearest rupee, half up, in one function.
 - **The record.** Every booking line with a section writes a `tds_deductions` row (the document, payee, section,
-  month, base, rate, whether the no-PAN rate applied, amount), with the posting, even when it deducts nothing. So the
+  month, base, the rate that applies on its date with the payee's PAN as it stood then, whether that was the no-PAN
+  rate, amount), with the posting, even when it deducts nothing. So the
   year's base and what's deducted are one indexed sum on `(party_id, section_id, financial_year)`, never a read of
   every bill. The entry credits TDS Payable (F12). A payment made with TDS (an advance, ADR-006 §6) writes its row the
   same way, and M5-10 replaces M3-12's typed TDS on payments made with this sum. A line with a section needs a
@@ -123,9 +133,15 @@ the line's own account for a service bill or an expense.
 - **Deposits (F18).** A `tds_deposits` document (challan number, BSR code, the date paid, the bank account) names the
   deductions it pays, each in full, under `payments:write`. It posts `tds_deposit`: Dr TDS Payable, Cr Bank. A
   deduction is deposited once (a unique key on the deduction).
-- **Cancelling** a booking reverses its deduction, only while it isn't deposited (`tds_deposited`). The correction
-  route for a deposited one waits on CA-22, with returns and certificates (RC-181, M7).
-- **The books check (ADR-006 §7)** gains a line: TDS Payable equals the deductions less those deposited.
+- **Cancelling** a booking writes a reversing `tds_deductions` row (the base and amount negated, naming the row it
+  reverses, never deposited), so the year's sums leave the booking out. It's refused while the original is deposited
+  (`tds_deposited`). The correction route for a deposited one waits on CA-22, with returns and certificates (RC-181,
+  M7).
+- **Opening TDS** (M5-16's cut-over balances) comes in as `tds_deductions` rows with the opening entry, so it can be
+  deposited like any other.
+- **The books check (ADR-006 §7)** gains a line: TDS Payable, less the lines of `payroll` entries, equals the
+  deductions (net of reversals) less those deposited. Salary TDS and its deposit are M6-08's, which adds its own line.
+  M5-10's migration writes rows for any payment already made with M3-12's typed TDS.
 - **Lower-deduction certificates** (a lower rate for one payee) aren't built in M5. If one is needed, it's a dated row
   per party, not a redesign.
 
@@ -136,16 +152,19 @@ the line's own account for a service bill or an expense.
 - **The lock row.** `gst_filed_lock`, one row (id 1): `gstr1_through` and `gstr3b_through`, each the last day of the
   latest month filed. It is ADR-006 §1 step 1's filed-month row: lib-accounts' `lockPeriod` reads it `FOR SHARE` after
   the period lock, and marking or undoing a filing takes it `FOR UPDATE`, so it waits for postings in flight.
-- **Every door, in the database.** A trigger on `journal_lines` refuses a line on a `gst` control account whose
-  business date is on or before `gstr3b_through`, and, for the outward kinds (`invoice`, `credit_note`), on or before
-  `gstr1_through` (`month_filed`). Every GST amount reaches the books on a `gst` line, so this covers invoices, notes,
-  bills, debit notes, expenses and, when D-10's imports come, customs IGST, with no door left to add by hand. Manual
-  journals can't reach a GST account at all (ADR-006 §2).
+- **Every door, in the database, by entry kind.** A trigger on `journal_entries` refuses an entry (`month_filed`):
+  - of an outward kind (`invoice`, `credit_note`) dated on or before `gstr1_through`;
+  - of a kind 3B reports (the outward kinds, `purchase_bill`, `supplier_return`, `expense`) dated on or before
+    `gstr3b_through`.
+  It keys on the entry, not its GST lines, because a return reports supplies that carry no GST line: a 0% invoice
+  (lib-sales drops zero lines), a composition or unregistered supplier's bill, and a blocked expense (§2). ADR-010 adds
+  its reverse-charge and settlement kinds to the list, and M9 customs IGST's. Manual journals can't reach a GST account
+  at all (ADR-006 §2).
 - **Correcting a filed month (CA-11).** A reversal is dated the day it's made (ADR-006 §3), so it would pass the lock.
   For outward documents that's not allowed: an invoice or credit note whose own date is in a month GSTR-1 has filed
   can't be cancelled (`month_filed`); it's corrected with a credit note (ADR-007 §6) or, once ADR-010 builds them, an
-  amendment. The cancel service checks it, and the trigger refuses a reversing entry of those kinds whose original is
-  dated on or before `gstr1_through`. An inward document (a bill, an expense) may still be cancelled, dated today: its
+  amendment. The cancel service checks it, and the same trigger refuses a reversing entry of those kinds whose
+  original is dated on or before `gstr1_through`. An inward document (a bill, an expense) may still be cancelled, dated today: its
   credit then comes back in the open month's 3B, which is where it belongs (CA-13 confirms the box).
 - **Marking a month filed.** `gst_filings` (the return, `gstr1` or `gstr3b`; the month; the ARN as the portal gives it;
   the filing date; the snapshot and its SHA-256; who marked it), with a partial unique index on `(return, month)` for
@@ -178,8 +197,8 @@ the line's own account for a service bill or an expense.
     the postings in flight, so nothing dated in the year can change while the close reads it;
   - the close runs at `REPEATABLE READ`, takes the period lock `FOR UPDATE`, runs ADR-006 §7's books check as at 31
     March in its own transaction (`books_check_failed`), and posts F20's `year_close` entry from the balances it reads.
-    A lock move committed after its snapshot fails it with a serialization error, mapped through `dbErrors` to
-    `try_again`;
+    A lock move committed after its snapshot fails it with a serialization error (SQLSTATE 40001), which the platform
+    already answers as `conflict` (409, "Please try again");
   - every item of the year-end checklist is ticked (`checklist_incomplete`). The checklist is the setting
     `accounts.year_end_checklist`, by default CA-25's list (depreciation, provisions, income tax, interest, the stock
     valuation agreed), and the ticks are kept on the close;
@@ -202,8 +221,9 @@ the line's own account for a service bill or an expense.
 Every save here takes ADR-006 §1's one order. Step 1's three rows are always taken in the same order (the company
 profile, the period lock, the filed-month lock), each `FOR SHARE` except the one being moved, which is `FOR UPDATE`:
 - **a posting** (bill, expense, deposit): all three `FOR SHARE` (`lockPeriod`); then its documents, by table then id;
-  then the payee's party row, when a line has a TDS section (§4); then the series, `accounts.journal` before
-  `accounts.expense` (ascending key, ADR-006 §1);
+  then the payee's party row, when a line has a TDS section (§4); then the series, the journal's first, then the rest
+  by key (ADR-006 §1 step 6). A bill's documents go in ADR-008 §12's table order; an expense or deposit locks only
+  itself;
 - **moving the period lock, closing or reopening a year:** the profile `FOR SHARE`, the period lock `FOR UPDATE`, the
   filed-month row `FOR SHARE`; then the request or `year_closes` row; then the journal series;
 - **marking or undoing a filing:** the profile and the period lock `FOR SHARE`, the filed-month row `FOR UPDATE`; then
@@ -232,7 +252,7 @@ never locked: ledger rows reference it by key, and a lock on it would block them
 | Credit by supplier kind (§2) | regular suppliers only | CA-04 | `gst.credit_from` |
 | Blocked credit (§2, §3) | a new category is blocked | CA-05 | each category's `credit` |
 | Credit timing and 2B matching (§2) | not enforced; the CA's monthly checklist | CA-12 | ADR-010, if the CA wants it in software |
-| TDS sections, rates, limits (§4) | the 2025 Act's published rows, unconfirmed | CA-18 | `tds_rates` rows |
+| TDS sections, rates, limits (§4) | the 2025 Act's published rows, unconfirmed; goods (194Q) not seeded | CA-18 | `tds_rates` rows |
 | TDS timing and base (§4) | at booking; before GST | CA-19 | code, in the one TDS function |
 | No-PAN rate (§4) | `rate_no_pan`, inoperative PAN included | CA-20 | `tds_rates` rows |
 | TDS rounding (§4) | nearest rupee | CA-21 | the one rounding function |
@@ -304,13 +324,15 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
 - **M5-02:** F12 (without TDS until M5-10), F27, F28 and its variant; a line on an account not in its category, and a
   category pointed at Bank or Debtors, are refused by the database; `bill_file_required`, `tax_mismatch`,
   `gstin_mismatch`; a cash expense over the limit; cancel restores the payable.
-- **M5-10:** F12, F18 and F29 with its variant; two bills for one payee saved at once deduct the catch-up once; an
+- **M5-10:** F12, F18 and F29 with its variant; an `excess` rate row (a test row, not seeded) deducts only on the
+  year's base over the limit; a cancelled booking leaves the year's base; an advance applied at the bill isn't counted
+  twice in the base, and one applied after it changes nothing; two bills for one payee saved at once deduct the catch-up once; an
   advance applied to a bill isn't deducted twice; a rate row dated 1 July applies to a 1 July bill and not a 30 June
   one, and a catch-up after it keeps the earlier bills at the old rate; a booking under both limits still writes its
   zero row; a payee whose PAN arrives mid-year is never refunded below zero; `tds_needs_party`, `tds_deposited`; the
   books check fails when a deduction's row is missing.
-- **M5-08:** a line on Input GST dated in a 3B-filed month is refused, through each door (invoice, credit note, bill,
-  supplier return, expense); a payment in that month posts; cancelling an invoice of a GSTR-1-filed month is refused,
+- **M5-08:** an entry dated in a 3B-filed month is refused through each door (invoice, credit note, bill, supplier
+  return, expense), including a 0% invoice, a composition supplier's bill and a blocked expense; a payment in that month posts; cancelling an invoice of a GSTR-1-filed month is refused,
   and a bill's cancel posts in the open month; the current month and a gap are refused; an undo by its asker is
   refused, by another `books:unlock` holder succeeds, and only for the latest filing; marking waits for a posting in
   flight.

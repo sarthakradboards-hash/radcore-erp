@@ -185,7 +185,8 @@ delivery they belong to (M5-17), so §7's per-line check still holds.
   - a composite foreign key `(reverses_entry_id, kind)` to `(id, kind)` keeps the original's kind;
   - its lines are the original's with debit and credit swapped, line for line, which the commit check confirms;
   - it is dated with the cancellation's business date (ADR-005 §7b), so the period lock applies to the day of the
-    cancellation.
+    cancellation. The one exception is reopening a year: its `year_close` reversal is dated that year's 31 March
+    ([ADR-009](009-accounts.md) §6).
 - **Balanced at commit:** each entry's debits equal its credits (RA002, ADR-005 §2).
 - **Business date and posting time** are on the entry and on every line (ADR-005 §6). The lines' composite foreign
   key keeps their date equal to the entry's. The database sets `posted_at` itself (RAD-86), and records on the entry
