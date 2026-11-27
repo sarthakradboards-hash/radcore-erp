@@ -445,7 +445,7 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       const line = await q(`insert into radcore.bank_statement_lines (account_id, import_id, row_no, value_date, narration, reference, direction,
         amount, balance) select $1, $2, 2, $3, 'NEFT', '', 'in', 100, 100 from p returning id`, [bank, imported, DATE]);
       add(['GET /bank/statement-lines/:id/candidates'], line);
-      add(['GET /bank/accounts/:id/statement-format', 'GET /bank/accounts/:id/book-lines'], bank);
+      add(['GET /bank/accounts/:id/statement-format', 'GET /bank/accounts/:id/book-lines', 'GET /bank/accounts/:id/reconciliation'], bank);
       add(['GET /bank/statement-imports/:id'], imported);
     });
 
@@ -480,6 +480,7 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
     const known: Record<string, Record<string, unknown>> = {
       'GET /crm/cost-per-lead': { fromDate: DATE, toDate: DATE },
       'GET /parties/:id/statement': { from: DATE, to: DATE },
+      'GET /bank/accounts/:id/reconciliation': { asAt: DATE },
       'GET /sales/price': { partyId: party, itemId: item, on: DATE },
       'GET /gst/rates/in-force': { hsn: ids['hsn']?.[0] ?? '', on: DATE },
       'GET /admin/audit': { filter: { occurred: { from: DATE, to: DATE } }, limit: 50 },

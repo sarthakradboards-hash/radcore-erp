@@ -139,3 +139,23 @@ export const listBookLinesContract = defineContract({
   })),
   errors: ['not_a_bank_account'],
 });
+
+/** GET /bank/accounts/:id/reconciliation (bank:read): the bank reconciliation statement as at `asAt` (ADR-009 §12,
+ * GL-132): the book balance and the statement's, the book lines the bank hasn't shown by then and the bank lines the books
+ * haven't (each listed, at most 500, with their whole count and signed total), and what they leave unexplained (the
+ * bank's balance before the books began, say). Null statement figures before the account's first statement line. */
+export const reconciliationContract = defineContract({
+  method: 'GET', path: '/bank/accounts/:id/reconciliation', auth: 'session', perm: 'bank:read', tx: read,
+  input: z.object({ id: idString(), asAt: dateString() }),
+  output: z.object({
+    asAt: dateString(), bookBalance: moneyString({ signed: true }), statementBalance: moneyString({ signed: true }).nullable(),
+    bookOutstanding: z.object({ count: z.number().int().min(0), total: moneyString({ signed: true }), lines: z.array(z.object({
+      journalLineId: idString(), entryId: idString(), entryNumber: z.string(), kind: z.string(), businessDate: dateString(),
+      direction: z.enum(['in', 'out']), amount: moneyString() })) }),
+    bankOutstanding: z.object({ count: z.number().int().min(0), total: moneyString({ signed: true }), lines: z.array(z.object({
+      statementLineId: idString(), valueDate: dateString(), narration: z.string(), reference: z.string(), direction: z.enum(['in', 'out']),
+      amount: moneyString() })) }),
+    unexplained: moneyString({ signed: true }).nullable(),
+  }),
+  errors: ['not_a_bank_account'],
+});
