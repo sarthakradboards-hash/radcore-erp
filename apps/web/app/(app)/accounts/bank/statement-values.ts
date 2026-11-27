@@ -9,7 +9,7 @@ import { t } from '../../../../lib/i18n/index.ts';
 
 type Format = z.output<typeof statementFormat>;
 
-const CODES = ['not_a_bank_account', 'statement_format_required', 'upload_refused', 'not_ready', 'wrong_file_kind', 'not_imported'] as const;
+const CODES = ['not_a_bank_account', 'statement_format_required', 'upload_refused', 'not_ready', 'wrong_file_kind', 'not_imported', 'statement_in_use'] as const;
 /** The bank contracts' refusals in the screen's words, for Form's `messages`. */
 export const BANK_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`books.bank.err.${c}`)]));
 
