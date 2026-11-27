@@ -38,6 +38,7 @@ describe('tdsFor', () => {
     expect(book('10000', [{ base: '25000', rate: '1' }, { base: '28000', rate: '1' }, { base: '50000', rate: '1' }], '20600').amount).toBe('0.00');
     expect(book('50000', [{ base: '25000', rate: '20' }, { base: '28000', rate: '20' }], '0', { noPan: true, payable: '5000' }).amount)
       .toBe('5000.00');
+    expect(book('50000', [], '0', { noPan: true, payable: '5000.60' }).amount).toBe('5000.00');
   });
   it('deducts every booking of a section with no limits', () => {
     expect(book('1000', [], '0', { rate: { rate: '10', rateNoPan: '20', singleLimit: null, yearlyLimit: null, limitKind: 'whole' } }).amount)

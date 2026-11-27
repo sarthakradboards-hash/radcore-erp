@@ -18,7 +18,7 @@ export const tdsRound = (x: Decimal): Money => roundMoney(x.toDecimalPlaces(0));
  *   crosses the limit catches up the earlier ones (F29) and a later rate or PAN change doesn't reprice them;
  * - otherwise, this booking alone over the single limit: this booking at its rate;
  * - a section with neither limit deducts every booking;
- * - never more than the booking's amount payable.
+ * - never more than the booking's amount payable, in whole rupees.
  * The rate this booking records is the no-PAN rate when the payee has no operative PAN (CA-20), judged now.
  */
 export function tdsFor(b: { base: string; rate: TdsRate; noPan: boolean; earlier: readonly TdsBooking[]; deducted: string; payable: string }):
@@ -48,6 +48,9 @@ export function tdsFor(b: { base: string; rate: TdsRate; noPan: boolean; earlier
   } else {
     due = dec('0');
   }
-  const capped = due.lt(0) ? dec('0') : due.gt(dec(b.payable)) ? dec(b.payable) : due;
+  // Capped at the payable's whole rupees, rounded down, so a deduction is always a whole rupee and never past it (the
+  // auditor on #440).
+  const cap = dec(b.payable).floor();
+  const capped = due.lt(0) ? dec('0') : due.gt(cap) ? cap : due;
   return { rate, noPanRate: b.noPan, amount: roundMoney(capped) };
 }
