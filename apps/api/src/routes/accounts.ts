@@ -3,7 +3,7 @@
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, getPaymentById, listPaymentsPage, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
   addAccount, addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
-  askToUnlock, moveLockForward, periodState, periodUnlockSpec,
+  askToUnlock, moveLockForward, periodState, periodUnlockSpec, cancelTransfer, recordTransfer, transferById, transfersPage,
   importStatement, statementFormatOf, statementImportById, statementLinesPage, undoStatementImport,
 } from '@radcore/lib-accounts';
 import {
@@ -12,6 +12,7 @@ import {
   createAccount, createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
   askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval,
   getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementLinesContract, undoStatementImportContract,
+  cancelTransferContract, getTransferContract, listTransfersContract, recordTransferContract,
 } from '@radcore/lib-accounts/contract';
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import { remindWithLink } from '@radcore/lib-sales';
@@ -40,6 +41,11 @@ export default [
   defineRoute(reverseAllocationContract, reverseAllocation),
   defineRoute(applyCreditContract, applyCredit),
   defineRoute(reverseCreditApplicationContract, reverseCreditApplication),
+  // Transfers between our own money accounts (RAD-165, F19).
+  defineRoute(listTransfersContract, transfersPage),
+  defineRoute(getTransferContract, transferById),
+  defineRoute(recordTransferContract, recordTransfer),
+  defineRoute(cancelTransferContract, cancelTransfer),
   ...defineApproval(cashLimitApproval, cashLimitSpec),
   defineRoute(createAccount, addAccount),
   defineRoute(setAccount, changeAccount),

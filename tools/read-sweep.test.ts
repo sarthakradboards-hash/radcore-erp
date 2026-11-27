@@ -9,7 +9,7 @@
 // other files count their own. A GET this can't reach is pinned below with its reason, so every new GET is either
 // reached or listed (the ratchet). Its known limit: it catches only the shapes the seed holds.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addAccount, addExpenseCategory, addParty, openFinancialYear, postManual, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
+import { addAccount, addExpenseCategory, addParty, openFinancialYear, postManual, recordPayment, recordTransfer, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { addAdSpend, addCampaign, captureEnquiry, createEnquiryForm, leadSourcesList } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
@@ -403,6 +403,13 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
         insert into radcore.approvals (kind, record_id, version_digest, requested_by) select 'period-unlock', $1, repeat('0', 64), 'system:test'
         from p returning id`, [asked?.id]);
       add(['GET /approvals/period-unlock/:id'], request?.id);
+    });
+
+    // Cash paid into the bank (RAD-165, F19).
+    await step('transfer', async () => {
+      const moved = await run(async (ctx) => recordTransfer(ctx, { fromAccountId: await systemAccountId(ctx, 'cash'),
+        toAccountId: await systemAccountId(ctx, 'bank'), amount: m('10'), businessDate: DATE }));
+      add(['GET /transfers/:id'], moved.id);
     });
 
     // A bank account's statement layout and an imported statement with a line (RAD-159), as rows: the import itself runs in
