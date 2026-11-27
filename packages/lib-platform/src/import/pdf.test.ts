@@ -62,7 +62,8 @@ describe('a PDF decompression bomb', { timeout: 120_000 }, () => {
     const bomb = await bombPdf(2048);
     // Well within the statement kind's 15 MB.
     expect(bomb.length).toBeLessThan(15 * 1024 * 1024);
-    await expect(readPdf(bomb, { ...ISOLATE_LIMITS, maxGrowthMb: 256 })).rejects.toThrow(/too much memory/);
+    // A long wall clock, so under a full run's load the memory cap, not the time limit, is what refuses it.
+    await expect(readPdf(bomb, { ...ISOLATE_LIMITS, maxGrowthMb: 256, timeoutMs: 100_000 })).rejects.toThrow(/too much memory/);
     expect((await readPdf(testPdf([['Still here']])))[0]?.[0]?.[0]?.text).toBe('Still here');
   });
 });
