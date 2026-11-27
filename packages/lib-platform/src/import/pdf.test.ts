@@ -1,10 +1,11 @@
 // A PDF's text read in the import isolate (RAD-159; ADR-003 §7; RC-135): lines top first, pieces left to right with
 // where they start; past 200 pages, or not a PDF at all, refused as ImportFileError in the worker thread.
 import { testPdf } from '@radcore/test-helpers';
+import { createDeflate } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { readPdf } from './isolate.ts';
-import { linesOf, PDF_LIMITS } from './read-pdf.ts';
-import { ImportFileError } from './read.ts';
+import { ISOLATE_LIMITS, readPdf } from './isolate.ts';
+import { linesOf } from './read-pdf.ts';
+import { ImportFileError, PDF_LIMITS } from './read.ts';
 
 // Each test starts a real worker, which loads pdf.js afresh.
 describe('readPdf', { timeout: 60_000 }, () => {
@@ -25,6 +26,44 @@ describe('readPdf', { timeout: 60_000 }, () => {
     await expect(readPdf(long)).rejects.toThrow(ImportFileError);
     await expect(readPdf(long)).rejects.toThrow(/more than 200 pages/);
     await expect(readPdf(new TextEncoder().encode('%PDF-1.7 not really'))).rejects.toThrow(/couldn't be read/);
+  });
+});
+
+/** A one-page PDF whose content stream inflates from a few MB to `mb` MB of zeros: a decompression bomb. */
+async function bombPdf(mb: number): Promise<Uint8Array> {
+  const deflate = createDeflate({ level: 9 });
+  const chunks: Buffer[] = [];
+  deflate.on('data', (c: Buffer) => chunks.push(c));
+  const done = new Promise((resolve) => deflate.on('end', resolve));
+  const zeros = Buffer.alloc(1024 * 1024);
+  for (let i = 0; i < mb; i++) if (!deflate.write(zeros)) await new Promise((resolve) => deflate.once('drain', resolve));
+  deflate.end();
+  await done;
+  const stream = Buffer.concat(chunks);
+  const parts: Buffer[] = [Buffer.from('%PDF-1.4\n')];
+  const offsets: number[] = [];
+  const at = () => parts.reduce((n, p) => n + p.length, 0);
+  const obj = (n: number, body: Buffer) => {
+    offsets[n] = at();
+    parts.push(Buffer.from(`${n} 0 obj\n`), body, Buffer.from('\nendobj\n'));
+  };
+  obj(1, Buffer.from('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2, Buffer.from('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
+  obj(3, Buffer.from('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>'));
+  obj(4, Buffer.concat([Buffer.from(`<< /Length ${stream.length} /Filter /FlateDecode >>\nstream\n`), stream, Buffer.from('\nendstream')]));
+  const xref = at();
+  const entries = offsets.slice(1).map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('');
+  parts.push(Buffer.from(`xref\n0 5\n0000000000 65535 f \n${entries}trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`));
+  return Buffer.concat(parts);
+}
+
+describe('a PDF decompression bomb', { timeout: 120_000 }, () => {
+  it('is refused once the process grows past the cap, ArrayBuffers counted, and the next file still reads (RC-135)', async () => {
+    const bomb = await bombPdf(2048);
+    // Well within the statement kind's 15 MB.
+    expect(bomb.length).toBeLessThan(15 * 1024 * 1024);
+    await expect(readPdf(bomb, { ...ISOLATE_LIMITS, maxGrowthMb: 256 })).rejects.toThrow(/too much memory/);
+    expect((await readPdf(testPdf([['Still here']])))[0]?.[0]?.[0]?.text).toBe('Still here');
   });
 });
 

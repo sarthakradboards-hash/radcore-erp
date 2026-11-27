@@ -1,12 +1,9 @@
 // Reading an uploaded PDF's text (M5-11, RAD-159; ADR-003 §2, §7; RC-135): only in the worker, and there only in
-// isolate.ts's thread, never in the api. unpdf (pdf.js bundled) gives each page's text items with their positions;
+// pdf-thread.ts's worker thread, never in the api. unpdf (pdf.js bundled) gives each page's text items with their positions;
 // they're grouped into lines, top of the page first, each line's pieces left to right with where they start, so a
 // bank's layout (lib-accounts) can tell a withdrawal column from a deposit one even where a cell is empty.
 import { extractTextItems, getDocumentProxy } from 'unpdf';
-import { ImportFileError } from './read.ts';
-
-/** ADR-003 §7: a PDF of at most 200 pages (and 15 MB, the statement kind's own limit; 30 seconds, the isolate's). */
-export const PDF_LIMITS = { maxPages: 200 } as const;
+import { ImportFileError, PDF_LIMITS } from './read.ts';
 
 /** One line of a page: its pieces of text, left to right, each with its x position (PDF units from the left edge). */
 export type PdfLine = readonly { readonly text: string; readonly x: number }[];
@@ -28,7 +25,7 @@ export function linesOf(items: readonly { str: string; x: number; y: number }[])
 }
 
 /** Reads a PDF's text as lines, refusing one past 200 pages, a password-protected one, and one pdf.js can't open. In
- * this thread: callers use isolate.ts's readPdf, which runs this in a worker.
+ * this thread: callers use isolate.ts's readPdf, which runs this in pdf-thread.ts's worker.
  * shortcut: a password-protected statement is refused; the bank account's stored statement password (ADR-009 §11,
  * `secrets`) joins when a bank that sends one is set up. */
 export async function parsePdf(bytes: Uint8Array): Promise<PdfPages> {

@@ -17,6 +17,10 @@ export const IMPORT_LIMITS = {
   sniffBytes: 64 * 1024,
 } as const;
 
+/** ADR-003 §7: a PDF of at most 200 pages (and 15 MB, the statement kind's own limit; 30 seconds, the isolate's). Here,
+ * not beside the PDF reader, so the api's import of lib-platform never loads unpdf (RAD-159). */
+export const PDF_LIMITS = { maxPages: 200 } as const;
+
 /** A file the importer refuses as a whole, with a sentence the person can act on. */
 export class ImportFileError extends Error {
   override name = 'ImportFileError';

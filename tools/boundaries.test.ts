@@ -105,6 +105,7 @@ const CLAUSE_IDS: Record<string, string[]> = {
   'L8-eval': ['no-eval'],
   'L8-new-function': ['no-new-func'],
   'L8-implied-eval': ['no-implied-eval'],
+  'L8-pdf-in-api': ['no-restricted-imports'],
 };
 
 const dirs = readdirSync(FIXTURES).filter((d) => statSync(join(FIXTURES, d)).isDirectory());
