@@ -2,7 +2,7 @@
 import type {
   getPermissionMatrix, listAuditTrail, listRoles, listSecurityEvents, listSessions, listUsers,
 } from '@radcore/lib-platform/contract';
-import type { listGstRates } from '@radcore/lib-gst/contract';
+import type { listGstRates, listRcmRules } from '@radcore/lib-gst/contract';
 import type { listParties } from '@radcore/lib-accounts/contract';
 import type { listPriceListRates, listPriceLists, priceListApproval } from '@radcore/lib-sales/contract';
 import type {
@@ -27,6 +27,7 @@ export type StockItem = Items<typeof listItems>;
 export type ItemCategory = z.output<typeof listItemCategories.output>['categories'][number];
 export type ItemUnit = z.output<typeof listUnitsOfMeasure.output>['units'][number];
 export type GstRate = Items<typeof listGstRates>;
+export type RcmRule = Items<typeof listRcmRules>;
 export type Party = Items<typeof listParties>;
 export type PriceList = Items<typeof listPriceLists>;
 export type PriceRate = Items<typeof listPriceListRates>;
