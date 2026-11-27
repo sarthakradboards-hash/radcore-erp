@@ -5,6 +5,7 @@
 // with one of that category's accounts (#436): both or neither, and both on a bill of charges only, which posts to them. A job worker's charge line
 // (#408) names the job-work receipt line whose made goods it bills, how many, at what rate, and the service's SAC. Empty boxes are none. Every
 // money and tax figure is the server's: nothing is added up here.
+import type { listExpenseCategories } from '@radcore/lib-accounts/contract';
 import { createPurchaseBill, type getPurchaseBill } from '@radcore/lib-purchasing/contract';
 import { indiaDate } from '@radcore/lib-common';
 import { z } from 'zod';
@@ -99,3 +100,9 @@ export function billToForm(b: z.output<typeof getPurchaseBill.output>): BillInpu
           jobWorkReceiptLineId: l.jobWorkReceiptLineId, qty: asWritten(l.qty), rate: asPrice(l.rate), hsn: l.hsn })),
   };
 }
+
+type Category = z.output<typeof listExpenseCategories.output>['items'][number];
+/** A charge's category choices: the switched-on ones, and the line's own even if it's switched off since, so a saved
+ * draft shows what it holds; null while the categories are still loading, when no choice can be shown. */
+export const categoryChoices = (items: readonly Category[] | undefined, current: string) => (items === undefined ? null
+  : items.filter((c) => c.active || c.id === current).map((c) => ({ value: c.id, label: c.name })));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billSchema, blankBill, blankCharge } from './bill-values.ts';
+import { billSchema, blankBill, blankCharge, categoryChoices } from './bill-values.ts';
 
 const id = (n: number) => `0193b1c2-3d4e-7f80-9a1b-${String(n).padStart(12, '0')}`;
 const filled = { ...blankBill(), supplierId: id(1), businessDate: '2026-11-24', supplierInvoiceNumber: 'VM/2611/0042',
@@ -53,5 +53,17 @@ describe('a charge’s expense category (#436)', () => {
     const goods = { kind: 'goods', label: 'Cable', poLineId: id(12), receiptId: '', receiptLineId: '', qty: '5', rate: '40' };
     expect(paths([goods, charge])).toEqual([]);
     expect(paths([goods, { ...charge, expenseCategoryId: id(40) }])).toEqual(['lines.1.expenseAccountId']);
+  });
+});
+
+describe('a charge’s category choices', () => {
+  const cat = (n: number, active: boolean) => ({ id: id(n), name: `Cat ${n}`, credit: 'allowed' as const, blockedClause: null, active, accounts: [] });
+  it('are none while loading, so a saved category is never drawn as None (e2e-playwright on #450)', () => {
+    expect(categoryChoices(undefined, id(40))).toBeNull();
+  });
+  it('are the switched-on categories, and the line’s own even when switched off since', () => {
+    const items = [cat(40, false), cat(41, true), cat(42, false)];
+    expect(categoryChoices(items, id(40))?.map((c) => c.value)).toEqual([id(40), id(41)]);
+    expect(categoryChoices(items, '')?.map((c) => c.value)).toEqual([id(41)]);
   });
 });

@@ -19,7 +19,7 @@ import { t } from '../../../../lib/i18n/index.ts';
 import { asPrice, asWritten } from '../../admin/decimal.ts';
 import { PickedField } from '../../sales/picked-field.tsx';
 import { PURCHASE_MESSAGES } from '../shared.tsx';
-import { billSchema, blankCharge, type BillInput, type BillLineInput } from './bill-values.ts';
+import { billSchema, blankCharge, categoryChoices, type BillInput, type BillLineInput } from './bill-values.ts';
 
 const useSuppliers = (query: string) => useApiSearch(listParties, query, { params: { filter: { buysFrom: true, active: true } } });
 const TYPES = purchaseBillFiles.startUpload.input.shape.contentType.options;
@@ -171,12 +171,15 @@ function ChargeCategory({ index }: { index: number }) {
   const may = useMe().permissions.includes('expenses:read');
   const q = useApiQuery(listExpenseCategories, {}, { enabled: may });
   if (!may || q.error !== null) return <p className="kit-hint">{t('purchases.bill.category.hidden')}</p>;
-  const items = q.data?.items ?? [];
-  const chosen = items.find((c) => c.id === categoryId);
+  // Drawn only once the categories are in: a select drawn with "None" alone can't show a saved draft's category, and
+  // would save it unseen (e2e-playwright on #450).
+  const choices = categoryChoices(q.data?.items, categoryId);
+  if (choices === null) return <p>{t('loading')}</p>;
+  const chosen = q.data?.items.find((c) => c.id === categoryId);
   return (
     <>
       <SelectField name={`lines.${index}.expenseCategoryId`} label={t('purchases.bill.category')} hint={t('purchases.bill.category.hint')}
-        options={[{ value: '', label: t('purchases.bill.category.none') }, ...items.filter((c) => c.active || c.id === categoryId).map((c) => ({ value: c.id, label: c.name }))]} />
+        options={[{ value: '', label: t('purchases.bill.category.none') }, ...choices]} />
       {chosen === undefined ? null : (
         <SelectField name={`lines.${index}.expenseAccountId`} label={t('purchases.bill.expenseAccount')} placeholder={t('purchases.bill.expenseAccount.pick')}
           options={chosen.accounts.map((a) => ({ value: a.id, label: a.name }))} />
