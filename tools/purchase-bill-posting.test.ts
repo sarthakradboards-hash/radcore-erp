@@ -137,7 +137,7 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     receiptLineId, qty: q(qty), rate: unitPriceString().parse(rate) });
   const freight = (amount: string) => ({ kind: 'charge' as const, charge: 'freight' as const, description: 'Freight', hsn: '9965',
     amount: moneyString().parse(amount) });
-  const draft = async (at: At, o: { lines: (ReturnType<typeof goods> | (ReturnType<typeof freight> & { expenseCategoryId?: string; expenseAccountId?: string }))[]; total: string; file?: boolean; number?: string },
+  const draft = async (at: At, o: { lines: (ReturnType<typeof goods> | (ReturnType<typeof freight> & { expenseCategoryId?: string; expenseAccountId?: string; tdsSectionId?: string }))[]; total: string; file?: boolean; number?: string },
     as: Principal = at.staff) => {
     const fileId = o.file === false ? null : await file();
     return run((ctx) => addBill(ctx, { supplierId: at.supplierId, businessDate: DATE, supplierInvoiceNumber: o.number ?? `INV/${tag()}`,
@@ -222,6 +222,26 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     // The books check's figures for that receipt line (RAD-95): 248,000.00 accrued, all of it cleared by the return and bill.
     expect((await run((ctx) => grniByReceiptLine(ctx), at.staff)).filter((l) => l.receiptLineId === at.receiptLineId))
       .toEqual([{ receiptLineId: at.receiptLineId, accrued: '248000.00', open: '0.00' }]);
+  });
+
+  // RAD-158 PR 2b (ADR-009 §4): a transporter's charge deducted under 194C-O at booking. This file's suppliers have no PAN,
+  // so it's the no-PAN 20%: 8,000.00 of the 40,000.00 freight. The supplier is owed the bill less it, and a cancel reverses it.
+  it('deducts TDS on a bill’s service line at posting, the supplier owed the bill less it, and reverses it on cancel', async () => {
+    const at = await setup();
+    const [a] = (await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+      insert into radcore.accounts (name, type) select $1, 'expense' from p returning id`, [`Freight inward ${tag()}`])).rows;
+    const expenseAccountId = a?.id ?? '';
+    const { id: expenseCategoryId } = await run((ctx) => addExpenseCategory(ctx, { name: `Freight ${tag()}`, credit: 'allowed', blockedClause: null,
+      accountIds: [expenseAccountId] }), at.staff);
+    const tdsSectionId = (await su.query<{ id: string }>("select id from radcore.tds_sections where code = '194C-O'")).rows[0]?.id ?? '';
+    const { id } = await draft(at, { lines: [{ ...freight('40000'), expenseCategoryId, expenseAccountId, tdsSectionId }], total: '47200' });
+    expect((await post(at, id)).status).toBe('posted');
+    const owed = (await pool.query('select total::text, tds::text, owed::text from radcore.purchase_bills where id = $1', [id])).rows;
+    expect(owed).toEqual([{ total: '47200.00', tds: '8000.00', owed: '39200.00' }]);
+    expect((await entryOf(at, id)).filter((l) => l.startsWith('Creditors') || l.startsWith('TDS'))).toEqual(['Creditors 0.00 39200.00', 'TDS Payable 0.00 8000.00']);
+    await run((ctx) => cancelBillNow(ctx, { id, businessDate: DATE, reason: 'Entered twice' }), at.staff);
+    expect((await pool.query("select coalesce(sum(amount), 0)::numeric(18, 2)::text as v from radcore.tds_deductions where source_id = $1", [id])).rows)
+      .toEqual([{ v: '0.00' }]);
   });
 
   // RAD-158 (the architect's ruling (a)): a bill owes its total less the TDS held back, and payments apply to that. TDS is

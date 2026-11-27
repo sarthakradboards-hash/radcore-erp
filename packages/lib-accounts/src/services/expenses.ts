@@ -18,6 +18,7 @@ import { getCompanyProfile } from './company.ts';
 import { holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { holdParty } from './parties.ts';
 import { cashPaidOn } from './expense-cash.ts';
+import { bookTds, defaultTdsSection, reverseTds } from './tds-booking.ts';
 import { CASH_PAYMENT_LIMIT, moneyAccount } from './payments.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -47,7 +48,7 @@ type Party = { gstin: string | null; composition: boolean; stateCode: string };
 /** A draft's checks (ADR-009 §3): the dates, the supplier (needed on credit) and the GSTIN printed, the money account, the
  * file, and each line's category switched on with that account in it. Answers the supplier, whether it's paid in cash,
  * and each line's category's credit rule. */
-async function checkDraft(ctx: Ctx, e: Draft): Promise<{ party: Party | null; cash: boolean; blocked: boolean[] }> {
+async function checkDraft(ctx: Ctx, e: Draft): Promise<{ party: Party | null; cash: boolean; blocked: boolean[]; sections: (string | null)[] }> {
   if (e.businessDate > today()) throw refuseAt('date_in_future', 'The date is after today', ['businessDate']);
   if (e.supplierInvoiceDate > e.businessDate) {
     throw refuseAt('supplier_date_after_bill', 'The supplier’s date is after the expense’s own', ['supplierInvoiceDate']);
@@ -73,34 +74,41 @@ async function checkDraft(ctx: Ctx, e: Draft): Promise<{ party: Party | null; ca
   const cash = e.payFromAccountId === null ? false : (await moneyAccount(ctx, e.payFromAccountId)).cash;
   if (e.fileId !== null) await readyFile(ctx, 'expense_bill', e.fileId, { wrongKind: ['fileId'] });
   const pairs = await tx.select({ categoryId: expenseCategoryAccounts.categoryId, accountId: expenseCategoryAccounts.accountId,
-    credit: expenseCategories.credit, categoryActive: expenseCategories.active, accountActive: accounts.active })
+    credit: expenseCategories.credit, categoryActive: expenseCategories.active, accountActive: accounts.active,
+    defaultTds: expenseCategories.defaultTdsSectionId })
     .from(expenseCategoryAccounts).innerJoin(expenseCategories, eq(expenseCategories.id, expenseCategoryAccounts.categoryId))
     .innerJoin(accounts, eq(accounts.id, expenseCategoryAccounts.accountId))
     .where(inArray(expenseCategoryAccounts.categoryId, [...new Set(e.lines.map((l) => l.categoryId))]));
+  const categoryTds = new Map<string, string | null>();
   const blocked = e.lines.map((l, n) => {
     const pair = pairs.find((p) => p.categoryId === l.categoryId && p.accountId === l.accountId);
     if (pair === undefined) throw refuseAt('not_in_category', 'That account isn’t one this category posts to', ['lines', n, 'accountId']);
     if (!pair.categoryActive) throw refuseAt('category_inactive', 'This category is switched off', ['lines', n, 'categoryId']);
     if (!pair.accountActive) throw refuseAt('account_inactive', 'This account is switched off', ['lines', n, 'accountId']);
+    categoryTds.set(l.categoryId, pair.defaultTds);
     return pair.credit === 'blocked';
   });
-  return { party, cash, blocked };
+  // A line's TDS section (ADR-009 §4): its own (null for none), else the supplier's default, else its category's.
+  const partyDefault = await defaultTdsSection(ctx, e.supplierId);
+  const sections = e.lines.map((l) => (l.tdsSectionId !== undefined ? l.tdsSectionId : partyDefault ?? categoryTds.get(l.categoryId) ?? null));
+  return { party, cash, blocked, sections };
 }
 
 const headerOf = (e: Draft) => ({ businessDate: e.businessDate, partyId: e.supplierId, supplierInvoiceNumber: e.supplierInvoiceNumber,
   supplierInvoiceDate: e.supplierInvoiceDate, supplierGstin: e.supplierGstin, payFromAccountId: e.payFromAccountId, statedTotal: e.statedTotal,
   // What the supplier is owed: the whole on credit, nothing when paid at once (ck_expenses_owed).
   total: e.payFromAccountId === null ? e.statedTotal : roundMoney('0'), fileId: e.fileId, notes: e.notes });
-const linesOf = (id: string, e: Draft) => e.lines.map((l, i) => ({ expenseId: id, lineNo: i + 1, categoryId: l.categoryId, accountId: l.accountId,
-  description: l.description, taxable: l.taxable, gstRate: l.gstRate, cgst: l.cgst, sgst: l.sgst, igst: l.igst }));
+const linesOf = (id: string, e: Draft, sections: readonly (string | null)[]) => e.lines.map((l, i) => ({ expenseId: id, lineNo: i + 1,
+  categoryId: l.categoryId, accountId: l.accountId, description: l.description, taxable: l.taxable, gstRate: l.gstRate, cgst: l.cgst, sgst: l.sgst,
+  igst: l.igst, tdsSectionId: sections[i] ?? null }));
 
 /** POST /expenses: a new draft. */
 export async function addExpense(ctx: Ctx, e: Draft): Promise<Out<typeof createExpense>> {
-  await checkDraft(ctx, e);
+  const { sections } = await checkDraft(ctx, e);
   const tx = accountsTx(ctx);
   const [row] = await tx.insert(expenses).values(headerOf(e)).returning({ id: expenses.id });
   const id = row?.id ?? '';
-  await tx.insert(expenseLines).values(linesOf(id, e));
+  await tx.insert(expenseLines).values(linesOf(id, e, sections));
   return { id };
 }
 
@@ -108,11 +116,11 @@ export async function addExpense(ctx: Ctx, e: Draft): Promise<Out<typeof createE
 export async function changeExpense(ctx: Ctx, { id, ...e }: In<typeof replaceExpense>): Promise<Out<typeof replaceExpense>> {
   const row = await expenseOf(ctx, id, 'expenses:write', true);
   if (row.status !== 'draft') throw wrongStatus(row.status, 'changed');
-  await checkDraft(ctx, e);
+  const { sections } = await checkDraft(ctx, e);
   const tx = accountsTx(ctx);
   await tx.update(expenses).set(headerOf(e)).where(eq(expenses.id, id));
   await tx.delete(expenseLines).where(eq(expenseLines.expenseId, id));
-  await tx.insert(expenseLines).values(linesOf(id, e));
+  await tx.insert(expenseLines).values(linesOf(id, e, sections));
   return {};
 }
 
@@ -131,7 +139,7 @@ const draftOf = async (ctx: Ctx, e: Row): Promise<{ draft: Draft; lines: (typeof
   return { lines, draft: { businessDate: e.businessDate, supplierId: e.partyId, supplierInvoiceNumber: e.supplierInvoiceNumber,
     supplierInvoiceDate: e.supplierInvoiceDate, supplierGstin: e.supplierGstin, payFromAccountId: e.payFromAccountId, statedTotal: m(e.statedTotal),
     fileId: e.fileId, notes: e.notes, lines: lines.map((l) => ({ categoryId: l.categoryId, accountId: l.accountId, description: l.description,
-      taxable: m(l.taxable), gstRate: l.gstRate as never, cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst) })) } };
+      taxable: m(l.taxable), gstRate: l.gstRate as never, cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst), tdsSectionId: l.tdsSectionId })) } };
 };
 
 /** Each head as printed against the rate on the taxable value, within the round-off (`tax_mismatch`): CGST and SGST at
@@ -165,7 +173,7 @@ async function post(ctx: Ctx, id: string, approved: boolean): Promise<Out<typeof
   const e = await expenseOf(ctx, id, key, true);
   if (e.status !== 'draft') throw wrongStatus(e.status, 'posted');
   const { draft, lines } = await draftOf(ctx, e);
-  const { party, cash, blocked } = await checkDraft(ctx, draft);
+  const { party, cash, blocked, sections } = await checkDraft(ctx, draft);
   if (e.fileId === null) throw refuseAt('bill_file_required', 'Attach the supplier’s bill before posting it', ['fileId']);
   for (const [n, l] of draft.lines.entries()) {
     if (!taxFits(l)) throw refuseAt('tax_mismatch', 'The tax on this line doesn’t match its rate on the taxable value', ['lines', n]);
@@ -195,9 +203,16 @@ async function post(ctx: Ctx, id: string, approved: boolean): Promise<Out<typeof
     ...signed({ system: 'input_cgst' }, claimed('cgst')), ...signed({ system: 'input_sgst' }, claimed('sgst')),
     ...signed({ system: 'input_igst' }, claimed('igst')),
     ...signed({ system: 'round_off' }, roundOff),
-    e.payFromAccountId === null ? { account: { system: 'creditors' }, partyId: e.partyId ?? '', credit: roundMoney(e.statedTotal) }
-      : { account: { id: e.payFromAccountId }, credit: roundMoney(e.statedTotal) },
   ];
+  // TDS on the lines with a section (ADR-009 §4, F12): booked here, the party's row after the expense's; the supplier or
+  // the cash is the bill less it, the rest to TDS Payable.
+  const tds = await bookTds(ctx, { table: SOURCE, id, partyId: e.partyId, businessDate: e.businessDate }, lines.flatMap((l, i) => {
+    const s = sections[i];
+    return s == null ? [] : [{ lineId: l.id, sectionId: s, base: l.taxable, payable: roundMoney(dec(l.taxable).plus(heads(l))), path: ['lines', i] }];
+  }));
+  const net = roundMoney(dec(e.statedTotal).minus(dec(tds.total)));
+  entryLines.push(...signed({ system: 'tds_payable' }, dec(tds.total).negated()),
+    e.payFromAccountId === null ? { account: { system: 'creditors' }, partyId: e.partyId ?? '', credit: net } : { account: { id: e.payFromAccountId }, credit: net });
   // The lines' credit while it's a draft (guard_document_line), then the journal's and the expenses' series, last.
   for (const [i, l] of lines.entries()) {
     const c = credits[i];
@@ -209,13 +224,14 @@ async function post(ctx: Ctx, id: string, approved: boolean): Promise<Out<typeof
   await holdSeries(ctx, [JOURNAL_SERIES, EXPENSE_SERIES]);
   const number = await nextNumber(ctx, EXPENSE_SERIES, e.businessDate);
   const entry = await postEntry(ctx, { kind: 'expense', businessDate: e.businessDate, source: { table: SOURCE, id }, lines: entryLines });
-  await tx.update(expenses).set({ status: 'posted', number, postedEntryId: entry.id }).where(eq(expenses.id, id));
+  await tx.update(expenses).set({ status: 'posted', number, postedEntryId: entry.id, tds: tds.total,
+    total: e.payFromAccountId === null ? net : roundMoney('0') }).where(eq(expenses.id, id));
   return { status: 'posted', number };
 }
 
 type Version = { businessDate: string; partyId: string | null; payFromAccountId: string | null; statedTotal: string; fileId: string | null;
   supplierGstin: string | null; supplierInvoiceNumber: string; supplierInvoiceDate: string;
-  lines: { categoryId: string; accountId: string; taxable: string; cgst: string; sgst: string; igst: string }[] };
+  lines: { categoryId: string; accountId: string; taxable: string; cgst: string; sgst: string; igst: string; tdsSectionId: string | null }[] };
 /** What an owner approves for cash past the limit (ADR-007 §8): the expense's figures and lines, the row locked while
  * they're read. Its approval posts the expense, past the limit. */
 export const expenseCashSpec: ApprovalSpec<Version> = {
@@ -230,7 +246,8 @@ export const expenseCashSpec: ApprovalSpec<Version> = {
     const m = (v: string) => roundMoney(v);
     return { businessDate: e.businessDate, partyId: e.partyId, payFromAccountId: e.payFromAccountId, statedTotal: m(e.statedTotal), fileId: e.fileId,
       supplierGstin: e.supplierGstin, supplierInvoiceNumber: e.supplierInvoiceNumber, supplierInvoiceDate: e.supplierInvoiceDate,
-      lines: lines.map((l) => ({ categoryId: l.categoryId, accountId: l.accountId, taxable: m(l.taxable), cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst) })) };
+      lines: lines.map((l) => ({ categoryId: l.categoryId, accountId: l.accountId, taxable: m(l.taxable), cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst),
+        tdsSectionId: l.tdsSectionId })) };
   },
   // The period's locks first, before the engine locks the expense, refusing nothing; posting checks under the same locks.
   async lockFirst(ctx) {
@@ -254,6 +271,7 @@ export async function cancelExpenseNow(ctx: Ctx, c: In<typeof cancelExpense>): P
   if (e.status !== 'posted' || e.postedEntryId === null) throw wrongStatus(e.status, 'cancelled');
   if (c.businessDate < e.businessDate) throw refuseAt('date_before_source', 'A cancellation is dated on or after what it cancels', ['businessDate']);
   const mirror = await reverseEntry(ctx, { entryId: e.postedEntryId, businessDate: c.businessDate, reason: c.reason });
+  await reverseTds(ctx, { table: SOURCE, id: e.id, businessDate: c.businessDate });
   await accountsTx(ctx).update(expenses).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
     cancelReason: c.reason, cancelEntryId: mirror.id }).where(eq(expenses.id, e.id));
   return {};
@@ -276,7 +294,7 @@ export async function listExpensesPage(ctx: Ctx, input: In<typeof listExpenses>)
 
 const headerOut = (r: Row, waiting: boolean) => ({ id: r.id, number: r.number, status: r.status as 'draft', businessDate: r.businessDate,
   supplierId: r.partyId, supplierInvoiceNumber: r.supplierInvoiceNumber, statedTotal: roundMoney(r.statedTotal), onCredit: r.payFromAccountId === null,
-  awaitingApproval: waiting, createdAt: isoMoment(r.createdAt) });
+  awaitingApproval: waiting, tds: roundMoney(r.tds), createdAt: isoMoment(r.createdAt) });
 
 /** GET /expenses/:id: with its lines and, once posted, each line's credit. */
 export async function getExpenseById(ctx: Ctx, { id }: In<typeof getExpense>): Promise<Out<typeof getExpense>> {
@@ -288,6 +306,6 @@ export async function getExpenseById(ctx: Ctx, { id }: In<typeof getExpense>): P
     payFromAccountId: e.payFromAccountId, fileId: e.fileId, notes: e.notes, cancelReason: e.cancelReason,
     lines: lines.map((l) => ({ id: l.id, lineNo: l.lineNo, categoryId: l.categoryId, accountId: l.accountId, description: l.description,
       taxable: m(l.taxable), gstRate: l.gstRate as never, cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst),
-      credit: l.creditCgst === null ? null : { cgst: m(l.creditCgst), sgst: m(l.creditSgst ?? '0'), igst: m(l.creditIgst ?? '0'),
+      tdsSectionId: l.tdsSectionId, credit: l.creditCgst === null ? null : { cgst: m(l.creditCgst), sgst: m(l.creditSgst ?? '0'), igst: m(l.creditIgst ?? '0'),
         reason: l.creditReason as 'state' | null } })) };
 }

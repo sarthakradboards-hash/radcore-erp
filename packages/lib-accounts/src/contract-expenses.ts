@@ -22,6 +22,8 @@ const CLAUSE_FITS = { message: 'A blocked category names its clause of section 1
 
 const category = z.object({
   id: idString(), name: z.string(), credit: z.enum(EXPENSE_CREDIT), blockedClause: z.string().nullable(), active: z.boolean(),
+  /** The TDS section its lines take when their supplier names none (ADR-009 §4). */
+  defaultTdsSectionId: idString().nullable(),
   accounts: z.array(z.object({ id: idString(), code: z.string().nullable(), name: z.string() })),
 });
 
@@ -37,7 +39,7 @@ export const listExpenseCategories = defineContract({
 export const createExpenseCategory = defineContract({
   method: 'POST', path: '/expense-categories', auth: 'session', perm: 'accounts:write', tx: write,
   input: z.object({ name: name(), credit: z.enum(EXPENSE_CREDIT), blockedClause: clause().nullable(),
-    accountIds: accountIds() }).refine(clauseFits, CLAUSE_FITS),
+    accountIds: accountIds(), defaultTdsSectionId: idString().nullable().optional() }).refine(clauseFits, CLAUSE_FITS),
   output: z.object({ id: idString() }),
   errors: ['name_taken', 'not_an_expense_account'],
 });
@@ -47,8 +49,9 @@ export const createExpenseCategory = defineContract({
 export const setExpenseCategory = defineContract({
   method: 'PATCH', path: '/expense-categories/:id', auth: 'session', perm: 'accounts:write', tx: write,
   input: z.object({ id: idString(), name: name().optional(), credit: z.enum(EXPENSE_CREDIT).optional(), blockedClause: clause().nullable().optional(),
-    accountIds: accountIds().optional(), active: z.boolean().optional(), reason: reason() })
-    .refine((c) => c.name !== undefined || c.credit !== undefined || c.blockedClause !== undefined || c.accountIds !== undefined || c.active !== undefined,
+    accountIds: accountIds().optional(), active: z.boolean().optional(), defaultTdsSectionId: idString().nullable().optional(), reason: reason() })
+    .refine((c) => c.name !== undefined || c.credit !== undefined || c.blockedClause !== undefined || c.accountIds !== undefined || c.active !== undefined
+      || c.defaultTdsSectionId !== undefined,
       'Change something')
     .refine(clauseFits, CLAUSE_FITS),
   output: z.object({}),
@@ -63,6 +66,8 @@ const gstin = () => z.string().regex(/^[0-9]{2}[A-Z0-9]{13}$/, 'A GSTIN is 15 ch
 const line = z.object({
   categoryId: idString(), accountId: idString(), description: z.string().trim().min(1).max(100).nullable(),
   taxable: moneyString(), gstRate: percentString(), cgst: moneyString(), sgst: moneyString(), igst: moneyString(),
+  /** Its TDS section (ADR-009 §4): left out, the supplier's default, else its category's; null for none. */
+  tdsSectionId: idString().nullable().optional(),
 });
 /** CGST and SGST are equal halves, and IGST stands alone (ck_expense_lines_heads; the auditor on #435). */
 const headsFit = (l: z.output<typeof line>) => dec(l.cgst).eq(dec(l.sgst)) && (dec(l.igst).isZero() || dec(l.cgst).isZero());
@@ -78,7 +83,9 @@ const expenseIn = z.object({
 const credit = z.object({ cgst: moneyString(), sgst: moneyString(), igst: moneyString(), reason: z.enum(['supplier_kind', 'blocked', 'state']).nullable() });
 const header = z.object({
   id: idString(), number: z.string().nullable(), status, businessDate: dateString(), supplierId: idString().nullable(),
-  supplierInvoiceNumber: z.string(), statedTotal: moneyString(), onCredit: z.boolean(), awaitingApproval: z.boolean(), createdAt: momentString(),
+  supplierInvoiceNumber: z.string(), statedTotal: moneyString(), onCredit: z.boolean(), awaitingApproval: z.boolean(),
+  /** The TDS held back at posting (0 for a draft). */
+  tds: moneyString(), createdAt: momentString(),
 });
 const expense = header.extend({
   supplierInvoiceDate: dateString(), supplierGstin: z.string().nullable(), payFromAccountId: idString().nullable(), fileId: idString().nullable(),
@@ -89,7 +96,7 @@ const expense = header.extend({
 const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'needs_supplier', 'not_a_supplier', 'gstin_mismatch', 'not_money_account',
   'account_inactive', 'unknown_account', 'category_inactive', 'not_in_category', 'wrong_file_kind', 'upload_refused', 'not_ready'] as const;
 const POST_ERRORS = [...DRAFT_ERRORS, 'wrong_status', 'bill_file_required', 'tax_mismatch', 'total_mismatch', 'period_locked', 'year_not_open',
-  'company_profile_incomplete', 'series_full'] as const;
+  'company_profile_incomplete', 'series_full', 'tds_needs_party', 'tds_overseas', 'no_tds_rate'] as const;
 
 /** GET /expenses (expenses:read): newest business date first, a page at a time; by status. */
 export const listExpenses = defineContract({

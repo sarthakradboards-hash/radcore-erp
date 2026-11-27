@@ -10,20 +10,21 @@
 //     accrued; an accepted part's goes to stock across the sellable places holding the item, and to cost of goods sold
 //     for what's gone (ADR-006 §4); a billed reject's onto its rejects place
 import { purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purchasing';
-import { getPartyById, holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
-import { dec, indiaDate, roundMoney, roundQty, type Decimal, type Money } from '@radcore/lib-common';
+import { getPartyById, holdPeriod, reverseTds, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
+import { dec, indiaDate, roundMoney, roundQty, type Decimal } from '@radcore/lib-common';
 import { AppError, holdSeries, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
 import { creditFrom, inputCredit, supplierKind } from '@radcore/lib-gst';
 import { holdStock, jobWorkLinesFor, postStock, quantitiesAt, revaluesOf, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import type { cancelPurchaseBill, postPurchaseBill } from '../contract.ts';
 import {
-  amountsOf, BILL_SERIES, checkStated, BILL_TOLERANCE, billOf, checkDraft, holdOrders, overPoRate, wrongStatus, type BillIn, type In, type Out, type Row,
+  amountsOf, BILL_SERIES, checkStated, BILL_TOLERANCE, billOf, checkDraft, holdOrders, inputOf, overPoRate, wrongStatus, type In, type Out, type Row,
 } from './bill-checks.ts';
 import { accrued, jobWorkAccruals, type Accrual } from './bill-job-work.ts';
 import { billedQty } from './billed.ts';
 import { receiptLinesFor } from './receipt-lines.ts';
 import { billDebited, returnedOf } from './received.ts';
+import { billTds } from './bill-tds.ts';
 import { buyingFrom } from './suppliers.ts';
 
 type Line = typeof purchaseBillLines.$inferSelect;
@@ -46,18 +47,6 @@ async function holdSources(ctx: Ctx, lines: readonly Line[]): Promise<ReceiptLin
   await jobWorkLinesFor(ctx, lines.flatMap((l) => (l.jobWorkReceiptLineId === null ? [] : [l.jobWorkReceiptLineId])), { lock: 'update' });
   return receipts;
 }
-
-/** The stored draft as its save sent it, for the draft's checks again. */
-const inputOf = (b: Row, lines: readonly Line[]): BillIn => ({ supplierId: b.partyId, businessDate: b.businessDate,
-  supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate, supplierGstin: b.supplierGstin,
-  statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes,
-  lines: lines.map((l) => (l.kind === 'goods'
-    ? { kind: 'goods' as const, poLineId: l.poLineId ?? '', receiptLineId: l.receiptLineId, qty: (l.qty ?? '0') as never, rate: (l.rate ?? '0') as never }
-    : l.kind === 'job_work'
-      ? { kind: 'job_work' as const, jobWorkReceiptLineId: l.jobWorkReceiptLineId ?? '', qty: (l.qty ?? '0') as never, rate: (l.rate ?? '0') as never,
-        hsn: l.hsn ?? '' }
-      : { kind: 'charge' as const, charge: (l.charge ?? 'other') as 'other', description: l.description ?? '', hsn: l.hsn ?? '', amount: (l.amount ?? '0') as Money,
-        expenseCategoryId: l.expenseCategoryId, expenseAccountId: l.expenseAccountId })) });
 
 type Judged = Awaited<ReturnType<typeof judge>>;
 
@@ -238,8 +227,10 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     ...signed({ system: 'rcm_cgst' }, owed('cgst').negated()), ...signed({ system: 'rcm_sgst' }, owed('sgst').negated()),
     ...signed({ system: 'rcm_igst' }, owed('igst').negated()),
     ...signed({ system: 'round_off' }, dec(t.roundOff)),
-    { account: { system: 'creditors' }, partyId: b.partyId, credit: t.total },
   ];
+  // TDS on its service lines (ADR-009 §4): the party's row, then Creditors for the bill less it.
+  const tds = await billTds(ctx, { ...b, total: t.total }, lines, j.amounts.lines);
+  entryLines.push(...tds.entryLines);
   // The journal's and the bills' series last (ADR-006 §1): the number is the save's last step.
   await holdSeries(ctx, [JOURNAL_SERIES, BILL_SERIES]);
   const number = await nextNumber(ctx, BILL_SERIES, b.businessDate);
@@ -259,7 +250,7 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     }
   }
   await tx.update(purchaseBills).set({ status: 'posted', number, postedEntryId: entry.id, placeOfSupply: j.amounts.placeOfSupply,
-    taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, roundOff: t.roundOff, total: t.total }).where(eq(purchaseBills.id, b.id));
+    taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, roundOff: t.roundOff, total: t.total, tds: tds.tds }).where(eq(purchaseBills.id, b.id));
   return number;
 }
 
@@ -288,7 +279,8 @@ export const billApproval: ApprovalSpec<Version> = {
     return { supplierId: b.partyId, businessDate: b.businessDate, supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate,
       statedTotal: b.statedTotal, fileId: b.fileId, total: worked?.totals.total ?? null,
       lines: lines.map((l) => ({ kind: l.kind, poLineId: l.poLineId, receiptLineId: l.receiptLineId, jobWorkReceiptLineId: l.jobWorkReceiptLineId,
-        qty: l.qty, rate: l.rate, hsn: l.hsn, amount: l.amount, expenseCategoryId: l.expenseCategoryId, expenseAccountId: l.expenseAccountId })) };
+        qty: l.qty, rate: l.rate, hsn: l.hsn, amount: l.amount, expenseCategoryId: l.expenseCategoryId, expenseAccountId: l.expenseAccountId,
+        tdsSectionId: l.tdsSectionId })) };
   },
   async lockFirst(ctx, id) {
     await lockPeriod(ctx);
@@ -393,6 +385,8 @@ export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<t
   // the mirror (which draws the journal's number), then posts its own entry, which the mirror mustn't reverse.
   const own = await undoDifference(ctx, b, await linesOf(ctx, id), businessDate,
     async () => (await reverseEntriesOf(ctx, { source: { table: SOURCE, id }, businessDate, reason }))[0]);
+  // Its TDS rows reversed, so the year's sums leave it out (ADR-009 §4).
+  await reverseTds(ctx, { table: SOURCE, id, businessDate });
   await purchasingTx(ctx).update(purchaseBills).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
     cancelReason: reason, cancelEntryId: own?.id ?? null }).where(eq(purchaseBills.id, id));
   return {};

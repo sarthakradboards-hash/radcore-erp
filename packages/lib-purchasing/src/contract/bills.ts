@@ -31,11 +31,13 @@ const chargeIn = z.object({ kind: z.literal('charge'), charge: z.enum(['freight'
   description: z.string().trim().min(1).max(100), hsn: hsn(), amount: moneyString(),
   /** Its expense category and one of that category's accounts, both or neither (ADR-009 §2, RAD-152): the category's
    * credit rule, and, on a bill of charges only (a transporter's, say), where it posts. Required there at posting. */
-  expenseCategoryId: idString().nullable().optional(), expenseAccountId: idString().nullable().optional() });
+  expenseCategoryId: idString().nullable().optional(), expenseAccountId: idString().nullable().optional(),
+  /** Its TDS section (ADR-009 §4): left out, the supplier's default, else its category's; null for none. */
+  tdsSectionId: idString().nullable().optional() });
 /** A job worker's charge (ADR-008 §11, RAD-142): the job-work receipt line whose made goods it bills, how many, at what
  * rate before tax, and the service's SAC, as the job worker's bill says. */
 const jobWorkIn = z.object({ kind: z.literal('job_work'), jobWorkReceiptLineId: idString(), qty: quantityString(), rate: unitPriceString(),
-  hsn: hsn() });
+  hsn: hsn(), tdsSectionId: idString().nullable().optional() });
 const lineIn = z.discriminatedUnion('kind', [goodsIn, chargeIn, jobWorkIn]);
 /** A line's tax, worked out by lib-gst from the bill's own lines at the rates in force on the supplier's invoice date,
  * never at the PO's (RC-056): on read while a draft, stored when posted. */
@@ -78,6 +80,8 @@ const bill = header.extend({
   /** The supplier's bill itself (file kind purchase_bill); a bill posts only with it (RC-172). */
   fileId: idString().nullable(),
   notes: z.string().nullable(), amounts, lines: z.array(lineOut),
+  /** The TDS held back at posting (0 for a draft); the bill owes its total less it (RAD-158). */
+  tds: moneyString(),
   /** Whether the charges, as a share of the goods' value, are past the tolerance. */
   chargesOverTolerance: z.boolean(),
   cancelReason: z.string().nullable(),
@@ -97,7 +101,7 @@ const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'unknown_par
 // What posting adds: the dates (ADR-008 §4), the file, the duplicate, the three-way match, the tax and stated total, the
 // approved version still holding, and the series.
 const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'date_before_source', 'bill_file_required', 'goods_not_received',
-  'over_received', 'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'rcm_bill_has_tax', 'nothing_to_revalue', 'account_inactive', 'version_changed', 'series_full', 'charge_needs_category'] as const;
+  'over_received', 'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'rcm_bill_has_tax', 'nothing_to_revalue', 'account_inactive', 'version_changed', 'series_full', 'charge_needs_category', 'tds_overseas', 'no_tds_rate'] as const;
 // The duplicate check is the database's: a partial unique index on (party, the invoice's financial year, its key) over
 // every bill that isn't cancelled, drafts too (ADR-008 §7), so a draft's save meets it as posting does.
 const BILL_DB_ERRORS = {
@@ -147,7 +151,7 @@ export const postPurchaseBill = defineContract({
 export const purchaseBillApproval = approvalContracts('purchase-bill', 'bills:approve',
   ['wrong_status', 'year_not_open', 'period_locked', 'date_before_source', 'not_a_supplier', 'gstin_mismatch', 'over_received',
     'receipt_not_posted', 'duplicate_bill', 'goods_not_received', 'bill_file_required', 'not_this_po_line', 'unknown_receipt_line',
-    'nothing_to_revalue', 'account_inactive', 'not_in_category', 'category_inactive', 'overseas_services_only',
+    'nothing_to_revalue', 'account_inactive', 'not_in_category', 'category_inactive', 'tds_overseas', 'no_tds_rate', 'overseas_services_only',
     'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'rcm_bill_has_tax', 'series_full'], BILL_DB_ERRORS);
 /** Cancels a posted bill by a mirror entry dated `businessDate`, with the reason: only while nothing is applied to it
  * and no supplier return has debited it. */
