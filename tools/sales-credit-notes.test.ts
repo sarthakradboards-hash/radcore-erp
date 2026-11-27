@@ -214,6 +214,8 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
   it('posts a note past section 34’s limit to GST Borne on Late Credit Notes (F25)', async () => {
     const approver = await approverWith(['credit_notes:approve']);
     const at = await setup({ on: '2026-03-10', stock: '1', stockRate: '61250', rate: '80000', sold: '1' });
+    // The notes are dated in 2026-27, which no other test may have opened yet in a shuffled run.
+    await run((ctx) => openFinancialYear(ctx, DATE));
     const out = await inBooks(async (ctx) => {
       const inv = await invoice(ctx, at);
       const inTime = await valueOff(ctx, at, inv, '1000', DATE);
@@ -301,44 +303,77 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
 
   // ADR-006 §1 for a save that posts several documents (the architect on RAD-115): a note with a counter refund draws CN
   // and PV, against key order, so it takes JV's, PV's and CN's turns up front, after its stock. Forced: while another
-  // save holds PV's turn, the approval waits on it holding JV's and not CN's; then both post, numbered. The approval runs
-  // on its own named connection, so the probe reads its locks, not another file's save waiting on PV too.
+  // save holds PV's turn, the approval waits for it holding JV's and not CN's; then both post, numbered. The approval runs
+  // on its own named connection, and the probe reads the turn it waits for and those it holds from its own locks
+  // (turnsHeldBy). PV and JV are every file's turns: another file's save that takes JV and then queues behind our PV puts
+  // the approval behind it on JV, and the forced state never comes (Refs RAD-114: red on dev in parallel runs, CI
+  // 45361152374). So the approval first waits on its stock (this test's own item, where the goods come back, locked just
+  // before the series), PV is taken only then, and the stock let go: from there it reaches JV at once, or queues for it
+  // behind other saves and then reaches PV. One that got JV first and waits for our PV would hold it there: then the run
+  // ends, and starts again on a new note once no one is queued for PV's turn, up to five times.
   it('takes its series’ turns up front, in order, when its counter refund draws a second number', async () => {
     const approver = await approverWith(['credit_notes:approve']);
-    const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
-    const asked = await run(async (ctx) => {
-      const inv = await invoice(ctx, at);
-      const cash = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'cash'`))[0]?.id ?? '';
-      const receipt = await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('1221'), accountId: cash });
-      await allocatePayment(ctx, { id: receipt.id, businessDate: DATE, lines: [{ documentTable: 'invoices', documentId: inv.id, amount: m('1221') }] });
-      const { id } = await goodsBack(ctx, at, inv, '1', { refund: { amount: '407', accountId: cash } });
-      return { noteId: id, ...await askCreditNoteApproval(ctx, { id }) };
-    });
-    const name = `credit-note-turns-${tag()}`;
-    const own = new pg.Pool({ connectionString: url, max: 1, application_name: name });
-    const holder = await su.connect();
-    try {
-      await holder.query('begin');
-      await holder.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`numbering.${PAYMENT_SERIES.key}`]);
-      const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]?.pid;
-      const approved = failure(runInTransaction(createDatabase(own), WRITE, approver, randomUUID(), (ctx) => decideApproval(ctx,
-        creditNoteApprovalSpec, asked.id, { decision: 'approve', versionHash: asked.versionHash })));
-      const waiter = async () => (await su.query<{ pid: number }>(`select pid from pg_stat_activity
-        where application_name = $1 and $2 = any(pg_blocking_pids(pid))`, [name, pid])).rows[0]?.pid;
-      await vi.waitFor(async () => expect(await waiter()).toBeDefined(), { timeout: 10_000 });
-      const waiting = await waiter();
-      const held = [await turnsHeldBy(su, waiting, [JOURNAL_SERIES.key]), await turnsHeldBy(su, waiting, [CREDIT_NOTE_SERIES.key])];
-      await holder.query('commit');
-      const done = await approved;
-      const { rows: [posted] } = await su.query<{ note: string | null; refund: string | null }>(`select n.number as note, p.number as refund
-        from radcore.credit_notes n join radcore.payments p on p.credit_table = 'credit_notes' and p.credit_id = n.id where n.id = $1`, [asked.noteId]);
-      expect([held, done, posted?.note != null, posted?.refund != null]).toEqual([[1, 0], 'ok', true, true]);
-    } finally {
-      await holder.query('rollback').catch(() => undefined);
-      holder.release();
-      await own.end();
+    const forced = async () => {
+      const at = await setup({ gst: '18', stock: '10', stockRate: '200', rate: '345', sold: '3' });
+      const asked = await run(async (ctx) => {
+        const inv = await invoice(ctx, at);
+        const cash = (await rows<{ id: string }>(ctx, sql`select id from radcore.accounts where system_key = 'cash'`))[0]?.id ?? '';
+        const receipt = await recordPayment(ctx, { kind: 'receipt', partyId: at.partyId, businessDate: DATE, amount: m('1221'), accountId: cash });
+        await allocatePayment(ctx, { id: receipt.id, businessDate: DATE, lines: [{ documentTable: 'invoices', documentId: inv.id, amount: m('1221') }] });
+        const { id } = await goodsBack(ctx, at, inv, '1', { refund: { amount: '407', accountId: cash } });
+        return { noteId: id, ...await askCreditNoteApproval(ctx, { id }) };
+      });
+      const name = `credit-note-turns-${tag()}`;
+      const own = new pg.Pool({ connectionString: url, max: 1, application_name: name });
+      // Its own connection: su's two are the holder's and the probes'.
+      const gate = new pg.Client({ connectionString: superUrl });
+      await gate.connect();
+      const holder = await su.connect();
+      try {
+        await gate.query('begin');
+        await gate.query('select 1 from radcore.stock_positions where item_id = $1 and location_id = $2 for update', [at.itemId, at.placeId]);
+        const gatePid = (await gate.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]?.pid;
+        const approved = failure(runInTransaction(createDatabase(own), WRITE, approver, randomUUID(), (ctx) => decideApproval(ctx,
+          creditNoteApprovalSpec, asked.id, { decision: 'approve', versionHash: asked.versionHash })));
+        await vi.waitFor(async () => expect((await su.query(`select 1 from pg_stat_activity where application_name = $1
+          and $2 = any(pg_blocking_pids(pid))`, [name, gatePid])).rowCount).toBe(1), { timeout: 10_000 });
+        await holder.query('begin');
+        await holder.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`numbering.${PAYMENT_SERIES.key}`]);
+        await gate.query('commit');
+        // The approval, once it waits for a series' turn: PV's, behind our holder, or JV's, behind another file's save.
+        const waiter = async () => (await su.query<{ pid: number }>(`select a.pid from pg_stat_activity a
+          where a.application_name = $1 and exists (select 1 from pg_locks l where l.pid = a.pid and l.locktype = 'advisory' and not l.granted)`,
+        [name])).rows[0]?.pid;
+        // It may queue for JV first, behind other files' saves, before it reaches PV: wait for PV's turn itself. If it never
+        // comes, the save ahead of it on JV wants our PV, and this run starts again.
+        const onPv = await vi.waitFor(async () => expect(await turnsHeldBy(su, await waiter(), [PAYMENT_SERIES.key], { waiting: true })).toBe(1),
+          { timeout: 15_000, interval: 50 }).then(() => true, () => false);
+        const waiting = await waiter();
+        const held = [await turnsHeldBy(su, waiting, [JOURNAL_SERIES.key]), await turnsHeldBy(su, waiting, [CREDIT_NOTE_SERIES.key])];
+        await holder.query('commit');
+        const done = await approved;
+        const { rows: [posted] } = await su.query<{ note: string | null; refund: string | null }>(`select n.number as note, p.number as refund
+          from radcore.credit_notes n join radcore.payments p on p.credit_table = 'credit_notes' and p.credit_id = n.id where n.id = $1`, [asked.noteId]);
+        return { onPv, outcome: [held, done, posted?.note != null, posted?.refund != null] };
+      } finally {
+        await gate.query('rollback').catch(() => undefined);
+        await gate.end();
+        await holder.query('rollback').catch(() => undefined);
+        holder.release();
+        await own.end();
+      }
+    };
+    // No one queued for PV's turn: whoever held JV and wanted PV has had it.
+    const pvClear = async () => expect((await su.query<{ n: number }>(`select count(*)::int n from pg_locks where locktype = 'advisory'
+      and not granted and objsubid = 1 and classid::bigint = (hashtextextended($1, 0) >> 32) & 4294967295
+      and objid::bigint = hashtextextended($1, 0) & 4294967295`, [`numbering.${PAYMENT_SERIES.key}`])).rows[0]?.n).toBe(0);
+    let tried = await forced();
+    for (let n = 1; n < 5 && !tried.onPv; n += 1) {
+      await vi.waitFor(pvClear, { timeout: 20_000, interval: 200 });
+      tried = await forced();
     }
-  });
+    expect(tried).toEqual({ onPv: true, outcome: [[1, 0], 'ok', true, true] });
+  }, 120_000);
 
   // RC-128: a serialised unit sold on the invoice comes back `returned`: ours again, its sale cleared. RC-207: the
   // note's cancellation sends it out again at the value it came back at, and is refused while the note is applied.
