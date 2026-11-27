@@ -48,3 +48,18 @@ it('asks again while the file is still being checked, and passes any other refus
   await expect(importWhenChecked(async () => { calls += 1; throw other; }, 10, wait)).rejects.toBe(other);
   expect(calls).toBe(1);
 });
+
+it('imports exactly once after a not_ready: the retry that succeeds is the last send', async () => {
+  const notReady = new ApiError(422, { code: 'not_ready', message: 'Still being checked', issues: [] } as never);
+  const imported: string[] = [];
+  let calls = 0;
+  const send = async () => {
+    calls += 1;
+    if (calls === 1) throw notReady;
+    imported.push(`import-${calls}`);
+    return { id: `import-${calls}` };
+  };
+  await expect(importWhenChecked(send, 10, async () => {})).resolves.toEqual({ id: 'import-2' });
+  expect(imported).toEqual(['import-2']);
+  expect(calls).toBe(2);
+});
