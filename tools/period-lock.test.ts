@@ -5,7 +5,7 @@
 // of its own: the period lock is one row, and these tests commit moves of it that every other file's postings would meet.
 import { randomUUID } from 'node:crypto';
 import {
-  askToUnlock, closeYear, moveLockForward, openFinancialYear, periodState, periodUnlockSpec, postManualJournal, type JournalLine,
+  askToUnlock, closeYear, moveLockForward, openFinancialYear, periodState, periodUnlockSpec, postManualJournal, type BooksCheck, type JournalLine,
 } from '@radcore/lib-accounts';
 import type { Money } from '@radcore/lib-common';
 import { decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -84,7 +84,7 @@ describe.skipIf(!adminUrl)('the period lock and year close', { timeout: 60_000 }
     const clerk = await user('accounts');
     const owner = await user('owner');
     const fees = { id: (await su().query<{ id: string }>("select id from radcore.accounts where name = 'Professional Fees'")).rows[0]?.id ?? '' };
-    const close = (start: string, ticks = TICKS, check = (c: Ctx, asAt: string) => checkBooks(c, { asAt }).then((r) => r.problems)) =>
+    const close = (start: string, ticks = TICKS, check: BooksCheck = (c, asAt) => checkBooks(c, { asAt }).then((r) => r.problems)) =>
       as(clerk)((ctx) => closeYear(ctx, { start, ticks, reason: 'Year end' }, check));
     const lock = (through: string) => code(as(clerk)((ctx) => moveLockForward(ctx, { through, reason: 'Month end' })));
 
