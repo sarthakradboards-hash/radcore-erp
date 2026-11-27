@@ -482,6 +482,7 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       'GET /parties/:id/statement': { from: DATE, to: DATE },
       'GET /sales/price': { partyId: party, itemId: item, on: DATE },
       'GET /gst/rates/in-force': { hsn: ids['hsn']?.[0] ?? '', on: DATE },
+      'GET /gst/returns/gstr1': { month: DATE.slice(0, 7) },
       'GET /admin/audit': { filter: { occurred: { from: DATE, to: DATE } }, limit: 50 },
       'GET /admin/security-events': { filter: { occurred: { from: DATE, to: DATE } }, limit: 50 },
       'GET /price-lists/:id/price': { itemId: item, on: DATE },
