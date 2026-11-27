@@ -88,6 +88,30 @@ describe.skipIf(!url || !superUrl)('what GSTR-1 reads', { timeout: 60_000 }, () 
     }
   });
 
+  // The architect's condition on the paired CHECK: a posted line always has its rate (posted_lines_rated, at commit), so
+  // its kind is always required. Raw, as sales-invoices' commit-check test posts one: a header of zeros, its line unrated.
+  it('refuses at commit an invoice posted with a line that has no rate, and a credit note has the same guard', async () => {
+    const at = await postedDelivery(run, su, DATE);
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      const { rows: [inv] } = await c.query<{ id: string }>(`insert into radcore.invoices (party_id, owner, business_date)
+        values ($1, 'system:test', '${DATE}') returning id`, [at.partyId]);
+      await c.query(`insert into radcore.invoice_lines (invoice_id, line_no, delivery_line_id, item_id, qty, rate) values ($1, 1, $2, $3, 1, 1000)`,
+        [inv?.id, at.deliveryLineId, at.itemId]);
+      await c.query(`update radcore.invoices set status = 'posted', number = $2, issuer_gstin = '27AAPFU0939F1ZV', place_of_supply = '27'
+        where id = $1`, [inv?.id, `T/${randomBytes(3).toString('hex')}`]);
+      expect(await code(c.query('set constraints all immediate'))).toBe('invoice_lines_rated');
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+    const { rows } = await su.query<{ t: string }>(`select c.relname t from pg_trigger g join pg_class c on c.oid = g.tgrelid
+      where g.tgname = 'posted_lines_rated' order by 1`);
+    expect(rows.map((r) => r.t)).toEqual(['credit_notes', 'invoices']);
+  });
+
   // Posted notes, which go through approval, are read in PR 2's builder tests.
   it('freezes a 0% line as nil and a 5% line as taxable, reads both through gst_outward_lines, and not a draft note', async () => {
     const [nil, taxed] = [await postedDelivery(run, su, DATE, undefined, { gst: '0' }), await postedDelivery(run, su, DATE)];

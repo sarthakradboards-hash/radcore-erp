@@ -73,3 +73,31 @@ ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 -- A view is read, never written (as v_document_paid).
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON radcore.gst_outward_lines FROM radcore_app;
+--> statement-breakpoint
+-- The architect on RAD-154: a posted line always has its rate, so ck_*_supply_kind always requires its kind. Checked at
+-- commit, once posting has written the lines; a posted document's lines can't change after (guard_document_line).
+CREATE FUNCTION radcore.posted_lines_rated() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, radcore, pg_temp AS $$
+DECLARE
+  line_table text := TG_ARGV[0];
+  parent_column text := TG_ARGV[1];
+  unrated boolean;
+BEGIN
+  IF NEW.status = 'draft' THEN
+    RETURN NULL;
+  END IF;
+  EXECUTE format('SELECT EXISTS (SELECT 1 FROM radcore.%I WHERE %I = $1 AND gst_rate IS NULL)', line_table, parent_column)
+    INTO unrated USING NEW.id;
+  IF unrated THEN
+    RAISE EXCEPTION '% %: a posted line has no GST rate', TG_TABLE_NAME, NEW.id USING ERRCODE = 'RA006', CONSTRAINT = line_table || '_rated';
+  END IF;
+  RETURN NULL;
+END $$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION radcore.posted_lines_rated() FROM PUBLIC;
+--> statement-breakpoint
+CREATE CONSTRAINT TRIGGER posted_lines_rated AFTER INSERT OR UPDATE OF status ON radcore.invoices DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION radcore.posted_lines_rated('invoice_lines', 'invoice_id');
+--> statement-breakpoint
+CREATE CONSTRAINT TRIGGER posted_lines_rated AFTER INSERT OR UPDATE OF status ON radcore.credit_notes DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION radcore.posted_lines_rated('credit_note_lines', 'credit_note_id');
