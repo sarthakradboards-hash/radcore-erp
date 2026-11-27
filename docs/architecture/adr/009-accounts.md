@@ -164,7 +164,8 @@ the line's own account for a service bill's charge or an expense.
   For outward documents that's not allowed: an invoice or credit note whose own date is in a month GSTR-1 has filed
   can't be cancelled (`month_filed`); it's corrected with a credit note (ADR-007 §6) or, once ADR-010 builds them, an
   amendment. The cancel service checks it, and the same trigger refuses a reversing entry of those kinds whose
-  original is dated on or before `gstr1_through`. An inward document (a bill, an expense) may still be cancelled, dated today: its
+  original is dated on or before `gstr1_through`. An inward document (a bill, an expense) may still be cancelled, dated
+  today: its
   credit then comes back in the open month's 3B, which is where it belongs (CA-13 confirms the box).
 - **Marking a month filed.** `gst_filings` (the return, `gstr1` or `gstr3b`; the month; the ARN as the portal gives it;
   the filing date; the snapshot and its SHA-256; who marked it), with a partial unique index on `(return, month)` for
@@ -326,13 +327,15 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
   `gstin_mismatch`; a cash expense over the limit; cancel restores the payable.
 - **M5-10:** F12, F18 and F29 with its variant; an `excess` rate row (a test row, not seeded) deducts only on the
   year's base over the limit; a cancelled booking leaves the year's base; an advance applied at the bill isn't counted
-  twice in the base, and one applied after it changes nothing; two bills for one payee saved at once deduct the catch-up once; an
+  twice in the base, and one applied after it changes nothing; two bills for one payee saved at once deduct the catch-up
+  once; an
   advance applied to a bill isn't deducted twice; a rate row dated 1 July applies to a 1 July bill and not a 30 June
   one, and a catch-up after it keeps the earlier bills at the old rate; a booking under both limits still writes its
   zero row; a payee whose PAN arrives mid-year is never refunded below zero; `tds_needs_party`, `tds_deposited`; the
   books check fails when a deduction's row is missing.
 - **M5-08:** an entry dated in a 3B-filed month is refused through each door (invoice, credit note, bill, supplier
-  return, expense), including a 0% invoice, a composition supplier's bill and a blocked expense; a payment in that month posts; cancelling an invoice of a GSTR-1-filed month is refused,
+  return, expense), including a 0% invoice, a composition supplier's bill and a blocked expense; a payment in that month
+  posts; cancelling an invoice of a GSTR-1-filed month is refused,
   and a bill's cancel posts in the open month; the current month and a gap are refused; an undo by its asker is
   refused, by another `books:unlock` holder succeeds, and only for the latest filing; marking waits for a posting in
   flight.
