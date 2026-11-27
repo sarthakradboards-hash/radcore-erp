@@ -16,6 +16,7 @@ import * as salesBookings from './sales/tables-bookings.ts';
 import * as salesQuickBills from './sales/tables-quick-bills.ts';
 import * as purchasingBills from './purchasing/tables-bills.ts';
 import * as purchasingReturns from './purchasing/tables-returns.ts';
+import * as accountsExpenses from './accounts/tables-expenses.ts';
 import * as purchasingOrders from './purchasing/tables-orders.ts';
 import * as purchasingReceipts from './purchasing/tables-receipts.ts';
 import * as stock from './stock/tables.ts';
@@ -40,6 +41,7 @@ export * from './sales/tables-bookings.ts';
 export * from './sales/tables-quick-bills.ts';
 export * from './purchasing/tables-bills.ts';
 export * from './purchasing/tables-returns.ts';
+export * from './accounts/tables-expenses.ts';
 export * from './purchasing/tables-orders.ts';
 export * from './purchasing/tables-receipts.ts';
 export * from './stock/tables.ts';
@@ -49,7 +51,7 @@ export * from './stock/tables-moves.ts';
 /** Every module's tables and relations, as they land: the same files drizzle.config.ts lists. */
 export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...platformSignIn, ...accounts, ...accountsClose, ...crm, ...gst, ...hr, ...sales,
   ...salesCredit, ...salesPrices, ...salesBookings, ...salesQuickBills, ...stock, ...stockMoves, ...stockJobWork, ...purchasingOrders,
-  ...purchasingReceipts, ...purchasingBills, ...purchasingReturns });
+  ...purchasingReceipts, ...purchasingBills, ...purchasingReturns, ...accountsExpenses });
 
 /** The Drizzle client lib-platform builds on its pool. */
 export type Database = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;

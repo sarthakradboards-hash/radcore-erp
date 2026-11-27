@@ -2,13 +2,13 @@
 // of accounts and journal (RAD-86), what parties owe (RAD-119), and the period lock and year close (RAD-157).
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, getPaymentById, listPaymentsPage, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
-  partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
+  addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
   askToUnlock, moveLockForward, periodState, periodUnlockSpec,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
   reverseCreditApplicationContract, createParty, getCompany, recordPaymentContract, getJournal, getParty, listAccounts, listMoneyAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
-  getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
+  createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
   askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval,
 } from '@radcore/lib-accounts/contract';
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
@@ -40,6 +40,9 @@ export default [
   defineRoute(reverseCreditApplicationContract, reverseCreditApplication),
   ...defineApproval(cashLimitApproval, cashLimitSpec),
   defineRoute(setAccount, changeAccount),
+  defineRoute(listExpenseCategories, expenseCategoriesList),
+  defineRoute(createExpenseCategory, addExpenseCategory),
+  defineRoute(setExpenseCategory, changeExpenseCategory),
   defineRoute(listJournal, journalPage),
   defineRoute(getJournal, journalEntryById),
   defineRoute(postJournal, postManual),
