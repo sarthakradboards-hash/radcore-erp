@@ -47,7 +47,8 @@ export function readStatement(t: Table, f: StatementFormat): Read {
   const reference = f.referenceColumn === null ? -1 : col(f.referenceColumn);
   const out: Read = { lines: [], refusals: [] };
   records.slice(at + 1).forEach((cells, i) => {
-    const row = at + i + 2;
+    // The file's own line for it, where the reader kept one (blank lines skipped), else its place below the header.
+    const row = t.lines?.[at + i + 1] ?? at + i + 2;
     const cell = (c: number | undefined) => (c === undefined || c < 0 ? '' : cells[c] ?? '').trim();
     // A blank row, or the bank's footer (totals, "closing balance") with no date and no amount, isn't a line.
     if (cell(date) === '' && cell(withdrawal) === '' && cell(deposit) === '') return;

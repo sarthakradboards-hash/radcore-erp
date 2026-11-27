@@ -7,12 +7,13 @@
 import { accounts, accountsTx, after, bankStatementLines, statementFormats, statementImports } from '@radcore/db/accounts';
 import { idString } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, encodeCursor, ImportFileError, readPdf, readTable, readyFile, type BeforeJob, type Ctx, type JobContract, type JobMeta, type Table,
+  AppError, decodeCursor, encodeCursor, ImportFileError, isoMoment, momentKey, readPdf, readTable, readyFile, type BeforeJob, type Ctx, type JobContract, type JobMeta, type Table,
 } from '@radcore/lib-platform';
 import { and, asc, between, desc, eq, gt, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
-  getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementLinesContract, undoStatementImportContract,
+  getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
+  undoStatementImportContract,
 } from '../contract-bank.ts';
 import { STATEMENT_LAYOUTS, type StatementLayout } from './statement-layouts.ts';
 import { chainToStored, readStatement, type Refusal, type StatementFormat, type StatementLine } from './statement-read.ts';
@@ -151,7 +152,30 @@ export async function statementImportById(ctx: Ctx, { id }: In<typeof getStateme
   const [r] = await accountsTx(ctx).select().from(statementImports).where(eq(statementImports.id, id)).limit(1);
   if (r === undefined) return refuse('not_found', 'There’s no such import');
   return { id: r.id, accountId: r.accountId, fileId: r.fileId, status: z.enum(['queued', 'imported', 'refused', 'undone']).parse(r.status),
-    newLines: r.newLines, presentLines: r.presentLines, refusals: refusalsOf.parse(r.refusals ?? []), createdAt: r.createdAt.toISOString() };
+    newLines: r.newLines, presentLines: r.presentLines, refusals: refusalsOf.parse(r.refusals ?? []), createdAt: isoMoment(r.createdAt) };
+}
+
+// Newest first: the moment each was asked for (its microseconds kept, momentKey), then id.
+const IMPORTS_KEY = z.object({ at: momentKey(), id: z.uuid() });
+
+/** GET /bank/statement-imports: newest first, a page at a time.
+ * shortcut: `undoable` is "imported" until M5-13, which adds "and no line matched", as the undo itself will. */
+export async function statementImportsPage(ctx: Ctx, input: In<typeof listStatementImportsContract>): Promise<Out<typeof listStatementImportsContract>> {
+  const key = input.after === undefined ? undefined : decodeCursor(IMPORTS_KEY, input.after);
+  const rows = await accountsTx(ctx).select().from(statementImports).where(and(
+    input.filter.accountId === undefined ? undefined : eq(statementImports.accountId, input.filter.accountId),
+    after([statementImports.createdAt, statementImports.id], key && [key.at, key.id], 'desc'),
+  )).orderBy(desc(statementImports.createdAt), desc(statementImports.id)).limit(input.limit + 1);
+  const page = rows.slice(0, input.limit);
+  const last = page.at(-1);
+  return {
+    items: page.map((r) => {
+      const status = z.enum(['queued', 'imported', 'refused', 'undone']).parse(r.status);
+      return { id: r.id, accountId: r.accountId, fileId: r.fileId, status, newLines: r.newLines, presentLines: r.presentLines,
+        refused: refusalsOf.parse(r.refusals ?? []).length, undoable: status === 'imported', createdAt: isoMoment(r.createdAt) };
+    }),
+    next: rows.length > input.limit && last ? encodeCursor({ at: last.createdAt, id: last.id }) : null,
+  };
 }
 
 /** POST /bank/statement-imports/:id/undo: its lines deleted, each audited with the reason.

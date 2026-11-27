@@ -316,7 +316,9 @@ export default tseslint.config(
   { files: SERVER, ignores: ZONES['radcore/outbound-only'], rules: on('radcore/outbound-only') },
   // L8: an uploaded PDF is read only in the worker (RC-135, ADR-003 §7; auditor-2 on #438), never by the api's own code.
   { files: [`apps/api/**/*.${EXT}`], rules: { 'no-restricted-imports': ['error', { paths: [{ name: '@radcore/lib-platform',
-    importNames: ['readPdf'], message: 'L8: a PDF is read only in the worker (RC-135). Queue a job that reads it.' }] }] } },
+    importNames: ['readPdf'], message: 'L8: a PDF is read only in the worker (RC-135). Queue a job that reads it.' },
+    { name: '@radcore/lib-accounts', importNames: ['readStatementFile', 'statementFileReader'],
+      message: 'L8: a statement file is read only in the worker job (RC-135, auditor-2 on #438).' }] }] } },
   ...Object.entries(L8_LIFTED).map(([file, lifted]) => ({ files: [file], rules: on('radcore/outbound-only',
     { ...OPTIONS['radcore/outbound-only'], imports: l8Imports(L8_MODULES.filter((m) => !lifted.includes(m))) }) })),
 
