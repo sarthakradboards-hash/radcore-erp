@@ -1,13 +1,14 @@
 // RAD-154's GSTR-1 tables (ADR-010 §3, §15's M5-04 tests), without a database: rows as gst_outward_lines answers them.
+import { randomInt, randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { buildGstr1, type OutwardLine } from './gstr1.ts';
 
 const OURS = '27';
-let n = 0;
-/** An invoice line, in our state to an unregistered buyer at 5% unless `o` says otherwise; a note's with `note`. */
+/** An invoice line, in our state to an unregistered buyer at 5% unless `o` says otherwise; a note's with `note`. Each
+ * call its own ids and number (RC-222: no counter shared between tests). */
 function line(o: Partial<OutwardLine> & { id?: string; note?: string } = {}): OutwardLine {
-  n += 1;
-  const id = o.id ?? `inv-${n}`;
+  const n = randomInt(1, 100_000);
+  const id = o.id ?? `inv-${randomUUID()}`;
   const isNote = o.note !== undefined;
   return {
     documentTable: isNote ? 'credit_notes' : 'invoices', documentId: isNote ? (o.note ?? '') : id,
