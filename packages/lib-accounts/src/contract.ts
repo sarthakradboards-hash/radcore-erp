@@ -360,3 +360,4 @@ export * from './contract-period.ts';
 export * from './contract-expenses.ts';
 export * from './contract-transfers.ts';
 export * from './contract-bank.ts';
+export * from './contract-tds.ts';
