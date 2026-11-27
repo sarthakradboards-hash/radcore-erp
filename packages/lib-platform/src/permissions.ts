@@ -36,6 +36,8 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'company:write', module: 'Company', label: 'Set the company’s name, GSTIN and address, which every invoice prints', secondFactor: true },
   { key: 'gst:read', module: 'GST', label: 'See GST rates by HSN and date' },
   { key: 'gst:write', module: 'GST', label: 'Add and correct GST rates, which every invoice uses', secondFactor: true },
+  // ADR-010 §15 (RAD-154): the returns are the whole company's, so never by maker.
+  { key: 'gst:returns', module: 'GST', label: 'Build and see GSTR-1 and GSTR-3B, and download the portal file', allOnly: true },
   { key: 'items:read', module: 'Items', label: 'See items, their categories and units' },
   { key: 'items:write', module: 'Items', label: 'Add and change items and their categories' },
   { key: 'parties:read', module: 'Parties', label: 'See customers, dealers, franchisees and suppliers' },

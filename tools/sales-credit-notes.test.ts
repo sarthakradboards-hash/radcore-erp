@@ -518,7 +518,7 @@ describe.skipIf(!url || !superUrl)('credit notes', () => {
         const { rows: [cn] } = await c.query<{ id: string }>(`insert into radcore.credit_notes (kind, invoice_id, party_id, owner, business_date, reason)
           values ('value', $1, $2, 'system:test', '${DATE}', 'Test') returning id`, [inv?.id, at.partyId]);
         await c.query(`insert into radcore.credit_note_lines (credit_note_id, line_no, invoice_line_id, item_id, taxable, gst_rate, gst_rate_source,
-          cgst, sgst, igst, line_total, cost) values ($1, 1, $2, $3, 1000, 5, 'Test', 25, 25, 0, 1050, 0)`, [cn?.id, il?.id, at.itemId]);
+          supply_kind, cgst, sgst, igst, line_total, cost) values ($1, 1, $2, $3, 1000, 5, 'Test', 'taxable', 25, 25, 0, 1050, 0)`, [cn?.id, il?.id, at.itemId]);
         // The header is consistent in itself (ck_credit_notes_identity): taxable plus both halves of the tax.
         await c.query(`update radcore.credit_notes set status = 'posted', number = $2, taxable = 1000, cgst = $3, sgst = $3,
           total = 1000 + 2 * $3::numeric where id = $1`, [cn?.id, `T/${tag()}`, tax]);
