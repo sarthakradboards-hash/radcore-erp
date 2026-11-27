@@ -231,6 +231,7 @@ Until CA-04 is answered, the stricter reading: a bill's input GST is claimed onl
 registered person whose GSTIN is on the bill. A bill from an unregistered or composition supplier carries no input
 GST: any tax on it is part of the cost, through the price difference. Foreign suppliers can't exist yet (§5). M4-04
 builds this and changes only the rule, not the shape, when CA-04 answers.
+[ADR-009](009-accounts.md) §2 replaces this rule (RAD-139, moved into M5).
 
 ### 8. Supplier returns and debit notes (M4-05, RC-129)
 
@@ -381,6 +382,8 @@ Every save here takes ADR-006 §1's one order:
      itself; a return its receipts, itself, then their bills. No two saves wait on each other in a circle.
    - **Transfers, counts and adjustments** touch no other document, so each locks only itself, after these.
 3. no party lock: no check here counts a supplier's balance. A payment to one takes its own, at payment (ADR-007 §8);
+   from M5-10, a bill line with a TDS section holds the payee's row, so two bills take turns at the year's limit
+   ([ADR-009](009-accounts.md) §4);
 4. the stock positions, then new batch rows, in §4a's order;
 5. the units, by id;
 6. the numbering series, last.
