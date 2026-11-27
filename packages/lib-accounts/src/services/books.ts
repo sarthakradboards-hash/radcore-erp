@@ -5,7 +5,7 @@ import { ACCOUNT_TYPES, CONTROL_KINDS, dec, ENTRY_KINDS, roundMoney } from '@rad
 import { AppError, decodeCursor, encodeCursor, principalsOf, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, eq, gte, inArray, lte, sum } from 'drizzle-orm';
 import { z } from 'zod';
-import type { getJournal, listAccounts, listJournal, postJournal, reverseJournal, setAccount } from '../contract.ts';
+import type { createAccount, getJournal, listAccounts, listJournal, postJournal, reverseJournal, setAccount } from '../contract.ts';
 import { periodLockRow, postManualJournal, reverseEntry, type Posted } from './journal.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -83,6 +83,30 @@ export async function changeAccount(ctx: Ctx, { id, code, active }: In<typeof se
     throw e;
   }
   return {};
+}
+
+/** POST /accounts: an ordinary account of its group's type (the architect on RAD-152). A control account such as Debtors
+ * is no group. The name is unique across the chart, whatever its case or spacing, and a code where set. */
+export async function addAccount(ctx: Ctx, { name, parentId, code }: In<typeof createAccount>): Promise<Out<typeof createAccount>> {
+  const tx = accountsTx(ctx);
+  const [parent] = await tx.select({ type: accounts.type, controlKind: accounts.controlKind }).from(accounts).where(eq(accounts.id, parentId)).limit(1);
+  if (parent === undefined || parent.controlKind !== 'none') {
+    const message = 'Put the account under a group, not under a control account such as Debtors';
+    throw new AppError('parent_not_group', message, [{ path: ['parentId'], code: 'parent_not_group', message }]);
+  }
+  const [row] = await tx.insert(accounts).values({ name, type: parent.type, parentId, ...(code === undefined ? {} : { code }) })
+    .returning({ id: accounts.id }).catch((e: unknown) => {
+      const constraint = (e as { cause?: { constraint?: string } }).cause?.constraint;
+      if (constraint === 'ux_accounts_name_key') {
+        throw new AppError('duplicate_account', 'The chart already has an account of this name',
+          [{ path: ['name'], code: 'taken', message: 'Choose another name' }]);
+      }
+      if (constraint === 'ux_accounts_code') {
+        throw new AppError('code_taken', 'Another account has this code', [{ path: ['code'], code: 'taken', message: 'Choose another code' }]);
+      }
+      throw e;
+    });
+  return { id: row?.id ?? '' };
 }
 
 const entryColumns = {
