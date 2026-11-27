@@ -57,14 +57,11 @@ export const billSchema = z.object({
   notes: z.string().trim(),
   lines: z.array(formLine).min(1, t('purchases.bill.err.lines')),
 }).superRefine((v, ctx) => {
-  // A bill of charges only (a transporter's) has no goods to spread them over, so each charge names where it posts; on any
-  // other bill the category is optional. Either way a category goes with one of its accounts (#436).
-  const chargesOnly = v.lines.every((l) => l.kind === 'charge');
+  // A chosen category goes with one of its accounts (#436). A bill of charges only needs the category at posting, not at
+  // saving (charge_needs_category), so a draft saves without it: someone without expenses:read sees no picker
+  // (auditor-3 on #450).
   v.lines.forEach((l, i) => {
-    if (l.kind !== 'charge') return;
-    if (l.expenseCategoryId === '' && chargesOnly) {
-      ctx.addIssue({ code: 'custom', path: ['lines', i, 'expenseCategoryId'], message: t('purchases.bill.err.category') });
-    } else if (l.expenseCategoryId !== '' && l.expenseAccountId === '') {
+    if (l.kind === 'charge' && l.expenseCategoryId !== '' && l.expenseAccountId === '') {
       ctx.addIssue({ code: 'custom', path: ['lines', i, 'expenseAccountId'], message: t('purchases.bill.err.expenseAccount') });
     }
   });

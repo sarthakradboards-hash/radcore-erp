@@ -40,8 +40,10 @@ describe('a charge’s expense category (#436)', () => {
   const charge = { ...blankCharge(), description: 'Transport, Pune to Nashik', hsn: '996511', amount: '4500.00' };
   const paths = (lines: unknown[]) => billSchema.safeParse({ ...filled, lines }).error?.issues.map((i) => i.path.join('.')) ?? [];
 
-  it('is needed on a bill of charges only, with one of its accounts', () => {
-    expect(paths([charge])).toEqual(['lines.0.expenseCategoryId']);
+  it('lets a draft of charges only save without one (posting asks for it), and goes with one of its accounts', () => {
+    // Someone without expenses:read sees no picker; posting refuses it as charge_needs_category (auditor-3 on #450).
+    expect(paths([charge])).toEqual([]);
+    expect(billSchema.parse({ ...filled, lines: [charge] }).lines).toEqual([expect.objectContaining({ expenseCategoryId: null, expenseAccountId: null })]);
     expect(paths([{ ...charge, expenseCategoryId: id(40) }])).toEqual(['lines.0.expenseAccountId']);
     expect(billSchema.parse({ ...filled, lines: [{ ...charge, expenseCategoryId: id(40), expenseAccountId: id(41) }] }).lines)
       .toEqual([expect.objectContaining({ expenseCategoryId: id(40), expenseAccountId: id(41) })]);
