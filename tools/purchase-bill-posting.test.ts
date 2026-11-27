@@ -257,12 +257,9 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
       const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
       await holder.query('select id from radcore.parties where id = $1 for update', [at.supplierId]);
       const posting = post(at, id);
-      let waiting = 0;
-      for (let i = 0; i < 200 && waiting === 0; i += 1) {
-        waiting = (await su.query<{ n: number }>('select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.n ?? 0;
-        if (waiting === 0) await new Promise((r) => { setTimeout(r, 25); });
-      }
-      expect(waiting).toBe(1);
+      // The posting waits on this row (as tools/party-lock.test.ts waits on its save).
+      await vi.waitFor(async () => expect((await su.query<{ n: number }>(
+        'select count(*)::int n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.n).toBe(1), { timeout: 10_000 });
       const probe = await su.connect();
       try {
         await probe.query('begin');
