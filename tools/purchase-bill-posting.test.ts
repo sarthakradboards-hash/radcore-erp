@@ -224,6 +224,37 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
       .toEqual([{ receiptLineId: at.receiptLineId, accrued: '248000.00', open: '0.00' }]);
   });
 
+  // RAD-158 (the architect's ruling (a)): a bill owes its total less the TDS held back, and payments apply to that. TDS is
+  // set here as posting will set it (RAD-158 PR 2b), past the posted-bill guard: F3's 131,250.00 with 1,250.00 held back
+  // takes 130,000.00 and refuses a paisa more.
+  it('applies payments to what a bill owes, its total less its TDS, and refuses a paisa more', async () => {
+    const at = await setup();
+    const { id } = await draft(at, { lines: [goods(at, '2', '62500')], total: '131250' });
+    await post(at, id);
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      await c.query("set local session_replication_role = replica");
+      await c.query("update radcore.purchase_bills set tds = '1250' where id = $1", [id]);
+      await c.query('commit');
+    } finally {
+      c.release();
+    }
+    expect((await pool.query('select total::text, owed::text from radcore.purchase_bills where id = $1', [id])).rows)
+      .toEqual([{ total: '131250.00', owed: '130000.00' }]);
+    const bank = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'bank'")).rows[0]?.id ?? '';
+    const pay = (amount: string) => run(async (ctx) => {
+      const { id: paymentId } = await recordPayment(ctx, { kind: 'payment', partyId: at.supplierId, businessDate: DATE, amount: moneyString().parse(amount),
+        accountId: bank });
+      await allocatePayment(ctx, { id: paymentId, businessDate: DATE, lines: [{ documentTable: 'purchase_bills', documentId: id,
+        amount: moneyString().parse(amount) }] });
+    }, at.staff);
+    expect(await code(pay('130000.01'))).toBe('allocation_exceeds_document');
+    await pay('130000');
+    expect((await run((ctx) => getBillById(ctx, { id }), at.staff)).open).toBe('0.00');
+  });
+
   // The architect on RAD-143: the bill list's open amount and `open` filter, for applying a payment out on screen. F3's
   // bill (131,250.00) with 100,000.00 of a payment allocated to it reads 31,250.00 open, through the real route; paid in
   // full, it leaves the open list; a draft is never on it.

@@ -37,6 +37,10 @@ export const purchaseBills = radcoreTable('purchase_bills', {
   fileId: uuid().references(() => files.id, { onDelete: 'restrict' }),
   notes: boundedText({ max: 500 }),
   placeOfSupply: text(), taxable: money(), cgst: money(), sgst: money(), igst: money(), roundOff: money({ signed: true }), total: money(),
+  // The TDS held back at posting (ADR-009 §4, RAD-158), and so what the supplier is owed: the invoice's total less it.
+  // Allocations read `owed` (allocatable_documents.amount_column; the architect on RAD-158).
+  tds: money().notNull().default('0'),
+  owed: money().generatedAlwaysAs(sql`total - tds`),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
   cancelledAt: timestamp({ withTimezone: true }),
   cancelledBy: text(),
@@ -50,6 +54,7 @@ export const purchaseBills = radcoreTable('purchase_bills', {
   check('ck_purchase_bills_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
   check('ck_purchase_bills_frozen', sql`num_nulls(${t.placeOfSupply}, ${t.taxable}, ${t.cgst}, ${t.sgst}, ${t.igst}, ${t.roundOff}, ${t.total}) in (0, 7)
     and coalesce(${t.placeOfSupply}, '00') ~ '^[0-9]{2}$'`),
+  check('ck_purchase_bills_tds_within', sql`${t.total} is null and ${t.tds} = 0 or ${t.tds} <= ${t.total}`),
   check('ck_purchase_bills_identity', sql`${t.total} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.roundOff}
     and abs(${t.roundOff}) < 1 and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
   // The supplier's date is theirs: on or before the bill's own (ADR-008 §4).

@@ -44,7 +44,7 @@ export const expenseCategoryAccounts = radcoreTable('expense_category_accounts',
  * An expense (M5-02, ADR-009 §3): a supplier's bill for a cost, paid at once from Cash or a bank account
  * (`pay_from_account_id`), or on credit to the supplier (none). `stated_total` is the bill's total as printed; `total` is
  * what the supplier is owed, the whole of it on credit and nothing when paid at once, since payments apply to it
- * (allocatable_documents reads `party_id`, `status`, `total` and `business_date`). Its owner is its maker (`created_by`).
+ * (allocatable_documents reads `party_id`, `status`, `total` and `business_date`), net of its TDS (`tds`). Its owner is its maker (`created_by`).
  */
 export const expenses = radcoreTable('expenses', {
   id: id(), createdAt: createdMoment(),
@@ -58,6 +58,8 @@ export const expenses = radcoreTable('expenses', {
   status: text().notNull().default('draft'),
   statedTotal: money().notNull(),
   total: money().notNull(),
+  // The TDS held back at posting (ADR-009 §4, RAD-158): on credit the supplier is owed the bill less it.
+  tds: money().notNull().default('0'),
   fileId: uuid().references(() => files.id, { onDelete: 'restrict' }),
   notes: boundedText({ max: 500 }),
   postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
@@ -69,8 +71,8 @@ export const expenses = radcoreTable('expenses', {
   check('ck_expenses_status', sql`${t.status} in ('draft', 'posted', 'cancelled')`),
   check('ck_expenses_posted', sql`(${t.status} = 'draft') = (${t.number} is null) and (${t.status} = 'draft') = (${t.postedEntryId} is null)`),
   check('ck_expenses_cancelled', sql`(${t.status} = 'cancelled') = (${t.cancelEntryId} is not null)`),
-  // On credit it's the supplier's, whole; paid at once, nothing is owed (ADR-009 §3).
-  check('ck_expenses_owed', sql`(${t.payFromAccountId} is null and ${t.partyId} is not null and ${t.total} = ${t.statedTotal})
+  // On credit the supplier is owed the bill less its TDS; paid at once, nothing (ADR-009 §3; the architect on RAD-158).
+  check('ck_expenses_owed', sql`(${t.payFromAccountId} is null and ${t.partyId} is not null and ${t.total} = ${t.statedTotal} - ${t.tds})
     or (${t.payFromAccountId} is not null and ${t.total} = 0)`),
   check('ck_expenses_supplier_date', sql`${t.supplierInvoiceDate} <= ${t.businessDate}`),
   check('ck_expenses_supplier_gstin', sql`${t.supplierGstin} is null or ${t.supplierGstin} ~ '^[0-9]{2}[A-Z0-9]{13}$'`),
