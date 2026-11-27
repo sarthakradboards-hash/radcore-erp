@@ -36,12 +36,11 @@ describe.skipIf(!url || !superUrl)('refunds of a credit note', { timeout: 30_000
   const as = (p: Principal) => <R>(fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, { readOnly: false, isolation: 'read committed' }, p,
     randomUUID(), fn);
   const run = as(CLERK);
-  async function owner<T extends pg.QueryResultRow>(text: string, values: unknown[] = [], role?: string): Promise<T[]> {
+  async function owner<T extends pg.QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> {
     const c = await su.connect();
     try {
       await c.query('begin');
       await c.query("set local app.principal = 'system:test'");
-      if (role !== undefined) await c.query(`set local role ${role}`);
       const { rows } = await c.query<T>(text, values);
       await c.query('commit');
       return rows;
@@ -63,17 +62,31 @@ describe.skipIf(!url || !superUrl)('refunds of a credit note', { timeout: 30_000
 
   beforeAll(async () => {
     await run((ctx) => openFinancialYear(ctx, DAY));
+    // Each fixture whole in one transaction, so no schema view run at the same time (tools/schema.test.ts) sees a table
+    // before its audit triggers (v_schema_missing_triggers) or its CHECK (the auditor on #427).
     for (const t of [CREDITS, DEBITS, INVOICES]) {
-      await owner(`create table radcore.${t} (id uuid primary key default gen_random_uuid(), party_id uuid not null, status text not null,
-        -- The CHECK every money column has, by its name (ADR-005 §1), so tools/schema.test.ts's v_schema_numeric_without_check,
-        -- run at the same time, doesn't find these fixtures (the auditor on RAD-151).
-        total numeric(18,2) not null constraint ck_${t}_total check (total >= 0 and total <> 'NaN'), business_date date not null,
-        created_at timestamptz not null default now(), created_by text not null default 'system:test',
-        updated_at timestamptz not null default now(), updated_by text not null default 'system:test')`, [], 'radcore_owner');
-      await owner(`select radcore.audit_attach('${t}', keep => array['party_id', 'status', 'total', 'business_date'])`);
-      await owner(`grant select, insert, update on radcore.${t} to radcore_app`);
-      await owner(`create trigger guard_applied_cancel before update of status on radcore.${t}
-        for each row execute function radcore.guard_applied_cancel()`);
+      const c = await su.connect();
+      try {
+        await c.query('begin');
+        await c.query("set local app.principal = 'system:test'");
+        await c.query('set local role radcore_owner');
+        await c.query(`create table radcore.${t} (id uuid primary key default gen_random_uuid(), party_id uuid not null, status text not null,
+          -- The CHECK every money column has, by its name (ADR-005 §1), for v_schema_numeric_without_check (the auditor on RAD-151).
+          total numeric(18,2) not null constraint ck_${t}_total check (total >= 0 and total <> 'NaN'), business_date date not null,
+          created_at timestamptz not null default now(), created_by text not null default 'system:test',
+          updated_at timestamptz not null default now(), updated_by text not null default 'system:test')`);
+        await c.query('reset role');
+        await c.query(`select radcore.audit_attach('${t}', keep => array['party_id', 'status', 'total', 'business_date'])`);
+        await c.query(`grant select, insert, update on radcore.${t} to radcore_app`);
+        await c.query(`create trigger guard_applied_cancel before update of status on radcore.${t}
+          for each row execute function radcore.guard_applied_cancel()`);
+        await c.query('commit');
+      } catch (e) {
+        await c.query('rollback');
+        throw e;
+      } finally {
+        c.release();
+      }
     }
     await owner(`insert into radcore.allocatable_documents (document_table, side, kind) values ('${CREDITS}', 'receivable', 'credit'),
       ('${DEBITS}', 'payable', 'credit'), ('${INVOICES}', 'receivable', 'charge')`);
