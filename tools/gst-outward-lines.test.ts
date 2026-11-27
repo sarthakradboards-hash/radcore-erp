@@ -3,9 +3,9 @@
 // every posted invoice and credit-note line with its document's frozen buyer and dates. Each test makes its own item.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { moneyString, percentString, quantityString } from '@radcore/lib-common';
-import { putGstRate } from '@radcore/lib-gst';
+import { gstr1Of, putGstRate } from '@radcore/lib-gst';
 import { setGstRate } from '@radcore/lib-gst/contract';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { addCreditNote, addInvoice, postInvoiceNow } from '@radcore/lib-sales';
 import pg from 'pg';
@@ -16,7 +16,7 @@ const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const DATE = '2026-11-15';
-const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'credit_notes:write', 'parties:write', 'parties:manage', 'items:write',
+const KEYS = ['gst:returns', 'sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'credit_notes:write', 'parties:write', 'parties:manage', 'items:write',
   'locations:write', 'gst:write', 'cost:read'];
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
 const q = (s: string) => quantityString().parse(s);
@@ -131,5 +131,15 @@ describe.skipIf(!url || !superUrl)('what GSTR-1 reads', { timeout: 60_000 }, () 
     await run((ctx) => addCreditNote(ctx, { invoiceId: taxedInvoice, kind: 'value', businessDate: DATE, locationId: null, reason: 'Discount agreed',
       refund: null, lines: [{ invoiceLineId: lineId, taxable: moneyString().parse('1000') }] }));
     expect((await outward(taxedInvoice)).map((r) => [r.t, r.kind, r.taxable, r.cgst])).toEqual([['invoices', 'taxable', '80000.00', '2000.00']]);
+
+    // GSTR-1 for the month, from the view: other files' invoices share it, so read this test's own HSN rows (Table 12 at
+    // 8 digits, each item's code its own), and the nil invoice in Table 8 and nowhere in Table 7.
+    const hsnOf = async (id: string) => (await su.query<{ hsn: string }>('select hsn from radcore.invoice_lines where invoice_id = $1', [id])).rows[0]?.hsn;
+    const [nilHsn, taxedHsn] = [await hsnOf(nilInvoice), await hsnOf(taxedInvoice)];
+    const g = await run((ctx) => gstr1Of({ ...ctx, settings: new Settings([{ key: 'gst.hsn_digits', value: '8' }]) }, { month: DATE.slice(0, 7) }));
+    expect(g.table12.filter((r) => r.hsn === nilHsn || r.hsn === taxedHsn).map((r) => [r.part, r.hsn === nilHsn ? 'nil' : 'taxed', r.qty, r.taxable, r.cgst])
+      .toSorted()).toEqual([['b2c', 'nil', '1', '80000.00', '0.00'], ['b2c', 'taxed', '1', '80000.00', '2000.00']]);
+    expect(g.table8.some((r) => r.supply === 'intra' && r.buyer === 'unregistered' && r.kind === 'nil')).toBe(true);
+    expect(g.table7.some((r) => r.rate === '0.000000')).toBe(false);
   });
 });
