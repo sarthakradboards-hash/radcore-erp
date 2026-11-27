@@ -46,7 +46,9 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     grni_value: 'what the line cleared of Goods Received Not Billed, as its receipt accrued it (purchasing:read)',
     jwcb_value: 'what the line cleared of Job Work Charges to be Billed, as its job-work receipt accrued it (purchasing:read)', rate: 'a rate the supplier billed (purchasing:read)', amount: 'a charge on the goods (purchasing:read)',
     gst_rate: 'a tax rate', taxable: 'a line’s value (purchasing:read)', cgst: 'tax on a line (purchasing:read)', sgst: 'tax on a line (purchasing:read)',
-    igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)' },
+    igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)',
+    credit_cgst: 'input credit a line claimed (RAD-139, purchasing:read)', credit_sgst: 'input credit a line claimed (RAD-139, purchasing:read)',
+    credit_igst: 'input credit a line claimed (RAD-139, purchasing:read)' },
   // A supplier return's (RAD-140): the rejects sent back at the value Goods Received Not Billed accrued for them, the
   // return's own content under purchasing:read, as a receipt's rejected_value is.
   supplier_returns: { unbilled_value: 'what went back against Goods Received Not Billed (purchasing:read)',

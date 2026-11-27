@@ -92,7 +92,16 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   // What posting cleared of its job-work receipt line's Job Work Charges to be Billed, for the books check (RAD-95).
   jwcbValue: money(),
   gstRate: percent(), gstRateSource: boundedText({ max: 200 }), taxable: money(), cgst: money(), sgst: money(), igst: money(), lineTotal: money(),
+  // The input credit posting claimed, by head, and where none, why (ADR-009 §2, RAD-139), for ADR-010's 3B. Null on a
+  // draft, and on a bill posted before RAD-139.
+  creditCgst: money(), creditSgst: money(), creditIgst: money(), creditReason: text(),
 }, (t) => [
+  check('ck_purchase_bill_lines_credit', sql`num_nulls(${t.creditCgst}, ${t.creditSgst}, ${t.creditIgst}) in (0, 3)
+    and (${t.creditCgst} is null or ${t.gstRate} is not null) and (${t.creditReason} is null or ${t.creditCgst} is not null)`),
+  // All the line's tax, or none and why.
+  check('ck_purchase_bill_lines_credit_whole', sql`${t.creditCgst} is null
+    or (${t.creditReason} is null and ${t.creditCgst} = ${t.cgst} and ${t.creditSgst} = ${t.sgst} and ${t.creditIgst} = ${t.igst})
+    or (${t.creditReason} in ('supplier_kind', 'blocked', 'state') and ${t.creditCgst} = 0 and ${t.creditSgst} = 0 and ${t.creditIgst} = 0)`),
   check('ck_purchase_bill_lines_kind', sql`${t.kind} in ('goods', 'charge', 'job_work')`),
   // A goods line names its PO line and item, with a quantity and rate; a charge, its kind, words, HSN and amount.
   check('ck_purchase_bill_lines_goods', sql`(${t.kind} = 'goods') = (${t.poLineId} is not null and ${t.itemId} is not null and ${t.qty} is not null
