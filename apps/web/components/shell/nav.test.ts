@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ACCOUNTS_PAGES, ADMIN_PAGES, isCurrent, menuFor, NAV, PURCHASES_PAGES, SALES_PAGES, type NavItem } from './nav.ts';
+import { ACCOUNTS_PAGES, ADMIN_PAGES, allowed, isCurrent, menuFor, NAV, PURCHASES_PAGES, SALES_PAGES, type NavItem } from './nav.ts';
 
 const items: NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
@@ -83,4 +83,10 @@ it('shows Purchases on purchasing:read, opening the orders, with the goods recei
   expect(purchases?.href).toBe('/purchases/orders');
   expect(menuFor(NAV, ['sales:read']).some((e) => e.label === 'nav.purchases')).toBe(false);
   expect(['/purchases/receipts/new', '/purchases/orders', '/sales/orders'].map((p) => purchases !== undefined && isCurrent(purchases, p))).toEqual([true, true, false]);
+});
+
+it('offers the bank page only with both of its keys (e2e-2 on #439)', () => {
+  const bank = ACCOUNTS_PAGES.find((p) => p.href === '/accounts/bank');
+  expect(bank !== undefined && allowed(bank, ['bank:read'])).toBe(false);
+  expect(bank !== undefined && allowed(bank, ['bank:read', 'money_accounts:read'])).toBe(true);
 });
