@@ -118,3 +118,18 @@ export const unmatchContract = defineContract({
   output: z.object({}),
   errors: ['not_matched'],
 });
+
+/** GET /bank/accounts/:id/book-lines (bank:read): a bank account's book lines not yet matched, of live entries, newest
+ * first, a page at a time, filtered by dates, direction (`in`, money into the account) and amount: the many entries a
+ * person picks for one match (RC-210; the architect on RAD-165). */
+export const listBookLinesContract = defineContract({
+  method: 'GET', path: '/bank/accounts/:id/book-lines', auth: 'session', perm: 'bank:read', tx: read,
+  input: listInput(z.object({ from: dateString().optional(), to: dateString().optional(), direction: z.enum(['in', 'out']).optional(),
+    amount: moneyString().optional() })).extend({ id: idString() }),
+  output: listOf(z.object({
+    journalLineId: idString(), entryId: idString(), entryNumber: z.string(), kind: z.string(), businessDate: dateString(),
+    direction: z.enum(['in', 'out']), amount: moneyString(), source: z.object({ table: z.string(), id: idString() }),
+    reference: z.string().nullable(), party: z.string().nullable(),
+  })),
+  errors: ['not_a_bank_account'],
+});
