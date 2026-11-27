@@ -178,6 +178,18 @@ export const setAccount = defineContract({
   errors: ['code_taken', 'system_account', 'account_not_empty'],
 });
 
+/** POST /accounts (accounts:write): an ordinary account, an expense head or a bank account, under a group: an account
+ * that isn't a control account, whose type it takes (ADR-006 §2; the architect on RAD-152). Its control kind is always
+ * `none`, and no system key is ever set here. */
+export const createAccount = defineContract({
+  method: 'POST', path: '/accounts', auth: 'session', perm: 'accounts:write', tx: write,
+  input: z.object({ name: z.string().trim().min(1, 'Name it').max(120), parentId: idString(), code: accountCode().optional() }),
+  output: z.object({ id: idString() }),
+  errors: ['parent_not_group', 'duplicate_account', 'code_taken', 'system_account_insert'],
+  // The database's own guard on a system or control account (0097); the route never asks for one.
+  dbErrors: { 'RA006:system_account_insert': { code: 'system_account_insert', message: 'Only the system adds a system or control account' } },
+});
+
 /** An entry as the journal lists it: `total` is its debits' sum; `reversedBy` the entry reversing it, if any. */
 const entry = z.object({
   id: idString(), number: z.string(), businessDate: dateString(), kind: z.enum(ENTRY_KINDS),

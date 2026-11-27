@@ -3,8 +3,8 @@
 // and control kind), so one pointed at Bank or Debtors is refused even past the service; the service names the account
 // picked wrong. Every name is the test's own, so the shuffled files share nothing.
 import { randomUUID } from 'node:crypto';
-import { addExpenseCategory, changeExpenseCategory, expenseCategoriesList, systemAccountId } from '@radcore/lib-accounts';
-import { createExpenseCategory, setExpenseCategory } from '@radcore/lib-accounts/contract';
+import { addAccount, addExpenseCategory, changeExpenseCategory, chartOfAccounts, expenseCategoriesList, systemAccountId } from '@radcore/lib-accounts';
+import { createAccount, createExpenseCategory, setExpenseCategory } from '@radcore/lib-accounts/contract';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { sql } from 'drizzle-orm';
@@ -74,6 +74,31 @@ describe.skipIf(!url || !superUrl)('expense categories', { timeout: 30_000 }, ()
     expect([allowed?.credit, allowed?.blockedClause, allowed?.accounts.map((a) => a.id)]).toEqual(['allowed', null, [meals]]);
     await as((ctx) => changeExpenseCategory(ctx, setExpenseCategory.input.parse({ id, active: false, reason: 'Not used' })));
     expect((await find(id))?.active).toBe(false);
+  });
+
+  // POST /accounts (the architect on RAD-152): an expense head under a group takes its type, and a category may use it.
+  it('adds an expense head under a group, of its type, with no system key, and a category posts to it', async () => {
+    const parentId = await as((ctx) => systemAccountId(ctx, 'round_off'));
+    const name = named('Staff welfare');
+    // A system key in the body is never read.
+    const { id } = await as((ctx) => addAccount(ctx, createAccount.input.parse({ name, parentId, code: 'SW-1', systemKey: 'staff_welfare' })));
+    const made = (await as(chartOfAccounts)).items.find((a) => a.id === id);
+    expect([made?.name, made?.type, made?.controlKind, made?.systemKey, made?.parentId, made?.code]).toEqual([name, 'expense', 'none', null, parentId, 'SW-1']);
+    const { id: categoryId } = await as((ctx) => addExpenseCategory(ctx, { name: named('Staff welfare'), credit: 'blocked', blockedClause: '(b)(i)',
+      accountIds: [id] }));
+    expect((await find(categoryId))?.accounts.map((a) => a.id)).toEqual([id]);
+  });
+
+  it('refuses an account under a control account, a name the chart has, and a code it has', async () => {
+    const parentId = await as((ctx) => systemAccountId(ctx, 'round_off'));
+    const debtors = await as((ctx) => systemAccountId(ctx, 'debtors'));
+    expect(await code(as((ctx) => addAccount(ctx, { name: named('Odd'), parentId: debtors })))).toBe('parent_not_group');
+    expect(await code(as((ctx) => addAccount(ctx, { name: named('Odd'), parentId: randomUUID() })))).toBe('parent_not_group');
+    const name = named('Travel');
+    const taken = `T${randomUUID().slice(0, 6).toUpperCase()}`;
+    await as((ctx) => addAccount(ctx, { name, parentId, code: taken }));
+    expect(await code(as((ctx) => addAccount(ctx, { name: ` ${name.toUpperCase()} `, parentId })))).toBe('duplicate_account');
+    expect(await code(as((ctx) => addAccount(ctx, { name: named('Travel'), parentId, code: taken })))).toBe('code_taken');
   });
 
   it('refuses a second category of the same name, whatever its case or spacing', async () => {
