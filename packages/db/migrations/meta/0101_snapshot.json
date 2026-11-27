@@ -1,5 +1,5 @@
 {
-  "id": "97c42621-c839-4c55-ac3c-ce479424fccd",
+  "id": "f063984d-0b33-4473-aced-0a35e9389453",
   "prevId": "65ad7990-3fc8-47fc-9c29-cdcc61d06e83",
   "version": "7",
   "dialect": "postgresql",
@@ -6269,7 +6269,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'tds:read') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -6356,7 +6356,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'tds:read') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -19211,9 +19211,42 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "expense_category_id": {
+          "name": "expense_category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expense_account_id": {
+          "name": "expense_account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
+        "ix_purchase_bill_lines_expense_category": {
+          "name": "ix_purchase_bill_lines_expense_category",
+          "columns": [
+            {
+              "expression": "expense_category_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expense_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "ux_purchase_bill_lines_line": {
           "name": "ux_purchase_bill_lines_line",
           "columns": [
@@ -19353,6 +19386,22 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
+        "fk_purchase_bill_lines_expense_category": {
+          "name": "fk_purchase_bill_lines_expense_category",
+          "tableFrom": "purchase_bill_lines",
+          "tableTo": "expense_category_accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "expense_category_id",
+            "expense_account_id"
+          ],
+          "columnsTo": [
+            "category_id",
+            "account_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "fk_purchase_bill_lines_job_work_line": {
           "name": "fk_purchase_bill_lines_job_work_line",
           "tableFrom": "purchase_bill_lines",
@@ -19439,6 +19488,10 @@
         "ck_purchase_bill_lines_credit_igst": {
           "name": "ck_purchase_bill_lines_credit_igst",
           "value": "\"radcore\".\"purchase_bill_lines\".\"credit_igst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" <> 'NaN'"
+        },
+        "ck_purchase_bill_lines_expense_category": {
+          "name": "ck_purchase_bill_lines_expense_category",
+          "value": "num_nulls(\"radcore\".\"purchase_bill_lines\".\"expense_category_id\", \"radcore\".\"purchase_bill_lines\".\"expense_account_id\") in (0, 2)\n    and (\"radcore\".\"purchase_bill_lines\".\"expense_category_id\" is null or \"radcore\".\"purchase_bill_lines\".\"kind\" = 'charge')"
         },
         "ck_purchase_bill_lines_credit": {
           "name": "ck_purchase_bill_lines_credit",
@@ -22016,305 +22069,6 @@
         "ck_expenses_supplier_number": {
           "name": "ck_expenses_supplier_number",
           "value": "btrim(\"radcore\".\"expenses\".\"supplier_invoice_number\") <> ''"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.tds_rates": {
-      "name": "tds_rates",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "section_id": {
-          "name": "section_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "effective_from": {
-          "name": "effective_from",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rate": {
-          "name": "rate",
-          "type": "numeric(9, 6)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rate_no_pan": {
-          "name": "rate_no_pan",
-          "type": "numeric(9, 6)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "single_limit": {
-          "name": "single_limit",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "yearly_limit": {
-          "name": "yearly_limit",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "limit_kind": {
-          "name": "limit_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'whole'"
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confirmed": {
-          "name": "confirmed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {
-        "ux_tds_rates_section_from": {
-          "name": "ux_tds_rates_section_from",
-          "columns": [
-            {
-              "expression": "section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "effective_from",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "tds_rates_section_id_tds_sections_id_fk": {
-          "name": "tds_rates_section_id_tds_sections_id_fk",
-          "tableFrom": "tds_rates",
-          "tableTo": "tds_sections",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "section_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_tds_rates_rate": {
-          "name": "ck_tds_rates_rate",
-          "value": "\"radcore\".\"tds_rates\".\"rate\" between 0 and 100 and \"radcore\".\"tds_rates\".\"rate\" <> 'NaN'"
-        },
-        "ck_tds_rates_rate_no_pan": {
-          "name": "ck_tds_rates_rate_no_pan",
-          "value": "\"radcore\".\"tds_rates\".\"rate_no_pan\" between 0 and 100 and \"radcore\".\"tds_rates\".\"rate_no_pan\" <> 'NaN'"
-        },
-        "ck_tds_rates_single_limit": {
-          "name": "ck_tds_rates_single_limit",
-          "value": "\"radcore\".\"tds_rates\".\"single_limit\" >= 0 and \"radcore\".\"tds_rates\".\"single_limit\" <> 'NaN'"
-        },
-        "ck_tds_rates_yearly_limit": {
-          "name": "ck_tds_rates_yearly_limit",
-          "value": "\"radcore\".\"tds_rates\".\"yearly_limit\" >= 0 and \"radcore\".\"tds_rates\".\"yearly_limit\" <> 'NaN'"
-        },
-        "ck_tds_rates_source": {
-          "name": "ck_tds_rates_source",
-          "value": "char_length(\"radcore\".\"tds_rates\".\"source\") <= 200"
-        },
-        "ck_tds_rates_note": {
-          "name": "ck_tds_rates_note",
-          "value": "char_length(\"radcore\".\"tds_rates\".\"note\") <= 500"
-        },
-        "ck_tds_rates_limit_kind": {
-          "name": "ck_tds_rates_limit_kind",
-          "value": "\"radcore\".\"tds_rates\".\"limit_kind\" in ('whole', 'excess')"
-        },
-        "ck_tds_rates_excess": {
-          "name": "ck_tds_rates_excess",
-          "value": "\"radcore\".\"tds_rates\".\"limit_kind\" = 'whole' or \"radcore\".\"tds_rates\".\"yearly_limit\" is not null"
-        },
-        "ck_tds_rates_no_pan": {
-          "name": "ck_tds_rates_no_pan",
-          "value": "\"radcore\".\"tds_rates\".\"rate_no_pan\" >= \"radcore\".\"tds_rates\".\"rate\""
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.tds_sections": {
-      "name": "tds_sections",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "act2025": {
-          "name": "act2025",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "act1961": {
-          "name": "act1961",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payee": {
-          "name": "payee",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "ux_tds_sections_code": {
-          "name": "ux_tds_sections_code",
-          "columns": [
-            {
-              "expression": "code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_tds_sections_name": {
-          "name": "ck_tds_sections_name",
-          "value": "char_length(\"radcore\".\"tds_sections\".\"name\") <= 120"
-        },
-        "ck_tds_sections_act2025": {
-          "name": "ck_tds_sections_act2025",
-          "value": "char_length(\"radcore\".\"tds_sections\".\"act2025\") <= 40"
-        },
-        "ck_tds_sections_act1961": {
-          "name": "ck_tds_sections_act1961",
-          "value": "char_length(\"radcore\".\"tds_sections\".\"act1961\") <= 40"
-        },
-        "ck_tds_sections_code": {
-          "name": "ck_tds_sections_code",
-          "value": "\"radcore\".\"tds_sections\".\"code\" ~ '^[0-9A-Z][0-9A-Z-]{1,19}$'"
-        },
-        "ck_tds_sections_payee": {
-          "name": "ck_tds_sections_payee",
-          "value": "\"radcore\".\"tds_sections\".\"payee\" in ('individual', 'other', 'any')"
         }
       },
       "isRLSEnabled": false

@@ -2,7 +2,9 @@
 export {
   addAccount, changeAccount, chartOfAccounts, entryDates, journalEntryById, journalPage, postManual, reverseJournalEntry, stockInHand, systemBalance, trialBalance,
 } from './services/books.ts';
-export { addExpenseCategory, changeExpenseCategory, expenseCategoriesList } from './services/expense-categories.ts';
+export {
+  addExpenseCategory, categoryPairs, changeExpenseCategory, expenseCategoriesList, type CategoryPair,
+} from './services/expense-categories.ts';
 export {
   addExpense, cancelExpenseNow, changeExpense, dropExpenseDraft, EXPENSE_SERIES, expenseCashSpec, getExpenseById, listExpensesPage, postExpenseNow,
 } from './services/expenses.ts';
