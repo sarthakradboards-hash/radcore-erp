@@ -24,11 +24,11 @@ export async function takeBooksTurn(ctx: Ctx): Promise<void> {
  * from pg_locks: a bigint key is classid (its high 32 bits), objid (its low 32) and objsubid 1. A try-lock can't do
  * this: it fails while any other file's save holds the same series' turn, such as the journal's (RAD-141, dev e77c225b).
  */
-export async function turnsHeldBy(db: pg.Pool, pid: number | undefined, keys: readonly string[]): Promise<number> {
+export async function turnsHeldBy(db: pg.Pool, pid: number | undefined, keys: readonly string[], o: { waiting?: boolean } = {}): Promise<number> {
   const { rows } = await db.query<{ n: number }>(`select count(*)::int n from pg_locks l
     join unnest($2::text[]) k on true
-    where l.pid = $1 and l.locktype = 'advisory' and l.granted and l.objsubid = 1
+    where l.pid = $1 and l.locktype = 'advisory' and l.granted = $3 and l.objsubid = 1
       and l.classid::bigint = (hashtextextended('numbering.' || k, 0) >> 32) & 4294967295
-      and l.objid::bigint = hashtextextended('numbering.' || k, 0) & 4294967295`, [pid, keys]);
+      and l.objid::bigint = hashtextextended('numbering.' || k, 0) & 4294967295`, [pid, keys, o.waiting !== true]);
   return rows[0]?.n ?? -1;
 }

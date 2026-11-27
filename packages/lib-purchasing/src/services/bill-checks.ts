@@ -3,15 +3,15 @@
 // the tax worked out from the bill's own lines at the supplier's invoice date (RC-056).
 import { purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
 import { categoryPairs, getCompanyProfile } from '@radcore/lib-accounts';
-import { dec, indiaDate, percentString } from '@radcore/lib-common';
-import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax } from '@radcore/lib-gst';
+import { dec, indiaDate, percentString, roundMoney, type Money } from '@radcore/lib-common';
+import { gstRateFor, isReverseCharge, lineTax, placeOfSupply, rcmRulesOn, totalsOf, type LineTax, type RcmParty } from '@radcore/lib-gst';
 import { AppError, defineSeries, defineSetting, listScope, momentKey, readyFile, type Ctx } from '@radcore/lib-platform';
 import { checkQuantity, itemLabels, jobWorkLinesFor } from '@radcore/lib-stock';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createPurchaseBill, getPurchaseBill } from '../contract.ts';
 import { receiptLinesFor } from './receipt-lines.ts';
-import { buyingFrom } from './suppliers.ts';
+import { buyingFrom, servicesOnly } from './suppliers.ts';
 
 export type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 export type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -79,6 +79,8 @@ export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string,
     throw refuseAt('gstin_mismatch', supplier.gstin === null ? `${supplier.name} has no GSTIN on record` : `${supplier.name}’s GSTIN is ${supplier.gstin}`,
       ['supplierGstin']);
   }
+  // An overseas supplier bills services only: charges, never goods or a job worker's charge on goods (ADR-010 §4).
+  if (supplier.overseas && b.lines.some((l) => l.kind !== 'charge')) throw servicesOnly(supplier.name);
   const goods = b.lines.flatMap((l, n) => (l.kind === 'goods' ? [{ l, n }] : []));
   const po = await poLinesOf(ctx, goods.map((g) => g.l.poLineId));
   const received = new Map((await receiptLinesFor(ctx, goods.flatMap((g) => (g.l.receiptLineId === null ? [] : [g.l.receiptLineId])),
@@ -160,13 +162,17 @@ export async function holdOrders(ctx: Ctx, poLineIds: readonly string[]): Promis
 }
 
 
-type Taxed = LineTax & { gstRate: string; gstRateSource: string };
+type Heads = { cgst: Money; sgst: Money; igst: Money };
+type Taxed = LineTax & { gstRate: string; gstRateSource: string; reverseCharge: Heads | null };
 /** The bill's tax from its own lines (RC-056): each at the rate in force on the supplier's invoice date for its item's HSN,
- * or its charge's HSN or SAC; the supplier sells, we buy, so the place of supply is ours (§7, as a PO's). */
-export async function amountsOf(ctx: Ctx, supplierState: string, on: string, lines: readonly (typeof purchaseBillLines.$inferSelect)[]) {
+ * or its charge's HSN or SAC; the supplier sells, we buy, so the place of supply is ours (§7, as a PO's). A charge under
+ * reverse charge on that date (ADR-010 §4) carries no tax of the supplier's: its tax is ours, by the same heads, and an
+ * overseas supplier's (state 96) is always IGST. */
+export async function amountsOf(ctx: Ctx, supplier: RcmParty & { stateCode: string }, on: string, lines: readonly (typeof purchaseBillLines.$inferSelect)[]) {
   const { company } = await getCompanyProfile(ctx);
   if (company === null) throw new AppError('company_profile_incomplete', 'Set the company’s GSTIN, address and state to work out the GST');
-  const place = placeOfSupply(supplierState, company.stateCode, null);
+  const place = placeOfSupply(supplier.stateCode, company.stateCode, null);
+  const rules = lines.some((l) => l.kind === 'charge') ? await rcmRulesOn(ctx, on) : [];
   const labels = await itemLabels(ctx, lines.flatMap((l) => (l.itemId === null ? [] : [l.itemId])));
   const taxed: Taxed[] = [];
   for (const [n, l] of lines.entries()) {
@@ -177,9 +183,29 @@ export async function amountsOf(ctx: Ctx, supplierState: string, on: string, lin
     });
     const t = l.kind === 'charge' ? lineTax({ qty: '1', rate: l.amount ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState)
       : lineTax({ qty: l.qty ?? '0', rate: l.rate ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState);
-    taxed.push({ ...t, gstRate: rate.rate, gstRateSource: rate.source });
+    if (l.kind === 'charge' && isReverseCharge(hsn, supplier, on, rules)) {
+      const nil = roundMoney('0');
+      taxed.push({ taxable: t.taxable, cgst: nil, sgst: nil, igst: nil, lineTotal: t.taxable, gstRate: rate.rate, gstRateSource: rate.source,
+        reverseCharge: { cgst: t.cgst, sgst: t.sgst, igst: t.igst } });
+    } else {
+      taxed.push({ ...t, gstRate: rate.rate, gstRateSource: rate.source, reverseCharge: null });
+    }
   }
   return { placeOfSupply: place.state, intraState: place.intraState, lines: taxed, totals: totalsOf(taxed) };
+}
+
+/** The bill's stated total against the worked-out one, within a rupee: total_mismatch, or rcm_bill_has_tax when the
+ * supplier charged the tax we owe under reverse charge (ADR-010 §4), which its bill then states and ours doesn't. */
+export function checkStated(a: Awaited<ReturnType<typeof amountsOf>>, stated: string): void {
+  const off = (more: Money | '0') => dec(a.totals.total).plus(dec(more)).minus(dec(stated)).abs().gte(1);
+  if (!off('0')) return;
+  const ours = roundMoney(a.lines.reduce((s, l) => (l.reverseCharge === null ? s
+    : s.plus(dec(l.reverseCharge.cgst)).plus(dec(l.reverseCharge.sgst)).plus(dec(l.reverseCharge.igst))), dec('0')));
+  if (!dec(ours).isZero() && !off(ours)) {
+    throw refuseAt('rcm_bill_has_tax', 'The supplier’s bill charges GST on a reverse-charge service: that tax is ours to pay, so ask for a bill without it',
+      ['statedTotal']);
+  }
+  throw refuseAt('total_mismatch', `The bill works out at ${a.totals.total}, not the ${stated} it states: put it right with the supplier`, ['statedTotal']);
 }
 
 /** How far a billed rate is above its PO rate, in percent to two places (0 at or below it); null for a free item's line

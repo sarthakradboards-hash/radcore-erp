@@ -86,6 +86,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /gst/rates': 'gst:read',
   'GET /gst/rates/in-force': 'gst:read',
   'PUT /gst/rates': 'gst:write',
+  'GET /gst/rcm-rules': 'gst:read',
+  'PUT /gst/rcm-rules': 'gst:write',
   // Parties (RAD-90): credit terms only with parties:manage.
   'GET /parties': 'parties:read',
   'GET /parties/:id': 'parties:read',
@@ -511,6 +513,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /gst/rates': ['lib-gst', 'lib-platform'],
   'GET /gst/rates/in-force': ['lib-gst', 'lib-platform'],
   'PUT /gst/rates': ['lib-gst', 'lib-platform'],
+  'GET /gst/rcm-rules': ['lib-gst', 'lib-platform'],
+  'PUT /gst/rcm-rules': ['lib-gst', 'lib-platform'],
   'GET /parties': ['lib-accounts', 'lib-platform'],
   'GET /parties/:id': ['lib-accounts', 'lib-platform'],
   'GET /parties/:id/statement': ['lib-accounts', 'lib-platform'],

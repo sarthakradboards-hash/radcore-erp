@@ -152,7 +152,7 @@ export const orderApproval: ApprovalSpec<Version> = {
 async function place(ctx: Ctx, o: Row, approved: boolean): Promise<string> {
   if (o.status !== 'draft') throw wrongStatus(o.status, 'placed');
   await holdPeriod(ctx, o.businessDate);
-  const supplier = await buyingFrom(ctx, o.partyId);
+  const supplier = await buyingFrom(ctx, o.partyId, { goods: true });
   const lines = await linesOf(ctx, o.id);
   await checkLines(ctx, lines);
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, lines);
@@ -238,7 +238,7 @@ export async function getOrderById(ctx: Ctx, { id }: In<typeof getPurchaseOrder>
 /** POST /purchasing/orders (purchasing:write): a new draft. */
 export async function addOrder(ctx: Ctx, input: In<typeof createPurchaseOrder>): Promise<Out<typeof createPurchaseOrder>> {
   checkDraftDate(input.businessDate);
-  await buyingFrom(ctx, input.supplierId);
+  await buyingFrom(ctx, input.supplierId, { goods: true });
   await checkLines(ctx, input.lines);
   const [row] = await purchasingTx(ctx).insert(purchaseOrders).values({ partyId: input.supplierId, businessDate: input.businessDate,
     expectedBy: input.expectedBy, notes: input.notes }).returning({ id: purchaseOrders.id });
@@ -254,7 +254,7 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updatePu
   checkDraftDate(input.businessDate);
   await checkLines(ctx, input.lines);
   if (o.status === 'draft') {
-    await buyingFrom(ctx, input.supplierId);
+    await buyingFrom(ctx, input.supplierId, { goods: true });
     await purchasingTx(ctx).update(purchaseOrders).set({ partyId: input.supplierId, businessDate: input.businessDate, expectedBy: input.expectedBy,
       notes: input.notes }).where(eq(purchaseOrders.id, id));
     await writeLines(ctx, id, input.lines, null);
@@ -267,7 +267,7 @@ export async function changeOrder(ctx: Ctx, { id, ...input }: In<typeof updatePu
   }
   // No line below what has come in against it, nor a line receipts name removed or turned into another item (po_received).
   await checkReceived(ctx, id, input.lines);
-  const supplier = await buyingFrom(ctx, o.partyId);
+  const supplier = await buyingFrom(ctx, o.partyId, { goods: true });
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, input.lines);
   const now = dec(o.total ?? '0');
   const next = dec(amounts.totals.total);
@@ -341,7 +341,7 @@ export async function placeOrder(ctx: Ctx, { id }: In<typeof placePurchaseOrder>
   await holdPeriod(ctx, seen.businessDate);
   const o = await orderOf(ctx, id, 'purchasing:write', true);
   if (o.status !== 'draft') throw wrongStatus(o.status, 'placed');
-  const supplier = await buyingFrom(ctx, o.partyId);
+  const supplier = await buyingFrom(ctx, o.partyId, { goods: true });
   const lines = await linesOf(ctx, id);
   await checkLines(ctx, lines);
   const amounts = await amountsOf(ctx, supplier.stateCode, o.businessDate, lines);

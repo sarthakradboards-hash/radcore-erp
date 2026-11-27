@@ -13,11 +13,12 @@ export const supplierKind = (p: { gstin: string | null; composition: boolean }):
   (p.gstin === null ? 'unregistered' : p.composition ? 'composition' : 'regular');
 
 /** A line's credit: all its tax by head, or none and why. CGST and SGST are claimed only from a supplier in the
- * company's state, IGST only from one in another (ADR-009 §2, F28), so a head that doesn't fit gives none at all. */
+ * company's state, IGST only from one in another (ADR-009 §2, F28), so a head that doesn't fit gives none at all. A
+ * reverse-charge line's tax is the one we owe, and its supplier's kind is passed over (ADR-010 §4). */
 export function inputCredit(l: { tax: { cgst: Money; sgst: Money; igst: Money }; kind: SupplierKind; creditFrom: readonly SupplierKind[];
-  blocked: boolean; intraState: boolean }): Credit {
+  blocked: boolean; intraState: boolean; reverseCharge?: boolean }): Credit {
   const none = (reason: NoCredit): Credit => ({ cgst: roundMoney('0'), sgst: roundMoney('0'), igst: roundMoney('0'), reason });
-  if (!l.creditFrom.includes(l.kind)) return none('supplier_kind');
+  if (l.reverseCharge !== true && !l.creditFrom.includes(l.kind)) return none('supplier_kind');
   if (l.blocked) return none('blocked');
   const wrong = l.intraState ? dec(l.tax.igst) : dec(l.tax.cgst).plus(dec(l.tax.sgst));
   if (!wrong.isZero()) return none('state');
