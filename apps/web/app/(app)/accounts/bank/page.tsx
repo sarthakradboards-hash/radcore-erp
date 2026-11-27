@@ -207,6 +207,11 @@ function PastImports({ accountId, mayUndo }: { accountId: string; mayUndo: boole
   );
 }
 
+/** A statement line in words, for the match panel's title and the row's buttons: which way the money went, how much, when
+ * (auditor-3 on #456). */
+const lineWords = (l: Line) => ({ dir: t(l.direction === 'in' ? 'books.bank.dir.in' : 'books.bank.dir.out'), amount: formatMoney(l.amount),
+  date: formatDate(l.valueDate) });
+
 const pickSchema = z.object({ journalLineId: z.string().min(1, t('books.bank.match.err.pick')) });
 
 /** Matches one statement line to one of the book lines the server offers for it (same amount, nearby, best first). */
@@ -214,10 +219,10 @@ function MatchPanel({ line, onClose }: { line: Line; onClose: () => void }) {
   const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const q = useApiQuery(listMatchCandidatesContract, { id: line.id });
-  const match = useApiMutation(matchLinesContract, { invalidates: [listStatementLinesContract, listMatchCandidatesContract] });
+  const match = useApiMutation(matchLinesContract, { invalidates: [listStatementLinesContract, listMatchCandidatesContract, listStatementImportsContract] });
   // The panel opens below the table, so focus goes to its heading.
   useEffect(() => { heading.current?.focus(); }, []);
-  const title = t('books.bank.match.title', { date: formatDate(line.valueDate), amount: formatMoney(line.amount) });
+  const title = t('books.bank.match.title', lineWords(line));
   const body = q.error !== null ? <p role="alert" className="kit-form-alert">{t('error.title')}</p>
     : q.data === undefined ? <p>{t('loading')}</p>
     : q.data.candidates.length === 0 ? <p>{t('books.bank.match.none')}</p>
@@ -249,13 +254,12 @@ function MatchPanel({ line, onClose }: { line: Line; onClose: () => void }) {
 /** The account's statement lines, each matched or not; under bank:reconcile, Match an unmatched one, Unmatch a matched one. */
 function StatementLines({ accountId, mayMatch }: { accountId: string; mayMatch: boolean }) {
   const lines = useApiList(listStatementLinesContract, { filter: { accountId } });
-  const unmatch = useApiMutation(unmatchContract, { invalidates: [listStatementLinesContract, listMatchCandidatesContract] });
+  const unmatch = useApiMutation(unmatchContract, { invalidates: [listStatementLinesContract, listMatchCandidatesContract, listStatementImportsContract] });
   const [matching, setMatching] = useState<Line | null>(null);
   const [unmatching, setUnmatching] = useState<Line | null>(null);
   const tableHeading = useRef<HTMLHeadingElement>(null);
   // Matching or unmatching swaps the row's button, so focus goes back to the table's heading, not the body.
   const backToTable = () => setTimeout(() => tableHeading.current?.focus(), 0);
-  const said = (l: Line) => ({ date: formatDate(l.valueDate), amount: formatMoney(l.amount) });
   const columns: Column<Line>[] = [
     { id: 'date', header: t('books.bank.col.date'), cell: (l) => formatDate(l.valueDate) },
     { id: 'narration', header: t('books.bank.col.narration'), cell: (l) => l.narration },
@@ -268,9 +272,9 @@ function StatementLines({ accountId, mayMatch }: { accountId: string; mayMatch: 
         {l.matchId === null ? null : <span>{t('books.bank.matched')} </span>}
         {!mayMatch ? null : l.matchId === null ? (
           <button type="button" className="kit-button" aria-pressed={matching?.id === l.id} onClick={() => setMatching(l)}
-            aria-label={t('books.bank.match.for', said(l))}>{t('books.bank.match')}</button>
+            aria-label={t('books.bank.match.for', lineWords(l))}>{t('books.bank.match')}</button>
         ) : (
-          <button type="button" className="kit-button" onClick={() => setUnmatching(l)} aria-label={t('books.bank.unmatch.for', said(l))}>
+          <button type="button" className="kit-button" onClick={() => setUnmatching(l)} aria-label={t('books.bank.unmatch.for', lineWords(l))}>
             {t('books.bank.unmatch')}
           </button>
         )}
