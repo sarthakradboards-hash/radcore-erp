@@ -3,3 +3,4 @@
 export { fakeClock, type FakeClock } from './clock.ts';
 export { factory, type Fresh } from './factory.ts';
 export { testKmsKeyArn, testPassword, testProductionSettings, testRateLimitKey, testSettings } from './settings.ts';
+export { testPdf, type TestPdfLine } from './pdf.ts';
