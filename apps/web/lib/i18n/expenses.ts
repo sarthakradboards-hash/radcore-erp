@@ -38,5 +38,9 @@ export const expenses = {
   'books.categories.save': 'Save',
   'books.categories.keep': 'Keep it',
   'books.categories.err.name_taken': 'Another category has this name. Choose another.',
-  'books.categories.err.not_an_expense_account': 'Pick only switched-on expense accounts.',
+  'books.categories.err.not_an_expense_account': 'Pick only switched-on expense accounts. Untick any marked switched off, or switch it on in the chart.',
+  'books.categories.err.name': 'Name it',
+  'books.categories.err.nameLong': 'Keep the name to 80 characters',
+  'books.categories.accounts.off': '{name} (switched off)',
+  'books.categories.none': 'You can’t see the expense categories.',
 } as const;
