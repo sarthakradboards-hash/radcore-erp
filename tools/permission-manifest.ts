@@ -89,6 +89,8 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /tds/sections': 'tds:read',
   'GET /tds/rates': 'tds:read',
   'PUT /tds/rates': 'tds:write',
+  'GET /gst/rcm-rules': 'gst:read',
+  'PUT /gst/rcm-rules': 'gst:write',
   // Parties (RAD-90): credit terms only with parties:manage.
   'GET /parties': 'parties:read',
   'GET /parties/:id': 'parties:read',
@@ -516,6 +518,8 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /tds/sections': ['lib-accounts', 'lib-platform'],
   'GET /tds/rates': ['lib-accounts', 'lib-platform'],
   'PUT /tds/rates': ['lib-accounts', 'lib-platform'],
+  'GET /gst/rcm-rules': ['lib-gst', 'lib-platform'],
+  'PUT /gst/rcm-rules': ['lib-gst', 'lib-platform'],
   'GET /parties': ['lib-accounts', 'lib-platform'],
   'GET /parties/:id': ['lib-accounts', 'lib-platform'],
   'GET /parties/:id/statement': ['lib-accounts', 'lib-platform'],

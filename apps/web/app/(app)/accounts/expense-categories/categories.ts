@@ -3,6 +3,7 @@
 // to blocked finds it again); what's sent drops it, and the contract's own checks then run on what's sent.
 import { createExpenseCategory, setExpenseCategory, type listAccounts } from '@radcore/lib-accounts/contract';
 import { z } from 'zod';
+import { t } from '../../../../lib/i18n/index.ts';
 
 type Account = z.output<typeof listAccounts.output>['items'][number];
 
@@ -13,7 +14,8 @@ export const CLAUSES = ['(a)', '(aa)', '(ab)', '(b)', '(b)(i)', '(b)(ii)', '(b)(
 export const expenseAccounts = (accounts: readonly Account[]) =>
   accounts.filter((a) => a.type === 'expense' && a.controlKind === 'none' && a.active);
 
-const fields = z.object({ name: z.string(), credit: z.enum(['allowed', 'blocked']), blockedClause: z.string(), accountIds: z.array(z.string()) });
+// The name's own limits are worded here, so the contract's raw text never shows (e2e-playwright on #430).
+const fields = z.object({ name: z.string().trim().min(1, t('books.categories.err.name')).max(80, t('books.categories.err.nameLong')), credit: z.enum(['allowed', 'blocked']), blockedClause: z.string(), accountIds: z.array(z.string()) });
 type Fields = z.output<typeof fields>;
 const sent = (v: Fields) => ({ name: v.name, credit: v.credit, blockedClause: v.credit === 'blocked' ? v.blockedClause : null, accountIds: v.accountIds });
 

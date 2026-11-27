@@ -72,8 +72,10 @@ function AddDialog({ accounts, onDone }: { accounts: readonly Choice[]; onDone: 
 function EditDialog({ category, accounts, onDone }: { category: Category; accounts: readonly Choice[]; onDone: () => void }) {
   const save = useApiMutation(setExpenseCategory, { invalidates: refresh });
   const schema = useMemo(() => editSchema(category.id), [category.id]);
-  // An account the category posts to but the chart no longer offers (switched off since) stays ticked, so it's seen.
-  const offered = [...accounts, ...category.accounts.filter((a) => !accounts.some((o) => o.value === a.id)).map((a) => ({ value: a.id, label: a.name }))];
+  // An account the category posts to but the chart no longer offers (switched off since) stays ticked and is marked, so it's
+  // seen and can be unticked; saving with it ticked is refused (auditor-3 on #430).
+  const offered = [...accounts, ...category.accounts.filter((a) => !accounts.some((o) => o.value === a.id))
+    .map((a) => ({ value: a.id, label: t('books.categories.accounts.off', { name: a.name }) }))];
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onDone(); }} title={t('books.categories.edit.title', { name: category.name })}>
       <Form schema={schema} saved={false} messages={MESSAGES}
@@ -151,9 +153,12 @@ function Table({ categories, accounts, mayWrite }: { categories: readonly Catego
 }
 
 export default function ExpenseCategoriesPage() {
-  const mayWrite = useMe().permissions.includes('accounts:write');
-  const list = useApiQuery(listExpenseCategories, {});
-  const chart = useApiQuery(listAccounts, {});
+  const { permissions } = useMe();
+  // The keys the two reads need, from their contracts, so a change to either reaches the screen.
+  const mayRead = [listExpenseCategories.perm, listAccounts.perm].every((p) => p === null || permissions.includes(p));
+  const mayWrite = permissions.includes('accounts:write');
+  const list = useApiQuery(listExpenseCategories, {}, { enabled: mayRead });
+  const chart = useApiQuery(listAccounts, {}, { enabled: mayRead });
   const [adding, setAdding] = useState(false);
   const accounts = useMemo(() => expenseAccounts(chart.data?.items ?? []).map((a) => ({ value: a.id, label: a.name })), [chart.data]);
   const failed = list.error ?? chart.error;
@@ -161,7 +166,7 @@ export default function ExpenseCategoriesPage() {
     <>
       <h1>{t('books.categories.title')}</h1>
       <p>{t('books.categories.intro')}</p>
-      {failed !== null ? (
+      {!mayRead ? <p>{t('books.categories.none')}</p> : failed !== null ? (
         <div role="alert" className="kit-form-alert">
           {t('error.title')}{' '}
           <button type="button" className="kit-button" onClick={() => { void list.refetch(); void chart.refetch(); }}>{t('error.retry')}</button>

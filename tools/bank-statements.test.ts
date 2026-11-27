@@ -7,9 +7,11 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  importStatement, readStatementFile, statementFormatOf, statementImportById, statementLinesPage, storeStatement, undoStatementImport,
+  importStatement, readStatementFile, statementFileReader, statementFormatOf, statementImportById, statementLinesPage, storeStatement,
+  undoStatementImport, type StatementLayout,
 } from '@radcore/lib-accounts';
 import { readTable, type Ctx, type FileStore, type Principal, type Table } from '@radcore/lib-platform';
+import { testPdf } from '@radcore/test-helpers';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -58,10 +60,12 @@ describe.skipIf(!url || !superUrl)('bank statements', { timeout: 60_000 }, () =>
     return { id, key, contentType, files };
   };
   /** The whole import as the api and the worker do it: the request, the file read, then the job's transaction. */
-  async function importFile(accountId: string, bytes: Uint8Array, o: { contentType?: string; format?: typeof FORMAT | null } = {}) {
+  async function importFile(accountId: string, bytes: Uint8Array,
+    o: { contentType?: string; format?: typeof FORMAT | null; layouts?: readonly StatementLayout[] } = {}) {
     const f = await file(bytes, o.contentType);
     const { id } = await run((ctx) => importStatement(ctx, { accountId, fileId: f.id, ...(o.format === null ? {} : { format: o.format ?? FORMAT }) }));
-    const before = await readStatementFile({ importId: id, key: f.key, contentType: f.contentType }, { files: f.files });
+    const reader = o.layouts === undefined ? readStatementFile : statementFileReader(o.layouts);
+    const before = await reader({ importId: id, key: f.key, contentType: f.contentType }, { files: f.files });
     await run((ctx) => storeStatement(ctx, { importId: id, key: f.key, contentType: f.contentType }, { jobId: randomUUID(), alert: async () => undefined, before }));
     return run((ctx) => statementImportById(ctx, { id }));
   }
@@ -97,14 +101,33 @@ describe.skipIf(!url || !superUrl)('bank statements', { timeout: 60_000 }, () =>
     expect(await lines(account)).toHaveLength(4);
   });
 
-  it('refuses a cash account, a first upload with no layout, and a PDF it can’t read yet', async () => {
+  it('refuses a cash account, a first upload with no layout, and a PDF no bank’s layout knows', async () => {
     const cash = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'cash'")).rows[0]?.id ?? '';
     const f = await file(text(csv(april)));
     expect(await code(run((ctx) => importStatement(ctx, { accountId: cash, fileId: f.id, format: FORMAT })))).toBe('not_a_bank_account');
     const account = await bankAccount();
     expect(await code(run((ctx) => importStatement(ctx, { accountId: account, fileId: f.id })))).toBe('statement_format_required');
-    const pdf = await importFile(account, text('%PDF-1.7'), { contentType: 'application/pdf' });
+    const pdf = await importFile(account, testPdf([['Some Bank', 'Statement of account']]), { contentType: 'application/pdf' });
     expect([pdf.status, pdf.refusals.map((r) => r.code)]).toEqual(['refused', ['statement_layout_unknown']]);
+    const notPdf = await importFile(account, text('%PDF-1.7 not really'), { contentType: 'application/pdf' });
+    expect([notPdf.status, notPdf.refusals.map((r) => r.code)]).toEqual(['refused', ['statement_unreadable']]);
+  });
+
+  it('reads a PDF in the worker by the layout of the bank it’s from, and imports its lines as a CSV’s (RC-135)', async () => {
+    // A stand-in bank: its statement says so on its first line, and each line below the heading is one row. A PDF has
+    // no text for an empty cell, so this test's statement writes '-' there, which the layout reads as empty.
+    const layout: StatementLayout = {
+      bank: 'Test Bank',
+      matches: (pages) => pages[0]?.[0]?.[0]?.text === 'Test Bank statement',
+      read: (pages) => ({ format: FORMAT, table: { header: HEADER,
+        rows: pages.flat().slice(2).map((l) => l.map((p) => (p.text === '-' ? '' : p.text))) } }),
+    };
+    const at = (cells: readonly string[]) => cells.map((text, i) => ({ text: text === '' ? '-' : text, x: 40 + i * 80 }));
+    const statement = testPdf([['Test Bank statement', at(HEADER), ...april.map(at)]]);
+    const account = await bankAccount();
+    const done = await importFile(account, statement, { contentType: 'application/pdf', layouts: [layout] });
+    expect([done.status, done.newLines, done.refusals]).toEqual(['imported', 3, []]);
+    expect(await lines(account)).toHaveLength(3);
   });
 
   it('undoes an import only under the account’s import lock, so it takes turns with an import’s chain check', async () => {

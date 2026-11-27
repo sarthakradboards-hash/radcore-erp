@@ -54,7 +54,10 @@ function Review({ request }: { request: Pending }) {
       )}
       <ConfirmDialog open={acting === 'approve'} onOpenChange={close} messages={PERIOD_MESSAGES} title={t('books.unlocks.approve.title')}
         body={t('books.unlocks.approve.body')} action={t('books.unlocks.approve')} done={t('books.unlocks.approved')}
-        onConfirm={async () => { await decided.submit({ id: a.id, decision: 'approve', versionHash: a.versionHash }); }} />
+        onConfirm={async () => {
+          // A refusal (the lock moved: version_changed) re-reads the request, so the figures and Approve follow it (e2e-playwright on #428).
+          await decided.submit({ id: a.id, decision: 'approve', versionHash: a.versionHash }).catch((e: unknown) => { void q.refetch(); throw e; });
+        }} />
       <ReasonDialog open={acting === 'reject'} onOpenChange={close} messages={PERIOD_MESSAGES} title={t('books.unlocks.reject.title')}
         action={t('books.unlocks.reject')} done={t('books.unlocks.rejected')}
         onConfirm={async (reason) => { await decided.submit({ id: a.id, decision: 'reject', reason }); }} />
@@ -71,7 +74,7 @@ export default function UnlockApprovalsPage() {
     { id: 'who', header: t('books.unlocks.col.who'), cell: (r) => who(r.requestedBy) },
     { id: 'review', header: t('books.unlocks.col.actions'), cell: (r) => (
       <button type="button" className="kit-button" aria-pressed={open?.id === r.id} onClick={() => setOpen(r)}
-        aria-label={t('books.unlocks.review.for', { who: who(r.requestedBy) })}>{t('books.unlocks.review')}</button>
+        aria-label={t('books.unlocks.review.for', { who: who(r.requestedBy), when: formatMoment(r.requestedAt) })}>{t('books.unlocks.review')}</button>
     ) },
   ];
   return (

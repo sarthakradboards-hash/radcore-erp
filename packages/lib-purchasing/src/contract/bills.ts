@@ -40,7 +40,10 @@ const lineIn = z.discriminatedUnion('kind', [goodsIn, chargeIn, jobWorkIn]);
 /** A line's tax, worked out by lib-gst from the bill's own lines at the rates in force on the supplier's invoice date,
  * never at the PO's (RC-056): on read while a draft, stored when posted. */
 const lineAmounts = z.object({ gstRate: z.string().nullable(), gstRateSource: z.string().nullable(), taxable: moneyString(), cgst: money(), sgst: money(), igst: money(),
-  lineTotal: money() });
+  lineTotal: money(),
+  /** A reverse-charge charge's tax by head (ADR-010 §4, RAD-153): ours to pay, not on the supplier's bill, whose own heads
+   * are then 0. Null on any other line, and while a draft's tax can't be worked out. */
+  reverseCharge: z.object({ cgst: moneyString(), sgst: moneyString(), igst: moneyString() }).nullable() });
 const lineOut = z.discriminatedUnion('kind', [
   goodsIn.extend({ id: idString(), lineNo: z.number().int().positive(), itemId: idString(), sku: z.string(), name: z.string(),
     unit: z.string(), poRate: unitPriceString(), poNumber: z.string(),
@@ -88,13 +91,13 @@ const supplierDated = <T extends z.ZodType<{ businessDate: string; supplierInvoi
 
 // What a draft's save can refuse: its dates, its supplier and GSTIN, its lines' PO and receipt lines, its file (lib-platform's
 // readyFile: another kind, still being checked, or refused), and its status.
-const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'unknown_party', 'not_a_supplier', 'gstin_mismatch',
+const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'unknown_party', 'not_a_supplier', 'overseas_services_only', 'gstin_mismatch',
   'unknown_po_line', 'po_not_placed', 'other_supplier', 'unknown_receipt_line', 'receipt_not_posted', 'not_this_po_line',
   'quantity_too_precise', 'wrong_file_kind', 'not_ready', 'upload_refused', 'duplicate_bill', 'wrong_status', 'not_in_category', 'category_inactive'] as const;
 // What posting adds: the dates (ADR-008 §4), the file, the duplicate, the three-way match, the tax and stated total, the
 // approved version still holding, and the series.
 const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'date_before_source', 'bill_file_required', 'goods_not_received',
-  'over_received', 'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'nothing_to_revalue', 'account_inactive', 'version_changed', 'series_full', 'charge_needs_category'] as const;
+  'over_received', 'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'rcm_bill_has_tax', 'nothing_to_revalue', 'account_inactive', 'version_changed', 'series_full', 'charge_needs_category'] as const;
 // The duplicate check is the database's: a partial unique index on (party, the invoice's financial year, its key) over
 // every bill that isn't cancelled, drafts too (ADR-008 §7), so a draft's save meets it as posting does.
 const BILL_DB_ERRORS = {
@@ -144,8 +147,8 @@ export const postPurchaseBill = defineContract({
 export const purchaseBillApproval = approvalContracts('purchase-bill', 'bills:approve',
   ['wrong_status', 'year_not_open', 'period_locked', 'date_before_source', 'not_a_supplier', 'gstin_mismatch', 'over_received',
     'receipt_not_posted', 'duplicate_bill', 'goods_not_received', 'bill_file_required', 'not_this_po_line', 'unknown_receipt_line',
-    'nothing_to_revalue', 'account_inactive', 'not_in_category', 'category_inactive',
-    'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'series_full'], BILL_DB_ERRORS);
+    'nothing_to_revalue', 'account_inactive', 'not_in_category', 'category_inactive', 'overseas_services_only',
+    'no_gst_rate', 'company_profile_incomplete', 'total_mismatch', 'rcm_bill_has_tax', 'series_full'], BILL_DB_ERRORS);
 /** Cancels a posted bill by a mirror entry dated `businessDate`, with the reason: only while nothing is applied to it
  * and no supplier return has debited it. */
 export const cancelPurchaseBill = defineContract({
