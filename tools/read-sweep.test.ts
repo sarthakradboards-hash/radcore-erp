@@ -385,6 +385,18 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       add(['GET /approvals/cash-limit/:id'], request);
     });
 
+    // A move back of the period lock, waiting (RAD-157). Written as rows, not through askToUnlock: that needs the run's one
+    // period lock set, which every other file's postings would meet.
+    await step('period unlock', async () => {
+      const { rows: [asked] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.period_unlock_requests (kind, through, reason, lock_was) select 'move_back', '2020-01-31', 'Sweep', '2020-02-29'
+        from p returning id`);
+      const { rows: [request] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.approvals (kind, record_id, version_digest, requested_by) select 'period-unlock', $1, repeat('0', 64), 'system:test'
+        from p returning id`, [asked?.id]);
+      add(['GET /approvals/period-unlock/:id'], request?.id);
+    });
+
     // A booking: a serialised unit promised to a confirmed order line, with an advance.
     await step('booking', async () => {
       // The customer's credit and price for the scooter, so its order confirms without an override.

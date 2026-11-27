@@ -666,6 +666,13 @@
       "when": 1795765419368,
       "tag": "0094_bill_input_credit",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795769649095,
+      "tag": "0095_period_lock",
+      "breakpoints": true
     }
   ]
 }

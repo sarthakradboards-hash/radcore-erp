@@ -61,6 +61,10 @@ export async function lockPeriod(ctx: Ctx): Promise<string | null> {
 export async function holdPeriod(ctx: Ctx, businessDate: string): Promise<void> {
   const through = await lockPeriod(ctx);
   if (through !== null && businessDate <= through) refuse('period_locked', `The books are locked through ${through}`);
+  await yearOpen(ctx, businessDate);
+}
+
+async function yearOpen(ctx: Ctx, businessDate: string): Promise<void> {
   const year = financialYear(businessDate);
   const [open] = await accountsTx(ctx).select({ start: financialYears.start }).from(financialYears)
     .where(eq(financialYears.start, year.start)).limit(1);
@@ -77,8 +81,12 @@ async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; sourc
   const tx = accountsTx(ctx);
   // The arithmetic first, before anything is read (posting.ts): each line one side above zero, and the entry balanced.
   const amounts = balancedAmounts(e.lines);
-  // 1. The period lock (holdPeriod), again if the document's service already took it: a second FOR SHARE is free.
-  await holdPeriod(ctx, e.businessDate);
+  // 1. The period lock (holdPeriod), again if the document's service already took it: a second FOR SHARE is free. The
+  // year-end close and its reversal pass it, dated their year's 31 March (ADR-009 §6), as the database's trigger does.
+  if (e.kind === 'year_close' && e.businessDate === financialYear(e.businessDate).end) {
+    await lockPeriod(ctx);
+    await yearOpen(ctx, e.businessDate);
+  } else await holdPeriod(ctx, e.businessDate);
   // Every line's account and control kind in one read.
   const ids = e.lines.flatMap((l) => ('id' in l.account ? [l.account.id] : []));
   const keys = e.lines.flatMap((l) => ('system' in l.account ? [l.account.system] : []));
