@@ -176,8 +176,9 @@ delivery they belong to (M5-17), so §7's per-line check still holds.
 - **Kinds** are a fixed list in lib-common (ADR-005 §4): `opening`, `goods_receipt`, `purchase_bill`,
   `supplier_return`, `delivery`, `delivery_return`, `invoice`, `credit_note`, `payment_in`, `payment_out`,
   `expense`, `stock_transfer`, `stock_adjustment`, `job_work`, `revaluation`, `salary_advance`, `payroll`,
-  `payroll_payment`, `statutory_payment`, `tds_deposit`, `transfer` (between own accounts), `manual` and
-  `year_close`. A ticket that adds a kind (M5-03, M5-07) adds it here and in the posting rules.
+  `payroll_payment`, `statutory_payment`, `tds_deposit`, `transfer` (between own accounts), `bank_charge`
+  (a bank charge or interest booked from a statement, M5-13), `manual` and `year_close`. A ticket that adds a kind
+  (M5-03, M5-07) adds it here and in the posting rules.
 - **One entry per document and kind.** An entry names its document (`source_table`, `source_id`). A unique key on
   `(source_table, source_id, kind, reverses_entry_id)` with `NULLS NOT DISTINCT` refuses posting a document twice.
 - **Corrections are reversals** (ADR-005 §7). Cancelling writes a new entry with `reverses_entry_id` set:
@@ -516,6 +517,7 @@ profile (M2-02), and the place of supply decides (CA-08). A line's rate is the o
 | PF, ESIC or PT paid over | - | Dr the payable, Cr Bank | M6-08, M6-09 |
 | TDS paid over | - | Dr TDS Payable, Cr Bank | M5-10 |
 | Transfer between own accounts | - | Dr the account it went to, Cr the account it came from | M5-19 |
+| Bank charge or interest from a statement ([ADR-009](009-accounts.md) §12) | - | Dr the charges account, Cr Bank; or Dr Bank, Cr the interest account (ordinary accounts only) | M5-13 |
 | Manual journal | - | ordinary accounts only (§2), with a reason | M2-03 |
 | Year-end close | - | every income and expense account's balance for the year, emptied into Retained Earnings, dated 31 March | M5-09 |
 | Cancelling any of these | the mirror of its movements, at the same values | the mirror of its entry, dated the cancellation's business date | each document's ticket |
