@@ -102,7 +102,9 @@ out.
   - each runs as a non-root user, with a read-only root filesystem, `cap_drop: ALL` and `no-new-privileges`;
   - no container mounts the Docker socket;
   - logs rotate (`json-file` with a size cap);
-  - export temp files go to a size-limited volume.
+  - export temp files go to a size-limited volume;
+  - every container has a memory limit (`mem_limit`, with swap off), sized in M8 so their sum fits the host. The
+    worker's limit is the bound on file parsing (ADR-003 §7); its RSS poll is only the early stop.
 
 ### 3. Credentials, deploys and rollback
 

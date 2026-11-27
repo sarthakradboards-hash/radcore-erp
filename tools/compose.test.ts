@@ -30,3 +30,14 @@ it('pins every image by digest', () => {
   expect(images.length).toBe(2);
   for (const image of images) expect(image).toMatch(/^[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$/);
 });
+
+it('gives every service a memory limit with swap off (ADR-004; the architect on RAD-159)', () => {
+  // Each service is a two-space-indented name under `services:`, up to the next top-level key.
+  const services = compose.slice(compose.indexOf('services:'), compose.search(/^volumes:/m)).split(/^ {2}(?=[a-z][\w-]*:\s*$)/m).slice(1);
+  expect(services.length).toBeGreaterThan(0);
+  for (const s of services) {
+    const name = s.split(':')[0];
+    const limit = /^ {4}mem_limit:\s*(\S+)\s*$/m.exec(s)?.[1];
+    expect([name, limit !== undefined, /^ {4}memswap_limit:\s*(\S+)\s*$/m.exec(s)?.[1]]).toEqual([name, true, limit]);
+  }
+});

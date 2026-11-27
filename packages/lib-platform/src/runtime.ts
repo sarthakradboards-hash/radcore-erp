@@ -86,6 +86,9 @@ export async function runJobs(queue: AppJobQueue, jobs: readonly JobDefinition[]
     });
     await queue.work(deadLetter, async ([dead]) => {
       if (dead === undefined) return;
+      // The job's own record closed first (its `failed` step, RAD-159); the alert goes either way.
+      await job.handleDead?.(dead.data, dead.id, { open, load: loadPrincipal, alert, ...(files === undefined ? {} : { files }) })
+        .catch(async () => { await alert(`job ${job.name}'s failed step failed too (job ${dead.id})`); });
       // The job's name and id, never its payload.
       await alert(`job ${job.name} failed after all its attempts (job ${dead.id})`);
       if (job.deleteOnComplete) await queue.deleteJob(deadLetter, dead.id);
