@@ -232,8 +232,8 @@ profile, the period lock, the filed-month lock), each `FOR SHARE` except the one
   the filing or request row.
 
 ```
-ask (books:lock)            decide (books:unlock, not the asker)
-  request row, pending  ->   lockFirst: profile SHARE, period lock UPDATE, filed row SHARE
+ask (books:lock) decide (books:unlock, not the asker)
+  request row, pending -> lockFirst: profile SHARE, period lock UPDATE, filed row SHARE
                              lock the request row (ADR-001 §8b), check version (lock date unchanged)
                              approved: move the lock back, or reverse the close dated 31 March
 ```
@@ -300,10 +300,10 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
 | `books:lock` | move the period lock forward, close a year, and ask to move the lock back or reopen a year | admin, accounts |
 | `books:unlock` | approve moving the lock back, reopening a year, and undoing a filing (D-06; second factor) | admin, owner |
 | `bank:read` | see statement lines, matches and the reconciliation statement (§11, §12) | admin, owner, accounts |
-| `bank:reconcile` | import statements, match and unmatch, book bank charges (second factor: it posts to Bank) | admin, accounts |
+| `bank:reconcile` | import statements (with `statement_files:write` for the upload itself), match and unmatch, book bank charges (second factor: it posts to Bank) | admin, accounts |
 | `reports:read` | see the accounts reports (§13) | admin, owner, accounts |
 | `migration:write` | run the Vyapar import steps and the daily compare, and mark a day reconciled (§14) | admin, accounts |
-| `migration:approve` | approve opening balances, close the opening import, sign the parallel month's weeks (§14) | admin, owner |
+| `migration:approve` | approve opening balances, close the opening import, sign the parallel month's weeks (§14; second factor: it posts every opening balance) | admin, owner |
 
 - **Record scope (E7):** `expenses:read` names `expenses` in its `records`, owned by `created_by`. `tds:read`,
   `gst:file`, `books:lock`, `books:unlock` and the five keys of §11 to §14 act on company rows, not owned records,
@@ -327,8 +327,8 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
 | M5-11 | backend-3 | `statement_formats`, `statement_imports`, `bank_statement_lines`; the PDF reader in the worker; `bank:read`, `bank:reconcile` |
 | M5-13 | backend-3 | `bank_matches` and its two link tables; the `bank_charge` entry kind; `bank.match_days`; the `bank_matched` check on cancels |
 | M5-14 | backend-3 | the report views and indexes; `reports:read` |
-| M5-16 | backend-3 | lib-platform's `defineImport` and `import_runs`; `opening_balances`; `accounts.cut_over_date`, `accounts.opening_closed_on`; `migration:write`, `migration:approve`; `tools/mask-vyapar` |
-| M5-17 | backend | `opening_invoices`, `opening_bills` and their lines; their `allocatable_documents` rows |
+| M5-16 | backend-3 | lib-platform's `defineImport` and `import_runs`; `opening_balances` and the `accounts.opening` series; `accounts.cut_over_date`, `accounts.opening_closed_on`; `migration:write`, `migration:approve`; `tools/mask-vyapar` |
+| M5-17 | backend | `opening_invoices`, `opening_bills` and their lines, `opening_receipts`, `opening_payments`; their `allocatable_documents` rows |
 | M5-18 | backend-3 | `reconciliation_runs`; the daily compare |
 
 - lib-accounts' tables split by family: `tables-expenses.ts`, `tables-tds.ts`, `tables-filings.ts`,
@@ -359,24 +359,29 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
   move-back requests at once don't deadlock; P&L of a closed year reads without the close.
 - **M5-11:** an .xlsx, a tab-separated CSV, a Windows-1252 file and a 5 MB file each import (GL-052); a header under
   title lines is found; an in and an out of the same amount on one day are both kept; importing an overlapping file
-  again adds nothing; `balance_chain_broken` and `balance_gap` name their rows, and a refused row inserts nothing; a PDF
-  over the page limit is refused in the worker, never the api; an unknown PDF layout is refused; undoing an import is
-  refused once a line is matched.
+  again adds nothing; an earlier month filled in after a later one chains and imports, while a hole is refused;
+  `balance_chain_broken` and `balance_gap` name their rows, and a refused row inserts nothing; a PDF over the page limit
+  is refused in the worker, never the api; an unknown PDF layout is refused; undoing an import is refused once a line is
+  matched.
 - **M5-13:** a payment matched by reference, and one by party; the same amount and date with no reference or party is
   only a suggestion; one entry matched over two bank lines, and two entries over one; a bank charge booked from a match,
-  then unmatched, reverses it; unmatching a line dated in a locked period is refused; two people matching one line   get
-  `already_matched`; cancelling a matched payment gets `bank_matched`; a newest-first statement checks its chain; a year
-  of 20,000 lines auto-matches in batches without a long transaction.
+  then unmatched, reverses it, and unmatching succeeds in a locked period with the reversal dated today; a cancel and a
+  match on one payment run at once and only one wins; a receipt cancelled and entered again offers only the live line; a
+  one-word party hit is only a suggestion; two people matching one line get `already_matched`; cancelling a matched
+  payment gets `bank_matched`; a newest-first statement checks its chain; a year of 20,000 lines auto-matches in batches
+  without a long transaction.
 - **M5-14:** each report's first page and totals under 1 second at 50,000 journal lines; the trial balance and balance
   sheet agree with the books check; a ledger's second page opens at the first page's closing balance; a closed year's
   P&L; the ageing's "not on a bill" column; costs masked without `cost:read`.
 - **M5-16:** a masked fixture's dry run lists every problem by row and column and writes nothing; a commit of a changed
   file is refused `import_not_dry_run`; steps out of order are refused; opening balances approved by their maker are
-  refused; `opening_totals_differ`; after `accounts.opening_closed_on` every step answers `opening_closed`; the books
-  check passes after the last step (GL-062).
+  refused; a commit re-checks a row whose party was changed after the dry run; units in stock come in at step 3 and the
+  books check's units-equal-quantity line holds; a mid-year cut-over's TDS rows keep the catch-up right;
+  `opening_totals_differ`; after `accounts.opening_closed_on` every step answers `opening_closed`; the books check
+  passes after the last step (GL-062).
 - **M5-17:** an opening invoice is paid, chased and credited up to its summary line, and goods back come in at the
   current average; it isn't in RadCore's GSTR-1, while its credit note is; a second invoice with the same Vyapar number
-  for that party and year is refused.
+  in that year is refused; a party with an open invoice and an advance ties out, then the advance is applied.
 - **M5-18:** a day with a difference can't be marked reconciled until the difference has a reason; a ₹1 gap passes only
   when it is the day's round-off; a stock value gap is logged as "stock valuation"; a document in only one system is
   listed.
@@ -400,8 +405,9 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
   row with both or neither of withdrawal and deposit is refused, with its row number.
 - **The running balance is required and checked (RC-136).** A file without one is refused (`balance_required`). Each
   row's balance is the previous row's plus or minus its amount (`balance_chain_broken`, with the row). Rows that overlap
-  lines already stored for the account must agree with them, and the first new row must follow on from the last stored
-  balance (`balance_gap`).
+  lines already stored for the account must agree with them. New rows must chain to the stored lines on either side of
+  them: so an earlier month may be filled in after a later one, as long as its last balance leads into the next stored
+  line, and a hole between files is refused (`balance_gap`).
 - **Duplicates (RC-136).** A line is already present when the account, value date, direction, amount, running balance
   and reference (empty when none) all equal a stored line's: a unique index on those columns. Two genuine payments of
   the same amount on one day, or an in and an out, have different balances, so both are kept. The import reports what
@@ -418,23 +424,27 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
   bank line several entries (RC-210). A statement line and a journal line are each in at most one live match (partial
   unique indexes), and the two sides' signed totals are equal, checked at commit (`match_unbalanced`).
 - **What can match (RC-145).** A candidate is an unmatched journal line on that account, of the same amount, dated
-  within `bank.match_days` of the value date (5 by default). Candidates are ranked by:
+  within `bank.match_days` of the value date (5 by default), whose entry is neither reversed nor a reversal: a match on
+  such a line is refused (`entry_reversed`), so a document cancelled and entered again offers only its live entry.
+  Candidates are ranked by:
   - **reference:** the line's reference, or a UTR, cheque or transaction number in its narration, equals the posting
     document's reference (a payment's `reference`, M3-12);
-  - **party:** the narration names the posting document's party (its normalised name, or a word of it of five letters or
-    more);
+    - **party:** the narration holds the posting document's party's whole normalised name; one word of it (five letters
+    or more) only ranks a suggestion higher;
   - then the nearest date.
   Amount and date alone never make a match.
 - **Auto-match** runs in the worker after each import (RC-087). It matches only a line with exactly one candidate that
-  agrees on amount and reference, or on amount and party with no other candidate in the   window, and marks the match
-  `auto`. Auto-match is one to one; a split is the person's. Everything else is a suggestion the person confirms. A
-  line's candidates come from one indexed read (M5-13 adds a generated `signed_amount`, debit less credit, and an index
-  on `journal_lines (account_id, signed_amount, business_date)`), so a year of statements takes linear work, and the job
-  works in batches of 500 lines, each its own short transaction.
+  agrees on amount and reference, or on amount and the party's whole name with no other candidate in the window, and
+  marks the match `auto`. Auto-match is one to one; a split is the person's. Everything else is a suggestion the person
+  confirms. A line's candidates come from one indexed read (M5-13 adds a generated `signed_amount`, debit less credit,
+  and an index on `journal_lines (account_id, signed_amount, business_date)`), so a year of statements takes linear
+  work, and the job works in batches of 500 lines, each its own short transaction.
 - **Bank charges and interest** with no book entry are booked from the match: a `bank_charge` entry, a new ADR-006 §3
   kind on ordinary accounts only (Dr the charges account, Cr Bank; or Dr Bank, Cr the interest account), matched to the
-  line in the same save. No input credit is claimed from a statement alone (CA-38); the bank's tax invoice comes in as
-  an expense (§3).
+  line in the same save. Its source is its `bank_matches` row, so matching again after an unmatch posts a new entry
+  under ADR-006 §3's one-entry-per-document key. No input credit is claimed from a statement alone (CA-38). When the
+  bank's tax invoice arrives, the person unmatches (which reverses the charge), enters the expense paid from that bank
+  account (§3), and matches the expense to the line, so the charge is booked once.
 - **Unmatching** removes the match, at any time, and is audited. A charge it booked is reversed in the same save, dated
   that day (RC-210). A match touches no ledger row, so the period lock doesn't stop it; the reversal of a charge is
   dated in the open period.
@@ -442,8 +452,11 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
   (`bank_matched`): unmatch first. M5-13 adds the check to those cancels.
 - **The reconciliation statement** for an account and a date: the book balance, the statement balance, and between them
   the unmatched book lines and the unmatched statement lines, each listed (GL-132).
-- **Lock order (§7):** step 1 (`lockPeriod`); then the statement lines by id, `FOR UPDATE`; then the journal series when
-  a charge posts. Journal lines aren't locked: the unique indexes refuse a second match (`already_matched`).
+- **Lock order (§7):** step 1 (`lockPeriod`); then each matched journal line's posting document `FOR SHARE`, by table
+  then id (ADR-006 §1 step 2, as drafts lock their sources, ADR-008 §12); then the statement lines by id, `FOR UPDATE`;
+  then the journal series when a charge posts. A cancel takes its document `FOR UPDATE`, so a match and a cancel of the
+  same document take turns: whichever is second sees the other (`bank_matched` or `entry_reversed`). Journal lines
+  themselves aren't locked: the unique indexes refuse a second match (`already_matched`).
 
 ### 13. Reports (M5-14, RC-176)
 
@@ -452,9 +465,9 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
   sheet; the cash book and the bank book; stock valuation as at a date; profit by bill and by customer; the HSN summary.
   Each is a GET under `reports:read`, paged, with an export (`defineExport`, csv-stringify's `escape_formulas`).
 - **Added up in the database (RC-176).** No report reads a whole ledger to show a page. Totals are SQL aggregates. A
-  page is a keyset page on `(business_date, id)`, with timestamp cursors in string mode and `momentKey` (RAD-125's
-  lists). A ledger's running balance is a window over the page, started from one indexed aggregate of everything before
-  the page's first row. Where Drizzle can't express a window or a grouping, a view in packages/db does (ADR-002 §3).
+  page is a keyset page on `(business_date, id)`: a date and a tie-break, so no timestamp cursor is involved. A ledger's
+  running balance is a window over the page, started from one indexed aggregate of everything before the page's first
+  row. Where Drizzle can't express a window or a grouping, a view in packages/db does (ADR-002 §3).
 - **Indexes** M5-14 adds: `journal_lines (account_id, business_date, id)`, `journal_lines (party_id, business_date, id)`
   where the party is set, and any other a report's query plan shows it needs.
 - **One snapshot.** A report of several figures (trial balance, balance sheet, P&L, ageing) reads in one read-only
@@ -476,37 +489,51 @@ its output is shared. The cut-over date is set at go-live (M8), in `accounts.cut
 - **The import engine** (M5-16 builds it) is lib-platform's `defineImport`, ADR-001 §8b's line. An upload (file kind
   `import`) is read by `readTable` in its isolate; the header is found among the first 20 rows by its column names
   (GL-053); each row is checked by the module's row function. A **dry run** lists every problem by row and column and
-  writes nothing. A commit is allowed only for a file whose hash matches a dry   run with no problems
-  (`import_not_dry_run`), and runs in one transaction, in the worker, under the job's own statement timeout. Each run is
-  an `import_runs` row (the step, file, hash, counts, who, when, dry or committed).
+  writes nothing. A commit is allowed only for a file whose hash matches a dry run with no problems
+  (`import_not_dry_run`), and runs in one transaction, in the worker, under the job's own statement timeout. The hash
+  only proves it's the same file: the commit runs every row check again inside its own transaction, since the data may
+  have changed since the dry run (a party added by hand), and any failure commits nothing. Each run is an `import_runs`
+  row (the step, file, hash, counts, who, when, dry or committed).
 - **The steps, in order** (GL-055 to GL-058), each refused until the one before is committed (`import_step_order`):
   1. **parties:** customers, dealers and suppliers, with GSTIN, state, phone, credit terms and each
      supplier's kind (§2);
-  2. **items:** HSN (4 to 8 digits), GST rate, unit and prices; serial numbers of serialised items in stock and,
-     if the owner decides so (GL-059), of those sold before the cut-over, as sold units;
-  3. **opening stock:** quantity and agreed value per item and location (F1);
+  2. **items:** HSN (4 to 8 digits), GST rate, unit and prices; and, if the owner decides so (GL-059), serial numbers
+     of units sold before the cut-over, as sold units;
+  3. **opening stock:** quantity and agreed value per item and location (F1), with the serial numbers of the units in
+     stock, which come in with the movement that brings them (ADR-006 §5, RA007);
   4. **account balances:** cash, each bank account, loans, capital, TDS (as `tds_deductions` rows, §4) and the
      GST credit brought forward by head (GL-057);
-  5. **open documents** (M5-17): each unpaid invoice and unpaid purchase bill.
+  5. **open documents** (M5-17): each unpaid invoice and unpaid purchase bill, and each party's money not yet
+     applied to one (an advance, a booking deposit, a payment on account, a credit or debit note not yet applied).
 - **Dated the day before the cut-over.** Every opening entry is kind `opening`, dated the day before
   `accounts.cut_over_date`, in an open year. If the cut-over is mid-year (CA-26), step 4 also brings the year's income
-  and expense balances so far, so the year's P&L is whole.
+  and expense balances so far, so the year's P&L is whole, and the year's TDS so far as `tds_deductions` rows per payee
+  and section (base and amount), so §4's yearly limits and catch-up still hold. Rows already deposited before the
+  cut-over are marked `deposited_before_cut_over`: they count in the year's sums, can't be deposited again, and aren't
+  in TDS Payable's opening balance, which is the undeposited rows only.
 - **Opening balances are approved by someone else (RC-038, GL-056).** Steps 3 and 4 make a draft `opening_balances`
   document, which posts only when someone other than its maker approves it (`defineApproval`, kind `opening-balances`,
   under `migration:approve`; its spec declares `lockFirst`). Stock comes in at the import's agreed value, which the CA
-  confirms (CA-27). Each item and location's batch is named by the opening document's number (ADR-006 §1, §4a).
+  confirms (CA-27). It's numbered from `accounts.opening` (`OB`), and each item and location's batch is named by that
+  number (ADR-006 §1, §4a).
 - **It ties out.** Opening Balance Equity takes the difference. The dry run refuses a step whose party balances don't
   add up to the file's Debtors or Creditors total (`opening_totals_differ`), and the books check runs after the last
   step (GL-062).
 - **Open documents one by one (M5-17, RC-120, GL-058).** `opening_invoices` and `opening_bills`: the party, Vyapar's
-  number and date, the due date, the place of supply, the amount still unpaid, and one summary line   per GST rate
+  number and date, the due date, the place of supply, the amount still unpaid, and one summary line per GST rate
   (taxable value, rate, tax) as Vyapar billed it. Each keeps Vyapar's number and draws from no series of ours: an
   invoice's is unique for its year, a bill's for its supplier and year, as ADR-008 §7's check. It posts Dr Debtors (or
   Cr Creditors) against Opening Balance Equity for the unpaid amount only. Each is in `allocatable_documents`, so
   payments apply to it, reminders chase it (ADR-007 §10), and a credit note can be raised against it (ADR-007 §6), up to
-  its summary line's value; goods taken back on one come in at the item's current average (CA-28). Neither is in
+    its summary line's value; goods taken back on one come in at the item's current average (CA-28). Neither is in
   RadCore's GSTR-1 or 3B; a credit note against one is, in its own month (ADR-010).
-- **Closed after use (RC-038, GL-063).** Once the owner signs the tie-out, someone holding   `migration:approve` sets
+- **Money not yet applied (GL-058).** Each party's unapplied amount comes in as an `opening_receipts` row (a customer's:
+  Dr Opening Balance Equity, Cr Debtors) or an `opening_payments` row (a supplier's: Dr Creditors, Cr Opening Balance
+  Equity), with Vyapar's reference and date. Each is registered in `allocatable_documents` as a credit, so it's applied
+  to an opening or new invoice or bill like any advance (ADR-005 §7a), or refunded (ADR-007 §5). A booking deposit is a
+  customer's opening receipt, applied when the booking's invoice is raised. The tie-out counts these: a party's balance
+  is its open documents less its unapplied money, and that's what `opening_totals_differ` compares.
+- **Closed after use (RC-038, GL-063).** Once the owner signs the tie-out, someone holding `migration:approve` sets
   `accounts.opening_closed_on`, and the period lock moves to at least the day before the cut-over, so nothing else posts
   before it. From then every step answers `opening_closed` (409), and nothing in the app reopens it. A later fix is an
   ordinary document: an adjustment, a journal or a credit note.
@@ -519,6 +546,7 @@ its output is shared. The cut-over date is set at go-live (M8), in `accounts.cut
     value gap is logged with the reason "stock valuation" (GL-134).
   - Accounts marks the day reconciled under `migration:write` once every difference has a reason, and the owner signs
     the week under `migration:approve`. RadCore's own tie-outs (GL-137) are the books check and §13's totals.
+
 ## Consequences
 
 - Each Wave B ticket has its tables, checks, keys and lock order fixed before it starts. The CA's answers change
