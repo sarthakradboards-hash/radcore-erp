@@ -12,7 +12,7 @@ import { asPrice, asWritten } from '../admin/decimal.ts';
 
 type Order = z.output<typeof getPurchaseOrder.output>;
 
-const CODES = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_party', 'not_a_supplier', 'unknown_item', 'item_inactive',
+const CODES = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_party', 'not_a_supplier', 'overseas_services_only', 'rcm_bill_has_tax', 'unknown_item', 'item_inactive',
   'quantity_too_precise', 'wrong_status', 'no_gst_rate', 'company_profile_incomplete', 'version_changed', 'series_full',
   'over_approved', 'fixed_once_placed', 'po_received', 'own_request', 'approver_too_new', 'not_pending',
   'supplier_date_after_bill', 'gstin_mismatch', 'unknown_po_line', 'po_not_placed', 'other_supplier', 'unknown_receipt_line', 'receipt_not_posted', 'not_this_po_line', 'wrong_file_kind', 'not_ready', 'upload_refused', 'duplicate_bill', 'date_before_source', 'bill_file_required', 'goods_not_received', 'over_received', 'total_mismatch', 'nothing_to_revalue', 'account_inactive', 'still_applied', 'bill_returned',

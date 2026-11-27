@@ -69,7 +69,7 @@ export default function PartiesPage() {
 
       <Dialog open={adding} onOpenChange={setAdding} title={t('admin.parties.add')} description={t('admin.parties.add.hint')}>
         <Form schema={newPartySchema} saved={false} messages={MESSAGES}
-          defaultValues={{ name: '', kinds: [], gstin: '', pan: '', stateCode: '', composition: false, phone: '', email: '',
+          defaultValues={{ name: '', kinds: [], gstin: '', pan: '', stateCode: '', composition: false, overseas: false, phone: '', email: '',
             addressLine1: '', addressLine2: '', city: '', pincode: '' }}
           onSubmit={async (v) => {
             const { id } = await add.submit(v);

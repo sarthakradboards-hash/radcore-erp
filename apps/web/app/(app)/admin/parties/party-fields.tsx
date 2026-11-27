@@ -3,8 +3,11 @@
 // schema. The changes are only about the boxes: an empty optional box is the contract's null. The rules between the
 // tax fields are the contract's own partyTaxIssues, so the form shows them on the right field before sending.
 // Contact fields the server masked for this person (no parties:contact) show read-only and are never sent (RAD-40).
+// An overseas supplier (RAD-169 on RAD-153, ADR-010 §4) has no GSTIN, PAN or composition and is in state 96: ticking it
+// clears and hides those boxes and sets the state; the contract's own rules still say what's wrong, in place.
 import { GST_STATES, isMasked } from '@radcore/lib-common';
 import { createParty, PARTY_KINDS, partyTaxIssues } from '@radcore/lib-accounts/contract';
+import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import {
@@ -27,6 +30,8 @@ export const newPartySchema = z.object(fields).superRefine((p, c) => {
 // An edit sends what changed; the server checks the tax rules on the party as it will be.
 export const editPartySchema = z.object(fields).partial();
 
+/** GST's code for a place outside India: an overseas supplier's state. */
+const OTHER_COUNTRY = '96';
 const STATES = Object.entries(GST_STATES).sort(([, a], [, b]) => a.localeCompare(b))
   .map(([code, name]) => ({ value: code, label: `${name} (${code})` }));
 /** A party's kinds as words: "Customer, Supplier". */
@@ -41,14 +46,36 @@ function Contact({ name, label, ...native }: { name: string; label: string } & P
 }
 
 export function PartyFields() {
+  const { watch, setValue } = useFormContext();
+  const kinds = watch('kinds') as readonly string[] | undefined;
+  const overseas = watch('overseas') === true;
+  useEffect(() => {
+    // Only the person's own tick acts: a saved overseas party loads as it is.
+    const sub = watch((v, { name }) => {
+      if (name !== 'overseas') return;
+      if (v['overseas'] === true) {
+        for (const f of ['gstin', 'pan']) setValue(f, '');
+        setValue('composition', false);
+        setValue('stateCode', OTHER_COUNTRY);
+      } else setValue('stateCode', '');
+    });
+    return () => sub.unsubscribe();
+  }, [watch, setValue]);
   return (
     <>
       <TextField name="name" label={t('admin.parties.name')} autoComplete="off" />
       <CheckboxesField name="kinds" label={t('admin.parties.kinds')} options={kindOptions()} />
-      <TextField name="gstin" label={t('admin.parties.gstin')} hint={t('admin.parties.gstin.hint')} autoComplete="off" spellCheck={false} />
-      <TextField name="pan" label={t('admin.parties.pan')} hint={t('admin.parties.pan.hint')} autoComplete="off" spellCheck={false} />
-      <SelectField name="stateCode" label={t('admin.parties.state')} placeholder={t('admin.parties.state.choose')} options={STATES} />
-      <CheckboxField name="composition" label={t('admin.parties.composition')} hint={t('admin.parties.composition.hint')} />
+      {/* Offered for a supplier; kept while ticked, so the "supplier only" refusal shows where it can be undone. */}
+      {overseas || (kinds?.includes('supplier') ?? false)
+        ? <CheckboxField name="overseas" label={t('admin.parties.overseas')} hint={t('admin.parties.overseas.hint')} /> : null}
+      {overseas ? <p>{t('admin.parties.overseas.state')}</p> : (
+        <>
+          <TextField name="gstin" label={t('admin.parties.gstin')} hint={t('admin.parties.gstin.hint')} autoComplete="off" spellCheck={false} />
+          <TextField name="pan" label={t('admin.parties.pan')} hint={t('admin.parties.pan.hint')} autoComplete="off" spellCheck={false} />
+          <SelectField name="stateCode" label={t('admin.parties.state')} placeholder={t('admin.parties.state.choose')} options={STATES} />
+          <CheckboxField name="composition" label={t('admin.parties.composition')} hint={t('admin.parties.composition.hint')} />
+        </>
+      )}
       <Contact name="phone" label={t('admin.parties.phone')} type="tel" autoComplete="off" />
       <Contact name="email" label={t('admin.parties.email')} type="email" autoComplete="off" />
       <Contact name="addressLine1" label={t('admin.parties.address1')} autoComplete="off" />

@@ -87,7 +87,7 @@ export default function PartyPage() {
           <Form key={JSON.stringify(p)} aria-labelledby="party-form" schema={editPartySchema} messages={MESSAGES}
             saved={t('admin.parties.saved')}
             defaultValues={{
-              name: p.name, kinds: p.kinds, gstin: p.gstin ?? '', pan: p.pan ?? '', stateCode: p.stateCode, composition: p.composition,
+              name: p.name, kinds: p.kinds, gstin: p.gstin ?? '', pan: p.pan ?? '', stateCode: p.stateCode, composition: p.composition, overseas: p.overseas,
               phone: plain(p.phone), email: plain(p.email), addressLine1: plain(p.addressLine1), addressLine2: plain(p.addressLine2),
               city: plain(p.city), pincode: plain(p.pincode),
               // A masked contact field holds the server's { masked }, which MaskedField shows and the form never sends.
