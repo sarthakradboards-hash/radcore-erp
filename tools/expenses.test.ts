@@ -6,9 +6,9 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   addExpense, addExpenseCategory, addParty, cancelExpenseNow, changeExpense, changeExpenseCategory, expenseCashSpec, getExpenseById, journalEntryById,
-  journalPage, openFinancialYear, postExpenseNow,
+  journalPage, openFinancialYear, postExpenseNow, recordPayment,
 } from '@radcore/lib-accounts';
-import { createExpense } from '@radcore/lib-accounts/contract';
+import { createExpense, recordPaymentContract } from '@radcore/lib-accounts/contract';
 import { gstinCheckChar } from '@radcore/lib-common';
 import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -19,12 +19,22 @@ const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const DATE = '2026-11-16';
-const KEYS = ['expenses:read', 'expenses:write', 'accounts:write', 'journal:read', 'parties:write'];
+const KEYS = ['expenses:read', 'expenses:write', 'accounts:write', 'journal:read', 'parties:write', 'payments:write'];
 const letters = (n: number) => [...randomBytes(n)].map((b) => String.fromCharCode(65 + (b % 26))).join('');
 const gstin = (state: string) => {
   const first14 = `${state}${letters(3)}C${letters(1)}${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}${letters(1)}1Z`;
   return `${first14}${gstinCheckChar(first14)}`;
 };
+
+it('refuses unequal CGST and SGST, and IGST beside them, in the contract, not as a 500 from the CHECK (the auditor on #435)', () => {
+  const line = (heads: Record<string, string>) => ({ categoryId: randomUUID(), accountId: randomUUID(), description: null, taxable: '1000', gstRate: '18',
+    cgst: '0', sgst: '0', igst: '0', ...heads });
+  const input = (l: object) => ({ businessDate: DATE, supplierId: null, supplierInvoiceNumber: 'A', supplierInvoiceDate: DATE, supplierGstin: null,
+    payFromAccountId: randomUUID(), statedTotal: '1180', fileId: null, notes: null, lines: [l] });
+  expect(createExpense.input.safeParse(input(line({ cgst: '90', sgst: '90' }))).success).toBe(true);
+  expect(createExpense.input.safeParse(input(line({ cgst: '90', sgst: '91' }))).success).toBe(false);
+  expect(createExpense.input.safeParse(input(line({ cgst: '90', sgst: '90', igst: '180' }))).success).toBe(false);
+});
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
   expect.fail('TEST_DATABASE_URL is not set: in CI the expense tests must run, not skip');
@@ -174,6 +184,29 @@ describe.skipIf(!url || !superUrl)('expenses', { timeout: 60_000 }, () => {
     await draft(at, { lines: [{ taxable: '300', gstRate: '0' }], total: '300', pay: await systemAccount('bank') });
     expect(await code(run((ctx) => changeExpenseCategory(ctx, { id: at.categoryId, accountIds: [spare], reason: 'Test' }), at.staff)))
       .toBe('fk_expense_lines_category_account');
+  });
+
+  // Section 40A(3) (the architect on #435): a supplier's cash payments and cash expenses are one day's figure. 6,000.00
+  // by payment and 5,000.00 by expense pass 10,000.00 together, so whichever is saved second asks for the override.
+  for (const first of ['payment', 'expense'] as const) {
+    it(`counts cash payments and cash expenses to one supplier as one day’s figure: the ${first} first, the other waits`, async () => {
+      const at = await setup({ state: '27', name: 'Loading' });
+      const cash = await systemAccount('cash');
+      const pay = async () => (await run((ctx) => recordPayment(ctx, recordPaymentContract.input.parse({ kind: 'payment', partyId: at.supplier,
+        businessDate: DATE, amount: '6000', accountId: cash })), at.staff)).status;
+      const spend = async () => (await post(at, await draft(at, { lines: [{ taxable: '5000', gstRate: '0' }], total: '5000', pay: cash }))).status;
+      const [one, two] = first === 'payment' ? [await pay(), await spend()] : [await spend(), await pay()];
+      expect([one, two]).toEqual(['posted', 'pending_approval']);
+    });
+  }
+
+  it('refuses a GSTIN with no supplier (gstin_mismatch)', async () => {
+    const at = await setup({ state: '27', name: 'Snacks' });
+    const [fileId, cash0] = [await file(), await systemAccount('cash')];
+    expect(await code(run((ctx) => addExpense(ctx, createExpense.input.parse({ businessDate: DATE, supplierId: null, supplierInvoiceNumber: 'B1',
+      supplierInvoiceDate: DATE, supplierGstin: at.supplierGstin, payFromAccountId: cash0, statedTotal: '100', fileId, notes: null,
+      lines: [{ categoryId: at.categoryId, accountId: at.accountId, description: null, taxable: '100', gstRate: '0', cgst: '0', sgst: '0', igst: '0' }] })),
+      at.staff))).toBe('gstin_mismatch');
   });
 
   // ADR-007 §8: cash payments to one party past 10,000.00 in a day need an owner's override, which posts it.

@@ -4,7 +4,7 @@
 // inputCredit (the supplier's kind, the category's block, the heads against the supplier's state), the rest part of the
 // line's cost. Paid in cash past the day's limit it waits for an owner's override, which posts it.
 //   locks (ADR-009 §7): the period FOR SHARE → the expense → its party (cash limit only) → the series, the journal's first
-import { accounts, accountsTx, after, expenseCategories, expenseCategoryAccounts, expenseLines, expenses, parties, payments } from '@radcore/db/accounts';
+import { accounts, accountsTx, after, expenseCategories, expenseCategoryAccounts, expenseLines, expenses, parties } from '@radcore/db/accounts';
 import { dec, indiaDate, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
 import { creditFrom, inputCredit, supplierKind, type Credit } from '@radcore/lib-gst';
 import {
@@ -17,7 +17,7 @@ import type { cancelExpense, createExpense, dropExpense, getExpense, listExpense
 import { getCompanyProfile } from './company.ts';
 import { holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { holdParty } from './parties.ts';
-import { cashExpensedOn } from './expense-cash.ts';
+import { cashPaidOn } from './expense-cash.ts';
 import { CASH_PAYMENT_LIMIT, moneyAccount } from './payments.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -66,6 +66,9 @@ async function checkDraft(ctx: Ctx, e: Draft): Promise<{ party: Party | null; ca
       throw refuseAt('gstin_mismatch', p.gstin === null ? 'This supplier has no GSTIN on record' : `The supplier’s GSTIN is ${p.gstin}`, ['supplierGstin']);
     }
     party = p;
+  } else if (e.supplierGstin !== null) {
+    // ADR-010's inward view reads the GSTIN with its supplier: none without one (the auditor on #435).
+    throw refuseAt('gstin_mismatch', 'Name the supplier whose GSTIN this is, or leave the GSTIN out', ['supplierGstin']);
   }
   const cash = e.payFromAccountId === null ? false : (await moneyAccount(ctx, e.payFromAccountId)).cash;
   if (e.fileId !== null) await readyFile(ctx, 'expense_bill', e.fileId, { wrongKind: ['fileId'] });
@@ -147,12 +150,8 @@ async function pastCashLimit(ctx: Ctx, e: Row): Promise<boolean> {
   if (e.partyId === null) return dec(e.statedTotal).gt(limit);
   // ADR-006 §1 step 3: the party after the expense's own row, so two cash saves for one supplier take turns.
   await holdParty(ctx, e.partyId);
-  const tx = accountsTx(ctx);
-  const cash = tx.select({ id: accounts.id }).from(accounts).where(eq(accounts.systemKey, 'cash'));
-  const paid = await tx.select({ amount: payments.amount }).from(payments).where(and(eq(payments.partyId, e.partyId),
-    eq(payments.businessDate, e.businessDate), eq(payments.status, 'posted'), inArray(payments.accountId, cash), inArray(payments.kind, ['payment', 'refund'])));
-  const spent = await cashExpensedOn(ctx, e.partyId, e.businessDate, e.id);
-  return paid.reduce((s, r) => s.plus(dec(r.amount)), dec(e.statedTotal)).plus(spent).gt(limit);
+  // One figure per supplier per day with their cash payments (section 40A(3); the architect on #435).
+  return dec(e.statedTotal).plus(await cashPaidOn(ctx, e.partyId, e.businessDate, { expense: e.id })).gt(limit);
 }
 
 /** Posts a draft, or asks for the owner's override when it's cash past the limit and not yet approved. */
@@ -214,7 +213,8 @@ async function post(ctx: Ctx, id: string, approved: boolean): Promise<Out<typeof
   return { status: 'posted', number };
 }
 
-type Version = { businessDate: string; partyId: string | null; payFromAccountId: string | null; statedTotal: string;
+type Version = { businessDate: string; partyId: string | null; payFromAccountId: string | null; statedTotal: string; fileId: string | null;
+  supplierGstin: string | null; supplierInvoiceNumber: string; supplierInvoiceDate: string;
   lines: { categoryId: string; accountId: string; taxable: string; cgst: string; sgst: string; igst: string }[] };
 /** What an owner approves for cash past the limit (ADR-007 §8): the expense's figures and lines, the row locked while
  * they're read. Its approval posts the expense, past the limit. */
@@ -228,7 +228,8 @@ export const expenseCashSpec: ApprovalSpec<Version> = {
     if (e === undefined || (!ctx.can('expenses:write', { owner: e.createdBy }) && !ctx.can('payments:approve', { owner: e.createdBy }))) return null;
     const lines = await accountsTx(ctx).select().from(expenseLines).where(eq(expenseLines.expenseId, id)).orderBy(asc(expenseLines.lineNo));
     const m = (v: string) => roundMoney(v);
-    return { businessDate: e.businessDate, partyId: e.partyId, payFromAccountId: e.payFromAccountId, statedTotal: m(e.statedTotal),
+    return { businessDate: e.businessDate, partyId: e.partyId, payFromAccountId: e.payFromAccountId, statedTotal: m(e.statedTotal), fileId: e.fileId,
+      supplierGstin: e.supplierGstin, supplierInvoiceNumber: e.supplierInvoiceNumber, supplierInvoiceDate: e.supplierInvoiceDate,
       lines: lines.map((l) => ({ categoryId: l.categoryId, accountId: l.accountId, taxable: m(l.taxable), cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst) })) };
   },
   // The period's locks first, before the engine locks the expense, refusing nothing; posting checks under the same locks.

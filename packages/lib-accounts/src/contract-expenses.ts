@@ -2,7 +2,7 @@
 // accounts it may post to, set up under accounts:write; and the expenses themselves, under expenses:read and
 // expenses:write, with an owner's override for cash past the day's limit (ADR-007 §8). Like every contract file it
 // imports only zod, lib-common and lib-platform's contracts (D5).
-import { dateString, defineContract, idString, listInput, listOf, momentString, moneyString, percentString, reason } from '@radcore/lib-common';
+import { dateString, dec, defineContract, idString, listInput, listOf, momentString, moneyString, percentString, reason } from '@radcore/lib-common';
 import { approvalContracts } from '@radcore/lib-platform/contract';
 import { z } from 'zod';
 
@@ -64,13 +64,16 @@ const line = z.object({
   categoryId: idString(), accountId: idString(), description: z.string().trim().min(1).max(100).nullable(),
   taxable: moneyString(), gstRate: percentString(), cgst: moneyString(), sgst: moneyString(), igst: moneyString(),
 });
+/** CGST and SGST are equal halves, and IGST stands alone (ck_expense_lines_heads; the auditor on #435). */
+const headsFit = (l: z.output<typeof line>) => dec(l.cgst).eq(dec(l.sgst)) && (dec(l.igst).isZero() || dec(l.cgst).isZero());
+const HEADS_FIT = { message: 'CGST and SGST are equal, and IGST is charged alone', path: ['cgst'] };
 /** What a draft holds: the supplier (none for a one-off expense paid at once that claims no credit), the bill as printed,
  * how it's paid (`payFromAccountId`: Cash or a bank account, or null on credit to the supplier), the stated total, the
  * file, and its lines, each with its tax by head as printed. */
 const expenseIn = z.object({
   businessDate: dateString(), supplierId: idString().nullable(), supplierInvoiceNumber: z.string().trim().min(1).max(40),
   supplierInvoiceDate: dateString(), supplierGstin: gstin().nullable(), payFromAccountId: idString().nullable(), statedTotal: moneyString(),
-  fileId: idString().nullable(), notes: z.string().trim().max(500).nullable(), lines: z.array(line).min(1).max(100),
+  fileId: idString().nullable(), notes: z.string().trim().max(500).nullable(), lines: z.array(line.refine(headsFit, HEADS_FIT)).min(1).max(100),
 });
 const credit = z.object({ cgst: moneyString(), sgst: moneyString(), igst: moneyString(), reason: z.enum(['supplier_kind', 'blocked', 'state']).nullable() });
 const header = z.object({
