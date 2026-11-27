@@ -27,6 +27,8 @@ export const bank = {
   'books.bank.file.ready': 'Uploaded. Choose another to replace it.',
   'books.bank.file.uploading': 'Uploading…',
   'books.bank.file.err.bucket': 'The file store refused it. Check it’s a CSV or Excel file of at most 15 MB, then try again.',
+  'books.bank.file.err.type': 'Choose the bank’s CSV or Excel (.xlsx) file.',
+  'books.bank.file.err.size': 'The file is over 15 MB. Ask the bank for a shorter period.',
   'books.bank.file.err.offline': 'The file couldn’t be sent. Check the connection, then try again.',
   'books.bank.layout': 'Its columns',
   'books.bank.layout.hint': 'Each heading as the file has it. Title lines above the heading row are skipped.',

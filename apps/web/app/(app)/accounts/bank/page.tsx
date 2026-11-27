@@ -24,10 +24,9 @@ import { BucketRefused, postToBucket } from '../../../../lib/files/post-to-bucke
 import { t } from '../../../../lib/i18n/index.ts';
 import '../../../../components/ui/table/table.css';
 import { ChoiceButtons } from '../../admin/shared.tsx';
-import { BANK_MESSAGES, importSchema, importValues, type ImportInput } from './statement-values.ts';
+import { BANK_MESSAGES, importSchema, importValues, UPLOADABLE, uploadType, type ImportInput } from './statement-values.ts';
 
 type Line = z.output<typeof listStatementLinesContract.output>['items'][number];
-const TYPES = statementFiles.startUpload.input.shape.contentType.options;
 
 /** The bank's file: chosen, sent straight to the bucket, then checked by the server; the form keeps its id. */
 function StatementFile() {
@@ -38,9 +37,14 @@ function StatementFile() {
   const confirm = useApiMutation(statementFiles.confirmUpload);
   const [state, setState] = useState<{ busy: boolean; problem: string }>({ busy: false, problem: '' });
   const add = async (file: File) => {
+    const kind = uploadType(file);
+    if ('problem' in kind) {
+      setState({ busy: false, problem: t(kind.problem === 'size' ? 'books.bank.file.err.size' : 'books.bank.file.err.type') });
+      return;
+    }
     setState({ busy: true, problem: '' });
     try {
-      const { id, url, fields } = await start.submit({ filename: file.name, contentType: file.type });
+      const { id, url, fields } = await start.submit({ filename: file.name, contentType: kind.contentType });
       await postToBucket(url, fields, file);
       await confirm.submit({ id });
       setValue('fileId', id, { shouldDirty: true, shouldValidate: true });
@@ -55,7 +59,7 @@ function StatementFile() {
     <div className="kit-field">
       <label htmlFor={inputId}>{t('books.bank.file')}</label>
       <p className="kit-hint">{fileId === '' ? t('books.bank.file.hint') : t('books.bank.file.ready')}</p>
-      <input id={inputId} type="file" accept={TYPES.join(',')} disabled={state.busy}
+      <input id={inputId} type="file" accept={['.csv', '.xlsx', ...UPLOADABLE].join(',')} disabled={state.busy}
         onChange={(e) => { const f = e.currentTarget.files?.[0]; if (f !== undefined) void add(f); }} />
       {state.busy ? <p role="status">{t('books.bank.file.uploading')}</p> : null}
       {state.problem === '' ? null : <p role="alert" className="kit-form-alert">{state.problem}</p>}
@@ -172,7 +176,8 @@ const columns: Column<Line>[] = [
 
 export default function BankPage() {
   const { permissions } = useMe();
-  const mayRead = permissions.includes('bank:read');
+  // The bank accounts come from /money-accounts, so the page needs that key as well as bank:read (auditor-3 on #439).
+  const mayRead = permissions.includes('bank:read') && permissions.includes('money_accounts:read');
   const mayImport = permissions.includes('bank:reconcile') && permissions.includes('statement_files:write');
   const money = useApiQuery(listMoneyAccounts, {}, { enabled: mayRead });
   const banks = (money.data?.items ?? []).filter((a) => !a.cash);
