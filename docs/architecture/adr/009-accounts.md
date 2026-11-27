@@ -231,7 +231,8 @@ profile, the period lock, the filed-month lock), each `FOR SHARE` except the one
 - **moving the period lock, closing or reopening a year:** the profile `FOR SHARE`, the period lock `FOR UPDATE`, the
   filed-month row `FOR SHARE`; then the request or `year_closes` row; then the journal series;
 - **marking or undoing a filing:** the profile and the period lock `FOR SHARE`, the filed-month row `FOR UPDATE`; then
-  the filing or request row.
+  the filing or request row; then the journal series, since a 3B's filing posts its settlement and its undo reverses it
+  ([ADR-010](010-gst.md) §8, §13).
 
 ```
 ask (books:lock)            decide (books:unlock, not the asker)
