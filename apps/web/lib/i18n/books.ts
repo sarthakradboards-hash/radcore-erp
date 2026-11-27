@@ -42,6 +42,7 @@ export const books = {
   'books.chart.posting': 'Posted by',
   'books.chart.control': 'Its documents only (control account)',
   'books.chart.manual': 'Documents and manual journals',
+  'books.chart.off': '{name} (switched off)',
   'books.chart.none': 'You can’t see the chart of accounts.',
   'books.chart.add': 'Add an account',
   'books.chart.add.title': 'New account',

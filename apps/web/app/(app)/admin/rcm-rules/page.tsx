@@ -39,7 +39,7 @@ export default function RcmRulesPage() {
     { id: 'source', header: t('gst.rcm.source'), cell: (r) => r.source },
     { id: 'note', header: t('gst.rcm.note'), cell: (r) => r.note ?? '' },
     { id: 'status', header: t('gst.rcm.status'), cell: (r) => t(r.confirmed ? 'gst.rcm.confirmed' : 'gst.rcm.unconfirmed') },
-    ...(mayWrite ? [{ id: 'act', header: '', cell: (r: RcmRule) => (
+    ...(mayWrite ? [{ id: 'act', header: t('admin.users.col.actions'), cell: (r: RcmRule) => (
       <button type="button" className="kit-button" onClick={() => setEditing(r)}
         aria-label={`${t('gst.rcm.correct')} ${r.prefix} ${supplierLabel(r.supplier)} ${formatDate(r.effectiveFrom)}`}>
         {t('gst.rcm.correct')}

@@ -124,6 +124,19 @@ describe('defineJob', () => {
     expect(steps).toEqual(['open', 'service done', 'commit', 'alert secret expires', 'alert webhook stuck', 'after']);
   });
 
+  it('runs a `failed` step for its dead letter, as a system principal named after the job, with the input checked (RAD-159)', async () => {
+    const seen: unknown[] = [];
+    const open: OpenJob = async (principal, jobId, work) => {
+      seen.push([principal, jobId]);
+      await work({} as Ctx);
+    };
+    const job = defineJob(contract(), async () => undefined, { failed: async (_ctx, input) => { seen.push(input); } });
+    await job.handleDead?.({ input: { n: 2 }, by: 'user:u-1' }, 'dead-1', { open, load: nobody, alert });
+    expect(seen).toEqual([[{ kind: 'system', name: `${contract().name}-failed`, permissions: [] }, 'dead-1'], { n: 2 }]);
+    await expect(job.handleDead?.({ input: { n: 'two' }, by: 'user:u-1' }, 'dead-2', { open, load: nobody, alert })).rejects.toThrow();
+    expect(defineJob(contract(), async () => undefined).handleDead).toBeUndefined();
+  });
+
   it('sends no alert from a job whose transaction rolls back (RAD-77)', async () => {
     const sent = vi.fn<(message: string) => Promise<void>>(async () => undefined);
     const open: OpenJob = async (_principal, _jobId, work) => {
