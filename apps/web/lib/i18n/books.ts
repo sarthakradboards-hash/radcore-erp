@@ -126,6 +126,7 @@ export const books = {
   'books.err.unknown_account': 'One of these accounts no longer exists. Reload to see the chart.',
   'books.err.period_locked': 'That day’s period is locked, so nothing can be posted on it. Choose a later day.',
   'books.err.year_not_open': 'That day’s financial year isn’t open in the books yet.',
+  'books.err.bank_matched': 'This is matched to a bank statement line. Unmatch it on the bank statements page first.',
   'books.err.already_reversed': 'This entry is already reversed.',
   'books.err.reversal_not_reversible': 'A reversal can’t itself be reversed.',
   'books.err.reverse_through_document': 'Only a manual journal is reversed here. A document’s entry is undone by cancelling its document.',

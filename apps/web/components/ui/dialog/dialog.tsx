@@ -20,13 +20,14 @@ type DialogProps = {
 export function Dialog({ open, onOpenChange, title, description, dismissible = true, children }: DialogProps) {
   const stay = dismissible ? undefined : (event: Event) => event.preventDefault();
   // Radix hands focus back to its own Trigger, and these dialogs are opened by the screen's buttons and menus. So
-  // remember what had focus when it opened, and go back there when it closes.
+  // remember what had focus when it opened, and go back there when it closes. When that was nothing (a WebKit mouse
+  // click never focuses the button, so it's the body) or it's gone since, Radix isn't let put focus on the body either:
+  // focus stays where the screen put it while the dialog closed, such as a heading (e2e-2 on #439).
   const opener = useRef<HTMLElement | null>(null);
   const remember = () => { opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; };
   const giveBack = (event: Event) => {
-    if (opener.current?.isConnected !== true) return;
     event.preventDefault();
-    opener.current.focus();
+    if (opener.current?.isConnected === true && opener.current !== document.body) opener.current.focus();
   };
   return (
     <Radix.Root open={open} onOpenChange={onOpenChange}>

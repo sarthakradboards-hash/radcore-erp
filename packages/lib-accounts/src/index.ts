@@ -9,6 +9,7 @@ export {
   addExpense, cancelExpenseNow, changeExpense, dropExpenseDraft, EXPENSE_SERIES, expenseCashSpec, getExpenseById, listExpensesPage, postExpenseNow,
 } from './services/expenses.ts';
 export { putTdsRate, tdsRatesPage, tdsSectionsList } from './services/tds-rates.ts';
+export { bookTds, defaultTdsSection, reverseTds, setTdsTerms, type TdsLine } from './services/tds-booking.ts';
 export { tdsFor, tdsRound, type TdsBooking, type TdsRate } from './rules/tds.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
 export {

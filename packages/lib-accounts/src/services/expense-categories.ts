@@ -29,14 +29,16 @@ export type CategoryPair = Readonly<{ categoryId: string; accountId: string }>;
 /** For a document naming a category and one of its accounts (a service bill's charge, RAD-152): each pair as it stands,
  * keyed `category:account`, with the category's credit rule and whether both are switched on; a pair the category
  * doesn't post to is missing. */
-export async function categoryPairs(ctx: Ctx, pairs: readonly CategoryPair[]): Promise<Map<string, { blocked: boolean; active: boolean }>> {
+export async function categoryPairs(ctx: Ctx, pairs: readonly CategoryPair[]): Promise<Map<string, { blocked: boolean; active: boolean; defaultTds: string | null }>> {
   if (pairs.length === 0) return new Map();
   const rows = await accountsTx(ctx).select({ categoryId: expenseCategoryAccounts.categoryId, accountId: expenseCategoryAccounts.accountId,
-    credit: expenseCategories.credit, categoryActive: expenseCategories.active, accountActive: accounts.active })
+    credit: expenseCategories.credit, categoryActive: expenseCategories.active, accountActive: accounts.active,
+    defaultTds: expenseCategories.defaultTdsSectionId })
     .from(expenseCategoryAccounts).innerJoin(expenseCategories, eq(expenseCategories.id, expenseCategoryAccounts.categoryId))
     .innerJoin(accounts, eq(accounts.id, expenseCategoryAccounts.accountId))
     .where(inArray(expenseCategoryAccounts.categoryId, [...new Set(pairs.map((p) => p.categoryId))]));
-  return new Map(rows.map((r) => [`${r.categoryId}:${r.accountId}`, { blocked: r.credit === 'blocked', active: r.categoryActive && r.accountActive }]));
+  return new Map(rows.map((r) => [`${r.categoryId}:${r.accountId}`, { blocked: r.credit === 'blocked', active: r.categoryActive && r.accountActive,
+    defaultTds: r.defaultTds }]));
 }
 
 /** GET /expense-categories: every category by name, with its accounts by code, then name. */
@@ -47,14 +49,15 @@ export async function expenseCategoriesList(ctx: Ctx): Promise<Out<typeof listEx
     .from(expenseCategoryAccounts).innerJoin(accounts, eq(accounts.id, expenseCategoryAccounts.accountId))
     .orderBy(asc(accounts.code), asc(accounts.nameKey));
   return { items: rows.map((c) => ({ id: c.id, name: c.name, credit: c.credit === 'allowed' ? 'allowed' : 'blocked', blockedClause: c.blockedClause,
-    active: c.active, accounts: links.filter((l) => l.categoryId === c.id).map(({ id, code, name }) => ({ id, code, name })) })) };
+    active: c.active, defaultTdsSectionId: c.defaultTdsSectionId, accounts: links.filter((l) => l.categoryId === c.id).map(({ id, code, name }) => ({ id, code, name })) })) };
 }
 
 /** POST /expense-categories. */
 export async function addExpenseCategory(ctx: Ctx, c: In<typeof createExpenseCategory>): Promise<Out<typeof createExpenseCategory>> {
   await checkAccounts(ctx, c.accountIds);
   const tx = accountsTx(ctx);
-  const [row] = await tx.insert(expenseCategories).values({ name: c.name, credit: c.credit, blockedClause: c.blockedClause })
+  const [row] = await tx.insert(expenseCategories).values({ name: c.name, credit: c.credit, blockedClause: c.blockedClause,
+    defaultTdsSectionId: c.defaultTdsSectionId ?? null })
     .returning({ id: expenseCategories.id }).catch((e: unknown) => {
       throw constraintOf(e) === 'ux_expense_categories_name_key' ? nameTaken() : e;
     });
@@ -69,6 +72,7 @@ export async function changeExpenseCategory(ctx: Ctx, c: In<typeof setExpenseCat
   const [found] = await tx.select({ id: expenseCategories.id }).from(expenseCategories).where(eq(expenseCategories.id, c.id)).for('update');
   if (found === undefined) throw new AppError('not_found', 'There’s no such expense category');
   const set = { ...(c.name === undefined ? {} : { name: c.name }), ...(c.active === undefined ? {} : { active: c.active }),
+    ...(c.defaultTdsSectionId === undefined ? {} : { defaultTdsSectionId: c.defaultTdsSectionId }),
     ...(c.credit === undefined ? {} : { credit: c.credit, blockedClause: c.credit === 'allowed' ? null : c.blockedClause ?? null }) };
   if (Object.keys(set).length > 0) {
     await tx.update(expenseCategories).set(set).where(eq(expenseCategories.id, c.id)).catch((e: unknown) => {
