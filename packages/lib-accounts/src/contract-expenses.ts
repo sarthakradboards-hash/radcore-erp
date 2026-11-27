@@ -20,6 +20,12 @@ const clauseFits = (c: { credit?: string | undefined; blockedClause?: string | n
   (c.credit === undefined && c.blockedClause === undefined) || (c.credit === 'blocked') === (typeof c.blockedClause === 'string');
 const CLAUSE_FITS = { message: 'A blocked category names its clause of section 17(5), and an allowed one none', path: ['blockedClause'] };
 
+/** An expense line or a bill's charge line naming a category's pair holds it, under either code. */
+const inUse = (state: '23503' | '23001') => ({
+  [`${state}:fk_expense_lines_category_account`]: { code: 'account_in_use', message: 'An expense already posts to that account under this category' },
+  [`${state}:fk_purchase_bill_lines_expense_category`]: { code: 'account_in_use', message: 'A bill’s charge already posts to that account under this category' },
+}) as const;
+
 const category = z.object({
   id: idString(), name: z.string(), credit: z.enum(EXPENSE_CREDIT), blockedClause: z.string().nullable(), active: z.boolean(),
   accounts: z.array(z.object({ id: idString(), code: z.string().nullable(), name: z.string() })),
@@ -56,8 +62,9 @@ export const setExpenseCategory = defineContract({
   errors: ['name_taken', 'not_an_expense_account', 'account_in_use'],
   // An expense line or a bill's charge line naming the pair (#436; e2e-playwright on RAD-152) holds it.
   dbErrors: {
-    '23001:fk_expense_lines_category_account': { code: 'account_in_use', message: 'An expense already posts to that account under this category' },
-    '23001:fk_purchase_bill_lines_expense_category': { code: 'account_in_use', message: 'A bill’s charge already posts to that account under this category' },
+    // PostgreSQL 16 raises an ON DELETE RESTRICT refusal as 23503, and 17 on as 23001 (restrict_violation): both, so
+    // every environment (16 in CI and production) and a newer local server answer the same (the auditor on #453).
+    ...inUse('23503'), ...inUse('23001'),
   },
 });
 
