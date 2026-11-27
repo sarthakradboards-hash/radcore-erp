@@ -680,6 +680,20 @@
       "when": 1795770510725,
       "tag": "0096_expense_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795771248733,
+      "tag": "0097_account_inserts",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795772152363,
+      "tag": "0098_transfers",
+      "breakpoints": true
     }
   ]
 }

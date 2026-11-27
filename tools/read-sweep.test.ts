@@ -9,7 +9,7 @@
 // other files count their own. A GET this can't reach is pinned below with its reason, so every new GET is either
 // reached or listed (the ratchet). Its known limit: it catches only the shapes the seed holds.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addExpenseCategory, addParty, openFinancialYear, postManual, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
+import { addAccount, addExpenseCategory, addParty, openFinancialYear, postManual, recordPayment, recordTransfer, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { addAdSpend, addCampaign, captureEnquiry, createEnquiryForm, leadSourcesList } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
@@ -232,7 +232,9 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       add(['GET /journal/:id'], posted.id);
       // An expense category, blocked, on an ordinary expense account (RAD-152), and one allowed.
       await run(async (ctx) => {
-        const accountIds = [await systemAccountId(ctx, 'round_off')];
+        // An expense head added under a group (POST /accounts), so the chart reads one.
+        const head = await addAccount(ctx, { name: `Sweep head ${randomUUID()}`, parentId: await systemAccountId(ctx, 'round_off'), code: 'SWEEP-1' });
+        const accountIds = [await systemAccountId(ctx, 'round_off'), head.id];
         await addExpenseCategory(ctx, { name: `Sweep blocked ${randomUUID()}`, credit: 'blocked', blockedClause: '(b)(i)', accountIds });
         await addExpenseCategory(ctx, { name: `Sweep allowed ${randomUUID()}`, credit: 'allowed', blockedClause: null, accountIds });
       });
@@ -401,6 +403,13 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
         insert into radcore.approvals (kind, record_id, version_digest, requested_by) select 'period-unlock', $1, repeat('0', 64), 'system:test'
         from p returning id`, [asked?.id]);
       add(['GET /approvals/period-unlock/:id'], request?.id);
+    });
+
+    // Cash paid into the bank (RAD-165, F19).
+    await step('transfer', async () => {
+      const moved = await run(async (ctx) => recordTransfer(ctx, { fromAccountId: await systemAccountId(ctx, 'cash'),
+        toAccountId: await systemAccountId(ctx, 'bank'), amount: m('10'), businessDate: DATE }));
+      add(['GET /transfers/:id'], moved.id);
     });
 
     // A booking: a serialised unit promised to a confirmed order line, with an advance.
