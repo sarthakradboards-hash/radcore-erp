@@ -5,7 +5,7 @@ import { dateString, formatDate, formatMoment, formatMoney, indiaDate, reason } 
 import { cancelTransferContract, getTransferContract, listTransfersContract } from '@radcore/lib-accounts/contract';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import { CloseButton, Dialog } from '../../../../../components/ui/dialog/dialog.tsx';
@@ -18,7 +18,7 @@ import { TRANSFER_MESSAGES } from '../transfer-values.ts';
 
 const cancelSchema = z.object({ businessDate: dateString(), reason: reason() });
 
-function CancelDialog({ id, number, onClose }: { id: string; number: string; onClose: () => void }) {
+function CancelDialog({ id, number, onClose, onCancelled }: { id: string; number: string; onClose: () => void; onCancelled: () => void }) {
   const cancel = useApiMutation(cancelTransferContract, { invalidates: [getTransferContract, listTransfersContract] });
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={t('books.transfers.cancel.title', { number })}
@@ -27,7 +27,7 @@ function CancelDialog({ id, number, onClose }: { id: string; number: string; onC
         onSubmit={async (v) => {
           await cancel.submit({ id, ...v });
           onClose();
-          setTimeout(() => announce(t('books.transfers.cancelled', { number })), 0);
+          setTimeout(() => { onCancelled(); announce(t('books.transfers.cancelled', { number })); }, 0);
         }}>
         <TextField name="businessDate" label={t('books.transfers.cancel.date')} type="date" />
         <TextAreaField name="reason" label={t('books.transfers.cancel.reason')} />
@@ -45,6 +45,8 @@ export default function TransferPage() {
   const mayWrite = useMe().permissions.includes('payments:write');
   const q = useApiQuery(getTransferContract, { id });
   const [cancelling, setCancelling] = useState(false);
+  // The Cancel button is gone once it's cancelled, so focus goes to the heading rather than falling to the body.
+  const heading = useRef<HTMLHeadingElement>(null);
   const r = q.data;
   const back = <p><Link href="/accounts/transfers">{t('books.transfers.back')}</Link></p>;
   if (q.error !== null) {
@@ -62,7 +64,7 @@ export default function TransferPage() {
   return (
     <>
       {back}
-      <h1>{r.number}</h1>
+      <h1 ref={heading} tabIndex={-1}>{r.number}</h1>
       <dl className="admin-facts" aria-label={t('books.transfers.facts')}>
         <dt>{t('books.transfers.col.status')}</dt><dd>{t(`books.transfers.status.${r.status}`)}</dd>
         <dt>{t('books.transfers.col.date')}</dt><dd>{formatDate(r.businessDate)}</dd>
@@ -70,7 +72,7 @@ export default function TransferPage() {
         <dt>{t('books.transfers.col.to')}</dt><dd>{r.to.name}</dd>
         <dt>{t('books.transfers.col.amount')}</dt><dd>{formatMoney(r.amount)}</dd>
         {r.reference === null ? null : <><dt>{t('books.transfers.col.reference')}</dt><dd>{r.reference}</dd></>}
-        {r.notes === null ? null : <><dt>{t('books.transfers.notes')}</dt><dd>{r.notes}</dd></>}
+        {r.notes === null ? null : <><dt>{t('books.transfers.col.notes')}</dt><dd>{r.notes}</dd></>}
         <dt>{t('books.transfers.recordedAt')}</dt><dd>{formatMoment(r.recordedAt)}</dd>
         {r.cancelReason === null ? null : <><dt>{t('books.transfers.cancelReason')}</dt><dd>{r.cancelReason}</dd></>}
       </dl>
@@ -79,7 +81,7 @@ export default function TransferPage() {
           <button type="button" className="kit-button" onClick={() => setCancelling(true)}>{t('books.transfers.cancel')}</button>
         </div>
       ) : null}
-      {cancelling ? <CancelDialog id={r.id} number={r.number} onClose={() => setCancelling(false)} /> : null}
+      {cancelling ? <CancelDialog id={r.id} number={r.number} onClose={() => setCancelling(false)} onCancelled={() => heading.current?.focus()} /> : null}
     </>
   );
 }

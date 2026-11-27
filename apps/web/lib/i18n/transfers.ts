@@ -1,7 +1,7 @@
 // The own-account transfer screens' text (RAD-168 on RAD-165's #432): merged into the English catalogue in index.ts. Under
 // "books." like the other accounts screens, in a file of its own so each stays small.
 export const transfers = {
-  'books.nav.transfers': 'Transfers',
+  'books.nav.transfers': 'Bank transfers',
   'books.transfers.title': 'Transfers',
   'books.transfers.intro': 'Money moved between the company’s own accounts: cash paid into the bank, or one bank to another. Each is posted as it’s recorded, and undone by cancelling it.',
   'books.transfers.filter': 'Show transfers of',
@@ -15,6 +15,7 @@ export const transfers = {
   'books.transfers.col.amount': 'Amount',
   'books.transfers.col.reference': 'Reference',
   'books.transfers.col.status': 'Status',
+  'books.transfers.col.notes': 'Notes',
   'books.transfers.status.posted': 'Posted',
   'books.transfers.status.cancelled': 'Cancelled',
   'books.transfers.form.title': 'Record a transfer',
