@@ -48,8 +48,9 @@ passes, and otherwise the tax is part of the cost: through the price difference 
 the line's own account for a service bill's charge or an expense.
 - **The supplier's kind (CA-04).** A party is `regular` (a GSTIN, not composition), `composition`, or `unregistered`
   (no GSTIN), read from the columns parties already have. The setting `gst.credit_from` lists the kinds whose bills
-  carry credit, by default `['regular']`. A bill's GSTIN as printed must be the party's (ADR-008 §7). SEZ and overseas
-  kinds come with D-10's foreign suppliers in M9.
+  carry credit, by default `['regular']`. A bill's GSTIN as printed must be the party's (ADR-008 §7). An `overseas`
+  supplier of services in rupees is reverse charge ([ADR-010](010-gst.md) §4); SEZ, and foreign suppliers of goods, come
+  with D-10 in M9.
 - **Blocked credit (CA-05).** Each expense category (§3) says `credit: allowed | blocked`, and a blocked one names its
   section 17(5) clause. A new category starts blocked. On a service bill (a bill with no `goods` lines), each `charge`
   line names an expense category too (M5-02 adds the column), so the same rule covers it. `goods` lines aren't blocked,
