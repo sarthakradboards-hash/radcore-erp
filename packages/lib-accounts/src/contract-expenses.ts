@@ -14,6 +14,8 @@ export const EXPENSE_CREDIT = ['allowed', 'blocked'] as const;
 /** A clause of section 17(5) as a blocked category names it: (a) to (i), and (b)'s sub-clauses, as "(b)(i)". */
 const clause = () => z.string().regex(/^\((a|aa|ab|c|d|e|f|fa|g|h|i)\)$|^\(b\)(\((i|ii|iii)\))?$/, 'Name the clause of section 17(5), such as (b)(i)');
 const name = () => z.string().trim().min(1, 'Name it').max(80);
+/** A service's SAC (or a good's HSN), 4, 6 or 8 digits, as a bill's charge line holds it. */
+const sac = () => z.string().regex(/^[0-9]{4}([0-9]{2}){0,2}$/, 'A SAC is 4, 6 or 8 digits');
 const accountIds = () => z.array(idString()).min(1, 'Name at least one expense account').max(50)
   .refine((ids) => new Set(ids).size === ids.length, 'Name each account once');
 /** A blocked category names its clause, and an allowed one none (ck_expense_categories_clause). */
@@ -36,6 +38,8 @@ const category = z.object({
   id: idString(), name: z.string(), credit: z.enum(EXPENSE_CREDIT), blockedClause: z.string().nullable(), active: z.boolean(),
   /** The TDS section its lines take when their supplier names none (ADR-009 §4). */
   defaultTdsSectionId: idString().nullable(),
+  /** The SAC its lines take when they name none, for reverse charge (ADR-010 §4). */
+  defaultSac: z.string().nullable(),
   accounts: z.array(z.object({ id: idString(), code: z.string().nullable(), name: z.string() })),
 });
 
@@ -51,7 +55,7 @@ export const listExpenseCategories = defineContract({
 export const createExpenseCategory = defineContract({
   method: 'POST', path: '/expense-categories', auth: 'session', perm: 'accounts:write', tx: write,
   input: z.object({ name: name(), credit: z.enum(EXPENSE_CREDIT), blockedClause: clause().nullable(),
-    accountIds: accountIds(), defaultTdsSectionId: idString().nullable().optional() }).refine(clauseFits, CLAUSE_FITS),
+    accountIds: accountIds(), defaultTdsSectionId: idString().nullable().optional(), defaultSac: sac().nullable().optional() }).refine(clauseFits, CLAUSE_FITS),
   output: z.object({ id: idString() }),
   errors: ['name_taken', 'not_an_expense_account', 'unknown_section'],
   dbErrors: CATEGORY_SECTION,
@@ -62,9 +66,10 @@ export const createExpenseCategory = defineContract({
 export const setExpenseCategory = defineContract({
   method: 'PATCH', path: '/expense-categories/:id', auth: 'session', perm: 'accounts:write', tx: write,
   input: z.object({ id: idString(), name: name().optional(), credit: z.enum(EXPENSE_CREDIT).optional(), blockedClause: clause().nullable().optional(),
-    accountIds: accountIds().optional(), active: z.boolean().optional(), defaultTdsSectionId: idString().nullable().optional(), reason: reason() })
+    accountIds: accountIds().optional(), active: z.boolean().optional(), defaultTdsSectionId: idString().nullable().optional(),
+    defaultSac: sac().nullable().optional(), reason: reason() })
     .refine((c) => c.name !== undefined || c.credit !== undefined || c.blockedClause !== undefined || c.accountIds !== undefined || c.active !== undefined
-      || c.defaultTdsSectionId !== undefined,
+      || c.defaultTdsSectionId !== undefined || c.defaultSac !== undefined,
       'Change something')
     .refine(clauseFits, CLAUSE_FITS),
   output: z.object({}),
@@ -87,6 +92,9 @@ const line = z.object({
   taxable: moneyString(), gstRate: percentString(), cgst: moneyString(), sgst: moneyString(), igst: moneyString(),
   /** Its TDS section (ADR-009 §4): left out, the supplier's default, else its category's; null for none. */
   tdsSectionId: idString().nullable().optional(),
+  /** Its SAC (ADR-010 §4): left out, its category's default; null for none. A line a reverse-charge rule covers shows no
+   * tax as printed (rcm_bill_has_tax): it's ours to pay, worked out at posting. */
+  sac: sac().nullable().optional(),
 });
 /** CGST and SGST are equal halves, and IGST stands alone (ck_expense_lines_heads; the auditor on #435). */
 const headsFit = (l: z.output<typeof line>) => dec(l.cgst).eq(dec(l.sgst)) && (dec(l.igst).isZero() || dec(l.cgst).isZero());
@@ -109,13 +117,16 @@ const header = z.object({
 const expense = header.extend({
   supplierInvoiceDate: dateString(), supplierGstin: z.string().nullable(), payFromAccountId: idString().nullable(), fileId: idString().nullable(),
   notes: z.string().nullable(), cancelReason: z.string().nullable(),
-  lines: z.array(line.extend({ id: idString(), lineNo: z.number().int(), credit: credit.nullable() })),
+  lines: z.array(line.extend({ id: idString(), lineNo: z.number().int(), credit: credit.nullable(),
+    /** Once posted, a reverse-charge line's tax by head: ours to pay (RCM Payable), not the supplier's. */
+    reverseCharge: z.object({ cgst: moneyString(), sgst: moneyString(), igst: moneyString() }).nullable() })),
 });
 /** What a draft's save can refuse, and what its posting can refuse beyond that (ADR-009 §2, §3). */
 const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'needs_supplier', 'not_a_supplier', 'gstin_mismatch', 'not_money_account',
   'account_inactive', 'unknown_account', 'category_inactive', 'not_in_category', 'wrong_file_kind', 'upload_refused', 'not_ready', 'unknown_section'] as const;
 const POST_ERRORS = [...DRAFT_ERRORS, 'wrong_status', 'bill_file_required', 'tax_mismatch', 'total_mismatch', 'period_locked', 'year_not_open',
-  'company_profile_incomplete', 'series_full', 'tds_needs_party', 'tds_overseas', 'no_tds_rate', 'tds_payee_mismatch'] as const;
+  'company_profile_incomplete', 'series_full', 'tds_needs_party', 'tds_overseas', 'no_tds_rate', 'tds_payee_mismatch', 'rcm_bill_has_tax',
+  'no_gst_rate'] as const;
 
 /** GET /expenses (expenses:read): newest business date first, a page at a time; by status. */
 export const listExpenses = defineContract({

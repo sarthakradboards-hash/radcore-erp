@@ -3,10 +3,13 @@
 // Each line posts to one of its category's accounts (the database holds that), its input GST claimed only by lib-gst's
 // inputCredit (the supplier's kind, the category's block, the heads against the supplier's state), the rest part of the
 // line's cost. Paid in cash past the day's limit it waits for an owner's override, which posts it.
+// A line a reverse-charge rule covers (ADR-010 §4, RAD-153, by its SAC and supplier on the supplier's invoice date; every
+// line of an overseas supplier) shows no tax as printed: its tax is worked out at the SAC's rate, as IGST from another
+// state or abroad, owed to RCM Payable, its credit waiting in RCM Credit Pending for the payment (F31).
 //   locks (ADR-009 §7): the period FOR SHARE → the expense → its party (cash limit only) → the series, the journal's first
 import { accounts, accountsTx, after, expenseCategories, expenseCategoryAccounts, expenseLines, expenses, parties } from '@radcore/db/accounts';
 import { dec, indiaDate, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
-import { creditFrom, inputCredit, supplierKind, type Credit } from '@radcore/lib-gst';
+import { creditFrom, gstRateFor, inputCredit, isReverseCharge, lineTax, rcmRulesOn, supplierKind, type Credit } from '@radcore/lib-gst';
 import {
   AppError, awaitingApproval, decodeCursor, defineSeries, encodeCursor, holdSeries, isoMoment, listScope, momentKey, nextNumber, principalId, readyFile,
   requestApproval, withdrawPending, type ApprovalSpec, type Ctx,
@@ -45,11 +48,12 @@ async function expenseOf(ctx: Ctx, id: string, key: string, forUpdate = false): 
   return row;
 }
 
-type Party = { gstin: string | null; composition: boolean; stateCode: string };
+type Party = { gstin: string | null; pan: string | null; composition: boolean; overseas: boolean; stateCode: string };
 /** A draft's checks (ADR-009 §3): the dates, the supplier (needed on credit) and the GSTIN printed, the money account, the
  * file, and each line's category switched on with that account in it. Answers the supplier, whether it's paid in cash,
  * and each line's category's credit rule. */
-async function checkDraft(ctx: Ctx, e: Draft): Promise<{ party: Party | null; cash: boolean; blocked: boolean[]; sections: (string | null)[] }> {
+async function checkDraft(ctx: Ctx, e: Draft): Promise<{ party: Party | null; cash: boolean; blocked: boolean[]; sections: (string | null)[];
+  sacs: (string | null)[] }> {
   if (e.businessDate > today()) throw refuseAt('date_in_future', 'The date is after today', ['businessDate']);
   if (e.supplierInvoiceDate > e.businessDate) {
     throw refuseAt('supplier_date_after_bill', 'The supplier’s date is after the expense’s own', ['supplierInvoiceDate']);
@@ -60,8 +64,8 @@ async function checkDraft(ctx: Ctx, e: Draft): Promise<{ party: Party | null; ca
   const tx = accountsTx(ctx);
   let party: Party | null = null;
   if (e.supplierId !== null) {
-    const [p] = await tx.select({ supplier: parties.supplier, gstin: parties.gstin, composition: parties.composition, stateCode: parties.stateCode,
-      active: parties.active }).from(parties).where(eq(parties.id, e.supplierId)).limit(1);
+    const [p] = await tx.select({ supplier: parties.supplier, gstin: parties.gstin, pan: parties.pan, composition: parties.composition,
+      overseas: parties.overseas, stateCode: parties.stateCode, active: parties.active }).from(parties).where(eq(parties.id, e.supplierId)).limit(1);
     if (p === undefined || !p.supplier || !p.active) throw refuseAt('not_a_supplier', 'Pick a supplier we buy from', ['supplierId']);
     // The GSTIN as printed must be the party's own, or none for an unregistered supplier (ADR-009 §3).
     if (e.supplierGstin !== p.gstin) {
@@ -76,40 +80,44 @@ async function checkDraft(ctx: Ctx, e: Draft): Promise<{ party: Party | null; ca
   if (e.fileId !== null) await readyFile(ctx, 'expense_bill', e.fileId, { wrongKind: ['fileId'] });
   const pairs = await tx.select({ categoryId: expenseCategoryAccounts.categoryId, accountId: expenseCategoryAccounts.accountId,
     credit: expenseCategories.credit, categoryActive: expenseCategories.active, accountActive: accounts.active,
-    defaultTds: expenseCategories.defaultTdsSectionId })
+    defaultTds: expenseCategories.defaultTdsSectionId, defaultSac: expenseCategories.defaultSac })
     .from(expenseCategoryAccounts).innerJoin(expenseCategories, eq(expenseCategories.id, expenseCategoryAccounts.categoryId))
     .innerJoin(accounts, eq(accounts.id, expenseCategoryAccounts.accountId))
     .where(inArray(expenseCategoryAccounts.categoryId, [...new Set(e.lines.map((l) => l.categoryId))]));
   const categoryTds = new Map<string, string | null>();
+  const categorySac = new Map<string, string | null>();
   const blocked = e.lines.map((l, n) => {
     const pair = pairs.find((p) => p.categoryId === l.categoryId && p.accountId === l.accountId);
     if (pair === undefined) throw refuseAt('not_in_category', 'That account isn’t one this category posts to', ['lines', n, 'accountId']);
     if (!pair.categoryActive) throw refuseAt('category_inactive', 'This category is switched off', ['lines', n, 'categoryId']);
     if (!pair.accountActive) throw refuseAt('account_inactive', 'This account is switched off', ['lines', n, 'accountId']);
     categoryTds.set(l.categoryId, pair.defaultTds);
+    categorySac.set(l.categoryId, pair.defaultSac);
     return pair.credit === 'blocked';
   });
   // A line's TDS section (ADR-009 §4): its own (null for none), else the supplier's default, else its category's.
   const partyDefault = await defaultTdsSection(ctx, e.supplierId);
   const sections = e.lines.map((l) => (l.tdsSectionId !== undefined ? l.tdsSectionId : partyDefault ?? categoryTds.get(l.categoryId) ?? null));
-  return { party, cash, blocked, sections };
+  // Its SAC (ADR-010 §4): its own (null for none), else its category's.
+  const sacs = e.lines.map((l) => (l.sac !== undefined ? l.sac : categorySac.get(l.categoryId) ?? null));
+  return { party, cash, blocked, sections, sacs };
 }
 
 const headerOf = (e: Draft) => ({ businessDate: e.businessDate, partyId: e.supplierId, supplierInvoiceNumber: e.supplierInvoiceNumber,
   supplierInvoiceDate: e.supplierInvoiceDate, supplierGstin: e.supplierGstin, payFromAccountId: e.payFromAccountId, statedTotal: e.statedTotal,
   // What the supplier is owed: the whole on credit, nothing when paid at once (ck_expenses_owed).
   total: e.payFromAccountId === null ? e.statedTotal : roundMoney('0'), fileId: e.fileId, notes: e.notes });
-const linesOf = (id: string, e: Draft, sections: readonly (string | null)[]) => e.lines.map((l, i) => ({ expenseId: id, lineNo: i + 1,
-  categoryId: l.categoryId, accountId: l.accountId, description: l.description, taxable: l.taxable, gstRate: l.gstRate, cgst: l.cgst, sgst: l.sgst,
-  igst: l.igst, tdsSectionId: sections[i] ?? null }));
+const linesOf = (id: string, e: Draft, sections: readonly (string | null)[], sacs: readonly (string | null)[]) => e.lines.map((l, i) => ({
+  expenseId: id, lineNo: i + 1, categoryId: l.categoryId, accountId: l.accountId, description: l.description, taxable: l.taxable, gstRate: l.gstRate,
+  cgst: l.cgst, sgst: l.sgst, igst: l.igst, tdsSectionId: sections[i] ?? null, sac: sacs[i] ?? null }));
 
 /** POST /expenses: a new draft. */
 export async function addExpense(ctx: Ctx, e: Draft): Promise<Out<typeof createExpense>> {
-  const { sections } = await checkDraft(ctx, e);
+  const { sections, sacs } = await checkDraft(ctx, e);
   const tx = accountsTx(ctx);
   const [row] = await tx.insert(expenses).values(headerOf(e)).returning({ id: expenses.id });
   const id = row?.id ?? '';
-  await tx.insert(expenseLines).values(linesOf(id, e, sections));
+  await tx.insert(expenseLines).values(linesOf(id, e, sections, sacs));
   return { id };
 }
 
@@ -117,11 +125,11 @@ export async function addExpense(ctx: Ctx, e: Draft): Promise<Out<typeof createE
 export async function changeExpense(ctx: Ctx, { id, ...e }: In<typeof replaceExpense>): Promise<Out<typeof replaceExpense>> {
   const row = await expenseOf(ctx, id, 'expenses:write', true);
   if (row.status !== 'draft') throw wrongStatus(row.status, 'changed');
-  const { sections } = await checkDraft(ctx, e);
+  const { sections, sacs } = await checkDraft(ctx, e);
   const tx = accountsTx(ctx);
   await tx.update(expenses).set(headerOf(e)).where(eq(expenses.id, id));
   await tx.delete(expenseLines).where(eq(expenseLines.expenseId, id));
-  await tx.insert(expenseLines).values(linesOf(id, e, sections));
+  await tx.insert(expenseLines).values(linesOf(id, e, sections, sacs));
   return {};
 }
 
@@ -140,7 +148,7 @@ const draftOf = async (ctx: Ctx, e: Row): Promise<{ draft: Draft; lines: (typeof
   return { lines, draft: { businessDate: e.businessDate, supplierId: e.partyId, supplierInvoiceNumber: e.supplierInvoiceNumber,
     supplierInvoiceDate: e.supplierInvoiceDate, supplierGstin: e.supplierGstin, payFromAccountId: e.payFromAccountId, statedTotal: m(e.statedTotal),
     fileId: e.fileId, notes: e.notes, lines: lines.map((l) => ({ categoryId: l.categoryId, accountId: l.accountId, description: l.description,
-      taxable: m(l.taxable), gstRate: l.gstRate as never, cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst), tdsSectionId: l.tdsSectionId })) } };
+      taxable: m(l.taxable), gstRate: l.gstRate as never, cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst), tdsSectionId: l.tdsSectionId, sac: l.sac })) } };
 };
 
 /** Each head as printed against the rate on the taxable value, within the round-off (`tax_mismatch`): CGST and SGST at
@@ -174,10 +182,19 @@ async function post(ctx: Ctx, id: string, approved: boolean): Promise<Out<typeof
   const e = await expenseOf(ctx, id, key, true);
   if (e.status !== 'draft') throw wrongStatus(e.status, 'posted');
   const { draft, lines } = await draftOf(ctx, e);
-  const { party, cash, blocked, sections } = await checkDraft(ctx, draft);
+  const { party, cash, blocked, sections, sacs } = await checkDraft(ctx, draft);
   if (e.fileId === null) throw refuseAt('bill_file_required', 'Attach the supplier’s bill before posting it', ['fileId']);
+  const heads = (l: { cgst: string; sgst: string; igst: string }): Decimal => dec(l.cgst).plus(dec(l.sgst)).plus(dec(l.igst));
+  // Reverse charge (ADR-010 §4): needs the supplier, by its SAC on the supplier's invoice date; read, not locked (§13).
+  const rules = party === null ? [] : await rcmRulesOn(ctx, e.supplierInvoiceDate);
+  const rcmAt = draft.lines.map((_, n) => party !== null && sacs[n] != null && isReverseCharge(sacs[n] ?? '', party, e.supplierInvoiceDate, rules));
   for (const [n, l] of draft.lines.entries()) {
-    if (!taxFits(l)) throw refuseAt('tax_mismatch', 'The tax on this line doesn’t match its rate on the taxable value', ['lines', n]);
+    if (rcmAt[n] === true) {
+      if (!heads(l).isZero()) {
+        throw refuseAt('rcm_bill_has_tax', 'This service is under reverse charge: its tax is ours to pay, so enter the bill’s line without the supplier’s GST',
+          ['lines', n]);
+      }
+    } else if (!taxFits(l)) throw refuseAt('tax_mismatch', 'The tax on this line doesn’t match its rate on the taxable value', ['lines', n]);
   }
   const linesTotal = draft.lines.reduce((s, l) => s.plus(dec(l.taxable)).plus(dec(l.cgst)).plus(dec(l.sgst)).plus(dec(l.igst)), zero());
   const roundOff = dec(e.statedTotal).minus(linesTotal);
@@ -190,19 +207,41 @@ async function post(ctx: Ctx, id: string, approved: boolean): Promise<Out<typeof
     await requestApproval(ctx, expenseCashSpec, id);
     return { status: 'pending_approval', number: null };
   }
-  // Input credit by ADR-009 §2: the heads as printed, against the supplier's state; none without a supplier.
+  // A reverse-charge line's tax, at the rate in force for its SAC on the supplier's date, by the supplier's state (abroad,
+  // state 96, is IGST).
+  const intraState = party === null || party.stateCode === company.stateCode;
+  const rcm: ({ cgst: Money; sgst: Money; igst: Money } | null)[] = [];
+  for (const [n, l] of draft.lines.entries()) {
+    if (rcmAt[n] !== true) {
+      rcm.push(null);
+      continue;
+    }
+    const rate = await gstRateFor(ctx, sacs[n] ?? '', e.supplierInvoiceDate).catch((err: unknown) => {
+      throw err instanceof AppError ? refuseAt(err.code, err.message, ['lines', n, 'sac']) : err;
+    });
+    const t = lineTax({ qty: '1', rate: l.taxable, discountPercent: '0', gstPercent: rate.rate }, intraState);
+    rcm.push({ cgst: t.cgst, sgst: t.sgst, igst: t.igst });
+  }
+  // Input credit by ADR-009 §2: the heads as printed, against the supplier's state; none without a supplier. A reverse-
+  // charge line's is on the tax we owe, its supplier's kind passed over (ADR-010 §4).
   const from = creditFrom(ctx);
-  const credits: Credit[] = draft.lines.map((l, i) => inputCredit({ tax: l, kind: party === null ? 'unregistered' : supplierKind(party),
-    creditFrom: from, blocked: blocked[i] ?? true, intraState: party === null || party.stateCode === company.stateCode }));
-  const heads = (l: { cgst: string; sgst: string; igst: string }): Decimal => dec(l.cgst).plus(dec(l.sgst)).plus(dec(l.igst));
-  const claimed = (head: 'cgst' | 'sgst' | 'igst') => credits.reduce((s, c) => s.plus(dec(c[head])), zero());
+  const credits: Credit[] = draft.lines.map((l, i) => inputCredit({ tax: rcm[i] ?? l, kind: party === null ? 'unregistered' : supplierKind(party),
+    creditFrom: from, blocked: blocked[i] ?? true, intraState, reverseCharge: rcm[i] != null }));
+  const claimed = (head: 'cgst' | 'sgst' | 'igst') => credits.reduce((s, c, i) => (rcm[i] != null ? s : s.plus(dec(c[head]))), zero());
+  const pending = credits.reduce((s, c, i) => (rcm[i] != null ? s.plus(heads(c)) : s), zero());
+  const owed = (head: 'cgst' | 'sgst' | 'igst') => rcm.reduce((s, r) => s.plus(dec(r?.[head] ?? '0')), zero());
   const signed = (account: JournalLine['account'], v: Decimal, more: Partial<JournalLine> = {}): JournalLine[] =>
     (v.isZero() ? [] : [{ account, ...more, ...(v.gt(0) ? { debit: roundMoney(v) } : { credit: roundMoney(v.abs()) }) }]);
   const entryLines: JournalLine[] = [
-    // Each line's account takes its taxable value and the GST it doesn't claim (F27, F28).
-    ...draft.lines.flatMap((l, i) => signed({ id: l.accountId }, dec(l.taxable).plus(heads(l)).minus(heads(credits[i] ?? l)))),
+    // Each line's account takes its taxable value and the GST it doesn't claim (F27, F28), the supplier's or, under
+    // reverse charge, ours (F31).
+    ...draft.lines.flatMap((l, i) => signed({ id: l.accountId }, dec(l.taxable).plus(heads(l)).plus(heads(rcm[i] ?? { cgst: '0', sgst: '0', igst: '0' }))
+      .minus(heads(credits[i] ?? l)))),
     ...signed({ system: 'input_cgst' }, claimed('cgst')), ...signed({ system: 'input_sgst' }, claimed('sgst')),
     ...signed({ system: 'input_igst' }, claimed('igst')),
+    ...signed({ system: 'rcm_credit_pending' }, pending),
+    ...signed({ system: 'rcm_cgst' }, owed('cgst').negated()), ...signed({ system: 'rcm_sgst' }, owed('sgst').negated()),
+    ...signed({ system: 'rcm_igst' }, owed('igst').negated()),
     ...signed({ system: 'round_off' }, roundOff),
   ];
   // TDS on the lines with a section (ADR-009 §4, F12): booked here, the party's row after the expense's; the supplier or
@@ -218,7 +257,9 @@ async function post(ctx: Ctx, id: string, approved: boolean): Promise<Out<typeof
   for (const [i, l] of lines.entries()) {
     const c = credits[i];
     if (c !== undefined) {
-      await tx.update(expenseLines).set({ creditCgst: c.cgst, creditSgst: c.sgst, creditIgst: c.igst, creditReason: c.reason })
+      const r = rcm[i];
+      await tx.update(expenseLines).set({ creditCgst: c.cgst, creditSgst: c.sgst, creditIgst: c.igst, creditReason: c.reason,
+        rcmCgst: r?.cgst ?? null, rcmSgst: r?.sgst ?? null, rcmIgst: r?.igst ?? null })
         .where(eq(expenseLines.id, l.id));
     }
   }
@@ -309,6 +350,7 @@ export async function getExpenseById(ctx: Ctx, { id }: In<typeof getExpense>): P
     payFromAccountId: e.payFromAccountId, fileId: e.fileId, notes: e.notes, cancelReason: e.cancelReason,
     lines: lines.map((l) => ({ id: l.id, lineNo: l.lineNo, categoryId: l.categoryId, accountId: l.accountId, description: l.description,
       taxable: m(l.taxable), gstRate: l.gstRate as never, cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst),
-      tdsSectionId: l.tdsSectionId, credit: l.creditCgst === null ? null : { cgst: m(l.creditCgst), sgst: m(l.creditSgst ?? '0'), igst: m(l.creditIgst ?? '0'),
-        reason: l.creditReason as 'state' | null } })) };
+      tdsSectionId: l.tdsSectionId, sac: l.sac, credit: l.creditCgst === null ? null : { cgst: m(l.creditCgst), sgst: m(l.creditSgst ?? '0'),
+        igst: m(l.creditIgst ?? '0'), reason: l.creditReason as 'state' | null },
+      reverseCharge: l.rcmCgst === null ? null : { cgst: m(l.rcmCgst), sgst: m(l.rcmSgst ?? '0'), igst: m(l.rcmIgst ?? '0') } })) };
 }
