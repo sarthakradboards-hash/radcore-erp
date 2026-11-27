@@ -60,7 +60,7 @@ function TypeTable({ type, accounts, nameOf }: { type: Account['type']; accounts
           <tbody>
             {accounts.map((a) => (
               <tr key={a.id}>
-                <td>{a.name}</td>
+                <td>{a.active ? a.name : t('books.chart.off', { name: a.name })}</td>
                 <td>{a.parentId === null ? '' : nameOf(a.parentId)}</td>
                 <td>{t(a.control ? 'books.chart.control' : 'books.chart.manual')}</td>
               </tr>

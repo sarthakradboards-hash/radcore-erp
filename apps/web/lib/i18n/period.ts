@@ -69,7 +69,7 @@ export const period = {
   'books.unlocks.col.who': 'Asked by',
   'books.unlocks.col.actions': 'Actions',
   'books.unlocks.review': 'Review',
-  'books.unlocks.review.for': 'Review the request by {who}, {when}',
+  'books.unlocks.review.for': 'Review request {n}, by {who}, {when}',
   'books.unlocks.heading': 'Asked by {who}, {when}',
   'books.unlocks.figures': 'What approving it does',
   'books.unlocks.kind': 'Request',

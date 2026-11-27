@@ -6,7 +6,7 @@
 // (`changed`), and anything the closes no longer allow; the screen only words those refusals.
 import { financialYear, formatDate, formatMoment } from '@radcore/lib-common';
 import { getPeriodContract, periodUnlockApproval } from '@radcore/lib-accounts/contract';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import { ReasonDialog } from '../../../../../components/ui/dialog/reason-dialog.tsx';
 import { DataTable, type Column } from '../../../../../components/ui/table/data-table.tsx';
@@ -23,8 +23,16 @@ function Review({ request }: { request: Pending }) {
   const q = useApiQuery(getApproval, { id: request.id });
   const decided = useApiMutation(decide, { invalidates: [listPending, getApproval, getPeriodContract] });
   const [acting, setActing] = useState<'approve' | 'reject' | null>(null);
-  const close = (open: boolean) => { if (!open) setActing(null); };
   const headingId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const approveButton = useRef<HTMLButtonElement>(null);
+  // A refused approval re-reads the request, which can take Approve away: then closing the dialog would leave focus on
+  // nothing, so it goes to the request's heading (e2e-playwright on #437).
+  const close = (open: boolean) => {
+    if (open) return;
+    setActing(null);
+    setTimeout(() => { if (approveButton.current?.isConnected !== true) heading.current?.focus(); }, 0);
+  };
   const a = q.data;
   if (q.error !== null) return <p role="alert" className="kit-form-alert">{t('error.title')}</p>;
   if (a === undefined) return <p>{t('loading')}</p>;
@@ -33,7 +41,7 @@ function Review({ request }: { request: Pending }) {
   const mayApprove = v !== null && !a.changed;
   return (
     <section aria-labelledby={headingId}>
-      <h2 id={headingId}>{t('books.unlocks.heading', { who: who(a.requestedBy), when: formatMoment(a.requestedAt) })}</h2>
+      <h2 id={headingId} ref={heading} tabIndex={-1}>{t('books.unlocks.heading', { who: who(a.requestedBy), when: formatMoment(a.requestedAt) })}</h2>
       {a.changed ? <p role="alert" className="kit-form-alert">{t('books.unlocks.changed')}</p> : null}
       {v === null ? <p role="alert" className="kit-form-alert">{t('books.unlocks.unreadable')}</p> : (
         <dl className="admin-facts" aria-label={t('books.unlocks.figures')}>
@@ -47,7 +55,7 @@ function Review({ request }: { request: Pending }) {
       {a.status !== 'pending' ? <p>{t(`books.unlocks.status.${a.status}`)}</p> : (
         <div className="kit-actions">
           {mayApprove
-            ? <button type="button" className="kit-button kit-button-primary" onClick={() => setActing('approve')}>{t('books.unlocks.approve')}</button>
+            ? <button ref={approveButton} type="button" className="kit-button kit-button-primary" onClick={() => setActing('approve')}>{t('books.unlocks.approve')}</button>
             : null}
           <button type="button" className="kit-button" onClick={() => setActing('reject')}>{t('books.unlocks.reject')}</button>
         </div>
@@ -74,7 +82,8 @@ export default function UnlockApprovalsPage() {
     { id: 'who', header: t('books.unlocks.col.who'), cell: (r) => who(r.requestedBy) },
     { id: 'review', header: t('books.unlocks.col.actions'), cell: (r) => (
       <button type="button" className="kit-button" aria-pressed={open?.id === r.id} onClick={() => setOpen(r)}
-        aria-label={t('books.unlocks.review.for', { who: who(r.requestedBy), when: formatMoment(r.requestedAt) })}>{t('books.unlocks.review')}</button>
+        // Numbered, since two requests by one person in one minute would otherwise share a name (e2e-playwright on #437).
+        aria-label={t('books.unlocks.review.for', { n: String(list.items.findIndex((x) => x.id === r.id) + 1), who: who(r.requestedBy), when: formatMoment(r.requestedAt) })}>{t('books.unlocks.review')}</button>
     ) },
   ];
   return (
