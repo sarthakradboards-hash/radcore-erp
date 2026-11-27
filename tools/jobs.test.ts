@@ -185,11 +185,12 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
     }
   }, 60_000);
 
-  it('sends a job that fails all its attempts to the dead-letter alert, without its payload', async () => {
+  it('sends a job that fails all its attempts to the dead-letter alert, without its payload, after its `failed` step', async () => {
     const queue = createJobQueue(database(), logger());
     const log = logger();
+    const failed = vi.fn(async (_ctx: unknown, _input: { card: string }) => undefined);
     const job = defineJob({ ...name(), principal: system, input: z.object({ card: z.string() }), retries: 0 },
-      async () => { throw new Error('provider down'); });
+      async () => { throw new Error('provider down'); }, { failed });
     const stop = await runJobs(queue, [job], log, { db });
     try {
       const id = await queue.send(job.name, envelope({ card: 'reset-link-payload' }));
@@ -199,6 +200,8 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
       const alert = log.error.mock.calls.map((c) => c[0]).join('\n');
       expect(alert).not.toContain('reset-link-payload');
       expect(id).not.toBeNull();
+      // The job's own record closed (RAD-159), with the input it was queued with.
+      expect(failed).toHaveBeenCalledWith(expect.anything(), { card: 'reset-link-payload' });
     } finally {
       await stop.stop();
     }

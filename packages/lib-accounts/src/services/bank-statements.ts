@@ -49,9 +49,18 @@ export const statementImportJob: JobContract<JobIn> = {
   name: 'accounts.statement-import',
   principal: { kind: 'user', perm: 'bank:reconcile' },
   input: z.strictObject({ importId: idString(), key: z.string().min(1).max(200), contentType: z.string().min(1).max(100) }),
-  retries: 2,
+  // One retry, so a file that takes the worker down (the container's memory limit, ADR-004) can't crash-loop it; after
+  // that the import is refused (markStatementUnreadable), never left queued (the architect on RAD-159).
+  retries: 1,
   timeoutSeconds: 120,
 };
+
+/** The job's `failed` step: an import whose job failed both attempts is refused as a file that can't be read. */
+export async function markStatementUnreadable(ctx: Ctx, { importId }: JobIn): Promise<void> {
+  await accountsTx(ctx).update(statementImports).set({ status: 'refused', refusals: [{ row: 0, column: '', code: 'statement_unreadable',
+    message: 'The file couldn’t be read. Upload it again, or the bank’s CSV or Excel statement instead.' }] })
+    .where(and(eq(statementImports.id, importId), eq(statementImports.status, 'queued')));
+}
 
 /** POST /bank/statement-imports: the layout kept (or the one kept used), the import queued for the worker. */
 export async function importStatement(ctx: Ctx, r: In<typeof importStatementContract>): Promise<Out<typeof importStatementContract>> {
