@@ -5,6 +5,7 @@ import {
   addExpense, cancelExpenseNow, changeExpense, dropExpenseDraft, expenseCashSpec, getExpenseById, listExpensesPage, postExpenseNow,
   addAccount, addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
   askToUnlock, moveLockForward, periodState, periodUnlockSpec, cancelTransfer, recordTransfer, transferById, transfersPage,
+  importStatement, statementFormatOf, statementImportById, statementLinesPage, undoStatementImport,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
@@ -12,6 +13,7 @@ import {
   cancelExpense, createExpense, dropExpense, expenseCashApproval, getExpense, listExpenses, postExpense, replaceExpense,
   createAccount, createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
   askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval,
+  getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementLinesContract, undoStatementImportContract,
   cancelTransferContract, getTransferContract, listTransfersContract, recordTransferContract,
 } from '@radcore/lib-accounts/contract';
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
@@ -64,6 +66,12 @@ export default [
   defineRoute(getJournal, journalEntryById),
   defineRoute(postJournal, postManual),
   defineRoute(reverseJournal, reverseJournalEntry),
+  // Bank statements (RAD-159): the import is queued here and done by the worker.
+  defineRoute(getStatementFormatContract, statementFormatOf),
+  defineRoute(importStatementContract, importStatement),
+  defineRoute(getStatementImportContract, statementImportById),
+  defineRoute(undoStatementImportContract, undoStatementImport),
+  defineRoute(listStatementLinesContract, statementLinesPage),
   // The period lock and year close (RAD-157): the close runs lib-service's books check as at the year's 31 March.
   defineRoute(getPeriodContract, periodState),
   defineRoute(lockPeriodContract, moveLockForward),

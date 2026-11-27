@@ -1,5 +1,5 @@
 {
-  "id": "f96a8c66-7a8f-4dba-94c3-65822f31284a",
+  "id": "0822ae2d-5896-4cb9-bae8-3750e909beb8",
   "prevId": "0328b052-bb6d-41e5-8d90-d25d07bc7e66",
   "version": "7",
   "dialect": "postgresql",
@@ -5303,7 +5303,7 @@
         },
         "ck_files_kind": {
           "name": "ck_files_kind",
-          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import', 'item_picture', 'delivery_photo', 'delivery_note', 'purchase_bill', 'expense_bill')"
+          "value": "\"radcore\".\"files\".\"kind\" in ('photo', 'resume', 'statement', 'import', 'item_picture', 'delivery_photo', 'delivery_note', 'purchase_bill')"
         },
         "ck_files_status": {
           "name": "ck_files_status",
@@ -6269,7 +6269,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -6356,7 +6356,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -21383,643 +21383,6 @@
       },
       "isRLSEnabled": false
     },
-    "radcore.expense_lines": {
-      "name": "expense_lines",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "expense_id": {
-          "name": "expense_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "line_no": {
-          "name": "line_no",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "category_id": {
-          "name": "category_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "taxable": {
-          "name": "taxable",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "gst_rate": {
-          "name": "gst_rate",
-          "type": "numeric(9, 6)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cgst": {
-          "name": "cgst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sgst": {
-          "name": "sgst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "igst": {
-          "name": "igst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "credit_cgst": {
-          "name": "credit_cgst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credit_sgst": {
-          "name": "credit_sgst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credit_igst": {
-          "name": "credit_igst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credit_reason": {
-          "name": "credit_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "ux_expense_lines_line": {
-          "name": "ux_expense_lines_line",
-          "columns": [
-            {
-              "expression": "expense_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "line_no",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_expense_lines_category_account": {
-          "name": "ix_expense_lines_category_account",
-          "columns": [
-            {
-              "expression": "category_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "expense_lines_expense_id_expenses_id_fk": {
-          "name": "expense_lines_expense_id_expenses_id_fk",
-          "tableFrom": "expense_lines",
-          "tableTo": "expenses",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "expense_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "fk_expense_lines_category_account": {
-          "name": "fk_expense_lines_category_account",
-          "tableFrom": "expense_lines",
-          "tableTo": "expense_category_accounts",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "category_id",
-            "account_id"
-          ],
-          "columnsTo": [
-            "category_id",
-            "account_id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_expense_lines_description": {
-          "name": "ck_expense_lines_description",
-          "value": "char_length(\"radcore\".\"expense_lines\".\"description\") <= 100"
-        },
-        "ck_expense_lines_taxable": {
-          "name": "ck_expense_lines_taxable",
-          "value": "\"radcore\".\"expense_lines\".\"taxable\" >= 0 and \"radcore\".\"expense_lines\".\"taxable\" <> 'NaN'"
-        },
-        "ck_expense_lines_gst_rate": {
-          "name": "ck_expense_lines_gst_rate",
-          "value": "\"radcore\".\"expense_lines\".\"gst_rate\" between 0 and 100 and \"radcore\".\"expense_lines\".\"gst_rate\" <> 'NaN'"
-        },
-        "ck_expense_lines_cgst": {
-          "name": "ck_expense_lines_cgst",
-          "value": "\"radcore\".\"expense_lines\".\"cgst\" >= 0 and \"radcore\".\"expense_lines\".\"cgst\" <> 'NaN'"
-        },
-        "ck_expense_lines_sgst": {
-          "name": "ck_expense_lines_sgst",
-          "value": "\"radcore\".\"expense_lines\".\"sgst\" >= 0 and \"radcore\".\"expense_lines\".\"sgst\" <> 'NaN'"
-        },
-        "ck_expense_lines_igst": {
-          "name": "ck_expense_lines_igst",
-          "value": "\"radcore\".\"expense_lines\".\"igst\" >= 0 and \"radcore\".\"expense_lines\".\"igst\" <> 'NaN'"
-        },
-        "ck_expense_lines_credit_cgst": {
-          "name": "ck_expense_lines_credit_cgst",
-          "value": "\"radcore\".\"expense_lines\".\"credit_cgst\" >= 0 and \"radcore\".\"expense_lines\".\"credit_cgst\" <> 'NaN'"
-        },
-        "ck_expense_lines_credit_sgst": {
-          "name": "ck_expense_lines_credit_sgst",
-          "value": "\"radcore\".\"expense_lines\".\"credit_sgst\" >= 0 and \"radcore\".\"expense_lines\".\"credit_sgst\" <> 'NaN'"
-        },
-        "ck_expense_lines_credit_igst": {
-          "name": "ck_expense_lines_credit_igst",
-          "value": "\"radcore\".\"expense_lines\".\"credit_igst\" >= 0 and \"radcore\".\"expense_lines\".\"credit_igst\" <> 'NaN'"
-        },
-        "ck_expense_lines_heads": {
-          "name": "ck_expense_lines_heads",
-          "value": "\"radcore\".\"expense_lines\".\"cgst\" = \"radcore\".\"expense_lines\".\"sgst\" and (\"radcore\".\"expense_lines\".\"igst\" = 0 or \"radcore\".\"expense_lines\".\"cgst\" = 0)"
-        },
-        "ck_expense_lines_credit": {
-          "name": "ck_expense_lines_credit",
-          "value": "num_nulls(\"radcore\".\"expense_lines\".\"credit_cgst\", \"radcore\".\"expense_lines\".\"credit_sgst\", \"radcore\".\"expense_lines\".\"credit_igst\") in (0, 3)\n    and (\"radcore\".\"expense_lines\".\"credit_reason\" is null or \"radcore\".\"expense_lines\".\"credit_cgst\" is not null)"
-        },
-        "ck_expense_lines_credit_whole": {
-          "name": "ck_expense_lines_credit_whole",
-          "value": "\"radcore\".\"expense_lines\".\"credit_cgst\" is null\n    or (\"radcore\".\"expense_lines\".\"credit_reason\" is null and \"radcore\".\"expense_lines\".\"credit_cgst\" = \"radcore\".\"expense_lines\".\"cgst\" and \"radcore\".\"expense_lines\".\"credit_sgst\" = \"radcore\".\"expense_lines\".\"sgst\" and \"radcore\".\"expense_lines\".\"credit_igst\" = \"radcore\".\"expense_lines\".\"igst\")\n    or (\"radcore\".\"expense_lines\".\"credit_reason\" in ('supplier_kind', 'blocked', 'state') and \"radcore\".\"expense_lines\".\"credit_cgst\" = 0 and \"radcore\".\"expense_lines\".\"credit_sgst\" = 0 and \"radcore\".\"expense_lines\".\"credit_igst\" = 0)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.expenses": {
-      "name": "expenses",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "number": {
-          "name": "number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "supplier_invoice_number": {
-          "name": "supplier_invoice_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "supplier_invoice_date": {
-          "name": "supplier_invoice_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "supplier_gstin": {
-          "name": "supplier_gstin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pay_from_account_id": {
-          "name": "pay_from_account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "stated_total": {
-          "name": "stated_total",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "total": {
-          "name": "total",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "file_id": {
-          "name": "file_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "posted_entry_id": {
-          "name": "posted_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_at": {
-          "name": "cancelled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_by": {
-          "name": "cancelled_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancel_reason": {
-          "name": "cancel_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancel_entry_id": {
-          "name": "cancel_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "ix_expenses_party": {
-          "name": "ix_expenses_party",
-          "columns": [
-            {
-              "expression": "party_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_expenses_pay_from": {
-          "name": "ix_expenses_pay_from",
-          "columns": [
-            {
-              "expression": "pay_from_account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_expenses_file": {
-          "name": "ix_expenses_file",
-          "columns": [
-            {
-              "expression": "file_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_expenses_posted_entry": {
-          "name": "ix_expenses_posted_entry",
-          "columns": [
-            {
-              "expression": "posted_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_expenses_cancel_entry": {
-          "name": "ix_expenses_cancel_entry",
-          "columns": [
-            {
-              "expression": "cancel_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_expenses_page": {
-          "name": "ix_expenses_page",
-          "columns": [
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "expenses_party_id_parties_id_fk": {
-          "name": "expenses_party_id_parties_id_fk",
-          "tableFrom": "expenses",
-          "tableTo": "parties",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "expenses_pay_from_account_id_accounts_id_fk": {
-          "name": "expenses_pay_from_account_id_accounts_id_fk",
-          "tableFrom": "expenses",
-          "tableTo": "accounts",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "pay_from_account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "expenses_file_id_files_id_fk": {
-          "name": "expenses_file_id_files_id_fk",
-          "tableFrom": "expenses",
-          "tableTo": "files",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "file_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "expenses_posted_entry_id_journal_entries_id_fk": {
-          "name": "expenses_posted_entry_id_journal_entries_id_fk",
-          "tableFrom": "expenses",
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "posted_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "expenses_cancel_entry_id_journal_entries_id_fk": {
-          "name": "expenses_cancel_entry_id_journal_entries_id_fk",
-          "tableFrom": "expenses",
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "cancel_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "expenses_number_unique": {
-          "name": "expenses_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "number"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_expenses_supplier_invoice_number": {
-          "name": "ck_expenses_supplier_invoice_number",
-          "value": "char_length(\"radcore\".\"expenses\".\"supplier_invoice_number\") <= 40"
-        },
-        "ck_expenses_stated_total": {
-          "name": "ck_expenses_stated_total",
-          "value": "\"radcore\".\"expenses\".\"stated_total\" >= 0 and \"radcore\".\"expenses\".\"stated_total\" <> 'NaN'"
-        },
-        "ck_expenses_total": {
-          "name": "ck_expenses_total",
-          "value": "\"radcore\".\"expenses\".\"total\" >= 0 and \"radcore\".\"expenses\".\"total\" <> 'NaN'"
-        },
-        "ck_expenses_notes": {
-          "name": "ck_expenses_notes",
-          "value": "char_length(\"radcore\".\"expenses\".\"notes\") <= 500"
-        },
-        "ck_expenses_cancel_reason": {
-          "name": "ck_expenses_cancel_reason",
-          "value": "char_length(\"radcore\".\"expenses\".\"cancel_reason\") <= 500"
-        },
-        "ck_expenses_status": {
-          "name": "ck_expenses_status",
-          "value": "\"radcore\".\"expenses\".\"status\" in ('draft', 'posted', 'cancelled')"
-        },
-        "ck_expenses_posted": {
-          "name": "ck_expenses_posted",
-          "value": "(\"radcore\".\"expenses\".\"status\" = 'draft') = (\"radcore\".\"expenses\".\"number\" is null) and (\"radcore\".\"expenses\".\"status\" = 'draft') = (\"radcore\".\"expenses\".\"posted_entry_id\" is null)"
-        },
-        "ck_expenses_cancelled": {
-          "name": "ck_expenses_cancelled",
-          "value": "(\"radcore\".\"expenses\".\"status\" = 'cancelled') = (\"radcore\".\"expenses\".\"cancel_entry_id\" is not null)"
-        },
-        "ck_expenses_owed": {
-          "name": "ck_expenses_owed",
-          "value": "(\"radcore\".\"expenses\".\"pay_from_account_id\" is null and \"radcore\".\"expenses\".\"party_id\" is not null and \"radcore\".\"expenses\".\"total\" = \"radcore\".\"expenses\".\"stated_total\")\n    or (\"radcore\".\"expenses\".\"pay_from_account_id\" is not null and \"radcore\".\"expenses\".\"total\" = 0)"
-        },
-        "ck_expenses_supplier_date": {
-          "name": "ck_expenses_supplier_date",
-          "value": "\"radcore\".\"expenses\".\"supplier_invoice_date\" <= \"radcore\".\"expenses\".\"business_date\""
-        },
-        "ck_expenses_supplier_gstin": {
-          "name": "ck_expenses_supplier_gstin",
-          "value": "\"radcore\".\"expenses\".\"supplier_gstin\" is null or \"radcore\".\"expenses\".\"supplier_gstin\" ~ '^[0-9]{2}[A-Z0-9]{13}$'"
-        },
-        "ck_expenses_supplier_number": {
-          "name": "ck_expenses_supplier_number",
-          "value": "btrim(\"radcore\".\"expenses\".\"supplier_invoice_number\") <> ''"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "radcore.transfers": {
       "name": "transfers",
       "schema": "radcore",
@@ -22329,6 +21692,550 @@
         "ck_transfers_cancelled": {
           "name": "ck_transfers_cancelled",
           "value": "(\"radcore\".\"transfers\".\"status\" = 'cancelled') = (\"radcore\".\"transfers\".\"cancel_entry_id\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.bank_statement_lines": {
+      "name": "bank_statement_lines",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "bank_statement_lines_seq_seq",
+            "schema": "radcore",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_no": {
+          "name": "row_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value_date": {
+          "name": "value_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "narration": {
+          "name": "narration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference": {
+          "name": "reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "balance": {
+          "name": "balance",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "ux_bank_statement_lines_present": {
+          "name": "ux_bank_statement_lines_present",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "value_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "direction",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "amount",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "balance",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reference",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_bank_statement_lines_account_date": {
+          "name": "ix_bank_statement_lines_account_date",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "value_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_bank_statement_lines_import": {
+          "name": "ix_bank_statement_lines_import",
+          "columns": [
+            {
+              "expression": "import_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bank_statement_lines_account_id_accounts_id_fk": {
+          "name": "bank_statement_lines_account_id_accounts_id_fk",
+          "tableFrom": "bank_statement_lines",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "bank_statement_lines_import_id_statement_imports_id_fk": {
+          "name": "bank_statement_lines_import_id_statement_imports_id_fk",
+          "tableFrom": "bank_statement_lines",
+          "tableTo": "statement_imports",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_bank_statement_lines_narration": {
+          "name": "ck_bank_statement_lines_narration",
+          "value": "char_length(\"radcore\".\"bank_statement_lines\".\"narration\") <= 500"
+        },
+        "ck_bank_statement_lines_reference": {
+          "name": "ck_bank_statement_lines_reference",
+          "value": "char_length(\"radcore\".\"bank_statement_lines\".\"reference\") <= 100"
+        },
+        "ck_bank_statement_lines_amount": {
+          "name": "ck_bank_statement_lines_amount",
+          "value": "\"radcore\".\"bank_statement_lines\".\"amount\" >= 0 and \"radcore\".\"bank_statement_lines\".\"amount\" <> 'NaN'"
+        },
+        "ck_bank_statement_lines_balance": {
+          "name": "ck_bank_statement_lines_balance",
+          "value": "\"radcore\".\"bank_statement_lines\".\"balance\" <> 'NaN'"
+        },
+        "ck_bank_statement_lines_direction": {
+          "name": "ck_bank_statement_lines_direction",
+          "value": "\"radcore\".\"bank_statement_lines\".\"direction\" in ('in', 'out')"
+        },
+        "ck_bank_statement_lines_above_zero": {
+          "name": "ck_bank_statement_lines_above_zero",
+          "value": "\"radcore\".\"bank_statement_lines\".\"amount\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.statement_formats": {
+      "name": "statement_formats",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "date_column": {
+          "name": "date_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "narration_column": {
+          "name": "narration_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_column": {
+          "name": "reference_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawal_column": {
+          "name": "withdrawal_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deposit_column": {
+          "name": "deposit_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "balance_column": {
+          "name": "balance_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "newest_first": {
+          "name": "newest_first",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "statement_formats_account_id_accounts_id_fk": {
+          "name": "statement_formats_account_id_accounts_id_fk",
+          "tableFrom": "statement_formats",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_statement_formats_date_column": {
+          "name": "ck_statement_formats_date_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"date_column\") <= 100"
+        },
+        "ck_statement_formats_narration_column": {
+          "name": "ck_statement_formats_narration_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"narration_column\") <= 100"
+        },
+        "ck_statement_formats_reference_column": {
+          "name": "ck_statement_formats_reference_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"reference_column\") <= 100"
+        },
+        "ck_statement_formats_withdrawal_column": {
+          "name": "ck_statement_formats_withdrawal_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"withdrawal_column\") <= 100"
+        },
+        "ck_statement_formats_deposit_column": {
+          "name": "ck_statement_formats_deposit_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"deposit_column\") <= 100"
+        },
+        "ck_statement_formats_balance_column": {
+          "name": "ck_statement_formats_balance_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"balance_column\") <= 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.statement_imports": {
+      "name": "statement_imports",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "new_lines": {
+          "name": "new_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "present_lines": {
+          "name": "present_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refusals": {
+          "name": "refusals",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_statement_imports_account": {
+          "name": "ix_statement_imports_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_statement_imports_file": {
+          "name": "ix_statement_imports_file",
+          "columns": [
+            {
+              "expression": "file_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "statement_imports_account_id_accounts_id_fk": {
+          "name": "statement_imports_account_id_accounts_id_fk",
+          "tableFrom": "statement_imports",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "statement_imports_file_id_files_id_fk": {
+          "name": "statement_imports_file_id_files_id_fk",
+          "tableFrom": "statement_imports",
+          "tableTo": "files",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_statement_imports_status": {
+          "name": "ck_statement_imports_status",
+          "value": "\"radcore\".\"statement_imports\".\"status\" in ('queued', 'imported', 'refused', 'undone')"
+        },
+        "ck_statement_imports_counts": {
+          "name": "ck_statement_imports_counts",
+          "value": "(\"radcore\".\"statement_imports\".\"status\" in ('imported', 'undone')) = (\"radcore\".\"statement_imports\".\"new_lines\" is not null and \"radcore\".\"statement_imports\".\"present_lines\" is not null)"
         }
       },
       "isRLSEnabled": false

@@ -72,7 +72,8 @@ export type BeforeJob<I, B> = (input: I, outside: { files: FileStore }) => Promi
 // A worker built without a file store (a test) gives afterCommit one that says so when used, so a step that never
 // touches files, such as the reset email's, runs as before.
 const noStore = (): Promise<never> => Promise.reject(new Error('this worker has no file store (RAD-43)'));
-const NO_FILE_STORE: FileStore = Object.freeze({ downloadUrl: noStore, viewUrl: noStore, verifyUpload: noStore, presignUpload: noStore, putFile: noStore });
+const NO_FILE_STORE: FileStore = Object.freeze({ downloadUrl: noStore, viewUrl: noStore, verifyUpload: noStore, presignUpload: noStore, putFile: noStore,
+  readFile: noStore });
 
 /** A job contract with the service that does the work. The worker runs these; nothing else calls `handle`. */
 export type JobDefinition = {
