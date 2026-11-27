@@ -10,7 +10,7 @@ import {
 } from '@radcore/db/accounts';
 import { addDays, dec, roundMoney } from '@radcore/lib-common';
 import { AppError, decodeCursor, defineSetting, encodeCursor, type Ctx } from '@radcore/lib-platform';
-import { and, asc, between, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, notInArray, or } from 'drizzle-orm';
+import { and, asc, between, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, not, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { listBookLinesContract, listMatchCandidatesContract, matchLinesContract, unmatchContract } from '../contract-bank.ts';
 import { lockPeriod } from './journal.ts';
@@ -193,8 +193,9 @@ export async function bookLinesPage(ctx: Ctx, input: In<typeof listBookLinesCont
     credit: journalLines.credit, number: journalEntries.number, kind: journalEntries.kind, sourceTable: journalEntries.sourceTable,
     sourceId: journalEntries.sourceId }).from(journalLines).innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
     .where(and(eq(journalLines.accountId, id), isNull(journalEntries.reversesEntryId),
-      notInArray(journalEntries.id, tx.select({ id: journalEntries.reversesEntryId }).from(journalEntries).where(isNotNull(journalEntries.reversesEntryId))),
-      notInArray(journalLines.id, tx.select({ id: bankMatchJournalLines.journalLineId }).from(bankMatchJournalLines)),
+      // NOT IN over subqueries that hold no null (notInArray isn't L1's: an empty list means every row).
+      not(inArray(journalEntries.id, tx.select({ id: journalEntries.reversesEntryId }).from(journalEntries).where(isNotNull(journalEntries.reversesEntryId)))),
+      not(inArray(journalLines.id, tx.select({ id: bankMatchJournalLines.journalLineId }).from(bankMatchJournalLines))),
       from === undefined ? undefined : gte(journalLines.businessDate, from), to === undefined ? undefined : lte(journalLines.businessDate, to),
       direction === undefined ? undefined : direction === 'in' ? gt(journalLines.debit, '0') : gt(journalLines.credit, '0'),
       amount === undefined ? undefined : direction === 'out' ? eq(journalLines.credit, amount)
