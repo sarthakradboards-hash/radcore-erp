@@ -39,6 +39,8 @@ export const purchaseBills = {
   'purchases.bill.col.over': 'Above PO rate',
   'purchases.bill.col.verdict': 'Tolerance',
   'purchases.bill.col.gst': 'GST',
+  'purchases.bill.col.rcm': 'GST we pay (reverse charge)',
+  'purchases.bill.rcm.note': 'Some services on this bill are under reverse charge: the supplier doesn’t charge their GST, and we pay it ourselves. It’s shown by line in GST we pay (reverse charge).',
   'purchases.bill.col.lineTotal': 'Line total',
   'purchases.bill.col.charge': 'Charge',
   'purchases.bill.col.hsn': 'HSN or SAC',

@@ -58,5 +58,6 @@ export const transfers = {
   'books.transfers.err.series_full': 'The transfers’ number series is full. Ask your admin to widen it.',
   'books.transfers.err.not_posted': 'Only a posted transfer can be cancelled.',
   'books.transfers.err.date_before_source': 'The reversal can’t be dated before the transfer itself.',
+  'books.transfers.err.bank_matched': 'This transfer is matched to a bank statement line. Unmatch it on the bank statements page first.',
   'books.transfers.err.already_reversed': 'This transfer is already cancelled.',
 } as const;

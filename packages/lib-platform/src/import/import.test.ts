@@ -1,5 +1,6 @@
 // RC-117 (what the sources produce: Excel, any delimiter, any encoding, more than 1 MB) and RC-118 ("9,111.00" is
 // 9111, a bad row is reported, not dropped), within ADR-003's parser limits.
+import chardet from 'chardet';
 import { Readable } from 'node:stream';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
@@ -126,6 +127,19 @@ describe('RC-117: CSV in the delimiter and encoding the source uses', () => {
     const t = await readTable(utf8('Narration,Amount\n\nTea,1\n"Two\nlines",2\n\n\nLast,3\n'));
     expect([t.rows.map((r) => r[0]), t.lines]).toEqual([['Tea', 'Two\nlines', 'Last'], [1, 3, 4, 8]]);
     expect(checkRows(t, z.object({ Amount: z.literal('x') })).errors.map((e) => e.row)).toEqual([3, 4, 8]);
+  });
+
+  it('reads plain ASCII as UTF-8, whatever chardet guesses (e2e-playwright on RAD-159)', async () => {
+    // A made-up statement of 8 rows, all ASCII, that chardet takes for Turkish (ISO-8859-9), which the reader refused.
+    const ascii = ['Date,Narration,Ref,Withdrawal,Deposit,Balance', '01-04-2026,TRADERS IMPS SALARY,R26617,858.02,,9141.98',
+      '02-04-2026,GST KIRAN TRANSFER,R5718,,430.93,9572.91', '03-04-2026,SALARY INDUSTRIES TDS,R83612,568.49,,9004.42',
+      '04-04-2026,CASH AKASH IMPS,R66548,,924.52,9928.94', '05-04-2026,PAYMENT SALARY TRANSFER,R63635,721.03,,9207.91',
+      '06-04-2026,SALARY CASH SALARY,R77050,527.00,,8680.91', '07-04-2026,DEPOSIT AKASH TRANSFER,R70618,358.03,,8322.88',
+      '08-04-2026,SALARY DINESH SALARY,R63824,,997.10,9319.98'].join('\r\n') + '\r\n';
+    expect(chardet.detect(utf8(ascii))).toBe('ISO-8859-9');
+    expect((await readTable(utf8(ascii))).rows).toHaveLength(8);
+    // Valid UTF-8 beyond ASCII is UTF-8 too, BOM or none.
+    expect(decodeText(utf8('Party\nCafé Noir\n'))).toBe('Party\nCafé Noir\n');
   });
 
   it('decodes UTF-16 with a byte-order mark, and Windows-1252', () => {
