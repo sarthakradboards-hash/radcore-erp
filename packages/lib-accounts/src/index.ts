@@ -16,6 +16,9 @@ export {
 export { getPaymentById, listPaymentsPage } from './services/payment-reads.ts';
 export { cancelTransfer, recordTransfer, TRANSFER_SERIES, transferById, transfersPage } from './services/transfers.ts';
 export {
+  importStatement, readStatementFile, statementFormatOf, statementImportById, statementImportJob, statementLinesPage, storeStatement, undoStatementImport,
+} from './services/bank-statements.ts';
+export {
   askToUnlock, closeYear, lockPeriodForMove, moveLockForward, periodState, periodUnlockSpec, YEAR_END_CHECKLIST, type BooksCheck,
 } from './services/period-lock.ts';
 export { partyReceivable } from './services/receivables.ts';

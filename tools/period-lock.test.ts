@@ -77,7 +77,8 @@ describe.skipIf(!adminUrl)('the period lock and year close', { timeout: 60_000 }
     await own.pool?.end();
     await own.su?.end();
     await own.drop?.();
-  });
+  // Dropping the file's own database can outlast the default hook time under a full run's load.
+  }, 120_000);
 
   it('closes years in order with F20 exactly, waits for a posting in flight, and reopens, posts and closes again', async () => {
     await setLock(null);

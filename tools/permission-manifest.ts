@@ -125,6 +125,11 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /journal/:id': 'journal:read',
   'POST /journal': 'journal:post',
   'POST /journal/:id/reverse': 'journal:reverse',
+  'GET /bank/accounts/:id/statement-format': 'bank:read',
+  'POST /bank/statement-imports': 'bank:reconcile',
+  'GET /bank/statement-imports/:id': 'bank:read',
+  'POST /bank/statement-imports/:id/undo': 'bank:reconcile',
+  'GET /bank/statement-lines': 'bank:read',
   'GET /books/period': 'books:lock',
   'POST /books/period/lock': 'books:lock',
   'POST /books/period/unlock-requests': 'books:lock',
@@ -408,6 +413,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'crm.google-lead': 'system google-leads [leads:read, leads:write]',
   'crm.meta-lead': 'system meta-leads [leads:read, leads:write]',
   'crm.whatsapp-message': 'system whatsapp [leads:read, leads:write]',
+  'accounts.statement-import': 'user bank:reconcile',
 };
 
 /** Which libraries each route's and job's own code reaches (RAD-84, M1-19, RC-153), keyed as above: the library of the
@@ -526,6 +532,11 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /journal/:id': ['lib-accounts', 'lib-platform'],
   'POST /journal': ['lib-accounts', 'lib-platform'],
   'POST /journal/:id/reverse': ['lib-accounts', 'lib-platform'],
+  'GET /bank/accounts/:id/statement-format': ['lib-accounts', 'lib-platform'],
+  'POST /bank/statement-imports': ['lib-accounts', 'lib-platform'],
+  'GET /bank/statement-imports/:id': ['lib-accounts', 'lib-platform'],
+  'POST /bank/statement-imports/:id/undo': ['lib-accounts', 'lib-platform'],
+  'GET /bank/statement-lines': ['lib-accounts', 'lib-platform'],
   'GET /books/period': ['lib-accounts', 'lib-platform'],
   'POST /books/period/lock': ['lib-accounts', 'lib-platform'],
   'POST /books/period/unlock-requests': ['lib-accounts', 'lib-platform'],
@@ -806,4 +817,5 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'crm.google-lead': CRM_DOORS,
   'crm.meta-lead': CRM_DOORS,
   'crm.whatsapp-message': CRM_DOORS,
+  'accounts.statement-import': ['lib-accounts', 'lib-platform'],
 };
