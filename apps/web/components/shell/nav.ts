@@ -37,6 +37,7 @@ export const ACCOUNTS_PAGES = [
   { href: '/accounts/chart', label: 'books.nav.chart', perm: 'journal:read' },
   { href: '/accounts/collect', label: 'books.nav.collect', perm: 'receivables:read' },
   { href: '/accounts/payments', label: 'books.nav.pay', perm: 'payments:read' },
+  { href: '/accounts/transfers', label: 'books.nav.transfers', perm: 'payments:read' },
 ] as const satisfies readonly NavPage[];
 
 /** The sales area's pages (RAD-125): quotes first, as an order usually starts from one. */
