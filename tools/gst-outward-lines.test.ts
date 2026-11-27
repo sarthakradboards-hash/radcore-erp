@@ -8,6 +8,7 @@ import { setGstRate } from '@radcore/lib-gst/contract';
 import { AppError, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { addCreditNote, addInvoice, postInvoiceNow } from '@radcore/lib-sales';
+import { addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { postedDelivery } from './delivered-fixture.ts';
@@ -110,6 +111,36 @@ describe.skipIf(!url || !superUrl)('what GSTR-1 reads', { timeout: 60_000 }, () 
     const { rows } = await su.query<{ t: string }>(`select c.relname t from pg_trigger g join pg_class c on c.oid = g.tgrelid
       where g.tgname = 'posted_lines_rated' order by 1`);
     expect(rows.map((r) => r.t)).toEqual(['credit_notes', 'invoices']);
+  });
+
+  // The architect on #457: Table 13 counts job-work challans too, through gst_documents_issued, with the portal's type.
+  it('lists posted and cancelled job-work challans in gst_documents_issued as delivery challans for job work, and no draft', async () => {
+    const at = await postedDelivery(run, su, DATE);
+    const place = (kind: 'store' | 'stores') => run((ctx) => addPlace(ctx, { code: `J${randomBytes(3).toString('hex').toUpperCase()}`,
+      name: `Place ${randomBytes(3).toString('hex')}`, kind }));
+    const places = [await place('store'), await place('stores')];
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      // Each made a draft, then posted and cancelled as its own guards allow; rolled back before the commit checks run.
+      const challan = async (status: string, n: string) => {
+        const id = (await c.query<{ id: string }>(`insert into radcore.job_work_challans (from_id, to_id, party_id, business_date)
+          values ($1, $2, $3, '${DATE}') returning id`, [places[0]?.id, places[1]?.id, at.partyId])).rows[0]?.id ?? '';
+        if (status !== 'draft') await c.query("update radcore.job_work_challans set status = 'posted', number = $2 where id = $1", [id, n]);
+        if (status === 'cancelled') await c.query("update radcore.job_work_challans set status = 'cancelled', cancelled_at = now() where id = $1", [id]);
+        return id;
+      };
+      const tag = randomBytes(3).toString('hex');
+      const ids = [await challan('posted', `JWC/T${tag}/00001`), await challan('cancelled', `JWC/T${tag}/00002`), await challan('draft', '')];
+      const { rows } = await c.query<{ t: string; n: string; s: string }>(`select document_type t, document_number n, status s
+        from radcore.gst_documents_issued where document_id = any($1::uuid[]) order by document_number`, [ids]);
+      expect(rows).toEqual([{ t: 'Delivery Challan for job work', n: `JWC/T${tag}/00001`, s: 'posted' },
+        { t: 'Delivery Challan for job work', n: `JWC/T${tag}/00002`, s: 'cancelled' }]);
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
   });
 
   // Posted notes, which go through approval, are read in PR 2's builder tests.
