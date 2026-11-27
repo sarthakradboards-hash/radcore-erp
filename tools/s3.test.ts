@@ -132,6 +132,15 @@ describe.skipIf(!env['S3_ENDPOINT'])('file store', () => {
     await expect(files.verifyUpload(key, 'photo')).rejects.toThrow('upload refused: the file doesn\'t begin the way a image/png must');
   });
 
+  it('reads a checked file back for a worker job, only by its own kind\'s key (RAD-159)', async () => {
+    const { put, files } = await store();
+    const key = `statement/${randomUUID()}`;
+    await put(key, 'Date,Narration\n', 'text/csv');
+    await files.verifyUpload(key, 'statement');
+    expect(new TextDecoder().decode(await files.readFile(key, 'statement'))).toBe('Date,Narration\n');
+    await expect(files.readFile(`incoming/${key}`, 'statement')).rejects.toThrow(TypeError);
+  });
+
   it('streams a server-written file to a key it makes, and serves it back (RAD-47\'s export)', async () => {
     const { files } = await store();
     const dir = mkdtempSync(join(tmpdir(), 'radcore-put-'));

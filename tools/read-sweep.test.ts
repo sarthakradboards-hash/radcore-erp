@@ -405,6 +405,25 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       add(['GET /approvals/period-unlock/:id'], request?.id);
     });
 
+    // A bank account's statement layout and an imported statement with a line (RAD-159), as rows: the import itself runs in
+    // the worker, which this file doesn't start.
+    await step('bank statement', async () => {
+      const q = (text: string, values: unknown[]) => su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        ${text}`, values).then((r) => r.rows[0]?.id ?? '');
+      const bank = await q(`insert into radcore.accounts (name, type, parent_id) select $1, 'asset', a.id from radcore.accounts a, p
+        where a.system_key = 'bank' returning id`, [`Sweep bank ${tag()}`]);
+      await q(`insert into radcore.statement_formats (account_id, date_column, narration_column, reference_column, withdrawal_column,
+        deposit_column, balance_column, newest_first) select $1, 'Date', 'Narration', null, 'Withdrawal', 'Deposit', 'Balance', false from p`, [bank]);
+      const file = await q(`insert into radcore.files (kind, store_key, filename, content_type, size, status)
+        select 'statement', $1, 'statement.csv', 'text/csv', 10, 'ready' from p returning id`, [`statement/${randomUUID()}`]);
+      const imported = await q(`insert into radcore.statement_imports (account_id, file_id, status, new_lines, present_lines, refusals)
+        select $1, $2, 'imported', 1, 0, '[]'::jsonb from p returning id`, [bank, file]);
+      await q(`insert into radcore.bank_statement_lines (account_id, import_id, row_no, value_date, narration, reference, direction, amount, balance)
+        select $1, $2, 2, $3, 'NEFT', '', 'in', 100, 100 from p`, [bank, imported, DATE]);
+      add(['GET /bank/accounts/:id/statement-format'], bank);
+      add(['GET /bank/statement-imports/:id'], imported);
+    });
+
     // A booking: a serialised unit promised to a confirmed order line, with an advance.
     await step('booking', async () => {
       // The customer's credit and price for the scooter, so its order confirms without an override.
