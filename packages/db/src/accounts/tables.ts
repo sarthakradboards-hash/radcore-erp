@@ -189,6 +189,9 @@ export const parties = radcoreTable('parties', {
   gstin: text(),
   pan: text(),
   composition: boolean().notNull().default(false),
+  // A supplier abroad of services paid in rupees (ADR-010 §4, RAD-153): no GSTIN or PAN, state 96 (other country), and
+  // every line it bills is reverse charge, as IGST.
+  overseas: boolean().notNull().default(false),
   stateCode: text().notNull(),
   phone: text(),
   email: boundedText({ max: 254 }),
@@ -213,6 +216,9 @@ export const parties = radcoreTable('parties', {
   check('ck_parties_pan_in_gstin', sql`${t.gstin} is null or ${t.pan} is null or substr(${t.gstin}, 3, 10) = ${t.pan}`),
   check('ck_parties_state', sql`${t.stateCode} ~ '^[0-9]{2}$' and (${t.gstin} is null or left(${t.gstin}, 2) = ${t.stateCode})`),
   check('ck_parties_composition', sql`not ${t.composition} or ${t.gstin} is not null`),
+  // State 96 is only an overseas supplier's, and it's a supplier only, with no GSTIN, PAN or composition (ADR-010 §4).
+  check('ck_parties_overseas', sql`${t.overseas} = (${t.stateCode} = '96') and (not ${t.overseas} or (${t.gstin} is null and ${t.pan} is null
+    and not ${t.composition} and ${t.supplier} and not ${t.customer} and not ${t.dealer} and not ${t.franchisee}))`),
   check('ck_parties_phone', sql`${t.phone} ~ '^[+][1-9][0-9]{6,14}$'`),
   check('ck_parties_pincode', sql`${t.pincode} ~ '^[1-9][0-9]{5}$'`),
   check('ck_parties_credit_days', sql`${t.creditDays} between 0 and 365`),

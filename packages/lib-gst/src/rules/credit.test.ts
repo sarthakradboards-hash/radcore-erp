@@ -18,6 +18,12 @@ describe('supplierKind', () => {
 });
 
 describe('inputCredit', () => {
+  it('passes over the supplier’s kind on a reverse-charge line, but not a blocked category (ADR-010 §4)', () => {
+    expect(inputCredit({ tax: intra, kind: 'unregistered', creditFrom: regular, blocked: false, intraState: true, reverseCharge: true }))
+      .toEqual({ ...intra, reason: null });
+    expect(inputCredit({ tax: intra, kind: 'unregistered', creditFrom: regular, blocked: true, intraState: true, reverseCharge: true }))
+      .toEqual(none('blocked'));
+  });
   it('claims every head from a regular supplier whose heads fit its state', () => {
     expect(inputCredit({ tax: intra, kind: 'regular', creditFrom: regular, blocked: false, intraState: true }))
       .toEqual({ ...intra, reason: null });

@@ -6,6 +6,9 @@ export { lineTax, placeOfSupply, toRupee, totalsOf, type LineTax, type Totals } 
 // Input credit (RAD-139, ADR-009 §2): the one rule bills and expenses call, and the setting it reads.
 export { inputCredit, supplierKind, type Credit, type NoCredit, type SupplierKind } from './rules/credit.ts';
 export { CREDIT_FROM, creditFrom } from './services/credit.ts';
+// Reverse charge (RAD-153, ADR-010 §4): the rule purchases call, and its rules by date.
+export { isReverseCharge, type RcmParty, type RcmRule } from './rules/reverse-charge.ts';
+export { listRcmRulesAll, putRcmRule, rcmRulesOn } from './services/rcm-rules.ts';
 
 // This library's settings, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { SettingDef } from '@radcore/lib-platform';

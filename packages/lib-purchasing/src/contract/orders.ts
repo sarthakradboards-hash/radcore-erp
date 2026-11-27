@@ -53,7 +53,7 @@ const expectedAfter = <T extends z.ZodType<{ businessDate: string; expectedBy: s
 const orderIn = expectedAfter(orderShape);
 
 // What a draft's save can refuse: its dates (ADR-008 §4), its supplier and items, and its status.
-const DRAFT_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_party', 'not_a_supplier', 'unknown_item',
+const DRAFT_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_party', 'not_a_supplier', 'overseas_services_only', 'unknown_item',
   'item_inactive', 'quantity_too_precise', 'wrong_status'] as const;
 // What placing adds: the tax worked out and stored, the number drawn, and a check that the approved version still holds.
 const PLACE_ERRORS = [...DRAFT_ERRORS, 'no_gst_rate', 'company_profile_incomplete', 'version_changed', 'series_full'] as const;
@@ -108,7 +108,7 @@ export const placePurchaseOrder = defineContract({
  * (the auditor on #333). */
 export const purchaseOrderApproval = approvalContracts('purchase-order', 'purchasing:approve',
   ['wrong_status', 'no_gst_rate', 'company_profile_incomplete', 'year_not_open', 'period_locked', 'series_full', 'not_a_supplier',
-    'item_inactive']);
+    'overseas_services_only', 'item_inactive']);
 /** Closes a placed PO with lines still to come, with the reason (closed short). */
 export const closePurchaseOrder = defineContract({
   method: 'POST', path: '/purchasing/orders/:id/close', auth: 'session', perm: 'purchasing:write', tx: write,
