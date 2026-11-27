@@ -299,6 +299,7 @@ export const SECURITY_EVENT_ROUTES = {
   'POST /files/delivery-photo/:id/download': ['download'],
   'POST /files/delivery-note/:id/download': ['download'],
   'POST /files/purchase-bill/:id/download': ['download'],
+  'POST /files/expense-bill/:id/download': ['download'],
   'POST /exports/:id/download': ['download'],
 } as const satisfies Record<string, readonly (typeof SECURITY_EVENT_KINDS)[number][]>;
 
@@ -364,6 +365,8 @@ export const importFiles = fileContracts('import');
 export const deliveryPhotoFiles = fileContracts('delivery_photo');
 export const deliveryNoteFiles = fileContracts('delivery_note');
 export const purchaseBillFiles = fileContracts('purchase_bill');
+/** An expense's bill as it came (RAD-152), under the expenses keys. */
+export const expenseBillFiles = fileContracts('expense_bill');
 /** Item pictures (RAD-89) upload and confirm with items:write; they have no download route, since they're seen through
  * the item's own answer, as inline view links (ADR-004 §2). */
 const pictureRoutes = fileContracts('item_picture');
@@ -377,4 +380,4 @@ export const ANSWER_NOT_STORED_ROUTES = ['POST /sign-in/second-factor/enrolment'
   'POST /files/photo/:id/download',
   'POST /files/resume/:id/download', 'POST /files/statement/:id/download', 'POST /files/import/:id/download',
   'POST /files/delivery-photo/:id/download', 'POST /files/delivery-note/:id/download', 'POST /files/purchase-bill/:id/download',
-  'POST /exports/:id/download', 'POST /sales/invoices/:id/links', 'POST /parties/:id/reminders'] as const;
+  'POST /files/expense-bill/:id/download', 'POST /exports/:id/download', 'POST /sales/invoices/:id/links', 'POST /parties/:id/reminders'] as const;

@@ -293,6 +293,7 @@ describe('the admin contracts', () => {
       'POST /files/delivery-photo/:id/download': ['download'],
       'POST /files/delivery-note/:id/download': ['download'],
       'POST /files/purchase-bill/:id/download': ['download'],
+      'POST /files/expense-bill/:id/download': ['download'],
       'POST /exports/:id/download': ['download'],
     });
   });

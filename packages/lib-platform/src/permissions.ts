@@ -49,6 +49,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // payments isn't a scoped table. No balance on it, so not receivables:read, and no second factor: it moves nothing.
   { key: 'payments:read', module: 'Payments', label: 'See receipts, payments and refunds', allOnly: true },
   { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
+  // Expenses (M5-02, ADR-009 §9): owned by their maker; writing pays, so it takes the second factor.
+  { key: 'expenses:read', module: 'Expenses', label: 'See expenses', records: ['@radcore/db/accounts#expenses'] },
+  { key: 'expenses:write', module: 'Expenses', label: 'Enter, post and cancel expenses', records: ['@radcore/db/accounts#expenses'], secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
   // One posted receipt, printed by its id (the architect on RAD-120): no balance on it, so not receivables:read; all-only,
   // since payments isn't a scoped table.

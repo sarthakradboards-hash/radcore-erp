@@ -89,9 +89,11 @@ export async function changeAccount(ctx: Ctx, { id, code, active }: In<typeof se
  * is no group. The name is unique across the chart, whatever its case or spacing, and a code where set. */
 export async function addAccount(ctx: Ctx, { name, parentId, code }: In<typeof createAccount>): Promise<Out<typeof createAccount>> {
   const tx = accountsTx(ctx);
-  const [parent] = await tx.select({ type: accounts.type, controlKind: accounts.controlKind }).from(accounts).where(eq(accounts.id, parentId)).limit(1);
-  if (parent === undefined || parent.controlKind !== 'none') {
-    const message = 'Put the account under a group, not under a control account such as Debtors';
+  const [parent] = await tx.select({ type: accounts.type, controlKind: accounts.controlKind, active: accounts.active }).from(accounts)
+    .where(eq(accounts.id, parentId)).limit(1);
+  // A switched-off account is no group either (the auditor on #429).
+  if (parent === undefined || parent.controlKind !== 'none' || !parent.active) {
+    const message = 'Put the account under a switched-on group, not under a control account such as Debtors';
     throw new AppError('parent_not_group', message, [{ path: ['parentId'], code: 'parent_not_group', message }]);
   }
   const [row] = await tx.insert(accounts).values({ name, type: parent.type, parentId, ...(code === undefined ? {} : { code }) })

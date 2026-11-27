@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { cancelPaymentContract, recordPaymentContract } from '../contract.ts';
 import { paymentUsed } from './allocations.ts';
 import { takesMoney } from './money-accounts.ts';
+import { cashPaidOn } from './expense-cash.ts';
 import { holdPeriod, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { holdParty } from './parties.ts';
 
@@ -143,13 +144,14 @@ async function pastCashLimit(ctx: Ctx, p: { id: string; kind: string; partyId: s
   // The Counter customer isn't one person: every walk-in shares it, so a quick bill's cash for it is judged one bill at
   // a time, never by the day (the architect on RAD-115); a quick bill takes its cash as one receipt. Only the quick
   // bill's own receipt is (recordCounterReceipt, auditor-2 on #304): any other sums the day, as for any party.
+  // Cash out is one figure per supplier per day with their cash expenses (section 40A(3); the architect on #435).
+  if (out) return dec(p.amount).plus(await cashPaidOn(ctx, p.partyId, p.businessDate, { payment: p.id })).gt(ctx.settings.get(CASH_PAYMENT_LIMIT));
   const [party] = counter ? await accountsTx(ctx).select({ key: parties.systemKey }).from(parties).where(eq(parties.id, p.partyId)).limit(1) : [];
   const cash = accountsTx(ctx).select({ id: accounts.id }).from(accounts).where(eq(accounts.systemKey, 'cash'));
   const earlier = party?.key === 'walk_in' ? [] : await accountsTx(ctx).select({ amount: payments.amount }).from(payments).where(and(eq(payments.partyId, p.partyId),
     eq(payments.businessDate, p.businessDate), eq(payments.status, 'posted'), inArray(payments.accountId, cash), ne(payments.id, p.id),
-    out ? inArray(payments.kind, ['payment', 'refund']) : eq(payments.kind, 'receipt')));
-  const total = sum([...earlier.map((e) => e.amount), p.amount]);
-  return out ? total.gt(ctx.settings.get(CASH_PAYMENT_LIMIT)) : total.gte(ctx.settings.get(CASH_RECEIPT_LIMIT));
+    eq(payments.kind, 'receipt')));
+  return sum([...earlier.map((e) => e.amount), p.amount]).gte(ctx.settings.get(CASH_RECEIPT_LIMIT));
 }
 
 /** What an owner approves for cash past the limit: the payment's own figures, the row locked while it's checked. The
