@@ -74,8 +74,8 @@ describe.skipIf(!url || !superUrl)('deliveries still to invoice', () => {
             case when $2 = 'cancelled' then gen_random_uuid() end)`, [id, status, partyId]);
         for (const [n, [deliveryLineId, taxable, gst]] of lines.entries()) {
           await c.query(`insert into radcore.invoice_lines (invoice_id, line_no, delivery_line_id, item_id, qty, rate, hsn, gst_rate, gst_rate_source,
-              taxable, cgst, sgst, igst, line_total, cost, delivery_taxable, delivery_gst)
-            values ($1, $2, $3, gen_random_uuid(), 1, 1, '87116020', 5, 'Test', 0, 0, 0, 0, 0, 0, $4, $5)`, [id, n + 1, deliveryLineId, taxable, gst]);
+              supply_kind, taxable, cgst, sgst, igst, line_total, cost, delivery_taxable, delivery_gst)
+            values ($1, $2, $3, gen_random_uuid(), 1, 1, '87116020', 5, 'Test', 'taxable', 0, 0, 0, 0, 0, 0, $4, $5)`, [id, n + 1, deliveryLineId, taxable, gst]);
         }
       };
       const back = async (partyId: string, status: string, deliveryId: string, lines: readonly (readonly [string, string, string])[]) => {

@@ -217,6 +217,25 @@ describe.skipIf(!url || !superUrl)('debit notes', { timeout: 60_000 }, () => {
     expect([r.applications.map((a) => a.amount), await paid(at, billId)]).toEqual([['45300.00'], '195300.00']);
   });
 
+  // RAD-158 (the auditor on #448): a bill owes its total less its TDS, so a return applies only what's owed less paid.
+  // 195,300.00 with 300.00 of TDS owes 195,000.00; paid 150,000.00, the 65,100.00 note applies 45,000.00.
+  it('applies to a part-paid bill with TDS only what it owes less what is paid', async () => {
+    const at = await setup('2', '1');
+    const billId = await bill(at, '3', '62000');
+    await su.query(`with p as (select set_config('app.principal', 'system:test', true), set_config('session_replication_role', 'replica', true))
+      update radcore.purchase_bills set tds = '300' from p where id = $1`, [billId]);
+    const bank = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'bank'")).rows[0]?.id ?? '';
+    await run(async (ctx) => {
+      const { id: paymentId } = await recordPayment(ctx, { kind: 'payment', partyId: at.supplierId, businessDate: DATE, amount: moneyString().parse('150000'),
+        accountId: bank });
+      await allocatePayment(ctx, { id: paymentId, businessDate: DATE, lines: [{ documentTable: 'purchase_bills', documentId: billId,
+        amount: moneyString().parse('150000') }] });
+    }, at.staff);
+    const { id } = await giveBack(at, '1');
+    const r = await run((ctx) => getReturnById(ctx, { id }), at.staff);
+    expect([r.applications.map((a) => a.amount), await paid(at, billId)]).toEqual([['45000.00'], '195000.00']);
+  });
+
   // backend-3 on #398: returns and a bill splitting one receipt line three ways leave Goods Received Not Billed at 0.00. Three
   // rejects at 33.333333 accrued 100.00; a return, a bill and a return clear 33.33, 33.33 and 33.34, returns taking the
   // pool from the top as bills take it from the bottom, so the last share takes what's left (not 33.33 at rate × qty).

@@ -84,6 +84,9 @@ export type JobDefinition = {
   settings: QueueSettings;
   /** Checks the envelope and its input, settles who the job runs as, then runs the service through open. */
   handle(data: unknown, jobId: string, run: JobRun): Promise<void>;
+  /** For a job that failed every attempt (its dead letter): its `failed` step, if it has one, in a transaction of its
+   * own, so what the job was for isn't left waiting (RAD-159: an import that can't be read is marked refused). */
+  handleDead?(data: unknown, jobId: string, run: JobRun): Promise<void>;
 };
 
 /** What pg-boss gets for the queue (its Queue options). */
@@ -146,12 +149,18 @@ export type JobSteps<I, B, R> = {
    * It gets the same `deps` as `before` (RAD-47: an export uploads its file here).
    */
   afterCommit?: (result: R, again: (work: (ctx: Ctx) => Promise<void>) => Promise<void>, deps: { files: FileStore }) => Promise<void>;
+  /**
+   * Runs once the job has failed every attempt, in its own transaction, as a system principal named after the job with
+   * no permissions: its enqueuer may be gone by then, and it only closes the job's own record (RAD-159). The runner's
+   * dead-letter alert still goes.
+   */
+  failed?: (ctx: Ctx, input: I) => Promise<void>;
 };
 
 /** A job's contract, its service, and its optional steps around the service's transaction. */
 export function defineJob<I, B = undefined, R = void>(contract: JobContract<I>,
   service: (ctx: Ctx, input: I, meta: JobMeta & { before: B }) => Promise<R>,
-  { before, afterCommit }: JobSteps<I, B, R> = {}): JobDefinition {
+  { before, afterCommit, failed }: JobSteps<I, B, R> = {}): JobDefinition {
   const settings = queueSettings(contract);
   // A schedule has no person behind it, so a scheduled job runs as a system principal.
   if (contract.every !== undefined && contract.principal.kind !== 'system') {
@@ -186,5 +195,10 @@ export function defineJob<I, B = undefined, R = void>(contract: JobContract<I>,
         await afterCommit(ran.result as R, (work) => open(principal, jobId, work), { files: files ?? NO_FILE_STORE });
       }
     },
+    ...(failed === undefined ? {} : { handleDead: async (data: unknown, jobId: string, { open }: JobRun) => {
+      const input = contract.input.parse(ENVELOPE.parse(data).input);
+      const system = Object.freeze({ kind: 'system', name: `${contract.name}-failed`, permissions: Object.freeze([]) }) satisfies Principal;
+      await open(system, jobId, (ctx) => failed(ctx, input));
+    } }),
   };
 }

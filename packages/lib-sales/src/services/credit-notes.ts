@@ -98,7 +98,7 @@ export async function noteFigures(ctx: Ctx, inv: Invoice, kind: Kind, lines: rea
   const credited = await creditedOf(ctx, [...billed.keys()]);
   const intraState = inv.placeOfSupply === inv.issuerStateCode;
   const seen = new Set<string>();
-  const out: (CreditFigures & { lineNo: number; line: NoteLineIn; itemId: string; gstRate: string; gstRateSource: string })[] = [];
+  const out: (CreditFigures & { lineNo: number; line: NoteLineIn; itemId: string; gstRate: string; gstRateSource: string; supplyKind: string })[] = [];
   for (const [n, l] of lines.entries()) {
     const il = billed.get(l.invoiceLineId);
     if (il === undefined || seen.has(il.id)) {
@@ -119,7 +119,9 @@ export async function noteFigures(ctx: Ctx, inv: Invoice, kind: Kind, lines: rea
       });
       await checkPicks(ctx, il.deliveryLineId, l, n);
     }
-    out.push({ ...figures, lineNo: n + 1, line: l, itemId: il.itemId, gstRate: il.gstRate ?? '0', gstRateSource: il.gstRateSource ?? '' });
+    // Its invoice line's supply kind (RAD-154): a posted line always has one, so '' would be refused, never guessed.
+    out.push({ ...figures, lineNo: n + 1, line: l, itemId: il.itemId, gstRate: il.gstRate ?? '0', gstRateSource: il.gstRateSource ?? '',
+      supplyKind: il.supplyKind ?? '' });
   }
   return out;
 }

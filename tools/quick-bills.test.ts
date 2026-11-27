@@ -241,6 +241,9 @@ describe.skipIf(!url || !superUrl)('quick bill', { timeout: 60_000 }, () => {
   it('keeps the Counter customer in the company’s state, so a walk-in pays the invoice’s total, never a rupee less', async () => {
     const at = await setup({ rate: '250.95' });
     const out = await atCounter(at, async (ctx) => {
+      // The company row first, as every save takes it (lockPeriod, then the party): taking walk_in's row before
+      // setCompanyProfile's upsert deadlocked with another file's quick bill holding the company and waiting on walk_in.
+      await rawOf(ctx.tx).execute(sql`select id from radcore.company for update`);
       await rawOf(ctx.tx).execute(sql`update radcore.parties set state_code = '29' where system_key = 'walk_in'`);
       await setCompanyProfile(ctx, COMPANY);
       const short = await failure(bill(ctx, at, '1', [cash('262')]));

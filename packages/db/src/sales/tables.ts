@@ -372,12 +372,12 @@ export const invoiceLines = radcoreTable('invoice_lines', {
   // The worst condition of the units it bills when not all are new, copied at posting so the buyer is told (the
   // architect on RAD-112, with stock.sell_damaged_units).
   unitCondition: text(),
-  // Its GST rate row's supply kind, frozen with the rate at posting (ADR-010 §2, RAD-154). Null on a draft, and on lines
-  // posted before RAD-154, which gst_outward_lines reads as nil at 0% and taxable otherwise.
+  // Its GST rate row's supply kind, frozen with the rate at posting (ADR-010 §2, RAD-154): required once the line has its
+  // rate, so a posting that leaves it out is refused. Null only on a draft, which has no rate yet.
   supplyKind: text(),
 }, (t) => [
-  check('ck_invoice_lines_supply_kind', sql`${t.supplyKind} is null or (${t.gstRate} is not null
-    and ${t.supplyKind} in ('taxable', 'nil', 'exempt', 'non_gst') and (${t.supplyKind} = 'taxable') = (${t.gstRate} > 0))`),
+  check('ck_invoice_lines_supply_kind', sql`(${t.supplyKind} is null) = (${t.gstRate} is null) and (${t.supplyKind} is null
+    or (${t.supplyKind} in ('taxable', 'nil', 'exempt', 'non_gst') and (${t.supplyKind} = 'taxable') = (${t.gstRate} > 0)))`),
   check('ck_invoice_lines_unit_condition', sql`${t.unitCondition} is null or ${t.unitCondition} in ('demo', 'used', 'damaged')`),
   uniqueIndex('ux_invoice_lines_line').on(t.invoiceId, t.lineNo),
   index('ix_invoice_lines_list_version').on(t.listVersionId),

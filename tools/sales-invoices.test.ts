@@ -319,8 +319,8 @@ describe.skipIf(!url || !superUrl)('invoices', () => {
         const { rows: [inv] } = await c.query<{ id: string }>(`insert into radcore.invoices (party_id, owner, business_date)
           values ($1, 'system:test', '${DATE}') returning id`, [at.partyId]);
         await c.query(`insert into radcore.invoice_lines (invoice_id, line_no, delivery_line_id, item_id, qty, rate, hsn, gst_rate,
-          gst_rate_source, taxable, cgst, sgst, igst, cess_ad_valorem, cess_per_unit_amount, line_total, cost, delivery_taxable, delivery_gst)
-          values ($1, 1, $2, $3, 1, 1000, '8716', 5, 'Test', 1000, 25, 25, 0, 0, 0, 1050, 100, 1000, 50)`, [inv?.id, at.deliveryLineId, at.itemId]);
+          gst_rate_source, supply_kind, taxable, cgst, sgst, igst, cess_ad_valorem, cess_per_unit_amount, line_total, cost, delivery_taxable, delivery_gst)
+          values ($1, 1, $2, $3, 1, 1000, '8716', 5, 'Test', 'taxable', 1000, 25, 25, 0, 0, 0, 1050, 100, 1000, 50)`, [inv?.id, at.deliveryLineId, at.itemId]);
         await c.query(`update radcore.invoices set status = 'posted', number = $2, issuer_gstin = '27AAPFU0939F1ZV', place_of_supply = '27',
           taxable = 1000, cgst = $3, sgst = $3, total = $4 where id = $1`, [inv?.id, `T/${tag()}`, header.cgst, header.total]);
         if (more !== '') await c.query(more, [inv?.id]);

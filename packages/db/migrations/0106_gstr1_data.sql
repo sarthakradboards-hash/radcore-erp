@@ -1,29 +1,43 @@
 ALTER TABLE "radcore"."role_grants" DROP CONSTRAINT "ck_role_grants_scope";--> statement-breakpoint
 ALTER TABLE "radcore"."role_templates" DROP CONSTRAINT "ck_role_templates_scope";--> statement-breakpoint
 ALTER TABLE "radcore"."gst_rates" ADD COLUMN "supply_kind" text DEFAULT 'taxable' NOT NULL;--> statement-breakpoint
--- RAD-154 (ADR-010 §2): a 0% rate is nil-rated, never a sale at 0% (RC-107); the CHECK below holds it. The CA marks a
--- row exempt or non-GST where it is one (CA-07).
-SELECT set_config('app.principal', 'system:migrate', true);--> statement-breakpoint
-UPDATE radcore.gst_rates SET supply_kind = 'nil' WHERE rate = 0;--> statement-breakpoint
 ALTER TABLE "radcore"."invoice_lines" ADD COLUMN "supply_kind" text;--> statement-breakpoint
 ALTER TABLE "radcore"."invoices" ADD COLUMN "ecommerce_gstin" text;--> statement-breakpoint
+ALTER TABLE "radcore"."credit_note_lines" ADD COLUMN "supply_kind" text;--> statement-breakpoint
+-- RAD-154 (ADR-010 §2; the architect on #444): every supply kind filled before the CHECKs below. First the rates: a 0%
+-- rate is nil-rated, never a sale at 0% (RC-107), and the rest stay taxable (the column's default), each row's source
+-- unchanged. The CA marks a row exempt or non-GST where it is one (CA-07).
+SELECT set_config('app.principal', 'system:migrate', true);--> statement-breakpoint
+UPDATE radcore.gst_rates SET supply_kind = 'nil' WHERE rate = 0;--> statement-breakpoint
+-- Then each posted line from its rate row: every 0% row is nil and every other taxable now, so a line's rate gives its
+-- row's kind. A note's line takes its invoice line's. Posted lines are fixed (guard_document_line), so only that guard
+-- is lifted while they're filled; the audit trigger still records the change.
+ALTER TABLE radcore.invoice_lines DISABLE TRIGGER guard_document_line;--> statement-breakpoint
+UPDATE radcore.invoice_lines SET supply_kind = CASE WHEN gst_rate = 0 THEN 'nil' ELSE 'taxable' END WHERE gst_rate IS NOT NULL;--> statement-breakpoint
+ALTER TABLE radcore.invoice_lines ENABLE TRIGGER guard_document_line;--> statement-breakpoint
+ALTER TABLE radcore.credit_note_lines DISABLE TRIGGER guard_document_line;--> statement-breakpoint
+UPDATE radcore.credit_note_lines l SET supply_kind = il.supply_kind FROM radcore.invoice_lines il
+  WHERE il.id = l.invoice_line_id AND l.gst_rate IS NOT NULL;--> statement-breakpoint
+ALTER TABLE radcore.credit_note_lines ENABLE TRIGGER guard_document_line;--> statement-breakpoint
 ALTER TABLE "radcore"."gst_rates" ADD CONSTRAINT "ck_gst_rates_supply_kind" CHECK ("radcore"."gst_rates"."supply_kind" in ('taxable', 'nil', 'exempt', 'non_gst') and ("radcore"."gst_rates"."supply_kind" = 'taxable') = ("radcore"."gst_rates"."rate" > 0));--> statement-breakpoint
 ALTER TABLE "radcore"."role_grants" ADD CONSTRAINT "ck_role_grants_scope" CHECK ("radcore"."role_grants"."scope" in ('all', 'own') and ("radcore"."role_grants"."permission" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'tds:read', 'gst:returns') or "radcore"."role_grants"."scope" = 'all'));--> statement-breakpoint
 ALTER TABLE "radcore"."role_templates" ADD CONSTRAINT "ck_role_templates_scope" CHECK ("radcore"."role_templates"."scope" in ('all', 'own') and ("radcore"."role_templates"."permission" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'tds:read', 'gst:returns') or "radcore"."role_templates"."scope" = 'all'));--> statement-breakpoint
-ALTER TABLE "radcore"."invoice_lines" ADD CONSTRAINT "ck_invoice_lines_supply_kind" CHECK ("radcore"."invoice_lines"."supply_kind" is null or ("radcore"."invoice_lines"."gst_rate" is not null
-    and "radcore"."invoice_lines"."supply_kind" in ('taxable', 'nil', 'exempt', 'non_gst') and ("radcore"."invoice_lines"."supply_kind" = 'taxable') = ("radcore"."invoice_lines"."gst_rate" > 0)));--> statement-breakpoint
+ALTER TABLE "radcore"."invoice_lines" ADD CONSTRAINT "ck_invoice_lines_supply_kind" CHECK (("radcore"."invoice_lines"."supply_kind" is null) = ("radcore"."invoice_lines"."gst_rate" is null) and ("radcore"."invoice_lines"."supply_kind" is null
+    or ("radcore"."invoice_lines"."supply_kind" in ('taxable', 'nil', 'exempt', 'non_gst') and ("radcore"."invoice_lines"."supply_kind" = 'taxable') = ("radcore"."invoice_lines"."gst_rate" > 0))));--> statement-breakpoint
 ALTER TABLE "radcore"."invoices" ADD CONSTRAINT "ck_invoices_ecommerce_gstin" CHECK ("radcore"."invoices"."ecommerce_gstin" is null or "radcore"."invoices"."ecommerce_gstin" ~ '^[0-9]{2}[A-Z0-9]{13}$');--> statement-breakpoint
+ALTER TABLE "radcore"."credit_note_lines" ADD CONSTRAINT "ck_credit_note_lines_supply_kind" CHECK (("radcore"."credit_note_lines"."supply_kind" is null) = ("radcore"."credit_note_lines"."gst_rate" is null)
+    and ("radcore"."credit_note_lines"."supply_kind" is null or "radcore"."credit_note_lines"."supply_kind" in ('taxable', 'nil', 'exempt', 'non_gst')));--> statement-breakpoint
 CREATE VIEW "radcore"."gst_outward_lines" AS (select 'invoices' as document_table, i.id as document_id, i.number as document_number, i.status, i.business_date as document_date,
     i.id as invoice_id, i.number as invoice_number, i.business_date as invoice_date, i.total as invoice_value, i.buyer_gstin, i.place_of_supply,
     i.issuer_state_code, i.ecommerce_gstin, false as late, l.id as line_id, l.hsn, it.unit as uqc, l.qty, l.gst_rate,
-    coalesce(l.supply_kind, case when l.gst_rate = 0 then 'nil' else 'taxable' end) as supply_kind,
+    l.supply_kind,
     l.taxable, l.cgst, l.sgst, l.igst, l.cess_ad_valorem + l.cess_per_unit_amount as cess
   from radcore.invoices i join radcore.invoice_lines l on l.invoice_id = i.id join radcore.items it on it.id = l.item_id
   where i.status <> 'draft'
   union all
   select 'credit_notes', n.id, n.number, n.status, n.business_date, i.id, i.number, i.business_date, i.total, i.buyer_gstin, i.place_of_supply,
     i.issuer_state_code, i.ecommerce_gstin, n.late, l.id, il.hsn, it.unit, coalesce(l.qty, 0), l.gst_rate,
-    coalesce(il.supply_kind, case when il.gst_rate = 0 then 'nil' else 'taxable' end),
+    l.supply_kind,
     l.taxable, l.cgst, l.sgst, l.igst, 0
   from radcore.credit_notes n join radcore.credit_note_lines l on l.credit_note_id = n.id
     join radcore.invoice_lines il on il.id = l.invoice_line_id join radcore.invoices i on i.id = n.invoice_id
@@ -43,6 +57,9 @@ SELECT radcore.audit_attach('invoices',
 SELECT radcore.audit_attach('invoice_lines', keep => array['invoice_id', 'line_no', 'delivery_line_id', 'item_id', 'qty', 'rate',
   'discount_percent', 'list_rate', 'list_version_id', 'hsn', 'gst_rate', 'gst_rate_source', 'taxable', 'cgst', 'sgst', 'igst', 'cess_ad_valorem', 'cess_per_unit_amount',
   'line_total', 'cost', 'delivery_taxable', 'delivery_gst', 'unit_condition', 'supply_kind'], owner => 'invoice_id', owner_table => 'invoices');
+--> statement-breakpoint
+SELECT radcore.audit_attach('credit_note_lines', keep => array['credit_note_id', 'line_no', 'invoice_line_id', 'item_id', 'qty', 'picks',
+  'taxable', 'gst_rate', 'gst_rate_source', 'cgst', 'sgst', 'igst', 'line_total', 'cost', 'supply_kind'], owner => 'credit_note_id', owner_table => 'credit_notes');
 --> statement-breakpoint
 -- gst:returns (ADR-010 §15): an ordinary catalogue key any role can be given, all-scope only (the CHECKs above). The
 -- starting grants, in each role's template too (RAD-83).

@@ -1,5 +1,5 @@
 {
-  "id": "8daf9da2-9213-47eb-903e-9402c80a7711",
+  "id": "b37dff3a-059e-4da3-88b6-98b214616f6f",
   "prevId": "79c67e2c-dc87-43ed-b572-3c5e6d97d306",
   "version": "7",
   "dialect": "postgresql",
@@ -4573,13 +4573,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "supply_kind": {
-          "name": "supply_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'taxable'"
         }
       },
       "indexes": {
@@ -4625,10 +4618,6 @@
         "ck_gst_rates_hsn": {
           "name": "ck_gst_rates_hsn",
           "value": "\"radcore\".\"gst_rates\".\"hsn\" ~ '^[0-9]{2}([0-9]{2}){0,3}$'"
-        },
-        "ck_gst_rates_supply_kind": {
-          "name": "ck_gst_rates_supply_kind",
-          "value": "\"radcore\".\"gst_rates\".\"supply_kind\" in ('taxable', 'nil', 'exempt', 'non_gst') and (\"radcore\".\"gst_rates\".\"supply_kind\" = 'taxable') = (\"radcore\".\"gst_rates\".\"rate\" > 0)"
         }
       },
       "isRLSEnabled": false
@@ -6421,7 +6410,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'tds:read', 'gst:returns') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'tds:read') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -6508,7 +6497,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'tds:read', 'gst:returns') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'tds:read') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -8599,12 +8588,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "supply_kind": {
-          "name": "supply_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -8800,10 +8783,6 @@
         "ck_invoice_lines_delivery_gst": {
           "name": "ck_invoice_lines_delivery_gst",
           "value": "\"radcore\".\"invoice_lines\".\"delivery_gst\" >= 0 and \"radcore\".\"invoice_lines\".\"delivery_gst\" <> 'NaN'"
-        },
-        "ck_invoice_lines_supply_kind": {
-          "name": "ck_invoice_lines_supply_kind",
-          "value": "\"radcore\".\"invoice_lines\".\"supply_kind\" is null or (\"radcore\".\"invoice_lines\".\"gst_rate\" is not null\n    and \"radcore\".\"invoice_lines\".\"supply_kind\" in ('taxable', 'nil', 'exempt', 'non_gst') and (\"radcore\".\"invoice_lines\".\"supply_kind\" = 'taxable') = (\"radcore\".\"invoice_lines\".\"gst_rate\" > 0))"
         },
         "ck_invoice_lines_unit_condition": {
           "name": "ck_invoice_lines_unit_condition",
@@ -9006,12 +8985,6 @@
         },
         "place_of_supply": {
           "name": "place_of_supply",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ecommerce_gstin": {
-          "name": "ecommerce_gstin",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -9383,10 +9356,6 @@
         "ck_invoices_identity": {
           "name": "ck_invoices_identity",
           "value": "\"radcore\".\"invoices\".\"total\" = \"radcore\".\"invoices\".\"taxable\" + \"radcore\".\"invoices\".\"cgst\" + \"radcore\".\"invoices\".\"sgst\" + \"radcore\".\"invoices\".\"igst\" + \"radcore\".\"invoices\".\"cess\" + \"radcore\".\"invoices\".\"round_off\"\n    and abs(\"radcore\".\"invoices\".\"round_off\") < 1 and \"radcore\".\"invoices\".\"cgst\" = \"radcore\".\"invoices\".\"sgst\" and (\"radcore\".\"invoices\".\"igst\" = 0 or \"radcore\".\"invoices\".\"cgst\" = 0)"
-        },
-        "ck_invoices_ecommerce_gstin": {
-          "name": "ck_invoices_ecommerce_gstin",
-          "value": "\"radcore\".\"invoices\".\"ecommerce_gstin\" is null or \"radcore\".\"invoices\".\"ecommerce_gstin\" ~ '^[0-9]{2}[A-Z0-9]{13}$'"
         },
         "ck_invoices_state_codes": {
           "name": "ck_invoices_state_codes",
@@ -19916,6 +19885,23 @@
           "primaryKey": false,
           "notNull": false
         },
+        "tds": {
+          "name": "tds",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "owed": {
+          "name": "owed",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "total - tds",
+            "type": "stored"
+          }
+        },
         "posted_entry_id": {
           "name": "posted_entry_id",
           "type": "uuid",
@@ -20170,6 +20156,14 @@
           "name": "ck_purchase_bills_total",
           "value": "\"radcore\".\"purchase_bills\".\"total\" >= 0 and \"radcore\".\"purchase_bills\".\"total\" <> 'NaN'"
         },
+        "ck_purchase_bills_tds": {
+          "name": "ck_purchase_bills_tds",
+          "value": "\"radcore\".\"purchase_bills\".\"tds\" >= 0 and \"radcore\".\"purchase_bills\".\"tds\" <> 'NaN'"
+        },
+        "ck_purchase_bills_owed": {
+          "name": "ck_purchase_bills_owed",
+          "value": "\"radcore\".\"purchase_bills\".\"owed\" >= 0 and \"radcore\".\"purchase_bills\".\"owed\" <> 'NaN'"
+        },
         "ck_purchase_bills_cancel_reason": {
           "name": "ck_purchase_bills_cancel_reason",
           "value": "char_length(\"radcore\".\"purchase_bills\".\"cancel_reason\") <= 500"
@@ -20189,6 +20183,10 @@
         "ck_purchase_bills_frozen": {
           "name": "ck_purchase_bills_frozen",
           "value": "num_nulls(\"radcore\".\"purchase_bills\".\"place_of_supply\", \"radcore\".\"purchase_bills\".\"taxable\", \"radcore\".\"purchase_bills\".\"cgst\", \"radcore\".\"purchase_bills\".\"sgst\", \"radcore\".\"purchase_bills\".\"igst\", \"radcore\".\"purchase_bills\".\"round_off\", \"radcore\".\"purchase_bills\".\"total\") in (0, 7)\n    and coalesce(\"radcore\".\"purchase_bills\".\"place_of_supply\", '00') ~ '^[0-9]{2}$'"
+        },
+        "ck_purchase_bills_tds_within": {
+          "name": "ck_purchase_bills_tds_within",
+          "value": "\"radcore\".\"purchase_bills\".\"total\" is null and \"radcore\".\"purchase_bills\".\"tds\" = 0 or \"radcore\".\"purchase_bills\".\"tds\" <= \"radcore\".\"purchase_bills\".\"total\""
         },
         "ck_purchase_bills_identity": {
           "name": "ck_purchase_bills_identity",
@@ -21997,6 +21995,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "tds": {
+          "name": "tds",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
         "file_id": {
           "name": "file_id",
           "type": "uuid",
@@ -22240,6 +22245,10 @@
           "name": "ck_expenses_total",
           "value": "\"radcore\".\"expenses\".\"total\" >= 0 and \"radcore\".\"expenses\".\"total\" <> 'NaN'"
         },
+        "ck_expenses_tds": {
+          "name": "ck_expenses_tds",
+          "value": "\"radcore\".\"expenses\".\"tds\" >= 0 and \"radcore\".\"expenses\".\"tds\" <> 'NaN'"
+        },
         "ck_expenses_notes": {
           "name": "ck_expenses_notes",
           "value": "char_length(\"radcore\".\"expenses\".\"notes\") <= 500"
@@ -22262,7 +22271,7 @@
         },
         "ck_expenses_owed": {
           "name": "ck_expenses_owed",
-          "value": "(\"radcore\".\"expenses\".\"pay_from_account_id\" is null and \"radcore\".\"expenses\".\"party_id\" is not null and \"radcore\".\"expenses\".\"total\" = \"radcore\".\"expenses\".\"stated_total\")\n    or (\"radcore\".\"expenses\".\"pay_from_account_id\" is not null and \"radcore\".\"expenses\".\"total\" = 0)"
+          "value": "(\"radcore\".\"expenses\".\"pay_from_account_id\" is null and \"radcore\".\"expenses\".\"party_id\" is not null and \"radcore\".\"expenses\".\"total\" = \"radcore\".\"expenses\".\"stated_total\" - \"radcore\".\"expenses\".\"tds\")\n    or (\"radcore\".\"expenses\".\"pay_from_account_id\" is not null and \"radcore\".\"expenses\".\"total\" = 0)"
         },
         "ck_expenses_supplier_date": {
           "name": "ck_expenses_supplier_date",
@@ -23629,165 +23638,6 @@
       },
       "definition": "select n.nspname::text as schema_name, c.relname::text as table_name, k.conname::text as constraint_name\n  from pg_catalog.pg_constraint k\n  join pg_catalog.pg_class c on c.oid = k.conrelid\n  join pg_catalog.pg_namespace n on n.oid = c.relnamespace\n  where k.contype = 'f'\n    and n.nspname not in ('pg_catalog', 'information_schema', 'pgboss', 'drizzle', 'ratelimit') and left(n.nspname, 3) <> 'pg_'\n    and not exists (select 1 from pg_catalog.pg_index i\n      where i.indrelid = k.conrelid\n        and array_to_string((i.indkey::int2[])[0:cardinality(k.conkey) - 1], ',') = array_to_string(k.conkey, ','))",
       "name": "v_schema_fk_without_index",
-      "schema": "radcore",
-      "isExisting": false,
-      "materialized": false
-    },
-    "radcore.gst_outward_lines": {
-      "columns": {
-        "documentTable": {
-          "name": "documentTable",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "documentId": {
-          "name": "documentId",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "documentNumber": {
-          "name": "documentNumber",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "documentDate": {
-          "name": "documentDate",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invoiceId": {
-          "name": "invoiceId",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invoiceNumber": {
-          "name": "invoiceNumber",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invoiceDate": {
-          "name": "invoiceDate",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invoiceValue": {
-          "name": "invoiceValue",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "buyerGstin": {
-          "name": "buyerGstin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "placeOfSupply": {
-          "name": "placeOfSupply",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "issuerStateCode": {
-          "name": "issuerStateCode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ecommerceGstin": {
-          "name": "ecommerceGstin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "late": {
-          "name": "late",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lineId": {
-          "name": "lineId",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hsn": {
-          "name": "hsn",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "uqc": {
-          "name": "uqc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "qty": {
-          "name": "qty",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gstRate": {
-          "name": "gstRate",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "supplyKind": {
-          "name": "supplyKind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "taxable": {
-          "name": "taxable",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cgst": {
-          "name": "cgst",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sgst": {
-          "name": "sgst",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "igst": {
-          "name": "igst",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cess": {
-          "name": "cess",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "definition": "select 'invoices' as document_table, i.id as document_id, i.number as document_number, i.status, i.business_date as document_date,\n    i.id as invoice_id, i.number as invoice_number, i.business_date as invoice_date, i.total as invoice_value, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, false as late, l.id as line_id, l.hsn, it.unit as uqc, l.qty, l.gst_rate,\n    coalesce(l.supply_kind, case when l.gst_rate = 0 then 'nil' else 'taxable' end) as supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, l.cess_ad_valorem + l.cess_per_unit_amount as cess\n  from radcore.invoices i join radcore.invoice_lines l on l.invoice_id = i.id join radcore.items it on it.id = l.item_id\n  where i.status <> 'draft'\n  union all\n  select 'credit_notes', n.id, n.number, n.status, n.business_date, i.id, i.number, i.business_date, i.total, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, n.late, l.id, il.hsn, it.unit, coalesce(l.qty, 0), l.gst_rate,\n    coalesce(il.supply_kind, case when il.gst_rate = 0 then 'nil' else 'taxable' end),\n    l.taxable, l.cgst, l.sgst, l.igst, 0\n  from radcore.credit_notes n join radcore.credit_note_lines l on l.credit_note_id = n.id\n    join radcore.invoice_lines il on il.id = l.invoice_line_id join radcore.invoices i on i.id = n.invoice_id\n    join radcore.items it on it.id = il.item_id\n  where n.status <> 'draft'",
-      "name": "gst_outward_lines",
       "schema": "radcore",
       "isExisting": false,
       "materialized": false

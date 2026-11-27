@@ -11,11 +11,13 @@ import {
   undoStatementImport, type StatementLayout,
 } from '@radcore/lib-accounts';
 import { readTable, type Ctx, type FileStore, type Principal, type Table } from '@radcore/lib-platform';
+import type { OpenJob } from '../packages/lib-platform/src/jobs.ts';
 import { testPdf } from '@radcore/test-helpers';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import writeXlsxFile from 'write-excel-file/node';
+import accountJobs from '../apps/worker/src/jobs/accounts.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
@@ -147,6 +149,25 @@ describe.skipIf(!url || !superUrl)('bank statements', { timeout: 60_000 }, () =>
       await holder.query('rollback').catch(() => undefined);
       holder.release();
     }
+  });
+
+  it('retries the import job once, then refuses an import whose job failed both attempts, never leaving it queued', async () => {
+    const [job] = accountJobs;
+    expect([job?.name, job?.settings.retries]).toEqual(['accounts.statement-import', 1]);
+    const account = await bankAccount();
+    const f = await file(text(csv(april)));
+    const { id } = await run((ctx) => importStatement(ctx, { accountId: account, fileId: f.id, format: FORMAT }));
+    // Both attempts failed (the worker went down reading it, say): pg-boss hands the job to its dead letter.
+    const open: OpenJob = (principal, jobId, work) => runInTransaction(db, WRITE, principal, jobId, work);
+    await job?.handleDead?.({ input: { importId: id, key: f.key, contentType: f.contentType }, by: 'system:test' },
+      randomUUID(), { open, load: async () => null, alert: async () => undefined });
+    const refused = await run((ctx) => statementImportById(ctx, { id }));
+    expect([refused.status, refused.refusals.map((r) => r.code)]).toEqual(['refused', ['statement_unreadable']]);
+    // An import already done is left as it is.
+    const done = await importFile(account, text(csv(april)), { format: null });
+    await job?.handleDead?.({ input: { importId: done.id, key: f.key, contentType: f.contentType }, by: 'system:test' }, randomUUID(),
+      { open, load: async () => null, alert: async () => undefined });
+    expect((await run((ctx) => statementImportById(ctx, { id: done.id }))).status).toBe('imported');
   });
 
   it('names a refused row by its line in the file, blank lines above it counted (e2e-2 on RAD-159)', async () => {

@@ -111,8 +111,8 @@ async function postNote(ctx: Ctx, id: string): Promise<void> {
       units: (f.line.serials ?? []).map((serialNo) => ({ serialNo })), unitEvent: 'returned' as const })) });
   // The lines' figures first: once the note is posted, its lines are fixed (guard_document_line).
   for (const f of figures) {
-    await tx.update(creditNoteLines).set({ taxable: f.taxable, gstRate: f.gstRate, gstRateSource: f.gstRateSource, cgst: f.cgst,
-      sgst: f.sgst, igst: f.igst, lineTotal: f.lineTotal, cost: f.cost })
+    await tx.update(creditNoteLines).set({ taxable: f.taxable, gstRate: f.gstRate, gstRateSource: f.gstRateSource, supplyKind: f.supplyKind,
+      cgst: f.cgst, sgst: f.sgst, igst: f.igst, lineTotal: f.lineTotal, cost: f.cost })
       .where(and(eq(creditNoteLines.creditNoteId, id), eq(creditNoteLines.lineNo, f.lineNo)));
   }
   const entry = await postEntry(ctx, { kind: 'credit_note', businessDate: note.businessDate, source: { table: 'credit_notes', id },

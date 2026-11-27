@@ -5,7 +5,7 @@
 // the order, the dates and the books; the screen only offers the likely action and words its refusals.
 import { financialYear, formatDate, formatMoment, indiaDate } from '@radcore/lib-common';
 import { askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval } from '@radcore/lib-accounts/contract';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { CloseButton, Dialog } from '../../../../components/ui/dialog/dialog.tsx';
 import { CheckboxesField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
@@ -32,6 +32,9 @@ function LockForms() {
   // A request asked shows as waiting, and the form starts again empty, so a second press can't ask twice by accident
   // (e2e-playwright on #428).
   const [asked, setAsked] = useState<{ date: string; round: number } | null>(null);
+  // The form remounts empty, so focus goes to its heading, and the ask is said aloud each time, even a second one for the
+  // same date (auditor-3 on #437).
+  const backHeading = useRef<HTMLHeadingElement>(null);
   return (
     <>
       <section aria-labelledby={forwardId}>
@@ -47,12 +50,13 @@ function LockForms() {
         </Form>
       </section>
       <section aria-labelledby={backId}>
-        <h2 id={backId}>{t('books.period.back.title')}</h2>
-        {asked === null ? null : <p role="status">{t('books.period.back.asked', { date: formatDate(asked.date) })}</p>}
+        <h2 id={backId} ref={backHeading} tabIndex={-1}>{t('books.period.back.title')}</h2>
+        {asked === null ? null : <p>{t('books.period.back.asked', { date: formatDate(asked.date) })}</p>}
         <Form key={asked?.round ?? 0} schema={askSchema} defaultValues={blank} saved={false} messages={PERIOD_MESSAGES} aria-labelledby={backId}
           onSubmit={async (v) => {
             await ask.submit({ kind: 'move_back', ...v });
             setAsked((was) => ({ date: v.through, round: (was?.round ?? 0) + 1 }));
+            setTimeout(() => { backHeading.current?.focus(); announce(t('books.period.back.asked', { date: formatDate(v.through) })); }, 0);
           }}>
           <TextField name="through" label={t('books.period.back.through')} hint={t('books.period.back.hint')} type="date" />
           <TextAreaField name="reason" label={t('books.reason')} hint={t('books.period.reason.hint')} />

@@ -20,7 +20,7 @@ const zero = () => dec('0');
 const minOf = (a: Decimal, b: Decimal) => (a.lt(b) ? a : b);
 
 type BillPart = { billId: string; billNumber: string; billDate: string; billLineId: string; receiptLineId: string; qty: Decimal; rate: string;
-  gstRate: string | null; placeOfSupply: string; claimable: boolean; total: string };
+  gstRate: string | null; placeOfSupply: string; claimable: boolean; owed: string };
 
 /**
  * The posted bills' goods lines that billed these receipt lines, latest first (by bill date, then number, drawn in
@@ -33,7 +33,7 @@ async function billPartsOf(ctx: Ctx, receiptLineIds: readonly string[], o: { for
   if (receiptLineIds.length === 0) return [];
   const tx = purchasingTx(ctx);
   const rows = await tx.select({ billId: purchaseBills.id, billNumber: purchaseBills.number, billDate: purchaseBills.businessDate,
-    owner: purchaseBills.createdBy, entryId: purchaseBills.postedEntryId, placeOfSupply: purchaseBills.placeOfSupply, total: purchaseBills.total,
+    owner: purchaseBills.createdBy, entryId: purchaseBills.postedEntryId, placeOfSupply: purchaseBills.placeOfSupply, owed: purchaseBills.owed,
     billLineId: purchaseBillLines.id, receiptLineId: purchaseBillLines.receiptLineId, qty: purchaseBillLines.qty, rate: purchaseBillLines.rate,
     gstRate: purchaseBillLines.gstRate })
     .from(purchaseBillLines).innerJoin(purchaseBills, eq(purchaseBills.id, purchaseBillLines.billId))
@@ -48,11 +48,11 @@ async function billPartsOf(ctx: Ctx, receiptLineIds: readonly string[], o: { for
   const claimed = await claimedInputGst(ctx, rows.flatMap((r) => (r.entryId === null ? [] : [r.entryId])));
   return rows.map((r) => ({ billId: r.billId, billNumber: r.billNumber ?? '', billDate: r.billDate, billLineId: r.billLineId,
     receiptLineId: r.receiptLineId ?? '', qty: dec(r.qty ?? '0'), rate: r.rate ?? '0', gstRate: r.gstRate, placeOfSupply: r.placeOfSupply ?? '',
-    claimable: r.entryId !== null && claimed.has(r.entryId), total: r.total ?? '0' }));
+    claimable: r.entryId !== null && claimed.has(r.entryId), owed: r.owed ?? '0' }));
 }
 
 type Debit = { billId: string; billNumber: string; billDate: string; billLineId: string; qty: Decimal; rate: string; gstRate: string | null;
-  tax: LineTax; claimable: boolean; billTotal: string; placeOfSupply: string };
+  tax: LineTax; claimable: boolean; billOwed: string; placeOfSupply: string };
 export type Split = { lineId: string; unbilledQty: Decimal; unbilledValue: Money; debits: Debit[] };
 type ReturnLine = { id: string; receiptLineId: string; qty: string };
 /** A posted receipt line's QC split and what each part accrued to Goods Received Not Billed. */
@@ -114,7 +114,7 @@ export async function splitLines(ctx: Ctx, lines: readonly ReturnLine[], accrued
       used.set(p.billLineId, (used.get(p.billLineId) ?? zero()).plus(take));
       rest = rest.minus(take);
       debits.push({ billId: p.billId, billNumber: p.billNumber, billDate: p.billDate, billLineId: p.billLineId, qty: take, rate: p.rate,
-        gstRate: p.gstRate, claimable: p.claimable, billTotal: p.total, placeOfSupply: p.placeOfSupply,
+        gstRate: p.gstRate, claimable: p.claimable, billOwed: p.owed, placeOfSupply: p.placeOfSupply,
         tax: lineTax({ qty: take, rate: p.rate, discountPercent: '0', gstPercent: p.gstRate ?? '0' }, p.placeOfSupply === company?.stateCode) });
     }
     if (rest.gt(0)) {
@@ -148,10 +148,11 @@ export async function applyToBills(ctx: Ctx, returnId: string, splits: readonly 
   for (const d of splits.flatMap((s) => s.debits)) share.set(d.billId, (share.get(d.billId) ?? zero()).plus(dec(d.tax.lineTotal)));
   const bills = [...share.keys()].sort();
   const paid = await paidOf(ctx, 'purchase_bills', bills);
-  const totals = new Map(splits.flatMap((s) => s.debits).map((d) => [d.billId, d.billTotal]));
+  // What each bill owes, its total less TDS, as allocations cap it (the auditor on #448).
+  const owed = new Map(splits.flatMap((s) => s.debits).map((d) => [d.billId, d.billOwed]));
   let left = dec(total);
   for (const billId of bills) {
-    const open = dec(totals.get(billId) ?? '0').minus(dec(paid.get(billId)?.paid ?? '0'));
+    const open = dec(owed.get(billId) ?? '0').minus(dec(paid.get(billId)?.paid ?? '0'));
     const amount = minOf(minOf(share.get(billId) ?? zero(), open), left);
     if (!amount.gt(0)) continue;
     left = left.minus(amount);

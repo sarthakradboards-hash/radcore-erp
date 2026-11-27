@@ -84,7 +84,11 @@ export const creditNoteLines = radcoreTable('credit_note_lines', {
   igst: money(),
   lineTotal: money(),
   cost: money(),
+  // Its invoice line's supply kind, copied at posting with the rate (ADR-010 §2, RAD-154); null only on a draft.
+  supplyKind: text(),
 }, (t) => [
+  check('ck_credit_note_lines_supply_kind', sql`(${t.supplyKind} is null) = (${t.gstRate} is null)
+    and (${t.supplyKind} is null or ${t.supplyKind} in ('taxable', 'nil', 'exempt', 'non_gst'))`),
   uniqueIndex('ux_credit_note_lines_line').on(t.creditNoteId, t.lineNo),
   index('ix_credit_note_lines_invoice_line').on(t.invoiceLineId),
   index('ix_credit_note_lines_item').on(t.itemId),
