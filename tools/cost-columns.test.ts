@@ -46,6 +46,7 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     round_off: 'a bill’s round-off (purchasing:read)', total: 'a bill’s total (purchasing:read)',
     tds: 'the TDS a bill held back (purchasing:read)', owed: 'what a bill owes, its total less TDS (purchasing:read)' },
   // TDS rates by section and date (RAD-158): the law's figures, under tds:read.
+  tds_deductions: { base: 'a booking’s TDS base (tds:read)', rate: 'a tax rate', amount: 'TDS deducted (tds:read)' },
   tds_rates: { rate: 'a tax rate', rate_no_pan: 'a tax rate', single_limit: 'a limit in the law (tds:read)', yearly_limit: 'a limit in the law (tds:read)' },
   // An expense's (RAD-152): the supplier's bill as printed and the credit claimed, under expenses:read.
   expenses: { stated_total: 'the total the supplier’s bill states (expenses:read)', total: 'what the supplier is owed (expenses:read)', tds: 'the TDS an expense held back (expenses:read)' },

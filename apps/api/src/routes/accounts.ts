@@ -3,19 +3,19 @@
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, getPaymentById, listPaymentsPage, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
   addExpense, cancelExpenseNow, changeExpense, dropExpenseDraft, expenseCashSpec, getExpenseById, listExpensesPage, postExpenseNow,
-  putTdsRate, tdsRatesPage, tdsSectionsList,
+  putTdsRate, setTdsTerms, tdsRatesPage, tdsSectionsList,
   addAccount, addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
   askToUnlock, moveLockForward, periodState, periodUnlockSpec, cancelTransfer, recordTransfer, transferById, transfersPage,
-  importStatement, statementFormatOf, statementImportById, statementImportsPage, statementLinesPage, undoStatementImport,
+  importStatement, matchCandidates, matchLines, unmatch, statementFormatOf, statementImportById, statementImportsPage, statementLinesPage, undoStatementImport,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
   reverseCreditApplicationContract, createParty, getCompany, recordPaymentContract, getJournal, getParty, listAccounts, listMoneyAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
   cancelExpense, createExpense, dropExpense, expenseCashApproval, getExpense, listExpenses, postExpense, replaceExpense,
-  listTdsRates, listTdsSections, setTdsRate,
+  listTdsRates, listTdsSections, setPartyTds, setTdsRate,
   createAccount, createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
   askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval,
-  getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
+  getStatementFormatContract, listMatchCandidatesContract, matchLinesContract, unmatchContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
   undoStatementImportContract,
   cancelTransferContract, getTransferContract, listTransfersContract, recordTransferContract,
 } from '@radcore/lib-accounts/contract';
@@ -55,6 +55,7 @@ export default [
   defineRoute(listTdsSections, tdsSectionsList),
   defineRoute(listTdsRates, tdsRatesPage),
   defineRoute(setTdsRate, putTdsRate),
+  defineRoute(setPartyTds, setTdsTerms),
   defineRoute(createAccount, addAccount),
   defineRoute(setAccount, changeAccount),
   defineRoute(listExpenses, listExpensesPage),
@@ -79,6 +80,10 @@ export default [
   defineRoute(getStatementImportContract, statementImportById),
   defineRoute(undoStatementImportContract, undoStatementImport),
   defineRoute(listStatementLinesContract, statementLinesPage),
+  // Matching (RAD-165).
+  defineRoute(listMatchCandidatesContract, matchCandidates),
+  defineRoute(matchLinesContract, matchLines),
+  defineRoute(unmatchContract, unmatch),
   // The period lock and year close (RAD-157): the close runs lib-service's books check as at the year's 31 March.
   defineRoute(getPeriodContract, periodState),
   defineRoute(lockPeriodContract, moveLockForward),

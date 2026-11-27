@@ -1,6 +1,7 @@
 // GST rates by date (M2-12, RAD-91; ADR-001 §5: lib-gst's). Rates come from our own table, built from the official
 // notifications (RAD-81: no GST package or its data). The rule for which row applies (RC-115) is gstRateFor's.
 import { after, gstRates, gstTx } from '@radcore/db/gst';
+import { dec } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, type Ctx } from '@radcore/lib-platform';
 import { and, asc, desc, inArray, like, lte } from 'drizzle-orm';
 import { z } from 'zod';
@@ -12,6 +13,7 @@ type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 const columns = {
   id: gstRates.id, hsn: gstRates.hsn, effectiveFrom: gstRates.effectiveFrom, rate: gstRates.rate, source: gstRates.source, note: gstRates.note,
+  supplyKind: gstRates.supplyKind,
 };
 
 /**
@@ -46,9 +48,11 @@ export async function listRatesPage(ctx: Ctx, input: In<typeof listGstRates>): P
 }
 
 /** PUT /gst/rates (gst:write): a new row, or the same code and date corrected. The reason was kept by the handler. */
-export async function putGstRate(ctx: Ctx, { hsn, effectiveFrom, rate, source, note }: In<typeof setGstRate>): Promise<Out<typeof setGstRate>> {
-  const [row] = await gstTx(ctx).insert(gstRates).values({ hsn, effectiveFrom, rate, source, note })
-    .onConflictDoUpdate({ target: [gstRates.hsn, gstRates.effectiveFrom], set: { rate, source, note } }).returning({ id: gstRates.id });
+export async function putGstRate(ctx: Ctx, { hsn, effectiveFrom, rate, source, note, supplyKind }: In<typeof setGstRate>): Promise<Out<typeof setGstRate>> {
+  // A 0% rate is nil-rated unless it's named exempt or non-GST (ADR-010 §2); the CHECK holds the pair.
+  const kind = supplyKind ?? (dec(rate).gt(0) ? 'taxable' : 'nil');
+  const [row] = await gstTx(ctx).insert(gstRates).values({ hsn, effectiveFrom, rate, source, note, supplyKind: kind })
+    .onConflictDoUpdate({ target: [gstRates.hsn, gstRates.effectiveFrom], set: { rate, source, note, supplyKind: kind } }).returning({ id: gstRates.id });
   if (row === undefined) throw new Error('The rate was not saved');
   return row;
 }

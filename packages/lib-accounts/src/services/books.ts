@@ -7,6 +7,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import type { createAccount, getJournal, listAccounts, listJournal, postJournal, reverseJournal, setAccount } from '../contract.ts';
 import { periodLockRow, postManualJournal, reverseEntry, type Posted } from './journal.ts';
+import { refuseIfMatched } from './bank-matching.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -187,5 +188,7 @@ export async function reverseJournalEntry(ctx: Ctx, r: In<typeof reverseJournal>
   if (entry.kind !== 'manual') {
     throw new AppError('reverse_through_document', 'This entry belongs to a document: cancel the document to reverse it');
   }
+  // A manual journal on a bank account may be matched (ADR-009 §12): unmatch first.
+  await refuseIfMatched(ctx, r.id);
   return reverseEntry(ctx, { entryId: r.id, businessDate: r.businessDate, reason: r.reason });
 }

@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm';
 import { boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, createdMoment, id, money, percent, radcoreTable } from '../columns.ts';
 import { files } from '../platform/tables.ts';
+import { tdsSections } from './tables-tds.ts';
 import { accounts, journalEntries, parties } from './tables.ts';
 
 /** An expense category (ADR-009 §2, §3): whether its input GST may be claimed, and where blocked, the clause of section
@@ -16,7 +17,10 @@ export const expenseCategories = radcoreTable('expense_categories', {
   credit: text().notNull().default('blocked'),
   blockedClause: text(),
   active: boolean().notNull().default(true),
+  // The TDS section its lines take when their supplier names none (ADR-009 §4, RAD-158).
+  defaultTdsSectionId: uuid().references(() => tdsSections.id, { onDelete: 'restrict' }),
 }, (t) => [
+  index('ix_expense_categories_tds_section').on(t.defaultTdsSectionId),
   check('ck_expense_categories_credit', sql`${t.credit} in ('allowed', 'blocked')`),
   // 17(5)'s clauses, (a) to (i), and only (b)'s sub-clauses, as "(b)(i)".
   check('ck_expense_categories_clause', sql`(${t.credit} = 'blocked') = (${t.blockedClause} is not null)
@@ -99,7 +103,10 @@ export const expenseLines = radcoreTable('expense_lines', {
   gstRate: percent().notNull(),
   cgst: money().notNull(), sgst: money().notNull(), igst: money().notNull(),
   creditCgst: money(), creditSgst: money(), creditIgst: money(), creditReason: text(),
+  // The TDS section it's deducted under (ADR-009 §4, RAD-158).
+  tdsSectionId: uuid().references(() => tdsSections.id, { onDelete: 'restrict' }),
 }, (t) => [
+  index('ix_expense_lines_tds_section').on(t.tdsSectionId),
   check('ck_expense_lines_heads', sql`${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
   check('ck_expense_lines_credit', sql`num_nulls(${t.creditCgst}, ${t.creditSgst}, ${t.creditIgst}) in (0, 3)
     and (${t.creditReason} is null or ${t.creditCgst} is not null)`),

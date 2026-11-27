@@ -16,6 +16,18 @@ const rateFields = {
 };
 const rateRow = z.object({ id: idString(), sectionId: idString(), sectionCode: z.string(), effectiveFrom: dateString(), ...rateFields });
 
+/** PUT /parties/:id/tds (parties:manage): a supplier's TDS terms (ADR-009 §4): the section its lines take unless they name
+ * another (null for none), and whether its PAN is inoperative, so it's deducted at the no-PAN rate (CA-20). */
+export const setPartyTds = defineContract({
+  method: 'PUT', path: '/parties/:id/tds', auth: 'session', perm: 'parties:manage', tx: write,
+  input: z.object({ id: idString(), defaultSectionId: idString().nullable(), panInoperative: z.boolean(), reason: reason() }),
+  output: z.object({}),
+  errors: ['unknown_section'],
+  dbErrors: {
+    '23503:party_tds_default_section_id_tds_sections_id_fk': { code: 'unknown_section', message: 'There is no such TDS section' },
+  },
+});
+
 /** GET /tds/sections (tds:read): every section, by code. Few, so one answer. */
 export const listTdsSections = defineContract({
   method: 'GET', path: '/tds/sections', auth: 'session', perm: 'tds:read', tx: read,

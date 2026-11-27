@@ -292,6 +292,9 @@ export const invoices = radcoreTable('invoices', {
   buyerPincode: text(),
   buyerStateCode: text(),
   placeOfSupply: text(),
+  // The e-commerce operator it was sold through (ADR-010 §2, CA-07, RAD-154): GSTR-1 reports it in 4C, 7 and 14. Shopify
+  // is our own store, not one; null until CA-07 says such sales exist.
+  ecommerceGstin: text(),
   // The totals, written at posting: the lines' sums, and the round-off that brings them to the rupee (ADR-005 §2).
   taxable: money().notNull().default('0'),
   cgst: money().notNull().default('0'),
@@ -320,6 +323,7 @@ export const invoices = radcoreTable('invoices', {
   // lines against the header are checked at commit (RA006).
   check('ck_invoices_identity', sql`${t.total} = ${t.taxable} + ${t.cgst} + ${t.sgst} + ${t.igst} + ${t.cess} + ${t.roundOff}
     and abs(${t.roundOff}) < 1 and ${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
+  check('ck_invoices_ecommerce_gstin', sql`${t.ecommerceGstin} is null or ${t.ecommerceGstin} ~ '^[0-9]{2}[A-Z0-9]{13}$'`),
   check('ck_invoices_state_codes', sql`coalesce(${t.shipToStateCode}, '00') ~ '^[0-9]{2}$' and coalesce(${t.issuerStateCode}, '00') ~ '^[0-9]{2}$'
     and coalesce(${t.buyerStateCode}, '00') ~ '^[0-9]{2}$' and coalesce(${t.placeOfSupply}, '00') ~ '^[0-9]{2}$'`),
   index('ix_invoices_party_date').on(t.partyId, t.businessDate),
@@ -368,7 +372,12 @@ export const invoiceLines = radcoreTable('invoice_lines', {
   // The worst condition of the units it bills when not all are new, copied at posting so the buyer is told (the
   // architect on RAD-112, with stock.sell_damaged_units).
   unitCondition: text(),
+  // Its GST rate row's supply kind, frozen with the rate at posting (ADR-010 §2, RAD-154): required once the line has its
+  // rate, so a posting that leaves it out is refused. Null only on a draft, which has no rate yet.
+  supplyKind: text(),
 }, (t) => [
+  check('ck_invoice_lines_supply_kind', sql`(${t.supplyKind} is null) = (${t.gstRate} is null) and (${t.supplyKind} is null
+    or (${t.supplyKind} in ('taxable', 'nil', 'exempt', 'non_gst') and (${t.supplyKind} = 'taxable') = (${t.gstRate} > 0)))`),
   check('ck_invoice_lines_unit_condition', sql`${t.unitCondition} is null or ${t.unitCondition} in ('demo', 'used', 'damaged')`),
   uniqueIndex('ux_invoice_lines_line').on(t.invoiceId, t.lineNo),
   index('ix_invoice_lines_list_version').on(t.listVersionId),

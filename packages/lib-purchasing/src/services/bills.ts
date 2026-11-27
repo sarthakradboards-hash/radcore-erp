@@ -19,7 +19,7 @@ import { billApproval } from './bill-post.ts';
 
 /** Writes a draft's lines afresh, numbered from 1 in the order sent; a goods line takes its PO line's item, a job
  * worker's charge its receipt line's made item. */
-async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], { po, made }: Checked): Promise<void> {
+async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], { po, made, sections }: Checked): Promise<void> {
   const tx = purchasingTx(ctx);
   await tx.delete(purchaseBillLines).where(eq(purchaseBillLines.billId, billId));
   await tx.insert(purchaseBillLines).values(lines.map((l, i) => {
@@ -29,10 +29,10 @@ async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], { 
     }
     if (l.kind === 'job_work') {
       return { ...at, jobWorkReceiptLineId: l.jobWorkReceiptLineId, itemId: made.get(l.jobWorkReceiptLineId)?.madeItemId ?? '', qty: l.qty,
-        rate: l.rate, hsn: l.hsn };
+        rate: l.rate, hsn: l.hsn, tdsSectionId: sections[i] ?? null };
     }
     return { ...at, charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount, expenseCategoryId: l.expenseCategoryId ?? null,
-      expenseAccountId: l.expenseAccountId ?? null };
+      expenseAccountId: l.expenseAccountId ?? null, tdsSectionId: sections[i] ?? null };
   }));
 }
 type Checked = Awaited<ReturnType<typeof checkDraft>>;
@@ -167,7 +167,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
     supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate, total: b.total as Money | null,
     awaitingApproval: (await awaitingApproval(ctx, billApproval, [id])).has(id),
     open: openOf(b.status, b.owed, (await paidOf(ctx, 'purchase_bills', [id])).get(id)?.paid ?? null), supplierGstin: b.supplierGstin, statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes, amounts,
-    chargesOverTolerance, cancelReason: b.cancelReason,
+    chargesOverTolerance, cancelReason: b.cancelReason, tds: b.tds as Money,
     lines: lines.map((l, i) => {
       const a = lineAmounts[i] ?? empty;
       if (l.kind === 'charge') {

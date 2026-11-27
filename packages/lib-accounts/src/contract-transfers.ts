@@ -3,6 +3,7 @@
 // second factor), read under payments:read. Like every contract file it imports only zod and lib-common (D5).
 import { dateString, defineContract, idString, listInput, listOf, momentString, moneyString, reason } from '@radcore/lib-common';
 import { z } from 'zod';
+import { BANK_MATCHED_DB_ERROR } from './contract-bank.ts';
 
 const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
@@ -46,5 +47,6 @@ export const cancelTransferContract = defineContract({
   method: 'POST', path: '/transfers/:id/cancel', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({}),
-  errors: ['not_posted', 'date_before_source', 'date_in_future', 'period_locked', 'year_not_open', 'already_reversed'],
+  errors: ['not_posted', 'date_before_source', 'date_in_future', 'period_locked', 'year_not_open', 'already_reversed', 'bank_matched'],
+  dbErrors: BANK_MATCHED_DB_ERROR,
 });

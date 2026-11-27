@@ -17,9 +17,13 @@ export const gstRates = radcoreTable('gst_rates', {
   rate: percent().notNull(),
   source: boundedText({ max: 200 }).notNull(),
   note: boundedText({ max: 500 }),
+  // What the supply is (ADR-010 §2, CA-07, RAD-154): taxable, or at 0% nil-rated, exempt or outside GST, which GSTR-1
+  // reports in Table 8, never as a sale at 0%. Zero-rated supplies (exports) come with D-10.
+  supplyKind: text().$type<'taxable' | 'nil' | 'exempt' | 'non_gst'>().notNull().default('taxable'),
 }, (t) => [
   uniqueIndex('ux_gst_rates_hsn_from').on(t.hsn, t.effectiveFrom),
   check('ck_gst_rates_hsn', sql`${t.hsn} ~ '^[0-9]{2}([0-9]{2}){0,3}$'`),
+  check('ck_gst_rates_supply_kind', sql`${t.supplyKind} in ('taxable', 'nil', 'exempt', 'non_gst') and (${t.supplyKind} = 'taxable') = (${t.rate} > 0)`),
 ]);
 
 /**

@@ -6,6 +6,7 @@ import {
   stateCodeString,
 } from '@radcore/lib-common';
 import { approvalContracts } from '@radcore/lib-platform/contract';
+import { BANK_MATCHED_DB_ERROR } from './contract-bank.ts';
 import { z } from 'zod';
 
 const read = { readOnly: true, isolation: 'read committed' } as const;
@@ -252,7 +253,8 @@ export const reverseJournal = defineContract({
   method: 'POST', path: '/journal/:id/reverse', auth: 'session', perm: 'journal:reverse', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['reverse_through_document', 'already_reversed', 'reversal_not_reversible', 'period_locked', 'year_not_open'],
+  errors: ['reverse_through_document', 'already_reversed', 'reversal_not_reversible', 'period_locked', 'year_not_open', 'bank_matched'],
+  dbErrors: BANK_MATCHED_DB_ERROR,
 });
 
 // Receipts, payments and refunds (M3-12, RAD-116; ADR-007 §1–§5, §8). Recording and cancelling move money, so
@@ -296,8 +298,9 @@ export const cancelPaymentContract = defineContract({
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({}),
   errors: ['not_posted', 'date_before_source', 'date_in_future', 'has_refunds', 'has_allocations', 'period_locked', 'year_not_open',
-    'already_reversed'],
-  dbErrors: { 'RA006:payment_still_allocated': { code: 'has_allocations', message: 'Reverse what this is applied to first' } },
+    'already_reversed', 'bank_matched'],
+  dbErrors: { 'RA006:payment_still_allocated': { code: 'has_allocations', message: 'Reverse what this is applied to first' },
+    ...BANK_MATCHED_DB_ERROR },
 });
 
 /** An owner's override for cash past the day's limit (ADR-007 §8, RC-114): its approval posts the payment, so the

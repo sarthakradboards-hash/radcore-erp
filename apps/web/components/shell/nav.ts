@@ -5,7 +5,8 @@
 import type { PermissionKey } from '@radcore/lib-common';
 import type { MessageKey } from '../../lib/i18n/index.ts';
 
-export type NavPage = { href: string; label: MessageKey; perm: PermissionKey | null };
+/** `also`: a second key the page needs, when it reads two kinds of record (the bank page: its lines and the money accounts). */
+export type NavPage = { href: string; label: MessageKey; perm: PermissionKey | null; also?: PermissionKey };
 /** `section`: a path prefix whose pages all count as this entry (the admin area's pages). */
 export type NavItem = { label: MessageKey; pages: readonly NavPage[]; section?: string };
 /** An entry as one person sees it: where it takes them. */
@@ -22,6 +23,7 @@ export const ADMIN_PAGES = [
   { href: '/admin/locations', label: 'admin.nav.locations', perm: 'locations:read' },
   { href: '/admin/items', label: 'admin.nav.items', perm: 'items:read' },
   { href: '/admin/gst-rates', label: 'admin.nav.gst', perm: 'gst:read' },
+  { href: '/admin/rcm-rules', label: 'gst.nav.rcm', perm: 'gst:read' },
   { href: '/admin/parties', label: 'admin.nav.parties', perm: 'parties:read' },
   { href: '/admin/price-lists', label: 'admin.nav.prices', perm: 'prices:read' },
   { href: '/admin/price-approvals', label: 'admin.nav.priceApprovals', perm: 'prices:approve' },
@@ -37,7 +39,7 @@ export const ACCOUNTS_PAGES = [
   { href: '/accounts/chart', label: 'books.nav.chart', perm: 'journal:read' },
   { href: '/accounts/collect', label: 'books.nav.collect', perm: 'receivables:read' },
   { href: '/accounts/payments', label: 'books.nav.pay', perm: 'payments:read' },
-  { href: '/accounts/bank', label: 'books.nav.bank', perm: 'bank:read' },
+  { href: '/accounts/bank', label: 'books.nav.bank', perm: 'bank:read', also: 'money_accounts:read' },
   { href: '/accounts/transfers', label: 'books.nav.transfers', perm: 'payments:read' },
   { href: '/accounts/period', label: 'books.nav.period', perm: 'books:lock' },
   { href: '/accounts/period/approvals', label: 'books.nav.unlocks', perm: 'books:unlock' },
@@ -105,7 +107,7 @@ export const NAV: readonly NavItem[] = [
 
 /** May this person open the page? */
 export const allowed = (page: NavPage, permissions: readonly string[]): boolean =>
-  page.perm === null || permissions.includes(page.perm);
+  (page.perm === null || permissions.includes(page.perm)) && (page.also === undefined || permissions.includes(page.also));
 
 /** The menu one person sees: each entry they can use at all, pointing at the first of its pages they may open. */
 export function menuFor(items: readonly NavItem[], permissions: readonly string[]): MenuEntry[] {

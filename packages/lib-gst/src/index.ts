@@ -9,8 +9,11 @@ export { CREDIT_FROM, creditFrom } from './services/credit.ts';
 // Reverse charge (RAD-153, ADR-010 §4): the rule purchases call, and its rules by date.
 export { isReverseCharge, type RcmParty, type RcmRule } from './rules/reverse-charge.ts';
 export { listRcmRulesAll, putRcmRule, rcmRulesOn } from './services/rcm-rules.ts';
+// GSTR-1's settings (RAD-154, ADR-010 §3).
+export { B2CL_LIMIT, HSN_DIGITS } from './services/returns.ts';
 
 // This library's settings, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { SettingDef } from '@radcore/lib-platform';
 import { CREDIT_FROM } from './services/credit.ts';
-export const settings: readonly SettingDef<unknown>[] = [CREDIT_FROM];
+import { B2CL_LIMIT, HSN_DIGITS } from './services/returns.ts';
+export const settings: readonly SettingDef<unknown>[] = [CREDIT_FROM, B2CL_LIMIT, HSN_DIGITS];

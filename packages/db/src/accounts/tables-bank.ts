@@ -1,10 +1,10 @@
 // lib-accounts' bank statements (M5-11, RAD-159; ADR-009 §11; RC-135, RC-136). SQL zone (ADR-002 §3): `sql` only as a
 // CHECK's argument. Statement lines aren't ledger rows: nothing posts at import.
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, date, index, integer, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, date, foreignKey, index, integer, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, createdMoment, id, json, money, radcoreTable } from '../columns.ts';
 import { files } from '../platform/tables.ts';
-import { accounts } from './tables.ts';
+import { accounts, journalLines } from './tables.ts';
 
 /**
  * How one bank account's statements are laid out (GL-053): the header names of the columns holding each field, by
@@ -69,4 +69,43 @@ export const bankStatementLines = radcoreTable('bank_statement_lines', {
   uniqueIndex('ux_bank_statement_lines_present').on(t.accountId, t.valueDate, t.direction, t.amount, t.balance, t.reference),
   index('ix_bank_statement_lines_account_date').on(t.accountId, t.valueDate, t.seq),
   index('ix_bank_statement_lines_import').on(t.importId),
+]);
+
+/**
+ * A match (M5-13, RAD-165; ADR-009 §12): one or more statement lines and one or more journal lines on the same bank
+ * account, whose signed totals are equal (checked at commit, `match_unbalanced`), so one book entry may cover several
+ * bank lines and one bank line several entries (RC-210). Unmatching deletes its links, audited, and stamps the match:
+ * a line is then free to match again. `auto` when the worker made it (M5-13's auto-match).
+ */
+export const bankMatches = radcoreTable('bank_matches', {
+  id: id(),
+  accountId: uuid().notNull().references(() => accounts.id, { onDelete: 'restrict' }),
+  kind: text().notNull(),
+  unmatchedAt: timestamp({ withTimezone: true }),
+  unmatchReason: boundedText({ max: 500 }),
+}, (t) => [
+  check('ck_bank_matches_kind', sql`${t.kind} in ('manual', 'auto')`),
+  check('ck_bank_matches_unmatched', sql`(${t.unmatchedAt} is null) = (${t.unmatchReason} is null)`),
+  index('ix_bank_matches_account').on(t.accountId),
+]);
+
+/** A live match's statement lines: each line in one match at most. */
+export const bankMatchStatementLines = radcoreTable('bank_match_statement_lines', {
+  matchId: uuid().notNull().references(() => bankMatches.id, { onDelete: 'restrict' }),
+  statementLineId: uuid().notNull(),
+}, (t) => [
+  primaryKey({ name: 'pk_bank_match_statement_lines', columns: [t.matchId, t.statementLineId] }),
+  // Named, since the generated name passes PostgreSQL's 63 bytes.
+  foreignKey({ name: 'fk_bank_match_statement_lines_line', columns: [t.statementLineId], foreignColumns: [bankStatementLines.id] })
+    .onDelete('restrict'),
+  uniqueIndex('ux_bank_match_statement_lines_line').on(t.statementLineId),
+]);
+
+/** A live match's journal lines: each line in one match at most. */
+export const bankMatchJournalLines = radcoreTable('bank_match_journal_lines', {
+  matchId: uuid().notNull().references(() => bankMatches.id, { onDelete: 'restrict' }),
+  journalLineId: uuid().notNull().references(() => journalLines.id, { onDelete: 'restrict' }),
+}, (t) => [
+  primaryKey({ name: 'pk_bank_match_journal_lines', columns: [t.matchId, t.journalLineId] }),
+  uniqueIndex('ux_bank_match_journal_lines_line').on(t.journalLineId),
 ]);
