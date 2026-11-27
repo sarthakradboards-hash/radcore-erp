@@ -42,6 +42,11 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   purchase_bills: { stated_total: 'the total the supplier’s bill states (purchasing:read)', taxable: 'a bill’s value (purchasing:read)',
     cgst: 'tax on a bill (purchasing:read)', sgst: 'tax on a bill (purchasing:read)', igst: 'tax on a bill (purchasing:read)',
     round_off: 'a bill’s round-off (purchasing:read)', total: 'a bill’s total (purchasing:read)' },
+  // An expense's (RAD-152): the supplier's bill as printed and the credit claimed, under expenses:read.
+  expenses: { stated_total: 'the total the supplier’s bill states (expenses:read)', total: 'what the supplier is owed (expenses:read)' },
+  expense_lines: { taxable: 'a line’s value (expenses:read)', gst_rate: 'a tax rate', cgst: 'tax on a line (expenses:read)',
+    sgst: 'tax on a line (expenses:read)', igst: 'tax on a line (expenses:read)', credit_cgst: 'input credit a line claimed (expenses:read)',
+    credit_sgst: 'input credit a line claimed (expenses:read)', credit_igst: 'input credit a line claimed (expenses:read)' },
   purchase_bill_lines: { qty: 'a quantity', revalued_qty: 'a quantity',
     grni_value: 'what the line cleared of Goods Received Not Billed, as its receipt accrued it (purchasing:read)',
     jwcb_value: 'what the line cleared of Job Work Charges to be Billed, as its job-work receipt accrued it (purchasing:read)', rate: 'a rate the supplier billed (purchasing:read)', amount: 'a charge on the goods (purchasing:read)',

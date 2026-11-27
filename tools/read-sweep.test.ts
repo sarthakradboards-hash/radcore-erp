@@ -9,7 +9,7 @@
 // other files count their own. A GET this can't reach is pinned below with its reason, so every new GET is either
 // reached or listed (the ratchet). Its known limit: it catches only the shapes the seed holds.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addExpenseCategory, addParty, openFinancialYear, postManual, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
+import { addExpense, addExpenseCategory, addParty, postExpenseNow, openFinancialYear, postManual, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { addAdSpend, addCampaign, captureEnquiry, createEnquiryForm, leadSourcesList } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
@@ -231,11 +231,28 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
         lines: [{ accountId: await systemAccountId(ctx, 'round_off'), debit: m('10') }, { accountId: await systemAccountId(ctx, 'bank'), credit: m('10') }] }));
       add(['GET /journal/:id'], posted.id);
       // An expense category, blocked, on an ordinary expense account (RAD-152), and one allowed.
-      await run(async (ctx) => {
+      const cash = await run(async (ctx) => {
         const accountIds = [await systemAccountId(ctx, 'round_off')];
         await addExpenseCategory(ctx, { name: `Sweep blocked ${randomUUID()}`, credit: 'blocked', blockedClause: '(b)(i)', accountIds });
-        await addExpenseCategory(ctx, { name: `Sweep allowed ${randomUUID()}`, credit: 'allowed', blockedClause: null, accountIds });
+        const { id: categoryId } = await addExpenseCategory(ctx, { name: `Sweep allowed ${randomUUID()}`, credit: 'allowed', blockedClause: null,
+          accountIds });
+        // An expense on credit, a draft, and one paid in cash past the day's limit waiting for its override (RAD-152).
+        const fileId = randomUUID();
+        await su.query(`with p as (select set_config('app.principal', 'system:test', true)) insert into radcore.files
+          (id, kind, store_key, filename, content_type, size, status) select $1, 'expense_bill', $2, 'bill.pdf', 'application/pdf', 2048, 'ready'
+          from p`, [fileId, `expense_bill/${fileId}`]);
+        const expense = async (amount: string, payFromAccountId: string | null) => (await addExpense(ctx, { businessDate: DATE, supplierId: base.supplier,
+          supplierInvoiceNumber: `EXP/${tag()}`, supplierInvoiceDate: DATE, supplierGstin: null, payFromAccountId, statedTotal: m(amount), fileId, notes: null,
+          lines: [{ categoryId, accountId: accountIds[0] ?? '', description: 'Sweep', taxable: m(amount), gstRate: percentString().parse('0'), cgst: m('0'),
+            sgst: m('0'), igst: m('0') }] })).id;
+        const draft = await expense('100', null);
+        const cash = await expense('20000', await systemAccountId(ctx, 'cash'));
+        await postExpenseNow(ctx, { id: cash });
+        add(['GET /expenses/:id'], draft, cash);
+        return cash;
       });
+      const asked = await su.query<{ id: string }>("select id from radcore.approvals where kind = 'expense-cash' and record_id = $1", [cash]);
+      add(['GET /approvals/expense-cash/:id'], asked.rows[0]?.id);
     });
 
     // Stock: a transfer posted, one cancelled, one into a franchisee waiting for approval; a count and an adjustment

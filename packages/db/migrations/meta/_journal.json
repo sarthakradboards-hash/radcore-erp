@@ -680,6 +680,13 @@
       "when": 1795770510725,
       "tag": "0096_expense_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795772050138,
+      "tag": "0098_expenses",
+      "breakpoints": true
     }
   ]
 }
