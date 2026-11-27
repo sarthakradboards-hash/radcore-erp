@@ -25,7 +25,7 @@ const LOCKS = 'packages/db/src/locks.ts';
 const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/sales/tables-credit.ts',
   'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts', 'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
   'packages/db/src/stock/tables-job-work.ts', 'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts',
-  'packages/db/src/purchasing/tables-bills.ts', 'packages/db/src/purchasing/tables-returns.ts', 'packages/db/src/accounts/tables-close.ts', 'packages/db/src/accounts/tables-expenses.ts', 'packages/db/src/accounts/tables-transfers.ts', 'packages/db/src/accounts/tables-bank.ts', 'packages/db/src/columns.ts'];
+  'packages/db/src/purchasing/tables-bills.ts', 'packages/db/src/purchasing/tables-returns.ts', 'packages/db/src/accounts/tables-close.ts', 'packages/db/src/accounts/tables-expenses.ts', 'packages/db/src/accounts/tables-tds.ts', 'packages/db/src/accounts/tables-transfers.ts', 'packages/db/src/accounts/tables-bank.ts', 'packages/db/src/columns.ts'];
 // The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.
 export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${TS}`, `apps/api/src/**/*.${TS}`,
   `apps/worker/src/**/*.${TS}`, `apps/web/**/*.${TS}`];
@@ -316,7 +316,9 @@ export default tseslint.config(
   { files: SERVER, ignores: ZONES['radcore/outbound-only'], rules: on('radcore/outbound-only') },
   // L8: an uploaded PDF is read only in the worker (RC-135, ADR-003 §7; auditor-2 on #438), never by the api's own code.
   { files: [`apps/api/**/*.${EXT}`], rules: { 'no-restricted-imports': ['error', { paths: [{ name: '@radcore/lib-platform',
-    importNames: ['readPdf'], message: 'L8: a PDF is read only in the worker (RC-135). Queue a job that reads it.' }] }] } },
+    importNames: ['readPdf'], message: 'L8: a PDF is read only in the worker (RC-135). Queue a job that reads it.' },
+    { name: '@radcore/lib-accounts', importNames: ['readStatementFile', 'statementFileReader'],
+      message: 'L8: a statement file is read only in the worker job (RC-135, auditor-2 on #438).' }] }] } },
   ...Object.entries(L8_LIFTED).map(([file, lifted]) => ({ files: [file], rules: on('radcore/outbound-only',
     { ...OPTIONS['radcore/outbound-only'], imports: l8Imports(L8_MODULES.filter((m) => !lifted.includes(m))) }) })),
 

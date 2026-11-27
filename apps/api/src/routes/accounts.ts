@@ -3,17 +3,20 @@
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, getPaymentById, listPaymentsPage, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
   addExpense, cancelExpenseNow, changeExpense, dropExpenseDraft, expenseCashSpec, getExpenseById, listExpensesPage, postExpenseNow,
+  putTdsRate, tdsRatesPage, tdsSectionsList,
   addAccount, addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
   askToUnlock, moveLockForward, periodState, periodUnlockSpec, cancelTransfer, recordTransfer, transferById, transfersPage,
-  importStatement, statementFormatOf, statementImportById, statementLinesPage, undoStatementImport,
+  importStatement, statementFormatOf, statementImportById, statementImportsPage, statementLinesPage, undoStatementImport,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
   reverseCreditApplicationContract, createParty, getCompany, recordPaymentContract, getJournal, getParty, listAccounts, listMoneyAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
   cancelExpense, createExpense, dropExpense, expenseCashApproval, getExpense, listExpenses, postExpense, replaceExpense,
+  listTdsRates, listTdsSections, setTdsRate,
   createAccount, createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
   askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval,
-  getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementLinesContract, undoStatementImportContract,
+  getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
+  undoStatementImportContract,
   cancelTransferContract, getTransferContract, listTransfersContract, recordTransferContract,
 } from '@radcore/lib-accounts/contract';
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
@@ -49,6 +52,9 @@ export default [
   defineRoute(recordTransferContract, recordTransfer),
   defineRoute(cancelTransferContract, cancelTransfer),
   ...defineApproval(cashLimitApproval, cashLimitSpec),
+  defineRoute(listTdsSections, tdsSectionsList),
+  defineRoute(listTdsRates, tdsRatesPage),
+  defineRoute(setTdsRate, putTdsRate),
   defineRoute(createAccount, addAccount),
   defineRoute(setAccount, changeAccount),
   defineRoute(listExpenses, listExpensesPage),
@@ -69,6 +75,7 @@ export default [
   // Bank statements (RAD-159): the import is queued here and done by the worker.
   defineRoute(getStatementFormatContract, statementFormatOf),
   defineRoute(importStatementContract, importStatement),
+  defineRoute(listStatementImportsContract, statementImportsPage),
   defineRoute(getStatementImportContract, statementImportById),
   defineRoute(undoStatementImportContract, undoStatementImport),
   defineRoute(listStatementLinesContract, statementLinesPage),
