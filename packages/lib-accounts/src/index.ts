@@ -2,6 +2,7 @@
 export {
   changeAccount, chartOfAccounts, entryDates, journalEntryById, journalPage, postManual, reverseJournalEntry, stockInHand, systemBalance, trialBalance,
 } from './services/books.ts';
+export { addExpenseCategory, changeExpenseCategory, expenseCategoriesList } from './services/expense-categories.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
 export {
   claimedInputGst, holdPeriod, JOURNAL_SERIES, lockPeriod, openFinancialYear, postEntry, postManualJournal, reverseEntriesOf, reverseEntry,

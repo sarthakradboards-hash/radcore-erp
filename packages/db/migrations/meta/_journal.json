@@ -659,6 +659,13 @@
       "when": 1795496249767,
       "tag": "0093_bill_job_work",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1795769242841,
+      "tag": "0094_expense_categories",
+      "breakpoints": true
     }
   ]
 }

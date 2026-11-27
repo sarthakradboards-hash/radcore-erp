@@ -2,12 +2,12 @@
 // of accounts and journal (RAD-86), and what parties owe (RAD-119).
 import {
   addParty, allocatePayment, applyCredit, cancelPayment, getPaymentById, listPaymentsPage, reverseAllocation, reverseCreditApplication, cashLimitSpec, changeAccount, changeParty, chartOfAccounts, recordPayment, getCompanyProfile, getPartyById, journalEntryById, journalPage, listPartiesPage, postManual,
-  partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
+  addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
   reverseCreditApplicationContract, createParty, getCompany, recordPaymentContract, getJournal, getParty, listAccounts, listMoneyAccounts, listJournal, listParties, postJournal, reverseJournal, setAccount,
-  getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
+  createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
 } from '@radcore/lib-accounts/contract';
 import { defineApproval, defineRoute } from '@radcore/lib-platform';
 import { remindWithLink } from '@radcore/lib-sales';
@@ -37,6 +37,9 @@ export default [
   defineRoute(reverseCreditApplicationContract, reverseCreditApplication),
   ...defineApproval(cashLimitApproval, cashLimitSpec),
   defineRoute(setAccount, changeAccount),
+  defineRoute(listExpenseCategories, expenseCategoriesList),
+  defineRoute(createExpenseCategory, addExpenseCategory),
+  defineRoute(setExpenseCategory, changeExpenseCategory),
   defineRoute(listJournal, journalPage),
   defineRoute(getJournal, journalEntryById),
   defineRoute(postJournal, postManual),
