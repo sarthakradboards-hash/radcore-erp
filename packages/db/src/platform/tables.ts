@@ -112,7 +112,7 @@ export const roleTemplates = radcoreTable('role_templates', {
   role: text().notNull().references(() => roles.key, { onDelete: 'restrict' }),
   permission: text().notNull(), scope: text().notNull(),
 }, (t) => [primaryKey({ name: 'pk_role_templates', columns: [t.role, t.permission] }),
-  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile') or ${t.scope} = 'all')`)]);
+  check('ck_role_templates_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'gst:returns') or ${t.scope} = 'all')`)]);
 
 /**
  * What a role may do (RAD-35, ADR-001 §6a): one permission key each, at a scope. `all` reaches every record of that
@@ -126,7 +126,7 @@ export const roleGrants = radcoreTable('role_grants', {
 }, (t) => [
   primaryKey({ name: 'pk_role_grants', columns: [t.role, t.permission] }),
   check('ck_role_grants_permission', sql`${t.permission} ~ '^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$'`),
-  check('ck_role_grants_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile') or ${t.scope} = 'all')`),
+  check('ck_role_grants_scope', sql`${t.scope} in ('all', 'own') and (${t.permission} not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'gst:returns') or ${t.scope} = 'all')`),
 ]);
 
 /**

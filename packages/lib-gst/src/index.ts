@@ -6,8 +6,11 @@ export { lineTax, placeOfSupply, toRupee, totalsOf, type LineTax, type Totals } 
 // Input credit (RAD-139, ADR-009 §2): the one rule bills and expenses call, and the setting it reads.
 export { inputCredit, supplierKind, type Credit, type NoCredit, type SupplierKind } from './rules/credit.ts';
 export { CREDIT_FROM, creditFrom } from './services/credit.ts';
+// GSTR-1's settings (RAD-154, ADR-010 §3).
+export { B2CL_LIMIT, HSN_DIGITS } from './services/returns.ts';
 
 // This library's settings, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { SettingDef } from '@radcore/lib-platform';
 import { CREDIT_FROM } from './services/credit.ts';
-export const settings: readonly SettingDef<unknown>[] = [CREDIT_FROM];
+import { B2CL_LIMIT, HSN_DIGITS } from './services/returns.ts';
+export const settings: readonly SettingDef<unknown>[] = [CREDIT_FROM, B2CL_LIMIT, HSN_DIGITS];

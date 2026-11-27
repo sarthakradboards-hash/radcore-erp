@@ -715,6 +715,13 @@
       "when": 1795776356509,
       "tag": "0102_bill_charge_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1795778485870,
+      "tag": "0102_gstr1_data",
+      "breakpoints": true
     }
   ]
 }
