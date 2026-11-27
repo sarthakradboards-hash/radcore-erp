@@ -13,6 +13,7 @@ import { paymentUsed } from './allocations.ts';
 import { takesMoney } from './money-accounts.ts';
 import { cashPaidOn } from './expense-cash.ts';
 import { holdPeriod, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
+import { refuseIfMatched } from './bank-matching.ts';
 import { holdParty } from './parties.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -294,6 +295,8 @@ export async function cancelPayment(ctx: Ctx, c: In<typeof cancelPaymentContract
   if (refund !== undefined) refuse('has_refunds', 'Cancel the refunds of this receipt first');
   // The database refuses it too (payment_still_allocated); said here by name first.
   if (!(await paymentUsed(ctx, p.id)).allocated.eq(0)) refuse('has_allocations', 'Reverse what this is applied to first');
+  // Matched to the bank statement: unmatch first (ADR-009 §12). The row is held FOR UPDATE, so a match waits or is seen.
+  await refuseIfMatched(ctx, p.postedEntryId);
   const mirror = await reverseEntry(ctx, { entryId: p.postedEntryId, businessDate: c.businessDate, reason: c.reason });
   await tx.update(payments).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal), cancelReason: c.reason,
     cancelEntryId: mirror.id }).where(eq(payments.id, p.id));
