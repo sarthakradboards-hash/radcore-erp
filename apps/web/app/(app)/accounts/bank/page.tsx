@@ -10,7 +10,8 @@ import {
   undoStatementImportContract,
 } from '@radcore/lib-accounts/contract';
 import { statementFiles } from '@radcore/lib-platform/contract';
-import { useId, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useId, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { z } from 'zod';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
@@ -24,6 +25,7 @@ import { BucketRefused, postToBucket } from '../../../../lib/files/post-to-bucke
 import { t } from '../../../../lib/i18n/index.ts';
 import '../../../../components/ui/table/table.css';
 import { ChoiceButtons } from '../../admin/shared.tsx';
+import { refreshLines } from './lines-refresh.ts';
 import { BANK_MESSAGES, importSchema, importValues, UPLOADABLE, uploadType, type ImportInput } from './statement-values.ts';
 
 type Line = z.output<typeof listStatementLinesContract.output>['items'][number];
@@ -78,6 +80,9 @@ function ImportStatus({ id }: { id: string }) {
   const status = q.data?.status;
   // Polling stops once the worker has settled it (state set while rendering, React's pattern for state derived from a prop).
   if (!settled && status !== undefined && status !== 'queued') setSettled(true);
+  // Its lines are in only now, well after the POST answered, so the table below reads them again (e2e-2 on #439).
+  const client = useQueryClient();
+  useEffect(() => { if (settled) void refreshLines(client); }, [settled, client]);
   const i = q.data;
   if (q.error !== null) return <p role="alert" className="kit-form-alert">{t('error.title')}</p>;
   if (i === undefined) return <p>{t('loading')}</p>;
