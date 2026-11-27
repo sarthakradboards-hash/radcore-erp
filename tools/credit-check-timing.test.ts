@@ -78,8 +78,8 @@ describe.skipIf(!adminUrl || !process.env['RADCORE_TIMING'])('the credit check w
         select md5($1::text || 'i' || n)::uuid, 'posted', 'T-SI-' || $1::text || '-' || n, $1::uuid, $2::date + (n % 360), 'user:x', '27AAAAA0000A1Z5', '27', 1000, 25, 25, 1050
         from generate_series(1, 4000) n`, [partyId, FY]);
       await c.query(`insert into radcore.invoice_lines (invoice_id, line_no, delivery_line_id, item_id, qty, rate, hsn, gst_rate, gst_rate_source,
-          taxable, cgst, sgst, igst, line_total, cost, delivery_taxable, delivery_gst)
-        select md5($1::text || 'i' || n)::uuid, 1, md5($1::text || 'dl' || n)::uuid, gen_random_uuid(), 1, 1000, '87116020', 5, 'Test', 1000, 25, 25, 0, 1050, 800, 1000, 50
+          supply_kind, taxable, cgst, sgst, igst, line_total, cost, delivery_taxable, delivery_gst)
+        select md5($1::text || 'i' || n)::uuid, 1, md5($1::text || 'dl' || n)::uuid, gen_random_uuid(), 1, 1000, '87116020', 5, 'Test', 'taxable', 1000, 25, 25, 0, 1050, 800, 1000, 50
         from generate_series(1, 3990) n`, [partyId]);
       // Each invoice's Debtors line, 1,050.00, and 2,000 receipts paying all but the last 20 bills.
       await c.query(`insert into radcore.journal_entries (id, number, kind, business_date, source_table, source_id)

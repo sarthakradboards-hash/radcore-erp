@@ -60,7 +60,7 @@ export function plain(v: string | { masked: string } | null): string | null {
   if (v !== null && typeof v === 'object') throw new Error('a party’s stored detail came back masked');
   return v;
 }
-type Priced = CheckedLine & LineTax & { hsn: string; gstRate: string; gstRateSource: string; cost: Money; deliveryTaxable: Money;
+type Priced = CheckedLine & LineTax & { hsn: string; gstRate: string; gstRateSource: string; supplyKind: string; cost: Money; deliveryTaxable: Money;
   deliveryGst: Money };
 
 /** The invoice's lines with every figure posting writes: the GST rate in force on its date and its source, the tax by
@@ -73,7 +73,7 @@ async function priced(ctx: Ctx, inv: Invoice, lines: readonly CheckedLine[], int
     const rate = await gstRateFor(ctx, hsn, inv.businessDate);
     const share = (total: string | null, gone: string) => shareOf(total ?? '0', l.sent.qty, { qty: l.gone.qty, share: gone }, l.qty);
     out.push({ ...l, ...lineTax({ ...l, gstPercent: rate.rate }, intraState), hsn, gstRate: rate.rate, gstRateSource: rate.source,
-      cost: share(l.sent.value, l.gone.value), deliveryTaxable: share(l.sent.taxable, l.gone.taxable), deliveryGst: share(l.sent.gst, l.gone.gst) });
+      supplyKind: rate.supplyKind, cost: share(l.sent.value, l.gone.value), deliveryTaxable: share(l.sent.taxable, l.gone.taxable), deliveryGst: share(l.sent.gst, l.gone.gst) });
   }
   return out;
 }
@@ -229,7 +229,7 @@ async function postInvoiceFor(ctx: Ctx, id: string, through?: ApprovedThrough): 
   for (const f of w.figures) {
     // Cess stays at its default 0 until lib-gst has cess rates (CA-50), so posting writes no cess line.
     await tx.update(invoiceLines).set({ listRate: f.listRate, listVersionId: f.listVersionId, hsn: f.hsn, gstRate: f.gstRate,
-      gstRateSource: f.gstRateSource, taxable: f.taxable, cgst: f.cgst,
+      gstRateSource: f.gstRateSource, supplyKind: f.supplyKind, taxable: f.taxable, cgst: f.cgst,
       sgst: f.sgst, igst: f.igst, lineTotal: f.lineTotal, cost: f.cost,
       deliveryTaxable: f.deliveryTaxable, deliveryGst: f.deliveryGst, unitCondition: conditions.get(f.deliveryLineId) ?? null })
       .where(and(eq(invoiceLines.invoiceId, id), eq(invoiceLines.lineNo, f.lineNo)));

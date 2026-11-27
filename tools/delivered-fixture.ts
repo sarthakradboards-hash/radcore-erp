@@ -1,5 +1,5 @@
 // A posted delivery for the sales tests that need one committed (RAD-118, RAD-120): a customer in Maharashtra with
-// credit and an address, an item at 5% GST, a confirmed order for one at 80,000.00, and its posted delivery. With
+// credit and an address, an item at 5% GST (or `gst`), a confirmed order for one at 80,000.00, and its posted delivery. With
 // `condition`, the item is serialised and the unit delivered is in it.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, openFinancialYear, setCreditTerms } from '@radcore/lib-accounts';
@@ -17,7 +17,7 @@ const q = (s: string) => quantityString().parse(s);
 
 /** `run` commits its work as the staff member the test acts as; `su` is the superuser's pool; `DATE` the business day. */
 export async function postedDelivery(run: <T>(fn: (ctx: Ctx) => Promise<T>) => Promise<T>, su: pg.Pool, DATE: string,
-  condition?: UnitCondition) {
+  condition?: UnitCondition, o: { gst?: string } = {}) {
   const serial = condition === undefined ? undefined : `SN-${tag()}`;
   const made = await run(async (ctx) => {
     await openFinancialYear(ctx, DATE);
@@ -26,7 +26,7 @@ export async function postedDelivery(run: <T>(fn: (ctx: Ctx) => Promise<T>) => P
     await setCreditTerms(ctx, { id: partyId, creditDays: 30, creditLimit: moneyString().parse('100000000'), reason: 'Test' });
     const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
     const hsn = `8716${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}`;
-    await putGstRate(ctx, { hsn, effectiveFrom: DATE, rate: percentString().parse('5'), source: 'Notification 1/2017-CT(R)', note: null,
+    await putGstRate(ctx, { hsn, effectiveFrom: DATE, rate: percentString().parse(o.gst ?? '5'), source: 'Notification 1/2017-CT(R)', note: null,
       reason: 'Test' });
     const { id: itemId } = await addItem(ctx, { sku: `I-${tag()}`, name: 'Scooter', categoryId, hsn, unit: 'NOS', barcode: null,
       serialised: serial !== undefined, hasChassis: false, purchasePrice: unitPriceString().parse('1') });

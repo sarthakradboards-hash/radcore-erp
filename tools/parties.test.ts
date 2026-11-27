@@ -37,8 +37,8 @@ it('marks parties:manage as needing the second factor, and parties:contact as al
   expect([SECOND_FACTOR_KEYS.includes('parties:manage'), SECOND_FACTOR_KEYS.includes('parties:contact')]).toEqual([true, false]);
   // leads:contact (RAD-106) is all-only for the same reason; leads:unassigned (RAD-109), money_accounts:read (RAD-116),
   // payments:read (RAD-116), tds:read (RAD-158), receipts:print (RAD-120), books:lock and books:unlock (RAD-157), bank:read and bank:reconcile (RAD-159) and sales:counter_credit (RAD-115)
-  // have no scope to give.
-  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'money_accounts:read', 'payments:read', 'tds:read', 'receipts:print',
+  // have no scope to give, nor gst:returns (RAD-154), the whole company's returns.
+  expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['gst:returns', 'parties:contact', 'money_accounts:read', 'payments:read', 'tds:read', 'receipts:print',
     'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile', 'sales:counter_credit',
     'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write']);
 });
