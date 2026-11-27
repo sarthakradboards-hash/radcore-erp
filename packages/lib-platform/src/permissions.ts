@@ -52,6 +52,10 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // Expenses (M5-02, ADR-009 §9): owned by their maker; writing pays, so it takes the second factor.
   { key: 'expenses:read', module: 'Expenses', label: 'See expenses', records: ['@radcore/db/accounts#expenses'] },
   { key: 'expenses:write', module: 'Expenses', label: 'Enter, post and cancel expenses', records: ['@radcore/db/accounts#expenses'], secondFactor: true },
+  // TDS sections and rates (M5-10, ADR-009 §9): company rows, so read all-only; writing changes every deduction, so it
+  // takes the second factor, like gst:write.
+  { key: 'tds:read', module: 'TDS', label: 'See TDS sections, rates and deductions', allOnly: true },
+  { key: 'tds:write', module: 'TDS', label: 'Add and correct TDS rates, which every deduction uses', secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
   // One posted receipt, printed by its id (the architect on RAD-120): no balance on it, so not receivables:read; all-only,
   // since payments isn't a scoped table.
