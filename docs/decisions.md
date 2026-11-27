@@ -81,6 +81,7 @@ differs from plan.md, this log and the ADR win.
 | 2026-11-27 | **D-03: e-invoice fields only in M5.** The IRN, acknowledgement and QR are typed in and printed, and a live IRN blocks cancelling; the portal link stays in M9 (M9-03) unless CA-01 says the turnover needs it | Sarthak, approving the M5 plan ("Approve as drafted") | M5-15 |
 | 2026-11-27 | **D-16: the Vyapar import is built and rehearsed on masked files in M5,** the cut-over date is picked at go-live (M8), and old unpaid invoices come in one by one. Real files only after Gate 0 | Sarthak, approving the M5 plan ("Approve as drafted") | M5-16 to M5-18; ADR-009's second part |
 | 2026-11-27 | **Bank statements by email (M5-12) move to M7.** They need inbound mail and sender proofs (DKIM, DMARC); M5-11's upload covers flow 9 | Sarthak, approving the M5 plan ("Approve as drafted") | the M5 plan; M7 |
+| 2026-11-27 | **Services from abroad, paid in rupees, are booked with their reverse charge from M5.** A party may be an `overseas` supplier of services only, in rupees, with no GSTIN and state code 96; every such line is IGST reverse charge. Foreign suppliers of goods and foreign currency stay in M9 (D-10) | Sarthak, in chat, via the coordinator ("1, add the overseas supplier type") | [ADR-010](architecture/adr/010-gst.md) §4; RAD-153 |
 
 **Still open**, and recorded here when decided:
 - Whether the Vercel test copy fits the Hobby plan's non-commercial terms, or needs Pro (ADR-004 §7).
