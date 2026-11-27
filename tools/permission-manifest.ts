@@ -437,6 +437,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'crm.meta-lead': 'system meta-leads [leads:read, leads:write]',
   'crm.whatsapp-message': 'system whatsapp [leads:read, leads:write]',
   'accounts.statement-import': 'user bank:reconcile',
+  'accounts.bank-auto-match': 'user bank:reconcile',
 };
 
 /** Which libraries each route's and job's own code reaches (RAD-84, M1-19, RC-153), keyed as above: the library of the
@@ -864,4 +865,5 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'crm.meta-lead': CRM_DOORS,
   'crm.whatsapp-message': CRM_DOORS,
   'accounts.statement-import': ['lib-accounts', 'lib-platform'],
+  'accounts.bank-auto-match': ['lib-accounts', 'lib-platform'],
 };

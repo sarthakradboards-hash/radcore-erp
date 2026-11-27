@@ -16,7 +16,7 @@ import type {
   undoStatementImportContract,
 } from '../contract-bank.ts';
 import { STATEMENT_LAYOUTS, type StatementLayout } from './statement-layouts.ts';
-import { matchesOfLines } from './bank-matching.ts';
+import { bankAutoMatchJob, matchesOfLines } from './bank-matching.ts';
 import { chainToStored, readStatement, type Refusal, type StatementFormat, type StatementLine } from './statement-read.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -153,6 +153,8 @@ export async function storeStatement(ctx: Ctx, { importId }: JobIn, { before }: 
   }
   await tx.update(statementImports).set({ status: 'imported', newLines: chain.fresh.length, presentLines: chain.present, refusals: [] })
     .where(eq(statementImports.id, importId));
+  // Auto-match next, in the worker, once this commits (RC-087).
+  if (chain.fresh.length > 0) await ctx.jobs.send(bankAutoMatchJob, { importId, after: null });
 }
 
 const refusalsOf = z.array(z.object({ row: z.number(), column: z.string(), code: z.string(), message: z.string() }));
