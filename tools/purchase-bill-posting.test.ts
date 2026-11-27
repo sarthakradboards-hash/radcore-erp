@@ -5,7 +5,7 @@
 // sellable places holding the item, and to cost of goods sold for what's gone; a line past the tolerance waits for
 // someone else's approval under bills:approve, which posts it.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, allocatePayment, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear, recordPayment } from '@radcore/lib-accounts';
+import { addExpenseCategory, addParty, allocatePayment, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear, recordPayment } from '@radcore/lib-accounts';
 import { gstinCheckChar, moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
 import { CREDIT_FROM, putGstRate } from '@radcore/lib-gst';
 import { AppError, decideApproval, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -30,7 +30,7 @@ const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const DATE = '2026-11-15';
 const KEYS = ['purchasing:read', 'purchasing:write', 'inward:write', 'inward:qc', 'bills:write', 'parties:write', 'parties:manage', 'items:write',
   'locations:write', 'cost:read', 'gst:write', 'journal:read', 'stock:read',
-  'supplier_returns:write', 'payments:read', 'payments:write'];
+  'supplier_returns:write', 'payments:read', 'payments:write', 'accounts:write'];
 const tag = () => randomBytes(3).toString('hex').toUpperCase();
 const q = (s: string) => quantityString().parse(s);
 const letters = (n: number) => [...randomBytes(n)].map((b) => String.fromCharCode(65 + (b % 26))).join('');
@@ -137,7 +137,7 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     receiptLineId, qty: q(qty), rate: unitPriceString().parse(rate) });
   const freight = (amount: string) => ({ kind: 'charge' as const, charge: 'freight' as const, description: 'Freight', hsn: '9965',
     amount: moneyString().parse(amount) });
-  const draft = async (at: At, o: { lines: ReturnType<typeof goods | typeof freight>[]; total: string; file?: boolean; number?: string },
+  const draft = async (at: At, o: { lines: (ReturnType<typeof goods> | (ReturnType<typeof freight> & { expenseCategoryId?: string; expenseAccountId?: string }))[]; total: string; file?: boolean; number?: string },
     as: Principal = at.staff) => {
     const fileId = o.file === false ? null : await file();
     return run((ctx) => addBill(ctx, { supplierId: at.supplierId, businessDate: DATE, supplierInvoiceNumber: o.number ?? `INV/${tag()}`,
@@ -298,6 +298,36 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     expect(widened.entry).toEqual([`Creditors 0.00 131250.00`, `Goods Received Not Billed 124000.00 0.00`, `Input CGST 3125.00 0.00`,
       `Input SGST 3125.00 0.00`, `Stock in Hand 1000.00 0.00`].sort());
     expect(widened.credit).toEqual([{ credit_cgst: '3125.00', credit_sgst: '3125.00', credit_igst: '0.00', credit_reason: null }]);
+  });
+
+  // RAD-152 (ADR-009 §2): a transporter's bill, of charges only, posts each to its expense category's account, its credit
+  // by the category's rule, and needs no approval for charges with no goods to share them.
+  it('posts a bill of charges only to each charge’s expense account, claiming its GST unless the category blocks it', async () => {
+    const at = await setup();
+    const category = async (credit: 'allowed' | 'blocked') => {
+      const [a] = (await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.accounts (name, type) select $1, 'expense' from p returning id`, [`Freight inward ${tag()}`])).rows;
+      const accountId = a?.id ?? '';
+      const { id } = await run((ctx) => addExpenseCategory(ctx, { name: `Freight ${tag()}`, credit, blockedClause: credit === 'blocked' ? '(b)(i)' : null,
+        accountIds: [accountId] }), at.staff);
+      return { expenseCategoryId: id, expenseAccountId: accountId };
+    };
+    const allowed = await category('allowed');
+    const { id } = await draft(at, { lines: [{ ...freight('1000'), ...allowed }], total: '1180' });
+    expect((await post(at, id)).status).toBe('posted');
+    const account = (await su.query<{ name: string }>('select name from radcore.accounts where id = $1', [allowed.expenseAccountId])).rows[0]?.name ?? '';
+    expect(await entryOf(at, id)).toEqual([`Creditors 0.00 1180.00`, `Input CGST 90.00 0.00`, `Input SGST 90.00 0.00`, `${account} 1000.00 0.00`].sort());
+    const blocked = await category('blocked');
+    const { id: kept } = await draft(at, { lines: [{ ...freight('1000'), ...blocked }], total: '1180' });
+    expect((await post(at, kept)).status).toBe('posted');
+    const keptAccount = (await su.query<{ name: string }>('select name from radcore.accounts where id = $1', [blocked.expenseAccountId])).rows[0]?.name ?? '';
+    expect(await entryOf(at, kept)).toEqual([`Creditors 0.00 1180.00`, `${keptAccount} 1180.00 0.00`].sort());
+    expect((await pool.query('select credit_reason from radcore.purchase_bill_lines where bill_id = $1', [kept])).rows).toEqual([{ credit_reason: 'blocked' }]);
+    // No category on a charges-only bill, and an account its category doesn't post to.
+    const { id: bare } = await draft(at, { lines: [freight('1000')], total: '1180' });
+    expect(await code(post(at, bare))).toBe('charge_needs_category');
+    expect(await code(draft(at, { lines: [{ ...freight('1000'), expenseCategoryId: allowed.expenseCategoryId, expenseAccountId: blocked.expenseAccountId }],
+      total: '1180' }))).toBe('not_in_category');
   });
 
   it('spreads freight over the goods into the price difference, within the tolerance', async () => {

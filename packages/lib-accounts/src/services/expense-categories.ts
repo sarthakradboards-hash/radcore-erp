@@ -25,6 +25,20 @@ async function checkAccounts(ctx: Ctx, ids: readonly string[]): Promise<void> {
   }
 }
 
+export type CategoryPair = Readonly<{ categoryId: string; accountId: string }>;
+/** For a document naming a category and one of its accounts (a service bill's charge, RAD-152): each pair as it stands,
+ * keyed `category:account`, with the category's credit rule and whether both are switched on; a pair the category
+ * doesn't post to is missing. */
+export async function categoryPairs(ctx: Ctx, pairs: readonly CategoryPair[]): Promise<Map<string, { blocked: boolean; active: boolean }>> {
+  if (pairs.length === 0) return new Map();
+  const rows = await accountsTx(ctx).select({ categoryId: expenseCategoryAccounts.categoryId, accountId: expenseCategoryAccounts.accountId,
+    credit: expenseCategories.credit, categoryActive: expenseCategories.active, accountActive: accounts.active })
+    .from(expenseCategoryAccounts).innerJoin(expenseCategories, eq(expenseCategories.id, expenseCategoryAccounts.categoryId))
+    .innerJoin(accounts, eq(accounts.id, expenseCategoryAccounts.accountId))
+    .where(inArray(expenseCategoryAccounts.categoryId, [...new Set(pairs.map((p) => p.categoryId))]));
+  return new Map(rows.map((r) => [`${r.categoryId}:${r.accountId}`, { blocked: r.credit === 'blocked', active: r.categoryActive && r.accountActive }]));
+}
+
 /** GET /expense-categories: every category by name, with its accounts by code, then name. */
 export async function expenseCategoriesList(ctx: Ctx): Promise<Out<typeof listExpenseCategories>> {
   const tx = accountsTx(ctx);

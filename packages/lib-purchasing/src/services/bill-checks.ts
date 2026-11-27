@@ -2,7 +2,7 @@
 // the principal's scope, a draft's checks (dates, supplier and GSTIN, PO and receipt lines, file), the POs' locks, and
 // the tax worked out from the bill's own lines at the supplier's invoice date (RC-056).
 import { purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
-import { getCompanyProfile } from '@radcore/lib-accounts';
+import { categoryPairs, getCompanyProfile } from '@radcore/lib-accounts';
 import { dec, indiaDate, percentString } from '@radcore/lib-common';
 import { gstRateFor, lineTax, placeOfSupply, totalsOf, type LineTax } from '@radcore/lib-gst';
 import { AppError, defineSeries, defineSetting, listScope, momentKey, readyFile, type Ctx } from '@radcore/lib-platform';
@@ -68,7 +68,7 @@ export type JobWorkLine = Awaited<ReturnType<typeof jobWorkLinesFor>>[number];
 /** A draft's checks (ADR-008 §4, §7): the dates, the supplier and the GSTIN printed on its bill, each goods line's PO
  * line (placed or closed, the supplier's own), each job worker's charge's receipt line (posted, the job worker's own, with
  * goods made), their quantities, and the file. Answers each goods line's PO line and each charge's job-work line. */
-export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string, PoLine>; made: Map<string, JobWorkLine> }> {
+export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string, PoLine>; made: Map<string, JobWorkLine>; blocked: boolean[] }> {
   if (b.businessDate > today()) throw refuseAt('date_in_future', 'The date is after today', ['businessDate']);
   if (b.supplierInvoiceDate > b.businessDate) {
     throw refuseAt('supplier_date_after_bill', 'The supplier’s date is after the bill’s own', ['supplierInvoiceDate']);
@@ -116,7 +116,24 @@ export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string,
     });
   }
   if (b.fileId !== null) await readyFile(ctx, 'purchase_bill', b.fileId, { wrongKind: ['fileId'] });
-  return { po, made };
+  return { po, made, blocked: await chargeCategories(ctx, b.lines) };
+}
+
+/** Each line's category rule (ADR-009 §2, RAD-152): a charge naming its expense category and one of that category's
+ * switched-on accounts, both or neither; true where the category's credit is blocked. */
+async function chargeCategories(ctx: Ctx, lines: readonly LineIn[]): Promise<boolean[]> {
+  const named = lines.flatMap((l, n) => (l.kind === 'charge' && (l.expenseCategoryId != null || l.expenseAccountId != null) ? [{ l, n }] : []));
+  const pairs = await categoryPairs(ctx, named.flatMap(({ l }) => (l.kind === 'charge' && l.expenseCategoryId != null && l.expenseAccountId != null
+    ? [{ categoryId: l.expenseCategoryId, accountId: l.expenseAccountId }] : [])));
+  const blocked = lines.map(() => false);
+  for (const { l, n } of named) {
+    if (l.kind !== 'charge') continue;
+    const pair = pairs.get(`${l.expenseCategoryId ?? ''}:${l.expenseAccountId ?? ''}`);
+    if (pair === undefined) throw refuseAt('not_in_category', 'Name an expense category and one of the accounts it posts to', ['lines', n, 'expenseAccountId']);
+    if (!pair.active) throw refuseAt('category_inactive', 'That expense category or account is switched off', ['lines', n, 'expenseCategoryId']);
+    blocked[n] = pair.blocked;
+  }
+  return blocked;
 }
 
 export const poLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'goods' ? [l.poLineId] : []));
