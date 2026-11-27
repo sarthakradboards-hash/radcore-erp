@@ -95,9 +95,9 @@ export function readStatement(t: Table, f: StatementFormat): Read {
 }
 
 /** A line's amount as it moves the balance. */
-export const signed = (l: { direction: string; amount: string }) => (l.direction === 'in' ? dec(l.amount) : dec(l.amount).neg());
+const signed = (l: { direction: string; amount: string }) => (l.direction === 'in' ? dec(l.amount) : dec(l.amount).neg());
 /** What makes a line already present (RC-136): the database's unique index on the same columns. */
-export const keyOf = (l: { valueDate: string; direction: string; amount: string; balance: string; reference: string }) =>
+const keyOf = (l: { valueDate: string; direction: string; amount: string; balance: string; reference: string }) =>
   [l.valueDate, l.direction, roundMoney(l.amount), roundMoney(l.balance), l.reference].join('|');
 
 /** The stored lines around a file's dates: the last before its first day, those on its days, and the first after its

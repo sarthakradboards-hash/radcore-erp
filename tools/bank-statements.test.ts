@@ -12,7 +12,7 @@ import {
 import { readTable, type Ctx, type FileStore, type Principal, type Table } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import writeXlsxFile from 'write-excel-file/node';
 
 const url = process.env['TEST_DATABASE_URL'];
@@ -30,7 +30,9 @@ it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
 });
 
 describe.skipIf(!url || !superUrl)('bank statements', { timeout: 60_000 }, () => {
-  const pool = new pg.Pool({ connectionString: url, max: 3 });
+  // Its own name, so a lock test counts only this file's waiters.
+  const APP = `bank-statements-${randomUUID().slice(0, 8)}`;
+  const pool = new pg.Pool({ connectionString: url, max: 3, application_name: APP });
   const su = new pg.Pool({ connectionString: superUrl, max: 2 });
   const db = createDatabase(pool);
   afterAll(async () => {
@@ -103,6 +105,25 @@ describe.skipIf(!url || !superUrl)('bank statements', { timeout: 60_000 }, () =>
     expect(await code(run((ctx) => importStatement(ctx, { accountId: account, fileId: f.id })))).toBe('statement_format_required');
     const pdf = await importFile(account, text('%PDF-1.7'), { contentType: 'application/pdf' });
     expect([pdf.status, pdf.refusals.map((r) => r.code)]).toEqual(['refused', ['statement_layout_unknown']]);
+  });
+
+  it('undoes an import only under the account’s import lock, so it takes turns with an import’s chain check', async () => {
+    const account = await bankAccount();
+    const done = await importFile(account, text(csv(april)));
+    const holder = await su.connect();
+    try {
+      // An import job of the same account, holding its lock (statement_formats FOR UPDATE).
+      await holder.query('begin');
+      await holder.query('select account_id from radcore.statement_formats where account_id = $1 for update', [account]);
+      const undo = code(run((ctx) => undoStatementImport(ctx, { id: done.id, reason: 'Wrong account' })));
+      await vi.waitFor(async () => expect((await su.query<{ n: number }>(`select count(*)::int n from pg_stat_activity
+        where application_name = $1 and cardinality(pg_blocking_pids(pid)) > 0`, [APP])).rows[0]?.n).toBe(1), { timeout: 10_000, interval: 20 });
+      await holder.query('rollback');
+      expect(await undo).toBe('ok');
+    } finally {
+      await holder.query('rollback').catch(() => undefined);
+      holder.release();
+    }
   });
 
   it('undoes an import, once, and the same file then imports again', async () => {

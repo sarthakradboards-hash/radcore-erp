@@ -103,10 +103,13 @@ const KEEP_REFUSALS = 200;
  * refused with every row that refused it. A repeated job finds its import no longer queued and changes nothing. */
 export async function storeStatement(ctx: Ctx, { importId }: JobIn, { before }: JobMeta & { before: FileRead }): Promise<void> {
   const tx = accountsTx(ctx);
+  // The account's import lock, then the import (an undo takes the same two in the same order, auditor-2 on #434).
+  const [owner] = await tx.select({ accountId: statementImports.accountId }).from(statementImports).where(eq(statementImports.id, importId)).limit(1);
+  if (owner === undefined) return;
+  const [format] = await tx.select(formatColumns).from(statementFormats).where(eq(statementFormats.accountId, owner.accountId)).limit(1).for('update');
   const [imp] = await tx.select({ accountId: statementImports.accountId }).from(statementImports)
     .where(and(eq(statementImports.id, importId), eq(statementImports.status, 'queued'))).limit(1).for('update');
   if (imp === undefined) return;
-  const [format] = await tx.select(formatColumns).from(statementFormats).where(eq(statementFormats.accountId, imp.accountId)).limit(1).for('update');
   const refused = (refusals: readonly Refusal[]) => tx.update(statementImports)
     .set({ status: 'refused', refusals: refusals.slice(0, KEEP_REFUSALS) }).where(eq(statementImports.id, importId));
   if (format === undefined) throw new Error(`statement import ${importId}: its account has no layout`);
@@ -147,6 +150,11 @@ export async function statementImportById(ctx: Ctx, { id }: In<typeof getStateme
  * shortcut: no line can be matched until M5-13, which adds `statement_in_use` here. */
 export async function undoStatementImport(ctx: Ctx, { id }: In<typeof undoStatementImportContract>): Promise<Out<typeof undoStatementImportContract>> {
   const tx = accountsTx(ctx);
+  // The account's import lock first, as an import's job takes it, so an undo and a job's chain check on the same account
+  // take turns: the job never judges a file against lines being taken out (auditor-2 on #434).
+  const [owner] = await tx.select({ accountId: statementImports.accountId }).from(statementImports).where(eq(statementImports.id, id)).limit(1);
+  if (owner === undefined) return refuse('not_found', 'There’s no such import');
+  await tx.select({ id: statementFormats.accountId }).from(statementFormats).where(eq(statementFormats.accountId, owner.accountId)).for('update');
   const [r] = await tx.select({ status: statementImports.status }).from(statementImports).where(eq(statementImports.id, id)).limit(1).for('update');
   if (r === undefined) return refuse('not_found', 'There’s no such import');
   if (r.status !== 'imported') refuse('not_imported', 'Only an imported statement can be undone');
