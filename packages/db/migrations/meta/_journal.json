@@ -708,6 +708,13 @@
       "when": 1795775446123,
       "tag": "0100_expenses",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795776356509,
+      "tag": "0102_bill_charge_categories",
+      "breakpoints": true
     }
   ]
 }

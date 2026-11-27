@@ -55,7 +55,8 @@ const inputOf = (b: Row, lines: readonly Line[]): BillIn => ({ supplierId: b.par
     : l.kind === 'job_work'
       ? { kind: 'job_work' as const, jobWorkReceiptLineId: l.jobWorkReceiptLineId ?? '', qty: (l.qty ?? '0') as never, rate: (l.rate ?? '0') as never,
         hsn: l.hsn ?? '' }
-      : { kind: 'charge' as const, charge: (l.charge ?? 'other') as 'other', description: l.description ?? '', hsn: l.hsn ?? '', amount: (l.amount ?? '0') as Money })) });
+      : { kind: 'charge' as const, charge: (l.charge ?? 'other') as 'other', description: l.description ?? '', hsn: l.hsn ?? '', amount: (l.amount ?? '0') as Money,
+        expenseCategoryId: l.expenseCategoryId, expenseAccountId: l.expenseAccountId })) });
 
 type Judged = Awaited<ReturnType<typeof judge>>;
 
@@ -64,7 +65,14 @@ type Judged = Awaited<ReturnType<typeof judge>>;
  * whether a line or the charges are past the tolerance. */
 async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonly ReceiptLine[]) {
   if (b.status !== 'draft') throw wrongStatus(b.status, 'posted');
-  const { po, made } = await checkDraft(ctx, inputOf(b, lines));
+  const { po, made, blocked } = await checkDraft(ctx, inputOf(b, lines));
+  // A bill of charges only (a transporter's, say) has no goods to spread them over: each posts to its category's account
+  // (ADR-009 §2), so each names one.
+  const service = lines.every((l) => l.kind === 'charge');
+  const unnamed = service ? lines.findIndex((l) => l.expenseAccountId === null) : -1;
+  if (unnamed >= 0) {
+    throw refuse('charge_needs_category', 'On a bill of charges only, name each charge’s expense category and account', ['lines', unnamed, 'expenseCategoryId']);
+  }
   if (b.fileId === null) throw refuse('bill_file_required', 'Attach the supplier’s bill before posting it', ['fileId']);
   const byId = new Map(receipts.map((r) => [r.id, r]));
   const used = await billedQty(ctx, receiptIdsOf(lines));
@@ -116,12 +124,13 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
   });
   const taxableOf = (kind: string) => lines.reduce((s, l, i) => (l.kind === kind ? s.plus(dec(amounts.lines[i]?.taxable ?? '0')) : s), zero());
   const [goods, charges] = [taxableOf('goods').plus(taxableOf('job_work')), taxableOf('charge')];
-  const chargesOver = !charges.isZero() && (goods.isZero() || charges.times(100).div(goods).gt(tolerance));
+  // A charge's share of the goods (ADR-008 §7); a bill of charges only has no goods to share, so none is past it.
+  const chargesOver = !service && !charges.isZero() && (goods.isZero() || charges.times(100).div(goods).gt(tolerance));
   // Each line's input credit by ADR-009 §2: the supplier's kind against gst.credit_from, and its heads against its state.
-  // The GSTIN as printed is the party's (checkDraft). A charge line's blocked category comes with M5-02.
+  // The GSTIN as printed is the party's (checkDraft); a charge's category may block its credit.
   const [kind, from] = [supplierKind(supplier), creditFrom(ctx)];
-  const credits = amounts.lines.map((tax) => inputCredit({ tax, kind, creditFrom: from, blocked: false, intraState: amounts.intraState }));
-  return { amounts, accruals, over: lineOver || chargesOver, credits };
+  const credits = amounts.lines.map((tax, i) => inputCredit({ tax, kind, creditFrom: from, blocked: blocked[i] ?? false, intraState: amounts.intraState }));
+  return { amounts, accruals, over: lineOver || chargesOver, credits, service };
 }
 
 /** Spreads `total` over `weights` by value, to the paisa, the last taking what's left so the shares add up exactly. */
@@ -214,6 +223,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     ...signed({ system: 'jw_accrued' }, j.accruals.reduce((s, a) => (a.jobWork ? s.plus(a.value) : s), zero())),
     ...moved.flatMap((m) => signed({ system: 'stock' }, dec(m.value), { itemId: m.itemId, locationId: m.locationId })),
     ...signed({ system: 'cogs' }, cogs),
+    // A bill of charges only: each charge to its own account, with the GST it doesn't claim (ADR-009 §2).
+    ...(j.service ? lines.flatMap((l, i) => signed({ id: l.expenseAccountId ?? '' }, costOf(i))) : []),
     ...signed({ system: 'input_cgst' }, claimed('cgst')), ...signed({ system: 'input_sgst' }, claimed('sgst')),
     ...signed({ system: 'input_igst' }, claimed('igst')),
     ...signed({ system: 'round_off' }, dec(t.roundOff)),
@@ -266,7 +277,7 @@ export const billApproval: ApprovalSpec<Version> = {
     return { supplierId: b.partyId, businessDate: b.businessDate, supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate,
       statedTotal: b.statedTotal, fileId: b.fileId, total: worked?.totals.total ?? null,
       lines: lines.map((l) => ({ kind: l.kind, poLineId: l.poLineId, receiptLineId: l.receiptLineId, jobWorkReceiptLineId: l.jobWorkReceiptLineId,
-        qty: l.qty, rate: l.rate, hsn: l.hsn, amount: l.amount })) };
+        qty: l.qty, rate: l.rate, hsn: l.hsn, amount: l.amount, expenseCategoryId: l.expenseCategoryId, expenseAccountId: l.expenseAccountId })) };
   },
   async lockFirst(ctx, id) {
     await lockPeriod(ctx);
