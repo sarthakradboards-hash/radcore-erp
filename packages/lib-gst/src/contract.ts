@@ -76,6 +76,8 @@ export const setRcmRule = defineContract({
 
 // GSTR-1 (M5-04, RAD-154; ADR-010 §3). A month's tables, built from its documents, never stored until it's filed (§1).
 const signed = () => moneyString({ signed: true });
+/** Table 13's document types, as the portal names them. */
+const DOCUMENT_TYPES = ['Invoices for outward supply', 'Credit Note', 'Delivery Challan for job work'] as const;
 const tax = z.object({ taxable: signed(), igst: signed(), cgst: signed(), sgst: signed(), cess: signed() });
 const gstDoc = z.object({ number: z.string().nullable(), date: dateString(), value: moneyString(), placeOfSupply: z.string(),
   items: z.array(tax.extend({ rate: z.string() })) });
@@ -97,7 +99,9 @@ export const getGstr1 = defineContract({
     table11a: z.array(z.never()),
     table11b: z.array(z.never()),
     table12: z.array(tax.extend({ part: z.enum(['b2b', 'b2c']), hsn: z.string(), uqc: z.string(), rate: z.string(), qty: z.string() })),
-    table13: z.array(z.object({ kind: z.enum(['invoices', 'credit_notes']), series: z.string(), from: z.string(), to: z.string(),
+    // Each series under its portal document type (the architect on #457): invoices, credit notes, job-work challans.
+    table13: z.array(z.object({ documentType: z.enum(DOCUMENT_TYPES),
+      series: z.string(), from: z.string(), to: z.string(),
       count: z.number().int(), cancelled: z.number().int() })),
     table14: z.array(tax.extend({ ecommerceGstin: z.string() })),
   }),

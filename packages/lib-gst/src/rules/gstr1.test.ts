@@ -1,7 +1,7 @@
 // RAD-154's GSTR-1 tables (ADR-010 §3, §15's M5-04 tests), without a database: rows as gst_outward_lines answers them.
 import { randomInt, randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { buildGstr1, type OutwardLine } from './gstr1.ts';
+import { buildGstr1, type IssuedDocument, type OutwardLine } from './gstr1.ts';
 
 const OURS = '27';
 /** An invoice line, in our state to an unregistered buyer at 5% unless `o` says otherwise; a note's with `note`. Each
@@ -16,9 +16,11 @@ function line(o: Partial<OutwardLine> & { id?: string; note?: string } = {}): Ou
     documentDate: '2026-11-10', invoiceId: id, invoiceNumber: `INV/26-27/${id}`, invoiceDate: '2026-11-05', invoiceValue: '1050.00',
     buyerGstin: null, placeOfSupply: OURS, issuerStateCode: OURS, ecommerceGstin: null, late: false, hsn: '87116020', uqc: 'NOS', qty: '1',
     gstRate: '5.000000', supplyKind: 'taxable', taxable: '1000.00', cgst: '25.00', sgst: '25.00', igst: '0.00', cess: '0.00', ...o,
+    // An invoice's own total is its invoice value; a note's is its own.
+    documentValue: o.documentValue ?? (isNote ? '1050.00' : (o.invoiceValue ?? '1050.00')),
   };
 }
-const build = (rows: OutwardLine[], hsnDigits = 6) => buildGstr1(rows, { b2clLimit: '100000.00', hsnDigits });
+const build = (rows: OutwardLine[], hsnDigits = 6, issued: IssuedDocument[] = []) => buildGstr1(rows, { b2clLimit: '100000.00', hsnDigits, issued });
 const interState = { placeOfSupply: '29', cgst: '0.00', sgst: '0.00', igst: '5000.00', taxable: '100000.00', qty: '1' } as const;
 
 describe('buildGstr1', () => {
@@ -56,8 +58,10 @@ describe('buildGstr1', () => {
 
   it('files a note on a registered buyer’s invoice in CDNR, note by note', () => {
     const g = build([line({ id: 'b', buyerGstin: '27AAPFU0939F1ZV' }), line({ id: 'b', note: 'cn-b', buyerGstin: '27AAPFU0939F1ZV', taxable: '200.00',
-      cgst: '5.00', sgst: '5.00' })]);
-    expect(g.table9b.cdnr.map((d) => [d.buyerGstin, d.invoiceNumber, d.items[0]?.taxable])).toEqual([['27AAPFU0939F1ZV', 'INV/26-27/b', '200.00']]);
+      cgst: '5.00', sgst: '5.00', documentValue: '210.00' })]);
+    // The note's own value, never its invoice's (the auditor on #457).
+    expect(g.table9b.cdnr.map((d) => [d.buyerGstin, d.invoiceNumber, d.value, d.items[0]?.taxable])).toEqual([['27AAPFU0939F1ZV', 'INV/26-27/b', '210.00',
+      '200.00']]);
   });
 
   it('reports a note past section 34’s limit in no table', () => {
@@ -65,16 +69,27 @@ describe('buildGstr1', () => {
     expect([g.table7[0]?.taxable, g.table9b.cdnur, g.table12[0]?.taxable]).toEqual(['1000.00', [], '1000.00']);
   });
 
-  it('counts Table 13 per series with a cancelled invoice, and leaves the cancelled one out of every other table', () => {
-    const rows = [line({ id: 'a', documentNumber: 'INV/26-27/00007' }), line({ id: 'b', documentNumber: 'INV/26-27/00009', status: 'cancelled' }),
-      line({ id: 'c', documentNumber: 'INV/26-27/00008' }), line({ id: 'c', documentNumber: 'INV/26-27/00008', hsn: '87120010' }),
-      line({ id: 'c', note: 'cn-c', documentNumber: 'CN/26-27/00002', taxable: '10.00', cgst: '0.25', sgst: '0.25' })];
-    const g = build(rows);
+  const issued = (documentType: IssuedDocument['documentType'], documentNumber: string, status = 'posted'): IssuedDocument =>
+    ({ documentType, documentNumber, status });
+  it('counts Table 13 per document type and series with a cancelled invoice, and leaves the cancelled one out of every other table', () => {
+    const rows = [line({ id: 'a' }), line({ id: 'b', status: 'cancelled' }), line({ id: 'c' }), line({ id: 'c', hsn: '87120010' }),
+      line({ id: 'c', note: 'cn-c', taxable: '10.00', cgst: '0.25', sgst: '0.25' })];
+    const g = build(rows, 6, [issued('Invoices for outward supply', 'INV/26-27/00007'), issued('Invoices for outward supply', 'INV/26-27/00009', 'cancelled'),
+      issued('Invoices for outward supply', 'INV/26-27/00008'), issued('Credit Note', 'CN/26-27/00002')]);
     expect(g.table13).toEqual([
-      { kind: 'credit_notes', series: 'CN/26-27/', from: 'CN/26-27/00002', to: 'CN/26-27/00002', count: 1, cancelled: 0 },
-      { kind: 'invoices', series: 'INV/26-27/', from: 'INV/26-27/00007', to: 'INV/26-27/00009', count: 3, cancelled: 1 },
+      { documentType: 'Credit Note', series: 'CN/26-27/', from: 'CN/26-27/00002', to: 'CN/26-27/00002', count: 1, cancelled: 0 },
+      { documentType: 'Invoices for outward supply', series: 'INV/26-27/', from: 'INV/26-27/00007', to: 'INV/26-27/00009', count: 3, cancelled: 1 },
     ]);
     expect(g.table7[0]?.taxable).toBe('2990.00');
+  });
+
+  // The architect on #457: job-work challans are their own Table 13 row.
+  it('counts two job-work challans, one cancelled, as their own Table 13 row, and a month with none has no challan row', () => {
+    const challans = [issued('Delivery Challan for job work', 'JWC/26-27/00001'), issued('Delivery Challan for job work', 'JWC/26-27/00002', 'cancelled')];
+    expect(build([], 6, challans).table13).toEqual([{ documentType: 'Delivery Challan for job work', series: 'JWC/26-27/', from: 'JWC/26-27/00001',
+      to: 'JWC/26-27/00002', count: 2, cancelled: 1 }]);
+    expect(build([], 6, [issued('Invoices for outward supply', 'INV/26-27/00001')]).table13.map((r) => r.documentType))
+      .toEqual(['Invoices for outward supply']);
   });
 
   it('sums Table 12 by HSN at 6 digits by default, and at 4 when gst.hsn_digits says so, net of notes, in B2B and B2C parts', () => {

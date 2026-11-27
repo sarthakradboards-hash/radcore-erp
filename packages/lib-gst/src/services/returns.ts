@@ -1,13 +1,13 @@
 // GSTR-1 (M5-04, RAD-154; ADR-010 §1, §3, §14): built from the month's lines in gst_outward_lines, never stored until it's
 // filed, and its settings, strict until the CA confirms them (D-08), so the settings screen edits them as they are.
 import { gstTx } from '@radcore/db/gst';
-import { vGstOutwardLines } from '@radcore/db/views';
+import { vGstDocumentsIssued, vGstOutwardLines } from '@radcore/db/views';
 import { moneyString, roundMoney } from '@radcore/lib-common';
 import { defineSetting, type Ctx } from '@radcore/lib-platform';
 import { and, gte, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type { getGstr1 } from '../contract.ts';
-import { buildGstr1, type OutwardLine } from '../rules/gstr1.ts';
+import { buildGstr1, type IssuedDocument, type OutwardLine } from '../rules/gstr1.ts';
 
 /** B2C large (Table 5): an inter-state invoice to a buyer with no GSTIN above this, invoice by invoice. 1,00,000 is the
  * limit from 1 August 2024; the CA confirms it before the first return. */
@@ -34,6 +34,10 @@ const monthAfter = (month: string): string => {
 export async function gstr1Of(ctx: Ctx, { month }: z.output<(typeof getGstr1)['input']>): Promise<z.input<(typeof getGstr1)['output']>> {
   const rows = await gstTx(ctx).select().from(vGstOutwardLines)
     .where(and(gte(vGstOutwardLines.documentDate, `${month}-01`), lt(vGstOutwardLines.documentDate, monthAfter(month))));
-  const built = buildGstr1(rows as OutwardLine[], { b2clLimit: ctx.settings.get(B2CL_LIMIT), hsnDigits: Number.parseInt(ctx.settings.get(HSN_DIGITS), 10) });
+  const issued = await gstTx(ctx).select({ documentType: vGstDocumentsIssued.documentType, documentNumber: vGstDocumentsIssued.documentNumber,
+    status: vGstDocumentsIssued.status }).from(vGstDocumentsIssued)
+    .where(and(gte(vGstDocumentsIssued.documentDate, `${month}-01`), lt(vGstDocumentsIssued.documentDate, monthAfter(month))));
+  const built = buildGstr1(rows as OutwardLine[], { b2clLimit: ctx.settings.get(B2CL_LIMIT), hsnDigits: Number.parseInt(ctx.settings.get(HSN_DIGITS), 10),
+    issued: issued as IssuedDocument[] });
   return { month, ...built };
 }

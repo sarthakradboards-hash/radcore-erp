@@ -1,6 +1,7 @@
 // GSTR-1 from a month's outward lines (M5-04, RAD-154; ADR-010 §3; RC-107). Pure, over gst_outward_lines' rows, so
 // its unit tests reach every table's rule. A credit note's amounts are positive on its rows and taken off here. A note
-// past section 34's limit is in no table (ADR-007 §6); a cancelled document only in Table 13.
+// past section 34's limit is in no table (ADR-007 §6); a cancelled document only in Table 13, which counts the month's
+// documents from gst_documents_issued, job-work challans included.
 import { dec, roundMoney, type Decimal, type Money } from '@radcore/lib-common';
 
 export type OutwardLine = {
@@ -8,9 +9,14 @@ export type OutwardLine = {
   invoiceId: string; invoiceNumber: string | null; invoiceDate: string; invoiceValue: string; buyerGstin: string | null; placeOfSupply: string;
   issuerStateCode: string; ecommerceGstin: string | null; late: boolean; hsn: string; uqc: string; qty: string; gstRate: string;
   supplyKind: string; taxable: string; cgst: string; sgst: string; igst: string; cess: string;
+  /** The document's own total: a credit note's, not its invoice's (the auditor on #457). */
+  documentValue: string;
 };
 export type Tax = { taxable: Money; igst: Money; cgst: Money; sgst: Money; cess: Money };
 type Rated = Tax & { rate: string };
+/** A document Table 13 counts, as gst_documents_issued answers it: an invoice, credit note or job-work challan. */
+export type IssuedDocument = { documentType: 'Invoices for outward supply' | 'Credit Note' | 'Delivery Challan for job work'; documentNumber: string;
+  status: string };
 type Doc = { number: string | null; date: string; value: Money; placeOfSupply: string; items: Rated[] };
 
 const HEADS = ['taxable', 'igst', 'cgst', 'sgst', 'cess'] as const;
@@ -37,11 +43,12 @@ function grouped<K>(lines: readonly OutwardLine[], key: (l: OutwardLine) => stri
 const byDocument = (lines: readonly OutwardLine[]) => grouped(lines, (l) => l.documentId, (l) => ({ l }), () => 1)
   .map(({ l }) => ({ l, items: grouped(lines.filter((x) => x.documentId === l.documentId), (x) => x.gstRate, (x) => ({ rate: x.gstRate }), () => 1)
     .map((g) => ({ rate: g.rate, ...out(g.sum) })) }));
-const docOf = (l: OutwardLine, items: Rated[]): Doc => ({ number: l.documentNumber, date: l.documentDate, value: roundMoney(l.invoiceValue),
+const docOf = (l: OutwardLine, items: Rated[]): Doc => ({ number: l.documentNumber, date: l.documentDate, value: roundMoney(l.documentValue),
   placeOfSupply: l.placeOfSupply, items });
 
-/** A month's GSTR-1, by ADR-010 §3's tables. `b2clLimit`: Table 5's limit (gst.b2cl_limit); `hsnDigits`: Table 12's (gst.hsn_digits). */
-export function buildGstr1(rows: readonly OutwardLine[], o: { b2clLimit: string; hsnDigits: number }) {
+/** A month's GSTR-1, by ADR-010 §3's tables. `b2clLimit`: Table 5's limit (gst.b2cl_limit); `hsnDigits`: Table 12's
+ * (gst.hsn_digits); `issued`: the month's documents for Table 13. */
+export function buildGstr1(rows: readonly OutwardLine[], o: { b2clLimit: string; hsnDigits: number; issued: readonly IssuedDocument[] }) {
   const b2b = (l: OutwardLine) => l.buyerGstin !== null;
   const inter = (l: OutwardLine) => l.placeOfSupply !== l.issuerStateCode;
   // B2C large is the invoice's, so a note on one follows it (CDNUR), whatever the note's own value.
@@ -76,25 +83,23 @@ export function buildGstr1(rows: readonly OutwardLine[], o: { b2clLimit: string;
     table12: grouped(live, (l) => `${b2b(l) ? 'b2b' : 'b2c'} ${l.hsn.slice(0, o.hsnDigits)} ${l.uqc} ${l.gstRate}`,
       (l) => ({ part: b2b(l) ? 'b2b' as const : 'b2c' as const, hsn: l.hsn.slice(0, o.hsnDigits), uqc: l.uqc, rate: l.gstRate }))
       .map(({ sum, ...g }) => ({ ...g, qty: sum.qty.toFixed(), ...out(sum) })),
-    table13: documentsIssued(rows),
+    table13: documentsIssued(o.issued),
     table14: grouped(live.filter((l) => taxed(l) && l.ecommerceGstin !== null), (l) => l.ecommerceGstin ?? '', (l) => ({ ecommerceGstin: l.ecommerceGstin ?? '' }))
       .map(({ sum, ...g }) => ({ ...g, ...out(sum) })),
   };
 }
 
-/** Table 13: per document kind and series (a number up to its last '/'), the first and last number of the month, how
- * many, and how many of them are cancelled. Numbers are zero-padded within a series, so text order is their order. */
-function documentsIssued(rows: readonly OutwardLine[]) {
-  const docs = new Map<string, OutwardLine>();
-  for (const l of rows) if (l.documentNumber !== null) docs.set(l.documentId, l);
-  const series = new Map<string, { kind: OutwardLine['documentTable']; series: string; from: string; to: string; count: number; cancelled: number }>();
-  for (const d of docs.values()) {
-    const docNo = d.documentNumber ?? '';
+/** Table 13: per portal document type and series (a number up to its last '/'), the first and last number of the month,
+ * how many, and how many of them are cancelled. Numbers are zero-padded within a series, so text order is their order. */
+function documentsIssued(docs: readonly IssuedDocument[]) {
+  const series = new Map<string, { documentType: IssuedDocument['documentType']; series: string; from: string; to: string; count: number; cancelled: number }>();
+  for (const d of docs) {
+    const docNo = d.documentNumber;
     const prefix = docNo.slice(0, docNo.lastIndexOf('/') + 1);
-    const key = `${d.documentTable} ${prefix}`;
-    const s = series.get(key) ?? { kind: d.documentTable, series: prefix, from: docNo, to: docNo, count: 0, cancelled: 0 };
+    const key = `${d.documentType} ${prefix}`;
+    const s = series.get(key) ?? { documentType: d.documentType, series: prefix, from: docNo, to: docNo, count: 0, cancelled: 0 };
     series.set(key, { ...s, from: docNo.localeCompare(s.from) < 0 ? docNo : s.from, to: docNo.localeCompare(s.to) > 0 ? docNo : s.to,
       count: s.count + 1, cancelled: s.cancelled + (d.status === 'cancelled' ? 1 : 0) });
   }
-  return [...series.values()].toSorted((a, b) => `${a.kind} ${a.series}`.localeCompare(`${b.kind} ${b.series}`));
+  return [...series.values()].toSorted((a, b) => `${a.documentType} ${a.series}`.localeCompare(`${b.documentType} ${b.series}`));
 }
