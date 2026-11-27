@@ -44,7 +44,7 @@ const refuse = (code: string, message: string): never => { throw new AppError(co
 const today = () => indiaDate(new Date());
 
 /** The money account a payment moves: Cash, Bank, or a bank account under Bank. */
-async function moneyAccount(ctx: Ctx, id: string): Promise<{ cash: boolean }> {
+export async function moneyAccount(ctx: Ctx, id: string): Promise<{ cash: boolean }> {
   const tx = accountsTx(ctx);
   const [a] = await tx.select({ key: accounts.systemKey, parentId: accounts.parentId, active: accounts.active }).from(accounts)
     .where(eq(accounts.id, id)).limit(1);
