@@ -2,7 +2,8 @@
 // What the purchase bill screens share (RAD-143 on RAD-138's contracts): status names, the status bar's steps, and the match view.
 // The match view is three-way: each goods line's PO and receipt, its rate against the PO's, and whether that's past
 // purchasing.bill_tolerance_pct, all as the server reports them (overPoRate, overTolerance). Nothing is worked out here.
-import { formatMoney } from '@radcore/lib-common';
+// A reverse-charge charge (RAD-169 on RAD-153, ADR-010 §4) shows the GST we pay ourselves, by head, as the server reports it.
+import { dec, formatMoney } from '@radcore/lib-common';
 import type { getPurchaseBill } from '@radcore/lib-purchasing/contract';
 import { useId } from 'react';
 import type { z } from 'zod';
@@ -22,6 +23,12 @@ export const billSteps = (s: Status) => (s === 'cancelled' ? ['draft', 'posted',
 
 const money = (x: string | null) => (x === null ? '' : formatMoney(x));
 const tax = (a: Bill['lines'][number]['amounts']) => [a.cgst, a.sgst, a.igst].filter((x) => x !== null).map((x) => formatMoney(x)).join(' + ');
+/** The reverse-charge heads that carry tax (IGST, or CGST + SGST), or nothing on a line that isn't under reverse charge. */
+const rcmTax = ({ reverseCharge: r }: Bill['lines'][number]['amounts']) => {
+  if (r === null) return '';
+  const heads = [r.cgst, r.sgst, r.igst].filter((x) => !dec(x).isZero());
+  return (heads.length === 0 ? [r.igst] : heads).map((x) => formatMoney(x)).join(' + ');
+};
 
 /** The match view: each goods line against its PO line and receipt line, then the charges. */
 export function MatchView({ bill }: { bill: Bill }) {
@@ -31,6 +38,7 @@ export function MatchView({ bill }: { bill: Bill }) {
   const goods = bill.lines.filter((l) => l.kind === 'goods');
   const charges = bill.lines.filter((l) => l.kind === 'charge');
   const jobWork = bill.lines.filter((l) => l.kind === 'job_work');
+  const rcm = charges.some((l) => l.amounts.reverseCharge !== null);
   return (
     <>
       <div className="kit-table">
@@ -83,6 +91,7 @@ export function MatchView({ bill }: { bill: Bill }) {
                   <th scope="col">{t('purchases.bill.col.hsn')}</th>
                   <th scope="col" className="kit-numeric">{t('sales.amounts.taxable')}</th>
                   <th scope="col" className="kit-numeric">{t('purchases.bill.col.gst')}</th>
+                  {rcm ? <th scope="col" className="kit-numeric">{t('purchases.bill.col.rcm')}</th> : null}
                   <th scope="col" className="kit-numeric">{t('purchases.bill.col.lineTotal')}</th>
                 </tr>
               </thead>
@@ -93,6 +102,7 @@ export function MatchView({ bill }: { bill: Bill }) {
                     <td>{l.hsn}</td>
                     <td className="kit-numeric">{money(l.amounts.taxable)}</td>
                     <td className="kit-numeric">{tax(l.amounts)}</td>
+                    {rcm ? <td className="kit-numeric">{rcmTax(l.amounts)}</td> : null}
                     <td className="kit-numeric">{money(l.amounts.lineTotal)}</td>
                   </tr>
                 ))}
@@ -101,6 +111,7 @@ export function MatchView({ bill }: { bill: Bill }) {
           </div>
         </div>
       )}
+      {rcm ? <p className="admin-notice">{t('purchases.bill.rcm.note')}</p> : null}
       {jobWork.length === 0 ? null : (
         // A job worker's charges (#408), against the charge rate their job-work receipt recorded. Its four reference fields are
         // null for a reader who can't see that receipt, so they show nothing then.
