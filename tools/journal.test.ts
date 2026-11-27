@@ -320,12 +320,27 @@ describe.skipIf(!url || !superUrl)('the journal', { timeout: 30_000 }, () => {
   it("keeps the system accounts: renamed, never removed, and only they are control accounts", async () => {
     const cash = await accountId('cash');
     expect(await code(asAdmin('delete from radcore.accounts where id = $1', [cash]))).toBe('RA001');
-    // The app sets no system key and no control kind: those columns aren't its to write.
+    // The app sets no system key and no control kind: a trigger refuses them on insert (RAD-152's 0097), and the
+    // columns aren't its to update.
     expect(await asApp(() => [["insert into radcore.accounts (name, type, system_key) values ($1, 'asset', 'cash2')", [`X ${letters()}`]]]))
-      .toBe('42501');
+      .toBe('RA006');
     expect(await asApp(() => [["insert into radcore.accounts (name, type, control_kind) values ($1, 'asset', 'party')", [`X ${letters()}`]]]))
-      .toBe('42501');
+      .toBe('RA006');
     expect(await asApp(() => [['update radcore.accounts set control_kind = $2 where id = $1', [cash, 'gst']]])).toBe('42501');
+    // The owner still seeds system and control accounts, as M5-03 and M5-07's migrations will (the auditor on #429): as
+    // radcore_owner itself, not a superuser, and rolled back, so the seeded list stays lib-common's.
+    const c = await admin.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local app.principal = 'system:test'");
+      await c.query('set local role radcore_owner');
+      const { rowCount } = await c.query("insert into radcore.accounts (name, type, system_key, control_kind) values ($1, 'liability', 'rcm_test', 'gst')",
+        [`RCM test ${letters()}`]);
+      expect(rowCount).toBe(1);
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
     const name = `Cash in hand ${letters()}`;
     expect(await asApp(() => [['update radcore.accounts set name = $2 where id = $1', [cash, name]]])).toBe('ok');
     await asAdmin("update radcore.accounts set name = 'Cash' where system_key = 'cash'");

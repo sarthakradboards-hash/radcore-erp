@@ -5,6 +5,7 @@
 // superseded.
 export const STATE_TRANSITIONS: Readonly<Record<string, readonly (readonly [from: string, to: string])[]>> = {
   payments: [['draft', 'posted'], ['posted', 'cancelled']],
+  transfers: [['draft', 'posted'], ['posted', 'cancelled']],
   price_list_versions: [['draft', 'approved'], ['approved', 'superseded']],
   deliveries: [['draft', 'posted'], ['posted', 'cancelled']],
   delivery_returns: [['draft', 'posted'], ['posted', 'cancelled']],
