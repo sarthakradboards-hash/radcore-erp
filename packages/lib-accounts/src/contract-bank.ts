@@ -149,10 +149,10 @@ export const reconciliationContract = defineContract({
   input: z.object({ id: idString(), asAt: dateString() }),
   output: z.object({
     asAt: dateString(), bookBalance: moneyString({ signed: true }), statementBalance: moneyString({ signed: true }).nullable(),
-    bookOutstanding: z.object({ count: z.number().int().min(0), total: moneyString({ signed: true }), lines: z.array(z.object({
+    notInBank: z.object({ count: z.number().int().min(0), total: moneyString({ signed: true }), lines: z.array(z.object({
       journalLineId: idString(), entryId: idString(), entryNumber: z.string(), kind: z.string(), businessDate: dateString(),
       direction: z.enum(['in', 'out']), amount: moneyString() })) }),
-    bankOutstanding: z.object({ count: z.number().int().min(0), total: moneyString({ signed: true }), lines: z.array(z.object({
+    notInBooks: z.object({ count: z.number().int().min(0), total: moneyString({ signed: true }), lines: z.array(z.object({
       statementLineId: idString(), valueDate: dateString(), narration: z.string(), reference: z.string(), direction: z.enum(['in', 'out']),
       amount: moneyString() })) }),
     unexplained: moneyString({ signed: true }).nullable(),

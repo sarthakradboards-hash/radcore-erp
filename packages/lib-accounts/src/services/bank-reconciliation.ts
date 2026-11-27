@@ -63,13 +63,13 @@ export async function reconciliation(ctx: Ctx, { id, asAt }: In<typeof reconcili
     asAt,
     bookBalance: roundMoney(bookBalance),
     statementBalance: statementBalance === null ? null : roundMoney(statementBalance),
-    bookOutstanding: {
-      count: Number(bookTotal?.n ?? 0), total: roundMoney(bookSigned),
+    notInBank: {
+      count: bookTotal?.n ?? 0, total: roundMoney(bookSigned),
       lines: bookLines.map((l) => ({ journalLineId: l.id, entryId: l.entryId, entryNumber: l.number, kind: l.kind, businessDate: l.date,
         direction: dec(l.debit).gt(0) ? 'in' as const : 'out' as const, amount: roundMoney(dec(l.debit).gt(0) ? l.debit : l.credit) })),
     },
-    bankOutstanding: {
-      count: bankRows.reduce((n, r) => n + Number(r.n ?? 0), 0), total: roundMoney(bankSigned),
+    notInBooks: {
+      count: bankRows.reduce((n, r) => n + r.n, 0), total: roundMoney(bankSigned),
       lines: bankLines.map((l) => ({ statementLineId: l.id, valueDate: l.date, narration: l.narration, reference: l.reference,
         direction: l.direction === 'in' ? 'in' as const : 'out' as const, amount: roundMoney(l.amount) })),
     },

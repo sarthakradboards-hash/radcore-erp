@@ -183,13 +183,13 @@ describe.skipIf(!url || !superUrl)('bank matching', { timeout: 60_000 }, () => {
     const r = await run((ctx) => reconciliation(ctx, { id: s.bank, asAt: DAY }));
     expect([r.bookBalance, r.statementBalance, r.unexplained]).toEqual(['150.00', '150.00', '0.00']);
     // As at the day, the 20.00 is matched only to a bank line of the next day: still outstanding then.
-    expect([r.bookOutstanding.count, r.bookOutstanding.total, r.bookOutstanding.lines.map((l) => l.journalLineId).toSorted()])
+    expect([r.notInBank.count, r.notInBank.total, r.notInBank.lines.map((l) => l.journalLineId).toSorted()])
       .toEqual([2, '50.00', [notInBank.line, late.line].toSorted()]);
-    expect([r.bankOutstanding.count, r.bankOutstanding.total, r.bankOutstanding.lines.map((l) => l.statementLineId)])
+    expect([r.notInBooks.count, r.notInBooks.total, r.notInBooks.lines.map((l) => l.statementLineId)])
       .toEqual([1, '50.00', [s.lines[1]]]);
     // A day later the 20.00 has cleared.
     const next = await run((ctx) => reconciliation(ctx, { id: s.bank, asAt: '2026-11-11' }));
-    expect([next.bookOutstanding.lines.map((l) => l.journalLineId), next.statementBalance, next.unexplained]).toEqual([[notInBank.line], '170.00', '0.00']);
+    expect([next.notInBank.lines.map((l) => l.journalLineId), next.statementBalance, next.unexplained]).toEqual([[notInBank.line], '170.00', '0.00']);
     // Before the first statement line there's no statement balance to reconcile to.
     expect((await run((ctx) => reconciliation(ctx, { id: s.bank, asAt: '2026-11-01' }))).statementBalance).toBeNull();
   });
