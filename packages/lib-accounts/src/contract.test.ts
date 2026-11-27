@@ -63,6 +63,13 @@ describe('the party contracts', () => {
     expect(ok({ ...party, phone: '12' })).toBe(false);
   });
 
+  it('take an overseas supplier only as a supplier in 96, with no GSTIN or PAN, and 96 only for one (RAD-153)', () => {
+    const abroad = { ...party, kinds: ['supplier'], gstin: null, pan: null, stateCode: '96', overseas: true };
+    expect(ok(abroad)).toBe(true);
+    expect([ok({ ...abroad, stateCode: '27' }), ok({ ...abroad, overseas: false }), ok({ ...abroad, kinds: ['supplier', 'customer'] }),
+      ok({ ...abroad, pan: 'AAPFU0939F' }), ok({ ...abroad, stateCode: '95' })]).toEqual([false, false, false, false, false]);
+  });
+
   it('mask the phone keeping its last 4, and the email and address whole, but never the name, unless seen with parties:contact', () => {
     expect(piiPlan(getParty.output)).toEqual({ table: 'parties', seenWith: 'parties:contact', fields: { phone: { kind: 'last4' }, email: { kind: 'whole' },
       addressLine1: { kind: 'whole' }, addressLine2: { kind: 'whole' }, city: { kind: 'whole' }, pincode: { kind: 'whole' } } });

@@ -16,7 +16,7 @@ type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 const columns = {
   id: parties.id, name: parties.name, customer: parties.customer, dealer: parties.dealer, franchisee: parties.franchisee,
   supplier: parties.supplier, gstin: parties.gstin, pan: parties.pan,
-  composition: parties.composition, stateCode: parties.stateCode, phone: parties.phone, email: parties.email,
+  composition: parties.composition, overseas: parties.overseas, stateCode: parties.stateCode, phone: parties.phone, email: parties.email,
   addressLine1: parties.addressLine1, addressLine2: parties.addressLine2, city: parties.city, pincode: parties.pincode,
   creditDays: parties.creditDays, creditLimit: parties.creditLimit, active: parties.active,
 };
@@ -30,7 +30,7 @@ const flags = (kinds: readonly Kind[] | undefined): Partial<KindFlags> =>
   (kinds === undefined ? {} : Object.fromEntries(PARTY_KINDS.map((k) => [k, kinds.includes(k)])));
 /** A party's own fields, picked by name from what was sent: never the input spread whole, so a caller that skips the
  * contract can't set credit terms or anything else through create or change (the auditor on #180). */
-const OWN = ['name', 'gstin', 'pan', 'composition', 'stateCode', 'phone', 'email', 'addressLine1', 'addressLine2', 'city', 'pincode'] as const;
+const OWN = ['name', 'gstin', 'pan', 'composition', 'overseas', 'stateCode', 'phone', 'email', 'addressLine1', 'addressLine2', 'city', 'pincode'] as const;
 type Own = Pick<In<typeof createParty>, (typeof OWN)[number]>;
 const own = (p: { [K in keyof Own]?: Own[K] | undefined }): Partial<Own> =>
   Object.fromEntries(OWN.filter((k) => p[k] !== undefined).map((k) => [k, p[k]])) as Partial<Own>;
@@ -132,11 +132,13 @@ export async function addParty(ctx: Ctx, input: In<typeof createParty>): Promise
 export async function changeParty(ctx: Ctx, { id, ...change }: In<typeof updateParty>): Promise<Out<typeof updateParty>> {
   const tx = accountsTx(ctx);
   const [now] = await tx.select({ gstin: parties.gstin, pan: parties.pan, stateCode: parties.stateCode, composition: parties.composition,
+    overseas: parties.overseas, customer: parties.customer, dealer: parties.dealer, franchisee: parties.franchisee, supplier: parties.supplier,
     systemKey: parties.systemKey }).from(parties).where(eq(parties.id, id)).limit(1).for(change.gstin === undefined ? 'no key update' : 'update');
   if (now === undefined) throw new AppError('not_found', 'There is no such party');
   if (now.systemKey !== null) throw systemParty();
   const issues = partyTaxIssues({ gstin: change.gstin === undefined ? now.gstin : change.gstin, pan: change.pan === undefined ? now.pan : change.pan,
-    stateCode: change.stateCode ?? now.stateCode, composition: change.composition ?? now.composition });
+    stateCode: change.stateCode ?? now.stateCode, composition: change.composition ?? now.composition, overseas: change.overseas ?? now.overseas,
+    kinds: change.kinds ?? answer(now).kinds });
   if (issues.length > 0) throw new AppError('invalid_input', 'Check the party’s GSTIN, PAN and state', issues);
   const fields = { ...stored(own(change)), ...flags(change.kinds), ...(change.active === undefined ? {} : { active: change.active }) };
   if (Object.keys(fields).length > 0) await gstinOnce(tx.update(parties).set(fields).where(eq(parties.id, id)));

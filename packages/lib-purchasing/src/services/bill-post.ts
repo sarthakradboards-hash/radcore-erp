@@ -31,6 +31,7 @@ type ReceiptLine = Awaited<ReturnType<typeof receiptLinesFor>>[number];
 const SOURCE = 'purchase_bills';
 const refuse = (code: string, message: string, path: (string | number)[]) => new AppError(code, message, [{ path, code, message }]);
 const zero = () => dec('0');
+const heads = (a: { cgst: string; sgst: string; igst: string }) => dec(a.cgst).plus(dec(a.sgst)).plus(dec(a.igst));
 const minOf = (a: Decimal, b: Decimal) => (a.lt(b) ? a : b);
 
 const linesOf = (ctx: Ctx, id: string) => purchasingTx(ctx).select().from(purchaseBillLines).where(eq(purchaseBillLines.billId, id))
@@ -102,8 +103,14 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
   }
   accruals.push(...await jobWorkAccruals(ctx, b, lines, made));
   const supplier = await buyingFrom(ctx, b.partyId);
-  const amounts = await amountsOf(ctx, supplier.stateCode, b.supplierInvoiceDate, lines);
+  const amounts = await amountsOf(ctx, supplier, b.supplierInvoiceDate, lines);
   if (dec(amounts.totals.total).minus(dec(b.statedTotal)).abs().gte(1)) {
+    // A supplier who charged the tax we owe under reverse charge (ADR-010 §4): its bill states it, ours doesn't.
+    const ours = amounts.lines.reduce((s, l) => s.plus(l.reverseCharge === null ? zero() : heads(l.reverseCharge)), zero());
+    if (!ours.isZero() && dec(amounts.totals.total).plus(ours).minus(dec(b.statedTotal)).abs().lt(1)) {
+      throw refuse('rcm_bill_has_tax', 'The supplier’s bill charges GST on a reverse-charge service: that tax is ours to pay, so ask for a bill without it',
+        ['statedTotal']);
+    }
     throw refuse('total_mismatch', `The bill works out at ${amounts.totals.total}, not the ${b.statedTotal} it states: put it right with the supplier`, ['statedTotal']);
   }
   const tolerance = dec(ctx.settings.get(BILL_TOLERANCE));
@@ -118,9 +125,11 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
   const [goods, charges] = [taxableOf('goods').plus(taxableOf('job_work')), taxableOf('charge')];
   const chargesOver = !charges.isZero() && (goods.isZero() || charges.times(100).div(goods).gt(tolerance));
   // Each line's input credit by ADR-009 §2: the supplier's kind against gst.credit_from, and its heads against its state.
-  // The GSTIN as printed is the party's (checkDraft). A charge line's blocked category comes with M5-02.
+  // The GSTIN as printed is the party's (checkDraft). A charge line's blocked category comes with M5-02. A reverse-charge
+  // line's credit is on the tax we owe, its supplier's kind passed over (ADR-010 §4).
   const [kind, from] = [supplierKind(supplier), creditFrom(ctx)];
-  const credits = amounts.lines.map((tax) => inputCredit({ tax, kind, creditFrom: from, blocked: false, intraState: amounts.intraState }));
+  const credits = amounts.lines.map((a) => inputCredit({ tax: a.reverseCharge ?? a, kind, creditFrom: from, blocked: false,
+    intraState: amounts.intraState, reverseCharge: a.reverseCharge !== null }));
   return { amounts, accruals, over: lineOver || chargesOver, credits };
 }
 
@@ -138,11 +147,17 @@ function spread(total: Decimal, weights: readonly Decimal[]): Decimal[] {
 
 /** Posts a judged bill: its price difference into stock and cost of goods sold, its entry, its tax and number. */
 async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Promise<string> {
-  const headsOf = (a: { cgst: string; sgst: string; igst: string } | undefined) =>
-    (a === undefined ? zero() : dec(a.cgst).plus(dec(a.sgst)).plus(dec(a.igst)));
-  // What each line costs: its taxable value, and the GST it doesn't claim (ADR-009 §2). Charges spread over the goods.
-  const costOf = (i: number) => dec(j.amounts.lines[i]?.taxable ?? '0').plus(headsOf(j.amounts.lines[i])).minus(headsOf(j.credits[i]));
-  const claimed = (head: 'cgst' | 'sgst' | 'igst') => j.credits.reduce((s, c) => s.plus(dec(c[head])), zero());
+  const headsOf = (a: { cgst: string; sgst: string; igst: string } | null | undefined) => (a == null ? zero() : heads(a));
+  // What each line costs: its taxable value, and the GST it doesn't claim (ADR-009 §2), the supplier's or, under reverse
+  // charge, ours (ADR-010 §4). Charges spread over the goods.
+  const costOf = (i: number) => dec(j.amounts.lines[i]?.taxable ?? '0').plus(headsOf(j.amounts.lines[i])).plus(headsOf(j.amounts.lines[i]?.reverseCharge))
+    .minus(headsOf(j.credits[i]));
+  const rcmAt = (i: number) => j.amounts.lines[i]?.reverseCharge != null;
+  // The credit claimed by head on the supplier's tax (Input GST), and on ours under reverse charge, which waits in RCM
+  // Credit Pending until the month's settlement pays it (F31).
+  const claimed = (head: 'cgst' | 'sgst' | 'igst') => j.credits.reduce((s, c, i) => (rcmAt(i) ? s : s.plus(dec(c[head]))), zero());
+  const pending = j.credits.reduce((s, c, i) => (rcmAt(i) ? s.plus(heads(c)) : s), zero());
+  const owed = (head: 'cgst' | 'sgst' | 'igst') => j.amounts.lines.reduce((s, l) => s.plus(dec(l.reverseCharge?.[head] ?? '0')), zero());
   const chargeCost = lines.reduce((s, l, i) => (l.kind === 'charge' ? s.plus(costOf(i)) : s), zero());
   const goodsAt = j.accruals.map((a) => lines.indexOf(a.line));
   const chargeShares = spread(chargeCost, goodsAt.map((i) => dec(j.amounts.lines[i]?.taxable ?? '0')));
@@ -216,6 +231,9 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     ...signed({ system: 'cogs' }, cogs),
     ...signed({ system: 'input_cgst' }, claimed('cgst')), ...signed({ system: 'input_sgst' }, claimed('sgst')),
     ...signed({ system: 'input_igst' }, claimed('igst')),
+    ...signed({ system: 'rcm_credit_pending' }, pending),
+    ...signed({ system: 'rcm_cgst' }, owed('cgst').negated()), ...signed({ system: 'rcm_sgst' }, owed('sgst').negated()),
+    ...signed({ system: 'rcm_igst' }, owed('igst').negated()),
     ...signed({ system: 'round_off' }, dec(t.roundOff)),
     { account: { system: 'creditors' }, partyId: b.partyId, credit: t.total },
   ];
@@ -231,7 +249,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     const [a, c] = [j.amounts.lines[i], j.credits[i]];
     if (a !== undefined && c !== undefined) {
       await tx.update(purchaseBillLines).set({ gstRate: a.gstRate, gstRateSource: a.gstRateSource, taxable: a.taxable, cgst: a.cgst, sgst: a.sgst,
-        igst: a.igst, lineTotal: a.lineTotal, creditCgst: c.cgst, creditSgst: c.sgst, creditIgst: c.igst, creditReason: c.reason, ...(l.kind === 'charge' ? {} : { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3),
+        igst: a.igst, lineTotal: a.lineTotal, creditCgst: c.cgst, creditSgst: c.sgst, creditIgst: c.igst, creditReason: c.reason,
+        rcmCgst: a.reverseCharge?.cgst ?? null, rcmSgst: a.reverseCharge?.sgst ?? null, rcmIgst: a.reverseCharge?.igst ?? null, ...(l.kind === 'charge' ? {} : { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3),
           [l.kind === 'goods' ? 'grniValue' : 'jwcbValue']: cleared.get(l.id) ?? null }) })
         .where(eq(purchaseBillLines.id, l.id));
     }
@@ -262,7 +281,7 @@ export const billApproval: ApprovalSpec<Version> = {
     const lines = await linesOf(ctx, id);
     // It refuses nothing, for the approver's queue: a total that can't be worked out now hashes as null.
     const party = await getPartyById(ctx, { id: b.partyId });
-    const worked = await amountsOf(ctx, party.stateCode, b.supplierInvoiceDate, lines).catch(() => null);
+    const worked = await amountsOf(ctx, party, b.supplierInvoiceDate, lines).catch(() => null);
     return { supplierId: b.partyId, businessDate: b.businessDate, supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate,
       statedTotal: b.statedTotal, fileId: b.fileId, total: worked?.totals.total ?? null,
       lines: lines.map((l) => ({ kind: l.kind, poLineId: l.poLineId, receiptLineId: l.receiptLineId, jobWorkReceiptLineId: l.jobWorkReceiptLineId,

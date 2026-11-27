@@ -7,7 +7,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, allocatePayment, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear, recordPayment } from '@radcore/lib-accounts';
 import { gstinCheckChar, moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
-import { CREDIT_FROM, putGstRate } from '@radcore/lib-gst';
+import { CREDIT_FROM, putGstRate, putRcmRule } from '@radcore/lib-gst';
 import { AppError, decideApproval, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
@@ -448,5 +448,84 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     expect(await grni(at)).toBe('186000.00');
     // A cancelled bill's number can be entered again (RC-023).
     expect(await code(draft(at, { lines: [goods(at, '2', '62500')], total: '131250', number }))).toBe('ok');
+  });
+  // RAD-153 (ADR-010 §4, F31): a charge whose SAC a reverse-charge rule covers, from a supplier it covers, on the supplier's
+  // invoice date, carries no tax on the supplier's bill: we owe it (RCM Payable) and its credit waits for the payment (RCM
+  // Credit Pending). Each test rates and rules SAC codes of its own, under 99 with 8 digits, which no seeded rule covers.
+  describe('reverse charge', () => {
+    const code_ = code;
+    const sac = () => `99${String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, '0')}`;
+    const ruled = async (at: At, from: string, supplier: 'any' | 'unregistered' = 'any') => {
+      const code = sac();
+      await run(async (ctx) => {
+        await putGstRate(ctx, { hsn: code, effectiveFrom: '2026-04-01', rate: percentString().parse('5'), source: 'Test', note: null, reason: 'Test' });
+        await putRcmRule(ctx, { prefix: code, supplier, effectiveFrom: from, source: 'Test', note: null, confirmed: false, reason: 'Test' });
+      }, at.staff);
+      return code;
+    };
+    const transport = (code: string) => ({ kind: 'charge' as const, charge: 'freight' as const, description: 'Transport', hsn: code,
+      amount: moneyString().parse('2000') });
+    const rcmOf = async (billId: string) => (await pool.query<{ cgst: string; sgst: string; igst: string; rcm: string | null; credit: string | null }>(
+      `select cgst::text, sgst::text, igst::text, rcm_cgst::text || '/' || rcm_sgst::text || '/' || rcm_igst::text as rcm,
+        credit_cgst::text || '/' || credit_sgst::text || '/' || credit_igst::text as credit
+      from radcore.purchase_bill_lines where bill_id = $1 and kind = 'charge'`, [billId])).rows[0];
+
+    it('books F31’s entry for freight: Dr RCM Credit Pending 100.00, Cr RCM CGST and SGST Payable 50.00 each, the supplier’s bill without it', async () => {
+      const at = await setup();
+      const code = await ruled(at, DATE);
+      // Goods 124,000.00 with 6,200.00 of the supplier's GST, and freight 2,000.00 (within the tolerance) with none.
+      const { id } = await draft(at, { lines: [goods(at, '2', '62000'), transport(code)], total: '132200' });
+      await post(at, id);
+      expect(await entryOf(at, id)).toEqual(['Creditors 0.00 132200.00', 'Goods Received Not Billed 124000.00 0.00', 'Input CGST 3100.00 0.00',
+        'Input SGST 3100.00 0.00', 'RCM CGST Payable 0.00 50.00', 'RCM Credit Pending 100.00 0.00', 'RCM SGST Payable 0.00 50.00',
+        'Stock in Hand 2000.00 0.00'].sort());
+      expect(await rcmOf(id)).toEqual({ cgst: '0.00', sgst: '0.00', igst: '0.00', rcm: '50.00/50.00/0.00', credit: '50.00/50.00/0.00' });
+      const read = await run((ctx) => getBillById(ctx, { id }), at.staff);
+      expect(read.lines[1]?.amounts.reverseCharge).toEqual({ cgst: '50.00', sgst: '50.00', igst: '0.00' });
+    });
+
+    it('applies a rule from its own date only: a bill dated the day before carries the supplier’s tax', async () => {
+      const at = await setup();
+      const code = await ruled(at, '2026-11-16');
+      const { id } = await draft(at, { lines: [goods(at, '2', '62000'), transport(code)], total: '132300' });
+      await post(at, id);
+      expect(await rcmOf(id)).toEqual({ cgst: '50.00', sgst: '50.00', igst: '0.00', rcm: null, credit: '50.00/50.00/0.00' });
+    });
+
+    it('refuses a supplier’s bill that charges the tax we owe (rcm_bill_has_tax), and only that', async () => {
+      const at = await setup();
+      const code = await ruled(at, DATE);
+      const { id } = await draft(at, { lines: [goods(at, '2', '62000'), transport(code)], total: '132300' });
+      expect(await code_(post(at, id))).toBe('rcm_bill_has_tax');
+      const other = await draft(at, { lines: [goods(at, '2', '62000'), transport(code)], total: '132600' });
+      expect(await code_(post(at, other.id))).toBe('total_mismatch');
+    });
+
+    it('follows the rule’s supplier: an unregistered-only rule passes over a registered supplier', async () => {
+      const at = await setup();
+      const code = await ruled(at, DATE, 'unregistered');
+      const { id } = await draft(at, { lines: [goods(at, '2', '62000'), transport(code)], total: '132300' });
+      expect(await code_(post(at, id))).toBe('ok');
+    });
+
+    it('takes an overseas supplier for services only: no PO or goods line (overseas_services_only), and its charge is IGST reverse charge', async () => {
+      const at = await setup();
+      const code = sac();
+      const made = await run(async (ctx) => {
+        await putGstRate(ctx, { hsn: code, effectiveFrom: '2026-04-01', rate: percentString().parse('18'), source: 'Test', note: null, reason: 'Test' });
+        return addParty(ctx, { name: `Ads abroad ${tag()}`, kinds: ['supplier'], gstin: null, pan: null, composition: false, overseas: true,
+          stateCode: '96', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
+      }, at.staff);
+      expect(await code_(run((ctx) => addOrder(ctx, { supplierId: made.id, businessDate: DATE, expectedBy: null, notes: null,
+        lines: [{ itemId: at.itemId, qty: q('1'), rate: unitPriceString().parse('100') }] }), at.staff))).toBe('overseas_services_only');
+      const bill = (lines: Parameters<typeof addBill>[1]['lines']) => run((ctx) => addBill(ctx, { supplierId: made.id, businessDate: DATE,
+        supplierInvoiceNumber: `META/${tag()}`, supplierInvoiceDate: DATE, supplierGstin: null, statedTotal: moneyString().parse('2000'), fileId: null,
+        notes: null, lines }), at.staff);
+      expect(await code_(bill([goods(at, '1', '62000')]))).toBe('overseas_services_only');
+      // No rule covers its SAC: an import of services is reverse charge whatever the rules say, and always IGST.
+      const { id } = await bill([{ ...transport(code), charge: 'other' as const, description: 'Advertising' }]);
+      const read = await run((ctx) => getBillById(ctx, { id }), at.staff);
+      expect([read.amounts.total, read.lines[0]?.amounts.reverseCharge]).toEqual(['2000.00', { cgst: '0.00', sgst: '0.00', igst: '360.00' }]);
+    });
   });
 });

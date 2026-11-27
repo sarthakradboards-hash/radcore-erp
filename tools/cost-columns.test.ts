@@ -48,7 +48,9 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     gst_rate: 'a tax rate', taxable: 'a line’s value (purchasing:read)', cgst: 'tax on a line (purchasing:read)', sgst: 'tax on a line (purchasing:read)',
     igst: 'tax on a line (purchasing:read)', line_total: 'a line’s total (purchasing:read)',
     credit_cgst: 'input credit a line claimed (RAD-139, purchasing:read)', credit_sgst: 'input credit a line claimed (RAD-139, purchasing:read)',
-    credit_igst: 'input credit a line claimed (RAD-139, purchasing:read)' },
+    credit_igst: 'input credit a line claimed (RAD-139, purchasing:read)',
+    rcm_cgst: 'reverse-charge tax on a line (RAD-153, purchasing:read)', rcm_sgst: 'reverse-charge tax on a line (RAD-153, purchasing:read)',
+    rcm_igst: 'reverse-charge tax on a line (RAD-153, purchasing:read)' },
   // A supplier return's (RAD-140): the rejects sent back at the value Goods Received Not Billed accrued for them, the
   // return's own content under purchasing:read, as a receipt's rejected_value is.
   supplier_returns: { unbilled_value: 'what went back against Goods Received Not Billed (purchasing:read)',

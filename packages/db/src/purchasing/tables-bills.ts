@@ -95,12 +95,19 @@ export const purchaseBillLines = radcoreTable('purchase_bill_lines', {
   // The input credit posting claimed, by head, and where none, why (ADR-009 §2, RAD-139), for ADR-010's 3B. Null on a
   // draft, and on a bill posted before RAD-139.
   creditCgst: money(), creditSgst: money(), creditIgst: money(), creditReason: text(),
+  // A reverse-charge line's tax by head (ADR-010 §4, RAD-153): we owe it, not the supplier, so its own heads are 0. Null
+  // on any other line and on a draft.
+  rcmCgst: money(), rcmSgst: money(), rcmIgst: money(),
 }, (t) => [
+  check('ck_purchase_bill_lines_rcm', sql`num_nulls(${t.rcmCgst}, ${t.rcmSgst}, ${t.rcmIgst}) in (0, 3) and (${t.rcmCgst} is null
+    or (${t.kind} = 'charge' and ${t.gstRate} is not null and ${t.cgst} = 0 and ${t.sgst} = 0 and ${t.igst} = 0
+      and ${t.rcmCgst} = ${t.rcmSgst} and (${t.rcmIgst} = 0 or ${t.rcmCgst} = 0)))`),
   check('ck_purchase_bill_lines_credit', sql`num_nulls(${t.creditCgst}, ${t.creditSgst}, ${t.creditIgst}) in (0, 3)
     and (${t.creditCgst} is null or ${t.gstRate} is not null) and (${t.creditReason} is null or ${t.creditCgst} is not null)`),
-  // All the line's tax, or none and why.
+  // All the line's tax (a reverse-charge line's, the tax we owe), or none and why.
   check('ck_purchase_bill_lines_credit_whole', sql`${t.creditCgst} is null
-    or (${t.creditReason} is null and ${t.creditCgst} = ${t.cgst} and ${t.creditSgst} = ${t.sgst} and ${t.creditIgst} = ${t.igst})
+    or (${t.creditReason} is null and ${t.creditCgst} = coalesce(${t.rcmCgst}, ${t.cgst}) and ${t.creditSgst} = coalesce(${t.rcmSgst}, ${t.sgst})
+      and ${t.creditIgst} = coalesce(${t.rcmIgst}, ${t.igst}))
     or (${t.creditReason} in ('supplier_kind', 'blocked', 'state') and ${t.creditCgst} = 0 and ${t.creditSgst} = 0 and ${t.creditIgst} = 0)`),
   check('ck_purchase_bill_lines_kind', sql`${t.kind} in ('goods', 'charge', 'job_work')`),
   // A goods line names its PO line and item, with a quantity and rate; a charge, its kind, words, HSN and amount.

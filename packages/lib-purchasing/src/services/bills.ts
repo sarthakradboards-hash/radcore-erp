@@ -130,7 +130,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
   let amounts: BillOut['amounts'];
   let lineAmounts: LineAmounts[];
   if (b.status === 'draft') {
-    const worked = await amountsOf(ctx, supplier.stateCode, b.supplierInvoiceDate, lines).catch((e: unknown) => {
+    const worked = await amountsOf(ctx, supplier, b.supplierInvoiceDate, lines).catch((e: unknown) => {
       if (e instanceof AppError && (e.code === 'company_profile_incomplete' || e.code === 'no_gst_rate')) return e;
       throw e;
     });
@@ -138,25 +138,26 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
       const taxable = lines.map((l) => (l.kind !== 'charge' ? roundMoney(dec(l.qty ?? '0').times(dec(l.rate ?? '0'))) : roundMoney(l.amount ?? '0')));
       amounts = { placeOfSupply: null, taxable: roundMoney(taxable.reduce((s, t) => s.plus(dec(t)), dec('0'))), ...none, roundOff: null, total: null,
         note: worked.code === 'company_profile_incomplete' ? 'Set the company’s state to work out the GST' : worked.message };
-      lineAmounts = taxable.map((t) => ({ gstRate: null, gstRateSource: null, taxable: t, ...none, lineTotal: null }));
+      lineAmounts = taxable.map((t) => ({ gstRate: null, gstRateSource: null, taxable: t, ...none, lineTotal: null, reverseCharge: null }));
     } else {
       const t = worked.totals;
       amounts = { placeOfSupply: worked.placeOfSupply, taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, roundOff: t.roundOff,
         total: t.total, note: null };
       lineAmounts = worked.lines.map((l) => ({ gstRate: l.gstRate, gstRateSource: l.gstRateSource, taxable: l.taxable, cgst: l.cgst, sgst: l.sgst,
-        igst: l.igst, lineTotal: l.lineTotal }));
+        igst: l.igst, lineTotal: l.lineTotal, reverseCharge: l.reverseCharge }));
     }
   } else {
     amounts = { placeOfSupply: b.placeOfSupply, taxable: b.taxable ?? '0.00', cgst: b.cgst, sgst: b.sgst, igst: b.igst, roundOff: b.roundOff,
       total: b.total, note: null };
     lineAmounts = lines.map((l) => ({ gstRate: l.gstRate, gstRateSource: l.gstRateSource, taxable: l.taxable ?? '0.00', cgst: l.cgst, sgst: l.sgst,
-      igst: l.igst, lineTotal: l.lineTotal }));
+      igst: l.igst, lineTotal: l.lineTotal,
+      reverseCharge: l.rcmCgst === null ? null : { cgst: l.rcmCgst, sgst: l.rcmSgst ?? '0.00', igst: l.rcmIgst ?? '0.00' } }));
   }
   // The charges as a share of the goods' taxable value: past the tolerance, the bill needs approval (ADR-008 §7).
   const goodsValue = lines.reduce((s, l, i) => (l.kind !== 'charge' ? s.plus(dec(lineAmounts[i]?.taxable ?? '0')) : s), dec('0'));
   const charges = lines.reduce((s, l, i) => (l.kind === 'charge' ? s.plus(dec(lineAmounts[i]?.taxable ?? '0')) : s), dec('0'));
   const chargesOverTolerance = !charges.isZero() && (goodsValue.isZero() || charges.times(100).div(goodsValue).gt(tolerance));
-  const empty = { gstRate: null, gstRateSource: null, taxable: '0.00', ...none, lineTotal: null };
+  const empty = { gstRate: null, gstRateSource: null, taxable: '0.00', ...none, lineTotal: null, reverseCharge: null };
   return {
     id: b.id, number: b.number, supplierId: b.partyId, supplierName: supplier.name, businessDate: b.businessDate, status: b.status as Status,
     supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate, total: b.total as Money | null,
