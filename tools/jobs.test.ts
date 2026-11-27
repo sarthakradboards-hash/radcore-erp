@@ -188,7 +188,7 @@ describe.skipIf(!url)('jobs on pg-boss', () => {
   it('sends a job that fails all its attempts to the dead-letter alert, without its payload, after its `failed` step', async () => {
     const queue = createJobQueue(database(), logger());
     const log = logger();
-    const failed = vi.fn(async (_ctx: unknown, _input: { card: string }) => undefined);
+    const failed = vi.fn<(ctx: unknown, input: { card: string }) => Promise<void>>(async () => undefined);
     const job = defineJob({ ...name(), principal: system, input: z.object({ card: z.string() }), retries: 0 },
       async () => { throw new Error('provider down'); }, { failed });
     const stop = await runJobs(queue, [job], log, { db });
