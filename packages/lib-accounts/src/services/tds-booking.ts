@@ -2,7 +2,7 @@
 // tds_deductions row with the posting, even one that deducts nothing, and the document posts the sum to TDS Payable. The
 // year's sums come from those rows alone, one indexed read on (party, section, year). Two bookings for one payee take
 // turns on the party's row (holdParty), so two bills can't both catch up the same year. A cancel writes the reversals.
-import { accountsTx, parties, partyTds, tdsDeductions, tdsRates } from '@radcore/db/accounts';
+import { accountsTx, parties, partyTds, tdsDeductions, tdsRates, tdsSections } from '@radcore/db/accounts';
 import { dec, financialYear, roundMoney, type Money } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
 import { and, desc, eq, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
@@ -51,7 +51,15 @@ export async function bookTds(ctx: Ctx, doc: Readonly<{ table: string; id: strin
   const year = financialYear(doc.businessDate).start;
   const noPan = p?.pan == null || p.inoperative === true;
   let total = dec('0');
+  // A PAN's 4th letter says its holder (P a person, H a HUF): a section for an individual needs one, one for others any
+  // other; with no PAN the type can't be told, so any section is allowed at the no-PAN rate (the architect on #452).
+  const individual = p?.pan == null ? null : ['P', 'H'].includes(p.pan.charAt(3));
   for (const l of lines) {
+    const [section] = await tx.select({ payee: tdsSections.payee }).from(tdsSections).where(eq(tdsSections.id, l.sectionId)).limit(1);
+    if (individual !== null && (section?.payee === 'individual') !== individual && section?.payee !== 'any') {
+      throw refuseAt('tds_payee_mismatch', individual ? 'This section is for payees other than individuals' : 'This section is for individuals and HUFs',
+        l.path);
+    }
     const [rate] = await tx.select().from(tdsRates).where(and(eq(tdsRates.sectionId, l.sectionId), lte(tdsRates.effectiveFrom, doc.businessDate)))
       .orderBy(desc(tdsRates.effectiveFrom)).limit(1);
     if (rate === undefined) throw refuseAt('no_tds_rate', 'This TDS section has no rate in force on the date', l.path);

@@ -10,7 +10,7 @@
 //     accrued; an accepted part's goes to stock across the sellable places holding the item, and to cost of goods sold
 //     for what's gone (ADR-006 §4); a billed reject's onto its rejects place
 import { purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purchasing';
-import { getPartyById, holdPeriod, reverseTds, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
+import { getPartyById, holdParty, holdPeriod, reverseTds, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, indiaDate, roundMoney, roundQty, type Decimal } from '@radcore/lib-common';
 import { AppError, holdSeries, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
 import { creditFrom, inputCredit, supplierKind } from '@radcore/lib-gst';
@@ -170,6 +170,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     if (!a.rejected.isZero()) rejects.push({ itemId: a.itemId, locationId: a.rejectsLocationId, lineId: a.line.id, d: dRejected, qty: a.rejected });
     add(a.itemId, d.minus(dRejected), a.accepted, a.line.id);
   }
+  // A TDS line's payee is ADR-006 §1's step 3, before the positions at step 4 (ADR-008 §12; the auditor on #452).
+  if (lines.some((l) => l.tdsSectionId !== null)) await holdParty(ctx, b.partyId);
   // The positions it may revalue, under their locks: the sellable places holding each item, and each reject's place.
   const items = [...byItem.keys()];
   const seen = await sellableOnHand(ctx, items);

@@ -244,6 +244,41 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
       .toEqual([{ v: '0.00' }]);
   });
 
+  // The auditor on #452 (ADR-006 §1, ADR-008 §12): a bill with a TDS line takes its payee's row (step 3) before the stock
+  // positions it revalues (step 4). With the supplier's row held elsewhere, posting waits there, and the position it would
+  // revalue is still free; in the old order it held the position first and waited on the party.
+  it('takes a TDS line’s payee before the stock positions it revalues', async () => {
+    const at = await setup();
+    const tdsSectionId = (await su.query<{ id: string }>("select id from radcore.tds_sections where code = '194C-O'")).rows[0]?.id ?? '';
+    const { id } = await draft(at, { lines: [goods(at, '2', '62500'), { ...freight('1000'), tdsSectionId }], total: '132430' });
+    const holder = await su.connect();
+    try {
+      await holder.query('begin');
+      const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid;
+      await holder.query('select id from radcore.parties where id = $1 for update', [at.supplierId]);
+      const posting = post(at, id);
+      let waiting = 0;
+      for (let i = 0; i < 200 && waiting === 0; i += 1) {
+        waiting = (await su.query<{ n: number }>('select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))', [pid])).rows[0]?.n ?? 0;
+        if (waiting === 0) await new Promise((r) => { setTimeout(r, 25); });
+      }
+      expect(waiting).toBe(1);
+      const probe = await su.connect();
+      try {
+        await probe.query('begin');
+        const free = await probe.query('select 1 from radcore.stock_positions where item_id = $1 for update nowait', [at.itemId]);
+        expect(free.rowCount).toBeGreaterThan(0);
+      } finally {
+        await probe.query('rollback');
+        probe.release();
+      }
+      await holder.query('rollback');
+      expect((await posting).status).toBe('posted');
+    } finally {
+      holder.release();
+    }
+  });
+
   // RAD-158 (the architect's ruling (a)): a bill owes its total less the TDS held back, and payments apply to that. TDS is
   // set here as posting will set it (RAD-158 PR 2b), past the posted-bill guard: F3's 131,250.00 with 1,250.00 held back
   // takes 130,000.00 and refuses a paisa more.

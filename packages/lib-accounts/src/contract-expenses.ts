@@ -20,6 +20,12 @@ const clauseFits = (c: { credit?: string | undefined; blockedClause?: string | n
   (c.credit === undefined && c.blockedClause === undefined) || (c.credit === 'blocked') === (typeof c.blockedClause === 'string');
 const CLAUSE_FITS = { message: 'A blocked category names its clause of section 17(5), and an allowed one none', path: ['blockedClause'] };
 
+/** An expense line or a category naming no such TDS section (the auditor on #452). */
+const LINE_SECTION = { '23503:expense_lines_tds_section_id_tds_sections_id_fk': { code: 'unknown_section', message: 'There is no such TDS section' } } as const;
+const CATEGORY_SECTION = {
+  '23503:expense_categories_default_tds_section_id_tds_sections_id_fk': { code: 'unknown_section', message: 'There is no such TDS section' },
+} as const;
+
 const category = z.object({
   id: idString(), name: z.string(), credit: z.enum(EXPENSE_CREDIT), blockedClause: z.string().nullable(), active: z.boolean(),
   /** The TDS section its lines take when their supplier names none (ADR-009 §4). */
@@ -41,7 +47,8 @@ export const createExpenseCategory = defineContract({
   input: z.object({ name: name(), credit: z.enum(EXPENSE_CREDIT), blockedClause: clause().nullable(),
     accountIds: accountIds(), defaultTdsSectionId: idString().nullable().optional() }).refine(clauseFits, CLAUSE_FITS),
   output: z.object({ id: idString() }),
-  errors: ['name_taken', 'not_an_expense_account'],
+  errors: ['name_taken', 'not_an_expense_account', 'unknown_section'],
+  dbErrors: CATEGORY_SECTION,
 });
 
 /** PATCH /expense-categories/:id (accounts:write): its name, its credit rule (the two together), its accounts (the whole
@@ -56,8 +63,8 @@ export const setExpenseCategory = defineContract({
     .refine(clauseFits, CLAUSE_FITS),
   output: z.object({}),
   // account_in_use: an account taken off the list that an expense line already names (the auditor on #425).
-  errors: ['name_taken', 'not_an_expense_account', 'account_in_use'],
-  dbErrors: { '23503:fk_expense_lines_category_account': { code: 'account_in_use', message: 'An expense already posts to that account under this category' } },
+  errors: ['name_taken', 'not_an_expense_account', 'account_in_use', 'unknown_section'],
+  dbErrors: { ...CATEGORY_SECTION, '23503:fk_expense_lines_category_account': { code: 'account_in_use', message: 'An expense already posts to that account under this category' } },
 });
 
 // Expenses themselves (ADR-009 §3).
@@ -94,9 +101,9 @@ const expense = header.extend({
 });
 /** What a draft's save can refuse, and what its posting can refuse beyond that (ADR-009 §2, §3). */
 const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'needs_supplier', 'not_a_supplier', 'gstin_mismatch', 'not_money_account',
-  'account_inactive', 'unknown_account', 'category_inactive', 'not_in_category', 'wrong_file_kind', 'upload_refused', 'not_ready'] as const;
+  'account_inactive', 'unknown_account', 'category_inactive', 'not_in_category', 'wrong_file_kind', 'upload_refused', 'not_ready', 'unknown_section'] as const;
 const POST_ERRORS = [...DRAFT_ERRORS, 'wrong_status', 'bill_file_required', 'tax_mismatch', 'total_mismatch', 'period_locked', 'year_not_open',
-  'company_profile_incomplete', 'series_full', 'tds_needs_party', 'tds_overseas', 'no_tds_rate'] as const;
+  'company_profile_incomplete', 'series_full', 'tds_needs_party', 'tds_overseas', 'no_tds_rate', 'tds_payee_mismatch'] as const;
 
 /** GET /expenses (expenses:read): newest business date first, a page at a time; by status. */
 export const listExpenses = defineContract({
@@ -111,12 +118,12 @@ export const getExpense = defineContract({
 /** POST /expenses (expenses:write): a new draft. */
 export const createExpense = defineContract({
   method: 'POST', path: '/expenses', auth: 'session', perm: 'expenses:write', tx: write,
-  input: expenseIn, output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS],
+  input: expenseIn, output: z.object({ id: idString() }), errors: [...DRAFT_ERRORS], dbErrors: LINE_SECTION,
 });
 /** PUT /expenses/:id (expenses:write): a draft replaced whole, lines and all. */
 export const replaceExpense = defineContract({
   method: 'PUT', path: '/expenses/:id', auth: 'session', perm: 'expenses:write', tx: write,
-  input: expenseIn.extend({ id: idString() }), output: z.object({}), errors: [...DRAFT_ERRORS, 'wrong_status'],
+  input: expenseIn.extend({ id: idString() }), output: z.object({}), errors: [...DRAFT_ERRORS, 'wrong_status'], dbErrors: LINE_SECTION,
 });
 /** DELETE /expenses/:id (expenses:write): a draft dropped, and its cash override withdrawn if it waits for one. */
 export const dropExpense = defineContract({

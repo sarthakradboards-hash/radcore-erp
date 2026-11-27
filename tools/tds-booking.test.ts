@@ -148,6 +148,16 @@ describe.skipIf(!url || !superUrl)('TDS at booking', { timeout: 60_000 }, () => 
       from radcore.payment_allocations where document_table = 'expenses' and document_id = $1`, [id]))?.v).toBe('50000.00');
   });
 
+  // The architect on #452: a section for individuals needs a PAN whose 4th letter is P or H; with no PAN any section is
+  // allowed at the no-PAN rate (F29's variant above).
+  it('refuses an individual’s section for a company’s PAN (tds_payee_mismatch), and takes it for an individual’s', async () => {
+    const section = await sectionId('194C-I');
+    const company = await setup({ pan: `${letters(3)}C${letters(1)}${digits()}${letters(1)}` });
+    expect(await code(book(company, '40000', { day: DAYS[0] ?? '', section }))).toBe('tds_payee_mismatch');
+    expect(await code(book(company, '40000', { day: DAYS[0] ?? '', section: await sectionId('194C-O') }))).toBe('ok');
+    expect(await deducted(await book(await setup(), '40000', { day: DAYS[0] ?? '', section }))).toBe('400.00');
+  });
+
   it('refuses a TDS section on an overseas supplier’s line (tds_overseas, ADR-010 §4)', async () => {
     const [at, section] = [await setup({ overseas: true }), await sectionId('194J-T')];
     expect(await code(book(at, '10000', { day: DAYS[0] ?? '', section }))).toBe('tds_overseas');
