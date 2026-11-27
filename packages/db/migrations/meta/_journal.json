@@ -694,6 +694,13 @@
       "when": 1795772152363,
       "tag": "0098_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795772977552,
+      "tag": "0099_bank_statements",
+      "breakpoints": true
     }
   ]
 }
