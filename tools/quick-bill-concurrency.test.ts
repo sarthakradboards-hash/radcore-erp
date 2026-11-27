@@ -84,7 +84,8 @@ it.runIf(process.env['CI'] && !adminUrl)('has its test database in CI', () => {
 describe.skipIf(!adminUrl)('a quick bill alongside plain saves', { timeout: 60_000 }, () => {
   const own = ownDatabase();
   beforeAll(() => own.open(), 120_000);
-  afterAll(() => own.close());
+  // Dropping the file's own database can outlast the default hook time under load, as period-lock.test's can.
+  afterAll(() => own.close(), 120_000);
   const run = <T>(fn: (ctx: Ctx) => Promise<T>) => runInTransaction(own.db, WRITE, staff, randomUUID(), fn);
 
   /** A named customer with ample credit, an item rated 5% priced 50.00 on its list, and a store holding 100 in B1. */
