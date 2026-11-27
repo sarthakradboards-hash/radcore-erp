@@ -750,6 +750,13 @@
       "when": 1795797363728,
       "tag": "0107_gstr1_data",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1795799293240,
+      "tag": "0108_bank_charge",
+      "breakpoints": true
     }
   ]
 }

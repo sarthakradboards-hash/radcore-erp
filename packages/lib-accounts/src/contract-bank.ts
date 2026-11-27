@@ -116,5 +116,18 @@ export const unmatchContract = defineContract({
   method: 'POST', path: '/bank/matches/:id/unmatch', auth: 'session', perm: 'bank:reconcile', tx: write,
   input: z.object({ id: idString(), reason: reason() }),
   output: z.object({}),
-  errors: ['not_matched'],
+  // A bank charge the match booked is reversed, dated today: the journal engine's refusals.
+  errors: ['not_matched', 'period_locked', 'year_not_open', 'series_full'],
+});
+
+/** POST /bank/statement-lines/:id/charge (bank:reconcile): a bank charge (a line out, to an expense account) or interest
+ * (a line in, to an income account) with no book entry, booked from the line and matched to it (ADR-009 §12, RC-210).
+ * Unmatching reverses it. */
+export const bookChargeContract = defineContract({
+  method: 'POST', path: '/bank/statement-lines/:id/charge', auth: 'session', perm: 'bank:reconcile', tx: write,
+  input: z.object({ id: idString(), accountId: idString() }),
+  output: z.object({ matchId: idString(), entry: z.string() }),
+  errors: ['already_matched', 'not_a_charge_account', 'account_inactive', 'period_locked', 'year_not_open', 'series_full', 'match_unbalanced',
+    'not_this_account', 'entry_reversed'],
+  dbErrors: MATCH_DB_ERRORS,
 });

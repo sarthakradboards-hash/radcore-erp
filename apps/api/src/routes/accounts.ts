@@ -6,7 +6,7 @@ import {
   putTdsRate, tdsRatesPage, tdsSectionsList,
   addAccount, addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
   askToUnlock, moveLockForward, periodState, periodUnlockSpec, cancelTransfer, recordTransfer, transferById, transfersPage,
-  importStatement, matchCandidates, matchLines, unmatch, statementFormatOf, statementImportById, statementImportsPage, statementLinesPage, undoStatementImport,
+  importStatement, bookCharge, matchCandidates, matchLines, unmatch, statementFormatOf, statementImportById, statementImportsPage, statementLinesPage, undoStatementImport,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
@@ -15,7 +15,7 @@ import {
   listTdsRates, listTdsSections, setTdsRate,
   createAccount, createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
   askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval,
-  getStatementFormatContract, listMatchCandidatesContract, matchLinesContract, unmatchContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
+  getStatementFormatContract, bookChargeContract, listMatchCandidatesContract, matchLinesContract, unmatchContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
   undoStatementImportContract,
   cancelTransferContract, getTransferContract, listTransfersContract, recordTransferContract,
 } from '@radcore/lib-accounts/contract';
@@ -83,6 +83,7 @@ export default [
   defineRoute(listMatchCandidatesContract, matchCandidates),
   defineRoute(matchLinesContract, matchLines),
   defineRoute(unmatchContract, unmatch),
+  defineRoute(bookChargeContract, bookCharge),
   // The period lock and year close (RAD-157): the close runs lib-service's books check as at the year's 31 March.
   defineRoute(getPeriodContract, periodState),
   defineRoute(lockPeriodContract, moveLockForward),
