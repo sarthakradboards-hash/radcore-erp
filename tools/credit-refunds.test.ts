@@ -65,7 +65,9 @@ describe.skipIf(!url || !superUrl)('refunds of a credit note', { timeout: 30_000
     await run((ctx) => openFinancialYear(ctx, DAY));
     for (const t of [CREDITS, DEBITS, INVOICES]) {
       await owner(`create table radcore.${t} (id uuid primary key default gen_random_uuid(), party_id uuid not null, status text not null,
-        total numeric(18,2) not null, business_date date not null,
+        -- The CHECK every money column has, by its name (ADR-005 §1), so tools/schema.test.ts's v_schema_numeric_without_check,
+        -- run at the same time, doesn't find these fixtures (the auditor on RAD-151).
+        total numeric(18,2) not null constraint ck_${t}_total check (total >= 0 and total <> 'NaN'), business_date date not null,
         created_at timestamptz not null default now(), created_by text not null default 'system:test',
         updated_at timestamptz not null default now(), updated_by text not null default 'system:test')`, [], 'radcore_owner');
       await owner(`select radcore.audit_attach('${t}', keep => array['party_id', 'status', 'total', 'business_date'])`);
