@@ -31,7 +31,8 @@ async function writeLines(ctx: Ctx, billId: string, lines: readonly LineIn[], { 
       return { ...at, jobWorkReceiptLineId: l.jobWorkReceiptLineId, itemId: made.get(l.jobWorkReceiptLineId)?.madeItemId ?? '', qty: l.qty,
         rate: l.rate, hsn: l.hsn };
     }
-    return { ...at, charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount };
+    return { ...at, charge: l.charge, description: l.description, hsn: l.hsn, amount: l.amount, expenseCategoryId: l.expenseCategoryId ?? null,
+      expenseAccountId: l.expenseAccountId ?? null };
   }));
 }
 type Checked = Awaited<ReturnType<typeof checkDraft>>;
@@ -155,7 +156,9 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
   // The charges as a share of the goods' taxable value: past the tolerance, the bill needs approval (ADR-008 §7).
   const goodsValue = lines.reduce((s, l, i) => (l.kind !== 'charge' ? s.plus(dec(lineAmounts[i]?.taxable ?? '0')) : s), dec('0'));
   const charges = lines.reduce((s, l, i) => (l.kind === 'charge' ? s.plus(dec(lineAmounts[i]?.taxable ?? '0')) : s), dec('0'));
-  const chargesOverTolerance = !charges.isZero() && (goodsValue.isZero() || charges.times(100).div(goodsValue).gt(tolerance));
+  // A bill of charges only has no goods to share them (RAD-152), so it's never past this.
+  const chargesOverTolerance = !lines.every((l) => l.kind === 'charge') && !charges.isZero()
+    && (goodsValue.isZero() || charges.times(100).div(goodsValue).gt(tolerance));
   const empty = { gstRate: null, gstRateSource: null, taxable: '0.00', ...none, lineTotal: null };
   return {
     id: b.id, number: b.number, supplierId: b.partyId, supplierName: supplier.name, businessDate: b.businessDate, status: b.status as Status,
@@ -167,7 +170,7 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
       const a = lineAmounts[i] ?? empty;
       if (l.kind === 'charge') {
         return { kind: 'charge' as const, id: l.id, lineNo: l.lineNo, charge: l.charge as 'freight', description: l.description ?? '', hsn: l.hsn ?? '',
-          amount: l.amount as Money, amounts: a };
+          amount: l.amount as Money, expenseCategoryId: l.expenseCategoryId, expenseAccountId: l.expenseAccountId, amounts: a };
       }
       const item = labels.get(l.itemId ?? '');
       if (l.kind === 'job_work') {
