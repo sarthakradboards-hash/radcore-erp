@@ -374,3 +374,4 @@ export * from './contract-collect.ts';
 export * from './contract-payments.ts';
 export * from './contract-period.ts';
 export * from './contract-expenses.ts';
+export * from './contract-transfers.ts';
