@@ -46,3 +46,30 @@ export const setGstRate = defineContract({
     { path: ['supplyKind'], message: 'A rate above 0% is taxable; a 0% rate is nil-rated, exempt or non-GST' }),
   output: z.object({ id: idString() }),
 });
+
+// Reverse-charge rules by date (M5-03, RAD-153; ADR-010 §4; CA-06).
+const RCM_SUPPLIERS = ['unregistered', 'any', 'not_body_corporate'] as const;
+const rcmRule = z.object({
+  id: idString(), prefix: z.string(), supplier: z.enum(RCM_SUPPLIERS), effectiveFrom: dateString(), source: z.string(), note: z.string().nullable(),
+  confirmed: z.boolean(),
+});
+
+/** GET /gst/rcm-rules (gst:read): every reverse-charge rule, by prefix, supplier and start date. A line whose SAC (or a
+ * notified good's HSN) starts with a rule's prefix, from a supplier it covers, on or after its date, owes the tax
+ * itself; each rule says whether the CA has confirmed it. */
+export const listRcmRules = defineContract({
+  method: 'GET', path: '/gst/rcm-rules', auth: 'session', perm: 'gst:read', tx: read,
+  input: z.object({}), output: z.object({ items: z.array(rcmRule) }),
+});
+
+/** PUT /gst/rcm-rules (gst:write): a rule for a code prefix and supplier from a date, with its source. The same prefix,
+ * supplier and date again corrects that rule (audited, with the person's reason); a rule is never deleted. */
+export const setRcmRule = defineContract({
+  method: 'PUT', path: '/gst/rcm-rules', auth: 'session', perm: 'gst:write', tx: write,
+  input: z.object({
+    prefix: z.string().regex(/^[0-9]{2,8}$/, 'A SAC or HSN prefix is 2 to 8 digits'), supplier: z.enum(RCM_SUPPLIERS), effectiveFrom: dateString(),
+    source: z.string().trim().min(1, 'Name the notification this rule comes from').max(200),
+    note: z.string().trim().max(500).nullable(), confirmed: z.boolean(), reason: reason(),
+  }),
+  output: z.object({ id: idString() }),
+});

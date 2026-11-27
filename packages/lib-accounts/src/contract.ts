@@ -53,7 +53,8 @@ const partyFields = {
   gstin: gstinString().nullable(),
   pan: panString().nullable(),
   composition: z.boolean(),
-  stateCode: stateCodeString(),
+  // 96 (other country) is only an overseas supplier's (ADR-010 §4, RAD-153).
+  stateCode: stateCodeString().or(z.literal('96')),
   phone: phoneString().nullable(),
   email: emailString().nullable(),
   addressLine1: z.string().trim().max(200).nullable(),
@@ -63,9 +64,21 @@ const partyFields = {
 };
 
 /** The rules between a party's tax fields, for a whole party: the PAN is the GSTIN's own, the state is the GSTIN's,
- * and a composition dealer is registered. The database holds the same rules as CHECKs. */
-export function partyTaxIssues(p: { gstin: string | null; pan: string | null; stateCode: string; composition: boolean }) {
+ * a composition dealer is registered, and an overseas supplier (ADR-010 §4) is a supplier only, in state 96, with no
+ * GSTIN or PAN. The database holds the same rules as CHECKs. */
+export function partyTaxIssues(p: { gstin: string | null; pan: string | null; stateCode: string; composition: boolean; overseas?: boolean | undefined;
+  kinds?: readonly string[] | undefined }) {
   const issues: { path: string[]; code: string; message: string }[] = [];
+  if ((p.overseas ?? false) !== (p.stateCode === '96')) {
+    issues.push({ path: ['stateCode'], code: 'overseas_state', message: p.overseas ? 'An overseas supplier’s state is 96, other country'
+      : 'Only an overseas supplier is in 96, other country' });
+  }
+  if (p.overseas === true && (p.gstin !== null || p.pan !== null || p.composition)) {
+    issues.push({ path: ['overseas'], code: 'overseas_unregistered', message: 'An overseas supplier has no GSTIN or PAN' });
+  }
+  if (p.overseas === true && p.kinds !== undefined && (p.kinds.length !== 1 || p.kinds[0] !== 'supplier')) {
+    issues.push({ path: ['kinds'], code: 'overseas_supplier_only', message: 'An overseas party is a supplier only' });
+  }
   if (p.gstin !== null && p.pan !== null && p.gstin.slice(2, 12) !== p.pan) {
     issues.push({ path: ['pan'], code: 'pan_not_gstin', message: 'The PAN isn’t the one in the GSTIN' });
   }
@@ -83,7 +96,7 @@ export function partyTaxIssues(p: { gstin: string | null; pan: string | null; st
  * The name is a business's, on every document. */
 const party = piiRecord('parties', z.object({
   id: idString(), name: z.string(), kinds: z.array(z.enum(PARTY_KINDS)), gstin: z.string().nullable(),
-  pan: z.string().nullable(), composition: z.boolean(), stateCode: z.string(),
+  pan: z.string().nullable(), composition: z.boolean(), overseas: z.boolean(), stateCode: z.string(),
   phone: pii(z.string().nullable(), 'last4'), email: pii(z.string().nullable()),
   addressLine1: pii(z.string().nullable()), addressLine2: pii(z.string().nullable()), city: pii(z.string().nullable()),
   pincode: pii(z.string().nullable()),
@@ -114,7 +127,10 @@ export const getParty = defineContract({
  * gstin_taken: a GSTIN names one party. */
 export const createParty = defineContract({
   method: 'POST', path: '/parties', auth: 'session', perm: 'parties:write', tx: write,
-  input: z.object(partyFields).superRefine((p, c) => { for (const i of partyTaxIssues(p)) c.addIssue({ code: 'custom', path: i.path, message: i.message }); }),
+  // Overseas: a supplier abroad of services paid in rupees, under reverse charge (ADR-010 §4, RAD-153).
+  input: z.object({ ...partyFields, overseas: z.boolean().optional() }).superRefine((p, c) => {
+    for (const i of partyTaxIssues(p)) c.addIssue({ code: 'custom', path: i.path, message: i.message });
+  }),
   output: z.object({ id: idString() }), errors: ['gstin_taken'],
 });
 
@@ -122,7 +138,7 @@ export const createParty = defineContract({
  * will be. A party is switched off (`active: false`), never deleted (ADR-005 §3). */
 export const updateParty = defineContract({
   method: 'PATCH', path: '/parties/:id', auth: 'session', perm: 'parties:write', tx: write,
-  input: z.object(partyFields).partial().extend({ id: idString(), active: z.boolean().optional() }),
+  input: z.object(partyFields).partial().extend({ id: idString(), overseas: z.boolean().optional(), active: z.boolean().optional() }),
   output: z.object({}), errors: ['gstin_taken', 'system_party'],
 });
 
@@ -360,3 +376,4 @@ export * from './contract-period.ts';
 export * from './contract-expenses.ts';
 export * from './contract-transfers.ts';
 export * from './contract-bank.ts';
+export * from './contract-tds.ts';

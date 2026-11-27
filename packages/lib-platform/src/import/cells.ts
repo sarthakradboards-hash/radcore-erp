@@ -85,7 +85,7 @@ export function checkRows<S extends z.ZodObject>(t: Table, schema: S): ImportRes
     return out;
   }
   t.rows.forEach((cells, i) => {
-    const row = i + 2;
+    const row = t.lines?.[i + 1] ?? i + 2;
     const raw = Object.fromEntries(t.header.map((h, c) => [h, cells[c] ?? '']));
     const r = schema.safeParse(raw);
     if (r.success) out.rows.push({ row, value: r.data });

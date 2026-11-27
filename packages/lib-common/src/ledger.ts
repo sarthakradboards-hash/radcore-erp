@@ -51,6 +51,8 @@ export const SYSTEM_ACCOUNTS: readonly SystemAccount[] = [
   acc('input_sgst', 'Input SGST', 'asset', 'gst'),
   acc('input_igst', 'Input IGST', 'asset', 'gst'),
   acc('input_cess', 'Input Cess', 'asset', 'gst'),
+  // Reverse-charge tax booked on a bill or expense, claimed only once it's paid at the month's settlement (ADR-010 §4, F31).
+  acc('rcm_credit_pending', 'RCM Credit Pending', 'asset', 'gst'),
   acc('tds_receivable', 'TDS Receivable', 'asset', 'tds'),
   acc('staff_advances', 'Staff Advances', 'asset', 'payroll'),
   acc('creditors', 'Creditors', 'liability', 'party'),
@@ -60,6 +62,11 @@ export const SYSTEM_ACCOUNTS: readonly SystemAccount[] = [
   acc('output_sgst', 'Output SGST', 'liability', 'gst'),
   acc('output_igst', 'Output IGST', 'liability', 'gst'),
   acc('output_cess', 'Output Cess', 'liability', 'gst'),
+  // Reverse-charge tax we owe on what we bought (ADR-010 §4), paid in cash at the month's settlement.
+  acc('rcm_cgst', 'RCM CGST Payable', 'liability', 'gst'),
+  acc('rcm_sgst', 'RCM SGST Payable', 'liability', 'gst'),
+  acc('rcm_igst', 'RCM IGST Payable', 'liability', 'gst'),
+  acc('rcm_cess', 'RCM Cess Payable', 'liability', 'gst'),
   acc('tds_payable', 'TDS Payable', 'liability', 'tds'),
   acc('tcs_payable', 'TCS Payable', 'liability', 'tds'),
   acc('salaries_payable', 'Salaries Payable', 'liability', 'payroll'),

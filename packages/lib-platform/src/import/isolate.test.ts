@@ -13,7 +13,7 @@ const csv = (rows: number) => new TextEncoder().encode(
 describe('readTable in its worker', () => {
   it('gives back the table the worker read', async () => {
     expect(await readTable(csv(2))).toEqual({ header: ['Narration', 'Amount'],
-      rows: [['Line 0 with some text', '0.50'], ['Line 1 with some text', '1.50']] });
+      rows: [['Line 0 with some text', '0.50'], ['Line 1 with some text', '1.50']], lines: [1, 2, 3] });
   });
 
   it('terminates a worker past its time limit and says so', async () => {

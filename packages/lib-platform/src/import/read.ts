@@ -26,8 +26,10 @@ export class ImportFileError extends Error {
   override name = 'ImportFileError';
 }
 
-/** The file's header row and data rows, every cell a string ('' when empty). Row 1 is the header. */
-export type Table = { header: string[]; rows: string[][] };
+/** The file's header row and data rows, every cell a string ('' when empty). `lines`, when given, is the line each of
+ * the header and rows starts on in the file, since blank lines are skipped (RAD-159: a refusal names the row the person
+ * sees); without it, the header is row 1 and the rows follow it. */
+export type Table = { header: string[]; rows: string[][]; lines?: readonly number[] };
 
 const MB = (n: number) => `${Math.round(n / 1024 / 1024)} MB`;
 
@@ -59,16 +61,22 @@ export function sniffDelimiter(text: string): string {
 function readCsv(bytes: Uint8Array): Table {
   const text = decodeText(bytes);
   let records: string[][];
+  // The line each record starts on (RAD-159): csv-parse's `lines` is the line a record ends on, so one whose quoted cells
+  // hold line breaks started that many lines earlier.
+  const lines: number[] = [];
   try {
     // to_line stops after the cap, so an oversized file isn't parsed in full; relax_column_count keeps short rows
     // for the row check to report rather than failing the file.
     records = parse(text, { delimiter: sniffDelimiter(text), relax_column_count: true, skip_empty_lines: true,
-      to_line: IMPORT_LIMITS.maxRows + 2 }) as string[][];
+      to_line: IMPORT_LIMITS.maxRows + 2, on_record: (record: string[], context) => {
+        lines.push(context.lines - record.join('').split('\n').length + 1);
+        return record;
+      } }) as string[][];
   } catch (e) {
     const where = e instanceof Error && 'lines' in e ? ` near line ${String(e.lines)}` : '';
     throw new ImportFileError(`The CSV file couldn't be read${where}. Check its quotes and delimiters.`);
   }
-  return table(records);
+  return table(records, lines);
 }
 
 const DAMAGED = 'The Excel file is damaged. Open it in Excel, save it again and retry.';
@@ -180,13 +188,13 @@ async function readExcel(bytes: Uint8Array): Promise<Table> {
   return table(first.data.map((row) => row.map(cellText)));
 }
 
-function table(records: string[][]): Table {
+function table(records: string[][], lines?: readonly number[]): Table {
   const [header, ...rows] = records;
   if (!header) throw new ImportFileError('The file is empty.');
   if (rows.length > IMPORT_LIMITS.maxRows) {
     throw new ImportFileError(`The file has more than ${IMPORT_LIMITS.maxRows.toLocaleString('en-IN')} rows. Split it and import each part.`);
   }
-  return { header: header.map((h) => h.trim()), rows };
+  return { header: header.map((h) => h.trim()), rows, ...(lines === undefined ? {} : { lines }) };
 }
 
 /** An upload's bytes, read from its stream and refused as soon as it passes the size cap (never held whole). */

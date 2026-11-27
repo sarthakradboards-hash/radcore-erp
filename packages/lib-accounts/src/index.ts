@@ -8,6 +8,8 @@ export {
 export {
   addExpense, cancelExpenseNow, changeExpense, dropExpenseDraft, EXPENSE_SERIES, expenseCashSpec, getExpenseById, listExpensesPage, postExpenseNow,
 } from './services/expenses.ts';
+export { putTdsRate, tdsRatesPage, tdsSectionsList } from './services/tds-rates.ts';
+export { tdsFor, tdsRound, type TdsBooking, type TdsRate } from './rules/tds.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
 export {
   claimedInputGst, holdPeriod, JOURNAL_SERIES, lockPeriod, openFinancialYear, postEntry, postManualJournal, reverseEntriesOf, reverseEntry,
@@ -21,7 +23,7 @@ export {
 export { getPaymentById, listPaymentsPage } from './services/payment-reads.ts';
 export { cancelTransfer, recordTransfer, TRANSFER_SERIES, transferById, transfersPage } from './services/transfers.ts';
 export {
-  importStatement, readStatementFile, statementFileReader, statementFormatOf, statementImportById, statementImportJob, statementLinesPage, storeStatement, undoStatementImport,
+  importStatement, readStatementFile, statementFileReader, statementFormatOf, statementImportById, statementImportJob, statementImportsPage, statementLinesPage, storeStatement, undoStatementImport,
 } from './services/bank-statements.ts';
 export type { StatementLayout } from './services/statement-layouts.ts';
 export {

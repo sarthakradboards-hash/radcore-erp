@@ -2,7 +2,7 @@
 // CHECK's argument. Statement lines aren't ledger rows: nothing posts at import.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, date, index, integer, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, json, money, radcoreTable } from '../columns.ts';
+import { boundedText, createdMoment, id, json, money, radcoreTable } from '../columns.ts';
 import { files } from '../platform/tables.ts';
 import { accounts } from './tables.ts';
 
@@ -29,7 +29,8 @@ export const statementFormats = radcoreTable('statement_formats', {
  * `undone` once its lines are taken out again.
  */
 export const statementImports = radcoreTable('statement_imports', {
-  id: id(),
+  // In string mode, so the imports list's page key keeps its microseconds (momentKey).
+  id: id(), createdAt: createdMoment(),
   accountId: uuid().notNull().references(() => accounts.id, { onDelete: 'restrict' }),
   fileId: uuid().notNull().references(() => files.id, { onDelete: 'restrict' }),
   status: text().notNull().default('queued'),
