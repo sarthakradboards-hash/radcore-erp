@@ -11,7 +11,7 @@ import {
 } from '@radcore/lib-accounts/contract';
 import { statementFiles } from '@radcore/lib-platform/contract';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { z } from 'zod';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
@@ -26,7 +26,7 @@ import { t } from '../../../../lib/i18n/index.ts';
 import '../../../../components/ui/table/table.css';
 import { ChoiceButtons } from '../../admin/shared.tsx';
 import { refreshLines } from './lines-refresh.ts';
-import { BANK_MESSAGES, importSchema, importValues, UPLOADABLE, uploadType, type ImportInput } from './statement-values.ts';
+import { BANK_MESSAGES, importSchema, importValues, importWhenChecked, lineCounts, UPLOADABLE, uploadType, type ImportInput } from './statement-values.ts';
 
 type Line = z.output<typeof listStatementLinesContract.output>['items'][number];
 
@@ -60,7 +60,7 @@ function StatementFile() {
   return (
     <div className="kit-field">
       <label htmlFor={inputId}>{t('books.bank.file')}</label>
-      <p className="kit-hint">{fileId === '' ? t('books.bank.file.hint') : t('books.bank.file.ready')}</p>
+      <p className="kit-hint">{fileId === '' ? t('books.bank.file.hint') : t('books.bank.file.checking')}</p>
       <input id={inputId} type="file" accept={['.csv', '.xlsx', ...UPLOADABLE].join(',')} disabled={state.busy}
         onChange={(e) => { const f = e.currentTarget.files?.[0]; if (f !== undefined) void add(f); }} />
       {state.busy ? <p role="status">{t('books.bank.file.uploading')}</p> : null}
@@ -77,6 +77,8 @@ function ImportStatus({ id }: { id: string }) {
   const undo = useApiMutation(undoStatementImportContract, { invalidates: [getStatementImportContract, listStatementLinesContract] });
   const [undoing, setUndoing] = useState(false);
   const captionId = useId();
+  // The Undo button is gone once it's undone, so focus goes to the import's heading, not the body (e2e-2 on #439).
+  const heading = useRef<HTMLHeadingElement>(null);
   const status = q.data?.status;
   // Polling stops once the worker has settled it (state set while rendering, React's pattern for state derived from a prop).
   if (!settled && status !== undefined && status !== 'queued') setSettled(true);
@@ -88,11 +90,11 @@ function ImportStatus({ id }: { id: string }) {
   if (i === undefined) return <p>{t('loading')}</p>;
   return (
     <section aria-labelledby={captionId}>
-      <h3 id={captionId}>{t('books.bank.import.heading', { when: formatMoment(i.createdAt) })}</h3>
+      <h3 id={captionId} ref={heading} tabIndex={-1}>{t('books.bank.import.heading', { when: formatMoment(i.createdAt) })}</h3>
       <p role="status">{t(`books.bank.import.status.${i.status}`)}</p>
       {i.status === 'imported' ? (
         <>
-          <p>{t('books.bank.import.counts', { added: String(i.newLines ?? 0), present: String(i.presentLines ?? 0) })}</p>
+          <p>{lineCounts(i.newLines ?? 0, i.presentLines ?? 0)}</p>
           <div className="kit-actions">
             <button type="button" className="kit-button" onClick={() => setUndoing(true)}>{t('books.bank.undo')}</button>
           </div>
@@ -125,7 +127,7 @@ function ImportStatus({ id }: { id: string }) {
       )}
       <ReasonDialog open={undoing} onOpenChange={setUndoing} messages={BANK_MESSAGES} title={t('books.bank.undo.title')}
         action={t('books.bank.undo')} done={t('books.bank.undone')}
-        onConfirm={async (reason) => { await undo.submit({ id: i.id, reason }); }} />
+        onConfirm={async (reason) => { await undo.submit({ id: i.id, reason }); setTimeout(() => heading.current?.focus(), 0); }} />
     </section>
   );
 }
@@ -147,7 +149,7 @@ function ImportForm({ accountId }: { accountId: string }) {
       <Form key={imports.length} aria-labelledby={headingId} schema={importSchema} defaultValues={importValues(format.data.format)} saved={false}
         messages={BANK_MESSAGES}
         onSubmit={async (v) => {
-          const { id } = await start.submit({ accountId, ...v });
+          const { id } = await importWhenChecked(() => start.submit({ accountId, ...v }));
           await format.refetch();
           setImports((was) => [...was, id]);
         }}>

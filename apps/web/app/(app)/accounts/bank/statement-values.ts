@@ -4,6 +4,7 @@
 import { statementFormat } from '@radcore/lib-accounts/contract';
 import { statementFiles } from '@radcore/lib-platform/contract';
 import { z } from 'zod';
+import { ApiError } from '../../../../lib/api-client.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 
 type Format = z.output<typeof statementFormat>;
@@ -46,3 +47,26 @@ export const importValues = (format: Format | null): ImportInput => ({
   withdrawalColumn: format?.withdrawalColumn ?? '', depositColumn: format?.depositColumn ?? '', balanceColumn: format?.balanceColumn ?? '',
   newestFirst: format?.newestFirst ?? false,
 });
+
+/** "1 new line; 2 already here." */
+export const lineCounts = (added: number, present: number) => t('books.bank.import.counts', {
+  added: t(added === 1 ? 'books.bank.import.new.one' : 'books.bank.import.new.other', { n: String(added) }),
+  present: t(present === 1 ? 'books.bank.import.present.one' : 'books.bank.import.present.other', { n: String(present) }),
+});
+
+/**
+ * Sends the import, waiting while the uploaded file is still being checked: no route reads a file's check, so a
+ * `not_ready` is asked again every 2 s for up to 20 s (e2e-2 on #439). A refusal rolls back its saved-once claim, so the
+ * same key asks again. Any other answer, or the last `not_ready`, goes to the form as it is.
+ */
+const pause = (ms: number) => new Promise<void>((done) => { setTimeout(done, ms); });
+export async function importWhenChecked<T>(send: () => Promise<T>, tries = 10, wait = pause): Promise<T> {
+  for (let left = tries; ; left -= 1) {
+    try {
+      return await send();
+    } catch (e) {
+      if (left <= 1 || !(e instanceof ApiError) || e.code !== 'not_ready') throw e;
+      await wait(2000);
+    }
+  }
+}
