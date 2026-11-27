@@ -54,7 +54,11 @@ export const setExpenseCategory = defineContract({
   output: z.object({}),
   // account_in_use: an account taken off the list that an expense line already names (the auditor on #425).
   errors: ['name_taken', 'not_an_expense_account', 'account_in_use'],
-  dbErrors: { '23503:fk_expense_lines_category_account': { code: 'account_in_use', message: 'An expense already posts to that account under this category' } },
+  // An expense line or a bill's charge line naming the pair (#436; e2e-playwright on RAD-152) holds it.
+  dbErrors: {
+    '23001:fk_expense_lines_category_account': { code: 'account_in_use', message: 'An expense already posts to that account under this category' },
+    '23001:fk_purchase_bill_lines_expense_category': { code: 'account_in_use', message: 'A bill’s charge already posts to that account under this category' },
+  },
 });
 
 // Expenses themselves (ADR-009 §3).
