@@ -7,14 +7,15 @@
 import { accounts, accountsTx, after, bankStatementLines, statementFormats, statementImports } from '@radcore/db/accounts';
 import { idString } from '@radcore/lib-common';
 import {
-  AppError, decodeCursor, encodeCursor, ImportFileError, readTable, readyFile, type BeforeJob, type Ctx, type JobContract, type JobMeta, type Table,
+  AppError, decodeCursor, encodeCursor, ImportFileError, readPdf, readTable, readyFile, type BeforeJob, type Ctx, type JobContract, type JobMeta, type Table,
 } from '@radcore/lib-platform';
 import { and, asc, between, desc, eq, gt, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementLinesContract, undoStatementImportContract,
 } from '../contract-bank.ts';
-import { chainToStored, readStatement, type Refusal, type StatementLine } from './statement-read.ts';
+import { STATEMENT_LAYOUTS, type StatementLayout } from './statement-layouts.ts';
+import { chainToStored, readStatement, type Refusal, type StatementFormat, type StatementLine } from './statement-read.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -70,23 +71,30 @@ export async function importStatement(ctx: Ctx, r: In<typeof importStatementCont
   return { id: row.id };
 }
 
-type FileRead = { ok: true; table: Table } | { ok: false; refusal: Refusal };
+// A PDF's layout brings its own format; a CSV or Excel file is read by the one the account keeps.
+type FileRead = { ok: true; table: Table; format?: StatementFormat } | { ok: false; refusal: Refusal };
 
 /** Before the job's transaction: the file read in lib-platform's isolate (ADR-003 §7). A file it can't read is the
  * import's answer; any other failure (S3 down) is retried. */
-export const readStatementFile: BeforeJob<JobIn, FileRead> = async ({ key, contentType }, { files }) => {
-  // shortcut: a PDF is refused until RAD-159's second PR reads each bank's layout in the worker (unpdf).
-  if (contentType === 'application/pdf') {
-    return { ok: false, refusal: { row: 0, column: '', code: 'statement_layout_unknown',
-      message: 'A PDF statement can’t be read yet: upload the bank’s CSV or Excel statement instead' } };
-  }
+export const statementFileReader = (layouts: readonly StatementLayout[]): BeforeJob<JobIn, FileRead> => async ({ key, contentType }, { files }) => {
   try {
-    return { ok: true, table: await readTable(await files.readFile(key, 'statement')) };
+    const bytes = await files.readFile(key, 'statement');
+    if (contentType !== 'application/pdf') return { ok: true, table: await readTable(bytes) };
+    // A PDF's text, in the isolate, within ADR-003 §7's limits (RC-135), then the layout of the bank it's from.
+    const pages = await readPdf(bytes);
+    const layout = layouts.find((l) => l.matches(pages));
+    if (layout === undefined) {
+      return { ok: false, refusal: { row: 0, column: '', code: 'statement_layout_unknown',
+        message: 'RadCore can’t read this bank’s PDF statement yet: upload the bank’s CSV or Excel statement instead' } };
+    }
+    return { ok: true, ...layout.read(pages) };
   } catch (e) {
     if (e instanceof ImportFileError) return { ok: false, refusal: { row: 0, column: '', code: 'statement_unreadable', message: e.message } };
     throw e;
   }
 };
+/** The worker's reader, with every bank's layout. */
+export const readStatementFile = statementFileReader(STATEMENT_LAYOUTS);
 
 const lineColumns = {
   rowNo: bankStatementLines.rowNo, valueDate: bankStatementLines.valueDate, narration: bankStatementLines.narration,
@@ -114,7 +122,7 @@ export async function storeStatement(ctx: Ctx, { importId }: JobIn, { before }: 
     .set({ status: 'refused', refusals: refusals.slice(0, KEEP_REFUSALS) }).where(eq(statementImports.id, importId));
   if (format === undefined) throw new Error(`statement import ${importId}: its account has no layout`);
   if (!before.ok) return void await refused([before.refusal]);
-  const read = readStatement(before.table, format);
+  const read = readStatement(before.table, before.format ?? format);
   if (read.refusals.length > 0) return void await refused(read.refusals);
   const first = read.lines[0];
   const last = read.lines.at(-1);

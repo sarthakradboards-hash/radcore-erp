@@ -32,6 +32,8 @@ export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${
 const DB_CLIENT = 'packages/lib-platform/src/db/client.ts';
 const OUTBOUND_CLIENT = 'packages/lib-platform/src/http/outbound.ts';
 const IMPORT_ISOLATE = 'packages/lib-platform/src/import/isolate.ts';
+// A PDF reader's thread entry (RAD-159): unpdf loads there alone.
+const IMPORT_PDF_THREAD = 'packages/lib-platform/src/import/pdf-thread.ts';
 // The print pool's starter and its threads' entry (RAD-120).
 const PRINT_POOL = 'packages/lib-platform/src/print/pool.ts';
 const PRINT_THREAD = 'packages/lib-platform/src/print/render-thread.ts';
@@ -48,7 +50,7 @@ export const ZONES = {
   'radcore/outbound-only': [OUTBOUND_CLIENT],
 };
 /** L8's import list lifted by one module in exactly these files, with the rest of L8 still on (ADR-002). */
-export const L8_LIFTED = { [IMPORT_ISOLATE]: ['worker_threads'], [PRINT_POOL]: ['worker_threads'], [PRINT_THREAD]: ['worker_threads'] };
+export const L8_LIFTED = { [IMPORT_ISOLATE]: ['worker_threads'], [IMPORT_PDF_THREAD]: ['worker_threads'], [PRINT_POOL]: ['worker_threads'], [PRINT_THREAD]: ['worker_threads'] };
 /** L1's SQL zone: `sql` allowed in its positions (plus `sql` on the allowlist). L1 itself is never off. */
 export const L1_SQL_ZONE = [VIEW_FILES, ...TABLE_FILES, REQUEST_CONTEXT, LOG_WRITERS, LOCKS];
 const L1_ALLOW = ['and', 'or', 'not', 'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'isNull', 'isNotNull', 'inArray', 'between',
@@ -312,6 +314,9 @@ export default tseslint.config(
     'no-eval': 'error', 'no-new-func': 'error', 'no-implied-eval': 'error',
   } },
   { files: SERVER, ignores: ZONES['radcore/outbound-only'], rules: on('radcore/outbound-only') },
+  // L8: an uploaded PDF is read only in the worker (RC-135, ADR-003 §7; auditor-2 on #438), never by the api's own code.
+  { files: [`apps/api/**/*.${EXT}`], rules: { 'no-restricted-imports': ['error', { paths: [{ name: '@radcore/lib-platform',
+    importNames: ['readPdf'], message: 'L8: a PDF is read only in the worker (RC-135). Queue a job that reads it.' }] }] } },
   ...Object.entries(L8_LIFTED).map(([file, lifted]) => ({ files: [file], rules: on('radcore/outbound-only',
     { ...OPTIONS['radcore/outbound-only'], imports: l8Imports(L8_MODULES.filter((m) => !lifted.includes(m))) }) })),
 
