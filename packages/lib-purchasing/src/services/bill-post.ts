@@ -1,4 +1,4 @@
-// Posting a purchase bill (M4-03, RAD-138; ADR-008 §7, §7a, §12; ADR-006 §4, §6, F3): matched three ways, each goods line
+// Posting a purchase bill (M4-03, RAD-138; ADR-008 §7, §12; ADR-009 §2; ADR-006 §4, §6, F3): matched three ways, each goods line
 // against the receipt line it bills and through it the PO line, then posted in one save. Its approval, past the tolerance,
 // posts it too; cancelling mirrors it.
 //   locks (§12): the period FOR SHARE → its POs FOR SHARE → its receipts → its job-work receipts (RAD-142) → the bill
@@ -6,13 +6,14 @@
 //   Goods Received Not Billed: cleared by exactly what the billed quantities accrued at receipt, accepted goods first
 //     (F3, F4): a line taking a receipt line from b0 to b1 of its quantity q, worth v at receipt, clears
 //     round(v × b1 / q) − round(v × b0 / q), so the bill that takes the last of it clears what's left, exactly
-//   the price difference: the bill's value (with its charges spread by value, and GST it can't claim, §7a) less what it
+//   the price difference: the bill's value (with its charges spread by value, and GST it doesn’t claim) less what it
 //     accrued; an accepted part's goes to stock across the sellable places holding the item, and to cost of goods sold
 //     for what's gone (ADR-006 §4); a billed reject's onto its rejects place
 import { purchaseBillLines, purchaseBills, purchasingTx } from '@radcore/db/purchasing';
 import { getPartyById, holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntriesOf, type JournalLine } from '@radcore/lib-accounts';
 import { dec, indiaDate, roundMoney, roundQty, type Decimal, type Money } from '@radcore/lib-common';
 import { AppError, holdSeries, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx } from '@radcore/lib-platform';
+import { creditFrom, inputCredit, supplierKind } from '@radcore/lib-gst';
 import { holdStock, jobWorkLinesFor, postStock, quantitiesAt, revaluesOf, sellableOnHand, type StockRevalue } from '@radcore/lib-stock';
 import { asc, eq } from 'drizzle-orm';
 import type { cancelPurchaseBill, postPurchaseBill } from '../contract.ts';
@@ -116,9 +117,11 @@ async function judge(ctx: Ctx, b: Row, lines: readonly Line[], receipts: readonl
   const taxableOf = (kind: string) => lines.reduce((s, l, i) => (l.kind === kind ? s.plus(dec(amounts.lines[i]?.taxable ?? '0')) : s), zero());
   const [goods, charges] = [taxableOf('goods').plus(taxableOf('job_work')), taxableOf('charge')];
   const chargesOver = !charges.isZero() && (goods.isZero() || charges.times(100).div(goods).gt(tolerance));
-  // Input GST is claimed only from a regular registered supplier whose GSTIN is on the bill (§7a, until CA-04).
-  const claimable = b.supplierGstin !== null && !supplier.composition;
-  return { amounts, accruals, over: lineOver || chargesOver, claimable };
+  // Each line's input credit by ADR-009 §2: the supplier's kind against gst.credit_from, and its heads against its state.
+  // The GSTIN as printed is the party's (checkDraft). A charge line's blocked category comes with M5-02.
+  const [kind, from] = [supplierKind(supplier), creditFrom(ctx)];
+  const credits = amounts.lines.map((tax) => inputCredit({ tax, kind, creditFrom: from, blocked: false, intraState: amounts.intraState }));
+  return { amounts, accruals, over: lineOver || chargesOver, credits };
 }
 
 /** Spreads `total` over `weights` by value, to the paisa, the last taking what's left so the shares add up exactly. */
@@ -135,12 +138,11 @@ function spread(total: Decimal, weights: readonly Decimal[]): Decimal[] {
 
 /** Posts a judged bill: its price difference into stock and cost of goods sold, its entry, its tax and number. */
 async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Promise<string> {
-  const gstOf = (i: number) => {
-    const a = j.amounts.lines[i];
-    return a === undefined ? zero() : dec(a.cgst).plus(dec(a.sgst)).plus(dec(a.igst));
-  };
-  // What each line costs: its taxable value, and its GST where it can't be claimed (§7a). Charges spread over the goods.
-  const costOf = (i: number) => dec(j.amounts.lines[i]?.taxable ?? '0').plus(j.claimable ? zero() : gstOf(i));
+  const headsOf = (a: { cgst: string; sgst: string; igst: string } | undefined) =>
+    (a === undefined ? zero() : dec(a.cgst).plus(dec(a.sgst)).plus(dec(a.igst)));
+  // What each line costs: its taxable value, and the GST it doesn't claim (ADR-009 §2). Charges spread over the goods.
+  const costOf = (i: number) => dec(j.amounts.lines[i]?.taxable ?? '0').plus(headsOf(j.amounts.lines[i])).minus(headsOf(j.credits[i]));
+  const claimed = (head: 'cgst' | 'sgst' | 'igst') => j.credits.reduce((s, c) => s.plus(dec(c[head])), zero());
   const chargeCost = lines.reduce((s, l, i) => (l.kind === 'charge' ? s.plus(costOf(i)) : s), zero());
   const goodsAt = j.accruals.map((a) => lines.indexOf(a.line));
   const chargeShares = spread(chargeCost, goodsAt.map((i) => dec(j.amounts.lines[i]?.taxable ?? '0')));
@@ -212,8 +214,8 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
     ...signed({ system: 'jw_accrued' }, j.accruals.reduce((s, a) => (a.jobWork ? s.plus(a.value) : s), zero())),
     ...moved.flatMap((m) => signed({ system: 'stock' }, dec(m.value), { itemId: m.itemId, locationId: m.locationId })),
     ...signed({ system: 'cogs' }, cogs),
-    ...(j.claimable ? [...signed({ system: 'input_cgst' }, dec(t.cgst)), ...signed({ system: 'input_sgst' }, dec(t.sgst)),
-      ...signed({ system: 'input_igst' }, dec(t.igst))] : []),
+    ...signed({ system: 'input_cgst' }, claimed('cgst')), ...signed({ system: 'input_sgst' }, claimed('sgst')),
+    ...signed({ system: 'input_igst' }, claimed('igst')),
     ...signed({ system: 'round_off' }, dec(t.roundOff)),
     { account: { system: 'creditors' }, partyId: b.partyId, credit: t.total },
   ];
@@ -226,10 +228,10 @@ async function commit(ctx: Ctx, b: Row, lines: readonly Line[], j: Judged): Prom
   // (ADR-006 §7, RAD-95).
   const cleared = new Map(j.accruals.map((x) => [x.line.id, roundMoney(x.value)]));
   for (const [i, l] of lines.entries()) {
-    const a = j.amounts.lines[i];
-    if (a !== undefined) {
+    const [a, c] = [j.amounts.lines[i], j.credits[i]];
+    if (a !== undefined && c !== undefined) {
       await tx.update(purchaseBillLines).set({ gstRate: a.gstRate, gstRateSource: a.gstRateSource, taxable: a.taxable, cgst: a.cgst, sgst: a.sgst,
-        igst: a.igst, lineTotal: a.lineTotal, ...(l.kind === 'charge' ? {} : { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3),
+        igst: a.igst, lineTotal: a.lineTotal, creditCgst: c.cgst, creditSgst: c.sgst, creditIgst: c.igst, creditReason: c.reason, ...(l.kind === 'charge' ? {} : { revaluedQty: roundQty(covered.get(l.id) ?? zero(), 3),
           [l.kind === 'goods' ? 'grniValue' : 'jwcbValue']: cleared.get(l.id) ?? null }) })
         .where(eq(purchaseBillLines.id, l.id));
     }

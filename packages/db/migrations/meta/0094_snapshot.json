@@ -1,5 +1,5 @@
 {
-  "id": "82bd56aa-f359-41b8-a0cd-7efeda696e58",
+  "id": "ffc2280e-b346-4c7f-a2bd-0f4e61c68c96",
   "prevId": "86a955f0-61f3-4061-a7b5-4c65af6eb13e",
   "version": "7",
   "dialect": "postgresql",
@@ -159,15 +159,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "id",
-            "control_kind"
-          ]
-        },
-        "ux_accounts_id_type_control_kind": {
-          "name": "ux_accounts_id_type_control_kind",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "type",
             "control_kind"
           ]
         }
@@ -19187,6 +19178,30 @@
           "type": "numeric(18, 2)",
           "primaryKey": false,
           "notNull": false
+        },
+        "credit_cgst": {
+          "name": "credit_cgst",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credit_sgst": {
+          "name": "credit_sgst",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credit_igst": {
+          "name": "credit_igst",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credit_reason": {
+          "name": "credit_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -19403,6 +19418,26 @@
         "ck_purchase_bill_lines_line_total": {
           "name": "ck_purchase_bill_lines_line_total",
           "value": "\"radcore\".\"purchase_bill_lines\".\"line_total\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"line_total\" <> 'NaN'"
+        },
+        "ck_purchase_bill_lines_credit_cgst": {
+          "name": "ck_purchase_bill_lines_credit_cgst",
+          "value": "\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" <> 'NaN'"
+        },
+        "ck_purchase_bill_lines_credit_sgst": {
+          "name": "ck_purchase_bill_lines_credit_sgst",
+          "value": "\"radcore\".\"purchase_bill_lines\".\"credit_sgst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" <> 'NaN'"
+        },
+        "ck_purchase_bill_lines_credit_igst": {
+          "name": "ck_purchase_bill_lines_credit_igst",
+          "value": "\"radcore\".\"purchase_bill_lines\".\"credit_igst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" <> 'NaN'"
+        },
+        "ck_purchase_bill_lines_credit": {
+          "name": "ck_purchase_bill_lines_credit",
+          "value": "num_nulls(\"radcore\".\"purchase_bill_lines\".\"credit_cgst\", \"radcore\".\"purchase_bill_lines\".\"credit_sgst\", \"radcore\".\"purchase_bill_lines\".\"credit_igst\") in (0, 3)\n    and (\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is null or \"radcore\".\"purchase_bill_lines\".\"gst_rate\" is not null) and (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" is null or \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is not null)"
+        },
+        "ck_purchase_bill_lines_credit_whole": {
+          "name": "ck_purchase_bill_lines_credit_whole",
+          "value": "\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is null\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" is null and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = \"radcore\".\"purchase_bill_lines\".\"cgst\" and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = \"radcore\".\"purchase_bill_lines\".\"sgst\" and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = \"radcore\".\"purchase_bill_lines\".\"igst\")\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" in ('supplier_kind', 'blocked', 'state') and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = 0)"
         },
         "ck_purchase_bill_lines_kind": {
           "name": "ck_purchase_bill_lines_kind",
@@ -20837,260 +20872,6 @@
         "ck_supplier_returns_debit": {
           "name": "ck_supplier_returns_debit",
           "value": "num_nulls(\"radcore\".\"supplier_returns\".\"taxable\", \"radcore\".\"supplier_returns\".\"cgst\", \"radcore\".\"supplier_returns\".\"sgst\", \"radcore\".\"supplier_returns\".\"igst\", \"radcore\".\"supplier_returns\".\"round_off\", \"radcore\".\"supplier_returns\".\"total\") in (0, 6)\n    and (\"radcore\".\"supplier_returns\".\"status\" <> 'draft' or \"radcore\".\"supplier_returns\".\"total\" is null) and (\"radcore\".\"supplier_returns\".\"debit_note_number\" is null or \"radcore\".\"supplier_returns\".\"total\" is not null)\n    and (\"radcore\".\"supplier_returns\".\"total\" is null or (\"radcore\".\"supplier_returns\".\"total\" = \"radcore\".\"supplier_returns\".\"taxable\" + \"radcore\".\"supplier_returns\".\"cgst\" + \"radcore\".\"supplier_returns\".\"sgst\" + \"radcore\".\"supplier_returns\".\"igst\" + \"radcore\".\"supplier_returns\".\"round_off\" and abs(\"radcore\".\"supplier_returns\".\"round_off\") < 1))"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.expense_categories": {
-      "name": "expense_categories",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name_key": {
-          "name": "name_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))",
-            "type": "stored"
-          }
-        },
-        "credit": {
-          "name": "credit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'blocked'"
-        },
-        "blocked_clause": {
-          "name": "blocked_clause",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        }
-      },
-      "indexes": {
-        "ux_expense_categories_name_key": {
-          "name": "ux_expense_categories_name_key",
-          "columns": [
-            {
-              "expression": "name_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_expense_categories_name": {
-          "name": "ck_expense_categories_name",
-          "value": "char_length(\"radcore\".\"expense_categories\".\"name\") <= 80"
-        },
-        "ck_expense_categories_credit": {
-          "name": "ck_expense_categories_credit",
-          "value": "\"radcore\".\"expense_categories\".\"credit\" in ('allowed', 'blocked')"
-        },
-        "ck_expense_categories_clause": {
-          "name": "ck_expense_categories_clause",
-          "value": "(\"radcore\".\"expense_categories\".\"credit\" = 'blocked') = (\"radcore\".\"expense_categories\".\"blocked_clause\" is not null)\n    and (\"radcore\".\"expense_categories\".\"blocked_clause\" is null or \"radcore\".\"expense_categories\".\"blocked_clause\" ~ '^\\((a|aa|ab|b|c|d|e|f|fa|g|h|i)\\)(\\((i|ii|iii)\\))?$')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.expense_category_accounts": {
-      "name": "expense_category_accounts",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "category_id": {
-          "name": "category_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_type": {
-          "name": "account_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'expense'"
-        },
-        "account_control_kind": {
-          "name": "account_control_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'none'"
-        }
-      },
-      "indexes": {
-        "ix_expense_category_accounts_account": {
-          "name": "ix_expense_category_accounts_account",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_control_kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "expense_category_accounts_category_id_expense_categories_id_fk": {
-          "name": "expense_category_accounts_category_id_expense_categories_id_fk",
-          "tableFrom": "expense_category_accounts",
-          "tableTo": "expense_categories",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "category_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "fk_expense_category_accounts_account": {
-          "name": "fk_expense_category_accounts_account",
-          "tableFrom": "expense_category_accounts",
-          "tableTo": "accounts",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "account_id",
-            "account_type",
-            "account_control_kind"
-          ],
-          "columnsTo": [
-            "id",
-            "type",
-            "control_kind"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "pk_expense_category_accounts": {
-          "name": "pk_expense_category_accounts",
-          "columns": [
-            "category_id",
-            "account_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_expense_category_accounts_ordinary": {
-          "name": "ck_expense_category_accounts_ordinary",
-          "value": "\"radcore\".\"expense_category_accounts\".\"account_type\" = 'expense' and \"radcore\".\"expense_category_accounts\".\"account_control_kind\" = 'none'"
         }
       },
       "isRLSEnabled": false

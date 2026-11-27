@@ -663,8 +663,15 @@
     {
       "idx": 94,
       "version": "7",
-      "when": 1795769242841,
-      "tag": "0094_expense_categories",
+      "when": 1795765419368,
+      "tag": "0094_bill_input_credit",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795769934108,
+      "tag": "0096_expense_categories",
       "breakpoints": true
     }
   ]

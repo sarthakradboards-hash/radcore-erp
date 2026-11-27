@@ -162,7 +162,7 @@ export async function amountsOf(ctx: Ctx, supplierState: string, on: string, lin
       : lineTax({ qty: l.qty ?? '0', rate: l.rate ?? '0', discountPercent: '0', gstPercent: rate.rate }, place.intraState);
     taxed.push({ ...t, gstRate: rate.rate, gstRateSource: rate.source });
   }
-  return { placeOfSupply: place.state, lines: taxed, totals: totalsOf(taxed) };
+  return { placeOfSupply: place.state, intraState: place.intraState, lines: taxed, totals: totalsOf(taxed) };
 }
 
 /** How far a billed rate is above its PO rate, in percent to two places (0 at or below it); null for a free item's line

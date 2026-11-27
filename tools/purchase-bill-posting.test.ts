@@ -7,8 +7,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { addParty, allocatePayment, JOURNAL_SERIES, journalEntryById, journalPage, openFinancialYear, recordPayment } from '@radcore/lib-accounts';
 import { gstinCheckChar, moneyString, percentString, quantityString, unitPriceString } from '@radcore/lib-common';
-import { putGstRate } from '@radcore/lib-gst';
-import { AppError, decideApproval, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
+import { CREDIT_FROM, putGstRate } from '@radcore/lib-gst';
+import { AppError, decideApproval, loadConfig, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import {
   addBill, addOrder, addReceipt, addReturn, BILL_SERIES, grniByReceiptLine, billApproval, cancelBillNow, cancelReceiptNow, getBillById, getOrderById, getReceiptById, placeOrder, postBillNow,
@@ -47,7 +47,8 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     await pool.end();
     await su.end();
   });
-  const run = <T>(fn: (ctx: Ctx) => Promise<T>, as: Principal) => runInTransaction(db, WRITE, as, randomUUID(), fn);
+  const run = <T>(fn: (ctx: Ctx) => Promise<T>, as: Principal, settings?: Settings) =>
+    runInTransaction(db, WRITE, as, randomUUID(), (ctx) => fn(settings === undefined ? ctx : { ...ctx, settings }));
   const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AppError ? e.code
     : (e as { cause?: { constraint?: string } }).cause?.constraint ?? String(e)));
 
@@ -84,15 +85,17 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     return id;
   };
 
-  type Setup = { stock?: Record<string, string>; ordered: string; received: { accepted: string; rejected: string } };
+  type Setup = { stock?: Record<string, string>; ordered: string; received: { accepted: string; rejected: string };
+    supplier?: 'composition' | 'unregistered' };
   /** F2's start, by default: SCOOTER at Stores 2 at 60,000.00 each, a PO for 3 at 62,000.00, and a receipt of 3 into Stores
    * of which QC accepts 2 and rejects 1 into Rejected. `stock` puts other opening stock at the named places instead. */
   async function setup(o: Setup = { ordered: '3', received: { accepted: '2', rejected: '1' } }, as?: Principal) {
     const staff = as ?? await person(KEYS);
     const made = await run(async (ctx) => {
       await openFinancialYear(ctx, DATE);
-      const supplierGstin = gstin();
-      const { id: supplierId } = await addParty(ctx, { name: `Supplier ${tag()}`, kinds: ['supplier'], gstin: supplierGstin, pan: null, composition: false,
+      const supplierGstin = o.supplier === 'unregistered' ? null : gstin();
+      const { id: supplierId } = await addParty(ctx, { name: `Supplier ${tag()}`, kinds: ['supplier'], gstin: supplierGstin, pan: null,
+        composition: o.supplier === 'composition',
         stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
       const { id: categoryId } = await addCategory(ctx, { name: `Test ${tag()}` });
       const hsn = `8711${String(randomBytes(2).readUInt16BE() % 10000).padStart(4, '0')}`;
@@ -140,7 +143,7 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     return run((ctx) => addBill(ctx, { supplierId: at.supplierId, businessDate: DATE, supplierInvoiceNumber: o.number ?? `INV/${tag()}`,
       supplierInvoiceDate: DATE, supplierGstin: at.supplierGstin, statedTotal: moneyString().parse(o.total), fileId, notes: null, lines: o.lines }), as);
   };
-  const post = (at: At, id: string, as: Principal = at.staff) => run((ctx) => postBillNow(ctx, { id }), as);
+  const post = (at: At, id: string, as: Principal = at.staff, settings?: Settings) => run((ctx) => postBillNow(ctx, { id }), as, settings);
   const position = async (itemId: string, locationId: string) => (await pool.query<{ qty: string; value: string }>(`select
     coalesce(sum(case direction when 'in' then qty when 'out' then -qty else 0 end), 0)::numeric(18, 0)::text as qty,
     coalesce(sum(case direction when 'out' then -value else value end), 0)::numeric(18, 2)::text as value
@@ -272,6 +275,29 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
       versionHash: asked.versionHash ?? '' }), at.staff))).toBe('own_request');
     await run((ctx) => decideApproval(ctx, billApproval, asked.approvalId ?? '', { decision: 'approve', versionHash: asked.versionHash ?? '' }), approver);
     expect((await run((ctx) => getBillById(ctx, { id: over }), at.staff)).status).toBe('posted');
+  });
+
+  // RAD-139 (ADR-009 §2, §10): F3's bill from a composition or an unregistered supplier claims nothing, so its 6,250.00 of
+  // GST joins the price difference, all to stock; with composition in gst.credit_from, the same bill claims it, as F3.
+  it('claims no input GST from a composition or unregistered supplier, until gst.credit_from names the kind', async () => {
+    const credit = async (id: string) => (await pool.query(`select credit_cgst, credit_sgst, credit_igst, credit_reason
+      from radcore.purchase_bill_lines where bill_id = $1`, [id])).rows;
+    const bill = async (supplier: 'composition' | 'unregistered', settings?: Settings) => {
+      const at = await setup({ ordered: '3', received: { accepted: '2', rejected: '1' }, supplier });
+      const { id } = await draft(at, { lines: [goods(at, '2', '62500')], total: '131250' });
+      expect((await post(at, id, at.staff, settings)).status).toBe('posted');
+      return { at, id, entry: await entryOf(at, id), stores: await position(at.itemId, at.places.stores), credit: await credit(id) };
+    };
+    for (const kind of ['composition', 'unregistered'] as const) {
+      const b = await bill(kind);
+      expect(b.entry).toEqual([`Creditors 0.00 131250.00`, `Goods Received Not Billed 124000.00 0.00`, `Stock in Hand 7250.00 0.00`].sort());
+      expect(b.stores).toEqual({ qty: '4', value: '251250.00' });
+      expect(b.credit).toEqual([{ credit_cgst: '0.00', credit_sgst: '0.00', credit_igst: '0.00', credit_reason: 'supplier_kind' }]);
+    }
+    const widened = await bill('composition', new Settings([{ key: CREDIT_FROM.key, value: 'regular,composition' }]));
+    expect(widened.entry).toEqual([`Creditors 0.00 131250.00`, `Goods Received Not Billed 124000.00 0.00`, `Input CGST 3125.00 0.00`,
+      `Input SGST 3125.00 0.00`, `Stock in Hand 1000.00 0.00`].sort());
+    expect(widened.credit).toEqual([{ credit_cgst: '3125.00', credit_sgst: '3125.00', credit_igst: '0.00', credit_reason: null }]);
   });
 
   it('spreads freight over the goods into the price difference, within the tolerance', async () => {
