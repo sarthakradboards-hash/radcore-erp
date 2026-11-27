@@ -59,8 +59,9 @@ the line's own account for a service bill's charge or an expense.
   credit (F28). A purchase bill's tax is always lib-gst's (ADR-008 §7), worked out from the supplier's state, so its
   heads always match. A service taxed where it's used, not where we are (a hotel, an event venue), is entered as an
   expense, where the heads are typed as printed and a mismatch means no credit.
-- **What the line records:** the credit claimed by head, and, where none, why (`supplier_kind`, `blocked`, `state`).
-  ADR-010's 3B tables read the claimed and the ineligible amounts from here.
+- **What the line records:** the credit claimed by head, and, where none, why (`supplier_kind`, `blocked`, `state`, or
+  `time_barred` past section 16(4), [ADR-010](010-gst.md) §10). ADR-010's 3B tables read the claimed and the ineligible
+  amounts from here.
 - **Not enforced in M5 (CA-12):** section 16(4)'s cut-off, matching to GSTR-2B, Rule 37's 180-day reversal and Rules
   42 and 43. Until the CA says which the software must hold, they're the CA's monthly checklist, and ADR-010 says where
   each would go.
@@ -141,9 +142,9 @@ the line's own account for a service bill's charge or an expense.
   M7).
 - **Opening TDS** (M5-16's cut-over balances) comes in as `tds_deductions` rows with the opening entry, so it can be
   deposited like any other.
-- **The books check (ADR-006 §7)** gains a line: TDS Payable, less the lines of `payroll` entries, equals the
-  deductions (net of reversals) less those deposited. Salary TDS and its deposit are M6-08's, which adds its own line.
-  M5-10's migration writes rows for any payment already made with M3-12's typed TDS.
+- **The books check (ADR-006 §7)** gains a line: TDS Payable, less the lines of `payroll` entries, equals the deductions
+  (net of reversals) less those deposited or marked `deposited_before_cut_over` (§14). Salary TDS and its deposit are
+  M6-08's, which adds its own line. M5-10's migration writes rows for any payment already made with M3-12's typed TDS.
 - **Lower-deduction certificates** (a lower rate for one payee) aren't built in M5. If one is needed, it's a dated row
   per party, not a redesign.
 
@@ -232,8 +233,8 @@ profile, the period lock, the filed-month lock), each `FOR SHARE` except the one
   the filing or request row.
 
 ```
-ask (books:lock) decide (books:unlock, not the asker)
-  request row, pending -> lockFirst: profile SHARE, period lock UPDATE, filed row SHARE
+ask (books:lock)            decide (books:unlock, not the asker)
+  request row, pending  ->   lockFirst: profile SHARE, period lock UPDATE, filed row SHARE
                              lock the request row (ADR-001 §8b), check version (lock date unchanged)
                              approved: move the lock back, or reverse the close dated 31 March
 ```
@@ -429,7 +430,7 @@ paid in cash. Category "Staff welfare", blocked under 17(5)(b).
   Candidates are ranked by:
   - **reference:** the line's reference, or a UTR, cheque or transaction number in its narration, equals the posting
     document's reference (a payment's `reference`, M3-12);
-    - **party:** the narration holds the posting document's party's whole normalised name; one word of it (five letters
+  - **party:** the narration holds the posting document's party's whole normalised name; one word of it (five letters
     or more) only ranks a suggestion higher;
   - then the nearest date.
   Amount and date alone never make a match.
@@ -525,7 +526,7 @@ its output is shared. The cut-over date is set at go-live (M8), in `accounts.cut
   invoice's is unique for its year, a bill's for its supplier and year, as ADR-008 §7's check. It posts Dr Debtors (or
   Cr Creditors) against Opening Balance Equity for the unpaid amount only. Each is in `allocatable_documents`, so
   payments apply to it, reminders chase it (ADR-007 §10), and a credit note can be raised against it (ADR-007 §6), up to
-    its summary line's value; goods taken back on one come in at the item's current average (CA-28). Neither is in
+  its summary line's value; goods taken back on one come in at the item's current average (CA-28). Neither is in
   RadCore's GSTR-1 or 3B; a credit note against one is, in its own month (ADR-010).
 - **Money not yet applied (GL-058).** Each party's unapplied amount comes in as an `opening_receipts` row (a customer's:
   Dr Opening Balance Equity, Cr Debtors) or an `opening_payments` row (a supplier's: Dr Creditors, Cr Opening Balance
