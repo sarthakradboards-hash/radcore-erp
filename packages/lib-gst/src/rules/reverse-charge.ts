@@ -2,8 +2,7 @@
 // the supplier's. Pure, so its unit tests reach every branch.
 
 /** Which suppliers a rule applies to: those with no GSTIN, any, or any but a body corporate. */
-export const RCM_SUPPLIERS = ['unregistered', 'any', 'not_body_corporate'] as const;
-export type RcmSupplier = (typeof RCM_SUPPLIERS)[number];
+type RcmSupplier = 'unregistered' | 'any' | 'not_body_corporate';
 export type RcmRule = { prefix: string; supplier: RcmSupplier; effectiveFrom: string };
 export type RcmParty = { gstin: string | null; pan: string | null; overseas: boolean };
 

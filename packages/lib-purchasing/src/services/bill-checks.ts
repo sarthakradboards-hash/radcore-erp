@@ -145,7 +145,7 @@ export async function holdOrders(ctx: Ctx, poLineIds: readonly string[]): Promis
 }
 
 
-export type Heads = { cgst: Money; sgst: Money; igst: Money };
+type Heads = { cgst: Money; sgst: Money; igst: Money };
 type Taxed = LineTax & { gstRate: string; gstRateSource: string; reverseCharge: Heads | null };
 /** The bill's tax from its own lines (RC-056): each at the rate in force on the supplier's invoice date for its item's HSN,
  * or its charge's HSN or SAC; the supplier sells, we buy, so the place of supply is ours (§7, as a PO's). A charge under
