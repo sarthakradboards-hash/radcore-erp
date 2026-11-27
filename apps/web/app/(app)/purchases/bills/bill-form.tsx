@@ -3,12 +3,13 @@
 // bill says it, its file, and its lines. Goods lines are added a PO at a time: each of the PO's lines becomes one, at its PO rate
 // until the bill says otherwise; once the goods are in, the receipt that brought them names its line. Charges (freight, packing,
 // insurance) are their own lines with an HSN or SAC. The server works out the tax and the match; posting is on the bill's page.
-import { listParties } from '@radcore/lib-accounts/contract';
+import { listExpenseCategories, listParties } from '@radcore/lib-accounts/contract';
 import { getGoodsReceipt, getPurchaseOrder, listGoodsReceipts, listPurchaseOrders } from '@radcore/lib-purchasing/contract';
 import { purchaseBillFiles } from '@radcore/lib-platform/contract';
 import { getJobWorkReceipt, listJobWorkReceipts } from '@radcore/lib-stock/contract';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
+import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { ApiError } from '../../../../lib/api-client.ts';
@@ -156,6 +157,34 @@ function ReceiptPick({ index }: { index: number }) {
   );
 }
 
+/** A charge's expense category and the account it posts to, from the categories (expenses:read): only switched-on ones, and
+ * only the chosen category's accounts. A new category empties the account, which may not be one of its own. */
+function ChargeCategory({ index }: { index: number }) {
+  const { control, setValue } = useFormContext<BillInput>();
+  const categoryId = useWatch({ control, name: `lines.${index}.expenseCategoryId` });
+  const seen = useRef(categoryId);
+  useEffect(() => {
+    if (seen.current === categoryId) return;
+    seen.current = categoryId;
+    setValue(`lines.${index}.expenseAccountId`, '');
+  }, [categoryId, index, setValue]);
+  const may = useMe().permissions.includes('expenses:read');
+  const q = useApiQuery(listExpenseCategories, {}, { enabled: may });
+  if (!may || q.error !== null) return <p className="kit-hint">{t('purchases.bill.category.hidden')}</p>;
+  const items = q.data?.items ?? [];
+  const chosen = items.find((c) => c.id === categoryId);
+  return (
+    <>
+      <SelectField name={`lines.${index}.expenseCategoryId`} label={t('purchases.bill.category')} hint={t('purchases.bill.category.hint')}
+        options={[{ value: '', label: t('purchases.bill.category.none') }, ...items.filter((c) => c.active || c.id === categoryId).map((c) => ({ value: c.id, label: c.name }))]} />
+      {chosen === undefined ? null : (
+        <SelectField name={`lines.${index}.expenseAccountId`} label={t('purchases.bill.expenseAccount')} placeholder={t('purchases.bill.expenseAccount.pick')}
+          options={chosen.accounts.map((a) => ({ value: a.id, label: a.name }))} />
+      )}
+    </>
+  );
+}
+
 function Lines() {
   const { control, getValues } = useFormContext<BillInput>();
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
@@ -196,6 +225,7 @@ function Lines() {
               <TextField name={`lines.${i}.description`} label={t('purchases.bill.chargeDescription')} autoComplete="off" />
               <TextField name={`lines.${i}.hsn`} label={t('purchases.bill.col.hsn')} inputMode="numeric" autoComplete="off" />
               <TextField name={`lines.${i}.amount`} label={t('purchases.bill.chargeAmount')} inputMode="decimal" autoComplete="off" />
+              <ChargeCategory index={i} />
             </>
           )}
           <button type="button" className="kit-button" onClick={() => remove(i)}>{t('purchases.bill.removeLine', { n: String(i + 1) })}</button>

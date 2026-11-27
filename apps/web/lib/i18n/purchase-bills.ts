@@ -138,5 +138,13 @@ export const purchaseBills = {
   'purchases.bill.err.rate': 'Enter the rate their bill charges.',
   'purchases.bill.err.description': 'Say what the charge is for.',
   'purchases.bill.err.amount': 'Enter the charge’s amount.',
+  'purchases.bill.err.category': 'A bill of charges only posts each charge to its expense account: choose its category.',
+  'purchases.bill.err.expenseAccount': 'Choose which of the category’s accounts it posts to.',
+  'purchases.bill.category': 'Expense category',
+  'purchases.bill.category.hint': 'Needed when the bill has only charges (a transporter’s, say); otherwise optional.',
+  'purchases.bill.category.none': 'None',
+  'purchases.bill.category.hidden': 'Expense categories can’t be shown to you. A bill of charges only needs them; ask accounts.',
+  'purchases.bill.expenseAccount': 'Posts to',
+  'purchases.bill.expenseAccount.pick': 'Choose the account',
   'purchases.bill.err.sac': 'Enter the service’s SAC, as their bill shows it.',
 } as const;

@@ -16,14 +16,14 @@ describe('the purchase bill form', () => {
     expect(r.lines).toEqual([
       { kind: 'goods', poLineId: id(11), receiptLineId: id(31), qty: '10', rate: '1200' },
       { kind: 'goods', poLineId: id(12), receiptLineId: null, qty: '5', rate: '40' },
-      { kind: 'charge', charge: 'freight', description: 'Road freight', hsn: '996511', amount: '900.00' },
+      { kind: 'charge', charge: 'freight', description: 'Road freight', hsn: '996511', amount: '900.00', expenseCategoryId: null, expenseAccountId: null },
     ]);
   });
 
   it('refuses a bill with no lines, and a supplier’s date after the bill’s, on their own boxes', () => {
     expect(billSchema.safeParse(filled).error?.issues.map((i) => i.path)).toEqual([['lines']]);
     const late = billSchema.safeParse({ ...filled, supplierInvoiceDate: '2026-11-25',
-      lines: [{ ...blankCharge(), description: 'Freight', hsn: '996511', amount: '100' }] });
+      lines: [{ ...blankCharge(), description: 'Freight', hsn: '996511', amount: '100', expenseCategoryId: id(40), expenseAccountId: id(41) }] });
     expect(late.error?.issues.map((i) => i.path)).toEqual([['supplierInvoiceDate']]);
   });
 });
@@ -33,5 +33,23 @@ describe('a job worker’s charge line', () => {
     const jw = { kind: 'job_work' as const, label: 'Painted frame (FRM-PNT), JWR/26-27/00001', jobWorkReceiptLineId: id(41), qty: '8', rate: '150.00', hsn: '998898' };
     expect(billSchema.parse({ ...filled, lines: [jw] }).lines).toEqual([{ kind: 'job_work', jobWorkReceiptLineId: id(41), qty: '8', rate: '150.00', hsn: '998898' }]);
     expect(billSchema.safeParse({ ...filled, lines: [{ ...jw, hsn: '' }] }).error?.issues.map((i) => i.path)).toEqual([['lines', 0, 'hsn']]);
+  });
+});
+
+describe('a charge’s expense category (#436)', () => {
+  const charge = { ...blankCharge(), description: 'Transport, Pune to Nashik', hsn: '996511', amount: '4500.00' };
+  const paths = (lines: unknown[]) => billSchema.safeParse({ ...filled, lines }).error?.issues.map((i) => i.path.join('.')) ?? [];
+
+  it('is needed on a bill of charges only, with one of its accounts', () => {
+    expect(paths([charge])).toEqual(['lines.0.expenseCategoryId']);
+    expect(paths([{ ...charge, expenseCategoryId: id(40) }])).toEqual(['lines.0.expenseAccountId']);
+    expect(billSchema.parse({ ...filled, lines: [{ ...charge, expenseCategoryId: id(40), expenseAccountId: id(41) }] }).lines)
+      .toEqual([expect.objectContaining({ expenseCategoryId: id(40), expenseAccountId: id(41) })]);
+  });
+
+  it('is optional beside goods, and still goes with an account when chosen', () => {
+    const goods = { kind: 'goods', label: 'Cable', poLineId: id(12), receiptId: '', receiptLineId: '', qty: '5', rate: '40' };
+    expect(paths([goods, charge])).toEqual([]);
+    expect(paths([goods, { ...charge, expenseCategoryId: id(40) }])).toEqual(['lines.1.expenseAccountId']);
   });
 });
