@@ -53,6 +53,8 @@ export const period = {
   'books.period.err.checklist_incomplete': 'Tick every item on the checklist first.',
   'books.period.err.books_check_failed': 'The books check finds problems as at the year’s 31 March. Put them right before closing.',
   'books.period.err.account_inactive': 'An account the close posts to is inactive. Make it active again, then close.',
+  'books.period.err.period_locked': 'The books are locked on the day this posts. Reload to see where the lock stands now.',
+  'books.period.err.year_not_open': 'That day’s financial year isn’t open in the books.',
   'books.period.err.series_full': 'The journal’s number series is full. Ask your admin to widen it.',
   'books.period.err.own_request': 'You asked for this, so someone else decides it.',
   'books.period.err.approver_too_new': 'Your unlock key is too new to decide this yet.',

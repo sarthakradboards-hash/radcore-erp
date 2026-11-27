@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { t } from '../../../../lib/i18n/index.ts';
 
 const CODES = ['lock_in_future', 'lock_not_forward', 'lock_not_back', 'year_closed', 'year_not_closed', 'later_year_closed',
-  'lock_before_year_end', 'earlier_year_open', 'checklist_incomplete', 'books_check_failed', 'account_inactive', 'series_full',
+  'lock_before_year_end', 'earlier_year_open', 'checklist_incomplete', 'books_check_failed', 'account_inactive', 'series_full', 'period_locked', 'year_not_open',
   'own_request', 'approver_too_new', 'version_changed', 'not_pending'] as const;
 /** The period lock contracts' refusals in the screen's words, for Form's `messages` (also the unlock approvals page's). */
 export const PERIOD_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`books.period.err.${c}`)]));
@@ -26,10 +26,10 @@ export function yearAction(years: readonly Year[], start: string, today: string)
 }
 
 /** A `period-unlock` approval's version (lib-accounts' periodUnlockSpec): what approving it does. */
-export const unlockVersion = z.object({
+const unlockVersion = z.object({
   kind: z.enum(['move_back', 'reopen_year']), through: dateString(), reason: z.string(), lockedThrough: dateString().nullable(),
 });
-export type UnlockVersion = z.output<typeof unlockVersion>;
+type UnlockVersion = z.output<typeof unlockVersion>;
 
 /** The version as the screen shows it, or null when it isn't one (then it can only be rejected). */
 export const readUnlock = (version: unknown): UnlockVersion | null => unlockVersion.safeParse(version).data ?? null;
