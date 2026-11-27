@@ -94,6 +94,8 @@ describe.skipIf(!url || !superUrl)('expense categories', { timeout: 30_000 }, ()
     const debtors = await as((ctx) => systemAccountId(ctx, 'debtors'));
     expect(await code(as((ctx) => addAccount(ctx, { name: named('Odd'), parentId: debtors })))).toBe('parent_not_group');
     expect(await code(as((ctx) => addAccount(ctx, { name: named('Odd'), parentId: randomUUID() })))).toBe('parent_not_group');
+    const off = await account('expense', false);
+    expect(await code(as((ctx) => addAccount(ctx, { name: named('Odd'), parentId: off })))).toBe('parent_not_group');
     const name = named('Travel');
     const taken = `T${randomUUID().slice(0, 6).toUpperCase()}`;
     await as((ctx) => addAccount(ctx, { name, parentId, code: taken }));

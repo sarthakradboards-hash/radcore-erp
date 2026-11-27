@@ -49,6 +49,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   // payments isn't a scoped table. No balance on it, so not receivables:read, and no second factor: it moves nothing.
   { key: 'payments:read', module: 'Payments', label: 'See receipts, payments and refunds', allOnly: true },
   { key: 'payments:write', module: 'Payments', label: 'Record and cancel receipts, payments and refunds', secondFactor: true },
+  // Expenses (M5-02, ADR-009 §9): owned by their maker; writing pays, so it takes the second factor.
+  { key: 'expenses:read', module: 'Expenses', label: 'See expenses', records: ['@radcore/db/accounts#expenses'] },
+  { key: 'expenses:write', module: 'Expenses', label: 'Enter, post and cancel expenses', records: ['@radcore/db/accounts#expenses'], secondFactor: true },
   { key: 'payments:approve', module: 'Payments', label: 'Approve another person’s cash past the day’s limit', secondFactor: true },
   // One posted receipt, printed by its id (the architect on RAD-120): no balance on it, so not receivables:read; all-only,
   // since payments isn't a scoped table.
@@ -65,6 +68,11 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'books:lock', module: 'Journal', label: 'Move the period lock forward, close a year, and ask to move the lock back or reopen a year',
     allOnly: true },
   { key: 'books:unlock', module: 'Journal', label: 'Approve moving the period lock back and reopening a year', allOnly: true,
+    secondFactor: true },
+  // Bank statements (M5-11, ADR-009 §9, §11): company rows, not owned records, so all-only. Importing needs
+  // statement_files:write too, for the upload itself; reconciling posts bank charges (M5-13), so the second factor.
+  { key: 'bank:read', module: 'Bank', label: 'See bank statement lines, matches and the reconciliation statement', allOnly: true },
+  { key: 'bank:reconcile', module: 'Bank', label: 'Import bank statements, match and unmatch, and book bank charges', allOnly: true,
     secondFactor: true },
   { key: 'prices:read', module: 'Prices', label: 'See price lists and discount limits' },
   { key: 'prices:write', module: 'Prices', label: 'Draft price lists, which price nothing until approved' },

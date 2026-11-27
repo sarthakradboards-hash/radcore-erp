@@ -1,5 +1,5 @@
 {
-  "id": "e11d9ccf-eb8e-4e39-b6d0-39b7f54aca0f",
+  "id": "0822ae2d-5896-4cb9-bae8-3750e909beb8",
   "prevId": "0328b052-bb6d-41e5-8d90-d25d07bc7e66",
   "version": "7",
   "dialect": "postgresql",
@@ -1381,13 +1381,6 @@
           "notNull": true,
           "default": false
         },
-        "overseas": {
-          "name": "overseas",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "state_code": {
           "name": "state_code",
           "type": "text",
@@ -1564,10 +1557,6 @@
         "ck_parties_composition": {
           "name": "ck_parties_composition",
           "value": "not \"radcore\".\"parties\".\"composition\" or \"radcore\".\"parties\".\"gstin\" is not null"
-        },
-        "ck_parties_overseas": {
-          "name": "ck_parties_overseas",
-          "value": "\"radcore\".\"parties\".\"overseas\" = (\"radcore\".\"parties\".\"state_code\" = '96') and (not \"radcore\".\"parties\".\"overseas\" or (\"radcore\".\"parties\".\"gstin\" is null and \"radcore\".\"parties\".\"pan\" is null\n    and not \"radcore\".\"parties\".\"composition\" and \"radcore\".\"parties\".\"supplier\" and not \"radcore\".\"parties\".\"customer\" and not \"radcore\".\"parties\".\"dealer\" and not \"radcore\".\"parties\".\"franchisee\"))"
         },
         "ck_parties_phone": {
           "name": "ck_parties_phone",
@@ -4622,136 +4611,6 @@
       },
       "isRLSEnabled": false
     },
-    "radcore.rcm_rules": {
-      "name": "rcm_rules",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "prefix": {
-          "name": "prefix",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "supplier": {
-          "name": "supplier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "effective_from": {
-          "name": "effective_from",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confirmed": {
-          "name": "confirmed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {
-        "ux_rcm_rules_prefix_supplier_from": {
-          "name": "ux_rcm_rules_prefix_supplier_from",
-          "columns": [
-            {
-              "expression": "prefix",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "supplier",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "effective_from",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_rcm_rules_source": {
-          "name": "ck_rcm_rules_source",
-          "value": "char_length(\"radcore\".\"rcm_rules\".\"source\") <= 200"
-        },
-        "ck_rcm_rules_note": {
-          "name": "ck_rcm_rules_note",
-          "value": "char_length(\"radcore\".\"rcm_rules\".\"note\") <= 500"
-        },
-        "ck_rcm_rules_prefix": {
-          "name": "ck_rcm_rules_prefix",
-          "value": "\"radcore\".\"rcm_rules\".\"prefix\" ~ '^[0-9]{2,8}$'"
-        },
-        "ck_rcm_rules_supplier": {
-          "name": "ck_rcm_rules_supplier",
-          "value": "\"radcore\".\"rcm_rules\".\"supplier\" in ('unregistered', 'any', 'not_body_corporate')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "radcore.employees": {
       "name": "employees",
       "schema": "radcore",
@@ -6410,7 +6269,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -6497,7 +6356,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock', 'bank:read', 'bank:reconcile') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -19352,24 +19211,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "rcm_cgst": {
-          "name": "rcm_cgst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rcm_sgst": {
-          "name": "rcm_sgst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rcm_igst": {
-          "name": "rcm_igst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -19599,29 +19440,13 @@
           "name": "ck_purchase_bill_lines_credit_igst",
           "value": "\"radcore\".\"purchase_bill_lines\".\"credit_igst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" <> 'NaN'"
         },
-        "ck_purchase_bill_lines_rcm_cgst": {
-          "name": "ck_purchase_bill_lines_rcm_cgst",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" <> 'NaN'"
-        },
-        "ck_purchase_bill_lines_rcm_sgst": {
-          "name": "ck_purchase_bill_lines_rcm_sgst",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"rcm_sgst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"rcm_sgst\" <> 'NaN'"
-        },
-        "ck_purchase_bill_lines_rcm_igst": {
-          "name": "ck_purchase_bill_lines_rcm_igst",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"rcm_igst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"rcm_igst\" <> 'NaN'"
-        },
-        "ck_purchase_bill_lines_rcm": {
-          "name": "ck_purchase_bill_lines_rcm",
-          "value": "num_nulls(\"radcore\".\"purchase_bill_lines\".\"rcm_cgst\", \"radcore\".\"purchase_bill_lines\".\"rcm_sgst\", \"radcore\".\"purchase_bill_lines\".\"rcm_igst\") in (0, 3) and (\"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" is null\n    or (\"radcore\".\"purchase_bill_lines\".\"kind\" = 'charge' and \"radcore\".\"purchase_bill_lines\".\"gst_rate\" is not null and \"radcore\".\"purchase_bill_lines\".\"cgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"sgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"igst\" = 0\n      and \"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" = \"radcore\".\"purchase_bill_lines\".\"rcm_sgst\" and (\"radcore\".\"purchase_bill_lines\".\"rcm_igst\" = 0 or \"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" = 0)))"
-        },
         "ck_purchase_bill_lines_credit": {
           "name": "ck_purchase_bill_lines_credit",
           "value": "num_nulls(\"radcore\".\"purchase_bill_lines\".\"credit_cgst\", \"radcore\".\"purchase_bill_lines\".\"credit_sgst\", \"radcore\".\"purchase_bill_lines\".\"credit_igst\") in (0, 3)\n    and (\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is null or \"radcore\".\"purchase_bill_lines\".\"gst_rate\" is not null) and (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" is null or \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is not null)"
         },
         "ck_purchase_bill_lines_credit_whole": {
           "name": "ck_purchase_bill_lines_credit_whole",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is null\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" is null and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = coalesce(\"radcore\".\"purchase_bill_lines\".\"rcm_cgst\", \"radcore\".\"purchase_bill_lines\".\"cgst\") and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = coalesce(\"radcore\".\"purchase_bill_lines\".\"rcm_sgst\", \"radcore\".\"purchase_bill_lines\".\"sgst\")\n      and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = coalesce(\"radcore\".\"purchase_bill_lines\".\"rcm_igst\", \"radcore\".\"purchase_bill_lines\".\"igst\"))\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" in ('supplier_kind', 'blocked', 'state') and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = 0)"
+          "value": "\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is null\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" is null and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = \"radcore\".\"purchase_bill_lines\".\"cgst\" and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = \"radcore\".\"purchase_bill_lines\".\"sgst\" and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = \"radcore\".\"purchase_bill_lines\".\"igst\")\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" in ('supplier_kind', 'blocked', 'state') and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = 0)"
         },
         "ck_purchase_bill_lines_kind": {
           "name": "ck_purchase_bill_lines_kind",
@@ -21867,6 +21692,550 @@
         "ck_transfers_cancelled": {
           "name": "ck_transfers_cancelled",
           "value": "(\"radcore\".\"transfers\".\"status\" = 'cancelled') = (\"radcore\".\"transfers\".\"cancel_entry_id\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.bank_statement_lines": {
+      "name": "bank_statement_lines",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "bank_statement_lines_seq_seq",
+            "schema": "radcore",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_no": {
+          "name": "row_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value_date": {
+          "name": "value_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "narration": {
+          "name": "narration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference": {
+          "name": "reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "balance": {
+          "name": "balance",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "ux_bank_statement_lines_present": {
+          "name": "ux_bank_statement_lines_present",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "value_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "direction",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "amount",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "balance",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reference",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_bank_statement_lines_account_date": {
+          "name": "ix_bank_statement_lines_account_date",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "value_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_bank_statement_lines_import": {
+          "name": "ix_bank_statement_lines_import",
+          "columns": [
+            {
+              "expression": "import_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bank_statement_lines_account_id_accounts_id_fk": {
+          "name": "bank_statement_lines_account_id_accounts_id_fk",
+          "tableFrom": "bank_statement_lines",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "bank_statement_lines_import_id_statement_imports_id_fk": {
+          "name": "bank_statement_lines_import_id_statement_imports_id_fk",
+          "tableFrom": "bank_statement_lines",
+          "tableTo": "statement_imports",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_bank_statement_lines_narration": {
+          "name": "ck_bank_statement_lines_narration",
+          "value": "char_length(\"radcore\".\"bank_statement_lines\".\"narration\") <= 500"
+        },
+        "ck_bank_statement_lines_reference": {
+          "name": "ck_bank_statement_lines_reference",
+          "value": "char_length(\"radcore\".\"bank_statement_lines\".\"reference\") <= 100"
+        },
+        "ck_bank_statement_lines_amount": {
+          "name": "ck_bank_statement_lines_amount",
+          "value": "\"radcore\".\"bank_statement_lines\".\"amount\" >= 0 and \"radcore\".\"bank_statement_lines\".\"amount\" <> 'NaN'"
+        },
+        "ck_bank_statement_lines_balance": {
+          "name": "ck_bank_statement_lines_balance",
+          "value": "\"radcore\".\"bank_statement_lines\".\"balance\" <> 'NaN'"
+        },
+        "ck_bank_statement_lines_direction": {
+          "name": "ck_bank_statement_lines_direction",
+          "value": "\"radcore\".\"bank_statement_lines\".\"direction\" in ('in', 'out')"
+        },
+        "ck_bank_statement_lines_above_zero": {
+          "name": "ck_bank_statement_lines_above_zero",
+          "value": "\"radcore\".\"bank_statement_lines\".\"amount\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.statement_formats": {
+      "name": "statement_formats",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "date_column": {
+          "name": "date_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "narration_column": {
+          "name": "narration_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_column": {
+          "name": "reference_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawal_column": {
+          "name": "withdrawal_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deposit_column": {
+          "name": "deposit_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "balance_column": {
+          "name": "balance_column",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "newest_first": {
+          "name": "newest_first",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "statement_formats_account_id_accounts_id_fk": {
+          "name": "statement_formats_account_id_accounts_id_fk",
+          "tableFrom": "statement_formats",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_statement_formats_date_column": {
+          "name": "ck_statement_formats_date_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"date_column\") <= 100"
+        },
+        "ck_statement_formats_narration_column": {
+          "name": "ck_statement_formats_narration_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"narration_column\") <= 100"
+        },
+        "ck_statement_formats_reference_column": {
+          "name": "ck_statement_formats_reference_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"reference_column\") <= 100"
+        },
+        "ck_statement_formats_withdrawal_column": {
+          "name": "ck_statement_formats_withdrawal_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"withdrawal_column\") <= 100"
+        },
+        "ck_statement_formats_deposit_column": {
+          "name": "ck_statement_formats_deposit_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"deposit_column\") <= 100"
+        },
+        "ck_statement_formats_balance_column": {
+          "name": "ck_statement_formats_balance_column",
+          "value": "char_length(\"radcore\".\"statement_formats\".\"balance_column\") <= 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.statement_imports": {
+      "name": "statement_imports",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "new_lines": {
+          "name": "new_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "present_lines": {
+          "name": "present_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refusals": {
+          "name": "refusals",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_statement_imports_account": {
+          "name": "ix_statement_imports_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_statement_imports_file": {
+          "name": "ix_statement_imports_file",
+          "columns": [
+            {
+              "expression": "file_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "statement_imports_account_id_accounts_id_fk": {
+          "name": "statement_imports_account_id_accounts_id_fk",
+          "tableFrom": "statement_imports",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "statement_imports_file_id_files_id_fk": {
+          "name": "statement_imports_file_id_files_id_fk",
+          "tableFrom": "statement_imports",
+          "tableTo": "files",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_statement_imports_status": {
+          "name": "ck_statement_imports_status",
+          "value": "\"radcore\".\"statement_imports\".\"status\" in ('queued', 'imported', 'refused', 'undone')"
+        },
+        "ck_statement_imports_counts": {
+          "name": "ck_statement_imports_counts",
+          "value": "(\"radcore\".\"statement_imports\".\"status\" in ('imported', 'undone')) = (\"radcore\".\"statement_imports\".\"new_lines\" is not null and \"radcore\".\"statement_imports\".\"present_lines\" is not null)"
         }
       },
       "isRLSEnabled": false

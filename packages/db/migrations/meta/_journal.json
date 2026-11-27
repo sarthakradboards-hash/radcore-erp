@@ -698,7 +698,21 @@
     {
       "idx": 99,
       "version": "7",
-      "when": 1795773708573,
+      "when": 1795772977552,
+      "tag": "0099_bank_statements",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1795775446123,
+      "tag": "0100_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795776401997,
       "tag": "0101_reverse_charge",
       "breakpoints": true
     }

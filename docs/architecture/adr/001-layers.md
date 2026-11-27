@@ -332,7 +332,10 @@ of each receipt line, and the charges of each job-work receipt line (RAD-142), n
 line, and the Job Work Charges to be Billed money its bills cleared by job-work receipt line (`jwcb_value`), net of
 cancellations, for the books check (§7), answering only sums (RAD-95). The ninth is lib-stock's
 `services/job-work-charges.ts`, which sums every posted job-work receipt line's Job Work Charges to be Billed money by
-line, net of cancellations, for the books check (§7), answering only sums (RAD-95).
+line, net of cancellations, for the books check (§7), answering only sums (RAD-95). The tenth is lib-accounts
+`services/expense-cash.ts` (RAD-152): sums every posted cash payment and cash expense to one supplier on one business
+date, whoever entered them, for the day's cash-payment limit (ADR-007 §8, ADR-009 §3). It answers one sum and returns
+no rows.
 
 **Nobody gives themselves more power (RAD-36, M1-18, RC-033).** The matrix and a person's role are changed only
 under these rules, each refused by name:

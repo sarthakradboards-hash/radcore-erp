@@ -31,6 +31,7 @@ const store = (verifyUpload: FileStore['verifyUpload'] = async () => ({ size: 20
   viewUrl: async (key, contentType) => `${LINK}/${key}?view=${encodeURIComponent(contentType)}`,
   verifyUpload,
   putFile: async () => { throw new Error('not used here'); },
+  readFile: async () => { throw new Error('not used here'); },
 });
 
 describe.skipIf(!url)('uploaded files', () => {

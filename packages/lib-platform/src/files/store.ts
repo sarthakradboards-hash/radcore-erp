@@ -44,6 +44,9 @@ export type FileStore = {
    * transaction has committed, to a new key `<kind>/<uuid>` the store makes. The file's size is known, so one
    * PutObject streams it, and no process holds the whole file in memory (ADR-004 §2). */
   putFile(kind: ServerFileKind, path: string, contentType: string): Promise<{ key: string; size: number }>;
+  /** A checked file's bytes, for a worker job that reads what was uploaded (a bank statement, RAD-159). Never in the api
+   * (RC-191). Refused past its kind's size limit, which its check already held it to. */
+  readFile(key: string, kind: FileKind): Promise<Uint8Array>;
 };
 
 /** An uploaded file that doesn't fit its kind. The message names the rule, never the file's name or content. */
@@ -210,6 +213,14 @@ export function createFileStore(s3: Config['s3'], client: S3Client = s3Client(s3
       await client.send(new PutObjectCommand({ Bucket, Key: key, Body: createReadStream(path), ContentLength: size,
         ContentType: contentType }));
       return { key, size };
+    },
+
+    async readFile(key, kind) {
+      // Only a checked copy's key, `<kind>/<uuid>`: never an upload still under incoming/.
+      if (!key.startsWith(`${kind}/`)) throw new TypeError(`the key isn't a ${kind} key`);
+      const got = await client.send(new GetObjectCommand({ Bucket, Key: key }));
+      if ((got.ContentLength ?? 0) > FILE_KINDS[kind].maxBytes) throw new UploadRefused(`the file is larger than ${FILE_KINDS[kind].maxBytes} bytes`);
+      return await got.Body?.transformToByteArray() ?? new Uint8Array();
     },
   };
 }

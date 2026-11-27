@@ -19,6 +19,7 @@ export const STATE_TRANSITIONS: Readonly<Record<string, readonly (readonly [from
   purchase_orders: [['draft', 'placed'], ['placed', 'closed'], ['closed', 'placed'], ['draft', 'cancelled'], ['placed', 'cancelled']],
   goods_receipts: [['draft', 'posted'], ['posted', 'cancelled']],
   purchase_bills: [['draft', 'posted'], ['posted', 'cancelled']],
+  expenses: [['draft', 'posted'], ['posted', 'cancelled']],
   supplier_returns: [['draft', 'posted'], ['posted', 'cancelled']],
   job_work_challans: [['draft', 'posted'], ['posted', 'cancelled']],
   job_work_receipts: [['draft', 'posted'], ['posted', 'cancelled']],

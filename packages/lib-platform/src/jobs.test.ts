@@ -138,7 +138,7 @@ describe('defineJob', () => {
 
   it('runs its `before` step outside the transaction, first, and hands its result to the service (ADR-001 §8)', async () => {
     const steps: string[] = [];
-    const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), viewUrl: vi.fn(), putFile: vi.fn() };
+    const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), viewUrl: vi.fn(), putFile: vi.fn(), readFile: vi.fn() };
     const open: OpenJob = async (_principal, _jobId, work) => {
       steps.push('open');
       // The service's ctx isn't read here; the real one is proved on PostgreSQL (tools/files.test.ts).
@@ -157,7 +157,7 @@ describe('defineJob', () => {
   it('rechecks the enqueuer before the `before` step, so a revoked permission reaches no network (§6a, §8)', async () => {
     const { open, opened } = opener();
     const before = vi.fn(async () => 'x');
-    const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), viewUrl: vi.fn(), putFile: vi.fn() };
+    const files = { verifyUpload: vi.fn(), presignUpload: vi.fn(), downloadUrl: vi.fn(), viewUrl: vi.fn(), putFile: vi.fn(), readFile: vi.fn() };
     await expect(defineJob(contract({ principal: { kind: 'user', perm: 'invoices:export' } }), async () => undefined, { before })
       .handle({ input: { n: 1 }, by: 'user:u-1' }, 'job-9', { open, load: async () => asUser([]), alert, files }))
       .rejects.toThrow(JobRefused);

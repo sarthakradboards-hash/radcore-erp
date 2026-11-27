@@ -87,8 +87,9 @@ export const itemPictureFileService = fileServices('item_picture');
  * not_found, or with `wrongKind`, `wrong_file_kind` naming `path` (a checklist's files, RAD-117, RC-208); a file still
  * checking is not_ready, and one the check refused is upload_refused, as a download says. */
 export async function readyFile(ctx: Ctx, kind: FileKind, id: string, o: { wrongKind?: readonly (string | number)[] } = {}):
-  Promise<{ id: string }> {
-  const [row] = await platformTx(ctx).select({ status: files.status, kind: files.kind }).from(files).where(eq(files.id, id));
+  Promise<{ id: string; key: string; contentType: string }> {
+  const [row] = await platformTx(ctx).select({ status: files.status, kind: files.kind, key: files.storeKey, contentType: files.contentType })
+    .from(files).where(eq(files.id, id));
   if (row !== undefined && row.kind !== kind && o.wrongKind !== undefined) {
     throw new AppError('wrong_file_kind', 'This file was uploaded as something else', [{ path: [...o.wrongKind], code: 'wrong_file_kind',
       message: `Upload it as a ${kind.replaceAll('_', ' ')}` }]);
@@ -96,7 +97,8 @@ export async function readyFile(ctx: Ctx, kind: FileKind, id: string, o: { wrong
   if (row === undefined || row.kind !== kind) throw new AppError('not_found', 'Not found');
   if (row.status === 'refused') throw new AppError('upload_refused', 'This file didn\'t pass its check (size, type or content). Upload it again');
   if (row.status !== 'ready') throw new AppError('not_ready', 'This file is still being checked. Try again in a moment');
-  return { id };
+  // Its stored key and checked type too, for a worker job that reads it (a bank statement, RAD-159).
+  return { id, key: row.key, contentType: row.contentType };
 }
 
 /**
@@ -117,3 +119,4 @@ export const importFileService = fileServices('import');
 export const deliveryPhotoFileService = fileServices('delivery_photo');
 export const deliveryNoteFileService = fileServices('delivery_note');
 export const purchaseBillFileService = fileServices('purchase_bill');
+export const expenseBillFileService = fileServices('expense_bill');

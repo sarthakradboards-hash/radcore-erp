@@ -9,7 +9,7 @@
 // other files count their own. A GET this can't reach is pinned below with its reason, so every new GET is either
 // reached or listed (the ratchet). Its known limit: it catches only the shapes the seed holds.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addAccount, addExpenseCategory, addParty, openFinancialYear, postManual, recordPayment, recordTransfer, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
+import { addAccount, addExpense, addExpenseCategory, addParty, openFinancialYear, postExpenseNow, postManual, recordPayment, recordTransfer, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { addAdSpend, addCampaign, captureEnquiry, createEnquiryForm, leadSourcesList } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
@@ -231,13 +231,30 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
         lines: [{ accountId: await systemAccountId(ctx, 'round_off'), debit: m('10') }, { accountId: await systemAccountId(ctx, 'bank'), credit: m('10') }] }));
       add(['GET /journal/:id'], posted.id);
       // An expense category, blocked, on an ordinary expense account (RAD-152), and one allowed.
-      await run(async (ctx) => {
+      const cash = await run(async (ctx) => {
         // An expense head added under a group (POST /accounts), so the chart reads one.
         const head = await addAccount(ctx, { name: `Sweep head ${randomUUID()}`, parentId: await systemAccountId(ctx, 'round_off'), code: 'SWEEP-1' });
         const accountIds = [await systemAccountId(ctx, 'round_off'), head.id];
         await addExpenseCategory(ctx, { name: `Sweep blocked ${randomUUID()}`, credit: 'blocked', blockedClause: '(b)(i)', accountIds });
-        await addExpenseCategory(ctx, { name: `Sweep allowed ${randomUUID()}`, credit: 'allowed', blockedClause: null, accountIds });
+        const { id: categoryId } = await addExpenseCategory(ctx, { name: `Sweep allowed ${randomUUID()}`, credit: 'allowed', blockedClause: null,
+          accountIds });
+        // An expense on credit, a draft, and one paid in cash past the day's limit waiting for its override (RAD-152).
+        const fileId = randomUUID();
+        await su.query(`with p as (select set_config('app.principal', 'system:test', true)) insert into radcore.files
+          (id, kind, store_key, filename, content_type, size, status) select $1, 'expense_bill', $2, 'bill.pdf', 'application/pdf', 2048, 'ready'
+          from p`, [fileId, `expense_bill/${fileId}`]);
+        const expense = async (amount: string, payFromAccountId: string | null) => (await addExpense(ctx, { businessDate: DATE, supplierId: base.supplier,
+          supplierInvoiceNumber: `EXP/${tag()}`, supplierInvoiceDate: DATE, supplierGstin: null, payFromAccountId, statedTotal: m(amount), fileId, notes: null,
+          lines: [{ categoryId, accountId: accountIds[0] ?? '', description: 'Sweep', taxable: m(amount), gstRate: percentString().parse('0'), cgst: m('0'),
+            sgst: m('0'), igst: m('0') }] })).id;
+        const draft = await expense('100', null);
+        const cash = await expense('20000', await systemAccountId(ctx, 'cash'));
+        await postExpenseNow(ctx, { id: cash });
+        add(['GET /expenses/:id'], draft, cash);
+        return cash;
       });
+      const asked = await su.query<{ id: string }>("select id from radcore.approvals where kind = 'expense-cash' and record_id = $1", [cash]);
+      add(['GET /approvals/expense-cash/:id'], asked.rows[0]?.id);
     });
 
     // Stock: a transfer posted, one cancelled, one into a franchisee waiting for approval; a count and an adjustment
@@ -410,6 +427,25 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       const moved = await run(async (ctx) => recordTransfer(ctx, { fromAccountId: await systemAccountId(ctx, 'cash'),
         toAccountId: await systemAccountId(ctx, 'bank'), amount: m('10'), businessDate: DATE }));
       add(['GET /transfers/:id'], moved.id);
+    });
+
+    // A bank account's statement layout and an imported statement with a line (RAD-159), as rows: the import itself runs in
+    // the worker, which this file doesn't start.
+    await step('bank statement', async () => {
+      const q = (text: string, values: unknown[]) => su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        ${text}`, values).then((r) => r.rows[0]?.id ?? '');
+      const bank = await q(`insert into radcore.accounts (name, type, parent_id) select $1, 'asset', a.id from radcore.accounts a, p
+        where a.system_key = 'bank' returning id`, [`Sweep bank ${tag()}`]);
+      await q(`insert into radcore.statement_formats (account_id, date_column, narration_column, reference_column, withdrawal_column,
+        deposit_column, balance_column, newest_first) select $1, 'Date', 'Narration', null, 'Withdrawal', 'Deposit', 'Balance', false from p`, [bank]);
+      const file = await q(`insert into radcore.files (kind, store_key, filename, content_type, size, status)
+        select 'statement', $1, 'statement.csv', 'text/csv', 10, 'ready' from p returning id`, [`statement/${randomUUID()}`]);
+      const imported = await q(`insert into radcore.statement_imports (account_id, file_id, status, new_lines, present_lines, refusals)
+        select $1, $2, 'imported', 1, 0, '[]'::jsonb from p returning id`, [bank, file]);
+      await q(`insert into radcore.bank_statement_lines (account_id, import_id, row_no, value_date, narration, reference, direction, amount, balance)
+        select $1, $2, 2, $3, 'NEFT', '', 'in', 100, 100 from p`, [bank, imported, DATE]);
+      add(['GET /bank/accounts/:id/statement-format'], bank);
+      add(['GET /bank/statement-imports/:id'], imported);
     });
 
     // A booking: a serialised unit promised to a confirmed order line, with an advance.

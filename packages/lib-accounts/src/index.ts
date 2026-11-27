@@ -3,6 +3,9 @@ export {
   addAccount, changeAccount, chartOfAccounts, entryDates, journalEntryById, journalPage, postManual, reverseJournalEntry, stockInHand, systemBalance, trialBalance,
 } from './services/books.ts';
 export { addExpenseCategory, changeExpenseCategory, expenseCategoriesList } from './services/expense-categories.ts';
+export {
+  addExpense, cancelExpenseNow, changeExpense, dropExpenseDraft, EXPENSE_SERIES, expenseCashSpec, getExpenseById, listExpensesPage, postExpenseNow,
+} from './services/expenses.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
 export {
   claimedInputGst, holdPeriod, JOURNAL_SERIES, lockPeriod, openFinancialYear, postEntry, postManualJournal, reverseEntriesOf, reverseEntry,
@@ -15,6 +18,9 @@ export {
 } from './services/payments.ts';
 export { getPaymentById, listPaymentsPage } from './services/payment-reads.ts';
 export { cancelTransfer, recordTransfer, TRANSFER_SERIES, transferById, transfersPage } from './services/transfers.ts';
+export {
+  importStatement, readStatementFile, statementFormatOf, statementImportById, statementImportJob, statementLinesPage, storeStatement, undoStatementImport,
+} from './services/bank-statements.ts';
 export {
   askToUnlock, closeYear, lockPeriodForMove, moveLockForward, periodState, periodUnlockSpec, YEAR_END_CHECKLIST, type BooksCheck,
 } from './services/period-lock.ts';
@@ -37,10 +43,11 @@ export { BUYS_FROM_KINDS, SELLS_TO_KINDS } from './contract.ts';
 
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
+import { EXPENSE_SERIES as spent } from './services/expenses.ts';
 import { JOURNAL_SERIES as journal } from './services/journal.ts';
 import { TRANSFER_SERIES as transferred } from './services/transfers.ts';
 import { YEAR_END_CHECKLIST as yearEnd } from './services/period-lock.ts';
 import { CASH_PAYMENT_LIMIT as cashOut, CASH_RECEIPT_LIMIT as cashIn, DEFAULT_CREDIT_DAYS as creditDays, PAYMENT_SERIES as paid,
   RECEIPT_SERIES as received } from './services/payments.ts';
 export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays, yearEnd];
-export const series: readonly Series[] = [journal, received, paid, transferred];
+export const series: readonly Series[] = [journal, received, paid, transferred, spent];

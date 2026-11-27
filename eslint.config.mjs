@@ -25,7 +25,7 @@ const LOCKS = 'packages/db/src/locks.ts';
 const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/sales/tables-credit.ts',
   'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts', 'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
   'packages/db/src/stock/tables-job-work.ts', 'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts',
-  'packages/db/src/purchasing/tables-bills.ts', 'packages/db/src/purchasing/tables-returns.ts', 'packages/db/src/accounts/tables-close.ts', 'packages/db/src/accounts/tables-expenses.ts', 'packages/db/src/accounts/tables-transfers.ts', 'packages/db/src/columns.ts'];
+  'packages/db/src/purchasing/tables-bills.ts', 'packages/db/src/purchasing/tables-returns.ts', 'packages/db/src/accounts/tables-close.ts', 'packages/db/src/accounts/tables-expenses.ts', 'packages/db/src/accounts/tables-transfers.ts', 'packages/db/src/accounts/tables-bank.ts', 'packages/db/src/columns.ts'];
 // The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.
 export const E6_TYPED = [`packages/*/src/**/*.${TS}`, `packages/db/views/**/*.${TS}`, `apps/api/src/**/*.${TS}`,
   `apps/worker/src/**/*.${TS}`, `apps/web/**/*.${TS}`];
@@ -258,6 +258,7 @@ OPTIONS['radcore/e7-scope-on-owned-reads'] = { tables: [...SCOPED_TABLES,
   // (ADR-001 §6a). tools/eslint-options.json pins the list.
   exempt: {
     'packages/lib-crm/src/services/enquiry-counts.ts': 'counts a campaign’s or source’s enquiries over an India-date range for cost per lead, whoever owns the lead, as counts keyed by campaign and source ids the caller holds through campaigns:read (the architect on RAD-110)',
+    'packages/lib-accounts/src/services/expense-cash.ts': 'sums every posted cash payment and cash expense to one supplier on one business date, whoever entered them, for the day’s cash-payment limit (ADR-007 §8, ADR-009 §3), as one sum and no rows (the architect on RAD-152)',
     'packages/lib-crm/src/services/lead-locks.ts': 'locks one lead by an id taken from a booking the caller has already locked within its scope, for the booking’s cancellation, and answers nothing (the architect on RAD-117)',
     'packages/lib-stock/src/services/job-work-charges.ts': 'sums every posted job-work receipt line’s Job Work Charges to be Billed money by line, net of cancellations, for the books check under journal:read, as money keyed by job-work receipt-line id and nothing else (the architect on RAD-95)',
     'packages/lib-purchasing/src/services/grni.ts': 'sums every posted receipt, bill and return line’s Goods Received Not Billed money by receipt line, net of cancellations, for the books check under journal:read, as money keyed by receipt-line id and nothing else (the architect on RAD-95)',
