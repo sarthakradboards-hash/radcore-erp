@@ -1,5 +1,5 @@
 {
-  "id": "e3f1d917-84ff-4645-9cde-655863641041",
+  "id": "13179b0c-af2b-41db-b94f-8d16e27f2314",
   "prevId": "ffc2280e-b346-4c7f-a2bd-0f4e61c68c96",
   "version": "7",
   "dialect": "postgresql",
@@ -1372,13 +1372,6 @@
           "notNull": true,
           "default": false
         },
-        "overseas": {
-          "name": "overseas",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "state_code": {
           "name": "state_code",
           "type": "text",
@@ -1555,10 +1548,6 @@
         "ck_parties_composition": {
           "name": "ck_parties_composition",
           "value": "not \"radcore\".\"parties\".\"composition\" or \"radcore\".\"parties\".\"gstin\" is not null"
-        },
-        "ck_parties_overseas": {
-          "name": "ck_parties_overseas",
-          "value": "\"radcore\".\"parties\".\"overseas\" = (\"radcore\".\"parties\".\"state_code\" = '96') and (not \"radcore\".\"parties\".\"overseas\" or (\"radcore\".\"parties\".\"gstin\" is null and \"radcore\".\"parties\".\"pan\" is null\n    and not \"radcore\".\"parties\".\"composition\" and \"radcore\".\"parties\".\"supplier\" and not \"radcore\".\"parties\".\"customer\" and not \"radcore\".\"parties\".\"dealer\" and not \"radcore\".\"parties\".\"franchisee\"))"
         },
         "ck_parties_phone": {
           "name": "ck_parties_phone",
@@ -4613,136 +4602,6 @@
       },
       "isRLSEnabled": false
     },
-    "radcore.rcm_rules": {
-      "name": "rcm_rules",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "prefix": {
-          "name": "prefix",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "supplier": {
-          "name": "supplier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "effective_from": {
-          "name": "effective_from",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confirmed": {
-          "name": "confirmed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {
-        "ux_rcm_rules_prefix_supplier_from": {
-          "name": "ux_rcm_rules_prefix_supplier_from",
-          "columns": [
-            {
-              "expression": "prefix",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "supplier",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "effective_from",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_rcm_rules_source": {
-          "name": "ck_rcm_rules_source",
-          "value": "char_length(\"radcore\".\"rcm_rules\".\"source\") <= 200"
-        },
-        "ck_rcm_rules_note": {
-          "name": "ck_rcm_rules_note",
-          "value": "char_length(\"radcore\".\"rcm_rules\".\"note\") <= 500"
-        },
-        "ck_rcm_rules_prefix": {
-          "name": "ck_rcm_rules_prefix",
-          "value": "\"radcore\".\"rcm_rules\".\"prefix\" ~ '^[0-9]{2,8}$'"
-        },
-        "ck_rcm_rules_supplier": {
-          "name": "ck_rcm_rules_supplier",
-          "value": "\"radcore\".\"rcm_rules\".\"supplier\" in ('unregistered', 'any', 'not_body_corporate')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "radcore.employees": {
       "name": "employees",
       "schema": "radcore",
@@ -6401,7 +6260,7 @@
         },
         "ck_role_grants_scope": {
           "name": "ck_role_grants_scope",
-          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_grants\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_grants\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock') or \"radcore\".\"role_grants\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -6488,7 +6347,7 @@
       "checkConstraints": {
         "ck_role_templates_scope": {
           "name": "ck_role_templates_scope",
-          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
+          "value": "\"radcore\".\"role_templates\".\"scope\" in ('all', 'own') and (\"radcore\".\"role_templates\".\"permission\" not in ('parties:contact', 'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write', 'money_accounts:read', 'sales:counter_credit', 'receipts:print', 'payments:read', 'books:lock', 'books:unlock') or \"radcore\".\"role_templates\".\"scope\" = 'all')"
         }
       },
       "isRLSEnabled": false
@@ -19343,24 +19202,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "rcm_cgst": {
-          "name": "rcm_cgst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rcm_sgst": {
-          "name": "rcm_sgst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rcm_igst": {
-          "name": "rcm_igst",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -19590,29 +19431,13 @@
           "name": "ck_purchase_bill_lines_credit_igst",
           "value": "\"radcore\".\"purchase_bill_lines\".\"credit_igst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" <> 'NaN'"
         },
-        "ck_purchase_bill_lines_rcm_cgst": {
-          "name": "ck_purchase_bill_lines_rcm_cgst",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" <> 'NaN'"
-        },
-        "ck_purchase_bill_lines_rcm_sgst": {
-          "name": "ck_purchase_bill_lines_rcm_sgst",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"rcm_sgst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"rcm_sgst\" <> 'NaN'"
-        },
-        "ck_purchase_bill_lines_rcm_igst": {
-          "name": "ck_purchase_bill_lines_rcm_igst",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"rcm_igst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"rcm_igst\" <> 'NaN'"
-        },
-        "ck_purchase_bill_lines_rcm": {
-          "name": "ck_purchase_bill_lines_rcm",
-          "value": "num_nulls(\"radcore\".\"purchase_bill_lines\".\"rcm_cgst\", \"radcore\".\"purchase_bill_lines\".\"rcm_sgst\", \"radcore\".\"purchase_bill_lines\".\"rcm_igst\") in (0, 3) and (\"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" is null\n    or (\"radcore\".\"purchase_bill_lines\".\"kind\" = 'charge' and \"radcore\".\"purchase_bill_lines\".\"gst_rate\" is not null and \"radcore\".\"purchase_bill_lines\".\"cgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"sgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"igst\" = 0\n      and \"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" = \"radcore\".\"purchase_bill_lines\".\"rcm_sgst\" and (\"radcore\".\"purchase_bill_lines\".\"rcm_igst\" = 0 or \"radcore\".\"purchase_bill_lines\".\"rcm_cgst\" = 0)))"
-        },
         "ck_purchase_bill_lines_credit": {
           "name": "ck_purchase_bill_lines_credit",
           "value": "num_nulls(\"radcore\".\"purchase_bill_lines\".\"credit_cgst\", \"radcore\".\"purchase_bill_lines\".\"credit_sgst\", \"radcore\".\"purchase_bill_lines\".\"credit_igst\") in (0, 3)\n    and (\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is null or \"radcore\".\"purchase_bill_lines\".\"gst_rate\" is not null) and (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" is null or \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is not null)"
         },
         "ck_purchase_bill_lines_credit_whole": {
           "name": "ck_purchase_bill_lines_credit_whole",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is null\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" is null and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = coalesce(\"radcore\".\"purchase_bill_lines\".\"rcm_cgst\", \"radcore\".\"purchase_bill_lines\".\"cgst\") and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = coalesce(\"radcore\".\"purchase_bill_lines\".\"rcm_sgst\", \"radcore\".\"purchase_bill_lines\".\"sgst\")\n      and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = coalesce(\"radcore\".\"purchase_bill_lines\".\"rcm_igst\", \"radcore\".\"purchase_bill_lines\".\"igst\"))\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" in ('supplier_kind', 'blocked', 'state') and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = 0)"
+          "value": "\"radcore\".\"purchase_bill_lines\".\"credit_cgst\" is null\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" is null and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = \"radcore\".\"purchase_bill_lines\".\"cgst\" and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = \"radcore\".\"purchase_bill_lines\".\"sgst\" and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = \"radcore\".\"purchase_bill_lines\".\"igst\")\n    or (\"radcore\".\"purchase_bill_lines\".\"credit_reason\" in ('supplier_kind', 'blocked', 'state') and \"radcore\".\"purchase_bill_lines\".\"credit_cgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_sgst\" = 0 and \"radcore\".\"purchase_bill_lines\".\"credit_igst\" = 0)"
         },
         "ck_purchase_bill_lines_kind": {
           "name": "ck_purchase_bill_lines_kind",
@@ -21047,6 +20872,250 @@
         "ck_supplier_returns_debit": {
           "name": "ck_supplier_returns_debit",
           "value": "num_nulls(\"radcore\".\"supplier_returns\".\"taxable\", \"radcore\".\"supplier_returns\".\"cgst\", \"radcore\".\"supplier_returns\".\"sgst\", \"radcore\".\"supplier_returns\".\"igst\", \"radcore\".\"supplier_returns\".\"round_off\", \"radcore\".\"supplier_returns\".\"total\") in (0, 6)\n    and (\"radcore\".\"supplier_returns\".\"status\" <> 'draft' or \"radcore\".\"supplier_returns\".\"total\" is null) and (\"radcore\".\"supplier_returns\".\"debit_note_number\" is null or \"radcore\".\"supplier_returns\".\"total\" is not null)\n    and (\"radcore\".\"supplier_returns\".\"total\" is null or (\"radcore\".\"supplier_returns\".\"total\" = \"radcore\".\"supplier_returns\".\"taxable\" + \"radcore\".\"supplier_returns\".\"cgst\" + \"radcore\".\"supplier_returns\".\"sgst\" + \"radcore\".\"supplier_returns\".\"igst\" + \"radcore\".\"supplier_returns\".\"round_off\" and abs(\"radcore\".\"supplier_returns\".\"round_off\") < 1))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.period_unlock_requests": {
+      "name": "period_unlock_requests",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "through": {
+          "name": "through",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lock_was": {
+          "name": "lock_was",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_period_unlock_requests_reason": {
+          "name": "ck_period_unlock_requests_reason",
+          "value": "char_length(\"radcore\".\"period_unlock_requests\".\"reason\") <= 500"
+        },
+        "ck_period_unlock_requests_kind": {
+          "name": "ck_period_unlock_requests_kind",
+          "value": "\"radcore\".\"period_unlock_requests\".\"kind\" in ('move_back', 'reopen_year')"
+        },
+        "ck_period_unlock_requests_back": {
+          "name": "ck_period_unlock_requests_back",
+          "value": "\"radcore\".\"period_unlock_requests\".\"through\" < \"radcore\".\"period_unlock_requests\".\"lock_was\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.year_closes": {
+      "name": "year_closes",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "fy_start": {
+          "name": "fy_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ticks": {
+          "name": "ticks",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reopened_at": {
+          "name": "reopened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reopened_by": {
+          "name": "reopened_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ux_year_closes_live": {
+          "name": "ux_year_closes_live",
+          "columns": [
+            {
+              "expression": "fy_start",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"radcore\".\"year_closes\".\"reopened_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_year_closes_fy_start": {
+          "name": "ix_year_closes_fy_start",
+          "columns": [
+            {
+              "expression": "fy_start",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_year_closes_reopened_by": {
+          "name": "ix_year_closes_reopened_by",
+          "columns": [
+            {
+              "expression": "reopened_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "year_closes_fy_start_financial_years_start_fk": {
+          "name": "year_closes_fy_start_financial_years_start_fk",
+          "tableFrom": "year_closes",
+          "tableTo": "financial_years",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "fy_start"
+          ],
+          "columnsTo": [
+            "start"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "year_closes_reopened_by_period_unlock_requests_id_fk": {
+          "name": "year_closes_reopened_by_period_unlock_requests_id_fk",
+          "tableFrom": "year_closes",
+          "tableTo": "period_unlock_requests",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "reopened_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_year_closes_reopened": {
+          "name": "ck_year_closes_reopened",
+          "value": "(\"radcore\".\"year_closes\".\"reopened_at\" is null) = (\"radcore\".\"year_closes\".\"reopened_by\" is null)"
         }
       },
       "isRLSEnabled": false

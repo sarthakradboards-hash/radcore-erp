@@ -36,9 +36,10 @@ const fields = (o: Record<string, unknown> = {}) => ({
 it('marks parties:manage as needing the second factor, and parties:contact as all-scope only without it', () => {
   expect([SECOND_FACTOR_KEYS.includes('parties:manage'), SECOND_FACTOR_KEYS.includes('parties:contact')]).toEqual([true, false]);
   // leads:contact (RAD-106) is all-only for the same reason; leads:unassigned (RAD-109), money_accounts:read (RAD-116),
-  // payments:read (RAD-116), receipts:print (RAD-120) and sales:counter_credit (RAD-115) have no scope to give.
+  // payments:read (RAD-116), receipts:print (RAD-120), books:lock and books:unlock (RAD-157) and sales:counter_credit (RAD-115)
+  // have no scope to give.
   expect(PERMISSIONS.filter((p) => p.allOnly).map((p) => p.key)).toEqual(['parties:contact', 'money_accounts:read', 'payments:read', 'receipts:print',
-    'sales:counter_credit',
+    'books:lock', 'books:unlock', 'sales:counter_credit',
     'leads:contact', 'leads:unassigned', 'campaigns:read', 'campaigns:write']);
 });
 

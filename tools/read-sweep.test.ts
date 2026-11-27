@@ -9,7 +9,7 @@
 // other files count their own. A GET this can't reach is pinned below with its reason, so every new GET is either
 // reached or listed (the ratchet). Its known limit: it catches only the shapes the seed holds.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { addParty, openFinancialYear, postManual, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
+import { addExpenseCategory, addParty, openFinancialYear, postManual, recordPayment, setCreditTerms, systemAccountId } from '@radcore/lib-accounts';
 import { moneyString, percentString, quantityString, requestFor, unitPriceString } from '@radcore/lib-common';
 import { addAdSpend, addCampaign, captureEnquiry, createEnquiryForm, leadSourcesList } from '@radcore/lib-crm';
 import { putGstRate } from '@radcore/lib-gst';
@@ -230,6 +230,12 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       const posted = await run(async (ctx) => postManual(ctx, { businessDate: DATE, reason: 'Bank charges',
         lines: [{ accountId: await systemAccountId(ctx, 'round_off'), debit: m('10') }, { accountId: await systemAccountId(ctx, 'bank'), credit: m('10') }] }));
       add(['GET /journal/:id'], posted.id);
+      // An expense category, blocked, on an ordinary expense account (RAD-152), and one allowed.
+      await run(async (ctx) => {
+        const accountIds = [await systemAccountId(ctx, 'round_off')];
+        await addExpenseCategory(ctx, { name: `Sweep blocked ${randomUUID()}`, credit: 'blocked', blockedClause: '(b)(i)', accountIds });
+        await addExpenseCategory(ctx, { name: `Sweep allowed ${randomUUID()}`, credit: 'allowed', blockedClause: null, accountIds });
+      });
     });
 
     // Stock: a transfer posted, one cancelled, one into a franchisee waiting for approval; a count and an adjustment
@@ -383,6 +389,18 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       const request = (await su.query<{ id: string }>("select id from radcore.approvals where kind = 'cash-limit' and record_id = $1",
         [held.id])).rows[0]?.id;
       add(['GET /approvals/cash-limit/:id'], request);
+    });
+
+    // A move back of the period lock, waiting (RAD-157). Written as rows, not through askToUnlock: that needs the run's one
+    // period lock set, which every other file's postings would meet.
+    await step('period unlock', async () => {
+      const { rows: [asked] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.period_unlock_requests (kind, through, reason, lock_was) select 'move_back', '2020-01-31', 'Sweep', '2020-02-29'
+        from p returning id`);
+      const { rows: [request] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.approvals (kind, record_id, version_digest, requested_by) select 'period-unlock', $1, repeat('0', 64), 'system:test'
+        from p returning id`, [asked?.id]);
+      add(['GET /approvals/period-unlock/:id'], request?.id);
     });
 
     // A booking: a serialised unit promised to a confirmed order line, with an advance.

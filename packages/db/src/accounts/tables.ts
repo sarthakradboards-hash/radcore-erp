@@ -68,6 +68,8 @@ export const accounts = radcoreTable('accounts', {
   check('ck_accounts_system_active', sql`${t.systemKey} is null or ${t.active}`),
   unique('ux_accounts_name_key').on(t.nameKey),
   unique('ux_accounts_id_control_kind').on(t.id, t.controlKind),
+  // For expense categories' accounts (ADR-009 §3): the type and control kind with the id.
+  unique('ux_accounts_id_type_control_kind').on(t.id, t.type, t.controlKind),
   index('ix_accounts_parent_id').on(t.parentId),
 ]);
 

@@ -33,7 +33,8 @@ ALTER TABLE "radcore"."purchase_bill_lines" ADD CONSTRAINT "ck_purchase_bill_lin
 ALTER TABLE "radcore"."purchase_bill_lines" ADD CONSTRAINT "ck_purchase_bill_lines_credit_whole" CHECK ("radcore"."purchase_bill_lines"."credit_cgst" is null
     or ("radcore"."purchase_bill_lines"."credit_reason" is null and "radcore"."purchase_bill_lines"."credit_cgst" = coalesce("radcore"."purchase_bill_lines"."rcm_cgst", "radcore"."purchase_bill_lines"."cgst") and "radcore"."purchase_bill_lines"."credit_sgst" = coalesce("radcore"."purchase_bill_lines"."rcm_sgst", "radcore"."purchase_bill_lines"."sgst")
       and "radcore"."purchase_bill_lines"."credit_igst" = coalesce("radcore"."purchase_bill_lines"."rcm_igst", "radcore"."purchase_bill_lines"."igst"))
-    or ("radcore"."purchase_bill_lines"."credit_reason" in ('supplier_kind', 'blocked', 'state') and "radcore"."purchase_bill_lines"."credit_cgst" = 0 and "radcore"."purchase_bill_lines"."credit_sgst" = 0 and "radcore"."purchase_bill_lines"."credit_igst" = 0));--> statement-breakpoint
+    or ("radcore"."purchase_bill_lines"."credit_reason" in ('supplier_kind', 'blocked', 'state') and "radcore"."purchase_bill_lines"."credit_cgst" = 0 and "radcore"."purchase_bill_lines"."credit_sgst" = 0 and "radcore"."purchase_bill_lines"."credit_igst" = 0));
+--> statement-breakpoint
 -- RAD-153 (ADR-010 §4): reverse-charge rules, audited like gst_rates: who added or corrected a rule, from which source, and
 -- why. Never deleted: a wrong one is corrected in place, with its reason.
 SELECT radcore.audit_attach('rcm_rules', keep => array['prefix', 'supplier', 'effective_from', 'source', 'note', 'confirmed']);
