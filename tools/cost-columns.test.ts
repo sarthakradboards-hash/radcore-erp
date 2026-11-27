@@ -43,11 +43,12 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   // PO's (the architect on RAD-136). cost() stays on what's derived from it: the stock's average and the price difference.
   purchase_bills: { stated_total: 'the total the supplier’s bill states (purchasing:read)', taxable: 'a bill’s value (purchasing:read)',
     cgst: 'tax on a bill (purchasing:read)', sgst: 'tax on a bill (purchasing:read)', igst: 'tax on a bill (purchasing:read)',
-    round_off: 'a bill’s round-off (purchasing:read)', total: 'a bill’s total (purchasing:read)' },
+    round_off: 'a bill’s round-off (purchasing:read)', total: 'a bill’s total (purchasing:read)',
+    tds: 'the TDS a bill held back (purchasing:read)', owed: 'what a bill owes, its total less TDS (purchasing:read)' },
   // TDS rates by section and date (RAD-158): the law's figures, under tds:read.
   tds_rates: { rate: 'a tax rate', rate_no_pan: 'a tax rate', single_limit: 'a limit in the law (tds:read)', yearly_limit: 'a limit in the law (tds:read)' },
   // An expense's (RAD-152): the supplier's bill as printed and the credit claimed, under expenses:read.
-  expenses: { stated_total: 'the total the supplier’s bill states (expenses:read)', total: 'what the supplier is owed (expenses:read)' },
+  expenses: { stated_total: 'the total the supplier’s bill states (expenses:read)', total: 'what the supplier is owed (expenses:read)', tds: 'the TDS an expense held back (expenses:read)' },
   expense_lines: { taxable: 'a line’s value (expenses:read)', gst_rate: 'a tax rate', cgst: 'tax on a line (expenses:read)',
     sgst: 'tax on a line (expenses:read)', igst: 'tax on a line (expenses:read)', credit_cgst: 'input credit a line claimed (expenses:read)',
     credit_sgst: 'input credit a line claimed (expenses:read)', credit_igst: 'input credit a line claimed (expenses:read)' },
