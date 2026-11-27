@@ -320,11 +320,12 @@ describe.skipIf(!url || !superUrl)('the journal', { timeout: 30_000 }, () => {
   it("keeps the system accounts: renamed, never removed, and only they are control accounts", async () => {
     const cash = await accountId('cash');
     expect(await code(asAdmin('delete from radcore.accounts where id = $1', [cash]))).toBe('RA001');
-    // The app sets no system key and no control kind: those columns aren't its to write.
+    // The app sets no system key and no control kind: a trigger refuses them on insert (RAD-152's 0097), and the
+    // columns aren't its to update.
     expect(await asApp(() => [["insert into radcore.accounts (name, type, system_key) values ($1, 'asset', 'cash2')", [`X ${letters()}`]]]))
-      .toBe('42501');
+      .toBe('RA006');
     expect(await asApp(() => [["insert into radcore.accounts (name, type, control_kind) values ($1, 'asset', 'party')", [`X ${letters()}`]]]))
-      .toBe('42501');
+      .toBe('RA006');
     expect(await asApp(() => [['update radcore.accounts set control_kind = $2 where id = $1', [cash, 'gst']]])).toBe('42501');
     const name = `Cash in hand ${letters()}`;
     expect(await asApp(() => [['update radcore.accounts set name = $2 where id = $1', [cash, name]]])).toBe('ok');
