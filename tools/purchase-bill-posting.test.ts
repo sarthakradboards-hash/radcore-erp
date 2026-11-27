@@ -317,6 +317,14 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
     expect((await post(at, id)).status).toBe('posted');
     const account = (await su.query<{ name: string }>('select name from radcore.accounts where id = $1', [allowed.expenseAccountId])).rows[0]?.name ?? '';
     expect(await entryOf(at, id)).toEqual([`Creditors 0.00 1180.00`, `Input CGST 90.00 0.00`, `Input SGST 90.00 0.00`, `${account} 1000.00 0.00`].sort());
+    // Cancelled, it's mirrored: over its entries the expense account, Input GST and Creditors are each back to 0 (the
+    // auditor on #436).
+    await run((ctx) => cancelBillNow(ctx, { id, businessDate: DATE, reason: 'Entered twice' }), at.staff);
+    const net = await pool.query<{ v: string }>(`select coalesce(sum(l.debit - l.credit), 0)::numeric(18, 2)::text as v from radcore.journal_lines l
+      join radcore.journal_entries e on e.id = l.entry_id where e.source_id = $1 group by l.account_id`, [id]);
+    expect(net.rows.map((r) => r.v)).toEqual(['0.00', '0.00', '0.00', '0.00']);
+    expect((await pool.query('select status, cancel_entry_id is not null as mirrored from radcore.purchase_bills where id = $1', [id])).rows)
+      .toEqual([{ status: 'cancelled', mirrored: true }]);
     const blocked = await category('blocked');
     const { id: kept } = await draft(at, { lines: [{ ...freight('1000'), ...blocked }], total: '1180' });
     expect((await post(at, kept)).status).toBe('posted');
