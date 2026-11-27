@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  importStatement, readStatementFile, statementFileReader, statementFormatOf, statementImportById, statementLinesPage, storeStatement,
+  importStatement, readStatementFile, statementFileReader, statementFormatOf, statementImportById, statementImportsPage, statementLinesPage, storeStatement,
   undoStatementImport, type StatementLayout,
 } from '@radcore/lib-accounts';
 import { readTable, type Ctx, type FileStore, type Principal, type Table } from '@radcore/lib-platform';
@@ -147,6 +147,28 @@ describe.skipIf(!url || !superUrl)('bank statements', { timeout: 60_000 }, () =>
       await holder.query('rollback').catch(() => undefined);
       holder.release();
     }
+  });
+
+  it('names a refused row by its line in the file, blank lines above it counted (e2e-2 on RAD-159)', async () => {
+    const account = await bankAccount();
+    const [first, second] = csv(april).split('\n').slice(1);
+    const file = [HEADER.map((c) => `"${c}"`).join(','), '', first, '', '', second?.replace('10,000.00', '9,000.00')].join('\n');
+    const refused = await importFile(account, text(file));
+    expect(refused.refusals.map((r) => [r.row, r.code])).toEqual([[6, 'balance_chain_broken']]);
+  });
+
+  it('lists an account’s imports newest first, with refused rows counted and whether each can still be undone', async () => {
+    const account = await bankAccount();
+    const refused = await importFile(account, text(csv([april[0] ?? [], ['02-04-2026', 'X', '', '1.00', '', '1.00']])));
+    const done = await importFile(account, text(csv(april)));
+    const list = async () => (await run((ctx) => statementImportsPage(ctx, { filter: { accountId: account }, limit: 1 })));
+    const page = await list();
+    expect(page.items.map((i) => [i.id, i.status, i.newLines, i.refused, i.undoable])).toEqual([[done.id, 'imported', 3, 0, true]]);
+    const next = await run((ctx) => statementImportsPage(ctx, { filter: { accountId: account }, limit: 1, after: page.next ?? '' }));
+    expect(next.items.map((i) => [i.id, i.status, i.refused, i.undoable])).toEqual([[refused.id, 'refused', 1, false]]);
+    expect(next.next).toBeNull();
+    await run((ctx) => undoStatementImport(ctx, { id: done.id, reason: 'Wrong account' }));
+    expect((await list()).items.map((i) => [i.status, i.undoable])).toEqual([['undone', false]]);
   });
 
   it('undoes an import, once, and the same file then imports again', async () => {

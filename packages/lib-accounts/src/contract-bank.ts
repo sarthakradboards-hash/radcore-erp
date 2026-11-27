@@ -40,6 +40,14 @@ const importOut = z.object({
   newLines: z.number().int().nullable(), presentLines: z.number().int().nullable(), refusals: z.array(refusal), createdAt: momentString(),
 });
 
+/** GET /bank/statement-imports (bank:read): an account's imports (or every account's), newest first, each with how many
+ * rows refused it and whether it can be undone now (RAD-159, e2e-2): the way back to an import after a reload. */
+export const listStatementImportsContract = defineContract({
+  method: 'GET', path: '/bank/statement-imports', auth: 'session', perm: 'bank:read', tx: read,
+  input: listInput(z.object({ accountId: idString().optional() })),
+  output: listOf(importOut.omit({ refusals: true }).extend({ refused: z.number().int().min(0), undoable: z.boolean() })),
+});
+
 /** GET /bank/statement-imports/:id (bank:read): where an import stands, and every row that refused it. */
 export const getStatementImportContract = defineContract({
   method: 'GET', path: '/bank/statement-imports/:id', auth: 'session', perm: 'bank:read', tx: read,

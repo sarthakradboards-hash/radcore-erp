@@ -119,7 +119,13 @@ describe('RC-118: amounts as Indian files write them', () => {
 describe('RC-117: CSV in the delimiter and encoding the source uses', () => {
   it.each([[','], [';'], ['\t'], ['|']])('reads "%s"-separated files, quoted amounts intact', async (d) => {
     const t = await readTable(utf8(`Date${d}Narration${d}Amount\n07-11-2026${d}"Tea, snacks"${d}"9,111.00"\n`));
-    expect(t).toEqual({ header: ['Date', 'Narration', 'Amount'], rows: [['07-11-2026', 'Tea, snacks', '9,111.00']] });
+    expect(t).toEqual({ header: ['Date', 'Narration', 'Amount'], rows: [['07-11-2026', 'Tea, snacks', '9,111.00']], lines: [1, 2] });
+  });
+
+  it('keeps the line each row starts on, past blank lines and a cell broken over two (RAD-159)', async () => {
+    const t = await readTable(utf8('Narration,Amount\n\nTea,1\n"Two\nlines",2\n\n\nLast,3\n'));
+    expect([t.rows.map((r) => r[0]), t.lines]).toEqual([['Tea', 'Two\nlines', 'Last'], [1, 3, 4, 8]]);
+    expect(checkRows(t, z.object({ Amount: z.literal('x') })).errors.map((e) => e.row)).toEqual([3, 4, 8]);
   });
 
   it('decodes UTF-16 with a byte-order mark, and Windows-1252', () => {
