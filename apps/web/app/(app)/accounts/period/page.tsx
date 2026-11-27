@@ -29,6 +29,9 @@ function LockForms() {
   const ask = useApiMutation(askUnlockContract, { invalidates: refresh });
   const forwardId = useId();
   const backId = useId();
+  // A request asked shows as waiting, and the form starts again empty, so a second press can't ask twice by accident
+  // (e2e-playwright on #428).
+  const [asked, setAsked] = useState<{ date: string; round: number } | null>(null);
   return (
     <>
       <section aria-labelledby={forwardId}>
@@ -45,8 +48,12 @@ function LockForms() {
       </section>
       <section aria-labelledby={backId}>
         <h2 id={backId}>{t('books.period.back.title')}</h2>
-        <Form schema={askSchema} defaultValues={blank} saved={t('books.period.asked')} messages={PERIOD_MESSAGES} aria-labelledby={backId}
-          onSubmit={async (v) => { await ask.submit({ kind: 'move_back', ...v }); }}>
+        {asked === null ? null : <p role="status">{t('books.period.back.asked', { date: formatDate(asked.date) })}</p>}
+        <Form key={asked?.round ?? 0} schema={askSchema} defaultValues={blank} saved={false} messages={PERIOD_MESSAGES} aria-labelledby={backId}
+          onSubmit={async (v) => {
+            await ask.submit({ kind: 'move_back', ...v });
+            setAsked((was) => ({ date: v.through, round: (was?.round ?? 0) + 1 }));
+          }}>
           <TextField name="through" label={t('books.period.back.through')} hint={t('books.period.back.hint')} type="date" />
           <TextAreaField name="reason" label={t('books.reason')} hint={t('books.period.reason.hint')} />
           <div className="kit-actions"><SubmitButton>{t('books.period.back.submit')}</SubmitButton></div>
