@@ -61,6 +61,12 @@ export const undoStatementImportContract = defineContract({
   input: z.object({ id: idString(), reason: reason() }),
   output: z.object({}),
   errors: ['not_imported', 'statement_in_use'],
+  // The backstop: a matched line's delete meets the match's foreign key.
+  // PostgreSQL 16 (CI, production) raises 23503 for this ON DELETE RESTRICT key; 17 and later raise 23001 (auditor-2 on #459).
+  dbErrors: {
+    '23503:fk_bank_match_statement_lines_line': { code: 'statement_in_use', message: 'A line of this statement is matched: unmatch it first' },
+    '23001:fk_bank_match_statement_lines_line': { code: 'statement_in_use', message: 'A line of this statement is matched: unmatch it first' },
+  },
 });
 
 /** GET /bank/statement-lines (bank:read): an account's statement lines, newest first, a page at a time. */

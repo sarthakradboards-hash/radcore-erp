@@ -155,8 +155,9 @@ export async function matchLines(ctx: Ctx, m: In<typeof matchLinesContract>): Pr
   }
   const [row] = await tx.insert(bankMatches).values({ accountId, kind: 'manual' }).returning({ id: bankMatches.id });
   if (row === undefined) throw new Error('The match was not saved');
-  await tx.insert(bankMatchStatementLines).values(bank.map((b) => ({ matchId: row.id, statementLineId: b.id })));
-  await tx.insert(bankMatchJournalLines).values(books.map((b) => ({ matchId: row.id, journalLineId: b.id })));
+  // Each side's links in id order, so two overlapping matches meet the unique indexes in one order (auditor-2 on #454).
+  await tx.insert(bankMatchStatementLines).values(bank.map((b) => b.id).toSorted().map((statementLineId) => ({ matchId: row.id, statementLineId })));
+  await tx.insert(bankMatchJournalLines).values(books.map((b) => b.id).toSorted().map((journalLineId) => ({ matchId: row.id, journalLineId })));
   return { id: row.id };
 }
 

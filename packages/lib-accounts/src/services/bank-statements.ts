@@ -200,7 +200,10 @@ export async function undoStatementImport(ctx: Ctx, { id }: In<typeof undoStatem
   const [r] = await tx.select({ status: statementImports.status }).from(statementImports).where(eq(statementImports.id, id)).limit(1).for('update');
   if (r === undefined) return refuse('not_found', 'There’s no such import');
   if (r.status !== 'imported') refuse('not_imported', 'Only an imported statement can be undone');
-  // A match takes its lines FOR UPDATE, so one in flight is seen here, or waits behind this undo's delete.
+  // Its lines FOR UPDATE, by id, before the check: a match takes them FOR UPDATE too, so one in flight finishes first and
+  // is seen here, or waits behind this undo's delete (auditor-2 on #454). Lock order: format, import, lines.
+  await tx.select({ id: bankStatementLines.id }).from(bankStatementLines).where(eq(bankStatementLines.importId, id))
+    .orderBy(asc(bankStatementLines.id)).for('update');
   if ((await importsInUse(ctx, [id])).size > 0) refuse('statement_in_use', 'A line of this statement is matched: unmatch it first');
   await tx.delete(bankStatementLines).where(eq(bankStatementLines.importId, id));
   await tx.update(statementImports).set({ status: 'undone' }).where(eq(statementImports.id, id));

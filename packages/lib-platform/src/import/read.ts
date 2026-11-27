@@ -41,6 +41,14 @@ const ENCODINGS: Record<string, string> = {
 
 /** The file's text, decoded by the encoding chardet finds in its first 64 KB (RC-117: not UTF-8 only). */
 export function decodeText(bytes: Uint8Array): string {
+  // Text that's valid UTF-8 (plain ASCII included) is read as UTF-8 whatever chardet guesses: a short all-ASCII bank
+  // statement can look Turkish to it (ISO-8859-9), which isn't supported (e2e-playwright on RAD-159). Only text that
+  // isn't UTF-8 (Windows-1252, UTF-16) needs its guess.
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes); // a byte-order mark is dropped here too
+  } catch {
+    // not UTF-8: chardet's guess below
+  }
   const found = chardet.detect(bytes.subarray(0, IMPORT_LIMITS.sniffBytes)) ?? 'UTF-8';
   const label = ENCODINGS[found];
   if (label === undefined) throw new ImportFileError(`The file's text encoding (${found}) isn't supported. Save it as UTF-8 and try again.`);

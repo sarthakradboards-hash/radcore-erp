@@ -1,8 +1,9 @@
 // lib-accounts' TDS (M5-10, RAD-158; ADR-009 §4): the sections and their rates by date, like GST's (M2-12). Beside
 // ./tables.ts, one file per document family (ADR-009 §10). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { sql } from 'drizzle-orm';
-import { boolean, check, date, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { boundedText, id, money, percent, radcoreTable } from '../columns.ts';
+import { boolean, check, date, index, text, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { boundedText, createdMoment, id, money, percent, radcoreTable } from '../columns.ts';
+import { parties } from './tables.ts';
 
 /** A TDS section (CA-18): its code, its name, the section of the Income-tax Act 2025 and the 1961 section it replaces,
  * and the payee it's for: `individual` (a PAN's fourth letter P or H), `other`, or `any`. Seeded; never deleted. */
@@ -40,4 +41,45 @@ export const tdsRates = radcoreTable('tds_rates', {
   check('ck_tds_rates_excess', sql`${t.limitKind} = 'whole' or ${t.yearlyLimit} is not null`),
   check('ck_tds_rates_no_pan', sql`${t.rateNoPan} >= ${t.rate}`),
   uniqueIndex('ux_tds_rates_section_from').on(t.sectionId, t.effectiveFrom),
+]);
+
+/** A party's TDS terms (ADR-009 §4; RAD-158): its default section, which a bill or expense line takes unless it names
+ * another, and whether its PAN is inoperative, so it's deducted at the no-PAN rate (CA-20). Kept beside the party, not on
+ * it, so the parties table and these don't import each other. */
+export const partyTds = radcoreTable('party_tds', {
+  partyId: uuid().primaryKey().references(() => parties.id, { onDelete: 'restrict' }),
+  defaultSectionId: uuid().references(() => tdsSections.id, { onDelete: 'restrict' }),
+  panInoperative: boolean().notNull().default(false),
+}, (t) => [index('ix_party_tds_section').on(t.defaultSectionId)]);
+
+/**
+ * Every booking line with a TDS section (ADR-009 §4), written with the posting, even one that deducts nothing: its
+ * document and line, payee, section, financial year and month, the base, the rate it took with the payee's PAN as it
+ * stood, whether that was the no-PAN rate, and the amount. A cancel writes a reversal (base and amount negated, naming the
+ * row it reverses), so the year's sums are one indexed read on (party, section, year).
+ */
+export const tdsDeductions = radcoreTable('tds_deductions', {
+  id: id(), createdAt: createdMoment(),
+  sourceTable: text().notNull(),
+  sourceId: uuid().notNull(),
+  sourceLineId: uuid().notNull(),
+  partyId: uuid().notNull().references(() => parties.id, { onDelete: 'restrict' }),
+  sectionId: uuid().notNull().references(() => tdsSections.id, { onDelete: 'restrict' }),
+  financialYear: date({ mode: 'string' }).notNull(),
+  businessDate: date({ mode: 'string' }).notNull(),
+  base: money({ signed: true }).notNull(),
+  rate: percent().notNull(),
+  noPanRate: boolean().notNull(),
+  amount: money({ signed: true }).notNull(),
+  reversesId: uuid().references((): AnyPgColumn => tdsDeductions.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_tds_deductions_source_table', sql`${t.sourceTable} ~ '^[a-z][a-z0-9_]*$'`),
+  check('ck_tds_deductions_year', sql`extract(month from ${t.financialYear}) = 4 and extract(day from ${t.financialYear}) = 1`),
+  // A booking deducts zero or more; only its reversal is negative.
+  check('ck_tds_deductions_sign', sql`(${t.reversesId} is null) = (${t.base} >= 0 and ${t.amount} >= 0)`),
+  index('ix_tds_deductions_year').on(t.partyId, t.sectionId, t.financialYear),
+  index('ix_tds_deductions_source').on(t.sourceTable, t.sourceId),
+  index('ix_tds_deductions_section').on(t.sectionId),
+  // A row is reversed once.
+  uniqueIndex('ux_tds_deductions_reverses').on(t.reversesId),
 ]);

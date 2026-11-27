@@ -143,6 +143,30 @@ describe.skipIf(!url || !superUrl)('bank matching', { timeout: 60_000 }, () => {
     expect(await code(run((ctx) => bookLinesPage(ctx, { id: cash, filter: {}, limit: 5 })))).toBe('not_a_bank_account');
   });
 
+  it('waits for a match holding a statement line before it judges an undo (auditor-2 on #454)', async () => {
+    const s = await statement([['in', '40.00', 'HELD', '']]);
+    const paid = await receipt(s.bank, await party(`Held ${tag()}`), '40.00');
+    const holder = await su.connect();
+    try {
+      // A match in flight: its statement line held FOR UPDATE, its rows written, not yet committed.
+      await holder.query('begin');
+      await holder.query("set local app.principal = 'system:test'");
+      await holder.query('select id from radcore.bank_statement_lines where id = $1 for update', [s.lines[0]]);
+      const { rows: [match] } = await holder.query<{ id: string }>("insert into radcore.bank_matches (account_id, kind) values ($1, 'manual') returning id", [s.bank]);
+      await holder.query('insert into radcore.bank_match_statement_lines (match_id, statement_line_id) values ($1, $2)', [match?.id, s.lines[0]]);
+      await holder.query('insert into radcore.bank_match_journal_lines (match_id, journal_line_id) values ($1, $2)', [match?.id, paid.line]);
+      const undoing = code(run((ctx) => undoStatementImport(ctx, { id: s.imported, reason: 'Wrong account' })));
+      await vi.waitFor(async () => expect((await su.query<{ n: number }>(`select count(*)::int n from pg_stat_activity
+        where application_name = $1 and cardinality(pg_blocking_pids(pid)) > 0`, [APP])).rows[0]?.n).toBe(1), { timeout: 10_000, interval: 20 });
+      await holder.query('commit');
+      // Seen by name once the match commits, never the foreign key's raw refusal.
+      expect(await undoing).toBe('statement_in_use');
+    } finally {
+      await holder.query('rollback').catch(() => undefined);
+      holder.release();
+    }
+  });
+
   it('waits for a cancel holding the receipt before it matches it (ADR-009 §12’s lock order)', async () => {
     const who = await party(`Race ${tag()}`);
     const s = await statement([['in', '90.00', 'RACE', '']]);

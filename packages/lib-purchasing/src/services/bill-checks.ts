@@ -2,7 +2,7 @@
 // the principal's scope, a draft's checks (dates, supplier and GSTIN, PO and receipt lines, file), the POs' locks, and
 // the tax worked out from the bill's own lines at the supplier's invoice date (RC-056).
 import { purchaseBillLines, purchaseBills, purchaseOrderLines, purchaseOrders, purchasingTx } from '@radcore/db/purchasing';
-import { categoryPairs, getCompanyProfile } from '@radcore/lib-accounts';
+import { categoryPairs, defaultTdsSection, getCompanyProfile } from '@radcore/lib-accounts';
 import { dec, indiaDate, percentString, roundMoney, type Money } from '@radcore/lib-common';
 import { gstRateFor, isReverseCharge, lineTax, placeOfSupply, rcmRulesOn, totalsOf, type LineTax, type RcmParty } from '@radcore/lib-gst';
 import { AppError, defineSeries, defineSetting, listScope, momentKey, readyFile, type Ctx } from '@radcore/lib-platform';
@@ -68,7 +68,7 @@ export type JobWorkLine = Awaited<ReturnType<typeof jobWorkLinesFor>>[number];
 /** A draft's checks (ADR-008 §4, §7): the dates, the supplier and the GSTIN printed on its bill, each goods line's PO
  * line (placed or closed, the supplier's own), each job worker's charge's receipt line (posted, the job worker's own, with
  * goods made), their quantities, and the file. Answers each goods line's PO line and each charge's job-work line. */
-export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string, PoLine>; made: Map<string, JobWorkLine>; blocked: boolean[] }> {
+export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string, PoLine>; made: Map<string, JobWorkLine>; blocked: boolean[]; sections: (string | null)[] }> {
   if (b.businessDate > today()) throw refuseAt('date_in_future', 'The date is after today', ['businessDate']);
   if (b.supplierInvoiceDate > b.businessDate) {
     throw refuseAt('supplier_date_after_bill', 'The supplier’s date is after the bill’s own', ['supplierInvoiceDate']);
@@ -118,24 +118,31 @@ export async function checkDraft(ctx: Ctx, b: BillIn): Promise<{ po: Map<string,
     });
   }
   if (b.fileId !== null) await readyFile(ctx, 'purchase_bill', b.fileId, { wrongKind: ['fileId'] });
-  return { po, made, blocked: await chargeCategories(ctx, b.lines) };
+  const { blocked, categoryTds } = await chargeCategories(ctx, b.lines);
+  // A service line's TDS section (ADR-009 §4): its own (null for none), else the supplier's default, else its category's.
+  const partyDefault = await defaultTdsSection(ctx, b.supplierId);
+  const sections = b.lines.map((l, n) => (l.kind === 'goods' ? null
+    : l.tdsSectionId !== undefined ? l.tdsSectionId : partyDefault ?? categoryTds[n] ?? null));
+  return { po, made, blocked, sections };
 }
 
 /** Each line's category rule (ADR-009 §2, RAD-152): a charge naming its expense category and one of that category's
  * switched-on accounts, both or neither; true where the category's credit is blocked. */
-async function chargeCategories(ctx: Ctx, lines: readonly LineIn[]): Promise<boolean[]> {
+async function chargeCategories(ctx: Ctx, lines: readonly LineIn[]): Promise<{ blocked: boolean[]; categoryTds: (string | null)[] }> {
   const named = lines.flatMap((l, n) => (l.kind === 'charge' && (l.expenseCategoryId != null || l.expenseAccountId != null) ? [{ l, n }] : []));
   const pairs = await categoryPairs(ctx, named.flatMap(({ l }) => (l.kind === 'charge' && l.expenseCategoryId != null && l.expenseAccountId != null
     ? [{ categoryId: l.expenseCategoryId, accountId: l.expenseAccountId }] : [])));
   const blocked = lines.map(() => false);
+  const categoryTds: (string | null)[] = lines.map(() => null);
   for (const { l, n } of named) {
     if (l.kind !== 'charge') continue;
     const pair = pairs.get(`${l.expenseCategoryId ?? ''}:${l.expenseAccountId ?? ''}`);
     if (pair === undefined) throw refuseAt('not_in_category', 'Name an expense category and one of the accounts it posts to', ['lines', n, 'expenseAccountId']);
     if (!pair.active) throw refuseAt('category_inactive', 'That expense category or account is switched off', ['lines', n, 'expenseCategoryId']);
     blocked[n] = pair.blocked;
+    categoryTds[n] = pair.defaultTds;
   }
-  return blocked;
+  return { blocked, categoryTds };
 }
 
 export const poLineIdsOf = (lines: readonly LineIn[]): string[] => lines.flatMap((l) => (l.kind === 'goods' ? [l.poLineId] : []));
@@ -216,3 +223,14 @@ export function overPoRate(rate: string, poRate: string): string | null {
   return dec(rate).minus(dec(poRate)).times(100).div(dec(poRate)).toFixed(2);
 }
 
+/** The stored draft as its save sent it, for the draft's checks again. */
+export const inputOf = (b: Row, lines: readonly (typeof purchaseBillLines.$inferSelect)[]): BillIn => ({ supplierId: b.partyId, businessDate: b.businessDate,
+  supplierInvoiceNumber: b.supplierInvoiceNumber, supplierInvoiceDate: b.supplierInvoiceDate, supplierGstin: b.supplierGstin,
+  statedTotal: b.statedTotal as Money, fileId: b.fileId, notes: b.notes,
+  lines: lines.map((l) => (l.kind === 'goods'
+    ? { kind: 'goods' as const, poLineId: l.poLineId ?? '', receiptLineId: l.receiptLineId, qty: (l.qty ?? '0') as never, rate: (l.rate ?? '0') as never }
+    : l.kind === 'job_work'
+      ? { kind: 'job_work' as const, jobWorkReceiptLineId: l.jobWorkReceiptLineId ?? '', qty: (l.qty ?? '0') as never, rate: (l.rate ?? '0') as never,
+        hsn: l.hsn ?? '', tdsSectionId: l.tdsSectionId }
+      : { kind: 'charge' as const, charge: (l.charge ?? 'other') as 'other', description: l.description ?? '', hsn: l.hsn ?? '', amount: (l.amount ?? '0') as Money,
+        expenseCategoryId: l.expenseCategoryId, expenseAccountId: l.expenseAccountId, tdsSectionId: l.tdsSectionId })) });
