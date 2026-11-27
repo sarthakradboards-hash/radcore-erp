@@ -60,6 +60,12 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'journal:read', module: 'Journal', label: 'See the chart of accounts and the journal' },
   { key: 'journal:post', module: 'Journal', label: 'Post a manual journal', secondFactor: true },
   { key: 'journal:reverse', module: 'Journal', label: 'Reverse a journal entry', secondFactor: true },
+  // The period lock and year close (M5-09, ADR-009 §6, §9): company rows, not owned records, so all-only. Moving the lock
+  // back or reopening a year needs a second person's books:unlock (D-06), which has the second factor.
+  { key: 'books:lock', module: 'Journal', label: 'Move the period lock forward, close a year, and ask to move the lock back or reopen a year',
+    allOnly: true },
+  { key: 'books:unlock', module: 'Journal', label: 'Approve moving the period lock back and reopening a year', allOnly: true,
+    secondFactor: true },
   { key: 'prices:read', module: 'Prices', label: 'See price lists and discount limits' },
   { key: 'prices:write', module: 'Prices', label: 'Draft price lists, which price nothing until approved' },
   { key: 'prices:approve', module: 'Prices', label: 'Approve another person’s price list, and set discount limits', secondFactor: true },

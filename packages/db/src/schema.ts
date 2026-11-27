@@ -3,6 +3,7 @@
 // is the one place a transaction opens.
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import * as accounts from './accounts/tables.ts';
+import * as accountsClose from './accounts/tables-close.ts';
 import * as crm from './crm/tables.ts';
 import * as gst from './gst/tables.ts';
 import * as hr from './hr/tables.ts';
@@ -26,6 +27,7 @@ import { bind, unbind, type RawTx, type Tx } from './tx.ts';
 export type { Tx } from './tx.ts';
 // Every table, for tools/schema.test.ts's guard and drizzle-kit's snapshots.
 export * from './accounts/tables.ts';
+export * from './accounts/tables-close.ts';
 export * from './crm/tables.ts';
 export * from './gst/tables.ts';
 export * from './hr/tables.ts';
@@ -45,7 +47,7 @@ export * from './stock/tables-job-work.ts';
 export * from './stock/tables-moves.ts';
 
 /** Every module's tables and relations, as they land: the same files drizzle.config.ts lists. */
-export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...platformSignIn, ...accounts, ...crm, ...gst, ...hr, ...sales,
+export const SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({ ...platform, ...platformSignIn, ...accounts, ...accountsClose, ...crm, ...gst, ...hr, ...sales,
   ...salesCredit, ...salesPrices, ...salesBookings, ...salesQuickBills, ...stock, ...stockMoves, ...stockJobWork, ...purchasingOrders,
   ...purchasingReceipts, ...purchasingBills, ...purchasingReturns });
 
