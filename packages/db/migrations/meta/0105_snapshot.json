@@ -1,5 +1,5 @@
 {
-  "id": "b776a885-0a5c-403b-b027-dff9bf77d307",
+  "id": "a829d677-9fe5-4f5d-be18-e312256e3015",
   "prevId": "b37dff3a-059e-4da3-88b6-98b214616f6f",
   "version": "7",
   "dialect": "postgresql",
@@ -19382,30 +19382,9 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "tds_section_id": {
-          "name": "tds_section_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "ix_purchase_bill_lines_tds_section": {
-          "name": "ix_purchase_bill_lines_tds_section",
-          "columns": [
-            {
-              "expression": "tds_section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "ix_purchase_bill_lines_expense_category": {
           "name": "ix_purchase_bill_lines_expense_category",
           "columns": [
@@ -19566,20 +19545,6 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "purchase_bill_lines_tds_section_id_tds_sections_id_fk": {
-          "name": "purchase_bill_lines_tds_section_id_tds_sections_id_fk",
-          "tableFrom": "purchase_bill_lines",
-          "tableTo": "tds_sections",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "tds_section_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
         "fk_purchase_bill_lines_expense_category": {
           "name": "fk_purchase_bill_lines_expense_category",
           "tableFrom": "purchase_bill_lines",
@@ -19694,10 +19659,6 @@
         "ck_purchase_bill_lines_rcm_igst": {
           "name": "ck_purchase_bill_lines_rcm_igst",
           "value": "\"radcore\".\"purchase_bill_lines\".\"rcm_igst\" >= 0 and \"radcore\".\"purchase_bill_lines\".\"rcm_igst\" <> 'NaN'"
-        },
-        "ck_purchase_bill_lines_tds_section": {
-          "name": "ck_purchase_bill_lines_tds_section",
-          "value": "\"radcore\".\"purchase_bill_lines\".\"tds_section_id\" is null or \"radcore\".\"purchase_bill_lines\".\"kind\" in ('charge', 'job_work')"
         },
         "ck_purchase_bill_lines_rcm": {
           "name": "ck_purchase_bill_lines_rcm",
@@ -21499,30 +21460,9 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "default_tds_section_id": {
-          "name": "default_tds_section_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "ix_expense_categories_tds_section": {
-          "name": "ix_expense_categories_tds_section",
-          "columns": [
-            {
-              "expression": "default_tds_section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "ux_expense_categories_name_key": {
           "name": "ux_expense_categories_name_key",
           "columns": [
@@ -21539,22 +21479,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "expense_categories_default_tds_section_id_tds_sections_id_fk": {
-          "name": "expense_categories_default_tds_section_id_tds_sections_id_fk",
-          "tableFrom": "expense_categories",
-          "tableTo": "tds_sections",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "default_tds_section_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -21837,30 +21762,9 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "tds_section_id": {
-          "name": "tds_section_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "ix_expense_lines_tds_section": {
-          "name": "ix_expense_lines_tds_section",
-          "columns": [
-            {
-              "expression": "tds_section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "ux_expense_lines_line": {
           "name": "ux_expense_lines_line",
           "columns": [
@@ -21917,20 +21821,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "expense_lines_tds_section_id_tds_sections_id_fk": {
-          "name": "expense_lines_tds_section_id_tds_sections_id_fk",
-          "tableFrom": "expense_lines",
-          "tableTo": "tds_sections",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "tds_section_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "fk_expense_lines_category_account": {
@@ -22394,378 +22284,6 @@
         "ck_expenses_supplier_number": {
           "name": "ck_expenses_supplier_number",
           "value": "btrim(\"radcore\".\"expenses\".\"supplier_invoice_number\") <> ''"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.party_tds": {
-      "name": "party_tds",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "default_section_id": {
-          "name": "default_section_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pan_inoperative": {
-          "name": "pan_inoperative",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {
-        "ix_party_tds_section": {
-          "name": "ix_party_tds_section",
-          "columns": [
-            {
-              "expression": "default_section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "party_tds_party_id_parties_id_fk": {
-          "name": "party_tds_party_id_parties_id_fk",
-          "tableFrom": "party_tds",
-          "tableTo": "parties",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "party_tds_default_section_id_tds_sections_id_fk": {
-          "name": "party_tds_default_section_id_tds_sections_id_fk",
-          "tableFrom": "party_tds",
-          "tableTo": "tds_sections",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "default_section_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "radcore.tds_deductions": {
-      "name": "tds_deductions",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "source_table": {
-          "name": "source_table",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_line_id": {
-          "name": "source_line_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "section_id": {
-          "name": "section_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "financial_year": {
-          "name": "financial_year",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "base": {
-          "name": "base",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rate": {
-          "name": "rate",
-          "type": "numeric(9, 6)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "no_pan_rate": {
-          "name": "no_pan_rate",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reverses_id": {
-          "name": "reverses_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "ix_tds_deductions_year": {
-          "name": "ix_tds_deductions_year",
-          "columns": [
-            {
-              "expression": "party_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "financial_year",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_tds_deductions_source": {
-          "name": "ix_tds_deductions_source",
-          "columns": [
-            {
-              "expression": "source_table",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_tds_deductions_section": {
-          "name": "ix_tds_deductions_section",
-          "columns": [
-            {
-              "expression": "section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ux_tds_deductions_reverses": {
-          "name": "ux_tds_deductions_reverses",
-          "columns": [
-            {
-              "expression": "reverses_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "tds_deductions_party_id_parties_id_fk": {
-          "name": "tds_deductions_party_id_parties_id_fk",
-          "tableFrom": "tds_deductions",
-          "tableTo": "parties",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "tds_deductions_section_id_tds_sections_id_fk": {
-          "name": "tds_deductions_section_id_tds_sections_id_fk",
-          "tableFrom": "tds_deductions",
-          "tableTo": "tds_sections",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "section_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "tds_deductions_reverses_id_tds_deductions_id_fk": {
-          "name": "tds_deductions_reverses_id_tds_deductions_id_fk",
-          "tableFrom": "tds_deductions",
-          "tableTo": "tds_deductions",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "reverses_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_tds_deductions_base": {
-          "name": "ck_tds_deductions_base",
-          "value": "\"radcore\".\"tds_deductions\".\"base\" <> 'NaN'"
-        },
-        "ck_tds_deductions_rate": {
-          "name": "ck_tds_deductions_rate",
-          "value": "\"radcore\".\"tds_deductions\".\"rate\" between 0 and 100 and \"radcore\".\"tds_deductions\".\"rate\" <> 'NaN'"
-        },
-        "ck_tds_deductions_amount": {
-          "name": "ck_tds_deductions_amount",
-          "value": "\"radcore\".\"tds_deductions\".\"amount\" <> 'NaN'"
-        },
-        "ck_tds_deductions_source_table": {
-          "name": "ck_tds_deductions_source_table",
-          "value": "\"radcore\".\"tds_deductions\".\"source_table\" ~ '^[a-z][a-z0-9_]*$'"
-        },
-        "ck_tds_deductions_year": {
-          "name": "ck_tds_deductions_year",
-          "value": "extract(month from \"radcore\".\"tds_deductions\".\"financial_year\") = 4 and extract(day from \"radcore\".\"tds_deductions\".\"financial_year\") = 1"
-        },
-        "ck_tds_deductions_sign": {
-          "name": "ck_tds_deductions_sign",
-          "value": "(\"radcore\".\"tds_deductions\".\"reverses_id\" is null) = (\"radcore\".\"tds_deductions\".\"base\" >= 0 and \"radcore\".\"tds_deductions\".\"amount\" >= 0)"
         }
       },
       "isRLSEnabled": false
@@ -23378,6 +22896,334 @@
         "ck_transfers_cancelled": {
           "name": "ck_transfers_cancelled",
           "value": "(\"radcore\".\"transfers\".\"status\" = 'cancelled') = (\"radcore\".\"transfers\".\"cancel_entry_id\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.bank_match_journal_lines": {
+      "name": "bank_match_journal_lines",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "match_id": {
+          "name": "match_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "journal_line_id": {
+          "name": "journal_line_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "ux_bank_match_journal_lines_line": {
+          "name": "ux_bank_match_journal_lines_line",
+          "columns": [
+            {
+              "expression": "journal_line_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bank_match_journal_lines_match_id_bank_matches_id_fk": {
+          "name": "bank_match_journal_lines_match_id_bank_matches_id_fk",
+          "tableFrom": "bank_match_journal_lines",
+          "tableTo": "bank_matches",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "match_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "bank_match_journal_lines_journal_line_id_journal_lines_id_fk": {
+          "name": "bank_match_journal_lines_journal_line_id_journal_lines_id_fk",
+          "tableFrom": "bank_match_journal_lines",
+          "tableTo": "journal_lines",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "journal_line_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "pk_bank_match_journal_lines": {
+          "name": "pk_bank_match_journal_lines",
+          "columns": [
+            "match_id",
+            "journal_line_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "radcore.bank_match_statement_lines": {
+      "name": "bank_match_statement_lines",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "match_id": {
+          "name": "match_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statement_line_id": {
+          "name": "statement_line_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "ux_bank_match_statement_lines_line": {
+          "name": "ux_bank_match_statement_lines_line",
+          "columns": [
+            {
+              "expression": "statement_line_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bank_match_statement_lines_match_id_bank_matches_id_fk": {
+          "name": "bank_match_statement_lines_match_id_bank_matches_id_fk",
+          "tableFrom": "bank_match_statement_lines",
+          "tableTo": "bank_matches",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "match_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fk_bank_match_statement_lines_line": {
+          "name": "fk_bank_match_statement_lines_line",
+          "tableFrom": "bank_match_statement_lines",
+          "tableTo": "bank_statement_lines",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "statement_line_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "pk_bank_match_statement_lines": {
+          "name": "pk_bank_match_statement_lines",
+          "columns": [
+            "match_id",
+            "statement_line_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "radcore.bank_matches": {
+      "name": "bank_matches",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unmatched_at": {
+          "name": "unmatched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unmatch_reason": {
+          "name": "unmatch_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_bank_matches_account": {
+          "name": "ix_bank_matches_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bank_matches_account_id_accounts_id_fk": {
+          "name": "bank_matches_account_id_accounts_id_fk",
+          "tableFrom": "bank_matches",
+          "tableTo": "accounts",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_bank_matches_unmatch_reason": {
+          "name": "ck_bank_matches_unmatch_reason",
+          "value": "char_length(\"radcore\".\"bank_matches\".\"unmatch_reason\") <= 500"
+        },
+        "ck_bank_matches_kind": {
+          "name": "ck_bank_matches_kind",
+          "value": "\"radcore\".\"bank_matches\".\"kind\" in ('manual', 'auto')"
+        },
+        "ck_bank_matches_unmatched": {
+          "name": "ck_bank_matches_unmatched",
+          "value": "(\"radcore\".\"bank_matches\".\"unmatched_at\" is null) = (\"radcore\".\"bank_matches\".\"unmatch_reason\" is null)"
         }
       },
       "isRLSEnabled": false

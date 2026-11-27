@@ -6,7 +6,7 @@
 // (`changed`), and anything the closes no longer allow; the screen only words those refusals.
 import { financialYear, formatDate, formatMoment } from '@radcore/lib-common';
 import { getPeriodContract, periodUnlockApproval } from '@radcore/lib-accounts/contract';
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import { ReasonDialog } from '../../../../../components/ui/dialog/reason-dialog.tsx';
 import { DataTable, type Column } from '../../../../../components/ui/table/data-table.tsx';
@@ -34,11 +34,18 @@ function Review({ request }: { request: Pending }) {
     setTimeout(() => { if (approveButton.current?.isConnected !== true) heading.current?.focus(); }, 0);
   };
   const a = q.data;
+  const v = a === undefined ? null : readUnlock(a.version);
+  // Approve is offered only for a version the screen could show, and only while it's still the one asked.
+  const mayApprove = a !== undefined && v !== null && !a.changed;
+  // When the re-read takes Approve away, focus goes to the heading, whenever the re-read lands: a WebKit mouse click
+  // never focuses the button, so the dialog has nothing to give focus back to (e2e-2 on #439).
+  const hadApprove = useRef(false);
+  useEffect(() => {
+    if (hadApprove.current && !mayApprove) heading.current?.focus();
+    hadApprove.current = mayApprove;
+  }, [mayApprove]);
   if (q.error !== null) return <p role="alert" className="kit-form-alert">{t('error.title')}</p>;
   if (a === undefined) return <p>{t('loading')}</p>;
-  const v = readUnlock(a.version);
-  // Approve is offered only for a version the screen could show, and only while it's still the one asked.
-  const mayApprove = v !== null && !a.changed;
   return (
     <section aria-labelledby={headingId}>
       <h2 id={headingId} ref={heading} tabIndex={-1}>{t('books.unlocks.heading', { who: who(a.requestedBy), when: formatMoment(a.requestedAt) })}</h2>

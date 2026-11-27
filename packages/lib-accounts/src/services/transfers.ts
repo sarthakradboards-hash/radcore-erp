@@ -11,6 +11,7 @@ import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelTransferContract, getTransferContract, listTransfersContract, recordTransferContract } from '../contract-transfers.ts';
 import { holdPeriod, postEntry, reverseEntry } from './journal.ts';
+import { refuseIfMatched } from './bank-matching.ts';
 import { moneyAccount } from './payments.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -49,6 +50,8 @@ export async function cancelTransfer(ctx: Ctx, c: In<typeof cancelTransferContra
   if (t === undefined) return refuse('not_found', 'There’s no such transfer');
   if (t.status !== 'posted' || t.postedEntryId === null) return refuse('not_posted', 'Only a posted transfer is cancelled');
   if (c.businessDate < t.businessDate) refuse('date_before_source', 'A cancellation is dated on or after what it cancels');
+  // Matched to the bank statement: unmatch first (ADR-009 §12). The row is held FOR UPDATE, so a match waits or is seen.
+  await refuseIfMatched(ctx, t.postedEntryId);
   const mirror = await reverseEntry(ctx, { entryId: t.postedEntryId, businessDate: c.businessDate, reason: c.reason });
   await tx.update(transfers).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal), cancelReason: c.reason,
     cancelEntryId: mirror.id }).where(eq(transfers.id, t.id));

@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { cancelExpense, createExpense, dropExpense, getExpense, listExpenses, postExpense, replaceExpense } from '../contract-expenses.ts';
 import { getCompanyProfile } from './company.ts';
 import { holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
+import { refuseIfMatched } from './bank-matching.ts';
 import { holdParty } from './parties.ts';
 import { cashPaidOn } from './expense-cash.ts';
 import { bookTds, defaultTdsSection, reverseTds } from './tds-booking.ts';
@@ -270,6 +271,8 @@ export async function cancelExpenseNow(ctx: Ctx, c: In<typeof cancelExpense>): P
   const e = await expenseOf(ctx, c.id, 'expenses:write', true);
   if (e.status !== 'posted' || e.postedEntryId === null) throw wrongStatus(e.status, 'cancelled');
   if (c.businessDate < e.businessDate) throw refuseAt('date_before_source', 'A cancellation is dated on or after what it cancels', ['businessDate']);
+  // Matched to the bank statement: unmatch first (ADR-009 §12). The row is held FOR UPDATE, so a match waits or is seen.
+  await refuseIfMatched(ctx, e.postedEntryId);
   const mirror = await reverseEntry(ctx, { entryId: e.postedEntryId, businessDate: c.businessDate, reason: c.reason });
   await reverseTds(ctx, { table: SOURCE, id: e.id, businessDate: c.businessDate });
   await accountsTx(ctx).update(expenses).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),

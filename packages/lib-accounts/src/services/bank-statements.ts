@@ -4,18 +4,19 @@
 // (its statement_formats row FOR UPDATE), so two files for one account are judged one after the other.
 //   POST /bank/statement-imports -> queued -> job: read file (before) -> readStatement -> chainToStored -> imported | refused
 // Nothing posts: statement lines aren't ledger rows.
-import { accounts, accountsTx, after, bankStatementLines, statementFormats, statementImports } from '@radcore/db/accounts';
+import { accounts, accountsTx, after, bankMatchStatementLines, bankStatementLines, statementFormats, statementImports } from '@radcore/db/accounts';
 import { idString } from '@radcore/lib-common';
 import {
   AppError, decodeCursor, encodeCursor, ImportFileError, isoMoment, momentKey, readPdf, readTable, readyFile, type BeforeJob, type Ctx, type JobContract, type JobMeta, type Table,
 } from '@radcore/lib-platform';
-import { and, asc, between, desc, eq, gt, lt } from 'drizzle-orm';
+import { and, asc, between, desc, eq, gt, inArray, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
   getStatementFormatContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
   undoStatementImportContract,
 } from '../contract-bank.ts';
 import { STATEMENT_LAYOUTS, type StatementLayout } from './statement-layouts.ts';
+import { matchesOfLines } from './bank-matching.ts';
 import { chainToStored, readStatement, type Refusal, type StatementFormat, type StatementLine } from './statement-read.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -167,8 +168,16 @@ export async function statementImportById(ctx: Ctx, { id }: In<typeof getStateme
 // Newest first: the moment each was asked for (its microseconds kept, momentKey), then id.
 const IMPORTS_KEY = z.object({ at: momentKey(), id: z.uuid() });
 
-/** GET /bank/statement-imports: newest first, a page at a time.
- * shortcut: `undoable` is "imported" until M5-13, which adds "and no line matched", as the undo itself will. */
+/** Which of these imports have a line in a live match (RAD-165): those can't be undone (`statement_in_use`). */
+async function importsInUse(ctx: Ctx, importIds: readonly string[]): Promise<Set<string>> {
+  if (importIds.length === 0) return new Set();
+  const rows = await accountsTx(ctx).select({ id: bankStatementLines.importId }).from(bankStatementLines)
+    .innerJoin(bankMatchStatementLines, eq(bankMatchStatementLines.statementLineId, bankStatementLines.id))
+    .where(inArray(bankStatementLines.importId, [...importIds]));
+  return new Set(rows.map((r) => r.id));
+}
+
+/** GET /bank/statement-imports: newest first, a page at a time; `undoable` while imported and no line is matched. */
 export async function statementImportsPage(ctx: Ctx, input: In<typeof listStatementImportsContract>): Promise<Out<typeof listStatementImportsContract>> {
   const key = input.after === undefined ? undefined : decodeCursor(IMPORTS_KEY, input.after);
   const rows = await accountsTx(ctx).select().from(statementImports).where(and(
@@ -177,18 +186,18 @@ export async function statementImportsPage(ctx: Ctx, input: In<typeof listStatem
   )).orderBy(desc(statementImports.createdAt), desc(statementImports.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
+  const inUse = await importsInUse(ctx, page.map((r) => r.id));
   return {
     items: page.map((r) => {
       const status = z.enum(['queued', 'imported', 'refused', 'undone']).parse(r.status);
       return { id: r.id, accountId: r.accountId, fileId: r.fileId, status, newLines: r.newLines, presentLines: r.presentLines,
-        refused: refusalsOf.parse(r.refusals ?? []).length, undoable: status === 'imported', createdAt: isoMoment(r.createdAt) };
+        refused: refusalsOf.parse(r.refusals ?? []).length, undoable: status === 'imported' && !inUse.has(r.id), createdAt: isoMoment(r.createdAt) };
     }),
     next: rows.length > input.limit && last ? encodeCursor({ at: last.createdAt, id: last.id }) : null,
   };
 }
 
-/** POST /bank/statement-imports/:id/undo: its lines deleted, each audited with the reason.
- * shortcut: no line can be matched until M5-13, which adds `statement_in_use` here. */
+/** POST /bank/statement-imports/:id/undo: its lines deleted, each audited with the reason, while none is matched. */
 export async function undoStatementImport(ctx: Ctx, { id }: In<typeof undoStatementImportContract>): Promise<Out<typeof undoStatementImportContract>> {
   const tx = accountsTx(ctx);
   // The account's import lock first, as an import's job takes it, so an undo and a job's chain check on the same account
@@ -199,6 +208,8 @@ export async function undoStatementImport(ctx: Ctx, { id }: In<typeof undoStatem
   const [r] = await tx.select({ status: statementImports.status }).from(statementImports).where(eq(statementImports.id, id)).limit(1).for('update');
   if (r === undefined) return refuse('not_found', 'There’s no such import');
   if (r.status !== 'imported') refuse('not_imported', 'Only an imported statement can be undone');
+  // A match takes its lines FOR UPDATE, so one in flight is seen here, or waits behind this undo's delete.
+  if ((await importsInUse(ctx, [id])).size > 0) refuse('statement_in_use', 'A line of this statement is matched: unmatch it first');
   await tx.delete(bankStatementLines).where(eq(bankStatementLines.importId, id));
   await tx.update(statementImports).set({ status: 'undone' }).where(eq(statementImports.id, id));
   return {};
@@ -214,7 +225,9 @@ export async function statementLinesPage(ctx: Ctx, input: In<typeof listStatemen
     .orderBy(desc(bankStatementLines.valueDate), desc(bankStatementLines.seq)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const last = page.at(-1);
+  const matched = await matchesOfLines(ctx, page.map((l) => l.id));
   return { items: page.map((l) => ({ id: l.id, accountId: l.accountId, importId: l.importId, rowNo: l.rowNo, valueDate: l.valueDate,
-    narration: l.narration, reference: l.reference, direction: l.direction === 'in' ? 'in' : 'out', amount: l.amount, balance: l.balance })),
+    narration: l.narration, reference: l.reference, direction: l.direction === 'in' ? 'in' : 'out', amount: l.amount, balance: l.balance,
+    matchId: matched.get(l.id) ?? null })),
     next: rows.length > input.limit && last ? encodeCursor({ date: last.valueDate, seq: last.seq }) : null };
 }

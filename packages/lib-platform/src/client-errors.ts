@@ -26,6 +26,7 @@ export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accou
   '/admin/audit', '/admin/company', '/admin/discount-limits', '/admin/gst-rates',
   '/admin/items', '/admin/items/[id]', '/admin/locations', '/admin/number-series', '/admin/parties', '/admin/parties/[id]',
   '/admin/permissions',
+  '/admin/rcm-rules',
   '/admin/po-limits',
   '/admin/price-approvals', '/admin/price-lists', '/admin/price-lists/[id]',
   '/admin/roles', '/admin/roles/[key]', '/admin/sessions', '/admin/settings', '/admin/users', '/crm/ad-spend', '/crm/board', '/crm/campaigns', '/crm/leads', '/crm/leads/[id]', '/crm/leads/new', '/crm/lists', '/crm/set-aside', '/crm/sources',

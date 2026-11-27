@@ -6,7 +6,8 @@
 // can be undone while nothing is matched. Which rows are new, already present or refused is the server's to judge.
 import { formatDate, formatMoment, formatMoney } from '@radcore/lib-common';
 import {
-  getStatementFormatContract, getStatementImportContract, importStatementContract, listMoneyAccounts, listStatementLinesContract,
+  getStatementFormatContract, getStatementImportContract, importStatementContract, listMoneyAccounts, listStatementImportsContract,
+  listStatementLinesContract,
   undoStatementImportContract,
 } from '@radcore/lib-accounts/contract';
 import { statementFiles } from '@radcore/lib-platform/contract';
@@ -29,6 +30,7 @@ import { refreshLines } from './lines-refresh.ts';
 import { BANK_MESSAGES, importSchema, importValues, importWhenChecked, lineCounts, UPLOADABLE, uploadType, type ImportInput } from './statement-values.ts';
 
 type Line = z.output<typeof listStatementLinesContract.output>['items'][number];
+type PastImport = z.output<typeof listStatementImportsContract.output>['items'][number];
 
 /** The bank's file: chosen, sent straight to the bucket, then checked by the server; the form keeps its id. */
 function StatementFile() {
@@ -70,11 +72,12 @@ function StatementFile() {
   );
 }
 
-/** Where an import stands, polled while the worker reads it, with every refused row and the undo. */
-function ImportStatus({ id }: { id: string }) {
+/** Where an import stands, polled while the worker reads it, with every refused row and, under bank:reconcile, the undo
+ * (offered only while the server says it can be undone, when it's known: a matched line keeps it). */
+function ImportStatus({ id, mayUndo, undoable = true }: { id: string; mayUndo: boolean; undoable?: boolean }) {
   const [settled, setSettled] = useState(false);
   const q = useApiQuery(getStatementImportContract, { id }, settled ? {} : { refetchInterval: 2000 });
-  const undo = useApiMutation(undoStatementImportContract, { invalidates: [getStatementImportContract, listStatementLinesContract] });
+  const undo = useApiMutation(undoStatementImportContract, { invalidates: [getStatementImportContract, listStatementLinesContract, listStatementImportsContract] });
   const [undoing, setUndoing] = useState(false);
   const captionId = useId();
   // The Undo button is gone once it's undone, so focus goes to the import's heading, not the body (e2e-2 on #439).
@@ -95,9 +98,11 @@ function ImportStatus({ id }: { id: string }) {
       {i.status === 'imported' ? (
         <>
           <p>{lineCounts(i.newLines ?? 0, i.presentLines ?? 0)}</p>
-          <div className="kit-actions">
-            <button type="button" className="kit-button" onClick={() => setUndoing(true)}>{t('books.bank.undo')}</button>
-          </div>
+          {mayUndo && undoable ? (
+            <div className="kit-actions">
+              <button type="button" className="kit-button" onClick={() => setUndoing(true)}>{t('books.bank.undo')}</button>
+            </div>
+          ) : null}
         </>
       ) : null}
       {i.refusals.length === 0 ? null : (
@@ -136,7 +141,7 @@ function ImportStatus({ id }: { id: string }) {
 function ImportForm({ accountId }: { accountId: string }) {
   const headingId = useId();
   const format = useApiQuery(getStatementFormatContract, { id: accountId });
-  const start = useApiMutation(importStatementContract, { invalidates: [listStatementLinesContract] });
+  const start = useApiMutation(importStatementContract, { invalidates: [listStatementLinesContract, listStatementImportsContract] });
   const [imports, setImports] = useState<string[]>([]);
   if (format.error !== null) return <p role="alert" className="kit-form-alert">{t('error.title')}</p>;
   if (format.data === undefined) return <p>{t('loading')}</p>;
@@ -167,8 +172,31 @@ function ImportForm({ accountId }: { accountId: string }) {
         </fieldset>
         <SubmitButton>{t('books.bank.import.submit')}</SubmitButton>
       </Form>
-      {latest === undefined ? null : <ImportStatus key={latest} id={latest} />}
+      {latest === undefined ? null : <ImportStatus key={latest} id={latest} mayUndo />}
     </section>
+  );
+}
+
+/** The account's imports, newest first: the way back to one after a reload, to read its refused rows or undo it. */
+function PastImports({ accountId, mayUndo }: { accountId: string; mayUndo: boolean }) {
+  const list = useApiList(listStatementImportsContract, { filter: { accountId } });
+  const [open, setOpen] = useState<PastImport | null>(null);
+  const cols: Column<PastImport>[] = [
+    { id: 'when', header: t('books.bank.past.col.when'), cell: (r) => formatMoment(r.createdAt) },
+    { id: 'status', header: t('books.bank.col.status'), cell: (r) => t(`books.bank.past.status.${r.status}`) },
+    { id: 'lines', header: t('books.bank.past.col.lines'), cell: (r) => (r.status === 'imported' ? lineCounts(r.newLines ?? 0, r.presentLines ?? 0) : '') },
+    { id: 'refused', header: t('books.bank.past.col.refused'), numeric: true, cell: (r) => (r.refused === 0 ? '' : String(r.refused)) },
+    { id: 'review', header: t('books.bank.past.col.actions'), cell: (r) => (
+      <button type="button" className="kit-button" aria-pressed={open?.id === r.id} onClick={() => setOpen(r)}
+        aria-label={t('books.bank.past.review.for', { when: formatMoment(r.createdAt) })}>{t('books.bank.past.review')}</button>
+    ) },
+  ];
+  return (
+    <>
+      <h2>{t('books.bank.past')}</h2>
+      <DataTable caption={t('books.bank.past')} columns={cols} rowKey={(r) => r.id} list={list} empty={t('books.bank.past.empty')} />
+      {open === null ? null : <ImportStatus key={open.id} id={open.id} mayUndo={mayUndo} undoable={open.undoable} />}
+    </>
   );
 }
 
@@ -201,6 +229,7 @@ export default function BankPage() {
           <ChoiceButtons label={t('books.bank.account')} value={accountId} onChange={setPicked} options={banks.map((b) => ({ value: b.id, label: b.name }))} />
         </div>
         {mayImport ? <ImportForm key={accountId} accountId={accountId} /> : null}
+        <PastImports key={`past-${accountId}`} accountId={accountId} mayUndo={permissions.includes('bank:reconcile')} />
         <h2>{t('books.bank.lines')}</h2>
         <DataTable caption={t('books.bank.lines')} columns={columns} rowKey={(l) => l.id} list={lines} empty={t('books.bank.lines.empty')} />
       </>

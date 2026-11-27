@@ -27,6 +27,7 @@ export {
   importStatement, markStatementUnreadable, readStatementFile, statementFileReader, statementFormatOf, statementImportById, statementImportJob, statementImportsPage, statementLinesPage, storeStatement, undoStatementImport,
 } from './services/bank-statements.ts';
 export type { StatementLayout } from './services/statement-layouts.ts';
+export { matchCandidates, matchLines, unmatch } from './services/bank-matching.ts';
 export {
   askToUnlock, closeYear, lockPeriodForMove, moveLockForward, periodState, periodUnlockSpec, YEAR_END_CHECKLIST, type BooksCheck,
 } from './services/period-lock.ts';
@@ -53,7 +54,8 @@ import { EXPENSE_SERIES as spent } from './services/expenses.ts';
 import { JOURNAL_SERIES as journal } from './services/journal.ts';
 import { TRANSFER_SERIES as transferred } from './services/transfers.ts';
 import { YEAR_END_CHECKLIST as yearEnd } from './services/period-lock.ts';
+import { MATCH_DAYS as matchDays } from './services/bank-matching.ts';
 import { CASH_PAYMENT_LIMIT as cashOut, CASH_RECEIPT_LIMIT as cashIn, DEFAULT_CREDIT_DAYS as creditDays, PAYMENT_SERIES as paid,
   RECEIPT_SERIES as received } from './services/payments.ts';
-export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays, yearEnd];
+export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays, yearEnd, matchDays];
 export const series: readonly Series[] = [journal, received, paid, transferred, spent];
