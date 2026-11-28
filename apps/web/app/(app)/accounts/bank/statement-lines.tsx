@@ -79,12 +79,13 @@ function MatchSeveral({ line, accountId, unmatched, older, headingId, onDone }: 
       <CheckboxesField name="statementLineIds" label={t('books.bank.several.statement')}
         options={unmatched.map((l) => ({ value: l.id, label: `${formatDate(l.valueDate)}, ${l.narration}: ${t(l.direction === 'in' ? 'books.bank.several.in'
           : 'books.bank.several.out', { amount: formatMoney(l.amount) })}` }))} />
-      <ShowMore list={older} label={t('books.bank.several.moreLines')} hint={t('books.bank.several.moreLines.hint')} />
+      <ShowMore list={older} label={t('books.bank.several.moreLines')} whole={t('books.bank.allShown.statement')}
+        hint={t('books.bank.several.moreLines.hint')} />
       {book.items.length === 0 ? <p>{t('books.bank.several.noBook')}</p> : (
         <CheckboxesField name="journalLineIds" label={t('books.bank.several.book')} hint={t('books.bank.several.book.hint')}
           options={book.items.map((b) => ({ value: b.journalLineId, label: bookLineLabel(b) }))} />
       )}
-      <ShowMore list={book} label={t('books.bank.several.more')} />
+      <ShowMore list={book} label={t('books.bank.several.more')} whole={t('books.bank.allShown.book')} />
       <SeveralTotals statement={unmatched} book={book.items} />
     </Form>
   );

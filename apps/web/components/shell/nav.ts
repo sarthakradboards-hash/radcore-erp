@@ -40,6 +40,7 @@ export const ACCOUNTS_PAGES = [
   { href: '/accounts/collect', label: 'books.nav.collect', perm: 'receivables:read' },
   { href: '/accounts/payments', label: 'books.nav.pay', perm: 'payments:read' },
   { href: '/accounts/bank', label: 'books.nav.bank', perm: 'bank:read', also: 'money_accounts:read' },
+  { href: '/accounts/bank/reconciliation', label: 'books.nav.reconciliation', perm: 'bank:read', also: 'money_accounts:read' },
   { href: '/accounts/transfers', label: 'books.nav.transfers', perm: 'payments:read' },
   { href: '/accounts/period', label: 'books.nav.period', perm: 'books:lock' },
   { href: '/accounts/period/approvals', label: 'books.nav.unlocks', perm: 'books:unlock' },
@@ -109,6 +110,11 @@ export const NAV: readonly NavItem[] = [
 /** May this person open the page? */
 export const allowed = (page: NavPage, permissions: readonly string[]): boolean =>
   (page.perm === null || permissions.includes(page.perm)) && (page.also === undefined || permissions.includes(page.also));
+
+/** The one page of a section's menu that `path` is on: of those it's at or under, the closest, so /accounts/bank isn't
+ * marked beside /accounts/bank/reconciliation (e2e-2 on #470). */
+export const currentHref = (hrefs: readonly string[], path: string): string | undefined =>
+  hrefs.filter((h) => path === h || path.startsWith(`${h}/`)).toSorted((a, b) => b.length - a.length)[0];
 
 /** The menu one person sees: each entry they can use at all, pointing at the first of its pages they may open. */
 export function menuFor(items: readonly NavItem[], permissions: readonly string[]): MenuEntry[] {
