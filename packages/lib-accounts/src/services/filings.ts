@@ -38,6 +38,14 @@ function monthOf(month: string): { first: string; last: string; before: string }
 }
 
 /** POST /gst/filings: in ADR-009 §5's order, under the filed-month row held FOR UPDATE. */
+/** Whether `ret` is marked filed, and not undone, for `month` (YYYY-MM): an invoice amendment needs its GSTR-1 filed
+ * (ADR-010 §5). Steady under ADR-009 §7's step 1 (lockPeriod), which holds the filed-month row FOR SHARE against a mark or undo. */
+export async function returnFiled(ctx: Ctx, ret: 'gstr1' | 'gstr3b', month: string): Promise<boolean> {
+  const rows = await accountsTx(ctx).select({ id: gstFilings.id }).from(gstFilings)
+    .where(and(eq(gstFilings.return, ret), eq(gstFilings.month, `${month}-01`), isNull(gstFilings.undoneAt))).limit(1);
+  return rows.length > 0;
+}
+
 export async function markFiling(ctx: Ctx, f: In<typeof markGstFiling>): Promise<Out<typeof markGstFiling>> {
   await lockPeriodForMove(ctx, 'filed');
   const tx = accountsTx(ctx);

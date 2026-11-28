@@ -4,7 +4,7 @@
 // and the goods' cost from GDNI to COGS, and draws its number (INV) last. Like every contract file it imports only zod,
 // lib-common and other libraries' contract entries (D5).
 import {
-  cost, dateString, defineContract, idString, listInput, listOf, moneyString, percentString, pii, piiRecord, quantityString, reason,
+  cost, dateString, defineContract, gstinString, idString, listInput, listOf, moneyString, percentString, pii, piiRecord, quantityString, reason,
   unitPriceString,
 } from '@radcore/lib-common';
 import { approvalContracts } from '@radcore/lib-platform/contract';
@@ -50,6 +50,8 @@ const invoice = piiRecord('invoices', header.extend({
   shipTo: z.object({ name: z.string(), address: pii(z.string()), stateCode: z.string() }).nullable(),
   issuer: z.object({ legalName: z.string(), gstin: z.string(), addressLine1: z.string(), addressLine2: z.string().nullable(),
     city: z.string(), pincode: z.string(), stateCode: z.string() }).nullable(),
+  /** The buyer GSTIN its last amendment gave it (ADR-010 §5), shown as "Amended"; the frozen `buyer` stays as issued. */
+  amendedGstin: z.string().nullable(),
   buyer: z.object({ name: z.string(), gstin: z.string().nullable(), addressLine1: pii(z.string().nullable()),
     addressLine2: pii(z.string().nullable()), city: pii(z.string().nullable()), pincode: pii(z.string().nullable()),
     stateCode: z.string() }).nullable(),
@@ -106,6 +108,13 @@ export const invoiceOverrideApproval = approvalContracts('sales-invoice-override
 /** Cancels a posted invoice (ADR-007 §6, F10): its entry mirrored on the cancellation's day, the deliveries it billed
  * open again. Refused while payments or credits are applied to it (RC-126: receipts are never touched), or a credit
  * note stands against it. */
+/** A filed invoice's buyer GSTIN corrected (M5-04, RAD-154; ADR-010 §5): GSTR-1 reports it in Table 9A. */
+export const amendInvoice = defineContract({
+  method: 'POST', path: '/sales/invoices/:id/amendments', auth: 'session', perm: 'gst:file', tx: write,
+  input: z.object({ id: idString(), gstin: gstinString(), reason: reason() }), output: z.object({ id: idString() }),
+  errors: ['wrong_status', 'not_b2b', 'same_gstin', 'amendment_changes_heads', 'not_filed', 'amendment_window_closed'],
+});
+
 export const cancelInvoice = defineContract({
   method: 'POST', path: '/sales/invoices/:id/cancel', auth: 'session', perm: 'invoices:cancel', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),

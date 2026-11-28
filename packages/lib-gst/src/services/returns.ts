@@ -24,6 +24,14 @@ export const HSN_DIGITS = defineSetting('gst.hsn_digits', z.enum(['4', '6', '8']
   input: { kind: 'choice', choices: [{ value: '4', label: '4 digits' }, { value: '6', label: '6 digits' }, { value: '8', label: '8 digits' }] },
 });
 
+/** The last day an invoice's GSTIN may be amended (ADR-010 §5, CA-11): this month and day after its financial year ends,
+ * 30 November by section 37(3) until the CA says otherwise. */
+export const AMENDMENT_LAST_DAY = defineSetting('gst.amendment_last_day', z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/), '11-30', {
+  label: 'Last day to amend an invoice',
+  description: 'An invoice’s buyer GSTIN can be corrected (GSTR-1 Table 9A) until this month and day after its financial year ends (MM-DD). The CA confirms it.',
+  input: { kind: 'text' },
+});
+
 /** The first day of the month after `month` (YYYY-MM). */
 const monthAfter = (month: string): string => {
   const [y, m] = month.split('-').map((x) => Number.parseInt(x, 10));

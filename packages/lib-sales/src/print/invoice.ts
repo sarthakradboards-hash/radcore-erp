@@ -5,16 +5,17 @@
 import { amountInWords, formatDate } from '@radcore/lib-common';
 import { AppError, type PrintDef } from '@radcore/lib-platform';
 import { issuedInvoice } from '../services/invoice-links.ts';
-import { invoiceOf } from '../services/invoices.ts';
+import { amendedGstinOf, invoiceOf } from '../services/invoices.ts';
 import { issuerBlocks, partyBlocks, percent, quantity, rupees, signature, taxTotals } from './shared.ts';
 
-type Issued = Awaited<ReturnType<typeof issuedInvoice>> & { cancelled: boolean; partyId: string };
+type Issued = Awaited<ReturnType<typeof issuedInvoice>> & { cancelled: boolean; partyId: string; amendedGstin: string | null };
 
 export const invoicePrint: PrintDef<Issued> = {
   async read(ctx, id) {
     const r = await invoiceOf(ctx, id, 'sales:read');
     if (r.number === null) throw new AppError('wrong_status', 'This invoice is a draft, so it has no number to print yet');
-    return { ...(await issuedInvoice(ctx, { ...r, number: r.number })), cancelled: r.status === 'cancelled', partyId: r.partyId };
+    return { ...(await issuedInvoice(ctx, { ...r, number: r.number })), cancelled: r.status === 'cancelled', partyId: r.partyId,
+      amendedGstin: await amendedGstinOf(ctx, id) };
   },
   title: (m) => `Tax invoice ${m.number}`,
   // Its frozen buyer's address is on every copy (Rule 46): a look at the party, so the audit shows who printed it.
@@ -25,6 +26,8 @@ export const invoicePrint: PrintDef<Issued> = {
     { kind: 'pairs', rows: [['Invoice no.', m.number], ['Date', formatDate(m.businessDate)],
       ['Place of supply', m.placeOfSupply ?? m.buyer.stateCode]] },
     ...partyBlocks('Bill to', m.buyer),
+    // A corrected GSTIN (ADR-010 §5): the invoice stands as issued, and says what GSTR-1 now reports.
+    ...(m.amendedGstin === null ? [] : [{ kind: 'pairs', rows: [['Amended: buyer GSTIN', m.amendedGstin]] } as const]),
     ...(m.shipTo === null ? [] : [{ kind: 'text', text: 'Ship to', bold: true } as const, { kind: 'text', text: m.shipTo.name } as const,
       { kind: 'text', text: m.shipTo.address } as const, { kind: 'pairs', rows: [['State code', m.shipTo.stateCode]] } as const]),
     { kind: 'table', columns: [{ label: '#', share: 0.6, onThermal: false }, { label: 'Item', share: 4 }, { label: 'HSN', share: 1.7 },
