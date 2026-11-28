@@ -19,6 +19,8 @@ const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const write = { readOnly: false, isolation: 'read committed' } as const;
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: [] };
 const DAY = '2029-06-01';
+// The Demo places the kill-each-step save draws on, one a run (see below).
+const PLACES = 60;
 const YEAR = '2029-30';
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
@@ -123,13 +125,15 @@ describe.skipIf(!url || !superUrl)('a save that fails halfway (RC-157)', { timeo
     const tag = () => randomBytes(3).toString('hex').toUpperCase();
     const setter: Principal = { kind: 'system', name: 'test', permissions: ['items:write', 'locations:write'] };
     // A Demo location for every run, killed or whole, made beforehand: each run then opens a position the item hasn't
-    // held, and making one inside the loop would add statements the fault counts (the auditor on #212).
+    // held, and making one inside the loop would add statements the fault counts (the auditor on #212). The counting run,
+    // each killed one and the whole one after each take one, so PLACES must stay above the save's steps (pinned below);
+    // 40 was outgrown when ADR-009 §7's step 1 gained the filed-month row (RAD-156).
     const { itemId, stores, demos } = await runInTransaction(db, write, setter, randomUUID(), async (ctx) => {
       const { id: categoryId } = await addCategory(ctx, { name: `Fault ${tag()}` });
       const { id } = await addItem(ctx, { sku: `F-${tag()}`, name: 'Brake-pad set', categoryId, hsn: '8708', unit: 'NOS', barcode: null,
         serialised: false, hasChassis: false });
       const places: string[] = [];
-      for (let i = 0; i < 40; i += 1) places.push((await addPlace(ctx, { code: `D${tag()}`, name: `Demo ${tag()}`, kind: 'demo' })).id);
+      for (let i = 0; i < PLACES; i += 1) places.push((await addPlace(ctx, { code: `D${tag()}`, name: `Demo ${tag()}`, kind: 'demo' })).id);
       return { itemId: id, stores: (await addPlace(ctx, { code: `S${tag()}`, name: `Stores ${tag()}`, kind: 'stores' })).id, demos: places };
     });
     const doc = (p: Parameters<typeof postDocument>[1]) => run((ctx) => postDocument(ctx, p));
@@ -140,9 +144,14 @@ describe.skipIf(!url || !superUrl)('a save that fails halfway (RC-157)', { timeo
     // One save: a new lot into Stores, and a unit of the old one to the next Demo location, a position the item
     // hasn't held yet.
     const unused = [...demos];
+    const next = () => {
+      const place = unused.shift();
+      if (place === undefined) throw new Error('Out of Demo places: raise PLACES');
+      return place;
+    };
     const save = () => doc({ ...base, sourceId: randomUUID(),
       ins: [{ itemId, locationId: stores, qty: q('2'), rate: unitPriceString().parse('120'), batches: [{ batchNo: `N${tag()}`, qty: q('2') }] }],
-      transfers: [{ itemId, from: stores, to: unused.shift() ?? '', qty: q('1'), batches: [{ batchId: batch, qty: q('1') }] }] });
+      transfers: [{ itemId, from: stores, to: next(), qty: q('1'), batches: [{ batchId: batch, qty: q('1') }] }] });
     // The item's rows, and each location's quantity and value as its movements add up.
     const ledger = async () => ({
       ...(await admin.query(`select
@@ -158,7 +167,8 @@ describe.skipIf(!url || !superUrl)('a save that fails halfway (RC-157)', { timeo
     });
     const { steps, after } = await killEachStep(save, ledger);
     expect(steps).toBeGreaterThanOrEqual(10);
-    expect(steps).toBeLessThan(demos.length);
+    // Every run had a place of its own: the counting run, each killed one and the whole one.
+    expect(steps + 2).toBeLessThanOrEqual(demos.length);
     expect(after).toMatchObject({ positions: 2, batches: 2 });
     await save();
     expect(await ledger()).toMatchObject({ positions: 3, batches: 3 });

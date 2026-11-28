@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { filingsPage, markFiling, openFinancialYear, postEntry, reverseEntry, type JournalLine } from '@radcore/lib-accounts';
 import { listGstFilings, markGstFiling } from '@radcore/lib-accounts/contract';
-import { indiaDate, period, type EntryKind, type Money } from '@radcore/lib-common';
+import type { EntryKind, Money } from '@radcore/lib-common';
 import type { Ctx, Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
@@ -71,8 +71,8 @@ describe.skipIf(!adminUrl)('the filed-month lock', { timeout: 60_000 }, () => {
     expect(await code(mark('gstr3b', '2025-03'))).toBe('filing_gap');
     expect(await code(mark('gstr3b', '2025-04', '2025-04-30'))).toBe('filed_before_month_end');
     expect(await code(mark('gstr3b', '2025-04', '2099-01-01'))).toBe('date_in_future');
-    const current = period(indiaDate(new Date())).label;
-    expect(await code(mark('gstr3b', current, indiaDate(new Date())))).toBe('month_not_ended');
+    // A month not ended yet, without reading the run date (RC-156): its last day is after any run's today.
+    expect(await code(mark('gstr3b', '2099-01', '2099-02-01'))).toBe('month_not_ended');
     expect(await code(mark('gstr3b', '2025-04', '2025-05-20'))).toBe('ok');
     expect(await code(mark('gstr3b', '2025-04', '2025-05-20'))).toBe('already_filed');
 
