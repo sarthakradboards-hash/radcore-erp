@@ -54,6 +54,7 @@ export const transfers = {
   'books.transfers.err.account_inactive': 'One of these accounts is switched off. Choose another.',
   'books.transfers.err.date_in_future': 'The date can’t be after today.',
   'books.transfers.err.period_locked': 'That day’s period is locked, so nothing can be posted on it. Choose a later day.',
+  'books.transfers.err.month_filed': 'A GST return for that month is filed, so what it reports can’t change. Date it in an open month; a filed sale is corrected with a credit note.',
   'books.transfers.err.year_not_open': 'That day’s financial year isn’t open in the books yet.',
   'books.transfers.err.series_full': 'The transfers’ number series is full. Ask your admin to widen it.',
   'books.transfers.err.not_posted': 'Only a posted transfer can be cancelled.',

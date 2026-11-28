@@ -25,13 +25,16 @@ const useSuppliers = (query: string) => useApiSearch(listParties, query, { param
 const TYPES = purchaseBillFiles.startUpload.input.shape.contentType.options;
 const CHARGE_KINDS = ['freight', 'packing', 'insurance', 'other'] as const;
 
-/** The supplier's bill itself: chosen, sent straight to the bucket, then checked by the server; the draft keeps its id. */
-function BillFile() {
+/** The supplier's bill itself: chosen, sent straight to the bucket, then checked by the server; the draft keeps its id. An
+ * expense's form uses it too, with its own file kind and wording, so both forms hold the id as `fileId`. */
+export function BillFile({ files = purchaseBillFiles, messages = PURCHASE_MESSAGES }: {
+  files?: Pick<typeof purchaseBillFiles, 'startUpload' | 'confirmUpload'>; messages?: Partial<Record<string, string>>;
+}) {
   const inputId = useId();
-  const { control, setValue } = useFormContext<BillInput>();
+  const { control, setValue } = useFormContext<{ fileId: string }>();
   const fileId = useWatch({ control, name: 'fileId' });
-  const start = useApiMutation(purchaseBillFiles.startUpload);
-  const confirm = useApiMutation(purchaseBillFiles.confirmUpload);
+  const start = useApiMutation(files.startUpload);
+  const confirm = useApiMutation(files.confirmUpload);
   const [state, setState] = useState<{ busy: boolean; problem: string }>({ busy: false, problem: '' });
   const add = async (file: File) => {
     setState({ busy: true, problem: '' });
@@ -43,7 +46,7 @@ function BillFile() {
       setState({ busy: false, problem: '' });
     } catch (e) {
       setState({ busy: false, problem: e instanceof BucketRefused ? t('purchases.bill.file.err.bucket')
-        : e instanceof ApiError ? (PURCHASE_MESSAGES[e.code] ?? e.envelope.issues[0]?.message ?? e.envelope.message) : t('purchases.bill.file.err.offline') });
+        : e instanceof ApiError ? (messages[e.code] ?? e.envelope.issues[0]?.message ?? e.envelope.message) : t('purchases.bill.file.err.offline') });
     }
   };
   return (

@@ -20,7 +20,7 @@ import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
 import { useMoneyAccounts } from '../../../sales/money-accounts.ts';
-import { EXPENSE_MESSAGES, expenseTitle, namingLine } from '../expense-values.ts';
+import { afterDelete, EXPENSE_MESSAGES, expenseTitle, namingLine } from '../expense-values.ts';
 import { LinesTable } from '../lines-table.tsx';
 
 type Dialogs = 'post' | 'delete' | 'cancel' | null;
@@ -99,6 +99,7 @@ export default function ExpensePage() {
         <div className="kit-actions">
           {draft && !e.awaitingApproval && e.fileId !== null
             ? <button type="button" className="kit-button kit-button-primary" onClick={() => setDialog('post')}>{t('books.expense.post')}</button> : null}
+          {draft ? <Link className="kit-button" href={`/accounts/expenses/${id}/edit`}>{t('books.expense.form.editLink')}</Link> : null}
           {draft ? <button type="button" className="kit-button" onClick={() => setDialog('delete')}>{t('books.expense.delete')}</button> : null}
           {e.status === 'posted' ? <button type="button" className="kit-button" onClick={() => setDialog('cancel')}>{t('books.expense.cancel')}</button> : null}
         </div>
@@ -113,7 +114,7 @@ export default function ExpensePage() {
         }} />
       <ConfirmDialog open={dialog === 'delete'} onOpenChange={shut} messages={EXPENSE_MESSAGES} title={t('books.expense.delete.title')}
         body={t('books.expense.delete.body')} action={t('books.expense.delete')} done={t('books.expense.deleted')}
-        onConfirm={async () => { await remove.submit({ id }); router.push('/accounts/expenses'); }} />
+        onConfirm={async () => { await remove.submit({ id }); afterDelete.focusList = true; router.push('/accounts/expenses'); }} />
       <Dialog open={dialog === 'cancel'} onOpenChange={shut} title={t('books.expense.cancel.title')} description={t('books.expense.cancel.body')}>
         <Form schema={cancelSchema} saved={false} messages={EXPENSE_MESSAGES} defaultValues={{ businessDate: indiaDate(new Date()), reason: '' }}
           onSubmit={async (v) => {

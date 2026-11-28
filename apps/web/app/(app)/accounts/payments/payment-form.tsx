@@ -14,7 +14,7 @@ import { t } from '../../../../lib/i18n/index.ts';
 import { PickedField } from '../../sales/picked-field.tsx';
 import { useMoneyAccounts } from '../../sales/money-accounts.ts';
 import { JOURNAL_MESSAGES } from '../shared.tsx';
-import { PAYMENT_KINDS, paymentSchema, type PaymentInput, type PaymentValues } from './payment-values.ts';
+import { PAYMENT_KINDS, paymentSchema, sectionLabel, type PaymentInput, type PaymentValues } from './payment-values.ts';
 
 const OWN = ['invalid_tds', 'exceeds_receipt', 'refund_through_owner', 'not_money_account', 'account_inactive', 'series_full', 'looks_like_card_number',
   'exceeds_payment', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted', 'document_missing', 'not_allocatable', 'not_posted',
@@ -71,7 +71,7 @@ function TdsFields() {
   return (
     <>
       <SelectField name="tdsSectionId" label={t('books.pay.tdsSection')} hint={t('books.pay.tdsSection.hint')} placeholder={t('books.pay.tdsSection.none')}
-        options={sections.data.items.map((s) => ({ value: s.id, label: `${s.code}: ${s.name}` }))} />
+        options={sections.data.items.map((s) => ({ value: s.id, label: sectionLabel(s) }))} />
       {section === '' ? null
         : <TextField name="tds" label={t('books.pay.tds.expected')} hint={t('books.pay.tds.expected.hint')} inputMode="decimal" autoComplete="off" />}
     </>

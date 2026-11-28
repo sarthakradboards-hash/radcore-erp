@@ -14,7 +14,7 @@ import { useApiList, useApiMutation, useApiQuery } from '../../../../../lib/api/
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
 import { useMoneyAccounts } from '../../../sales/money-accounts.ts';
-import { EXPENSE_MESSAGES, namingLine, readCashVersion } from '../expense-values.ts';
+import { describedLines, EXPENSE_MESSAGES, namingLine, readCashVersion } from '../expense-values.ts';
 import { LinesTable } from '../lines-table.tsx';
 
 const { listPending, getApproval, decide } = expenseCashApproval;
@@ -59,13 +59,14 @@ function Review({ request }: { request: Pending }) {
         <>
           <dl className="admin-facts" aria-label={t('books.expense.approvals.figures')}>
             <dt>{t('books.expense.supplier')}</dt>
-            <dd>{expense.data === undefined ? t('loading') : expense.data.supplierName ?? t('books.expense.noSupplier')}</dd>
+            <dd>{expense.data === undefined ? t(expense.error === null ? 'loading' : 'books.expense.approvals.notRead')
+              : expense.data.supplierName ?? t('books.expense.noSupplier')}</dd>
             <dt>{t('books.expense.supplierBill')}</dt><dd>{v.supplierInvoiceNumber}, {formatDate(v.supplierInvoiceDate)}</dd>
             <dt>{t('books.expense.col.date')}</dt><dd>{formatDate(v.businessDate)}</dd>
             <dt>{t('books.expense.col.paid')}</dt><dd>{paidFrom ?? t('books.expense.atOnce')}</dd>
             <dt>{t('books.expense.col.total')}</dt><dd>{formatMoney(v.statedTotal)}</dd>
           </dl>
-          <LinesTable caption={t('books.expense.lines')} lines={v.lines} />
+          <LinesTable caption={t('books.expense.lines')} lines={describedLines(v.lines, a.changed ? undefined : expense.data?.lines)} />
         </>
       )}
       {a.status !== 'pending' ? <p>{t(`books.expense.approvals.status.${a.status}`)}</p> : (
