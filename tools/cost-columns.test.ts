@@ -122,7 +122,7 @@ const NOT_COSTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     charge_rate: 'the job worker’s charge rate (stock:read)', charge: 'the job worker’s charge (stock:read)' },
   job_work_receipts: { charges: 'the job worker’s charges (stock:read)' },
   // The books: who may read them is journal:read's question, which the architect is ruling on (auditor-2 on #224).
-  journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)' },
+  journal_lines: { debit: 'the books (journal:read)', credit: 'the books (journal:read)', signed_amount: 'debit less credit (journal:read)' },
 };
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
