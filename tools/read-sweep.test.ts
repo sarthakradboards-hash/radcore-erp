@@ -422,6 +422,21 @@ describe.skipIf(!url || !superUrl)('the read sweep', { timeout: 240_000 }, () =>
       add(['GET /approvals/period-unlock/:id'], request?.id);
     });
 
+    // An undo of a filing, waiting (RAD-156). Written as rows, not through askToUndoFiling: marking needs the run's one
+    // filed-month lock moved, which every other file's postings would meet. The filing is an undone one, so it takes no
+    // live (return, month).
+    await step('filing undo', async () => {
+      const { rows: [filed] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.gst_filings (return, month, arn, filed_on, snapshot, snapshot_sha256, undone_at)
+        select 'gstr3b', '2000-01-01', 'SWEEP', '2000-02-20', '{}', repeat('0', 64), now() from p returning id`);
+      const { rows: [asked] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.filing_undo_requests (filing_id, reason) select $1, 'Sweep' from p returning id`, [filed?.id]);
+      const { rows: [request] } = await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.approvals (kind, record_id, version_digest, requested_by) select 'gst-filing-undo', $1, repeat('0', 64), 'system:test'
+        from p returning id`, [asked?.id]);
+      add(['GET /approvals/gst-filing-undo/:id'], request?.id);
+    });
+
     // Cash paid into the bank (RAD-165, F19).
     await step('transfer', async () => {
       const moved = await run(async (ctx) => recordTransfer(ctx, { fromAccountId: await systemAccountId(ctx, 'cash'),

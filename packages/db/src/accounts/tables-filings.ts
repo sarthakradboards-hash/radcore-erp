@@ -1,7 +1,7 @@
 // lib-accounts' filed-month lock (M5-08, RAD-156; ADR-009 §5, §7; RC-012). SQL zone (ADR-002 §3): `sql` only as a
 // CHECK's argument.
 import { isNull, sql } from 'drizzle-orm';
-import { check, date, smallint, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { check, date, index, smallint, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { boundedText, id, json, radcoreTable } from '../columns.ts';
 
 /**
@@ -36,3 +36,17 @@ export const gstFilings = radcoreTable('gst_filings', {
   check('ck_gst_filings_sha256', sql`${t.snapshotSha256} ~ '^[0-9a-f]{64}$'`),
   uniqueIndex('ux_gst_filings_live').on(t.return, t.month).where(isNull(t.undoneAt)),
 ]);
+
+/**
+ * A request to undo a filing (ADR-009 §5, D-06): asked under gst:file with a reason, approved by someone else holding
+ * books:unlock (`gst-filing-undo` approvals). `through_was` is where that return's lock stood when it was asked: the
+ * version approved names the lock as it is now, so a request a later filing made stale is refused (`version_changed`).
+ * `applied_at` is set once, when the approval marks the filing undone.
+ */
+export const filingUndoRequests = radcoreTable('filing_undo_requests', {
+  id: id(),
+  filingId: uuid().notNull().references(() => gstFilings.id, { onDelete: 'restrict' }),
+  reason: boundedText({ max: 500 }).notNull(),
+  throughWas: date({ mode: 'string' }),
+  appliedAt: timestamp({ withTimezone: true }),
+}, (t) => [index('ix_filing_undo_requests_filing').on(t.filingId)]);

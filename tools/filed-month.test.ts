@@ -5,10 +5,12 @@
 // posting in flight and its snapshot holds it. In a database of its own: the filed lock is one row, and these tests
 // commit moves of it that every other file's postings would meet.
 import { randomUUID } from 'node:crypto';
-import { filingsPage, markFiling, openFinancialYear, postEntry, reverseEntry, type JournalLine } from '@radcore/lib-accounts';
-import { listGstFilings, markGstFiling } from '@radcore/lib-accounts/contract';
+import {
+  askToUndoFiling, filingsPage, filingUndoSpec, markFiling, openFinancialYear, postEntry, reverseEntry, type JournalLine,
+} from '@radcore/lib-accounts';
+import { askFilingUndo, listGstFilings, markGstFiling } from '@radcore/lib-accounts/contract';
 import type { EntryKind, Money } from '@radcore/lib-common';
-import type { Ctx, Principal } from '@radcore/lib-platform';
+import { decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -32,8 +34,17 @@ describe.skipIf(!adminUrl)('the filed-month lock', { timeout: 60_000 }, () => {
     return x;
   };
   const su = () => made(own.su);
-  const clerk: Principal = { kind: 'user', userId: randomUUID(), permissions: ['gst:file', 'gst:returns', 'journal:post'] };
-  const run = <R>(fn: (ctx: Ctx) => Promise<R>) => runInTransaction(made(own.db), WRITE, clerk, randomUUID(), fn);
+  const clerk: Principal = { kind: 'user', userId: randomUUID(), permissions: ['gst:file', 'gst:returns', 'journal:post', 'books:unlock'] };
+  const owner: Principal = { kind: 'user', userId: randomUUID(), permissions: ['books:unlock'] };
+  const as = (p: Principal) => <R>(fn: (ctx: Ctx) => Promise<R>) => runInTransaction(made(own.db), WRITE, p, randomUUID(), fn);
+  const run = as(clerk);
+  const askUndo = (id: string) => run((ctx) => askToUndoFiling(ctx, askFilingUndo.input.parse({ id, reason: 'The wrong ARN was entered' })));
+  const decide = (p: Principal, asked: { id: string; versionHash: string }) => code(as(p)((ctx) =>
+    decideApproval(ctx, filingUndoSpec, asked.id, { decision: 'approve', versionHash: asked.versionHash })));
+  const lockNow = async () => (await su().query<{ gstr1: string | null; gstr3b: string | null }>(
+    'select gstr1_through::text gstr1, gstr3b_through::text gstr3b from radcore.gst_filed_lock')).rows[0];
+  const filingOf = async (ret: string, month: string) => (await su().query<{ id: string }>(
+    'select id from radcore.gst_filings where return = $1 and month = $2 and undone_at is null', [ret, `${month}-01`])).rows[0]?.id ?? '';
   const mark = (ret: 'gstr1' | 'gstr3b', month: string, filedOn = `${month.slice(0, 4)}-12-20`, arn = `AA${month.replace('-', '')}0000001`) =>
     run((ctx) => markFiling(ctx, markGstFiling.input.parse({ return: ret, month, arn, filedOn })));
   const fees = async () => ({ id: (await su().query<{ id: string }>("select id from radcore.accounts where name = 'Professional Fees'")).rows[0]?.id ?? '' });
@@ -51,6 +62,12 @@ describe.skipIf(!adminUrl)('the filed-month lock', { timeout: 60_000 }, () => {
     own.drop = fresh.drop;
     await su().query(`with p as (select set_config('app.principal', 'system:test', true))
       insert into radcore.accounts (name, type) select 'Professional Fees', 'expense' from p`);
+    // People, made before any request: an approver's account must be older than what it decides.
+    for (const [p, role] of [[clerk, 'accounts'], [owner, 'owner']] as const) {
+      await su().query(`with p as (select set_config('app.principal', 'system:test', true))
+        insert into radcore.users (id, email, display_name, role) select $1, $2, $3, $3 from p`,
+      [p.kind === 'user' ? p.userId : '', `${randomUUID()}@example.test`, role]);
+    }
     for (const d of ['2025-04-01', '2026-04-01']) await run((ctx) => openFinancialYear(ctx, d));
   }, 120_000);
   afterAll(async () => {
@@ -121,5 +138,28 @@ describe.skipIf(!adminUrl)('the filed-month lock', { timeout: 60_000 }, () => {
     const page = listGstFilings.output.parse(await run((ctx) => filingsPage(ctx, listGstFilings.input.parse({ filter: {}, limit: 10 }))));
     const rows = page.items.map((f) => `${f.month} ${f.return} ${String(f.undone)}`);
     expect([rows[0], rows.slice(1).toSorted()]).toEqual(['2025-05 gstr3b false', ['2025-04 gstr1 false', '2025-04 gstr3b false']]);
+
+    // Undoing (D-06): only the latest live filing of a return; never decided by its asker; another books:unlock holder
+    // approves it, the filing stays undone with its snapshot, and the lock goes back to the month before.
+    const april3b = await filingOf('gstr3b', '2025-04');
+    const may3b = await filingOf('gstr3b', '2025-05');
+    expect(await code(askUndo(april3b))).toBe('not_latest_filing');
+    const asked = await askUndo(may3b);
+    expect(await decide(clerk, asked)).toBe('own_request');
+    expect(await decide(owner, asked)).toBe('ok');
+    expect(await lockNow()).toEqual({ gstr1: '2025-04-30', gstr3b: '2025-04-30' });
+    expect((await su().query<{ sha: string }>('select snapshot_sha256 sha from radcore.gst_filings where id = $1 and undone_at is not null',
+      [may3b])).rows[0]?.sha).toBe(row?.sha);
+    expect(await code(askUndo(may3b))).toBe('filing_undone');
+    expect(await code(entry('expense', '2025-05-26'))).toBe('ok');
+    // A request a later filing made stale is refused: April's undo, asked before May was marked again.
+    const stale = await askUndo(april3b);
+    expect(await code(mark('gstr3b', '2025-05', '2025-06-21'))).toBe('ok');
+    expect(await decide(owner, stale)).toBe('version_changed');
+    // GSTR-1's only filing undone: no month is filed for it then.
+    const first = await askUndo(await filingOf('gstr1', '2025-04'));
+    expect(await decide(owner, first)).toBe('ok');
+    expect(await lockNow()).toEqual({ gstr1: null, gstr3b: '2025-05-31' });
+    expect(await code(run((ctx) => reverseEntry(ctx, { entryId: aprilInvoice.id, businessDate: '2025-06-05' })))).toBe('ok');
   });
 });
