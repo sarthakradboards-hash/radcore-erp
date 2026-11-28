@@ -6,7 +6,8 @@
 // of its own: the period lock is one row, and these tests commit moves of it that every other file's postings would meet.
 import { randomUUID } from 'node:crypto';
 import {
-  askToUnlock, bookCharge, closeYear, moveLockForward, openFinancialYear, periodState, periodUnlockSpec, postManualJournal, unmatch, type BooksCheck,
+  askToUnlock, bookCharge, closeYear, moveLockForward, openFinancialYear, periodState, periodUnlockSpec, postEntry, postManualJournal, unmatch,
+  type BooksCheck,
   type JournalLine,
 } from '@radcore/lib-accounts';
 import type { Money } from '@radcore/lib-common';
@@ -100,7 +101,8 @@ describe.skipIf(!adminUrl)('the period lock and year close', { timeout: 60_000 }
     expect(await code(close('2025-04-01'))).toBe('lock_before_year_end');
     expect(await code(close('2024-04-01', TICKS.slice(1)))).toBe('checklist_incomplete');
     // Nothing to move in 2024-25: the close posts no entry.
-    expect((await close('2024-04-01')).entry).toBeNull();
+    const earlier = await close('2024-04-01');
+    expect(earlier.entry).toBeNull();
     expect(await code(close('2024-04-01'))).toBe('year_closed');
 
     // F20's start, in 2025-26: Sales Cr 1,035.00; Cost of Goods Sold Dr 600.00; Round Off Dr 0.30; Professional Fees Dr
@@ -163,6 +165,13 @@ describe.skipIf(!adminUrl)('the period lock and year close', { timeout: 60_000 }
     expect(await balance("a.type in ('income', 'expense')", '2025-04-01')).toBe('0.00');
     // Only a year_close passes the lock, and only on 31 March.
     expect(await code(post(clerk, '2026-03-31', [dr(CASH, '1.00'), cr(SALES, '1.00')]))).toBe('period_locked');
+    // And only naming a close of its year (auditor-2 on #426): another source meets the engine's lock, and a close that
+    // isn't there, or is another year's, meets the database's.
+    const forged = (table: string, id: string) => as(clerk)((ctx) => postEntry(ctx, { kind: 'year_close', businessDate: '2026-03-31',
+      source: { table, id }, lines: [dr({ system: 'retained_earnings' }, '1.00'), cr(SALES, '1.00')] }));
+    expect(await code(forged('payments', randomUUID()))).toBe('period_locked');
+    expect(await code(forged('year_closes', randomUUID()))).toBe('RA003');
+    expect(await code(forged('year_closes', earlier.id))).toBe('RA003');
     const state = await runInTransaction(made(own.db), READ, clerk, randomUUID(), (ctx) => periodState(ctx));
     expect(state.years.map((y) => [y.start, y.closed !== null])).toEqual([['2026-04-01', false], ['2025-04-01', true], ['2024-04-01', true]]);
     expect(state.checklist).toEqual(TICKS);
