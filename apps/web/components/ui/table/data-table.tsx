@@ -120,9 +120,10 @@ export function DataTable<T extends RowData, K extends string = string>(
       )}
       <div className="kit-table-foot">
         <p role="status">{list.items.length === 0 ? '' : t('kit.table.shown', { count: String(list.items.length) })}</p>
+        {/* aria-disabled while a page loads, not disabled: a disabled button drops focus to the body (e2e-2 on #468). */}
         {list.hasNextPage ? (
-          <button type="button" className="kit-button" onClick={list.fetchNextPage}
-            disabled={list.isFetchingNextPage} aria-busy={list.isFetchingNextPage}>{t('kit.table.more')}</button>
+          <button type="button" className="kit-button" onClick={() => { if (!list.isFetchingNextPage) list.fetchNextPage(); }}
+            aria-disabled={list.isFetchingNextPage} aria-busy={list.isFetchingNextPage}>{t('kit.table.more')}</button>
         ) : null}
       </div>
     </div>
