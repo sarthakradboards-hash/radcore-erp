@@ -27,7 +27,7 @@ const lines = <T extends z.ZodType>(line: T) => z.array(line).min(1, 'Add at lea
 // The refusals a delivery's or return's draft shares: its date (§4), its lines, and its status.
 const DRAFT_ERRORS = ['date_in_future', 'date_before_source', 'wrong_status', 'not_on_source', 'over_quantity',
   'quantity_too_precise', 'unknown_location', 'location_inactive', 'place_not_sellable'] as const;
-const POST_ERRORS = [...DRAFT_ERRORS, 'version_changed', 'year_not_open', 'period_locked', 'account_inactive', 'no_gst_rate', 'not_enough_stock', 'qty_not_positive', 'batches_mismatch',
+const POST_ERRORS = [...DRAFT_ERRORS, 'version_changed', 'year_not_open', 'period_locked', 'month_filed', 'account_inactive', 'no_gst_rate', 'not_enough_stock', 'qty_not_positive', 'batches_mismatch',
   'units_mismatch', 'serial_twice', 'not_serialised', 'unit_damaged', 'mixed_condition', 'unit_held',
   // Posting draws its number, and its stock goes through the engine's valuation and units (RAD-134).
   'series_full', 'no_estimate', 'unit_batch'] as const;
@@ -149,7 +149,7 @@ export const postDeliveryReturn = defineContract({
 // the cancellation's day, nothing deleted.
 // A cancel's units must still be where the document left them: the stock engine refuses one that has moved on since
 // (units_mismatch, auditor-2 on #365).
-const CANCEL_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive',
+const CANCEL_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'month_filed', 'year_not_open', 'account_inactive',
   'not_enough_stock', 'already_reversed', 'not_reversible', 'units_mismatch'] as const;
 const cancelIn = z.object({ id: idString(), businessDate: dateString(), reason: reason() });
 /** Cancels a posted delivery while nothing on it is invoiced or taken back: its goods come back at the values they went out

@@ -28,12 +28,12 @@ const lineOut = { id: idString(), lineNo: z.number().int().positive(), itemId: i
 const cancelIn = z.object({ id: idString(), businessDate: dateString(), reason: reason() });
 
 // What the stock engine and the ledger refuse as a document posts (ADR-006 §4, §6).
-const POSTING_ERRORS = ['year_not_open', 'period_locked', 'account_inactive', 'not_enough_stock', 'batches_mismatch', 'units_mismatch',
+const POSTING_ERRORS = ['year_not_open', 'period_locked', 'month_filed', 'account_inactive', 'not_enough_stock', 'batches_mismatch', 'units_mismatch',
   'serial_twice', 'not_serialised', 'unit_held', 'no_estimate'] as const;
 // What a draft's places and lines are refused for.
 const LINE_ERRORS = ['unknown_location', 'location_inactive', 'unknown_item', 'quantity_too_precise', 'qty_not_positive', 'date_in_future'] as const;
 // A cancellation: dated on or after what it undoes, and only while what it moved is still where it went (§9).
-const CANCEL_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', 'goods_moved_on', 'year_not_open', 'period_locked',
+const CANCEL_ERRORS = ['wrong_status', 'date_in_future', 'date_before_source', 'goods_moved_on', 'year_not_open', 'period_locked', 'month_filed',
   'account_inactive', 'not_enough_stock'] as const;
 
 // ---- Transfers (§9) ----

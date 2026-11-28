@@ -4,7 +4,7 @@
 // documents, and the entry's number last, once every check has passed. The database checks again what the engine
 // checks (balance at commit RA002, the period lock RA003, control accounts by their posting rules), so a service
 // that skipped the engine couldn't post a wrong entry either.
-import { accounts, accountsTx, company, financialYears, journalEntries, journalLines, periodLock } from '@radcore/db/accounts';
+import { accounts, accountsTx, company, financialYears, gstFiledLock, journalEntries, journalLines, periodLock } from '@radcore/db/accounts';
 import { financialYear, type EntryKind, type Money } from '@radcore/lib-common';
 import { AppError, defineSeries, nextNumber, type Ctx } from '@radcore/lib-platform';
 import { randomUUID } from 'node:crypto';
@@ -36,9 +36,13 @@ const refuse = (code: string, message: string): never => { throw new AppError(co
 // account off, books.ts).
 export const periodLockRow = (ctx: Ctx) => accountsTx(ctx).select({ through: periodLock.lockedThrough }).from(periodLock)
   .where(eq(periodLock.id, 1));
+// The filed-month lock's one row (ADR-009 §5): step 1's third row, after the period lock.
+export const filedLockRow = (ctx: Ctx) => accountsTx(ctx).select({ gstr1: gstFiledLock.gstr1Through, gstr3b: gstFiledLock.gstr3bThrough })
+  .from(gstFiledLock).where(eq(gstFiledLock.id, 1));
 
 /**
- * ADR-006 §1's step 1's locks alone, refusing nothing: the company profile, then the period lock row, FOR SHARE. The
+ * ADR-006 §1's step 1's locks alone, refusing nothing: the company profile, the period lock row, then the filed-month
+ * row (ADR-009 §7), FOR SHARE. The
  * profile first, so changing it waits for the postings in flight and the GSTIN and state an invoice freezes can't
  * change under it (the architect on RAD-113); before it's set there's no row. An approval's lockFirst takes these
  * before its record and leaves the checks to its posting (the auditor on #275): a reject must never be refused by
@@ -47,7 +51,26 @@ export const periodLockRow = (ctx: Ctx) => accountsTx(ctx).select({ through: per
 export async function lockPeriod(ctx: Ctx): Promise<string | null> {
   await accountsTx(ctx).select({ id: company.id }).from(company).for('share');
   const [lock] = await periodLockRow(ctx).for('share');
+  await filedLockRow(ctx).for('share');
   return lock?.through ?? null;
+}
+
+// The entry kinds each return reports (ADR-009 §5): GSTR-1 the outward ones, 3B those and the inward ones. Keyed on the
+// entry, not its GST lines, since a 0% invoice or a composition supplier's bill carries none.
+const OUTWARD = new Set<string>(['invoice', 'credit_note']);
+const IN_3B = new Set<string>([...OUTWARD, 'purchase_bill', 'supplier_return', 'expense']);
+
+/** `month_filed` for an entry a filed return reports, or a reversal of an outward one whose original GSTR-1 reported
+ * (ADR-009 §5, CA-11): it's corrected with a credit note, not cancelled. The database's trigger refuses the same (RA010). */
+async function refuseFiled(ctx: Ctx, kind: string, businessDate: string, originalDate: string | null): Promise<void> {
+  if (!IN_3B.has(kind)) return;
+  const [f] = await filedLockRow(ctx);
+  if (f === undefined) return;
+  if (OUTWARD.has(kind) && f.gstr1 !== null && businessDate <= f.gstr1) refuse('month_filed', `GSTR-1 is filed through ${f.gstr1}: date this in an open month`);
+  if (f.gstr3b !== null && businessDate <= f.gstr3b) refuse('month_filed', `GSTR-3B is filed through ${f.gstr3b}: date this in an open month`);
+  if (OUTWARD.has(kind) && originalDate !== null && f.gstr1 !== null && originalDate <= f.gstr1) {
+    refuse('month_filed', `GSTR-1 is filed for ${originalDate.slice(0, 7)}: correct it with a credit note instead`);
+  }
 }
 
 /**
@@ -77,7 +100,7 @@ export async function openFinancialYear(ctx: Ctx, date: string): Promise<void> {
 }
 
 async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; source: { table: string; id: string };
-  lines: readonly JournalLine[]; reason?: string; reverses?: string; id?: string }): Promise<Posted> {
+  lines: readonly JournalLine[]; reason?: string; reverses?: string; reversesDate?: string; id?: string }): Promise<Posted> {
   const tx = accountsTx(ctx);
   // The arithmetic first, before anything is read (posting.ts): each line one side above zero, and the entry balanced.
   const amounts = balancedAmounts(e.lines);
@@ -87,6 +110,7 @@ async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; sourc
     await lockPeriod(ctx);
     await yearOpen(ctx, e.businessDate);
   } else await holdPeriod(ctx, e.businessDate);
+  await refuseFiled(ctx, e.kind, e.businessDate, e.reversesDate ?? null);
   // Every line's account and control kind in one read.
   const ids = e.lines.flatMap((l) => ('id' in l.account ? [l.account.id] : []));
   const keys = e.lines.flatMap((l) => ('system' in l.account ? [l.account.system] : []));
@@ -147,7 +171,7 @@ export async function reverseEntry(ctx: Ctx, r: Readonly<{ entryId: string; busi
   if (original.kind === 'manual' && (r.reason ?? '') === '') refuse('reason_required', 'Say why the journal is reversed');
   const lines = await tx.select().from(journalLines).where(eq(journalLines.entryId, original.id)).orderBy(asc(journalLines.lineNo));
   return write(ctx, {
-    kind: original.kind as EntryKind, businessDate: r.businessDate, reverses: original.id,
+    kind: original.kind as EntryKind, businessDate: r.businessDate, reverses: original.id, reversesDate: original.businessDate,
     source: { table: original.sourceTable, id: original.sourceId }, ...(r.reason === undefined ? {} : { reason: r.reason }),
     lines: lines.map((l) => ({ account: { id: l.accountId }, ...swapSides(l),
       ...(l.partyId === null ? {} : { partyId: l.partyId }), ...(l.itemId === null ? {} : { itemId: l.itemId }),

@@ -108,7 +108,7 @@ describe('the journal contracts', () => {
     expect(postJournal.errors).toEqual(['control_account', 'unbalanced', 'invalid_line', 'unknown_account', 'account_inactive', 'period_locked',
       'year_not_open']);
     expect(reverseJournal.errors).toEqual(['reverse_through_document', 'already_reversed', 'reversal_not_reversible', 'period_locked',
-      'year_not_open', 'bank_matched']);
+      'month_filed', 'year_not_open', 'bank_matched']);
     expect(reverseJournal.input.safeParse({ id: ID, businessDate: '2026-11-14', reason: 'Posted twice' }).success).toBe(true);
     expect(reverseJournal.input.safeParse({ id: ID, businessDate: '2026-11-14' }).success).toBe(false);
   });

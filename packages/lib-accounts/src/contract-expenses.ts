@@ -124,7 +124,7 @@ const expense = header.extend({
 /** What a draft's save can refuse, and what its posting can refuse beyond that (ADR-009 §2, §3). */
 const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'needs_supplier', 'not_a_supplier', 'gstin_mismatch', 'not_money_account',
   'account_inactive', 'unknown_account', 'category_inactive', 'not_in_category', 'wrong_file_kind', 'upload_refused', 'not_ready', 'unknown_section'] as const;
-const POST_ERRORS = [...DRAFT_ERRORS, 'wrong_status', 'bill_file_required', 'tax_mismatch', 'total_mismatch', 'period_locked', 'year_not_open',
+const POST_ERRORS = [...DRAFT_ERRORS, 'wrong_status', 'bill_file_required', 'tax_mismatch', 'total_mismatch', 'period_locked', 'month_filed', 'year_not_open',
   'company_profile_incomplete', 'series_full', 'tds_needs_party', 'tds_overseas', 'no_tds_rate', 'tds_payee_mismatch', 'rcm_bill_has_tax',
   'no_gst_rate', 'sac_required'] as const;
 
@@ -164,7 +164,7 @@ export const postExpense = defineContract({
 export const cancelExpense = defineContract({
   method: 'POST', path: '/expenses/:id/cancel', auth: 'session', perm: 'expenses:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: z.string().trim().min(1).max(500) }), output: z.object({}),
-  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'has_allocations', 'series_full', 'bank_matched',
+  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'month_filed', 'year_not_open', 'has_allocations', 'series_full', 'bank_matched',
     'tds_deposited'],
   dbErrors: { 'RA006:document_still_applied': { code: 'has_allocations', message: 'Reverse what’s applied to this expense first' },
     ...BANK_MATCHED_DB_ERROR },

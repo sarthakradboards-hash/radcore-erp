@@ -107,7 +107,7 @@ export const requestCreditNoteApproval = defineContract({
 });
 /** The credit notes' approval routes (RAD-38): approving posts the note, applies it to its invoice and pays its refund. */
 export const creditNoteApproval = approvalContracts('credit-note', 'credit_notes:approve',
-  [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'account_inactive', 'batches_mismatch', 'units_mismatch',
+  [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'month_filed', 'account_inactive', 'batches_mismatch', 'units_mismatch',
     'serial_twice', 'not_serialised', 'credit_not_posted', 'refund_other_party', 'wrong_credit', 'unknown_account', 'not_money_account',
     // Posting draws the note's number, and goods back go through the stock engine (RAD-134).
     'series_full', 'no_estimate', 'unit_batch'],
@@ -117,7 +117,7 @@ export const creditNoteApproval = approvalContracts('credit-note', 'credit_notes
 export const cancelCreditNote = defineContract({
   method: 'POST', path: '/sales/credit-notes/:id/cancel', auth: 'session', perm: 'credit_notes:cancel', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),
-  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive', 'still_applied',
+  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'month_filed', 'year_not_open', 'account_inactive', 'still_applied',
     'not_enough_stock', 'units_mismatch', 'already_reversed', 'not_reversible'],
   dbErrors: { 'RA006:document_still_applied': { code: 'still_applied', message: 'This credit note is still applied or refunded: reverse that first' } },
 });

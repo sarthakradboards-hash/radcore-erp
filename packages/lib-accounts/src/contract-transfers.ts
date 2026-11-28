@@ -38,7 +38,7 @@ export const recordTransferContract = defineContract({
     reference: z.string().trim().min(1).max(40).optional(), notes: z.string().trim().min(1).max(500).optional(),
   }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['amount_not_positive', 'same_account', 'unknown_account', 'not_money_account', 'account_inactive', 'date_in_future', 'period_locked',
+  errors: ['amount_not_positive', 'same_account', 'unknown_account', 'not_money_account', 'account_inactive', 'date_in_future', 'period_locked', 'month_filed',
     'year_not_open', 'series_full'],
 });
 
@@ -47,6 +47,6 @@ export const cancelTransferContract = defineContract({
   method: 'POST', path: '/transfers/:id/cancel', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({}),
-  errors: ['not_posted', 'date_before_source', 'date_in_future', 'period_locked', 'year_not_open', 'already_reversed', 'bank_matched'],
+  errors: ['not_posted', 'date_before_source', 'date_in_future', 'period_locked', 'month_filed', 'year_not_open', 'already_reversed', 'bank_matched'],
   dbErrors: BANK_MATCHED_DB_ERROR,
 });

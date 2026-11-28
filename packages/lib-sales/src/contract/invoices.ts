@@ -61,7 +61,7 @@ const invoice = piiRecord('invoices', header.extend({
 // The refusals a draft shares: its date (§4), its lines, its party and its status.
 const DRAFT_ERRORS = ['date_in_future', 'date_before_source', 'invoice_too_late', 'wrong_status', 'not_on_source', 'over_quantity',
   'quantity_too_precise', 'unknown_party', 'not_a_customer', 'other_party'] as const;
-const POST_ERRORS = [...DRAFT_ERRORS, 'version_changed', 'year_not_open', 'period_locked', 'account_inactive', 'no_gst_rate',
+const POST_ERRORS = [...DRAFT_ERRORS, 'version_changed', 'year_not_open', 'period_locked', 'month_filed', 'account_inactive', 'no_gst_rate',
   'company_profile_incomplete', 'buyer_details_required', 'needs_override', 'series_full'] as const;
 
 /** Invoices, newest first, a page at a time. */
@@ -109,7 +109,7 @@ export const invoiceOverrideApproval = approvalContracts('sales-invoice-override
 export const cancelInvoice = defineContract({
   method: 'POST', path: '/sales/invoices/:id/cancel', auth: 'session', perm: 'invoices:cancel', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),
-  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'account_inactive', 'still_applied',
+  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'month_filed', 'year_not_open', 'account_inactive', 'still_applied',
     'credit_note_stands'],
   dbErrors: { 'RA006:document_still_applied': { code: 'still_applied', message: 'Payments or credits are still applied to this invoice: reverse them first' } },
 });

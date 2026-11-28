@@ -97,10 +97,10 @@ function entriesOf(list: string, built: Readonly<Record<string, number>>): strin
 const ENGINE = 'packages/lib-accounts/src/services/journal.ts';
 /** What each of the engine's posting functions may refuse any caller: a reversal takes a switched-off account. */
 const ENGINE_ERRORS: Readonly<Record<string, readonly string[]>> = {
-  postEntry: ['account_inactive', 'period_locked', 'year_not_open'],
+  postEntry: ['account_inactive', 'period_locked', 'year_not_open', 'month_filed'],
   postManualJournal: ['account_inactive', 'period_locked', 'year_not_open'],
-  reverseEntry: ['period_locked', 'year_not_open'],
-  reverseEntriesOf: ['period_locked', 'year_not_open'],
+  reverseEntry: ['period_locked', 'year_not_open', 'month_filed'],
+  reverseEntriesOf: ['period_locked', 'year_not_open', 'month_filed'],
   holdPeriod: ['period_locked', 'year_not_open'],
 };
 /** The engine functions code reaches, following each call into a function, method or arrow declared in the repo. */

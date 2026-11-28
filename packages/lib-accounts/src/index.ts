@@ -10,6 +10,7 @@ export {
 } from './services/expenses.ts';
 export { putTdsRate, tdsRatesPage, tdsSectionsList } from './services/tds-rates.ts';
 export { bookTds, defaultTdsSection, reverseTds, setTdsTerms, type TdsLine } from './services/tds-booking.ts';
+export { filingsPage, FILING_FREQUENCY, FILING_START, markFiling } from './services/filings.ts';
 export { depositTds, TDS_DEPOSIT_SERIES, tdsDeductionsPage, tdsPayableFigures } from './services/tds-deposits.ts';
 export { tdsFor, tdsRound, type TdsBooking, type TdsRate } from './rules/tds.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
@@ -58,7 +59,8 @@ import { JOURNAL_SERIES as journal } from './services/journal.ts';
 import { TRANSFER_SERIES as transferred } from './services/transfers.ts';
 import { YEAR_END_CHECKLIST as yearEnd } from './services/period-lock.ts';
 import { MATCH_DAYS as matchDays } from './services/bank-matching.ts';
+import { FILING_FREQUENCY as filingFrequency, FILING_START as filingStart } from './services/filings.ts';
 import { CASH_PAYMENT_LIMIT as cashOut, CASH_RECEIPT_LIMIT as cashIn, DEFAULT_CREDIT_DAYS as creditDays, PAYMENT_SERIES as paid,
   RECEIPT_SERIES as received } from './services/payments.ts';
-export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays, yearEnd, matchDays];
+export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays, yearEnd, matchDays, filingFrequency, filingStart];
 export const series: readonly Series[] = [journal, received, paid, transferred, spent, tdsDeposited];

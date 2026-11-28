@@ -38,6 +38,9 @@ export const PERMISSIONS: readonly Permission[] = Object.freeze([
   { key: 'gst:write', module: 'GST', label: 'Add and correct GST rates, which every invoice uses', secondFactor: true },
   // ADR-010 §15 (RAD-154): the returns are the whole company's, so never by maker.
   { key: 'gst:returns', module: 'GST', label: 'Build and see GSTR-1 and GSTR-3B, and download the portal file', allOnly: true },
+  // The filed-month lock (M5-08, ADR-009 §5, §9): company rows, so all-only. Undoing a filing needs a second person's
+  // books:unlock (D-06).
+  { key: 'gst:file', module: 'GST', label: 'Mark a month’s return filed, and ask to undo a filing', allOnly: true },
   { key: 'items:read', module: 'Items', label: 'See items, their categories and units' },
   { key: 'items:write', module: 'Items', label: 'Add and change items and their categories' },
   { key: 'parties:read', module: 'Parties', label: 'See customers, dealers, franchisees and suppliers' },

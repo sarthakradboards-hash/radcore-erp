@@ -67,7 +67,7 @@ const lineOut = z.object({
 const receipt = header.extend({ notes: z.string().nullable(), lines: z.array(lineOut) });
 
 // What a draft's arrival can refuse: its dates (ADR-008 §4: not before the PO's), its PO and places, and its lines.
-const ARRIVAL_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'date_before_source', 'unknown_order', 'order_not_placed',
+const ARRIVAL_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'month_filed', 'date_before_source', 'unknown_order', 'order_not_placed',
   'unknown_order_line', 'unknown_location', 'location_inactive', 'place_not_sellable', 'not_a_rejects_place', 'quantity_too_precise',
   'qty_not_positive', 'over_ordered', 'wrong_status'] as const;
 // What QC and posting add: the split, the batches and serials (checked by name before the database's RA007 and RA008),
@@ -120,6 +120,6 @@ export const postGoodsReceipt = defineContract({
 export const cancelGoodsReceipt = defineContract({
   method: 'POST', path: '/purchasing/receipts/:id/cancel', auth: 'session', perm: 'inward:qc', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),
-  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked', 'receipt_in_use', 'account_inactive',
+  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked', 'month_filed', 'receipt_in_use', 'account_inactive',
     'not_enough_stock'],
 });

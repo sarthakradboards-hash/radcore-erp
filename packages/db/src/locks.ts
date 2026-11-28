@@ -31,3 +31,11 @@ export async function drawCounter(tx: Tx, o: { turn: string; series: string; fin
 export async function setPeriodLock(tx: Tx, through: string): Promise<void> {
   await rawOf(tx).execute(sql`select radcore.set_period_lock(${through}::date)`);
 }
+
+/**
+ * Moves a return's filed-month lock (M5-08, RAD-156): the app login holds no write on gst_filed_lock, so this one
+ * SECURITY DEFINER function is the way. Only lib-accounts' filings service calls it, holding the row FOR UPDATE.
+ */
+export async function setFiledLock(tx: Tx, ret: 'gstr1' | 'gstr3b', through: string | null): Promise<void> {
+  await rawOf(tx).execute(sql`select radcore.set_filed_lock(${ret}, ${through}::date)`);
+}
