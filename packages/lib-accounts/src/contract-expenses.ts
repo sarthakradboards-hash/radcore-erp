@@ -110,6 +110,8 @@ const expenseIn = z.object({
 const credit = z.object({ cgst: moneyString(), sgst: moneyString(), igst: moneyString(), reason: z.enum(['supplier_kind', 'blocked', 'state']).nullable() });
 const header = z.object({
   id: idString(), number: z.string().nullable(), status, businessDate: dateString(), supplierId: idString().nullable(),
+  /** The supplier's name, for the screens (null with no supplier). */
+  supplierName: z.string().nullable(),
   supplierInvoiceNumber: z.string(), statedTotal: moneyString(), onCredit: z.boolean(), awaitingApproval: z.boolean(),
   /** The TDS held back at posting (0 for a draft). */
   tds: moneyString(), createdAt: momentString(),
