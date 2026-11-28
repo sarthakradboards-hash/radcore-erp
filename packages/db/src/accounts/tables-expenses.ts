@@ -19,8 +19,11 @@ export const expenseCategories = radcoreTable('expense_categories', {
   active: boolean().notNull().default(true),
   // The TDS section its lines take when their supplier names none (ADR-009 §4, RAD-158).
   defaultTdsSectionId: uuid().references(() => tdsSections.id, { onDelete: 'restrict' }),
+  // The SAC its lines take when they name none (ADR-010 §4, RAD-153), for the reverse-charge rules.
+  defaultSac: text(),
 }, (t) => [
   index('ix_expense_categories_tds_section').on(t.defaultTdsSectionId),
+  check('ck_expense_categories_default_sac', sql`${t.defaultSac} is null or ${t.defaultSac} ~ '^[0-9]{4}([0-9]{2}){0,2}$'`),
   check('ck_expense_categories_credit', sql`${t.credit} in ('allowed', 'blocked')`),
   // 17(5)'s clauses, (a) to (i), and only (b)'s sub-clauses, as "(b)(i)".
   check('ck_expense_categories_clause', sql`(${t.credit} = 'blocked') = (${t.blockedClause} is not null)
@@ -105,14 +108,23 @@ export const expenseLines = radcoreTable('expense_lines', {
   creditCgst: money(), creditSgst: money(), creditIgst: money(), creditReason: text(),
   // The TDS section it's deducted under (ADR-009 §4, RAD-158).
   tdsSectionId: uuid().references(() => tdsSections.id, { onDelete: 'restrict' }),
+  // Its SAC (ADR-010 §4, RAD-153): its own or its category's default; what the reverse-charge rules read.
+  sac: text(),
+  // A reverse-charge line's tax by head, worked out at posting: we owe it, not the supplier, whose bill shows none.
+  rcmCgst: money(), rcmSgst: money(), rcmIgst: money(),
 }, (t) => [
   index('ix_expense_lines_tds_section').on(t.tdsSectionId),
+  check('ck_expense_lines_sac', sql`${t.sac} is null or ${t.sac} ~ '^[0-9]{4}([0-9]{2}){0,2}$'`),
+  check('ck_expense_lines_rcm', sql`num_nulls(${t.rcmCgst}, ${t.rcmSgst}, ${t.rcmIgst}) in (0, 3) and (${t.rcmCgst} is null
+    or (${t.sac} is not null and ${t.cgst} = 0 and ${t.sgst} = 0 and ${t.igst} = 0 and ${t.rcmCgst} = ${t.rcmSgst}
+      and (${t.rcmIgst} = 0 or ${t.rcmCgst} = 0)))`),
   check('ck_expense_lines_heads', sql`${t.cgst} = ${t.sgst} and (${t.igst} = 0 or ${t.cgst} = 0)`),
   check('ck_expense_lines_credit', sql`num_nulls(${t.creditCgst}, ${t.creditSgst}, ${t.creditIgst}) in (0, 3)
     and (${t.creditReason} is null or ${t.creditCgst} is not null)`),
-  // All the line's tax, or none and why.
+  // All the line's tax (a reverse-charge line's, the tax we owe), or none and why.
   check('ck_expense_lines_credit_whole', sql`${t.creditCgst} is null
-    or (${t.creditReason} is null and ${t.creditCgst} = ${t.cgst} and ${t.creditSgst} = ${t.sgst} and ${t.creditIgst} = ${t.igst})
+    or (${t.creditReason} is null and ${t.creditCgst} = coalesce(${t.rcmCgst}, ${t.cgst}) and ${t.creditSgst} = coalesce(${t.rcmSgst}, ${t.sgst})
+      and ${t.creditIgst} = coalesce(${t.rcmIgst}, ${t.igst}))
     or (${t.creditReason} in ('supplier_kind', 'blocked', 'state') and ${t.creditCgst} = 0 and ${t.creditSgst} = 0 and ${t.creditIgst} = 0)`),
   uniqueIndex('ux_expense_lines_line').on(t.expenseId, t.lineNo),
   index('ix_expense_lines_category_account').on(t.categoryId, t.accountId),

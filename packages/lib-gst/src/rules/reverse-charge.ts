@@ -3,7 +3,7 @@
 
 /** Which suppliers a rule applies to: those with no GSTIN, any, or any but a body corporate. */
 type RcmSupplier = 'unregistered' | 'any' | 'not_body_corporate';
-export type RcmRule = { prefix: string; supplier: RcmSupplier; effectiveFrom: string };
+export type RcmRule = { prefix: string; supplier: RcmSupplier; effectiveFrom: string; withdrawnFrom: string | null };
 export type RcmParty = { gstin: string | null; pan: string | null; overseas: boolean };
 
 /** A company's PAN has C as its fourth letter. shortcut: an LLP's PAN (F, as a firm's) reads as not a body corporate,
@@ -14,7 +14,8 @@ const fits = (rule: RcmSupplier, p: RcmParty): boolean =>
   rule === 'any' || (rule === 'unregistered' ? p.gstin === null : !bodyCorporate(p));
 
 /** Whether a line with this SAC (or HSN), from this supplier, on the supplier's invoice date, is reverse charge: always
- * for an overseas supplier (an import of services), else when a rule in force on that date covers its code and the
- * supplier. A rule is never withdrawn, only corrected, so any one started on or before the date counts. */
+ * for an overseas supplier (an import of services), else when a rule in force on that date (started on or before it,
+ * and not withdrawn by it) covers its code and the supplier. */
 export const isReverseCharge = (code: string, party: RcmParty, on: string, rules: readonly RcmRule[]): boolean =>
-  party.overseas || rules.some((r) => code.startsWith(r.prefix) && r.effectiveFrom <= on && fits(r.supplier, party));
+  party.overseas || rules.some((r) => code.startsWith(r.prefix) && r.effectiveFrom <= on && (r.withdrawnFrom === null || on < r.withdrawnFrom)
+    && fits(r.supplier, party));

@@ -62,7 +62,10 @@ const lineOut = z.discriminatedUnion('kind', [
 const lines = () => z.array(lineIn).min(1, 'Add at least one line').max(200, 'At most 200 lines');
 /** The bill's totals, to the rupee, with `note` saying what's missing while a draft's tax can't be worked out. */
 const amounts = z.object({ placeOfSupply: z.string().nullable(), taxable: moneyString(), cgst: money(), sgst: money(), igst: money(),
-  roundOff: z.string().nullable(), total: money(), note: z.string().nullable() });
+  roundOff: z.string().nullable(), total: money(), note: z.string().nullable(),
+  /** What the bill owes under reverse charge, by head (ADR-010 §4): the charges' reverseCharge summed, null when none.
+   * Not in `total`, the supplier's: ours to pay at the month's settlement. */
+  reverseCharge: z.object({ cgst: moneyString(), sgst: moneyString(), igst: moneyString() }).nullable() });
 const header = z.object({
   id: idString(), number: z.string().nullable(), supplierId: idString(), supplierName: z.string(), businessDate: dateString(), status,
   supplierInvoiceNumber: z.string(), supplierInvoiceDate: dateString(), total: money(),
