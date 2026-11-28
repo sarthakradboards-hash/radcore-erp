@@ -5,7 +5,7 @@
 // cancel holding the document. Each test has its own bank account and its own statement lines, written as rows.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  bookLinesPage, cancelPayment, matchCandidates, matchLines, openFinancialYear, reconciliation, recordPayment, statementImportsPage, statementLinesPage, undoStatementImport,
+  bookCharge, bookLinesPage, cancelPayment, matchCandidates, matchLines, openFinancialYear, reconciliation, recordPayment, statementImportsPage, statementLinesPage, undoStatementImport,
   unmatch,
 } from '@radcore/lib-accounts';
 import { moneyString } from '@radcore/lib-common';
@@ -118,6 +118,33 @@ describe.skipIf(!url || !superUrl)('bank matching', { timeout: 60_000 }, () => {
     const again = await receipt(s.bank, who, '250.00');
     expect((await run((ctx) => matchCandidates(ctx, { id: s.lines[0] ?? '' }))).candidates.map((c) => c.journalLineId)).toEqual([again.line]);
     expect(await code(run((ctx) => matchLines(ctx, { statementLineIds: s.lines, journalLineIds: [first.line] })))).toBe('entry_reversed');
+  });
+
+  it('books a bank charge or interest from its line, matched, and unmatching reverses it (ADR-009 §12, RC-210)', async () => {
+    const s = await statement([['out', '59.00', 'SMS ALERT CHARGES', ''], ['in', '12.50', 'INT CREDIT', '']]);
+    const charges = await q("insert into radcore.accounts (name, type) select $1, 'expense' from p returning id", [`Bank charges ${tag()}`]);
+    const interest = await q("insert into radcore.accounts (name, type) select $1, 'income' from p returning id", [`Interest ${tag()}`]);
+    const linesOf = async (matchId: string) => (await su.query<{ account: string; debit: string; credit: string; reversal: boolean }>(
+      `select l.account_id account, l.debit::text, l.credit::text, e.reverses_entry_id is not null reversal from radcore.journal_entries e
+       join radcore.journal_lines l on l.entry_id = e.id where e.source_table = 'bank_matches' and e.source_id = $1 and e.kind = 'bank_charge'
+       order by reversal, l.line_no`, [matchId])).rows;
+    // A charge out goes to an expense account, interest in to an income account: not the other way, nor to the bank.
+    expect(await code(run((ctx) => bookCharge(ctx, { id: s.lines[0] ?? '', accountId: interest })))).toBe('not_a_charge_account');
+    expect(await code(run((ctx) => bookCharge(ctx, { id: s.lines[0] ?? '', accountId: s.bank })))).toBe('not_a_charge_account');
+    const charge = await run((ctx) => bookCharge(ctx, { id: s.lines[0] ?? '', accountId: charges }));
+    expect(await linesOf(charge.matchId)).toEqual([{ account: charges, debit: '59.00', credit: '0.00', reversal: false },
+      { account: s.bank, debit: '0.00', credit: '59.00', reversal: false }]);
+    const credit = await run((ctx) => bookCharge(ctx, { id: s.lines[1] ?? '', accountId: interest }));
+    expect((await linesOf(credit.matchId)).map((l) => [l.account, l.debit, l.credit])).toEqual([[s.bank, '12.50', '0.00'], [interest, '0.00', '12.50']]);
+    expect((await run((ctx) => statementLinesPage(ctx, { filter: { accountId: s.bank }, limit: 5 }))).items.map((l) => l.matchId).toSorted())
+      .toEqual([charge.matchId, credit.matchId].toSorted());
+    expect(await code(run((ctx) => bookCharge(ctx, { id: s.lines[0] ?? '', accountId: charges })))).toBe('already_matched');
+    // Unmatched (the bank's tax invoice came, say): the charge is reversed, so it's booked once, and the line is free.
+    await run((ctx) => unmatch(ctx, { id: charge.matchId, reason: 'Tax invoice came' }));
+    const after = await linesOf(charge.matchId);
+    expect(after.filter((l) => l.reversal).map((l) => [l.account, l.debit, l.credit])).toEqual([[charges, '0.00', '59.00'], [s.bank, '59.00', '0.00']]);
+    expect((await run((ctx) => statementLinesPage(ctx, { filter: { accountId: s.bank }, limit: 5 }))).items.find((l) => l.id === s.lines[0])?.matchId)
+      .toBeNull();
   });
 
   it('lists an account’s unmatched live book lines for a many-to-many match, newest first, filtered (the architect on RAD-165)', async () => {
