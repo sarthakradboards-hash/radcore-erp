@@ -24,3 +24,8 @@ END $$;
 SELECT radcore.audit_attach('payment_tds', keep => array['payment_id', 'section_id', 'expected'], owner => 'payment_id', owner_table => 'payments');
 --> statement-breakpoint
 REVOKE UPDATE, DELETE, TRUNCATE ON radcore.payment_tds FROM radcore_app;
+--> statement-breakpoint
+-- The auditor's NIT on #467: a posted deposit's only change is its entry, set once in the save that posts it.
+REVOKE UPDATE ON radcore.tds_deposits FROM radcore_app;
+--> statement-breakpoint
+GRANT UPDATE (posted_entry_id) ON radcore.tds_deposits TO radcore_app;
