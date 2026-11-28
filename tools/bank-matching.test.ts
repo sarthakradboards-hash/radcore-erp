@@ -5,7 +5,7 @@
 // cancel holding the document. Each test has its own bank account and its own statement lines, written as rows.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  bookCharge, cancelPayment, matchCandidates, matchLines, openFinancialYear, recordPayment, statementImportsPage, statementLinesPage, undoStatementImport,
+  bookCharge, bookLinesPage, cancelPayment, matchCandidates, matchLines, openFinancialYear, recordPayment, statementImportsPage, statementLinesPage, undoStatementImport,
   unmatch,
 } from '@radcore/lib-accounts';
 import { moneyString } from '@radcore/lib-common';
@@ -145,6 +145,29 @@ describe.skipIf(!url || !superUrl)('bank matching', { timeout: 60_000 }, () => {
     expect(after.filter((l) => l.reversal).map((l) => [l.account, l.debit, l.credit])).toEqual([[charges, '0.00', '59.00'], [s.bank, '59.00', '0.00']]);
     expect((await run((ctx) => statementLinesPage(ctx, { filter: { accountId: s.bank }, limit: 5 }))).items.find((l) => l.id === s.lines[0])?.matchId)
       .toBeNull();
+  });
+
+  it('lists an account’s unmatched live book lines for a many-to-many match, newest first, filtered (the architect on RAD-165)', async () => {
+    const who = await party(`Book ${tag()}`);
+    const s = await statement([['in', '10.00', 'MATCHED', '']]);
+    const matched = await receipt(s.bank, who, '10.00');
+    await run((ctx) => matchLines(ctx, { statementLineIds: s.lines, journalLineIds: [matched.line] }));
+    const cancelled = await receipt(s.bank, who, '20.00');
+    await run((ctx) => cancelPayment(ctx, { id: cancelled.id, businessDate: DAY, reason: 'Twice' }));
+    const [early, late] = [await receipt(s.bank, who, '30.00', undefined, '2026-11-08'), await receipt(s.bank, who, '40.00')];
+    const paidOut = await run((ctx) => recordPayment(ctx, { kind: 'payment', partyId: who, businessDate: DAY, amount: m('50.00'), accountId: s.bank }));
+    const page = (filter: Parameters<typeof bookLinesPage>[1]['filter'], limit = 10, after?: string) =>
+      run((ctx) => bookLinesPage(ctx, { id: s.bank, filter, limit, ...(after === undefined ? {} : { after }) }));
+    // Neither the matched receipt nor the cancelled one, nor its reversal: only the live, unmatched lines.
+    expect((await page({})).items.map((l) => [l.direction, l.amount]).toSorted()).toEqual([['in', '30.00'], ['in', '40.00'], ['out', '50.00']]);
+    expect((await page({ direction: 'in', amount: m('40.00') })).items.map((l) => l.journalLineId)).toEqual([late.line]);
+    expect((await page({ to: '2026-11-09' })).items.map((l) => l.journalLineId)).toEqual([early.line]);
+    expect((await page({ direction: 'out' })).items.map((l) => l.source.id)).toEqual([paidOut.id]);
+    const first = await page({}, 2);
+    const rest = await page({}, 2, first.next ?? '');
+    expect([first.items.length, rest.items.length, rest.next]).toEqual([2, 1, null]);
+    const cash = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'cash'")).rows[0]?.id ?? '';
+    expect(await code(run((ctx) => bookLinesPage(ctx, { id: cash, filter: {}, limit: 5 })))).toBe('not_a_bank_account');
   });
 
   it('waits for a match holding a statement line before it judges an undo (auditor-2 on #454)', async () => {

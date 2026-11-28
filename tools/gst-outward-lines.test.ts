@@ -3,11 +3,12 @@
 // every posted invoice and credit-note line with its document's frozen buyer and dates. Each test makes its own item.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { moneyString, percentString, quantityString } from '@radcore/lib-common';
-import { putGstRate } from '@radcore/lib-gst';
+import { gstr1Of, putGstRate } from '@radcore/lib-gst';
 import { setGstRate } from '@radcore/lib-gst/contract';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { AppError, Settings, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { addCreditNote, addInvoice, postInvoiceNow } from '@radcore/lib-sales';
+import { addPlace } from '@radcore/lib-stock';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { postedDelivery } from './delivered-fixture.ts';
@@ -16,7 +17,7 @@ const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
 const DATE = '2026-11-15';
-const KEYS = ['sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'credit_notes:write', 'parties:write', 'parties:manage', 'items:write',
+const KEYS = ['gst:returns', 'sales:read', 'sales:write', 'deliveries:write', 'invoices:write', 'credit_notes:write', 'parties:write', 'parties:manage', 'items:write',
   'locations:write', 'gst:write', 'cost:read'];
 const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: KEYS };
 const q = (s: string) => quantityString().parse(s);
@@ -112,6 +113,36 @@ describe.skipIf(!url || !superUrl)('what GSTR-1 reads', { timeout: 60_000 }, () 
     expect(rows.map((r) => r.t)).toEqual(['credit_notes', 'invoices']);
   });
 
+  // The architect on #457: Table 13 counts job-work challans too, through gst_documents_issued, with the portal's type.
+  it('lists posted and cancelled job-work challans in gst_documents_issued as delivery challans for job work, and no draft', async () => {
+    const at = await postedDelivery(run, su, DATE);
+    const place = (kind: 'store' | 'stores') => run((ctx) => addPlace(ctx, { code: `J${randomBytes(3).toString('hex').toUpperCase()}`,
+      name: `Place ${randomBytes(3).toString('hex')}`, kind }));
+    const places = [await place('store'), await place('stores')];
+    const c = await su.connect();
+    try {
+      await c.query('begin');
+      await c.query("select set_config('app.principal', 'system:test', true)");
+      // Each made a draft, then posted and cancelled as its own guards allow; rolled back before the commit checks run.
+      const challan = async (status: string, n: string) => {
+        const id = (await c.query<{ id: string }>(`insert into radcore.job_work_challans (from_id, to_id, party_id, business_date)
+          values ($1, $2, $3, '${DATE}') returning id`, [places[0]?.id, places[1]?.id, at.partyId])).rows[0]?.id ?? '';
+        if (status !== 'draft') await c.query("update radcore.job_work_challans set status = 'posted', number = $2 where id = $1", [id, n]);
+        if (status === 'cancelled') await c.query("update radcore.job_work_challans set status = 'cancelled', cancelled_at = now() where id = $1", [id]);
+        return id;
+      };
+      const tag = randomBytes(3).toString('hex');
+      const ids = [await challan('posted', `JWC/T${tag}/00001`), await challan('cancelled', `JWC/T${tag}/00002`), await challan('draft', '')];
+      const { rows } = await c.query<{ t: string; n: string; s: string }>(`select document_type t, document_number n, status s
+        from radcore.gst_documents_issued where document_id = any($1::uuid[]) order by document_number`, [ids]);
+      expect(rows).toEqual([{ t: 'Delivery Challan for job work', n: `JWC/T${tag}/00001`, s: 'posted' },
+        { t: 'Delivery Challan for job work', n: `JWC/T${tag}/00002`, s: 'cancelled' }]);
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+  });
+
   // Posted notes, which go through approval, are read in PR 2's builder tests.
   it('freezes a 0% line as nil and a 5% line as taxable, reads both through gst_outward_lines, and not a draft note', async () => {
     const [nil, taxed] = [await postedDelivery(run, su, DATE, undefined, { gst: '0' }), await postedDelivery(run, su, DATE)];
@@ -131,5 +162,15 @@ describe.skipIf(!url || !superUrl)('what GSTR-1 reads', { timeout: 60_000 }, () 
     await run((ctx) => addCreditNote(ctx, { invoiceId: taxedInvoice, kind: 'value', businessDate: DATE, locationId: null, reason: 'Discount agreed',
       refund: null, lines: [{ invoiceLineId: lineId, taxable: moneyString().parse('1000') }] }));
     expect((await outward(taxedInvoice)).map((r) => [r.t, r.kind, r.taxable, r.cgst])).toEqual([['invoices', 'taxable', '80000.00', '2000.00']]);
+
+    // GSTR-1 for the month, from the view: other files' invoices share it, so read this test's own HSN rows (Table 12 at
+    // 8 digits, each item's code its own), and the nil invoice in Table 8 and nowhere in Table 7.
+    const hsnOf = async (id: string) => (await su.query<{ hsn: string }>('select hsn from radcore.invoice_lines where invoice_id = $1', [id])).rows[0]?.hsn;
+    const [nilHsn, taxedHsn] = [await hsnOf(nilInvoice), await hsnOf(taxedInvoice)];
+    const g = await run((ctx) => gstr1Of({ ...ctx, settings: new Settings([{ key: 'gst.hsn_digits', value: '8' }]) }, { month: DATE.slice(0, 7) }));
+    expect(g.table12.filter((r) => r.hsn === nilHsn || r.hsn === taxedHsn).map((r) => [r.part, r.hsn === nilHsn ? 'nil' : 'taxed', r.qty, r.taxable, r.cgst])
+      .toSorted()).toEqual([['b2c', 'nil', '1', '80000.00', '0.00'], ['b2c', 'taxed', '1', '80000.00', '2000.00']]);
+    expect(g.table8.some((r) => r.supply === 'intra' && r.buyer === 'unregistered' && r.kind === 'nil')).toBe(true);
+    expect(g.table7.some((r) => r.rate === '0.000000')).toBe(false);
   });
 });

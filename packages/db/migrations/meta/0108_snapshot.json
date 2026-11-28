@@ -1,5 +1,5 @@
 {
-  "id": "8719f44f-77f4-4629-97a9-62dbf23c3716",
+  "id": "1a37c358-3d49-46eb-a344-00e44256b139",
   "prevId": "4a62ef98-3f1d-4e5f-9baa-236e1c29e5c6",
   "version": "7",
   "dialect": "postgresql",
@@ -934,7 +934,7 @@
         },
         "ck_journal_entries_kind": {
           "name": "ck_journal_entries_kind",
-          "value": "\"radcore\".\"journal_entries\".\"kind\" in ('opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice', 'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work', 'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer', 'manual', 'year_close', 'bank_charge')"
+          "value": "\"radcore\".\"journal_entries\".\"kind\" in ('opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice', 'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work', 'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer', 'manual', 'year_close')"
         },
         "ck_journal_entries_source_table": {
           "name": "ck_journal_entries_source_table",
@@ -24493,6 +24493,51 @@
       "isExisting": false,
       "materialized": false
     },
+    "radcore.gst_documents_issued": {
+      "columns": {
+        "documentTable": {
+          "name": "documentTable",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentId": {
+          "name": "documentId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentType": {
+          "name": "documentType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentNumber": {
+          "name": "documentNumber",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentDate": {
+          "name": "documentDate",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select 'invoices' as document_table, id as document_id, 'Invoices for outward supply' as document_type, number as document_number,\n    business_date as document_date, status\n  from radcore.invoices where status <> 'draft'\n  union all\n  select 'credit_notes', id, 'Credit Note', number, business_date, status from radcore.credit_notes where status <> 'draft'\n  union all\n  select 'job_work_challans', id, 'Delivery Challan for job work', number, business_date, status from radcore.job_work_challans\n  where status <> 'draft'",
+      "name": "gst_documents_issued",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
     "radcore.gst_outward_lines": {
       "columns": {
         "documentTable": {
@@ -24644,9 +24689,15 @@
           "type": "numeric",
           "primaryKey": false,
           "notNull": false
+        },
+        "documentValue": {
+          "name": "documentValue",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
         }
       },
-      "definition": "select 'invoices' as document_table, i.id as document_id, i.number as document_number, i.status, i.business_date as document_date,\n    i.id as invoice_id, i.number as invoice_number, i.business_date as invoice_date, i.total as invoice_value, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, false as late, l.id as line_id, l.hsn, it.unit as uqc, l.qty, l.gst_rate,\n    l.supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, l.cess_ad_valorem + l.cess_per_unit_amount as cess\n  from radcore.invoices i join radcore.invoice_lines l on l.invoice_id = i.id join radcore.items it on it.id = l.item_id\n  where i.status <> 'draft'\n  union all\n  select 'credit_notes', n.id, n.number, n.status, n.business_date, i.id, i.number, i.business_date, i.total, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, n.late, l.id, il.hsn, it.unit, coalesce(l.qty, 0), l.gst_rate,\n    l.supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, 0\n  from radcore.credit_notes n join radcore.credit_note_lines l on l.credit_note_id = n.id\n    join radcore.invoice_lines il on il.id = l.invoice_line_id join radcore.invoices i on i.id = n.invoice_id\n    join radcore.items it on it.id = il.item_id\n  where n.status <> 'draft'",
+      "definition": "select 'invoices' as document_table, i.id as document_id, i.number as document_number, i.status, i.business_date as document_date,\n    i.id as invoice_id, i.number as invoice_number, i.business_date as invoice_date, i.total as invoice_value, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, false as late, l.id as line_id, l.hsn, it.unit as uqc, l.qty, l.gst_rate,\n    l.supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, l.cess_ad_valorem + l.cess_per_unit_amount as cess, i.total as document_value\n  from radcore.invoices i join radcore.invoice_lines l on l.invoice_id = i.id join radcore.items it on it.id = l.item_id\n  where i.status <> 'draft'\n  union all\n  select 'credit_notes', n.id, n.number, n.status, n.business_date, i.id, i.number, i.business_date, i.total, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, n.late, l.id, il.hsn, it.unit, coalesce(l.qty, 0), l.gst_rate,\n    l.supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, 0, n.total\n  from radcore.credit_notes n join radcore.credit_note_lines l on l.credit_note_id = n.id\n    join radcore.invoice_lines il on il.id = l.invoice_line_id join radcore.invoices i on i.id = n.invoice_id\n    join radcore.items it on it.id = il.item_id\n  where n.status <> 'draft'",
       "name": "gst_outward_lines",
       "schema": "radcore",
       "isExisting": false,

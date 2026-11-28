@@ -62,7 +62,11 @@ export const undoStatementImportContract = defineContract({
   output: z.object({}),
   errors: ['not_imported', 'statement_in_use'],
   // The backstop: a matched line's delete meets the match's foreign key.
-  dbErrors: { '23503:fk_bank_match_statement_lines_line': { code: 'statement_in_use', message: 'A line of this statement is matched: unmatch it first' } },
+  // PostgreSQL 16 (CI, production) raises 23503 for this ON DELETE RESTRICT key; 17 and later raise 23001 (auditor-2 on #459).
+  dbErrors: {
+    '23503:fk_bank_match_statement_lines_line': { code: 'statement_in_use', message: 'A line of this statement is matched: unmatch it first' },
+    '23001:fk_bank_match_statement_lines_line': { code: 'statement_in_use', message: 'A line of this statement is matched: unmatch it first' },
+  },
 });
 
 /** GET /bank/statement-lines (bank:read): an account's statement lines, newest first, a page at a time. */
@@ -132,4 +136,19 @@ export const bookChargeContract = defineContract({
   errors: ['already_matched', 'not_a_charge_account', 'account_inactive', 'period_locked', 'year_not_open', 'series_full', 'match_unbalanced',
     'not_this_account', 'entry_reversed'],
   dbErrors: MATCH_DB_ERRORS,
+});
+
+/** GET /bank/accounts/:id/book-lines (bank:read): a bank account's book lines not yet matched, of live entries, newest
+ * first, a page at a time, filtered by dates, direction (`in`, money into the account) and amount: the many entries a
+ * person picks for one match (RC-210; the architect on RAD-165). */
+export const listBookLinesContract = defineContract({
+  method: 'GET', path: '/bank/accounts/:id/book-lines', auth: 'session', perm: 'bank:read', tx: read,
+  input: listInput(z.object({ from: dateString().optional(), to: dateString().optional(), direction: z.enum(['in', 'out']).optional(),
+    amount: moneyString().optional() })).extend({ id: idString() }),
+  output: listOf(z.object({
+    journalLineId: idString(), entryId: idString(), entryNumber: z.string(), kind: z.string(), businessDate: dateString(),
+    direction: z.enum(['in', 'out']), amount: moneyString(), source: z.object({ table: z.string(), id: idString() }),
+    reference: z.string().nullable(), party: z.string().nullable(),
+  })),
+  errors: ['not_a_bank_account'],
 });

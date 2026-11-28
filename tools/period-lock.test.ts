@@ -1,13 +1,15 @@
 // RAD-157 (M5-09; ADR-009 §6, §7; ADR-006 F20; RC-039, RC-163; D-06) on PostgreSQL 16: the period lock moves forward
 // freely and waits for a posting in flight; back only when someone else holding books:unlock approves, and a request the
 // lock moved past is stale; two decisions at once take turns; a year closes in order, once locked and checked, with F20's
-// entry exactly; and a reopened year reverses its close dated 31 March, takes a posting and closes again. In a database
+// entry exactly; a reopened year reverses its close dated 31 March, takes a posting and closes again; and a bank charge
+// unmatched in a locked month is reversed today (ADR-009 §15). In a database
 // of its own: the period lock is one row, and these tests commit moves of it that every other file's postings would meet.
 import { randomUUID } from 'node:crypto';
 import {
-  askToUnlock, closeYear, moveLockForward, openFinancialYear, periodState, periodUnlockSpec, postManualJournal, type BooksCheck, type JournalLine,
+  askToUnlock, bookCharge, closeYear, moveLockForward, openFinancialYear, periodState, periodUnlockSpec, postManualJournal, unmatch, type BooksCheck,
+  type JournalLine,
 } from '@radcore/lib-accounts';
-import type { Money } from '@radcore/lib-common';
+import { indiaDate, type Money } from '@radcore/lib-common';
 import { decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { checkBooks } from '@radcore/lib-service';
@@ -193,5 +195,29 @@ describe.skipIf(!adminUrl)('the period lock and year close', { timeout: 60_000 }
     // Each holds the period lock FOR UPDATE before its request: the second sees the first's move and is stale.
     expect(both.toSorted()).toEqual(['approved', 'version_changed']);
     expect(['2026-10-15', '2026-10-01']).toContain(await lockNow());
+  });
+
+  it('unmatches a bank charge in a locked period, its reversal dated today (ADR-009 §15, M5-13)', async () => {
+    await setLock(null);
+    const clerk: Principal = { ...await user('accounts'), permissions: ['bank:read', 'bank:reconcile'] };
+    const row = async (text: string, values: unknown[]) => (await su().query<{ id: string }>(
+      `with p as (select set_config('app.principal', 'system:test', true)) ${text}`, values)).rows[0]?.id ?? '';
+    const bank = await row(`insert into radcore.accounts (name, type, parent_id) select 'Lock Bank', 'asset', a.id from radcore.accounts a, p
+      where a.system_key = 'bank' returning id`, []);
+    const charges = await row("insert into radcore.accounts (name, type) select 'Bank Charges', 'expense' from p returning id", []);
+    const file = await row(`insert into radcore.files (kind, store_key, filename, content_type, size, status)
+      select 'statement', $1, 'statement.csv', 'text/csv', 10, 'ready' from p returning id`, [`statement/${randomUUID()}`]);
+    const imported = await row(`insert into radcore.statement_imports (account_id, file_id, status, new_lines, present_lines, refusals)
+      select $1, $2, 'imported', 1, 0, '[]'::jsonb from p returning id`, [bank, file]);
+    const line = await row(`insert into radcore.bank_statement_lines (account_id, import_id, row_no, value_date, narration, reference, direction,
+      amount, balance) select $1, $2, 2, '2026-11-10', 'SMS ALERT CHARGES', '', 'out', '59.00', '-59.00' from p returning id`, [bank, imported]);
+    const { matchId } = await as(clerk)((ctx) => bookCharge(ctx, { id: line, accountId: charges }));
+    // The lock moves past the charge's day; unmatching still succeeds, reversing it today, not in the locked month.
+    await setLock('2026-11-20');
+    await as(clerk)((ctx) => unmatch(ctx, { id: matchId, reason: 'Tax invoice came' }));
+    const entries = (await su().query<{ date: string; reversal: boolean }>(`select business_date::text date, reverses_entry_id is not null reversal
+      from radcore.journal_entries where source_table = 'bank_matches' and source_id = $1 order by reversal`, [matchId])).rows;
+    expect(entries).toEqual([{ date: '2026-11-10', reversal: false }, { date: indiaDate(new Date()), reversal: true }]);
+    await setLock(null);
   });
 });

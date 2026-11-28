@@ -27,7 +27,7 @@ export {
   importStatement, markStatementUnreadable, readStatementFile, statementFileReader, statementFormatOf, statementImportById, statementImportJob, statementImportsPage, statementLinesPage, storeStatement, undoStatementImport,
 } from './services/bank-statements.ts';
 export type { StatementLayout } from './services/statement-layouts.ts';
-export { bookCharge, matchCandidates, matchLines, unmatch } from './services/bank-matching.ts';
+export { bookCharge, bookLinesPage, matchCandidates, matchLines, unmatch } from './services/bank-matching.ts';
 export {
   askToUnlock, closeYear, lockPeriodForMove, moveLockForward, periodState, periodUnlockSpec, YEAR_END_CHECKLIST, type BooksCheck,
 } from './services/period-lock.ts';
