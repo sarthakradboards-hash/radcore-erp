@@ -122,7 +122,20 @@ export const unmatchContract = defineContract({
   method: 'POST', path: '/bank/matches/:id/unmatch', auth: 'session', perm: 'bank:reconcile', tx: write,
   input: z.object({ id: idString(), reason: reason() }),
   output: z.object({}),
-  errors: ['not_matched'],
+  // A bank charge the match booked is reversed, dated today: the journal engine's refusals.
+  errors: ['not_matched', 'period_locked', 'year_not_open', 'series_full'],
+});
+
+/** POST /bank/statement-lines/:id/charge (bank:reconcile): a bank charge (a line out, to an expense account) or interest
+ * (a line in, to an income account) with no book entry, booked from the line and matched to it (ADR-009 §12, RC-210).
+ * Unmatching reverses it. */
+export const bookChargeContract = defineContract({
+  method: 'POST', path: '/bank/statement-lines/:id/charge', auth: 'session', perm: 'bank:reconcile', tx: write,
+  input: z.object({ id: idString(), accountId: idString() }),
+  output: z.object({ matchId: idString(), entry: z.string() }),
+  errors: ['already_matched', 'not_a_charge_account', 'account_inactive', 'period_locked', 'year_not_open', 'series_full', 'match_unbalanced',
+    'not_this_account', 'entry_reversed'],
+  dbErrors: MATCH_DB_ERRORS,
 });
 
 /** GET /bank/accounts/:id/book-lines (bank:read): a bank account's book lines not yet matched, of live entries, newest
@@ -137,5 +150,25 @@ export const listBookLinesContract = defineContract({
     direction: z.enum(['in', 'out']), amount: moneyString(), source: z.object({ table: z.string(), id: idString() }),
     reference: z.string().nullable(), party: z.string().nullable(),
   })),
+  errors: ['not_a_bank_account'],
+});
+
+/** GET /bank/accounts/:id/reconciliation (bank:read): the bank reconciliation statement as at `asAt` (ADR-009 §12,
+ * GL-132): the book balance and the statement's, the book lines the bank hasn't shown by then and the bank lines the books
+ * haven't (each listed, at most 500, with their whole count and signed total), and what they leave unexplained (the
+ * bank's balance before the books began, say). Null statement figures before the account's first statement line. */
+export const reconciliationContract = defineContract({
+  method: 'GET', path: '/bank/accounts/:id/reconciliation', auth: 'session', perm: 'bank:read', tx: read,
+  input: z.object({ id: idString(), asAt: dateString() }),
+  output: z.object({
+    asAt: dateString(), bookBalance: moneyString({ signed: true }), statementBalance: moneyString({ signed: true }).nullable(),
+    notInBank: z.object({ count: z.number().int().min(0), total: moneyString({ signed: true }), lines: z.array(z.object({
+      journalLineId: idString(), entryId: idString(), entryNumber: z.string(), kind: z.string(), businessDate: dateString(),
+      direction: z.enum(['in', 'out']), amount: moneyString() })) }),
+    notInBooks: z.object({ count: z.number().int().min(0), total: moneyString({ signed: true }), lines: z.array(z.object({
+      statementLineId: idString(), valueDate: dateString(), narration: z.string(), reference: z.string(), direction: z.enum(['in', 'out']),
+      amount: moneyString() })) }),
+    unexplained: moneyString({ signed: true }).nullable(),
+  }),
   errors: ['not_a_bank_account'],
 });

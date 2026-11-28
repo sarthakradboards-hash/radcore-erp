@@ -8,7 +8,8 @@ export const ENTRY_KINDS = [
   'opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice',
   'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work',
   'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer',
-  'manual', 'year_close',
+  // bank_charge: a bank charge or interest booked from a statement line (M5-13, ADR-009 §12).
+  'manual', 'year_close', 'bank_charge',
 ] as const;
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 
