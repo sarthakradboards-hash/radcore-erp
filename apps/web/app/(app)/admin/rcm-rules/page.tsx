@@ -17,8 +17,8 @@ import { t } from '../../../../lib/i18n/index.ts';
 import { MESSAGES } from '../shared.tsx';
 import type { RcmRule } from '../types.ts';
 
-// An empty note box is the contract's null.
-const ruleSchema = setRcmRule.input.extend({
+// An empty note box is the contract's null. safeExtend, not extend: the input is refined (withdrawnFrom), and extend() throws on that.
+const ruleSchema = setRcmRule.input.safeExtend({
   note: z.string().trim().transform((s) => (s === '' ? null : s)).pipe(setRcmRule.input.shape.note),
 });
 const SUPPLIERS = setRcmRule.input.shape.supplier.options;
