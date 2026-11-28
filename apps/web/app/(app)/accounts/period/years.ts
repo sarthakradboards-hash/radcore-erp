@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { t } from '../../../../lib/i18n/index.ts';
 
 const CODES = ['lock_in_future', 'lock_not_forward', 'lock_not_back', 'year_closed', 'year_not_closed', 'later_year_closed',
-  'lock_before_year_end', 'earlier_year_open', 'checklist_incomplete', 'books_check_failed', 'account_inactive', 'series_full', 'period_locked', 'year_not_open',
+  'lock_before_year_end', 'earlier_year_open', 'checklist_incomplete', 'books_check_failed', 'account_inactive', 'series_full', 'period_locked', 'month_filed', 'year_not_open',
   'own_request', 'approver_too_new', 'version_changed', 'not_pending'] as const;
 /** The period lock contracts' refusals in the screen's words, for Form's `messages` (also the unlock approvals page's). */
 export const PERIOD_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`books.period.err.${c}`)]));

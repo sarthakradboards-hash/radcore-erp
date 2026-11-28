@@ -18,13 +18,13 @@ export const MATCH_MESSAGES: Partial<Record<string, string>> = Object.fromEntrie
 export const CHARGE_MESSAGES: Partial<Record<string, string>> = {
   ...MATCH_MESSAGES,
   not_a_charge_account: t('books.bank.err.not_a_charge_account'), account_inactive: t('books.bank.err.account_inactive'),
-  period_locked: t('books.bank.err.charge.period_locked'), year_not_open: t('books.bank.err.charge.year_not_open'),
+  month_filed: t('books.err.month_filed'), period_locked: t('books.bank.err.charge.period_locked'), year_not_open: t('books.bank.err.charge.year_not_open'),
   series_full: t('books.bank.err.series_full'),
 };
 /** What an unmatch can be refused with. */
 export const UNMATCH_MESSAGES: Partial<Record<string, string>> = {
   ...MATCH_MESSAGES,
-  period_locked: t('books.bank.err.unmatch.period_locked'), year_not_open: t('books.bank.err.unmatch.year_not_open'),
+  month_filed: t('books.err.month_filed'), period_locked: t('books.bank.err.unmatch.period_locked'), year_not_open: t('books.bank.err.unmatch.year_not_open'),
   series_full: t('books.bank.err.series_full'),
 };
 
