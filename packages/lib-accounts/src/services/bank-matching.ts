@@ -8,12 +8,12 @@ import {
   accounts, accountsTx, after, bankMatches, bankMatchJournalLines, bankMatchStatementLines, bankStatementLines, expenses, journalEntries, journalLines, parties,
   payments, transfers,
 } from '@radcore/db/accounts';
-import { addDays, dec, idString, roundMoney } from '@radcore/lib-common';
+import { addDays, dec, idString, indiaDate, roundMoney } from '@radcore/lib-common';
 import { AppError, decodeCursor, defineSetting, describeError, encodeCursor, type Ctx, type JobContract } from '@radcore/lib-platform';
 import { and, asc, between, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, not, or } from 'drizzle-orm';
 import { z } from 'zod';
-import type { listBookLinesContract, listMatchCandidatesContract, matchLinesContract, unmatchContract } from '../contract-bank.ts';
-import { lockPeriod } from './journal.ts';
+import type { bookChargeContract, listBookLinesContract, listMatchCandidatesContract, matchLinesContract, unmatchContract } from '../contract-bank.ts';
+import { lockPeriod, postEntry, reverseEntry } from './journal.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -228,13 +228,56 @@ async function matchAs(kind: 'manual' | 'auto', ctx: Ctx, m: In<typeof matchLine
  * ledger row, so the period lock doesn't stop it (ADR-009 §12). */
 export async function unmatch(ctx: Ctx, { id, reason }: In<typeof unmatchContract>): Promise<Out<typeof unmatchContract>> {
   const tx = accountsTx(ctx);
+  // The period first (ADR-006 §1): a charge the match booked is reversed in this save.
+  await lockPeriod(ctx);
   const [match] = await tx.select({ unmatchedAt: bankMatches.unmatchedAt }).from(bankMatches).where(eq(bankMatches.id, id)).limit(1).for('update');
   if (match === undefined) return refuse('not_found', 'There’s no such match');
   if (match.unmatchedAt !== null) refuse('not_matched', 'This match is already undone');
   await tx.delete(bankMatchStatementLines).where(eq(bankMatchStatementLines.matchId, id));
   await tx.delete(bankMatchJournalLines).where(eq(bankMatchJournalLines.matchId, id));
+  // A bank charge or interest this match booked is reversed, dated today, so it's booked once (RC-210, ADR-009 §12).
+  const [charge] = await tx.select({ id: journalEntries.id }).from(journalEntries).where(and(eq(journalEntries.sourceTable, 'bank_matches'),
+    eq(journalEntries.sourceId, id), eq(journalEntries.kind, 'bank_charge'), isNull(journalEntries.reversesEntryId))).limit(1);
+  if (charge !== undefined) await reverseEntry(ctx, { entryId: charge.id, businessDate: indiaDate(new Date()), reason });
   await tx.update(bankMatches).set({ unmatchedAt: new Date(), unmatchReason: reason }).where(eq(bankMatches.id, id));
   return {};
+}
+
+/**
+ * POST /bank/statement-lines/:id/charge: a bank charge (a line out) or interest (a line in) with no book entry, booked
+ * from the line and matched to it in the same save (ADR-009 §12): a `bank_charge` entry on ordinary accounts, Dr the
+ * charges account and Cr the bank, or Dr the bank and Cr the interest account, dated the line's value date and sourced
+ * to its match. No input credit is claimed from a statement alone (CA-38): with the bank's tax invoice, unmatch (which
+ * reverses this) and enter the expense instead.
+ */
+export async function bookCharge(ctx: Ctx, c: In<typeof bookChargeContract>): Promise<Out<typeof bookChargeContract>> {
+  const tx = accountsTx(ctx);
+  await lockPeriod(ctx);
+  const [line] = await tx.select().from(bankStatementLines).where(eq(bankStatementLines.id, c.id)).limit(1).for('update');
+  if (line === undefined) return refuse('not_found', 'There’s no such statement line');
+  const [taken] = await tx.select({ id: bankMatchStatementLines.matchId }).from(bankMatchStatementLines)
+    .where(eq(bankMatchStatementLines.statementLineId, line.id)).limit(1);
+  if (taken !== undefined) refuse('already_matched', 'This line is already matched: unmatch it first');
+  const out = line.direction === 'out';
+  const [account] = await tx.select({ type: accounts.type, control: accounts.controlKind }).from(accounts)
+    .where(eq(accounts.id, c.accountId)).limit(1);
+  // An ordinary expense account for a charge, an ordinary income account for interest: never a control account, and
+  // never a money account, which is an asset.
+  if (account === undefined || account.control !== 'none' || account.type !== (out ? 'expense' : 'income')) {
+    refuse('not_a_charge_account', out ? 'Book a bank charge to an expense account' : 'Book interest to an income account');
+  }
+  const [match] = await tx.insert(bankMatches).values({ accountId: line.accountId, kind: 'manual' }).returning({ id: bankMatches.id });
+  if (match === undefined) throw new Error('The match was not saved');
+  const amount = roundMoney(line.amount);
+  const entry = await postEntry(ctx, { kind: 'bank_charge', businessDate: line.valueDate, source: { table: 'bank_matches', id: match.id },
+    lines: out ? [{ account: { id: c.accountId }, debit: amount }, { account: { id: line.accountId }, credit: amount }]
+      : [{ account: { id: line.accountId }, debit: amount }, { account: { id: c.accountId }, credit: amount }] });
+  const [bankSide] = await tx.select({ id: journalLines.id }).from(journalLines)
+    .where(and(eq(journalLines.entryId, entry.id), eq(journalLines.accountId, line.accountId))).limit(1);
+  if (bankSide === undefined) throw new Error('The charge posted no bank line');
+  await tx.insert(bankMatchStatementLines).values({ matchId: match.id, statementLineId: line.id });
+  await tx.insert(bankMatchJournalLines).values({ matchId: match.id, journalLineId: bankSide.id });
+  return { matchId: match.id, entry: entry.number };
 }
 
 /** Which of these statement lines are matched, and to which match: for the lines list, the imports list and undo. */

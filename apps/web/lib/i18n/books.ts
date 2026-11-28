@@ -30,6 +30,7 @@ export const books = {
   'books.kind.tds_deposit': 'TDS deposit',
   'books.kind.transfer': 'Transfer',
   'books.kind.year_close': 'Year close',
+  'books.kind.bank_charge': 'Bank charge or interest',
   'books.type.asset': 'Assets',
   'books.type.liability': 'Liabilities',
   'books.type.equity': 'Equity',

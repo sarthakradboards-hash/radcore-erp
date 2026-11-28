@@ -1,5 +1,5 @@
 {
-  "id": "be9266b0-a444-454d-a3cd-08364616d438",
+  "id": "7a753916-916b-467a-b675-a0ec0d1cce1f",
   "prevId": "1a37c358-3d49-46eb-a344-00e44256b139",
   "version": "7",
   "dialect": "postgresql",
@@ -934,7 +934,7 @@
         },
         "ck_journal_entries_kind": {
           "name": "ck_journal_entries_kind",
-          "value": "\"radcore\".\"journal_entries\".\"kind\" in ('opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice', 'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work', 'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer', 'manual', 'year_close')"
+          "value": "\"radcore\".\"journal_entries\".\"kind\" in ('opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice', 'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work', 'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer', 'manual', 'year_close', 'bank_charge')"
         },
         "ck_journal_entries_source_table": {
           "name": "ck_journal_entries_source_table",
@@ -1063,16 +1063,6 @@
           "notNull": true,
           "default": "'0'"
         },
-        "signed_amount": {
-          "name": "signed_amount",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "debit - credit",
-            "type": "stored"
-          }
-        },
         "party_id": {
           "name": "party_id",
           "type": "uuid",
@@ -1104,33 +1094,6 @@
             },
             {
               "expression": "account_control_kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_journal_lines_bank_candidates": {
-          "name": "ix_journal_lines_bank_candidates",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "signed_amount",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "business_date",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1314,10 +1277,6 @@
         "ck_journal_lines_one_side": {
           "name": "ck_journal_lines_one_side",
           "value": "(\"radcore\".\"journal_lines\".\"debit\" > 0) <> (\"radcore\".\"journal_lines\".\"credit\" > 0)"
-        },
-        "ck_journal_lines_signed_amount": {
-          "name": "ck_journal_lines_signed_amount",
-          "value": "\"radcore\".\"journal_lines\".\"signed_amount\" <> 'NaN'"
         },
         "ck_journal_lines_party": {
           "name": "ck_journal_lines_party",
