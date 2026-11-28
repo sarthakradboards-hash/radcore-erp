@@ -16,6 +16,7 @@ import { defineRoute } from './route.ts';
  * .test.ts holds this list to apps/web/app's page files, so a new page fails there until it has its line. */
 export const WEB_PAGES = ['/', '/account/password', '/account/sessions', '/accounts/bank', '/accounts/chart', '/accounts/collect', '/accounts/collect/[partyId]',
   '/accounts/expense-categories',
+  '/accounts/gst/gstr1',
   '/accounts/journal',
   '/accounts/journal/[id]', '/accounts/journal/new', '/accounts/payments', '/accounts/payments/[id]', '/accounts/payments/new',
   '/accounts/period',

@@ -150,8 +150,10 @@ export const ROUTE_CHECKS: Readonly<Record<string, string>> = {
   'GET /bank/statement-lines': 'bank:read',
   'GET /bank/statement-lines/:id/candidates': 'bank:read',
   'GET /bank/accounts/:id/book-lines': 'bank:read',
+  'GET /bank/accounts/:id/reconciliation': 'bank:read',
   'POST /bank/matches': 'bank:reconcile',
   'POST /bank/matches/:id/unmatch': 'bank:reconcile',
+  'POST /bank/statement-lines/:id/charge': 'bank:reconcile',
   'GET /books/period': 'books:lock',
   'POST /books/period/lock': 'books:lock',
   'POST /books/period/unlock-requests': 'books:lock',
@@ -439,6 +441,7 @@ export const JOB_PRINCIPALS: Readonly<Record<string, string>> = {
   'crm.meta-lead': 'system meta-leads [leads:read, leads:write]',
   'crm.whatsapp-message': 'system whatsapp [leads:read, leads:write]',
   'accounts.statement-import': 'user bank:reconcile',
+  'accounts.bank-auto-match': 'user bank:reconcile',
 };
 
 /** Which libraries each route's and job's own code reaches (RAD-84, M1-19, RC-153), keyed as above: the library of the
@@ -582,8 +585,10 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'GET /bank/statement-lines': ['lib-accounts', 'lib-platform'],
   'GET /bank/statement-lines/:id/candidates': ['lib-accounts', 'lib-platform'],
   'GET /bank/accounts/:id/book-lines': ['lib-accounts', 'lib-platform'],
+  'GET /bank/accounts/:id/reconciliation': ['lib-accounts', 'lib-platform'],
   'POST /bank/matches': ['lib-accounts', 'lib-platform'],
   'POST /bank/matches/:id/unmatch': ['lib-accounts', 'lib-platform'],
+  'POST /bank/statement-lines/:id/charge': ['lib-accounts', 'lib-platform'],
   'GET /books/period': ['lib-accounts', 'lib-platform'],
   'POST /books/period/lock': ['lib-accounts', 'lib-platform'],
   'POST /books/period/unlock-requests': ['lib-accounts', 'lib-platform'],
@@ -868,4 +873,5 @@ export const ROUTE_REACH: Readonly<Record<string, readonly string[]>> = {
   'crm.meta-lead': CRM_DOORS,
   'crm.whatsapp-message': CRM_DOORS,
   'accounts.statement-import': ['lib-accounts', 'lib-platform'],
+  'accounts.bank-auto-match': ['lib-accounts', 'lib-platform'],
 };

@@ -768,8 +768,22 @@
     {
       "idx": 109,
       "version": "7",
-      "when": 1795859630123,
-      "tag": "0110_rcm_expenses",
+      "when": 1795859480080,
+      "tag": "0110_bank_charge",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1795862041795,
+      "tag": "0111_bank_candidates",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1795862884627,
+      "tag": "0112_rcm_expenses",
       "breakpoints": true
     }
   ]

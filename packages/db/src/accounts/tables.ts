@@ -1,6 +1,6 @@
 // lib-accounts' tables (ADR-001 §3, §5). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument or a generated column.
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, date, foreignKey, index, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid,
+import { bigint, boolean, check, date, foreignKey, index, numeric, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid,
   type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { boundedText, createdMoment, id, money, radcoreTable, trigramIndex } from '../columns.ts';
 import { publicLinks } from '../platform/tables.ts';
@@ -102,7 +102,7 @@ export const journalEntries = radcoreTable('journal_entries', {
   // The transaction that wrote it, set by the database: its lines are written in the same one, never added later.
   txId: bigint({ mode: 'number' }).notNull().default(0),
 }, (t) => [
-  check('ck_journal_entries_kind', sql`${t.kind} in ('opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice', 'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work', 'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer', 'manual', 'year_close')`),
+  check('ck_journal_entries_kind', sql`${t.kind} in ('opening', 'goods_receipt', 'purchase_bill', 'supplier_return', 'delivery', 'delivery_return', 'invoice', 'credit_note', 'payment_in', 'payment_out', 'expense', 'stock_transfer', 'stock_adjustment', 'job_work', 'revaluation', 'salary_advance', 'payroll', 'payroll_payment', 'statutory_payment', 'tds_deposit', 'transfer', 'manual', 'year_close', 'bank_charge')`),
   check('ck_journal_entries_source_table', sql`${t.sourceTable} ~ '^[a-z][a-z0-9_]*$' and to_regclass('radcore.' || ${t.sourceTable}) is not null`),
   // A manual journal is its own document, and says why.
   // A manual journal is its own document; its reversal belongs to the same document, the original (RAD-86's routes).
@@ -139,12 +139,15 @@ export const journalLines = radcoreTable('journal_lines', {
   ruleKind: text().generatedAlwaysAs(sql`nullif(account_control_kind, 'none')`),
   debit: money().notNull().default('0'),
   credit: money().notNull().default('0'),
+  // Debit less credit (M5-13, ADR-009 §12): a bank line's candidates are one indexed read by account, amount and date.
+  signedAmount: numeric({ precision: 18, scale: 2 }).notNull().generatedAlwaysAs(sql`debit - credit`),
   partyId: uuid(),
   itemId: uuid(),
   locationId: uuid(),
 }, (t) => [
   check('ck_journal_lines_line_no', sql`${t.lineNo} > 0`),
   check('ck_journal_lines_one_side', sql`(${t.debit} > 0) <> (${t.credit} > 0)`),
+  check('ck_journal_lines_signed_amount', sql`${t.signedAmount} <> 'NaN'`),
   check('ck_journal_lines_party', sql`(${t.accountControlKind} = 'party') = (${t.partyId} is not null)`),
   check('ck_journal_lines_stock', sql`(${t.accountControlKind} = 'stock') = (${t.itemId} is not null and ${t.locationId} is not null)
     and (${t.itemId} is null) = (${t.locationId} is null)`),
@@ -158,6 +161,7 @@ export const journalLines = radcoreTable('journal_lines', {
   foreignKey({ name: 'fk_journal_lines_fy_start', columns: [t.fyStart], foreignColumns: [financialYears.start] }),
   // Each foreign key's own index (the schema test), the account's first, for the ledger's reads.
   index('ix_journal_lines_account').on(t.accountId, t.accountControlKind),
+  index('ix_journal_lines_bank_candidates').on(t.accountId, t.signedAmount, t.businessDate),
   index('ix_journal_lines_entry').on(t.entryId, t.entryKind, t.businessDate),
   index('ix_journal_lines_rule').on(t.ruleKind, t.entryKind),
   index('ix_journal_lines_fy_start').on(t.fyStart),
