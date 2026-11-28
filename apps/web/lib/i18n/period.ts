@@ -55,6 +55,7 @@ export const period = {
   'books.period.err.books_check_failed': 'The books check finds problems as at the year’s 31 March. Put them right before closing.',
   'books.period.err.account_inactive': 'An account the close posts to is inactive. Make it active again, then close.',
   'books.period.err.period_locked': 'The books are locked on the day this posts. Reload to see where the lock stands now.',
+  'books.period.err.month_filed': 'A GST return for that month is filed, so what it reports can’t change. Date it in an open month; a filed sale is corrected with a credit note.',
   'books.period.err.year_not_open': 'That day’s financial year isn’t open in the books.',
   'books.period.err.series_full': 'The journal’s number series is full. Ask your admin to widen it.',
   'books.period.err.own_request': 'You asked for this, so someone else decides it.',

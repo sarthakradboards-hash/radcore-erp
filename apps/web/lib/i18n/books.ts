@@ -125,6 +125,7 @@ export const books = {
   'books.err.invalid_line': 'Each line needs one amount above zero, as a debit or a credit.',
   'books.err.unknown_account': 'One of these accounts no longer exists. Reload to see the chart.',
   'books.err.period_locked': 'That day’s period is locked, so nothing can be posted on it. Choose a later day.',
+  'books.err.month_filed': 'A GST return for that month is filed, so what it reports can’t change. Date it in an open month; a filed sale is corrected with a credit note.',
   'books.err.year_not_open': 'That day’s financial year isn’t open in the books yet.',
   'books.err.bank_matched': 'This is matched to a bank statement line. Unmatch it on the bank statements page first.',
   'books.err.already_reversed': 'This entry is already reversed.',
