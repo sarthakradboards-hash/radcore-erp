@@ -285,6 +285,14 @@ describe.skipIf(!url || !superUrl)('expenses', { timeout: 60_000 }, () => {
       expect((await rcmOf(id))[0]?.[0]).toBe(s);
     });
 
+    it('refuses an overseas supplier’s line with no SAC and no category default, at the line’s SAC (sac_required, auditor-2 on #466)', async () => {
+      const abroad = await supplied(await setup({ state: '27', name: 'Advertising' }), true);
+      // At 0% the line fits its tax, so without the check it would post owing no RCM at all.
+      const id = await draft(abroad, { lines: [{ taxable: '10000', gstRate: '0' }], total: '10000', pay: null });
+      const refused = await post(abroad, id).then(() => null, (e: unknown) => e as AppError);
+      expect([refused?.code, refused?.issues[0]?.path]).toEqual(['sac_required', ['lines', 0, 'sac']]);
+    });
+
     it('stops reverse charge from a rule’s withdrawal day: the supplier’s own GST is then on its bill', async () => {
       const at = await supplied(await setup({ state: '27', name: 'Freight' }));
       const s = await rated(at, '5', { from: '2026-04-01', withdrawnFrom: DATE });

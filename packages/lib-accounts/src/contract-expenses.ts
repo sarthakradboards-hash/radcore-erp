@@ -126,7 +126,7 @@ const DRAFT_ERRORS = ['date_in_future', 'supplier_date_after_bill', 'needs_suppl
   'account_inactive', 'unknown_account', 'category_inactive', 'not_in_category', 'wrong_file_kind', 'upload_refused', 'not_ready', 'unknown_section'] as const;
 const POST_ERRORS = [...DRAFT_ERRORS, 'wrong_status', 'bill_file_required', 'tax_mismatch', 'total_mismatch', 'period_locked', 'year_not_open',
   'company_profile_incomplete', 'series_full', 'tds_needs_party', 'tds_overseas', 'no_tds_rate', 'tds_payee_mismatch', 'rcm_bill_has_tax',
-  'no_gst_rate'] as const;
+  'no_gst_rate', 'sac_required'] as const;
 
 /** GET /expenses (expenses:read): newest business date first, a page at a time; by status. */
 export const listExpenses = defineContract({

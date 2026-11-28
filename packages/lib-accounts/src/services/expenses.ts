@@ -189,6 +189,11 @@ async function post(ctx: Ctx, id: string, approved: boolean): Promise<Out<typeof
   const rules = party === null ? [] : await rcmRulesOn(ctx, e.supplierInvoiceDate);
   const rcmAt = draft.lines.map((_, n) => party !== null && sacs[n] != null && isReverseCharge(sacs[n] ?? '', party, e.supplierInvoiceDate, rules));
   for (const [n, l] of draft.lines.entries()) {
+    // Everything from an overseas supplier is reverse charge, and its rate is the SAC's: without one, no RCM Payable.
+    if (party?.overseas === true && sacs[n] == null) {
+      throw refuseAt('sac_required', 'An overseas supplier’s service is under reverse charge: enter its SAC, or set a default SAC on its category',
+        ['lines', n, 'sac']);
+    }
     if (rcmAt[n] === true) {
       if (!heads(l).isZero()) {
         throw refuseAt('rcm_bill_has_tax', 'This service is under reverse charge: its tax is ours to pay, so enter the bill’s line without the supplier’s GST',
