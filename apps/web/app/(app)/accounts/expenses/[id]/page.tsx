@@ -99,6 +99,7 @@ export default function ExpensePage() {
         <div className="kit-actions">
           {draft && !e.awaitingApproval && e.fileId !== null
             ? <button type="button" className="kit-button kit-button-primary" onClick={() => setDialog('post')}>{t('books.expense.post')}</button> : null}
+          {draft ? <Link className="kit-button" href={`/accounts/expenses/${id}/edit`}>{t('books.expense.form.editLink')}</Link> : null}
           {draft ? <button type="button" className="kit-button" onClick={() => setDialog('delete')}>{t('books.expense.delete')}</button> : null}
           {e.status === 'posted' ? <button type="button" className="kit-button" onClick={() => setDialog('cancel')}>{t('books.expense.cancel')}</button> : null}
         </div>

@@ -28,7 +28,9 @@ const columns: Column<Row>[] = [
 ];
 
 export default function ExpensesPage() {
-  const mayRead = useMe().permissions.includes('expenses:read');
+  const { permissions } = useMe();
+  const mayRead = permissions.includes('expenses:read');
+  const mayWrite = permissions.includes('expenses:write');
   const [show, setShow] = useState<Show>('all');
   const list = useApiList(listExpenses, { filter: show === 'all' ? {} : { status: show } }, { enabled: mayRead });
   return (
@@ -42,6 +44,7 @@ export default function ExpensesPage() {
               { value: 'all', label: t('books.expense.all') },
               ...(['draft', 'posted', 'cancelled'] as const).map((s) => ({ value: s, label: t(`books.expense.status.${s}`) })),
             ]} />
+            {mayWrite ? <Link className="kit-button kit-button-primary" href="/accounts/expenses/new">{t('books.expense.form.new')}</Link> : null}
           </div>
           <DataTable caption={t('books.expense.title')} columns={columns} rowKey={(r) => r.id} list={list} empty={t('books.expense.empty')} />
         </>
