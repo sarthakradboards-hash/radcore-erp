@@ -79,7 +79,6 @@ async function refuseFiled(ctx: Ctx, kind: string, businessDate: string, origina
  * (the database's foreign key holds that too, RC-111). A document's service calls it first, before locking its
  * documents; postEntry and lib-stock's postStock call it again on entry, which costs nothing and keeps every check
  * under the lock (the architect on RAD-93).
- * shortcut: the filed-month lock row (M5-08) joins this read when its table lands.
  */
 export async function holdPeriod(ctx: Ctx, businessDate: string): Promise<void> {
   const through = await lockPeriod(ctx);

@@ -1,7 +1,8 @@
 // The filed-month lock (M5-08, RAD-156; ADR-009 §5, §9; RC-012), re-exported by ./contract: a month's return marked
 // filed under gst:file, after which nothing it reports changes. Like every contract file it imports only zod and
 // lib-common (D5).
-import { dateString, defineContract, idString, listInput, listOf, momentString, principalOut } from '@radcore/lib-common';
+import { dateString, defineContract, idString, listInput, listOf, momentString, principalOut, reason } from '@radcore/lib-common';
+import { approvalContracts } from '@radcore/lib-platform/contract';
 import { z } from 'zod';
 
 const read = { readOnly: true, isolation: 'read committed' } as const;
@@ -31,3 +32,20 @@ export const markGstFiling = defineContract({
   errors: ['month_not_ended', 'filing_gap', 'filing_start_not_set', 'already_filed', 'date_in_future', 'filed_before_month_end'],
   dbErrors: { '23505:ux_gst_filings_live': { code: 'already_filed', message: 'This return is already filed for that month' } },
 });
+
+// What asking to undo a filing, and its approval again, checks (ADR-009 §5).
+const UNDO = ['filing_undone', 'not_latest_filing'] as const;
+
+/** POST /gst/filings/:id/undo-requests (gst:file): asks to undo the latest live filing of its return, with the reason.
+ * Someone else holding books:unlock decides it (`gst-filing-undo` approvals, D-06). */
+export const askFilingUndo = defineContract({
+  method: 'POST', path: '/gst/filings/:id/undo-requests', auth: 'session', perm: 'gst:file', tx: write,
+  input: z.object({ id: idString(), reason: reason() }),
+  output: z.object({ id: idString(), versionHash: z.string() }),
+  errors: [...UNDO],
+});
+
+/** An undo, decided under books:unlock, never by its asker (D-06): it marks the filing undone (its row and snapshot
+ * stay) and moves that return's lock back to the month before. A request a later filing made stale is refused
+ * (`version_changed`). */
+export const filingUndoApproval = approvalContracts('gst-filing-undo', 'books:unlock', [...UNDO]);
