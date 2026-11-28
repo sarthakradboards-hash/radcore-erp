@@ -76,13 +76,16 @@ describe.skipIf(!url || !superUrl)('receipts, payments and refunds', { timeout: 
       ['bank', null, '9800.00', '0.00'], ['tds_receivable', null, '200.00', '0.00'], ['debtors', p, '0.00', '10000.00']]);
   });
 
-  it('posts a payment: Dr Creditors, Cr Bank, and Cr TDS Payable for TDS held, numbered PV', async () => {
+  // A payment's TDS comes from its section (RAD-158, tools/tds-booking.test.ts): typed alone, it's refused.
+  it('posts a payment: Dr Creditors, Cr Bank, numbered PV; TDS typed with no section is refused', async () => {
     const p = await party();
+    expect(await code(run(async (ctx) => recordPayment(ctx, { kind: 'payment', partyId: p, businessDate: DAY, amount: m('5000.00'),
+      tds: m('50.00'), accountId: await systemId('bank') })))).toBe('invalid_tds');
     const r = await run(async (ctx) => recordPayment(ctx, { kind: 'payment', partyId: p, businessDate: DAY, amount: m('5000.00'),
-      tds: m('50.00'), accountId: await systemId('bank') }));
+      accountId: await systemId('bank') }));
     expect(r).toMatchObject({ status: 'posted', number: expect.stringMatching(/^PV\/26-27\/\d{5}$/) });
     expect(await linesOf((await paymentRow(r.id))?.posted_entry_id ?? null)).toEqual([
-      ['creditors', p, '5000.00', '0.00'], ['bank', null, '0.00', '4950.00'], ['tds_payable', null, '0.00', '50.00']]);
+      ['creditors', p, '5000.00', '0.00'], ['bank', null, '0.00', '5000.00']]);
   });
 
   it('refunds a customer against the receipt it names, never more than is left of it, nor dated before it', async () => {

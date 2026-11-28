@@ -39,6 +39,13 @@ export async function paymentUsed(ctx: Ctx, paymentId: string) {
 }
 
 /** POST /payments/:id/allocations: applies a posted receipt or payment to documents, within what's left of it. */
+/** The payments under a TDS section each save made, by its ctx (one per transaction). */
+const advancesOf = new WeakMap<Ctx, Set<string>>();
+/** For payments.ts: this save made a payment under a TDS section, so it isn't applied in this save. */
+export function madeAdvance(ctx: Ctx, paymentId: string): void {
+  advancesOf.set(ctx, (advancesOf.get(ctx) ?? new Set()).add(paymentId));
+}
+
 export async function allocatePayment(ctx: Ctx, a: In<typeof allocatePaymentContract>): Promise<Out<typeof allocatePaymentContract>> {
   await dated(ctx, a.businessDate);
   const tx = accountsTx(ctx);
@@ -47,6 +54,9 @@ export async function allocatePayment(ctx: Ctx, a: In<typeof allocatePaymentCont
   if (a.businessDate < p.businessDate) refuse('date_before_source', 'An allocation is dated on or after its payment');
   if (p.kind === 'refund') refuse('not_allocatable', 'A refund pays a receipt back; it isn’t applied to documents');
   if (p.status !== 'posted') refuse('not_posted', 'Only a posted payment is applied');
+  // A payment that deducts TDS is an advance: a bill deducts its own, so it isn't applied in the save that made it;
+  // applied later, it changes neither row (the architect on RAD-158).
+  if (advancesOf.get(ctx)?.has(p.id) === true) refuse('tds_on_applied_payment', 'A payment that deducts TDS is an advance: apply it to a bill in a later save');
   const { allocated, refunded } = await paymentUsed(ctx, p.id);
   if (allocated.plus(refunded).plus(sum(a.lines.map((l) => l.amount))).gt(p.amount)) {
     refuse('exceeds_payment', 'That’s more than is left of the payment');

@@ -44,7 +44,7 @@ export const ACCOUNTS_PAGES = [
   { href: '/accounts/transfers', label: 'books.nav.transfers', perm: 'payments:read' },
   { href: '/accounts/period', label: 'books.nav.period', perm: 'books:lock' },
   { href: '/accounts/period/approvals', label: 'books.nav.unlocks', perm: 'books:unlock' },
-  { href: '/accounts/expense-categories', label: 'books.nav.expenseCategories', perm: 'journal:read' },
+  { href: '/accounts/expense-categories', label: 'books.nav.expenseCategories', perm: 'journal:read', also: 'expenses:read' },
   { href: '/accounts/gst/gstr1', label: 'gst.nav.gstr1', perm: 'gst:returns' },
 ] as const satisfies readonly NavPage[];
 

@@ -1,5 +1,6 @@
 // A payment as its form holds it (RAD-126 on RAD-116's contract): a receipt (money in from a customer) or a payment (out to a supplier),
-// its party, date, amount, any TDS held back, the money account, and the money's own trail (an approval code, a UTR, a cheque number),
+// its party, date, amount, its TDS (a receipt's as the customer held it back; a payment's worked out by the server from the section
+// picked, a typed figure only checking it, RAD-158), the money account, and the money's own trail (an approval code, a UTR, a cheque number),
 // which is never card digits: that is refused here as the server refuses it. Refunds wait for the payments list (they name a receipt).
 // The allocation form holds an amount against each open bill. The checks are the contract's own.
 import { dec, indiaDate, looksLikeCardNumber, moneyString } from '@radcore/lib-common';
@@ -13,25 +14,32 @@ const shape = recordPaymentContract.input.shape;
 const positive = (a: string) => moneyString().safeParse(a).success && dec(a).gt(0);
 
 export const PAYMENT_KINDS = ['receipt', 'payment'] as const;
+const hasTdsBox = (v: { kind: (typeof PAYMENT_KINDS)[number]; tdsSectionId: string }) => v.kind === 'receipt' || v.tdsSectionId !== '';
 
 export const paymentSchema = z.object({
   kind: z.enum(PAYMENT_KINDS),
   partyId: z.string().min(1, t('books.pay.party.none')).pipe(shape.partyId),
   businessDate: shape.businessDate,
   amount: z.string().trim().refine(positive, t('books.pay.err.amount')).pipe(shape.amount),
-  tds: z.string().trim().refine((a) => a === '' || moneyString().safeParse(a).success, t('books.pay.err.tds')),
+  tds: z.string().trim(),
+  tdsSectionId: z.string(),
   accountId: z.string().min(1, t('books.pay.err.account')).pipe(shape.accountId),
   reference: z.string().trim().refine((r) => !looksLikeCardNumber(r), t('books.pay.err.card.digits')),
   narration: z.string().trim(),
-}).transform((v) => ({
-  kind: v.kind, partyId: v.partyId, businessDate: v.businessDate, amount: v.amount, accountId: v.accountId,
-  ...(v.tds === '' ? {} : { tds: v.tds }), ...(v.reference === '' ? {} : { reference: v.reference }), ...(v.narration === '' ? {} : { narration: v.narration }),
-}));
+})
+  // The TDS box is checked and sent only where it's shown: a receipt, or a payment under a section.
+  .refine((v) => !hasTdsBox(v) || v.tds === '' || moneyString().safeParse(v.tds).success, { path: ['tds'], message: t('books.pay.err.tds') })
+  .transform((v) => ({
+    kind: v.kind, partyId: v.partyId, businessDate: v.businessDate, amount: v.amount, accountId: v.accountId,
+    ...(v.kind === 'payment' && v.tdsSectionId !== '' ? { tdsSectionId: v.tdsSectionId } : {}),
+    ...(hasTdsBox(v) && v.tds !== '' ? { tds: v.tds } : {}),
+    ...(v.reference === '' ? {} : { reference: v.reference }), ...(v.narration === '' ? {} : { narration: v.narration }),
+  }));
 export type PaymentInput = z.input<typeof paymentSchema>;
 export type PaymentValues = z.output<typeof paymentSchema>;
 
 export const NEW_PAYMENT: PaymentInput = {
-  kind: 'receipt', partyId: '', businessDate: indiaDate(new Date()), amount: '', tds: '', accountId: '', reference: '', narration: '',
+  kind: 'receipt', partyId: '', businessDate: indiaDate(new Date()), amount: '', tds: '', tdsSectionId: '', accountId: '', reference: '', narration: '',
 };
 
 const lineShape = allocatePaymentContract.input.shape.lines.element.shape;

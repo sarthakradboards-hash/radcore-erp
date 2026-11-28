@@ -30,8 +30,8 @@ export const gstRates = radcoreTable('gst_rates', {
  * Reverse-charge rules by date (M5-03, RAD-153; ADR-010 §4; RC-057, CA-04, CA-06): a service's SAC prefix (or a notified
  * good's HSN prefix, section 9(4)) and the supplier it applies to, in force from a date. A purchase line whose code
  * starts with the prefix, from such a supplier, on or after that date, is reverse charge: we owe its tax, not the
- * supplier. Each row names its source and whether the CA has confirmed it (D-08). Never deleted: corrected in place
- * with a reason, under gst:write.
+ * supplier, until the day it's withdrawn, if it is. Each row names its source and whether the CA has confirmed it (D-08).
+ * Never deleted: corrected in place or withdrawn, with a reason, under gst:write.
  */
 export const rcmRules = radcoreTable('rcm_rules', {
   id: id(),
@@ -42,7 +42,10 @@ export const rcmRules = radcoreTable('rcm_rules', {
   source: boundedText({ max: 200 }).notNull(),
   note: boundedText({ max: 500 }),
   confirmed: boolean().notNull().default(false),
+  // The first day it no longer applies (auditor-2 on #431): a wrong rule is withdrawn, and the right one added beside it.
+  withdrawnFrom: date({ mode: 'string' }),
 }, (t) => [
+  check('ck_rcm_rules_withdrawn', sql`${t.withdrawnFrom} is null or ${t.withdrawnFrom} > ${t.effectiveFrom}`),
   uniqueIndex('ux_rcm_rules_prefix_supplier_from').on(t.prefix, t.supplier, t.effectiveFrom),
   check('ck_rcm_rules_prefix', sql`${t.prefix} ~ '^[0-9]{2,8}$'`),
   check('ck_rcm_rules_supplier', sql`${t.supplier} in ('unregistered', 'any', 'not_body_corporate')`),

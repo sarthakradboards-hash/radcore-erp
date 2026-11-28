@@ -93,6 +93,12 @@ it('marks only the closest page of a section as current (e2e-2 on #470)', () => 
   expect(currentHref(hrefs, '/accounts/banking')).toBeUndefined();
 });
 
+it('offers expense categories only with both of its keys (e2e-playwright on #466)', () => {
+  const page = ACCOUNTS_PAGES.find((p) => p.href === '/accounts/expense-categories');
+  expect(page !== undefined && allowed(page, ['journal:read'])).toBe(false);
+  expect(page !== undefined && allowed(page, ['journal:read', 'expenses:read'])).toBe(true);
+});
+
 it('offers the bank page only with both of its keys (e2e-2 on #439)', () => {
   const bank = ACCOUNTS_PAGES.find((p) => p.href === '/accounts/bank');
   expect(bank !== undefined && allowed(bank, ['bank:read'])).toBe(false);

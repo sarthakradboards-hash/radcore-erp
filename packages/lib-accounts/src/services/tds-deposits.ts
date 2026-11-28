@@ -2,10 +2,10 @@
 // each in full and once, and posts Dr TDS Payable, Cr the bank. Its payees' rows are held while it's paid, so a cancel of
 // one of its bookings (reverseTds, which holds the same row) can't reverse it at the same moment.
 //   locks (ADR-009 §7): the period FOR SHARE → the payees' party rows, by id → the series, the journal's first
-import { accountsTx, after, tdsDeductions, tdsDepositLines, tdsDeposits } from '@radcore/db/accounts';
+import { accounts, accountsTx, after, journalLines, tdsDeductions, tdsDepositLines, tdsDeposits } from '@radcore/db/accounts';
 import { dec, indiaDate, roundMoney } from '@radcore/lib-common';
 import { AppError, decodeCursor, defineSeries, encodeCursor, holdSeries, nextNumber, type Ctx } from '@radcore/lib-platform';
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, not } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, not, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import type { listTdsDeductions, recordTdsDeposit } from '../contract-tds.ts';
 import { holdPeriod, JOURNAL_SERIES, postEntry } from './journal.ts';
@@ -77,4 +77,21 @@ export async function tdsDeductionsPage(ctx: Ctx, input: In<typeof listTdsDeduct
   return { items: page.map(({ d, deposited }) => ({ id: d.id, sourceTable: d.sourceTable, sourceId: d.sourceId, partyId: d.partyId, sectionId: d.sectionId,
     businessDate: d.businessDate, base: d.base, rate: d.rate, amount: roundMoney(d.amount), deposited: deposited !== null })),
     next: rows.length > input.limit && last ? encodeCursor({ date: last.d.businessDate, id: last.d.id }) : null };
+}
+
+/** For the books check (ADR-009 §4), as at a date: TDS Payable, credits less debits, less the lines of `payroll` entries
+ * (salary TDS is M6-08's own line); and the deductions, net of reversals, less those deposited. They agree when every
+ * credit to TDS Payable has its row. */
+export async function tdsPayableFigures(ctx: Ctx, asAt?: string): Promise<{ books: string; open: string }> {
+  const tx = accountsTx(ctx);
+  const [books] = await tx.select({ credit: sum(journalLines.credit), debit: sum(journalLines.debit) }).from(journalLines)
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .where(and(eq(accounts.systemKey, 'tds_payable'), ne(journalLines.entryKind, 'payroll'), asAt === undefined ? undefined : lte(journalLines.businessDate, asAt)));
+  const [deducted] = await tx.select({ v: sum(tdsDeductions.amount) }).from(tdsDeductions)
+    .where(asAt === undefined ? undefined : lte(tdsDeductions.businessDate, asAt));
+  const [deposited] = await tx.select({ v: sum(tdsDeductions.amount) }).from(tdsDepositLines)
+    .innerJoin(tdsDeposits, eq(tdsDeposits.id, tdsDepositLines.depositId)).innerJoin(tdsDeductions, eq(tdsDeductions.id, tdsDepositLines.deductionId))
+    .where(asAt === undefined ? undefined : lte(tdsDeposits.businessDate, asAt));
+  return { books: dec(books?.credit ?? '0').minus(dec(books?.debit ?? '0')).toString(),
+    open: dec(deducted?.v ?? '0').minus(dec(deposited?.v ?? '0')).toString() };
 }

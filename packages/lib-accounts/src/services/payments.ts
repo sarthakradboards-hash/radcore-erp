@@ -2,19 +2,20 @@
 // posted in the same save, through the journal engine, then numbered last (ADR-006 §1): RV for a receipt, PV for a
 // payment or refund. Cash past a day's limit (RC-114, CA-24) stays a draft and asks an owner, through defineApproval;
 // the approval posts it. A posted one is cancelled only by a mirror entry dated the cancellation's day (ADR-007 §6).
-import { accounts, accountsTx, parties, payments } from '@radcore/db/accounts';
+import { accounts, accountsTx, parties, payments, paymentTds } from '@radcore/db/accounts';
 import { dec, indiaDate, looksLikeCardNumber, moneyString, roundMoney, sum, type Money } from '@radcore/lib-common';
 import { AppError, awaitingApproval, defineSeries, defineSetting, nextNumber, principalId, requestApproval, type ApprovalSpec, type Ctx }
   from '@radcore/lib-platform';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import type { cancelPaymentContract, recordPaymentContract } from '../contract.ts';
-import { paymentUsed } from './allocations.ts';
+import { madeAdvance, paymentUsed } from './allocations.ts';
 import { takesMoney } from './money-accounts.ts';
 import { cashPaidOn } from './expense-cash.ts';
 import { holdPeriod, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { refuseIfMatched } from './bank-matching.ts';
 import { holdParty } from './parties.ts';
+import { bookTds, reverseTds } from './tds-booking.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -129,10 +130,23 @@ async function post(ctx: Ctx, id: string): Promise<{ number: string }> {
   if (p.refundOfId !== null) {
     await checkRefund(ctx, { receiptId: p.refundOfId, partyId: p.partyId, businessDate: p.businessDate, amount: roundMoney(p.amount) });
   }
+  const amount = roundMoney(p.amount);
+  let tds = roundMoney(p.tds);
+  // A payment under a TDS section deducts by the year's sums now, as a booking does (ADR-009 §4, the architect on
+  // RAD-158): its row written, the payee held, before the journal's series. Never the whole amount (ck_payments_figures).
+  const [terms] = p.kind === 'payment' ? await tx.select().from(paymentTds).where(eq(paymentTds.paymentId, id)).limit(1) : [];
+  if (terms !== undefined) {
+    ({ total: tds } = await bookTds(ctx, { table: 'payments', id, partyId: p.partyId, businessDate: p.businessDate },
+      [{ lineId: id, sectionId: terms.sectionId, base: amount, payable: roundMoney(dec(amount).minus('0.01')), path: ['tdsSectionId'] }]));
+    if (terms.expected !== null && !dec(terms.expected).eq(tds)) {
+      throw new AppError('tds_mismatch', `The TDS on this works out to ${tds}, not ${roundMoney(terms.expected)}`,
+        [{ path: ['tds'], code: 'tds_mismatch', message: `The TDS works out to ${tds}` }]);
+    }
+  }
   const entry = await postEntry(ctx, { kind: p.kind === 'receipt' ? 'payment_in' : 'payment_out', businessDate: p.businessDate,
-    source: { table: 'payments', id }, lines: linesOf({ ...p, amount: roundMoney(p.amount), tds: roundMoney(p.tds) }) });
+    source: { table: 'payments', id }, lines: linesOf({ ...p, amount, tds }) });
   const number = await nextNumber(ctx, p.kind === 'receipt' ? RECEIPT_SERIES : PAYMENT_SERIES, p.businessDate);
-  await tx.update(payments).set({ status: 'posted', number, postedEntryId: entry.id }).where(eq(payments.id, id));
+  await tx.update(payments).set({ status: 'posted', number, postedEntryId: entry.id, tds }).where(eq(payments.id, id));
   return { number };
 }
 
@@ -225,7 +239,7 @@ export function recordHeldReceipt(ctx: Ctx, input: Readonly<Omit<In<typeof recor
 /** For a credit note's own service (RAD-114), reached by no route of its own: refunds what's left of a posted credit
  * note to its party, under the same checks as any refund (its cap shared with the note's applications, its date, the
  * cash limit). The database checks the credit, by name, when the refund posts. */
-export function refundCredit(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'credit' | 'tds'> & {
+export function refundCredit(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'credit' | 'tds' | 'tdsSectionId'> & {
   creditTable: string; creditId: string }>): Promise<Out<typeof recordPaymentContract>> {
   const { creditTable, creditId, ...rest } = r;
   return record(ctx, { ...rest, kind: 'refund', credit: { table: creditTable, id: creditId } }, null, null);
@@ -233,7 +247,7 @@ export function refundCredit(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentC
 
 /** For a document's own service (bookings, M3-13), reached by no route: refunds a receipt held for `owner`, with the
  * same checks as any refund (its cap, its date, the cash limit). */
-export function refundHeld(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'tds'> & {
+export function refundHeld(ctx: Ctx, r: Readonly<Omit<In<typeof recordPaymentContract>, 'kind' | 'refundOf' | 'tds' | 'tdsSectionId'> & {
   receiptId: string; owner: HeldFor }>): Promise<Out<typeof recordPaymentContract>> {
   const { receiptId, owner, ...rest } = r;
   return record(ctx, { ...rest, kind: 'refund', refundOf: receiptId }, null, owner);
@@ -248,6 +262,11 @@ async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor
   if (!dec(p.amount).gt(0)) refuse('amount_not_positive', 'Enter an amount above 0');
   if (!dec(p.tds).lt(p.amount)) refuse('invalid_tds', 'TDS held back is less than the amount');
   if (p.kind === 'refund' && dec(p.tds).gt(0)) refuse('invalid_tds', 'A refund holds no TDS');
+  // Only a payment out deducts TDS, and only from its section: a typed figure is a check on it (RAD-158).
+  if (p.tdsSectionId !== undefined && p.kind !== 'payment') refuse('invalid_tds', 'Only a payment to a supplier deducts TDS');
+  if (p.kind === 'payment' && p.tdsSectionId === undefined && dec(p.tds).gt(0)) {
+    refuse('invalid_tds', 'Pick the TDS section: the TDS is worked out from it');
+  }
   if (p.businessDate > today()) refuse('date_in_future', 'The date is after today');
   // Never card digits (Sarthak on RAD-115), wherever a reference comes from, POST /payments too (backend on #304).
   if (p.reference !== undefined && looksLikeCardNumber(p.reference)) {
@@ -268,12 +287,18 @@ async function record(ctx: Ctx, input: In<typeof recordPaymentContract>, heldFor
     refuse('refund_needs_receipt', 'Only a refund names a receipt or a credit note');
   }
   const { cash } = await moneyAccount(ctx, p.accountId);
-  const [row] = await tx.insert(payments).values({ kind: p.kind, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount, tds: p.tds,
+  const [row] = await tx.insert(payments).values({ kind: p.kind, partyId: p.partyId, businessDate: p.businessDate, amount: p.amount,
+    tds: p.tdsSectionId === undefined ? p.tds : roundMoney('0'),
     accountId: p.accountId, refundOfId: p.refundOf ?? null, creditTable: p.credit?.table ?? null, creditId: p.credit?.id ?? null,
     narration: p.narration ?? null, reference: p.reference ?? null, heldForTable: heldFor?.table ?? null, heldForId: heldFor?.id ?? null }).returning({ id: payments.id });
   // The insert locked a credit it names (check_credit_refund), so the cash limit's party lock below comes after the
   // document's, as ADR-006 §1 orders them.
   const id = row?.id ?? refuse('server_error', 'The payment was not stored');
+  // Its section, and the TDS typed as a check; the posting works the TDS out (post()).
+  if (p.tdsSectionId !== undefined) {
+    await tx.insert(paymentTds).values({ paymentId: id, sectionId: p.tdsSectionId, expected: input.tds ?? null });
+    madeAdvance(ctx, id);
+  }
   if (cash && await pastCashLimit(ctx, { id, ...p }, counter)) {
     await requestApproval(ctx, cashLimitSpec, id);
     return { id, status: 'pending_approval', number: null };
@@ -297,6 +322,8 @@ export async function cancelPayment(ctx: Ctx, c: In<typeof cancelPaymentContract
   if (!(await paymentUsed(ctx, p.id)).allocated.eq(0)) refuse('has_allocations', 'Reverse what this is applied to first');
   // Matched to the bank statement: unmatch first (ADR-009 §12). The row is held FOR UPDATE, so a match waits or is seen.
   await refuseIfMatched(ctx, p.postedEntryId);
+  // Its TDS row reversed (tds_deposited once paid), the payee held before the journal's series (ADR-009 §7).
+  if (p.kind === 'payment') await reverseTds(ctx, { table: 'payments', id: p.id, businessDate: c.businessDate });
   const mirror = await reverseEntry(ctx, { entryId: p.postedEntryId, businessDate: c.businessDate, reason: c.reason });
   await tx.update(payments).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal), cancelReason: c.reason,
     cancelEntryId: mirror.id }).where(eq(payments.id, p.id));
