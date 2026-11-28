@@ -3,12 +3,14 @@
 // every entry that return reports dated in it. Marking takes ADR-009 §7's step 1 with the filed-month row FOR UPDATE
 // (lockPeriodForMove('filed')), so it waits for the postings in flight and none starts until it commits.
 //   locks: the profile and the period lock FOR SHARE → the filed-month row FOR UPDATE → the filing row
-import { accounts, accountsTx, after, gstFilings, journalEntries, journalLines, setFiledLock } from '@radcore/db/accounts';
+import { accounts, accountsTx, after, filingUndoRequests, gstFilings, journalEntries, journalLines, setFiledLock } from '@radcore/db/accounts';
 import { addDays, indiaDate, period, roundMoney } from '@radcore/lib-common';
-import { AppError, decodeCursor, defineSetting, encodeCursor, principalsOf, versionHash, type Ctx } from '@radcore/lib-platform';
-import { and, asc, desc, eq, gte, isNull, lte, sum } from 'drizzle-orm';
+import { AppError, decodeCursor, defineSetting, encodeCursor, principalsOf, requestApproval, versionHash, type ApprovalSpec, type Ctx }
+  from '@radcore/lib-platform';
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, sum } from 'drizzle-orm';
 import { z } from 'zod';
-import type { listGstFilings, markGstFiling } from '../contract-filings.ts';
+import type { askFilingUndo, listGstFilings, markGstFiling } from '../contract-filings.ts';
+import { filedLockRow } from './journal.ts';
 import { lockPeriodForMove } from './period-lock.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -93,3 +95,66 @@ export async function filingsPage(ctx: Ctx, input: In<typeof listGstFilings>): P
     snapshotSha256: r.snapshotSha256, markedAt: r.createdAt.toISOString(), markedBy: principal(r.createdBy), undone: r.undoneAt !== null })),
   next: rows.length > input.limit && last ? encodeCursor({ month: last.month, id: last.id }) : null };
 }
+
+/** What an undo of a filing may not do (ADR-009 §5), asked and approved alike: undo an undone one, or one with a later
+ * live filing of its return (`not_latest_filing`). Answers the filing. */
+async function checkUndo(ctx: Ctx, filingId: string) {
+  const tx = accountsTx(ctx);
+  const [f] = await tx.select().from(gstFilings).where(eq(gstFilings.id, filingId)).limit(1);
+  if (f === undefined) return refuse('not_found', 'There’s no such filing');
+  if (f.undoneAt !== null) refuse('filing_undone', 'This filing is already undone');
+  const [later] = await tx.select({ id: gstFilings.id }).from(gstFilings)
+    .where(and(eq(gstFilings.return, f.return), gt(gstFilings.month, f.month), isNull(gstFilings.undoneAt))).limit(1);
+  if (later !== undefined) refuse('not_latest_filing', 'Only the latest filing of a return can be undone: undo the later ones first');
+  return { id: f.id, month: f.month, return: f.return === 'gstr1' ? 'gstr1' as const : 'gstr3b' as const };
+}
+
+/** POST /gst/filings/:id/undo-requests: the request, and its approval asked for (`gst-filing-undo`). */
+export async function askToUndoFiling(ctx: Ctx, r: In<typeof askFilingUndo>): Promise<Out<typeof askFilingUndo>> {
+  const [lock] = await filedLockRow(ctx).for('share');
+  const f = await checkUndo(ctx, r.id);
+  const [row] = await accountsTx(ctx).insert(filingUndoRequests).values({ filingId: f.id, reason: r.reason,
+    throughWas: (f.return === 'gstr1' ? lock?.gstr1 : lock?.gstr3b) ?? null }).returning({ id: filingUndoRequests.id });
+  if (row === undefined) throw new Error('The request was not saved');
+  return requestApproval(ctx, filingUndoSpec, row.id);
+}
+
+type UndoVersion = { filingId: string; return: string; month: string; reason: string; through: string | null };
+
+/**
+ * An undo of a filing (D-06). The version names the return's lock as it stands while the request waits, so one a later
+ * filing made stale is refused (`version_changed`); once applied, the lock it moved from, which is what was approved.
+ * lockFirst takes the filed-month row FOR UPDATE before the request, so two decisions take turns (ADR-009 §7).
+ */
+export const filingUndoSpec: ApprovalSpec<UndoVersion> = {
+  kind: 'gst-filing-undo',
+  table: 'filing_undo_requests',
+  async version(ctx, id, { forUpdate }) {
+    const tx = accountsTx(ctx);
+    const q = tx.select().from(filingUndoRequests).where(eq(filingUndoRequests.id, id)).limit(1);
+    const [r] = forUpdate ? await q.for('update') : await q;
+    if (r === undefined) return null;
+    const [f] = await tx.select({ return: gstFilings.return, month: gstFilings.month }).from(gstFilings).where(eq(gstFilings.id, r.filingId)).limit(1);
+    if (f === undefined) return null;
+    const [lock] = r.appliedAt === null ? await filedLockRow(ctx) : [];
+    const now = (f.return === 'gstr1' ? lock?.gstr1 : lock?.gstr3b) ?? null;
+    return { filingId: r.filingId, return: f.return, month: f.month, reason: r.reason, through: r.appliedAt === null ? now : r.throughWas };
+  },
+  async lockFirst(ctx) {
+    await lockPeriodForMove(ctx, 'filed');
+  },
+  async approved(ctx, id) {
+    const tx = accountsTx(ctx);
+    const [r] = await tx.select().from(filingUndoRequests).where(eq(filingUndoRequests.id, id)).limit(1);
+    if (r === undefined) return refuse('not_found', 'There’s no such request');
+    // Judged again under the lock: a later filing may have been marked since it was asked.
+    const f = await checkUndo(ctx, r.filingId);
+    const [before] = await tx.select({ month: gstFilings.month }).from(gstFilings)
+      .where(and(eq(gstFilings.return, f.return), lt(gstFilings.month, f.month), isNull(gstFilings.undoneAt)))
+      .orderBy(desc(gstFilings.month)).limit(1);
+    await tx.update(gstFilings).set({ undoneAt: new Date() }).where(eq(gstFilings.id, f.id));
+    await setFiledLock(ctx.tx, f.return, before === undefined ? null : period(before.month).end);
+    await tx.update(filingUndoRequests).set({ appliedAt: new Date() }).where(eq(filingUndoRequests.id, id));
+  },
+  async rejected() {},
+};

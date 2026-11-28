@@ -53,7 +53,7 @@ it('marks Admin current on any admin page, and Home only on /', () => {
 
 it('shows Accounts on journal:read, opening the journal, and marks it current on its pages only (RAD-100)', () => {
   expect(ACCOUNTS_PAGES.map((p) => [p.href, p.perm])).toEqual([['/accounts/journal', 'journal:read'], ['/accounts/chart', 'journal:read'], ['/accounts/collect', 'receivables:read'],
-    ['/accounts/payments', 'payments:read'], ['/accounts/bank', 'bank:read'], ['/accounts/bank/reconciliation', 'bank:read'], ['/accounts/transfers', 'payments:read'], ['/accounts/period', 'books:lock'],
+    ['/accounts/payments', 'payments:read'], ['/accounts/bank', 'bank:read'], ['/accounts/bank/reconciliation', 'bank:read'], ['/accounts/transfers', 'payments:read'], ['/accounts/expenses', 'expenses:read'], ['/accounts/expenses/approvals', 'payments:approve'], ['/accounts/period', 'books:lock'],
     ['/accounts/period/approvals', 'books:unlock'], ['/accounts/expense-categories', 'journal:read'], ['/accounts/gst/gstr1', 'gst:returns']]);
   const accounts = menuFor(NAV, ['journal:read']).find((e) => e.label === 'nav.accounts');
   expect(accounts?.href).toBe('/accounts/journal');

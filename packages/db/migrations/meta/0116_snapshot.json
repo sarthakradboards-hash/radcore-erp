@@ -1,5 +1,5 @@
 {
-  "id": "e1b0b4c6-37cc-4d25-8e0e-5d05b0ac6b79",
+  "id": "dc6fe422-b982-4d57-b969-ce2abfc3cb9b",
   "prevId": "7f9f9b11-1800-45ce-bf47-66f6f2f938b0",
   "version": "7",
   "dialect": "postgresql",
@@ -15338,153 +15338,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "radcore.invoice_amendments": {
-      "name": "invoice_amendments",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "invoice_id": {
-          "name": "invoice_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "old_gstin": {
-          "name": "old_gstin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "new_gstin": {
-          "name": "new_gstin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "ix_invoice_amendments_invoice": {
-          "name": "ix_invoice_amendments_invoice",
-          "columns": [
-            {
-              "expression": "invoice_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_invoice_amendments_date": {
-          "name": "ix_invoice_amendments_date",
-          "columns": [
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "invoice_amendments_invoice_id_invoices_id_fk": {
-          "name": "invoice_amendments_invoice_id_invoices_id_fk",
-          "tableFrom": "invoice_amendments",
-          "tableTo": "invoices",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "invoice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_invoice_amendments_old_gstin": {
-          "name": "ck_invoice_amendments_old_gstin",
-          "value": "char_length(\"radcore\".\"invoice_amendments\".\"old_gstin\") <= 15"
-        },
-        "ck_invoice_amendments_new_gstin": {
-          "name": "ck_invoice_amendments_new_gstin",
-          "value": "char_length(\"radcore\".\"invoice_amendments\".\"new_gstin\") <= 15"
-        },
-        "ck_invoice_amendments_reason": {
-          "name": "ck_invoice_amendments_reason",
-          "value": "char_length(\"radcore\".\"invoice_amendments\".\"reason\") <= 500"
-        },
-        "ck_invoice_amendments_same_state": {
-          "name": "ck_invoice_amendments_same_state",
-          "value": "\"radcore\".\"invoice_amendments\".\"new_gstin\" <> \"radcore\".\"invoice_amendments\".\"old_gstin\" and left(\"radcore\".\"invoice_amendments\".\"new_gstin\", 2) = left(\"radcore\".\"invoice_amendments\".\"old_gstin\", 2)"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "radcore.stock_adjustment_lines": {
       "name": "stock_adjustment_lines",
       "schema": "radcore",
@@ -24967,6 +24820,114 @@
         "ck_statement_imports_counts": {
           "name": "ck_statement_imports_counts",
           "value": "(\"radcore\".\"statement_imports\".\"status\" in ('imported', 'undone')) = (\"radcore\".\"statement_imports\".\"new_lines\" is not null and \"radcore\".\"statement_imports\".\"present_lines\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "radcore.filing_undo_requests": {
+      "name": "filing_undo_requests",
+      "schema": "radcore",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nullif(current_setting('app.principal', true), '')"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "filing_id": {
+          "name": "filing_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "through_was": {
+          "name": "through_was",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_filing_undo_requests_filing": {
+          "name": "ix_filing_undo_requests_filing",
+          "columns": [
+            {
+              "expression": "filing_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "filing_undo_requests_filing_id_gst_filings_id_fk": {
+          "name": "filing_undo_requests_filing_id_gst_filings_id_fk",
+          "tableFrom": "filing_undo_requests",
+          "tableTo": "gst_filings",
+          "schemaTo": "radcore",
+          "columnsFrom": [
+            "filing_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_filing_undo_requests_reason": {
+          "name": "ck_filing_undo_requests_reason",
+          "value": "char_length(\"radcore\".\"filing_undo_requests\".\"reason\") <= 500"
         }
       },
       "isRLSEnabled": false

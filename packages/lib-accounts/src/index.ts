@@ -10,7 +10,7 @@ export {
 } from './services/expenses.ts';
 export { putTdsRate, tdsRatesPage, tdsSectionsList } from './services/tds-rates.ts';
 export { bookTds, defaultTdsSection, reverseTds, setTdsTerms, type TdsLine } from './services/tds-booking.ts';
-export { filingsPage, FILING_FREQUENCY, FILING_START, markFiling, returnFiled } from './services/filings.ts';
+export { askToUndoFiling, filingsPage, FILING_FREQUENCY, FILING_START, filingUndoSpec, markFiling, returnFiled } from './services/filings.ts';
 export { depositTds, TDS_DEPOSIT_SERIES, tdsDeductionsPage, tdsPayableFigures } from './services/tds-deposits.ts';
 export { tdsFor, tdsRound, type TdsBooking, type TdsRate } from './rules/tds.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
