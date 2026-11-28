@@ -9,7 +9,8 @@ import {
   postExpenseNow, recordPayment, tdsDeductionsPage,
 } from '@radcore/lib-accounts';
 import { createExpense, listTdsDeductions, recordPaymentContract } from '@radcore/lib-accounts/contract';
-import { gstinCheckChar, moneyString } from '@radcore/lib-common';
+import { gstinCheckChar, moneyString, percentString } from '@radcore/lib-common';
+import { putGstRate } from '@radcore/lib-gst';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
@@ -66,14 +67,14 @@ describe.skipIf(!url || !superUrl)('TDS at booking', { timeout: 60_000 }, () => 
   }
   type At = Awaited<ReturnType<typeof setup>>;
   /** An expense of `base` (GST at `rate`), on credit unless `pay` names a money account, under `section`. */
-  const book = async (at: At, base: string, o: { day: string; section: string | null; pay?: string; rate?: string }) => {
+  const book = async (at: At, base: string, o: { day: string; section: string | null; pay?: string; rate?: string; sac?: string }) => {
     const rate = o.rate ?? '0';
     const half = moneyString().parse(String(Number(base) * Number(rate) / 200));
     const total = String(Number(base) + 2 * Number(half));
     const input = createExpense.input.parse({ businessDate: o.day, supplierId: at.partyId, supplierInvoiceNumber: `B/${letters(5)}`, supplierInvoiceDate: o.day,
       supplierGstin: at.gstin, payFromAccountId: o.pay ?? null, statedTotal: total, fileId: await file(), notes: null,
       lines: [{ categoryId: at.categoryId, accountId: at.accountId, description: null, taxable: base, gstRate: rate, cgst: half, sgst: half, igst: '0',
-        tdsSectionId: o.section }] });
+        tdsSectionId: o.section, ...(o.sac === undefined ? {} : { sac: o.sac }) }] });
     return run(async (ctx) => {
       const { id } = await addExpense(ctx, input);
       await postExpenseNow(ctx, { id });
@@ -229,6 +230,9 @@ describe.skipIf(!url || !superUrl)('TDS at booking', { timeout: 60_000 }, () => 
 
   it('refuses a TDS section on an overseas supplier’s line (tds_overseas, ADR-010 §4)', async () => {
     const [at, section] = [await setup({ overseas: true }), await sectionId('194J-T')];
-    expect(await code(book(at, '10000', { day: DAYS[0] ?? '', section }))).toBe('tds_overseas');
+    // Its line needs a rated SAC, or posting stops first at sac_required (auditor-2 on #466).
+    const sac = `99${String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, '0')}`;
+    await run((ctx) => putGstRate(ctx, { hsn: sac, effectiveFrom: '2026-04-01', rate: percentString().parse('18'), source: 'Test', note: null, reason: 'Test' }));
+    expect(await code(book(at, '10000', { day: DAYS[0] ?? '', section, sac }))).toBe('tds_overseas');
   });
 });

@@ -1,5 +1,5 @@
 {
-  "id": "983a8e25-a84d-4497-946e-7665267943a3",
+  "id": "65063be1-ad1f-467e-be14-a133afa689a5",
   "prevId": "b2fce1c3-6bb8-4393-8892-ad4f7dbfd5b8",
   "version": "7",
   "dialect": "postgresql",
@@ -4749,6 +4749,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "withdrawn_from": {
+          "name": "withdrawn_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4792,6 +4798,10 @@
         "ck_rcm_rules_note": {
           "name": "ck_rcm_rules_note",
           "value": "char_length(\"radcore\".\"rcm_rules\".\"note\") <= 500"
+        },
+        "ck_rcm_rules_withdrawn": {
+          "name": "ck_rcm_rules_withdrawn",
+          "value": "\"radcore\".\"rcm_rules\".\"withdrawn_from\" is null or \"radcore\".\"rcm_rules\".\"withdrawn_from\" > \"radcore\".\"rcm_rules\".\"effective_from\""
         },
         "ck_rcm_rules_prefix": {
           "name": "ck_rcm_rules_prefix",
@@ -21587,6 +21597,12 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "default_sac": {
+          "name": "default_sac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -21644,6 +21660,10 @@
         "ck_expense_categories_name": {
           "name": "ck_expense_categories_name",
           "value": "char_length(\"radcore\".\"expense_categories\".\"name\") <= 80"
+        },
+        "ck_expense_categories_default_sac": {
+          "name": "ck_expense_categories_default_sac",
+          "value": "\"radcore\".\"expense_categories\".\"default_sac\" is null or \"radcore\".\"expense_categories\".\"default_sac\" ~ '^[0-9]{4}([0-9]{2}){0,2}$'"
         },
         "ck_expense_categories_credit": {
           "name": "ck_expense_categories_credit",
@@ -21925,6 +21945,30 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sac": {
+          "name": "sac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rcm_cgst": {
+          "name": "rcm_cgst",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rcm_sgst": {
+          "name": "rcm_sgst",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rcm_igst": {
+          "name": "rcm_igst",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -22072,6 +22116,26 @@
           "name": "ck_expense_lines_credit_igst",
           "value": "\"radcore\".\"expense_lines\".\"credit_igst\" >= 0 and \"radcore\".\"expense_lines\".\"credit_igst\" <> 'NaN'"
         },
+        "ck_expense_lines_rcm_cgst": {
+          "name": "ck_expense_lines_rcm_cgst",
+          "value": "\"radcore\".\"expense_lines\".\"rcm_cgst\" >= 0 and \"radcore\".\"expense_lines\".\"rcm_cgst\" <> 'NaN'"
+        },
+        "ck_expense_lines_rcm_sgst": {
+          "name": "ck_expense_lines_rcm_sgst",
+          "value": "\"radcore\".\"expense_lines\".\"rcm_sgst\" >= 0 and \"radcore\".\"expense_lines\".\"rcm_sgst\" <> 'NaN'"
+        },
+        "ck_expense_lines_rcm_igst": {
+          "name": "ck_expense_lines_rcm_igst",
+          "value": "\"radcore\".\"expense_lines\".\"rcm_igst\" >= 0 and \"radcore\".\"expense_lines\".\"rcm_igst\" <> 'NaN'"
+        },
+        "ck_expense_lines_sac": {
+          "name": "ck_expense_lines_sac",
+          "value": "\"radcore\".\"expense_lines\".\"sac\" is null or \"radcore\".\"expense_lines\".\"sac\" ~ '^[0-9]{4}([0-9]{2}){0,2}$'"
+        },
+        "ck_expense_lines_rcm": {
+          "name": "ck_expense_lines_rcm",
+          "value": "num_nulls(\"radcore\".\"expense_lines\".\"rcm_cgst\", \"radcore\".\"expense_lines\".\"rcm_sgst\", \"radcore\".\"expense_lines\".\"rcm_igst\") in (0, 3) and (\"radcore\".\"expense_lines\".\"rcm_cgst\" is null\n    or (\"radcore\".\"expense_lines\".\"sac\" is not null and \"radcore\".\"expense_lines\".\"cgst\" = 0 and \"radcore\".\"expense_lines\".\"sgst\" = 0 and \"radcore\".\"expense_lines\".\"igst\" = 0 and \"radcore\".\"expense_lines\".\"rcm_cgst\" = \"radcore\".\"expense_lines\".\"rcm_sgst\"\n      and (\"radcore\".\"expense_lines\".\"rcm_igst\" = 0 or \"radcore\".\"expense_lines\".\"rcm_cgst\" = 0)))"
+        },
         "ck_expense_lines_heads": {
           "name": "ck_expense_lines_heads",
           "value": "\"radcore\".\"expense_lines\".\"cgst\" = \"radcore\".\"expense_lines\".\"sgst\" and (\"radcore\".\"expense_lines\".\"igst\" = 0 or \"radcore\".\"expense_lines\".\"cgst\" = 0)"
@@ -22082,7 +22146,7 @@
         },
         "ck_expense_lines_credit_whole": {
           "name": "ck_expense_lines_credit_whole",
-          "value": "\"radcore\".\"expense_lines\".\"credit_cgst\" is null\n    or (\"radcore\".\"expense_lines\".\"credit_reason\" is null and \"radcore\".\"expense_lines\".\"credit_cgst\" = \"radcore\".\"expense_lines\".\"cgst\" and \"radcore\".\"expense_lines\".\"credit_sgst\" = \"radcore\".\"expense_lines\".\"sgst\" and \"radcore\".\"expense_lines\".\"credit_igst\" = \"radcore\".\"expense_lines\".\"igst\")\n    or (\"radcore\".\"expense_lines\".\"credit_reason\" in ('supplier_kind', 'blocked', 'state') and \"radcore\".\"expense_lines\".\"credit_cgst\" = 0 and \"radcore\".\"expense_lines\".\"credit_sgst\" = 0 and \"radcore\".\"expense_lines\".\"credit_igst\" = 0)"
+          "value": "\"radcore\".\"expense_lines\".\"credit_cgst\" is null\n    or (\"radcore\".\"expense_lines\".\"credit_reason\" is null and \"radcore\".\"expense_lines\".\"credit_cgst\" = coalesce(\"radcore\".\"expense_lines\".\"rcm_cgst\", \"radcore\".\"expense_lines\".\"cgst\") and \"radcore\".\"expense_lines\".\"credit_sgst\" = coalesce(\"radcore\".\"expense_lines\".\"rcm_sgst\", \"radcore\".\"expense_lines\".\"sgst\")\n      and \"radcore\".\"expense_lines\".\"credit_igst\" = coalesce(\"radcore\".\"expense_lines\".\"rcm_igst\", \"radcore\".\"expense_lines\".\"igst\"))\n    or (\"radcore\".\"expense_lines\".\"credit_reason\" in ('supplier_kind', 'blocked', 'state') and \"radcore\".\"expense_lines\".\"credit_cgst\" = 0 and \"radcore\".\"expense_lines\".\"credit_sgst\" = 0 and \"radcore\".\"expense_lines\".\"credit_igst\" = 0)"
         }
       },
       "isRLSEnabled": false
@@ -22583,115 +22647,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "radcore.payment_tds": {
-      "name": "payment_tds",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "payment_id": {
-          "name": "payment_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "section_id": {
-          "name": "section_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expected": {
-          "name": "expected",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "ix_payment_tds_section": {
-          "name": "ix_payment_tds_section",
-          "columns": [
-            {
-              "expression": "section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "payment_tds_payment_id_payments_id_fk": {
-          "name": "payment_tds_payment_id_payments_id_fk",
-          "tableFrom": "payment_tds",
-          "tableTo": "payments",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "payment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "payment_tds_section_id_tds_sections_id_fk": {
-          "name": "payment_tds_section_id_tds_sections_id_fk",
-          "tableFrom": "payment_tds",
-          "tableTo": "tds_sections",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "section_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_payment_tds_expected": {
-          "name": "ck_payment_tds_expected",
-          "value": "\"radcore\".\"payment_tds\".\"expected\" >= 0 and \"radcore\".\"payment_tds\".\"expected\" <> 'NaN'"
-        }
-      },
       "isRLSEnabled": false
     },
     "radcore.tds_deductions": {

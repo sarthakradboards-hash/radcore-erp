@@ -51,7 +51,7 @@ export const setGstRate = defineContract({
 const RCM_SUPPLIERS = ['unregistered', 'any', 'not_body_corporate'] as const;
 const rcmRule = z.object({
   id: idString(), prefix: z.string(), supplier: z.enum(RCM_SUPPLIERS), effectiveFrom: dateString(), source: z.string(), note: z.string().nullable(),
-  confirmed: z.boolean(),
+  confirmed: z.boolean(), withdrawnFrom: dateString().nullable(),
 });
 
 /** GET /gst/rcm-rules (gst:read): every reverse-charge rule, by prefix, supplier and start date. A line whose SAC (or a
@@ -63,14 +63,18 @@ export const listRcmRules = defineContract({
 });
 
 /** PUT /gst/rcm-rules (gst:write): a rule for a code prefix and supplier from a date, with its source. The same prefix,
- * supplier and date again corrects that rule (audited, with the person's reason); a rule is never deleted. */
+ * supplier and date again corrects that rule, or withdraws it from a day (audited, with the person's reason); a rule
+ * is never deleted. */
 export const setRcmRule = defineContract({
   method: 'PUT', path: '/gst/rcm-rules', auth: 'session', perm: 'gst:write', tx: write,
   input: z.object({
     prefix: z.string().regex(/^[0-9]{2,8}$/, 'A SAC or HSN prefix is 2 to 8 digits'), supplier: z.enum(RCM_SUPPLIERS), effectiveFrom: dateString(),
     source: z.string().trim().min(1, 'Name the notification this rule comes from').max(200),
-    note: z.string().trim().max(500).nullable(), confirmed: z.boolean(), reason: reason(),
-  }),
+    note: z.string().trim().max(500).nullable(), confirmed: z.boolean(),
+    /** The first day it no longer applies; null to put it back in force, left out to leave it as it is. */
+    withdrawnFrom: dateString().nullable().optional(), reason: reason(),
+  }).refine((r) => r.withdrawnFrom == null || r.withdrawnFrom > r.effectiveFrom,
+    { path: ['withdrawnFrom'], message: 'A rule is withdrawn after the day it started' }),
   output: z.object({ id: idString() }),
 });
 

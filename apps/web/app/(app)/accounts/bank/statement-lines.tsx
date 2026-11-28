@@ -1,7 +1,8 @@
 'use client';
 // Matching a bank account's statement lines to the books (RAD-168 on RAD-165's #454 and #460; ADR-009 §12, RC-210): the
 // lines with whether each is matched, and under bank:reconcile, Match (one of the server's suggestions, or several lines
-// on either side whose totals agree) and Unmatch with a reason. Out of page.tsx so each file stays under E2's cap.
+// on either side whose totals agree, or a charge or interest booked from it) and Unmatch with a reason.
+// Out of page.tsx so each file stays under E2's cap.
 import { addDays, formatDate, formatMoney } from '@radcore/lib-common';
 import {
   listBookLinesContract, listMatchCandidatesContract, listStatementImportsContract, listStatementLinesContract, matchLinesContract,
@@ -18,7 +19,9 @@ import { DataTable, type Column } from '../../../../components/ui/table/data-tab
 import { useApiList, useApiMutation, useApiQuery } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { ChoiceButtons } from '../../admin/shared.tsx';
-import { bookLineLabel, candidateLabel, MATCH_MESSAGES, matchTotals, movedWords } from './match-values.ts';
+import { BookCharge } from './book-charge.tsx';
+import { bookLineLabel, candidateLabel, MATCH_MESSAGES, matchTotals, movedWords, UNMATCH_MESSAGES } from './match-values.ts';
+import { ShowMore, type Paged } from './show-more.tsx';
 
 type Line = z.output<typeof listStatementLinesContract.output>['items'][number];
 type BookLine = z.output<typeof listBookLinesContract.output>['items'][number];
@@ -46,7 +49,7 @@ function SeveralTotals({ statement, book }: { statement: readonly Line[]; book: 
       <dl className="admin-facts" aria-label={t('books.bank.several.totals')}>
         <dt>{t('books.bank.several.statementTotal')}</dt><dd>{movedWords(totals.statement)}</dd>
         <dt>{t('books.bank.several.bookTotal')}</dt><dd>{movedWords(totals.book)}</dd>
-        <dt>{t('books.bank.several.difference')}</dt><dd>{movedWords(totals.difference)}</dd>
+        <dt>{t('books.bank.several.difference')}</dt><dd>{formatMoney(totals.difference)}</dd>
       </dl>
       {totals.balanced ? null : <p className="kit-hint">{t('books.bank.several.unbalanced')}</p>}
       <SubmitButton disabled={!totals.balanced}>{t('books.bank.match.save')}</SubmitButton>
@@ -56,8 +59,8 @@ function SeveralTotals({ statement, book }: { statement: readonly Line[]; book: 
 
 /** A match of several lines on either side (RC-210): the unmatched statement lines on screen, and the account's unmatched
  * book lines going the same way, within ten days of this line by default, a page at a time; their totals must agree. */
-function MatchSeveral({ line, accountId, unmatched, headingId, onDone }: {
-  line: Line; accountId: string; unmatched: readonly Line[]; headingId: string; onDone: () => void;
+function MatchSeveral({ line, accountId, unmatched, older, headingId, onDone }: {
+  line: Line; accountId: string; unmatched: readonly Line[]; older: Paged; headingId: string; onDone: () => void;
 }) {
   const book = useApiList(listBookLinesContract, { id: accountId, filter: { direction: line.direction, from: addDays(line.valueDate, -10),
     to: addDays(line.valueDate, 10) } });
@@ -76,22 +79,25 @@ function MatchSeveral({ line, accountId, unmatched, headingId, onDone }: {
       <CheckboxesField name="statementLineIds" label={t('books.bank.several.statement')}
         options={unmatched.map((l) => ({ value: l.id, label: `${formatDate(l.valueDate)}, ${l.narration}: ${t(l.direction === 'in' ? 'books.bank.several.in'
           : 'books.bank.several.out', { amount: formatMoney(l.amount) })}` }))} />
+      <ShowMore list={older} label={t('books.bank.several.moreLines')} hint={t('books.bank.several.moreLines.hint')} />
       {book.items.length === 0 ? <p>{t('books.bank.several.noBook')}</p> : (
         <CheckboxesField name="journalLineIds" label={t('books.bank.several.book')} hint={t('books.bank.several.book.hint')}
           options={book.items.map((b) => ({ value: b.journalLineId, label: bookLineLabel(b) }))} />
       )}
-      {book.hasNextPage ? (
-        <button type="button" className="kit-button" disabled={book.isFetchingNextPage} onClick={book.fetchNextPage}>{t('books.bank.several.more')}</button>
-      ) : null}
+      <ShowMore list={book} label={t('books.bank.several.more')} />
       <SeveralTotals statement={unmatched} book={book.items} />
     </Form>
   );
 }
 
-/** Matches a statement line: to one of the book lines the server offers for it (same amount, nearby, best first), or, to
- * pick several on either side, by hand. */
-function MatchPanel({ line, accountId, unmatched, onClose }: { line: Line; accountId: string; unmatched: readonly Line[]; onClose: () => void }) {
-  const [several, setSeveral] = useState(false);
+type Mode = 'suggested' | 'several' | 'charge';
+
+/** Matches a statement line: to one of the book lines the server offers for it (same amount, nearby, best first), to
+ * several on either side picked by hand, or, with nothing in the books, to a charge or interest booked from it. */
+function MatchPanel({ line, accountId, unmatched, older, onClose }: {
+  line: Line; accountId: string; unmatched: readonly Line[]; older: Paged; onClose: () => void;
+}) {
+  const [mode, setMode] = useState<Mode>('suggested');
   const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const q = useApiQuery(listMatchCandidatesContract, { id: line.id });
@@ -99,7 +105,10 @@ function MatchPanel({ line, accountId, unmatched, onClose }: { line: Line; accou
   // The panel opens below the table, so focus goes to its heading.
   useEffect(() => { heading.current?.focus(); }, []);
   const title = t('books.bank.match.title', lineWords(line));
-  const body = several ? <MatchSeveral line={line} accountId={accountId} unmatched={unmatched} headingId={headingId} onDone={onClose} />
+  const intro = mode === 'several' ? 'books.bank.several.intro' : mode === 'suggested' ? 'books.bank.match.intro'
+    : `books.bank.charge.intro.${line.direction}` as const;
+  const body = mode === 'several' ? <MatchSeveral line={line} accountId={accountId} unmatched={unmatched} older={older} headingId={headingId} onDone={onClose} />
+    : mode === 'charge' ? <BookCharge line={line} headingId={headingId} onDone={onClose} />
     : q.error !== null ? <p role="alert" className="kit-form-alert">{t('error.title')}</p>
     : q.data === undefined ? <p>{t('loading')}</p>
     : q.data.candidates.length === 0 ? <p>{t('books.bank.match.none')}</p>
@@ -119,10 +128,11 @@ function MatchPanel({ line, accountId, unmatched, onClose }: { line: Line; accou
   return (
     <section aria-labelledby={headingId}>
       <h3 id={headingId} ref={heading} tabIndex={-1}>{title}</h3>
-      <p>{t(several ? 'books.bank.several.intro' : 'books.bank.match.intro')}</p>
+      <p>{t(intro)}</p>
       <div className="admin-toolbar">
-        <ChoiceButtons label={t('books.bank.match.how')} value={several ? 'several' : 'suggested'} onChange={(v) => setSeveral(v === 'several')}
-          options={[{ value: 'suggested', label: t('books.bank.match.suggested') }, { value: 'several', label: t('books.bank.match.several') }]} />
+        <ChoiceButtons label={t('books.bank.match.how')} value={mode} onChange={(v) => setMode(v as Mode)}
+          options={[{ value: 'suggested', label: t('books.bank.match.suggested') }, { value: 'several', label: t('books.bank.match.several') },
+            { value: 'charge', label: t('books.bank.charge') }]} />
       </div>
       {body}
       <div className="kit-actions">
@@ -135,7 +145,9 @@ function MatchPanel({ line, accountId, unmatched, onClose }: { line: Line; accou
 /** The account's statement lines, each matched or not; under bank:reconcile, Match an unmatched one, Unmatch a matched one. */
 export function StatementLines({ accountId, mayMatch }: { accountId: string; mayMatch: boolean }) {
   const lines = useApiList(listStatementLinesContract, { filter: { accountId } });
-  const unmatch = useApiMutation(unmatchContract, { invalidates: [listStatementLinesContract, listMatchCandidatesContract, listStatementImportsContract] });
+  // The book lines it frees can be picked again.
+  const unmatch = useApiMutation(unmatchContract, { invalidates: [listStatementLinesContract, listMatchCandidatesContract, listStatementImportsContract,
+    listBookLinesContract] });
   const [matching, setMatching] = useState<Line | null>(null);
   const [unmatching, setUnmatching] = useState<Line | null>(null);
   const tableHeading = useRef<HTMLHeadingElement>(null);
@@ -166,9 +178,9 @@ export function StatementLines({ accountId, mayMatch }: { accountId: string; may
     <>
       <h2 ref={tableHeading} tabIndex={-1}>{t('books.bank.lines')}</h2>
       <DataTable caption={t('books.bank.lines')} columns={columns} rowKey={(l) => l.id} list={lines} empty={t('books.bank.lines.empty')} />
-      {matching === null ? null : <MatchPanel key={matching.id} line={matching} accountId={accountId} unmatched={lines.items.filter((x) => x.matchId === null)} onClose={() => { setMatching(null); backToTable(); }} />}
-      <ReasonDialog open={unmatching !== null} onOpenChange={(open) => { if (!open) setUnmatching(null); }} messages={MATCH_MESSAGES}
-        title={t('books.bank.unmatch.title')} action={t('books.bank.unmatch')} done={t('books.bank.unmatched')}
+      {matching === null ? null : <MatchPanel key={matching.id} line={matching} accountId={accountId} unmatched={lines.items.filter((x) => x.matchId === null)} older={lines} onClose={() => { setMatching(null); backToTable(); }} />}
+      <ReasonDialog open={unmatching !== null} onOpenChange={(open) => { if (!open) setUnmatching(null); }} messages={UNMATCH_MESSAGES}
+        title={t('books.bank.unmatch.title')} description={t('books.bank.unmatch.body')} action={t('books.bank.unmatch')} done={t('books.bank.unmatched')}
         onConfirm={async (reason) => {
           const matchId = unmatching?.matchId;
           if (matchId === null || matchId === undefined) return;

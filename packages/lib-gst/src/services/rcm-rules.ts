@@ -11,11 +11,12 @@ type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 
 const columns = { id: rcmRules.id, prefix: rcmRules.prefix, supplier: rcmRules.supplier, effectiveFrom: rcmRules.effectiveFrom, source: rcmRules.source,
-  note: rcmRules.note, confirmed: rcmRules.confirmed };
+  note: rcmRules.note, confirmed: rcmRules.confirmed, withdrawnFrom: rcmRules.withdrawnFrom };
 
 /** The rules started on or before `on`, for isReverseCharge. */
 export async function rcmRulesOn(ctx: Ctx, on: string): Promise<RcmRule[]> {
-  return (await gstTx(ctx).select({ prefix: rcmRules.prefix, supplier: rcmRules.supplier, effectiveFrom: rcmRules.effectiveFrom })
+  return (await gstTx(ctx).select({ prefix: rcmRules.prefix, supplier: rcmRules.supplier, effectiveFrom: rcmRules.effectiveFrom,
+    withdrawnFrom: rcmRules.withdrawnFrom })
     .from(rcmRules).where(lte(rcmRules.effectiveFrom, on))) as RcmRule[];
 }
 
@@ -25,12 +26,14 @@ export async function listRcmRulesAll(ctx: Ctx): Promise<Out<typeof listRcmRules
   return { items: items as Out<typeof listRcmRules>['items'] };
 }
 
-/** PUT /gst/rcm-rules (gst:write): a new rule, or the same prefix, supplier and date corrected. The reason was kept by
- * the handler. */
-export async function putRcmRule(ctx: Ctx, { prefix, supplier, effectiveFrom, source, note, confirmed }: In<typeof setRcmRule>):
+/** PUT /gst/rcm-rules (gst:write): a new rule, or the same prefix, supplier and date corrected, or withdrawn from a day
+ * (`withdrawnFrom`; left out, it stays as it is). A wrong prefix, supplier or date is withdrawn and the right rule added.
+ * The reason was kept by the handler. */
+export async function putRcmRule(ctx: Ctx, { prefix, supplier, effectiveFrom, source, note, confirmed, withdrawnFrom }: In<typeof setRcmRule>):
   Promise<Out<typeof setRcmRule>> {
-  const [row] = await gstTx(ctx).insert(rcmRules).values({ prefix, supplier, effectiveFrom, source, note, confirmed })
-    .onConflictDoUpdate({ target: [rcmRules.prefix, rcmRules.supplier, rcmRules.effectiveFrom], set: { source, note, confirmed } })
+  const [row] = await gstTx(ctx).insert(rcmRules).values({ prefix, supplier, effectiveFrom, source, note, confirmed, withdrawnFrom: withdrawnFrom ?? null })
+    .onConflictDoUpdate({ target: [rcmRules.prefix, rcmRules.supplier, rcmRules.effectiveFrom],
+      set: { source, note, confirmed, ...(withdrawnFrom === undefined ? {} : { withdrawnFrom }) } })
     .returning({ id: rcmRules.id });
   if (row === undefined) throw new Error('The rule was not saved');
   return row;

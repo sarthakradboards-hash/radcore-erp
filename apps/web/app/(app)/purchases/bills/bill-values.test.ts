@@ -58,7 +58,7 @@ describe('a charge’s expense category (#436)', () => {
 
 describe('a charge’s category choices', () => {
   const cat = (n: number, active: boolean) => ({ id: id(n), name: `Cat ${n}`, credit: 'allowed' as const, blockedClause: null, active, defaultTdsSectionId: null,
-    accounts: [] });
+    defaultSac: null, accounts: [] });
   it('are none while loading, so a saved category is never drawn as None (e2e-playwright on #450)', () => {
     expect(categoryChoices(undefined, id(40))).toBeNull();
   });

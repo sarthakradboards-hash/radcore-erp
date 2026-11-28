@@ -2,7 +2,7 @@
 // server ranks them (same signed amount, within the match days, by reference, then the party in the narration, then the
 // nearest date), and the matching contracts' refusals.
 import { dec, ENTRY_KINDS, formatDate, formatMoney, sum, type EntryKind } from '@radcore/lib-common';
-import type { listBookLinesContract, listMatchCandidatesContract } from '@radcore/lib-accounts/contract';
+import type { listAccounts, listBookLinesContract, listMatchCandidatesContract } from '@radcore/lib-accounts/contract';
 import type { z } from 'zod';
 import { t } from '../../../../lib/i18n/index.ts';
 
@@ -12,6 +12,27 @@ type BookLine = z.output<typeof listBookLinesContract.output>['items'][number];
 const CODES = ['already_matched', 'entry_reversed', 'match_unbalanced', 'not_this_account', 'not_matched', 'statement_in_use'] as const;
 /** The matching contracts' refusals in the screen's words. */
 export const MATCH_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`books.bank.err.${c}`)]));
+
+// The journal's refusals say which day they mean: a charge is booked on the line's date, and an unmatch reverses it today.
+/** What booking a bank charge or interest can be refused with. */
+export const CHARGE_MESSAGES: Partial<Record<string, string>> = {
+  ...MATCH_MESSAGES,
+  not_a_charge_account: t('books.bank.err.not_a_charge_account'), account_inactive: t('books.bank.err.account_inactive'),
+  period_locked: t('books.bank.err.charge.period_locked'), year_not_open: t('books.bank.err.charge.year_not_open'),
+  series_full: t('books.bank.err.series_full'),
+};
+/** What an unmatch can be refused with. */
+export const UNMATCH_MESSAGES: Partial<Record<string, string>> = {
+  ...MATCH_MESSAGES,
+  period_locked: t('books.bank.err.unmatch.period_locked'), year_not_open: t('books.bank.err.unmatch.year_not_open'),
+  series_full: t('books.bank.err.series_full'),
+};
+
+type Account = z.output<typeof listAccounts.output>['items'][number];
+/** Where a line may be booked: a charge (money out) to an ordinary expense account, interest (money in) to an ordinary
+ * income account, switched on. The server judges it again (not_a_charge_account, account_inactive). */
+export const chargeAccounts = <A extends Pick<Account, 'type' | 'controlKind' | 'active'>>(accounts: readonly A[], direction: 'in' | 'out') =>
+  accounts.filter((a) => a.type === (direction === 'out' ? 'expense' : 'income') && a.controlKind === 'none' && a.active);
 
 const isKind = (k: string): k is EntryKind => (ENTRY_KINDS as readonly string[]).includes(k);
 
@@ -36,12 +57,13 @@ const signed = (m: Moved) => (m.direction === 'in' ? m.amount : dec(m.amount).ne
 
 /**
  * The two sides of a several-line match, each the signed sum of what's ticked (money into the account counts up), and
- * whether they come to the same: the screen offers the match only then; the server judges it again (match_unbalanced).
+ * whether they come to the same: the screen offers the match only then; the server judges it again (match_unbalanced). The
+ * difference has no direction: with both sides money out, "in" misread (e2e-playwright on #463).
  */
 export function matchTotals(statement: readonly Moved[], book: readonly Moved[]) {
   const s = sum(statement.map(signed));
   const b = sum(book.map(signed));
-  return { statement: s.toFixed(2), book: b.toFixed(2), difference: s.minus(b).toFixed(2), balanced: statement.length > 0 && book.length > 0 && s.eq(b) };
+  return { statement: s.toFixed(2), book: b.toFixed(2), difference: s.minus(b).abs().toFixed(2), balanced: statement.length > 0 && book.length > 0 && s.eq(b) };
 }
 
 /** A signed total in words: "₹7,500.00 out", "₹900.00 in", "₹0.00". */

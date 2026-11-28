@@ -139,21 +139,27 @@ export async function getBillById(ctx: Ctx, { id }: In<typeof getPurchaseBill>):
     if (worked instanceof AppError) {
       const taxable = lines.map((l) => (l.kind !== 'charge' ? roundMoney(dec(l.qty ?? '0').times(dec(l.rate ?? '0'))) : roundMoney(l.amount ?? '0')));
       amounts = { placeOfSupply: null, taxable: roundMoney(taxable.reduce((s, t) => s.plus(dec(t)), dec('0'))), ...none, roundOff: null, total: null,
-        note: worked.code === 'company_profile_incomplete' ? 'Set the company’s state to work out the GST' : worked.message };
+        note: worked.code === 'company_profile_incomplete' ? 'Set the company’s state to work out the GST' : worked.message, reverseCharge: null };
       lineAmounts = taxable.map((t) => ({ gstRate: null, gstRateSource: null, taxable: t, ...none, lineTotal: null, reverseCharge: null }));
     } else {
       const t = worked.totals;
       amounts = { placeOfSupply: worked.placeOfSupply, taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, roundOff: t.roundOff,
-        total: t.total, note: null };
+        total: t.total, note: null, reverseCharge: null };
       lineAmounts = worked.lines.map((l) => ({ gstRate: l.gstRate, gstRateSource: l.gstRateSource, taxable: l.taxable, cgst: l.cgst, sgst: l.sgst,
         igst: l.igst, lineTotal: l.lineTotal, reverseCharge: l.reverseCharge }));
     }
   } else {
     amounts = { placeOfSupply: b.placeOfSupply, taxable: b.taxable ?? '0.00', cgst: b.cgst, sgst: b.sgst, igst: b.igst, roundOff: b.roundOff,
-      total: b.total, note: null };
+      total: b.total, note: null, reverseCharge: null };
     lineAmounts = lines.map((l) => ({ gstRate: l.gstRate, gstRateSource: l.gstRateSource, taxable: l.taxable ?? '0.00', cgst: l.cgst, sgst: l.sgst,
       igst: l.igst, lineTotal: l.lineTotal,
       reverseCharge: l.rcmCgst === null ? null : { cgst: l.rcmCgst, sgst: l.rcmSgst ?? '0.00', igst: l.rcmIgst ?? '0.00' } }));
+  }
+  // What the bill owes under reverse charge (ADR-010 §4), its charges' summed, for the bill page (the coordinator, 27 Nov).
+  const owed = lineAmounts.flatMap((a) => (a.reverseCharge === null ? [] : [a.reverseCharge]));
+  if (owed.length > 0) {
+    const sum = (head: 'cgst' | 'sgst' | 'igst') => roundMoney(owed.reduce((s, r) => s.plus(dec(r[head])), dec('0')));
+    amounts = { ...amounts, reverseCharge: { cgst: sum('cgst'), sgst: sum('sgst'), igst: sum('igst') } };
   }
   // The charges as a share of the goods' taxable value: past the tolerance, the bill needs approval (ADR-008 §7).
   const goodsValue = lines.reduce((s, l, i) => (l.kind !== 'charge' ? s.plus(dec(lineAmounts[i]?.taxable ?? '0')) : s), dec('0'));
