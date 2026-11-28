@@ -16,6 +16,8 @@ type ReasonDialogProps = {
   onOpenChange: (open: boolean) => void;
   /** What is being done to what: "Cancel invoice INV-0042". */
   title: string;
+  /** What else it does, under the title. */
+  description?: string;
   /** The confirm button: "Cancel invoice". */
   action: string;
   /** Sends it, for example `cancel.submit({ id, reason })`. An ApiError's issue at ["reason"] shows on the field. */
@@ -26,7 +28,7 @@ type ReasonDialogProps = {
   messages?: Partial<Record<string, string>>;
 };
 
-export function ReasonDialog({ open, onOpenChange, title, action, onConfirm, done, messages }: ReasonDialogProps) {
+export function ReasonDialog({ open, onOpenChange, title, description, action, onConfirm, done, messages }: ReasonDialogProps) {
   const confirm = async ({ reason }: z.output<typeof schema>) => {
     await onConfirm(reason);
     onOpenChange(false);
@@ -34,7 +36,7 @@ export function ReasonDialog({ open, onOpenChange, title, action, onConfirm, don
     setTimeout(() => announce(done), 0);
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={title}>
+    <Dialog open={open} onOpenChange={onOpenChange} title={title} {...(description === undefined ? {} : { description })}>
       <Form schema={schema} defaultValues={{ reason: '' }} onSubmit={confirm} saved={false}
         {...(messages === undefined ? {} : { messages })}>
         <TextAreaField name="reason" label={t('kit.reason.label')} hint={t('kit.reason.hint')} />
