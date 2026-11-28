@@ -10,6 +10,7 @@ export {
 } from './services/expenses.ts';
 export { putTdsRate, tdsRatesPage, tdsSectionsList } from './services/tds-rates.ts';
 export { bookTds, defaultTdsSection, reverseTds, setTdsTerms, type TdsLine } from './services/tds-booking.ts';
+export { depositTds, TDS_DEPOSIT_SERIES, tdsDeductionsPage } from './services/tds-deposits.ts';
 export { tdsFor, tdsRound, type TdsBooking, type TdsRate } from './rules/tds.ts';
 export { companyForInvoice, getCompanyProfile, setCompanyProfile } from './services/company.ts';
 export {
@@ -52,6 +53,7 @@ export { BUYS_FROM_KINDS, SELLS_TO_KINDS } from './contract.ts';
 // This library's settings and number series, for apps/api's catalogue (RAD-132, ADR-001 §8c).
 import type { Series, SettingDef } from '@radcore/lib-platform';
 import { EXPENSE_SERIES as spent } from './services/expenses.ts';
+import { TDS_DEPOSIT_SERIES as tdsDeposited } from './services/tds-deposits.ts';
 import { JOURNAL_SERIES as journal } from './services/journal.ts';
 import { TRANSFER_SERIES as transferred } from './services/transfers.ts';
 import { YEAR_END_CHECKLIST as yearEnd } from './services/period-lock.ts';
@@ -59,4 +61,4 @@ import { MATCH_DAYS as matchDays } from './services/bank-matching.ts';
 import { CASH_PAYMENT_LIMIT as cashOut, CASH_RECEIPT_LIMIT as cashIn, DEFAULT_CREDIT_DAYS as creditDays, PAYMENT_SERIES as paid,
   RECEIPT_SERIES as received } from './services/payments.ts';
 export const settings: readonly SettingDef<unknown>[] = [cashIn, cashOut, creditDays, yearEnd, matchDays];
-export const series: readonly Series[] = [journal, received, paid, transferred, spent];
+export const series: readonly Series[] = [journal, received, paid, transferred, spent, tdsDeposited];

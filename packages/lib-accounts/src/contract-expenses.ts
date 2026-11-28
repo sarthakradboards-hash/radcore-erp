@@ -164,7 +164,8 @@ export const postExpense = defineContract({
 export const cancelExpense = defineContract({
   method: 'POST', path: '/expenses/:id/cancel', auth: 'session', perm: 'expenses:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: z.string().trim().min(1).max(500) }), output: z.object({}),
-  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'has_allocations', 'series_full', 'bank_matched'],
+  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'has_allocations', 'series_full', 'bank_matched',
+    'tds_deposited'],
   dbErrors: { 'RA006:document_still_applied': { code: 'has_allocations', message: 'Reverse what’s applied to this expense first' },
     ...BANK_MATCHED_DB_ERROR },
 });

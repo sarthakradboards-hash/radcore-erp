@@ -383,12 +383,12 @@ export async function cancelBillNow(ctx: Ctx, { id, businessDate, reason }: In<t
   if (businessDate < b.businessDate) throw refuse('date_before_source', `The bill is dated ${b.businessDate}`, ['businessDate']);
   // A bill a posted supplier return debits stays: its debit note mirrors it (RAD-140). Cancel the return first.
   if (await billDebited(ctx, id)) throw new AppError('bill_returned', 'A supplier return’s debit note is against this bill: cancel that return first');
+  // Its TDS reversed first (refused while deposited): that holds the payee's row, step 3, before the positions (step 4).
+  await reverseTds(ctx, { table: SOURCE, id, businessDate });
   // The stock positions before any series' turn (ADR-006 §1, the auditor on #380): undoDifference holds them, then runs
   // the mirror (which draws the journal's number), then posts its own entry, which the mirror mustn't reverse.
   const own = await undoDifference(ctx, b, await linesOf(ctx, id), businessDate,
     async () => (await reverseEntriesOf(ctx, { source: { table: SOURCE, id }, businessDate, reason }))[0]);
-  // Its TDS rows reversed, so the year's sums leave it out (ADR-009 §4).
-  await reverseTds(ctx, { table: SOURCE, id, businessDate });
   await purchasingTx(ctx).update(purchaseBills).set({ status: 'cancelled', cancelledAt: new Date(), cancelledBy: principalId(ctx.principal),
     cancelReason: reason, cancelEntryId: own?.id ?? null }).where(eq(purchaseBills.id, id));
   return {};
