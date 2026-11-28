@@ -5,7 +5,8 @@
 // cancel holding the document. Each test has its own bank account and its own statement lines, written as rows.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  bookCharge, bookLinesPage, cancelPayment, matchCandidates, matchLines, openFinancialYear, reconciliation, recordPayment, statementImportsPage, statementLinesPage, undoStatementImport,
+  AUTO_MATCH_BATCH, autoMatch, autoMatchBatch, bookCharge, bookLinesPage, cancelPayment, matchCandidates, matchLines, openFinancialYear,
+  reconciliation, recordPayment, statementImportsPage, statementLinesPage, undoStatementImport,
   unmatch,
 } from '@radcore/lib-accounts';
 import { moneyString } from '@radcore/lib-common';
@@ -192,6 +193,79 @@ describe.skipIf(!url || !superUrl)('bank matching', { timeout: 60_000 }, () => {
       await holder.query('rollback').catch(() => undefined);
       holder.release();
     }
+  });
+
+  it('auto-matches only a line with one agreeing reference, or one candidate with the party’s whole name, in batches (RC-087)', async () => {
+    const name = `Ashwini Cycles ${tag()}`;
+    const asha = await party(name);
+    const other = await party(`Other ${tag()}`);
+    const s = await statement([['in', '310.00', 'NEFT UTR555', 'UTR555'], ['in', '320.00', `IMPS ${name.toUpperCase()}`, ''],
+      ['in', '330.00', 'NO CLUE', '']]);
+    // Line 1: one receipt with its reference, beside another of the same amount: matched to the reference.
+    const byRef = await receipt(s.bank, other, '310.00', 'UTR555');
+    await receipt(s.bank, other, '310.00');
+    // Line 2: the only candidate, its party named in full in the narration.
+    const byName = await receipt(s.bank, asha, '320.00');
+    // Line 3: two receipts of its amount and nothing else to tell them apart: left for the person.
+    await receipt(s.bank, other, '330.00');
+    await receipt(s.bank, other, '330.00');
+    const sorted = [...s.lines].toSorted();
+    // One line a batch: each call answers where it got to, and null once the import's lines are done.
+    const steps: (string | null)[] = [];
+    let after: string | null = null;
+    for (let i = 0; i < 4 && (i === 0 || after !== null); i++) {
+      const from: string | null = after;
+      after = await run((ctx) => autoMatchBatch(ctx, s.imported, from, 1));
+      steps.push(after);
+    }
+    expect(steps).toEqual([sorted[0], sorted[1], sorted[2], null]);
+    const matched = (await su.query<{ line: string; journal: string; kind: string }>(`select x.statement_line_id line, j.journal_line_id journal, m.kind
+      from radcore.bank_match_statement_lines x join radcore.bank_matches m on m.id = x.match_id
+      join radcore.bank_match_journal_lines j on j.match_id = m.id where x.statement_line_id = any($1)`, [s.lines])).rows;
+    expect(matched.map((r) => [r.line, r.journal, r.kind]).toSorted()).toEqual([[s.lines[0], byRef.line, 'auto'], [s.lines[1], byName.line, 'auto']].toSorted());
+  });
+
+  it('skips a line whose candidate a person matches mid-batch, and keeps the batch’s other matches (auditor-2 on #462)', async () => {
+    const other = await party(`Other ${tag()}`);
+    const s = await statement([['in', '310.00', 'NEFT UTR777', 'UTR777'], ['in', '310.00', 'BY HAND', ''], ['in', '320.00', 'NEFT UTR888', 'UTR888']]);
+    const taken = await receipt(s.bank, other, '310.00', 'UTR777');
+    const kept = await receipt(s.bank, other, '320.00', 'UTR888');
+    // A person matches line 2 to the receipt line 1 would pick, and holds the save open while the batch runs.
+    const held = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    const manual = run(async (ctx) => {
+      await matchLines(ctx, { statementLineIds: [s.lines[1] ?? ''], journalLineIds: [taken.line] });
+      held.resolve();
+      await gate.promise;
+    });
+    await held.promise;
+    const batch = run((ctx) => autoMatchBatch(ctx, s.imported, null));
+    // The batch's link to that receipt waits on the person's unique index entry, then meets their committed match.
+    await vi.waitFor(async () => expect((await su.query<{ n: number }>(`select count(*)::int n from pg_stat_activity
+      where application_name = $1 and cardinality(pg_blocking_pids(pid)) > 0`, [APP])).rows[0]?.n).toBe(1), { timeout: 10_000, interval: 20 });
+    gate.resolve();
+    await manual;
+    expect(await batch).toBeNull();
+    const matched = (await su.query<{ line: string; journal: string; kind: string }>(`select x.statement_line_id line, j.journal_line_id journal, m.kind
+      from radcore.bank_match_statement_lines x join radcore.bank_matches m on m.id = x.match_id
+      join radcore.bank_match_journal_lines j on j.match_id = m.id where x.statement_line_id = any($1)`, [s.lines])).rows;
+    expect(matched.map((r) => [r.line, r.journal, r.kind]).toSorted())
+      .toEqual([[s.lines[1], taken.line, 'manual'], [s.lines[2], kept.line, 'auto']].toSorted());
+  });
+
+  it('queues the next auto-match batch while an import’s lines remain, and none after the last', async () => {
+    const s = await statement([['in', '1.00', 'FIRST', '']]);
+    // 500 more lines on the same import, in one insert, so the import holds one more than a batch.
+    await q(`insert into radcore.bank_statement_lines (account_id, import_id, row_no, value_date, narration, reference, direction, amount, balance)
+      select $1, $2, n + 2, $3, 'BULK', '', 'in', 1, 1 + n from p, generate_series(1, 500) n`, [s.bank, s.imported, DAY]);
+    const sent: { importId: string; after: string | null }[] = [];
+    const runWith = <R>(fn: (ctx: Ctx) => Promise<R>) => runInTransaction(db, WRITE, clerk, randomUUID(),
+      (ctx) => fn({ ...ctx, jobs: { send: async (_job: unknown, input: unknown) => { sent.push(input as { importId: string; after: string | null }); } } }));
+    expect(AUTO_MATCH_BATCH).toBe(500);
+    await runWith((ctx) => autoMatch(ctx, { importId: s.imported, after: null }));
+    expect(sent.map((x) => [x.importId, x.after !== null])).toEqual([[s.imported, true]]);
+    await runWith((ctx) => autoMatch(ctx, { importId: s.imported, after: sent[0]?.after ?? null }));
+    expect(sent).toHaveLength(1);
   });
 
   it('reconciles as at a date: book balance, statement balance, and each side’s outstanding lines (GL-132)', async () => {

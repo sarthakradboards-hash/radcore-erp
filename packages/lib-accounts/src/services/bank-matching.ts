@@ -8,8 +8,8 @@ import {
   accounts, accountsTx, after, bankMatches, bankMatchJournalLines, bankMatchStatementLines, bankStatementLines, expenses, journalEntries, journalLines, parties,
   payments, transfers,
 } from '@radcore/db/accounts';
-import { addDays, dec, indiaDate, roundMoney } from '@radcore/lib-common';
-import { AppError, decodeCursor, defineSetting, encodeCursor, type Ctx } from '@radcore/lib-platform';
+import { addDays, dec, idString, indiaDate, roundMoney } from '@radcore/lib-common';
+import { AppError, decodeCursor, defineSetting, describeError, encodeCursor, type Ctx, type JobContract } from '@radcore/lib-platform';
 import { and, asc, between, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, not, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { bookChargeContract, listBookLinesContract, listMatchCandidatesContract, matchLinesContract, unmatchContract } from '../contract-bank.ts';
@@ -62,17 +62,25 @@ const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 /** GET /bank/statement-lines/:id/candidates: the unmatched live book lines on the line's account of its signed amount,
  * dated within bank.match_days, ranked (ADR-009 §12). */
 export async function matchCandidates(ctx: Ctx, { id }: In<typeof listMatchCandidatesContract>): Promise<Out<typeof listMatchCandidatesContract>> {
-  const tx = accountsTx(ctx);
-  const [line] = await tx.select().from(bankStatementLines).where(eq(bankStatementLines.id, id)).limit(1);
+  const [line] = await accountsTx(ctx).select().from(bankStatementLines).where(eq(bankStatementLines.id, id)).limit(1);
   if (line === undefined) return refuse('not_found', 'There’s no such statement line');
+  return { candidates: (await candidatesFor(ctx, line)).slice(0, 50) };
+}
+
+type Line = { id: string; accountId: string; valueDate: string; direction: string; amount: string; narration: string; reference: string };
+type Candidate = Out<typeof listMatchCandidatesContract>['candidates'][number];
+
+/** A statement line's candidates, best first (ADR-009 §12): one indexed read on journal_lines (account, signed amount,
+ * date), then the live and unmatched among them, ranked. Shared by the candidates route and auto-match. */
+async function candidatesFor(ctx: Ctx, line: Line): Promise<Candidate[]> {
+  const tx = accountsTx(ctx);
   const days = ctx.settings.get(MATCH_DAYS);
-  const amount = roundMoney(line.amount);
   const rows = await tx.select({ id: journalLines.id, entryId: journalLines.entryId, date: journalLines.businessDate, debit: journalLines.debit,
     credit: journalLines.credit, number: journalEntries.number, kind: journalEntries.kind, sourceTable: journalEntries.sourceTable,
     sourceId: journalEntries.sourceId, reversesEntryId: journalEntries.reversesEntryId, matched: bankMatchJournalLines.matchId })
     .from(journalLines).innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
     .leftJoin(bankMatchJournalLines, eq(bankMatchJournalLines.journalLineId, journalLines.id))
-    .where(and(eq(journalLines.accountId, line.accountId), line.direction === 'in' ? eq(journalLines.debit, amount) : eq(journalLines.credit, amount),
+    .where(and(eq(journalLines.accountId, line.accountId), eq(journalLines.signedAmount, roundMoney(signedOf(line))),
       between(journalLines.businessDate, addDays(line.valueDate, -days), addDays(line.valueDate, days)), isNull(bankMatchJournalLines.matchId)))
     .orderBy(asc(journalLines.businessDate), asc(journalLines.id)).limit(200);
   const dead = await deadEntries(ctx, rows.map((r) => ({ id: r.entryId, reversesEntryId: r.reversesEntryId })));
@@ -94,7 +102,59 @@ export async function matchCandidates(ctx: Ctx, { id }: In<typeof listMatchCandi
   });
   const rank = (c: (typeof ranked)[number]) => (c.byReference ? 4 : 0) + (c.byParty === 'whole' ? 2 : c.byParty === 'word' ? 1 : 0);
   ranked.sort((a, b) => rank(b) - rank(a) || a.daysApart - b.daysApart || a.journalLineId.localeCompare(b.journalLineId));
-  return { candidates: ranked.slice(0, 50) };
+  return ranked;
+}
+
+/** How many statement lines one auto-match transaction takes: short transactions, so a year of lines never holds one
+ * long (ADR-009 §12). */
+export const AUTO_MATCH_BATCH = 500;
+
+/**
+ * Auto-match (RC-087, ADR-009 §12), for the worker after an import: of the import's unmatched lines after `after` (by
+ * id), up to `size`, each one with exactly one candidate that agrees on its reference, or with exactly one candidate in
+ * its window whose party's whole name its narration holds, is matched to it, one to one, as `auto`. Everything else is
+ * left for the person. Answers the last line looked at, or null once the import's lines are done.
+ */
+export async function autoMatchBatch(ctx: Ctx, importId: string, after: string | null, size = AUTO_MATCH_BATCH): Promise<string | null> {
+  const lines = await accountsTx(ctx).select().from(bankStatementLines)
+    .where(and(eq(bankStatementLines.importId, importId), after === null ? undefined : gt(bankStatementLines.id, after)))
+    .orderBy(asc(bankStatementLines.id)).limit(size);
+  const taken = await matchesOfLines(ctx, lines.map((l) => l.id));
+  for (const line of lines.filter((l) => !taken.has(l.id))) {
+    const candidates = await candidatesFor(ctx, line);
+    const byReference = candidates.filter((c) => c.byReference);
+    const pick = byReference.length === 1 ? byReference[0]
+      : byReference.length === 0 && candidates.length === 1 && candidates[0]?.byParty === 'whole' ? candidates[0] : undefined;
+    if (pick === undefined) continue;
+    // Each line in a savepoint: one a person matched, or whose document was cancelled, while the batch ran is left for
+    // the person, and the batch's other matches stand (auditor-2 on #462).
+    await accountsTx(ctx).transaction(() => matchAs('auto', ctx, { statementLineIds: [line.id], journalLineIds: [pick.journalLineId] }))
+      .catch((e: unknown) => { if (!raced(e)) throw e; });
+  }
+  return lines.length < size ? null : lines.at(-1)?.id ?? null;
+}
+
+// What a line meets when a person or a cancel got there first: the refusals, or the link indexes' unique violation.
+const RACED = new Set(['already_matched', 'entry_reversed', '23505:ux_bank_match_statement_lines_line', '23505:ux_bank_match_journal_lines_line']);
+function raced(e: unknown): boolean {
+  const { code, constraint } = describeError(e);
+  return e instanceof AppError ? RACED.has(e.code) : RACED.has(`${code ?? ''}:${constraint ?? ''}`);
+}
+
+type AutoMatchIn = { importId: string; after: string | null };
+/** Queued when an import stores its lines, and by itself until they're done: one batch a transaction. It runs as the
+ * person who imported, bank:reconcile checked again. */
+export const bankAutoMatchJob: JobContract<AutoMatchIn> = {
+  name: 'accounts.bank-auto-match',
+  principal: { kind: 'user', perm: 'bank:reconcile' },
+  input: z.strictObject({ importId: idString(), after: idString().nullable() }),
+  retries: 2,
+};
+
+/** The job's one batch, then the next batch queued if lines remain. */
+export async function autoMatch(ctx: Ctx, { importId, after }: AutoMatchIn): Promise<void> {
+  const last = await autoMatchBatch(ctx, importId, after);
+  if (last !== null) await ctx.jobs.send(bankAutoMatchJob, { importId, after: last });
 }
 
 /** Each posting document's reference and party name, where its kind has them (payments, transfers). */
@@ -119,7 +179,10 @@ async function documentsOf(ctx: Ctx, refs: readonly { table: string; id: string 
 }
 
 /** POST /bank/matches: the lines checked under ADR-009 §12's locks, then the match and its links. */
-export async function matchLines(ctx: Ctx, m: In<typeof matchLinesContract>): Promise<Out<typeof matchLinesContract>> {
+export const matchLines = (ctx: Ctx, m: In<typeof matchLinesContract>): Promise<Out<typeof matchLinesContract>> => matchAs('manual', ctx, m);
+
+/** A match, the person's or auto-match's. */
+async function matchAs(kind: 'manual' | 'auto', ctx: Ctx, m: In<typeof matchLinesContract>): Promise<Out<typeof matchLinesContract>> {
   const tx = accountsTx(ctx);
   await lockPeriod(ctx);
   const books = await tx.select({ id: journalLines.id, accountId: journalLines.accountId, entryId: journalLines.entryId, debit: journalLines.debit,
@@ -153,7 +216,7 @@ export async function matchLines(ctx: Ctx, m: In<typeof matchLinesContract>): Pr
   if (!bankTotal.eq(bookTotal)) {
     refuse('match_unbalanced', `The statement lines come to ${roundMoney(bankTotal)} and the book lines to ${roundMoney(bookTotal)}`);
   }
-  const [row] = await tx.insert(bankMatches).values({ accountId, kind: 'manual' }).returning({ id: bankMatches.id });
+  const [row] = await tx.insert(bankMatches).values({ accountId, kind }).returning({ id: bankMatches.id });
   if (row === undefined) throw new Error('The match was not saved');
   // Each side's links in id order, so two overlapping matches meet the unique indexes in one order (auditor-2 on #454).
   await tx.insert(bankMatchStatementLines).values(bank.map((b) => b.id).toSorted().map((statementLineId) => ({ matchId: row.id, statementLineId })));

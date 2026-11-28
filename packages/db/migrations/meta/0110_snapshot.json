@@ -1,5 +1,5 @@
 {
-  "id": "73dacfb2-2365-4de2-ac55-c9301125dee5",
+  "id": "0dd1f43a-6a23-46b6-8292-d50aa3579a16",
   "prevId": "7a753916-916b-467a-b675-a0ec0d1cce1f",
   "version": "7",
   "dialect": "postgresql",
@@ -1063,6 +1063,16 @@
           "notNull": true,
           "default": "'0'"
         },
+        "signed_amount": {
+          "name": "signed_amount",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "debit - credit",
+            "type": "stored"
+          }
+        },
         "party_id": {
           "name": "party_id",
           "type": "uuid",
@@ -1094,6 +1104,33 @@
             },
             {
               "expression": "account_control_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_journal_lines_bank_candidates": {
+          "name": "ix_journal_lines_bank_candidates",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "signed_amount",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "business_date",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1277,6 +1314,10 @@
         "ck_journal_lines_one_side": {
           "name": "ck_journal_lines_one_side",
           "value": "(\"radcore\".\"journal_lines\".\"debit\" > 0) <> (\"radcore\".\"journal_lines\".\"credit\" > 0)"
+        },
+        "ck_journal_lines_signed_amount": {
+          "name": "ck_journal_lines_signed_amount",
+          "value": "\"radcore\".\"journal_lines\".\"signed_amount\" <> 'NaN'"
         },
         "ck_journal_lines_party": {
           "name": "ck_journal_lines_party",
@@ -22807,321 +22848,6 @@
         "ck_tds_deductions_sign": {
           "name": "ck_tds_deductions_sign",
           "value": "(\"radcore\".\"tds_deductions\".\"reverses_id\" is null) = (\"radcore\".\"tds_deductions\".\"base\" >= 0 and \"radcore\".\"tds_deductions\".\"amount\" >= 0)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "radcore.tds_deposit_lines": {
-      "name": "tds_deposit_lines",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "deposit_id": {
-          "name": "deposit_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "deduction_id": {
-          "name": "deduction_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "ux_tds_deposit_lines_deduction": {
-          "name": "ux_tds_deposit_lines_deduction",
-          "columns": [
-            {
-              "expression": "deduction_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "tds_deposit_lines_deposit_id_tds_deposits_id_fk": {
-          "name": "tds_deposit_lines_deposit_id_tds_deposits_id_fk",
-          "tableFrom": "tds_deposit_lines",
-          "tableTo": "tds_deposits",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "deposit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "tds_deposit_lines_deduction_id_tds_deductions_id_fk": {
-          "name": "tds_deposit_lines_deduction_id_tds_deductions_id_fk",
-          "tableFrom": "tds_deposit_lines",
-          "tableTo": "tds_deductions",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "deduction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "pk_tds_deposit_lines": {
-          "name": "pk_tds_deposit_lines",
-          "columns": [
-            "deposit_id",
-            "deduction_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "radcore.tds_deposits": {
-      "name": "tds_deposits",
-      "schema": "radcore",
-      "columns": {
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "nullif(current_setting('app.principal', true), '')"
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "number": {
-          "name": "number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "challan_number": {
-          "name": "challan_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bsr_code": {
-          "name": "bsr_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "posted_entry_id": {
-          "name": "posted_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "ux_tds_deposits_number": {
-          "name": "ux_tds_deposits_number",
-          "columns": [
-            {
-              "expression": "number",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_tds_deposits_account": {
-          "name": "ix_tds_deposits_account",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_tds_deposits_entry": {
-          "name": "ix_tds_deposits_entry",
-          "columns": [
-            {
-              "expression": "posted_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_tds_deposits_page": {
-          "name": "ix_tds_deposits_page",
-          "columns": [
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "tds_deposits_account_id_accounts_id_fk": {
-          "name": "tds_deposits_account_id_accounts_id_fk",
-          "tableFrom": "tds_deposits",
-          "tableTo": "accounts",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "tds_deposits_posted_entry_id_journal_entries_id_fk": {
-          "name": "tds_deposits_posted_entry_id_journal_entries_id_fk",
-          "tableFrom": "tds_deposits",
-          "tableTo": "journal_entries",
-          "schemaTo": "radcore",
-          "columnsFrom": [
-            "posted_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_tds_deposits_challan_number": {
-          "name": "ck_tds_deposits_challan_number",
-          "value": "char_length(\"radcore\".\"tds_deposits\".\"challan_number\") <= 20"
-        },
-        "ck_tds_deposits_amount": {
-          "name": "ck_tds_deposits_amount",
-          "value": "\"radcore\".\"tds_deposits\".\"amount\" >= 0 and \"radcore\".\"tds_deposits\".\"amount\" <> 'NaN'"
-        },
-        "ck_tds_deposits_bsr_code": {
-          "name": "ck_tds_deposits_bsr_code",
-          "value": "\"radcore\".\"tds_deposits\".\"bsr_code\" ~ '^[0-9]{7}$'"
-        },
-        "ck_tds_deposits_challan": {
-          "name": "ck_tds_deposits_challan",
-          "value": "btrim(\"radcore\".\"tds_deposits\".\"challan_number\") <> ''"
         }
       },
       "isRLSEnabled": false
