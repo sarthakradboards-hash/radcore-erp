@@ -49,3 +49,27 @@ export const setTdsRate = defineContract({
   errors: ['unknown_section'],
   dbErrors: { '23503:tds_rates_section_id_tds_sections_id_fk': { code: 'unknown_section', message: 'There is no such TDS section' } },
 });
+
+// TDS deposits (ADR-009 §4, F18): a challan pays the deductions it names, each in full and once.
+const deduction = z.object({
+  id: idString(), sourceTable: z.string(), sourceId: idString(), partyId: idString(), sectionId: idString(), businessDate: dateString(),
+  base: z.string(), rate: z.string(), amount: moneyString(), deposited: z.boolean(),
+});
+/** GET /tds/deductions (tds:read): newest first, a page at a time; `open` for the ones a deposit can still pay (above 0,
+ * not reversed, not deposited). */
+export const listTdsDeductions = defineContract({
+  method: 'GET', path: '/tds/deductions', auth: 'session', perm: 'tds:read', tx: read,
+  input: listInput(z.object({ open: z.literal(true).optional() })), output: listOf(deduction),
+});
+/** POST /tds/deposits (payments:write): a challan (its number and the bank's BSR code), paid on its date from a bank
+ * account, paying these deductions in full. Posts Dr TDS Payable, Cr the bank (F18). */
+export const recordTdsDeposit = defineContract({
+  method: 'POST', path: '/tds/deposits', auth: 'session', perm: 'payments:write', tx: write,
+  input: z.object({ businessDate: dateString(), challanNumber: z.string().trim().min(1).max(20),
+    bsrCode: z.string().regex(/^[0-9]{7}$/, 'A BSR code is 7 digits'), accountId: idString(),
+    deductionIds: z.array(idString()).min(1).max(500).refine((ids) => new Set(ids).size === ids.length, 'Name each deduction once') }),
+  output: z.object({ id: idString(), number: z.string() }),
+  errors: ['date_in_future', 'period_locked', 'year_not_open', 'unknown_account', 'account_inactive', 'not_money_account', 'not_bank_account',
+    'unknown_deduction', 'deduction_reversed', 'nothing_to_deposit', 'already_deposited', 'series_full'],
+  dbErrors: { '23505:ux_tds_deposit_lines_deduction': { code: 'already_deposited', message: 'A deduction here is already deposited' } },
+});
