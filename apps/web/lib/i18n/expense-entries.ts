@@ -113,6 +113,7 @@ export const expenseEntries = {
   'books.expense.approvals.open': 'Open the expense',
   'books.expense.approvals.figures': 'What approving posts',
   'books.expense.approvals.changed': 'The expense changed since this was asked, so it can’t be approved. Reject it, and post the expense again.',
+  'books.expense.approvals.notRead': 'Couldn’t be read',
   'books.expense.approvals.cannotRead': 'The expense couldn’t be read, so it can’t be approved from here.',
   'books.expense.approvals.unreadable': 'What approving would post couldn’t be shown, so it can’t be approved from here.',
   'books.expense.approvals.status.approved': 'Approved',

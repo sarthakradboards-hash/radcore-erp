@@ -60,5 +60,17 @@ const version = z.object({
   lines: z.array(z.object({ categoryId: z.string(), accountId: z.string(), taxable: moneyString(), cgst: moneyString(), sgst: moneyString(),
     igst: moneyString() })),
 });
+type Described = { categoryId: string; accountId: string; description: string | null };
+/** The approval's lines with what each is for. The version carries no descriptions, so they're read from the expense,
+ * line by line, only where its line posts to the same place (e2e-playwright on #473). Pass nothing once it's changed. */
+export const describedLines = <T extends { categoryId: string; accountId: string }>(lines: readonly T[], now: readonly Described[] | undefined) =>
+  lines.map((l, i) => {
+    const same = now?.[i];
+    return { ...l, description: same?.categoryId === l.categoryId && same.accountId === l.accountId ? same.description : null };
+  });
+
+/** Set when a draft is deleted, for the list to take the focus its deleted page can't keep (e2e-playwright on #473). */
+export const afterDelete = { focusList: false };
+
 /** What approving posts, read from the approval's own version, so what's shown is what's approved; null if unreadable. */
 export const readCashVersion = (v: unknown) => version.safeParse(v).data ?? null;

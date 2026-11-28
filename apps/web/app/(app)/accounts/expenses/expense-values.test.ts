@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { cancelExpense, dropExpense, expenseCashApproval, postExpense } from '@radcore/lib-accounts/contract';
 import { ApiError } from '../../../../lib/api-client.ts';
-import { creditWords, EXPENSE_MESSAGES, expenseTitle, lineName, namingLine, readCashVersion } from './expense-values.ts';
+import { creditWords, describedLines, EXPENSE_MESSAGES, expenseTitle, lineName, namingLine, readCashVersion } from './expense-values.ts';
 
 const categories = [{ id: 'c1', name: 'Travel', credit: 'blocked' as const, blockedClause: '(g)', active: true, defaultTdsSectionId: null, defaultSac: null,
   accounts: [{ id: 'a1', code: '5100', name: 'Fuel' }] }];
@@ -39,4 +39,11 @@ it('keeps the line’s number on a refusal of one line, and leaves any other ref
   expect(named instanceof ApiError && EXPENSE_MESSAGES[named.code]).toBeUndefined();
   const whole = refusal(['statedTotal']);
   expect(namingLine(whole)).toBe(whole);
+});
+
+it('describes an approval’s line only from the expense’s line posting to the same place', () => {
+  const line = { categoryId: 'c1', accountId: 'a1' };
+  expect(describedLines([line], [{ ...line, description: 'Diesel' }])[0]?.description).toBe('Diesel');
+  expect(describedLines([line], [{ ...line, accountId: 'a2', description: 'Rent' }])[0]?.description).toBeNull();
+  expect(describedLines([line], undefined)[0]?.description).toBeNull();
 });

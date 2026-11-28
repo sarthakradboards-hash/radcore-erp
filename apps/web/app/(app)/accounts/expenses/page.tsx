@@ -4,14 +4,14 @@
 import { formatDate, formatMoney } from '@radcore/lib-common';
 import { listExpenses } from '@radcore/lib-accounts/contract';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { z } from 'zod';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { useApiList } from '../../../../lib/api/query.ts';
 import { t } from '../../../../lib/i18n/index.ts';
 import { ChoiceButtons } from '../../admin/shared.tsx';
-import { expenseTitle } from './expense-values.ts';
+import { afterDelete, expenseTitle } from './expense-values.ts';
 
 type Row = z.output<typeof listExpenses.output>['items'][number];
 type Show = Row['status'] | 'all';
@@ -32,10 +32,16 @@ export default function ExpensesPage() {
   const mayRead = permissions.includes('expenses:read');
   const mayWrite = permissions.includes('expenses:write');
   const [show, setShow] = useState<Show>('all');
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (!afterDelete.focusList) return;
+    afterDelete.focusList = false;
+    heading.current?.focus();
+  }, []);
   const list = useApiList(listExpenses, { filter: show === 'all' ? {} : { status: show } }, { enabled: mayRead });
   return (
     <>
-      <h1>{t('books.expense.title')}</h1>
+      <h1 ref={heading} tabIndex={-1}>{t('books.expense.title')}</h1>
       <p>{t('books.expense.intro')}</p>
       {!mayRead ? <p>{t('books.expense.none')}</p> : (
         <>
