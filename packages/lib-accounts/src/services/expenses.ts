@@ -344,7 +344,8 @@ export async function listExpensesPage(ctx: Ctx, input: In<typeof listExpenses>)
 }
 
 const headerOut = (r: Row, waiting: boolean, names: ReadonlyMap<string, string>) => ({ id: r.id, number: r.number, status: r.status as 'draft',
-  businessDate: r.businessDate, supplierId: r.partyId, supplierName: r.partyId === null ? null : names.get(r.partyId) ?? null, supplierInvoiceNumber: r.supplierInvoiceNumber, statedTotal: roundMoney(r.statedTotal), onCredit: r.payFromAccountId === null,
+  businessDate: r.businessDate, supplierId: r.partyId, supplierName: r.partyId === null ? null : names.get(r.partyId) ?? null,
+  supplierInvoiceNumber: r.supplierInvoiceNumber, statedTotal: roundMoney(r.statedTotal), onCredit: r.payFromAccountId === null,
   awaitingApproval: waiting, tds: roundMoney(r.tds), createdAt: isoMoment(r.createdAt) });
 
 /** GET /expenses/:id: with its lines and, once posted, each line's credit. */
