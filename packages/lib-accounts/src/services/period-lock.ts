@@ -13,7 +13,7 @@ import { AppError, defineSetting, principalsOf, requestApproval, type ApprovalSp
 import { and, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type { askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract } from '../contract-period.ts';
-import { lockPeriod, periodLockRow, postEntry, reverseEntry, type JournalLine } from './journal.ts';
+import { filedLockRow, lockPeriod, periodLockRow, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -31,14 +31,16 @@ export const YEAR_END_CHECKLIST = defineSetting('accounts.year_end_checklist', z
 const checklistOf = (ctx: Ctx) => ctx.settings.get(YEAR_END_CHECKLIST).split(';').map((s) => s.trim()).filter((s) => s !== '');
 
 /**
- * ADR-009 §7's step 1 for a move of the period lock, a close or a reopen: the company profile FOR SHARE, then the period
- * lock FOR UPDATE, so it waits for the postings in flight and none starts until it commits. Like lockPeriod it takes
- * locks and refuses nothing, so an approval's lockFirst can call it for a reject too. Answers where the lock stands.
- * shortcut: the filed-month row (M5-08) joins here FOR SHARE, after the period lock, when its table lands.
+ * ADR-009 §7's step 1 for a move of a lock: the company profile FOR SHARE, then the period lock and the filed-month row,
+ * the one being moved FOR UPDATE and the other FOR SHARE (`period` for a move of the period lock, a close or a reopen;
+ * `filed` for marking or undoing a filing). So it waits for the postings in flight and none starts until it commits.
+ * Like lockPeriod it takes locks and refuses nothing, so an approval's lockFirst can call it for a reject too. Answers
+ * where the period lock stands.
  */
-export async function lockPeriodForMove(ctx: Ctx): Promise<string | null> {
+export async function lockPeriodForMove(ctx: Ctx, which: 'period' | 'filed'): Promise<string | null> {
   await accountsTx(ctx).select({ id: company.id }).from(company).for('share');
-  const [lock] = await periodLockRow(ctx).for('update');
+  const [lock] = await periodLockRow(ctx).for(which === 'period' ? 'update' : 'share');
+  await filedLockRow(ctx).for(which === 'filed' ? 'update' : 'share');
   return lock?.through ?? null;
 }
 
@@ -66,7 +68,7 @@ export async function periodState(ctx: Ctx): Promise<Out<typeof getPeriodContrac
 
 /** POST /books/period/lock: forward only, to a day before today (ADR-009 §6). */
 export async function moveLockForward(ctx: Ctx, { through }: In<typeof lockPeriodContract>): Promise<Out<typeof lockPeriodContract>> {
-  const lock = await lockPeriodForMove(ctx);
+  const lock = await lockPeriodForMove(ctx, 'period');
   if (through >= today()) refuse('lock_in_future', 'Lock the books only through a day before today');
   if (lock !== null && through <= lock) {
     refuse('lock_not_forward', `The books are locked through ${lock}: ask to move the lock back instead`);
@@ -118,7 +120,7 @@ export const periodUnlockSpec: ApprovalSpec<UnlockVersion> = {
     return { kind: r.kind, through: r.through, reason: r.reason, lockedThrough: lock?.through ?? null };
   },
   async lockFirst(ctx) {
-    await lockPeriodForMove(ctx);
+    await lockPeriodForMove(ctx, 'period');
   },
   async approved(ctx, id) {
     const tx = accountsTx(ctx);
@@ -154,7 +156,7 @@ export type BooksCheck = (ctx: Ctx, asAt: string) => Promise<readonly unknown[]>
 export async function closeYear(ctx: Ctx, input: In<typeof closeYearContract>, booksCheck: BooksCheck): Promise<Out<typeof closeYearContract>> {
   const tx = accountsTx(ctx);
   const year = financialYear(input.start);
-  const lock = await lockPeriodForMove(ctx);
+  const lock = await lockPeriodForMove(ctx, 'period');
   const [open] = await tx.select({ start: financialYears.start }).from(financialYears).where(eq(financialYears.start, year.start)).limit(1);
   if (open === undefined) refuse('year_not_open', `The financial year ${year.label} isn’t open`);
   if (lock === null || lock < year.end) refuse('lock_before_year_end', `Lock the books through ${year.end} before closing ${year.label}`);

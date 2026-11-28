@@ -83,7 +83,7 @@ const DRAFT_ERRORS = ['date_in_future', 'unknown_party', 'not_a_supplier', 'unkn
   'unknown_batch', 'batches_mismatch', 'serials_mismatch', 'serial_twice', 'not_serialised', 'wrong_status'] as const;
 // What posting adds: the dates (§4: not before its receipts, nor the bills it debits), the stock engine's and the
 // ledger's refusals as the goods go out, the bills' tax, and its numbers.
-const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'date_before_source', 'account_inactive', 'not_enough_stock',
+const POST_ERRORS = [...DRAFT_ERRORS, 'year_not_open', 'period_locked', 'month_filed', 'date_before_source', 'account_inactive', 'not_enough_stock',
   'units_mismatch', 'unit_held', 'unit_batch', 'no_estimate', 'company_profile_incomplete', 'series_full'] as const;
 
 /** Supplier returns, newest first, a page at a time; the principal's own where that's their scope. */
@@ -134,7 +134,7 @@ export const postSupplierReturn = defineContract({
 export const cancelSupplierReturn = defineContract({
   method: 'POST', path: '/purchasing/returns/:id/cancel', auth: 'session', perm: 'supplier_returns:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({}),
-  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked', 'account_inactive', 'replacement_received',
+  errors: ['wrong_status', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked', 'month_filed', 'account_inactive', 'replacement_received',
     'still_applied', 'units_mismatch', 'not_reversible', 'already_reversed'],
   dbErrors: { 'RA006:document_still_applied': { code: 'still_applied', message: 'This debit note is still applied or refunded: reverse that first' } },
 });

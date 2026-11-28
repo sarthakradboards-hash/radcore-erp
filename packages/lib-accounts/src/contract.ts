@@ -253,7 +253,7 @@ export const reverseJournal = defineContract({
   method: 'POST', path: '/journal/:id/reverse', auth: 'session', perm: 'journal:reverse', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['reverse_through_document', 'already_reversed', 'reversal_not_reversible', 'period_locked', 'year_not_open', 'bank_matched'],
+  errors: ['reverse_through_document', 'already_reversed', 'reversal_not_reversible', 'period_locked', 'month_filed', 'year_not_open', 'bank_matched'],
   dbErrors: BANK_MATCHED_DB_ERROR,
 });
 
@@ -290,7 +290,7 @@ export const recordPaymentContract = defineContract({
     reference: z.string().trim().min(1).max(40).optional(),
   }),
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
-  errors: ['amount_not_positive', 'invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',
+  errors: ['amount_not_positive', 'invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'month_filed', 'refund_needs_receipt', 'receipt_not_posted',
     'refund_other_party', 'date_before_source', 'exceeds_receipt', 'unknown_account', 'not_money_account', 'account_inactive', 'not_draft',
     'refund_through_owner', 'series_full', 'looks_like_card_number', ...PAYMENT_TDS_ERRORS, 'unknown_section', ...CREDIT_REFUND_ERRORS],
   dbErrors: { ...CREDIT_REFUND_DB_ERRORS,
@@ -302,7 +302,7 @@ export const cancelPaymentContract = defineContract({
   method: 'POST', path: '/payments/:id/cancel', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({}),
-  errors: ['not_posted', 'date_before_source', 'date_in_future', 'has_refunds', 'has_allocations', 'period_locked', 'year_not_open',
+  errors: ['not_posted', 'date_before_source', 'date_in_future', 'has_refunds', 'has_allocations', 'period_locked', 'month_filed', 'year_not_open',
     'already_reversed', 'bank_matched', 'tds_deposited'],
   dbErrors: { 'RA006:payment_still_allocated': { code: 'has_allocations', message: 'Reverse what this is applied to first' },
     ...BANK_MATCHED_DB_ERROR },
@@ -311,7 +311,7 @@ export const cancelPaymentContract = defineContract({
 /** An owner's override for cash past the day's limit (ADR-007 §8, RC-114): its approval posts the payment, so the
  * decision can meet the engine's refusals. */
 export const cashLimitApproval = approvalContracts('cash-limit', 'payments:approve',
-  ['account_inactive', 'period_locked', 'year_not_open', 'not_draft', 'receipt_not_posted', 'exceeds_receipt', 'refund_other_party',
+  ['account_inactive', 'period_locked', 'month_filed', 'year_not_open', 'not_draft', 'receipt_not_posted', 'exceeds_receipt', 'refund_other_party',
     'date_before_source', 'series_full', ...PAYMENT_TDS_ERRORS, ...CREDIT_REFUND_ERRORS], CREDIT_REFUND_DB_ERRORS);
 
 // Allocations and credit applications (M3-12, RAD-116 part 2; ADR-005 §7a). A document is named by its table, one
@@ -347,7 +347,7 @@ export const allocatePaymentContract = defineContract({
     .min(1, 'Apply it to one document or more').max(50) }),
   output: z.object({ ids: z.array(idString()) }),
   errors: ['not_allocatable', 'not_posted', 'exceeds_payment', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted',
-    'document_missing', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'tds_on_applied_payment'],
+    'document_missing', 'date_in_future', 'date_before_source', 'period_locked', 'month_filed', 'year_not_open', 'tds_on_applied_payment'],
   dbErrors: ALLOCATION_DB_ERRORS,
 });
 
@@ -355,7 +355,7 @@ export const allocatePaymentContract = defineContract({
 export const reverseAllocationContract = defineContract({
   method: 'POST', path: '/allocations/:id/reverse', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({ id: idString() }),
-  errors: ['already_reversed', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
+  errors: ['already_reversed', 'date_in_future', 'date_before_source', 'period_locked', 'month_filed', 'year_not_open'],
   dbErrors: { '23505:ux_payment_allocations_reverses': { code: 'already_reversed', message: 'That allocation is already reversed' } },
 });
 
@@ -366,7 +366,7 @@ export const applyCreditContract = defineContract({
     amount: moneyString(), businessDate: dateString() }),
   output: z.object({ id: idString() }),
   errors: ['not_allocatable', 'exceeds_credit', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted', 'document_missing',
-    'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
+    'date_in_future', 'date_before_source', 'period_locked', 'month_filed', 'year_not_open'],
   dbErrors: CREDIT_DB_ERRORS,
 });
 
@@ -374,7 +374,7 @@ export const applyCreditContract = defineContract({
 export const reverseCreditApplicationContract = defineContract({
   method: 'POST', path: '/credit-applications/:id/reverse', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }), output: z.object({ id: idString() }),
-  errors: ['already_reversed', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
+  errors: ['already_reversed', 'date_in_future', 'date_before_source', 'period_locked', 'month_filed', 'year_not_open'],
   dbErrors: { '23505:ux_credit_applications_reverses': { code: 'already_reversed', message: 'That credit application is already reversed' } },
 });
 
@@ -385,3 +385,4 @@ export * from './contract-expenses.ts';
 export * from './contract-transfers.ts';
 export * from './contract-bank.ts';
 export * from './contract-tds.ts';
+export * from './contract-filings.ts';

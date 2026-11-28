@@ -26,7 +26,7 @@ const payment = z.discriminatedUnion('method', [
  * recordPayment and allocatePayment, listed as the bookings contract lists them, so no lib-sales route reaches lib-accounts
  * through its contract); and the quick bill's own. */
 const STAGES = [createOrder, confirmOrder, createDelivery, postDelivery, createInvoice, postInvoice];
-const MONEY_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'unknown_account', 'not_money_account', 'account_inactive',
+const MONEY_ERRORS = ['date_in_future', 'year_not_open', 'period_locked', 'month_filed', 'unknown_account', 'not_money_account', 'account_inactive',
   'exceeds_payment', 'exceeds_document', 'document_not_posted'] as const;
 const ERRORS = [...new Set([...STAGES.flatMap((c) => c.errors), ...MONEY_ERRORS, 'cash_over_limit', 'approval_code_required',
   'looks_like_card_number', 'overpaid', 'no_payment_amount', 'walk_in_pays_in_full'])];

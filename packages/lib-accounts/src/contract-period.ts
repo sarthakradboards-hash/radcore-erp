@@ -8,7 +8,7 @@ import { z } from 'zod';
 const read = { readOnly: true, isolation: 'read committed' } as const;
 const write = { readOnly: false, isolation: 'read committed' } as const;
 // What a close or a reopen can meet in the journal engine (tools/permission-reach.test.ts's ENGINE_ERRORS) and numbering.
-const ENGINE = ['account_inactive', 'period_locked', 'year_not_open', 'series_full'] as const;
+const ENGINE = ['account_inactive', 'period_locked', 'month_filed', 'year_not_open', 'series_full'] as const;
 // What a request, and its approval again, checks of the years (ADR-009 §6).
 const UNLOCK = ['lock_not_back', 'year_closed', 'year_not_closed', 'later_year_closed'] as const;
 

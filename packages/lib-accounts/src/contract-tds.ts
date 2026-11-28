@@ -69,7 +69,7 @@ export const recordTdsDeposit = defineContract({
     bsrCode: z.string().regex(/^[0-9]{7}$/, 'A BSR code is 7 digits'), accountId: idString(),
     deductionIds: z.array(idString()).min(1).max(500).refine((ids) => new Set(ids).size === ids.length, 'Name each deduction once') }),
   output: z.object({ id: idString(), number: z.string() }),
-  errors: ['date_in_future', 'period_locked', 'year_not_open', 'unknown_account', 'account_inactive', 'not_money_account', 'not_bank_account',
+  errors: ['date_in_future', 'period_locked', 'month_filed', 'year_not_open', 'unknown_account', 'account_inactive', 'not_money_account', 'not_bank_account',
     'unknown_deduction', 'deduction_reversed', 'nothing_to_deposit', 'already_deposited', 'series_full'],
   dbErrors: { '23505:ux_tds_deposit_lines_deduction': { code: 'already_deposited', message: 'A deduction here is already deposited' } },
 });

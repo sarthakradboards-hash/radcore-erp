@@ -26,7 +26,7 @@ const item = { itemId: idString(), sku: z.string(), name: z.string() };
 const cancelIn = z.object({ id: idString(), businessDate: dateString(), reason: reason() });
 
 // What the stock engine and the ledger refuse as a document posts (ADR-006 §4, §6).
-const POSTING_ERRORS = ['year_not_open', 'period_locked', 'account_inactive', 'not_enough_stock', 'batches_mismatch', 'units_mismatch',
+const POSTING_ERRORS = ['year_not_open', 'period_locked', 'month_filed', 'account_inactive', 'not_enough_stock', 'batches_mismatch', 'units_mismatch',
   'serial_twice', 'not_serialised', 'unit_held', 'no_estimate', 'series_full'] as const;
 // What a document's places and lines are refused for.
 const LINE_ERRORS = ['unknown_location', 'location_inactive', 'unknown_item', 'quantity_too_precise', 'qty_not_positive', 'date_in_future'] as const;
@@ -81,7 +81,7 @@ export const createJobWorkChallan = defineContract({
 export const cancelJobWorkChallan = defineContract({
   method: 'POST', path: '/stock/job-work/challans/:id/cancel', auth: 'session', perm: 'job_work:write', tx: write,
   input: cancelIn, output: z.object({}),
-  errors: ['wrong_status', 'challan_answered', 'goods_moved_on', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked',
+  errors: ['wrong_status', 'challan_answered', 'goods_moved_on', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked', 'month_filed',
     'account_inactive', 'not_enough_stock'],
 });
 /**
@@ -153,7 +153,7 @@ export const createJobWorkReceipt = defineContract({
 export const cancelJobWorkReceipt = defineContract({
   method: 'POST', path: '/stock/job-work/receipts/:id/cancel', auth: 'session', perm: 'job_work:write', tx: write,
   input: cancelIn, output: z.object({}),
-  errors: ['wrong_status', 'goods_moved_on', 'charges_billed', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked',
+  errors: ['wrong_status', 'goods_moved_on', 'charges_billed', 'date_in_future', 'date_before_source', 'year_not_open', 'period_locked', 'month_filed',
     'account_inactive', 'not_enough_stock'],
   // A bill that isn't cancelled names its charges (ADR-008 §11): the database's guard, since lib-stock can't read bills.
   dbErrors: { 'RA006:job_work_charges_billed': { code: 'charges_billed', message: 'A purchase bill names this receipt’s charges: cancel or delete the bill first' } },
