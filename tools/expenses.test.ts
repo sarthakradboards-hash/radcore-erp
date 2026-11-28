@@ -9,7 +9,8 @@ import {
   journalPage, openFinancialYear, postExpenseNow, recordPayment,
 } from '@radcore/lib-accounts';
 import { createExpense, recordPaymentContract } from '@radcore/lib-accounts/contract';
-import { gstinCheckChar } from '@radcore/lib-common';
+import { gstinCheckChar, percentString } from '@radcore/lib-common';
+import { putGstRate, putRcmRule } from '@radcore/lib-gst';
 import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import pg from 'pg';
@@ -96,14 +97,14 @@ describe.skipIf(!url || !superUrl)('expenses', { timeout: 60_000 }, () => {
     }, staff);
     return { staff, supplierGstin, accountId, ...made };
   }
-  type Line = { taxable: string; gstRate: string; cgst?: string; sgst?: string; igst?: string };
+  type Line = { taxable: string; gstRate: string; cgst?: string; sgst?: string; igst?: string; sac?: string | null };
   const draft = async (at: Setup, o: { lines: Line[]; total: string; pay: string | null; file?: boolean; supplier?: boolean }) => {
     const fileId = o.file === false ? null : await file();
     const input = createExpense.input.parse({ businessDate: DATE, supplierId: o.supplier === false ? null : at.supplier,
       supplierInvoiceNumber: `INV/${letters(5)}`, supplierInvoiceDate: DATE, supplierGstin: o.supplier === false ? null : at.supplierGstin,
       payFromAccountId: o.pay, statedTotal: o.total, fileId, notes: null,
       lines: o.lines.map((l) => ({ categoryId: at.categoryId, accountId: at.accountId, description: null, taxable: l.taxable, gstRate: l.gstRate,
-        cgst: l.cgst ?? '0', sgst: l.sgst ?? '0', igst: l.igst ?? '0' })) });
+        cgst: l.cgst ?? '0', sgst: l.sgst ?? '0', igst: l.igst ?? '0', ...(l.sac === undefined ? {} : { sac: l.sac }) })) });
     return (await run((ctx) => addExpense(ctx, input), at.staff)).id;
   };
   const post = (at: Setup, id: string) => run((ctx) => postExpenseNow(ctx, { id }), at.staff);
@@ -225,5 +226,71 @@ describe.skipIf(!url || !superUrl)('expenses', { timeout: 60_000 }, () => {
     await decide(approver);
     expect((await run((ctx) => getExpenseById(ctx, { id }), at.staff)).status).toBe('posted');
     expect(await entryOf(at, id)).toEqual(['Cash 0.00 12000.00', 'Labour 12000.00 0.00'].sort());
+  });
+
+  // RAD-153 PR 2 (ADR-010 §4, F31): an expense line its SAC puts under reverse charge, from a supplier the rule covers on
+  // the supplier's date. Its bill shows no tax; we owe it to RCM Payable, its credit waiting in RCM Credit Pending. Each
+  // test rates and rules SAC codes of its own, under 99 with 8 digits, which no seeded rule covers.
+  describe('reverse charge', () => {
+    const sac = () => `99${String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, '0')}`;
+    const rated = async (at: Setup, rate: string, rule?: { from: string; withdrawnFrom?: string }) => {
+      const s = sac();
+      await run(async (ctx) => {
+        await putGstRate(ctx, { hsn: s, effectiveFrom: '2026-04-01', rate: percentString().parse(rate), source: 'Test', note: null, reason: 'Test' });
+        if (rule !== undefined) {
+          await putRcmRule(ctx, { prefix: s, supplier: 'any', effectiveFrom: rule.from, source: 'Test', note: null, confirmed: false,
+            withdrawnFrom: rule.withdrawnFrom ?? null, reason: 'Test' });
+        }
+      }, at.staff);
+      return s;
+    };
+    /** `at`'s category and account, with an unregistered transporter of Maharashtra, or an overseas supplier, of its own. */
+    const supplied = async (at: Setup, overseas = false) => {
+      const { id } = await run((ctx) => addParty(ctx, { name: `Supplier ${letters(6)}`, kinds: ['supplier'], gstin: null, pan: null, composition: false,
+        overseas, stateCode: overseas ? '96' : '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null }), at.staff);
+      return { ...at, supplier: id, supplierGstin: null as unknown as string };
+    };
+    const rcmOf = async (id: string) => (await run((ctx) => getExpenseById(ctx, { id }), await person())).lines.map((l) => [l.sac, l.reverseCharge, l.credit]);
+
+    it('books F31: Dr Freight 10,000.00, Dr RCM Credit Pending 500.00, Cr RCM CGST and SGST Payable 250.00, Cr the supplier 10,000.00', async () => {
+      const at = await supplied(await setup({ state: '27', name: 'Freight' }));
+      const s = await rated(at, '5', { from: DATE });
+      const id = await draft(at, { lines: [{ taxable: '10000', gstRate: '5', sac: s }], total: '10000', pay: null });
+      await post(at, id);
+      expect(await entryOf(at, id)).toEqual(['Creditors 0.00 10000.00', 'Freight 10000.00 0.00', 'RCM CGST Payable 0.00 250.00',
+        'RCM Credit Pending 500.00 0.00', 'RCM SGST Payable 0.00 250.00'].sort());
+      expect(await rcmOf(id)).toEqual([[s, { cgst: '250.00', sgst: '250.00', igst: '0.00' }, { cgst: '250.00', sgst: '250.00', igst: '0.00', reason: null }]]);
+    });
+
+    it('owes the tax and claims none on a blocked category, and refuses a line that shows the supplier’s GST (rcm_bill_has_tax)', async () => {
+      const at = await supplied(await setup({ state: '27', name: 'Freight', blocked: '(b)(i)' }));
+      const s = await rated(at, '5', { from: DATE });
+      const id = await draft(at, { lines: [{ taxable: '10000', gstRate: '5', sac: s }], total: '10000', pay: null });
+      await post(at, id);
+      expect(await entryOf(at, id)).toEqual(['Creditors 0.00 10000.00', 'Freight 10500.00 0.00', 'RCM CGST Payable 0.00 250.00',
+        'RCM SGST Payable 0.00 250.00'].sort());
+      const taxed = await draft(at, { lines: [{ taxable: '10000', gstRate: '5', cgst: '250', sgst: '250', sac: s }], total: '10500', pay: null });
+      expect(await code(post(at, taxed))).toBe('rcm_bill_has_tax');
+    });
+
+    it('books an overseas supplier’s service as IGST reverse charge, by its category’s default SAC, whatever the rules say', async () => {
+      const at = await setup({ state: '27', name: 'Advertising' });
+      const s = await rated(at, '18');
+      await run((ctx) => changeExpenseCategory(ctx, { id: at.categoryId, defaultSac: s, reason: 'Test' }), at.staff);
+      const abroad = await supplied(at, true);
+      const id = await draft(abroad, { lines: [{ taxable: '10000', gstRate: '18' }], total: '10000', pay: null });
+      await post(abroad, id);
+      expect(await entryOf(abroad, id)).toEqual(['Advertising 10000.00 0.00', 'Creditors 0.00 10000.00', 'RCM Credit Pending 1800.00 0.00',
+        'RCM IGST Payable 0.00 1800.00'].sort());
+      expect((await rcmOf(id))[0]?.[0]).toBe(s);
+    });
+
+    it('stops reverse charge from a rule’s withdrawal day: the supplier’s own GST is then on its bill', async () => {
+      const at = await supplied(await setup({ state: '27', name: 'Freight' }));
+      const s = await rated(at, '5', { from: '2026-04-01', withdrawnFrom: DATE });
+      const id = await draft(at, { lines: [{ taxable: '10000', gstRate: '5', cgst: '250', sgst: '250', sac: s }], total: '10500', pay: null });
+      await post(at, id);
+      expect((await rcmOf(id))[0]?.[1]).toBeNull();
+    });
   });
 });

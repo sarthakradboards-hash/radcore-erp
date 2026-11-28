@@ -605,6 +605,38 @@ describe.skipIf(!url || !superUrl)('posting purchase bills', { timeout: 60_000 }
       expect(read.lines[1]?.amounts.reverseCharge).toEqual({ cgst: '50.00', sgst: '50.00', igst: '0.00' });
     });
 
+    // F31 exactly (ADR-010 §4), on a transporter's bill of charges only (RAD-152's service bill): Dr Freight 10,000.00,
+    // Dr RCM Credit Pending 500.00, Cr Creditors 10,000.00, Cr RCM CGST and SGST Payable 250.00 each; blocked, the tax is cost.
+    it('books F31 exactly on a service bill, and on a blocked category owes the tax and claims none; the bill read sums what we owe', async () => {
+      const at = await setup();
+      const code = await ruled(at, DATE);
+      const category = async (credit: 'allowed' | 'blocked') => {
+        const [a] = (await su.query<{ id: string }>(`with p as (select set_config('app.principal', 'system:test', true))
+          insert into radcore.accounts (name, type) select $1, 'expense' from p returning id`, [`Freight inward ${tag()}`])).rows;
+        const accountId = a?.id ?? '';
+        const { id } = await run((ctx) => addExpenseCategory(ctx, { name: `Freight ${tag()}`, credit, blockedClause: credit === 'blocked' ? '(b)(i)' : null,
+          accountIds: [accountId] }), at.staff);
+        const name = (await su.query<{ name: string }>('select name from radcore.accounts where id = $1', [accountId])).rows[0]?.name ?? '';
+        return { pair: { expenseCategoryId: id, expenseAccountId: accountId }, name };
+      };
+      const f31 = { ...transport(code), amount: moneyString().parse('10000') };
+      const allowed = await category('allowed');
+      const { id } = await draft(at, { lines: [{ ...f31, ...allowed.pair }], total: '10000' });
+      expect((await post(at, id)).status).toBe('posted');
+      expect(await entryOf(at, id)).toEqual([`${allowed.name} 10000.00 0.00`, 'Creditors 0.00 10000.00', 'RCM CGST Payable 0.00 250.00',
+        'RCM Credit Pending 500.00 0.00', 'RCM SGST Payable 0.00 250.00'].sort());
+      expect((await run((ctx) => getBillById(ctx, { id }), at.staff)).amounts.reverseCharge).toEqual({ cgst: '250.00', sgst: '250.00', igst: '0.00' });
+      const blocked = await category('blocked');
+      const { id: kept } = await draft(at, { lines: [{ ...f31, ...blocked.pair }], total: '10000' });
+      await post(at, kept);
+      expect(await entryOf(at, kept)).toEqual([`${blocked.name} 10500.00 0.00`, 'Creditors 0.00 10000.00', 'RCM CGST Payable 0.00 250.00',
+        'RCM SGST Payable 0.00 250.00'].sort());
+      expect(await rcmOf(kept)).toEqual({ cgst: '0.00', sgst: '0.00', igst: '0.00', rcm: '250.00/250.00/0.00', credit: '0.00/0.00/0.00' });
+      // A bill with no reverse charge has none to show.
+      const plain = await draft(at, { lines: [goods(at, '2', '62000')], total: '130200' });
+      expect((await run((ctx) => getBillById(ctx, { id: plain.id }), at.staff)).amounts.reverseCharge).toBeNull();
+    });
+
     it('applies a rule from its own date only: a bill dated the day before carries the supplier’s tax', async () => {
       const at = await setup();
       const code = await ruled(at, '2026-11-16');
