@@ -80,6 +80,9 @@ export default function EntryPage() {
   // Only a manual journal is reversed here; a document's entry is undone by cancelling its document.
   const manual = e.kind === 'manual';
   const reversible = manual && e.reversedBy === null && e.reversesEntryId === null;
+  // A bank charge has no document: unmatching its statement line undoes it (e2e-2 on #461). Once undone, nothing's to say.
+  const undoneBy = e.kind !== 'bank_charge' ? t('books.entry.byDocument')
+    : e.reversedBy === null && e.reversesEntryId === null ? t('books.bank.charge.entry') : null;
 
   return (
     <>
@@ -99,7 +102,7 @@ export default function EntryPage() {
         )}
       </dl>
       <Lines e={e} />
-      {manual ? null : <p>{t('books.entry.byDocument')}</p>}
+      {manual || undoneBy === null ? null : <p>{undoneBy}</p>}
       {mayReverse && reversible ? (
         <div className="kit-actions">
           <button type="button" className="kit-button" onClick={() => setReversing(true)}>{t('books.reverse')}</button>
