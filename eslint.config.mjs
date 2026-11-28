@@ -23,7 +23,7 @@ const LOCKS = 'packages/db/src/locks.ts';
 // A module's second table file is named here exactly, never by a wider glob (the architect on RAD-92).
 // A module's tables, and a second file per document family once its tables.ts would pass E2's cap (the architect on RAD-114).
 const TABLE_FILES = ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts', 'packages/db/src/sales/tables-credit.ts',
-  'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts', 'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts',
+  'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts', 'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/sales/tables-amendments.ts', 'packages/db/src/stock/tables-moves.ts',
   'packages/db/src/stock/tables-job-work.ts', 'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts',
   'packages/db/src/purchasing/tables-bills.ts', 'packages/db/src/purchasing/tables-returns.ts', 'packages/db/src/accounts/tables-close.ts', 'packages/db/src/accounts/tables-expenses.ts', 'packages/db/src/accounts/tables-tds.ts', 'packages/db/src/accounts/tables-transfers.ts', 'packages/db/src/accounts/tables-bank.ts', 'packages/db/src/accounts/tables-filings.ts', 'packages/db/src/columns.ts'];
 // The TypeScript a tsconfig holds: the root one (packages' sources and views, apps/api and apps/worker) and apps/web's.

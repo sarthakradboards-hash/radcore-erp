@@ -2,7 +2,7 @@
 // their lines. A draft is changed and thrown away freely; posting is invoice-post.ts's. A line bills no more of a
 // delivery line than is still out (not taken back, not already invoiced), at its order line's rate and discount unless
 // the person sets another.
-import { after, deliveries, deliveryLines, invoiceLines, invoices, salesOrderLines, salesTx } from '@radcore/db/sales';
+import { after, deliveries, deliveryLines, invoiceAmendments, invoiceLines, invoices, salesOrderLines, salesTx } from '@radcore/db/sales';
 import { dec, type Money } from '@radcore/lib-common';
 import { AppError, decodeCursor, encodeCursor, listScope, momentKey, principalId, type Ctx } from '@radcore/lib-platform';
 import { checkQuantity, soldCondition, soldUnits } from '@radcore/lib-stock';
@@ -35,6 +35,13 @@ export async function invoiceOf(ctx: Ctx, id: string, permission: string, forUpd
   if (row === undefined) throw new AppError('not_found', 'There is no such invoice');
   ctx.see(permission, { owner: row.owner });
   return row;
+}
+
+/** The GSTIN an invoice's last amendment gave it, or null if it has none. */
+export async function amendedGstinOf(ctx: Ctx, invoiceId: string): Promise<string | null> {
+  const [last] = await salesTx(ctx).select({ gstin: invoiceAmendments.newGstin }).from(invoiceAmendments)
+    .where(eq(invoiceAmendments.invoiceId, invoiceId)).orderBy(desc(invoiceAmendments.createdAt), desc(invoiceAmendments.id)).limit(1);
+  return last?.gstin ?? null;
 }
 
 /** Whose an invoice is: its deliveries' shared owner, else the principal making it (invoice-rules.ts). */
@@ -173,6 +180,7 @@ export async function getInvoiceById(ctx: Ctx, { id }: In<typeof getInvoice>): P
       addressLine2: r.issuerAddressLine2, city: r.issuerCity ?? '', pincode: r.issuerPincode ?? '', stateCode: r.issuerStateCode ?? '' } : null,
     buyer: frozen ? { name: r.buyerName ?? '', gstin: r.buyerGstin, addressLine1: r.buyerAddressLine1, addressLine2: r.buyerAddressLine2,
       city: r.buyerCity, pincode: r.buyerPincode, stateCode: r.buyerStateCode ?? '' } : null,
+    amendedGstin: frozen ? await amendedGstinOf(ctx, r.id) : null,
     placeOfSupply: r.placeOfSupply, taxable: r.taxable as Money, cgst: r.cgst as Money, sgst: r.sgst as Money, igst: r.igst as Money,
     cess: r.cess as Money, roundOff: r.roundOff, lines: shown,
   };

@@ -21,6 +21,7 @@ export {
 } from './services/deliveries.ts';
 export { deliveryOverride } from './services/delivery-checks.ts';
 export { addInvoice, changeInvoice, getInvoiceById, listInvoicesPage } from './services/invoices.ts';
+export { amendInvoiceNow } from './services/invoice-amendments.ts';
 export { cancelInvoiceNow } from './services/invoice-cancel.ts';
 export { remindWithLink } from './services/reminder-links.ts';
 // The printouts' templates (RAD-120), each mounted with lib-platform's definePrintRoute.

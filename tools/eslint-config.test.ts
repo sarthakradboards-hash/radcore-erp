@@ -25,7 +25,7 @@ it('each zone is exactly the ADR-002 table', () => {
     'radcore/no-driver': ['packages/lib-platform/src/db/client.ts', 'packages/db/src/migrate.ts'],
     'radcore/tables-in-schema': ['packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
       'packages/db/src/sales/tables-credit.ts', 'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts',
-      'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts', 'packages/db/src/stock/tables-job-work.ts',
+      'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/sales/tables-amendments.ts', 'packages/db/src/stock/tables-moves.ts', 'packages/db/src/stock/tables-job-work.ts',
       'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts', 'packages/db/src/purchasing/tables-bills.ts', 'packages/db/src/purchasing/tables-returns.ts', 'packages/db/src/accounts/tables-close.ts', 'packages/db/src/accounts/tables-expenses.ts', 'packages/db/src/accounts/tables-tds.ts', 'packages/db/src/accounts/tables-transfers.ts', 'packages/db/src/accounts/tables-bank.ts', 'packages/db/src/accounts/tables-filings.ts',
       'packages/db/src/columns.ts'],
     'radcore/views-in-views': [VIEW],
@@ -33,7 +33,7 @@ it('each zone is exactly the ADR-002 table', () => {
   });
   expect(L1_SQL_ZONE).toEqual([VIEW, 'packages/db/src/*/tables.ts', 'packages/db/src/platform/tables-sign-in.ts',
     'packages/db/src/sales/tables-credit.ts', 'packages/db/src/sales/tables-prices.ts', 'packages/db/src/sales/tables-bookings.ts',
-    'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/stock/tables-moves.ts', 'packages/db/src/stock/tables-job-work.ts',
+    'packages/db/src/sales/tables-quick-bills.ts', 'packages/db/src/sales/tables-amendments.ts', 'packages/db/src/stock/tables-moves.ts', 'packages/db/src/stock/tables-job-work.ts',
       'packages/db/src/purchasing/tables-orders.ts', 'packages/db/src/purchasing/tables-receipts.ts', 'packages/db/src/purchasing/tables-bills.ts', 'packages/db/src/purchasing/tables-returns.ts', 'packages/db/src/accounts/tables-close.ts', 'packages/db/src/accounts/tables-expenses.ts', 'packages/db/src/accounts/tables-tds.ts', 'packages/db/src/accounts/tables-transfers.ts', 'packages/db/src/accounts/tables-bank.ts', 'packages/db/src/accounts/tables-filings.ts',
       'packages/db/src/columns.ts',
       'packages/db/src/request-context.ts', 'packages/db/src/log-writers.ts', 'packages/db/src/locks.ts']);
@@ -102,6 +102,8 @@ const SAMPLES: Record<string, { rules: string[]; l1: object; typed: boolean; ser
   'packages/db/src/sales/tables-bookings.ts': {
     rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
   'packages/db/src/sales/tables-quick-bills.ts': {
+    rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
+  'packages/db/src/sales/tables-amendments.ts': {
     rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
   'packages/db/src/stock/tables-moves.ts': {
     rules: without(SERVER, 'radcore/tables-in-schema'), l1: L1.zone, typed: false, server: true },
