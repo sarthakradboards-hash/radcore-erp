@@ -194,6 +194,22 @@ describe.skipIf(!url || !superUrl)('bank matching', { timeout: 60_000 }, () => {
     expect((await run((ctx) => reconciliation(ctx, { id: s.bank, asAt: '2026-11-01' }))).statementBalance).toBeNull();
   });
 
+  it('clears a split match only once every line of it on both sides is dated by then (auditor-2 on #464)', async () => {
+    const who = await party(`Split ${tag()}`);
+    // A receipt of 100.00 the bank shows as 60.00 on the day and 40.00 the next, matched as one.
+    const s = await statement([['in', '60.00', 'PART 1', ''], ['in', '40.00', 'PART 2', '', '2026-11-11']]);
+    const book = await receipt(s.bank, who, '100.00');
+    await run((ctx) => matchLines(ctx, { statementLineIds: [s.lines[0] ?? '', s.lines[1] ?? ''], journalLineIds: [book.line] }));
+    // As at the day: the 100.00 in the books and the 60.00 in the bank are both still outstanding.
+    const r = await run((ctx) => reconciliation(ctx, { id: s.bank, asAt: DAY }));
+    expect([r.bookBalance, r.statementBalance, r.unexplained]).toEqual(['100.00', '60.00', '0.00']);
+    expect([r.notInBank.count, r.notInBank.total, r.notInBank.lines.map((l) => l.journalLineId)]).toEqual([1, '100.00', [book.line]]);
+    expect([r.notInBooks.count, r.notInBooks.total, r.notInBooks.lines.map((l) => l.statementLineId)]).toEqual([1, '60.00', [s.lines[0]]]);
+    // A day later it has cleared on both sides.
+    const next = await run((ctx) => reconciliation(ctx, { id: s.bank, asAt: '2026-11-11' }));
+    expect([next.notInBank.count, next.notInBooks.count, next.statementBalance, next.unexplained]).toEqual([0, 0, '100.00', '0.00']);
+  });
+
   it('waits for a cancel holding the receipt before it matches it (ADR-009 §12’s lock order)', async () => {
     const who = await party(`Race ${tag()}`);
     const s = await statement([['in', '90.00', 'RACE', '']]);

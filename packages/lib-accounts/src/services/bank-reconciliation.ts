@@ -1,12 +1,13 @@
 // The bank reconciliation statement (M5-13, RAD-165; ADR-009 §12; GL-132): for a bank account and a date, the book
 // balance, the statement's balance, and between them the book lines the bank hasn't shown by then and the bank lines
-// the books haven't, each listed. As at the date: a line matched only to the other side's lines dated after it is still
-// outstanding then. A cancelled document and its reversal net to nothing, so neither is listed.
+// the books haven't, each listed. As at the date, a match has cleared only when none of its lines on either side is
+// dated after it; until then its lines dated by then are outstanding on each side. A cancelled document and its
+// reversal net to nothing, so neither is listed.
 //   statement balance = book balance - book lines outstanding + bank lines outstanding (+ what's unexplained)
 import { accountsTx, bankMatchJournalLines, bankMatchStatementLines, bankStatementLines, journalEntries, journalLines } from '@radcore/db/accounts';
 import { dec, roundMoney } from '@radcore/lib-common';
 import type { Ctx } from '@radcore/lib-platform';
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lte, not, sum } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lte, not, sum, type Column } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { reconciliationContract } from '../contract-bank.ts';
 import { bankAccount } from './bank-matching.ts';
@@ -28,21 +29,23 @@ export async function reconciliation(ctx: Ctx, { id, asAt }: In<typeof reconcili
     .where(and(eq(bankStatementLines.accountId, id), lte(bankStatementLines.valueDate, asAt)))
     .orderBy(desc(bankStatementLines.valueDate), desc(bankStatementLines.seq)).limit(1);
 
-  // Matches that, as at the date, hold a bank line, and those that hold a book line.
-  const shownByBank = tx.select({ id: bankMatchStatementLines.matchId }).from(bankMatchStatementLines)
-    .innerJoin(bankStatementLines, eq(bankStatementLines.id, bankMatchStatementLines.statementLineId)).where(lte(bankStatementLines.valueDate, asAt));
-  const inBooks = tx.select({ id: bankMatchJournalLines.matchId }).from(bankMatchJournalLines)
-    .innerJoin(journalLines, eq(journalLines.id, bankMatchJournalLines.journalLineId)).where(lte(journalLines.businessDate, asAt));
+  // Matches not yet cleared as at the date: a line on either side dated after it (auditor-2 on #464).
+  const lateInBank = tx.select({ id: bankMatchStatementLines.matchId }).from(bankMatchStatementLines)
+    .innerJoin(bankStatementLines, eq(bankStatementLines.id, bankMatchStatementLines.statementLineId)).where(gt(bankStatementLines.valueDate, asAt));
+  const lateInBooks = tx.select({ id: bankMatchJournalLines.matchId }).from(bankMatchJournalLines)
+    .innerJoin(journalLines, eq(journalLines.id, bankMatchJournalLines.journalLineId)).where(gt(journalLines.businessDate, asAt));
+  const cleared = (matchId: Column) =>
+    and(not(inArray(matchId, lateInBank)), not(inArray(matchId, lateInBooks)));
   // Cancelled documents: the entries reversed by then, and the reversals themselves.
   const reversed = tx.select({ id: journalEntries.reversesEntryId }).from(journalEntries)
     .where(and(isNotNull(journalEntries.reversesEntryId), lte(journalEntries.businessDate, asAt)));
   const bookOutstanding = and(eq(journalLines.accountId, id), lte(journalLines.businessDate, asAt), isNull(journalEntries.reversesEntryId),
     not(inArray(journalEntries.id, reversed)),
     not(inArray(journalLines.id, tx.select({ id: bankMatchJournalLines.journalLineId }).from(bankMatchJournalLines)
-      .where(inArray(bankMatchJournalLines.matchId, shownByBank)))));
+      .where(cleared(bankMatchJournalLines.matchId)))));
   const bankOutstanding = and(eq(bankStatementLines.accountId, id), lte(bankStatementLines.valueDate, asAt),
     not(inArray(bankStatementLines.id, tx.select({ id: bankMatchStatementLines.statementLineId }).from(bankMatchStatementLines)
-      .where(inArray(bankMatchStatementLines.matchId, inBooks)))));
+      .where(cleared(bankMatchStatementLines.matchId)))));
 
   const bookLines = await tx.select({ id: journalLines.id, entryId: journalLines.entryId, number: journalEntries.number, kind: journalEntries.kind,
     date: journalLines.businessDate, debit: journalLines.debit, credit: journalLines.credit }).from(journalLines)
