@@ -275,11 +275,15 @@ const CREDIT_REFUND_ERRORS = ['credit_not_posted', 'wrong_credit', 'exceeds_cred
 /** POST /payments: a receipt (money in, Cr Debtors), payment (out, Dr Creditors) or refund (back to a customer,
  * against the receipt or the credit note it names). `amount` is the party's, gross of any TDS held back (F8). Posted
  * now, numbered RV or PV, or held as a draft for an owner when cash passes the day's limit (`pending_approval`). */
+/** What a payment's TDS can refuse when it posts, on its own save or at its cash-limit approval (bookTds, RAD-158). */
+const PAYMENT_TDS_ERRORS = ['tds_mismatch', 'tds_overseas', 'no_tds_rate', 'tds_payee_mismatch'] as const;
 export const recordPaymentContract = defineContract({
   method: 'POST', path: '/payments', auth: 'session', perm: 'payments:write', tx: write,
   input: z.object({
     kind: z.enum(['receipt', 'payment', 'refund']), partyId: idString(), businessDate: dateString(), amount: moneyString(),
-    tds: moneyString().optional(), accountId: idString(), refundOf: idString().optional(),
+    // A payment's TDS is worked out from its section on the gross amount (the architect on RAD-158); `tds`, if given, is
+    // checked against it. A receipt's `tds` is what the customer held back, as typed.
+    tds: moneyString().optional(), tdsSectionId: idString().optional(), accountId: idString(), refundOf: idString().optional(),
     credit: z.object({ table: z.string().regex(/^[a-z][a-z0-9_]*$/, 'Not a document table'), id: idString() }).optional(),
     narration: z.string().trim().min(1).max(500).optional(),
     // The money's own trail (RAD-115): a card machine's approval code, a UPI UTR, a cheque number.
@@ -288,8 +292,9 @@ export const recordPaymentContract = defineContract({
   output: z.object({ id: idString(), status: z.enum(['posted', 'pending_approval']), number: z.string().nullable() }),
   errors: ['amount_not_positive', 'invalid_tds', 'date_in_future', 'year_not_open', 'period_locked', 'refund_needs_receipt', 'receipt_not_posted',
     'refund_other_party', 'date_before_source', 'exceeds_receipt', 'unknown_account', 'not_money_account', 'account_inactive', 'not_draft',
-    'refund_through_owner', 'series_full', 'looks_like_card_number', ...CREDIT_REFUND_ERRORS],
-  dbErrors: CREDIT_REFUND_DB_ERRORS,
+    'refund_through_owner', 'series_full', 'looks_like_card_number', ...PAYMENT_TDS_ERRORS, 'unknown_section', ...CREDIT_REFUND_ERRORS],
+  dbErrors: { ...CREDIT_REFUND_DB_ERRORS,
+    '23503:payment_tds_section_id_tds_sections_id_fk': { code: 'unknown_section', message: 'There is no such TDS section' } },
 });
 
 /** POST /payments/:id/cancel: cancels a posted payment by a mirror entry dated `businessDate`, with the reason. */
@@ -298,7 +303,7 @@ export const cancelPaymentContract = defineContract({
   input: z.object({ id: idString(), businessDate: dateString(), reason: reason() }),
   output: z.object({}),
   errors: ['not_posted', 'date_before_source', 'date_in_future', 'has_refunds', 'has_allocations', 'period_locked', 'year_not_open',
-    'already_reversed', 'bank_matched'],
+    'already_reversed', 'bank_matched', 'tds_deposited'],
   dbErrors: { 'RA006:payment_still_allocated': { code: 'has_allocations', message: 'Reverse what this is applied to first' },
     ...BANK_MATCHED_DB_ERROR },
 });
@@ -307,7 +312,7 @@ export const cancelPaymentContract = defineContract({
  * decision can meet the engine's refusals. */
 export const cashLimitApproval = approvalContracts('cash-limit', 'payments:approve',
   ['account_inactive', 'period_locked', 'year_not_open', 'not_draft', 'receipt_not_posted', 'exceeds_receipt', 'refund_other_party',
-    'date_before_source', 'series_full', ...CREDIT_REFUND_ERRORS], CREDIT_REFUND_DB_ERRORS);
+    'date_before_source', 'series_full', ...PAYMENT_TDS_ERRORS, ...CREDIT_REFUND_ERRORS], CREDIT_REFUND_DB_ERRORS);
 
 // Allocations and credit applications (M3-12, RAD-116 part 2; ADR-005 §7a). A document is named by its table, one
 // `allocatable_documents` lists, and its id. The rules the database checks at commit answer by name (dbErrors, §9).
@@ -342,7 +347,7 @@ export const allocatePaymentContract = defineContract({
     .min(1, 'Apply it to one document or more').max(50) }),
   output: z.object({ ids: z.array(idString()) }),
   errors: ['not_allocatable', 'not_posted', 'exceeds_payment', 'exceeds_document', 'party_mismatch', 'side_mismatch', 'document_not_posted',
-    'document_missing', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open'],
+    'document_missing', 'date_in_future', 'date_before_source', 'period_locked', 'year_not_open', 'tds_on_applied_payment'],
   dbErrors: ALLOCATION_DB_ERRORS,
 });
 

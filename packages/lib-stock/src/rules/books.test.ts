@@ -17,6 +17,7 @@ const healthy: BooksFigures = {
   jwcb: { books: '450.00', lines: [{ jobWorkLineId: LINE, accrued: '450.00', open: '450.00' }] },
   grni: { books: '62000.00', lines: [{ receiptLineId: LINE, accrued: '186000.00', open: '62000.00' },
     { receiptLineId: 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f', accrued: '500.00', open: '0.00' }] },
+  tds: { books: '1030.00', open: '1030' },
 };
 const checks = (f: Partial<BooksFigures>) => booksProblems({ ...healthy, ...f }).map((p) => [p.check, p.locationId]);
 
@@ -24,7 +25,7 @@ describe('the books check’s comparison', () => {
   it('finds nothing wrong with books that agree', () => {
     expect(booksProblems(healthy)).toEqual([]);
     expect(booksProblems({ trial: { debit: '0', credit: '0.00' }, books: [], ledger: [], current: [], batches: [], grni: { books: '0', lines: [] },
-      jwcb: { books: '0', lines: [] } })).toEqual([]);
+      jwcb: { books: '0', lines: [] }, tds: { books: '0', open: '0.00' } })).toEqual([]);
   });
 
   it('finds debits that differ from credits', () => {
@@ -71,6 +72,11 @@ describe('the books check’s comparison', () => {
     expect(booksProblems({ ...healthy, jwcb: { books: '0', lines: [line('-1')] } }).map((p) => p.message)).toEqual([
       `Job-work receipt line ${LINE} accrued 450.00 to Job Work Charges to be Billed, but bills have cleared it to -1.00`,
       'Job Work Charges to be Billed shows 0.00, but the job-work lines left to bill come to -1.00']);
+  });
+
+  it('finds TDS Payable that differs from the deductions not yet deposited (RAD-158)', () => {
+    expect(booksProblems({ ...healthy, tds: { books: '1030.00', open: '0' } }).map((p) => [p.check, p.message])).toEqual([
+      ['tds_payable', 'TDS Payable shows 1030.00, but the deductions not yet deposited come to 0.00']]);
   });
 
   it('says what it found in words a person can act on', () => {

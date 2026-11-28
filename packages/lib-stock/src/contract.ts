@@ -167,7 +167,7 @@ export const updateLocation = defineContract({
 });
 
 /** What the books check compares (ADR-006 §7). */
-const BOOKS_CHECKS = ['trial_balance', 'stock_value', 'empty_place_value', 'batches', 'grni', 'grni_line', 'jwcb', 'jwcb_line'] as const;
+const BOOKS_CHECKS = ['trial_balance', 'stock_value', 'empty_place_value', 'batches', 'grni', 'grni_line', 'jwcb', 'jwcb_line', 'tds_payable'] as const;
 export type BooksCheck = (typeof BOOKS_CHECKS)[number];
 
 /** GET /books/check (journal:read): the books check (M2-07, RC-063), in one REPEATABLE READ snapshot. As at `asAt`
