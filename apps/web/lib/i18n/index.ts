@@ -10,6 +10,7 @@ import { creditNotes } from './credit-notes.ts';
 import { crm } from './crm.ts';
 import { deliveries } from './deliveries.ts';
 import { expenses } from './expenses.ts';
+import { expenseEntries } from './expense-entries.ts';
 import { gst } from './gst.ts';
 import { invoices } from './invoices.ts';
 import { inward } from './inward.ts';
@@ -114,7 +115,7 @@ export const core = {
 
 // Spreading lets a later key silently replace an earlier one (TypeScript allows it), so index.test.ts checks that the
 // catalogues share no key: a clash once put the account page's words on the admin Sessions page.
-const en = { ...core, ...admin, ...masters, ...books, ...bank, ...period, ...transfers, ...expenses, ...gst, ...collect, ...payments, ...sales, ...invoices, ...approvals, ...deliveries, ...creditNotes, ...testRides, ...bookings, ...quickBill, ...inward, ...crm, ...stock, ...purchases, ...purchaseBills, ...kit } as const;
+const en = { ...core, ...admin, ...masters, ...books, ...bank, ...period, ...transfers, ...expenses, ...expenseEntries, ...gst, ...collect, ...payments, ...sales, ...invoices, ...approvals, ...deliveries, ...creditNotes, ...testRides, ...bookings, ...quickBill, ...inward, ...crm, ...stock, ...purchases, ...purchaseBills, ...kit } as const;
 
 export type MessageKey = keyof typeof en;
 

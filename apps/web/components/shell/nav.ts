@@ -41,6 +41,8 @@ export const ACCOUNTS_PAGES = [
   { href: '/accounts/payments', label: 'books.nav.pay', perm: 'payments:read' },
   { href: '/accounts/bank', label: 'books.nav.bank', perm: 'bank:read', also: 'money_accounts:read' },
   { href: '/accounts/transfers', label: 'books.nav.transfers', perm: 'payments:read' },
+  { href: '/accounts/expenses', label: 'books.nav.expenses', perm: 'expenses:read' },
+  { href: '/accounts/expenses/approvals', label: 'books.nav.expenseApprovals', perm: 'payments:approve', also: 'expenses:read' },
   { href: '/accounts/period', label: 'books.nav.period', perm: 'books:lock' },
   { href: '/accounts/period/approvals', label: 'books.nav.unlocks', perm: 'books:unlock' },
   { href: '/accounts/expense-categories', label: 'books.nav.expenseCategories', perm: 'journal:read' },
