@@ -53,7 +53,7 @@ export const setTdsRate = defineContract({
 // TDS deposits (ADR-009 §4, F18): a challan pays the deductions it names, each in full and once.
 const deduction = z.object({
   id: idString(), sourceTable: z.string(), sourceId: idString(), partyId: idString(), sectionId: idString(), businessDate: dateString(),
-  base: z.string(), rate: z.string(), amount: moneyString(), deposited: z.boolean(),
+  base: z.string(), rate: z.string(), amount: moneyString({ signed: true }), deposited: z.boolean(),
 });
 /** GET /tds/deductions (tds:read): newest first, a page at a time; `open` for the ones a deposit can still pay (above 0,
  * not reversed, not deposited). */

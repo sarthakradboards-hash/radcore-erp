@@ -8,7 +8,7 @@ import {
   addExpense, addExpenseCategory, addParty, allocatePayment, cancelExpenseNow, depositTds, getExpenseById, journalEntryById, journalPage, openFinancialYear,
   postExpenseNow, recordPayment, tdsDeductionsPage,
 } from '@radcore/lib-accounts';
-import { createExpense, recordPaymentContract } from '@radcore/lib-accounts/contract';
+import { createExpense, listTdsDeductions, recordPaymentContract } from '@radcore/lib-accounts/contract';
 import { gstinCheckChar, moneyString } from '@radcore/lib-common';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -125,6 +125,15 @@ describe.skipIf(!url || !superUrl)('TDS at booking', { timeout: 60_000 }, () => 
     const june = await book(at, '50000', { day: DAYS[2] ?? '', section });
     await run((ctx) => cancelExpenseNow(ctx, { id: june, businessDate: DAYS[2] ?? '', reason: 'Entered twice' }));
     expect(await deducted(june)).toBe('0.00');
+    // The list carries the reversal, negative, through the contract's own output (the read sweep's 500 on #467).
+    const amounts: string[] = [];
+    for (let after: string | undefined, more = true; more;) {
+      const page = listTdsDeductions.output.parse(await run((ctx) => tdsDeductionsPage(ctx, listTdsDeductions.input.parse({ filter: {}, limit: 100,
+        ...(after === undefined ? {} : { after }) }))));
+      amounts.push(...page.items.filter((d) => d.sourceId === june).map((d) => d.amount));
+      [after, more] = [page.next ?? undefined, page.next !== null];
+    }
+    expect(amounts.sort()).toEqual(['-1030.00', '1030.00']);
     // 25,000 + 28,000 + 10,000 is under both limits once June is gone.
     expect(await deducted(await book(at, '10000', { day: DAYS[3] ?? '', section }))).toBe('0.00');
   });
