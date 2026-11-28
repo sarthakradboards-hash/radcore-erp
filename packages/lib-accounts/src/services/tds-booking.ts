@@ -2,10 +2,10 @@
 // tds_deductions row with the posting, even one that deducts nothing, and the document posts the sum to TDS Payable. The
 // year's sums come from those rows alone, one indexed read on (party, section, year). Two bookings for one payee take
 // turns on the party's row (holdParty), so two bills can't both catch up the same year. A cancel writes the reversals.
-import { accountsTx, parties, partyTds, tdsDeductions, tdsRates, tdsSections } from '@radcore/db/accounts';
+import { accountsTx, parties, partyTds, tdsDeductions, tdsDepositLines, tdsRates, tdsSections } from '@radcore/db/accounts';
 import { dec, financialYear, roundMoney, type Money } from '@radcore/lib-common';
 import { AppError, type Ctx } from '@radcore/lib-platform';
-import { and, desc, eq, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
 import { tdsFor } from '../rules/tds.ts';
 import { holdParty } from './parties.ts';
 import type { setPartyTds } from '../contract-tds.ts';
@@ -83,9 +83,18 @@ export async function bookTds(ctx: Ctx, doc: Readonly<{ table: string; id: strin
  * sums leave it out. */
 export async function reverseTds(ctx: Ctx, doc: Readonly<{ table: string; id: string; businessDate: string }>): Promise<void> {
   const tx = accountsTx(ctx);
-  const rows = await tx.select().from(tdsDeductions).where(and(eq(tdsDeductions.sourceTable, doc.table), eq(tdsDeductions.sourceId, doc.id),
-    isNull(tdsDeductions.reversesId)));
+  // The payee's row first, as a deposit and a booking take it (the rows are append-only, so not row-locked): a deposit
+  // and this cancel take turns, and the cancel sees what was deposited.
+  const which = and(eq(tdsDeductions.sourceTable, doc.table), eq(tdsDeductions.sourceId, doc.id), isNull(tdsDeductions.reversesId));
+  for (const p of [...new Set((await tx.select({ partyId: tdsDeductions.partyId }).from(tdsDeductions).where(which)).map((r) => r.partyId))].sort()) {
+    await holdParty(ctx, p);
+  }
+  const rows = await tx.select().from(tdsDeductions).where(which).orderBy(asc(tdsDeductions.id));
   if (rows.length === 0) return;
+  // A deposited deduction's correction waits on CA-22 (RC-181, M7): its booking isn't cancelled meanwhile.
+  const [paid] = await tx.select({ id: tdsDepositLines.deductionId }).from(tdsDepositLines)
+    .where(inArray(tdsDepositLines.deductionId, rows.map((r) => r.id))).limit(1);
+  if (paid !== undefined) throw new AppError('tds_deposited', 'Its TDS is deposited: the correction waits for the CA (CA-22)');
   const done = new Set((await tx.select({ id: tdsDeductions.reversesId }).from(tdsDeductions).where(and(isNotNull(tdsDeductions.reversesId),
     inArray(tdsDeductions.reversesId, rows.map((r) => r.id))))).map((r) => r.id));
   const todo = rows.filter((r) => !done.has(r.id));

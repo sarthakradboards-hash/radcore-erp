@@ -778,6 +778,13 @@
       "when": 1795862041795,
       "tag": "0111_bank_candidates",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1795862826239,
+      "tag": "0112_tds_deposits",
+      "breakpoints": true
     }
   ]
 }

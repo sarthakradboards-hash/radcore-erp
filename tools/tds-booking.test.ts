@@ -5,10 +5,10 @@
 // overseas supplier takes no section.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addExpense, addExpenseCategory, addParty, allocatePayment, cancelExpenseNow, getExpenseById, journalEntryById, journalPage, openFinancialYear,
-  postExpenseNow, recordPayment,
+  addExpense, addExpenseCategory, addParty, allocatePayment, cancelExpenseNow, depositTds, getExpenseById, journalEntryById, journalPage, openFinancialYear,
+  postExpenseNow, recordPayment, tdsDeductionsPage,
 } from '@radcore/lib-accounts';
-import { createExpense, recordPaymentContract } from '@radcore/lib-accounts/contract';
+import { createExpense, listTdsDeductions, recordPaymentContract } from '@radcore/lib-accounts/contract';
 import { gstinCheckChar, moneyString } from '@radcore/lib-common';
 import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
@@ -125,6 +125,15 @@ describe.skipIf(!url || !superUrl)('TDS at booking', { timeout: 60_000 }, () => 
     const june = await book(at, '50000', { day: DAYS[2] ?? '', section });
     await run((ctx) => cancelExpenseNow(ctx, { id: june, businessDate: DAYS[2] ?? '', reason: 'Entered twice' }));
     expect(await deducted(june)).toBe('0.00');
+    // The list carries the reversal, negative, through the contract's own output (the read sweep's 500 on #467).
+    const amounts: string[] = [];
+    for (let after: string | undefined, more = true; more;) {
+      const page = listTdsDeductions.output.parse(await run((ctx) => tdsDeductionsPage(ctx, listTdsDeductions.input.parse({ filter: {}, limit: 100,
+        ...(after === undefined ? {} : { after }) }))));
+      amounts.push(...page.items.filter((d) => d.sourceId === june).map((d) => d.amount));
+      [after, more] = [page.next ?? undefined, page.next !== null];
+    }
+    expect(amounts.sort()).toEqual(['-1030.00', '1030.00']);
     // 25,000 + 28,000 + 10,000 is under both limits once June is gone.
     expect(await deducted(await book(at, '10000', { day: DAYS[3] ?? '', section }))).toBe('0.00');
   });
@@ -156,6 +165,31 @@ describe.skipIf(!url || !superUrl)('TDS at booking', { timeout: 60_000 }, () => 
     expect(await code(book(company, '40000', { day: DAYS[0] ?? '', section }))).toBe('tds_payee_mismatch');
     expect(await code(book(company, '40000', { day: DAYS[0] ?? '', section: await sectionId('194C-O') }))).toBe('ok');
     expect(await deducted(await book(await setup(), '40000', { day: DAYS[0] ?? '', section }))).toBe('400.00');
+  });
+
+  // F18 (ADR-009 §4): a challan pays deductions in full, each once: Dr TDS Payable, Cr Bank. A booking whose TDS is
+  // deposited isn't cancelled (its correction waits on CA-22).
+  it('deposits F29’s 1,030.00 by challan (Dr TDS Payable, Cr Bank), once, and then refuses the bill’s cancel', async () => {
+    const [at, section, bank] = [await setup(), await sectionId('194C-I'), await systemAccount('bank')];
+    const april = await book(at, '25000', { day: DAYS[0] ?? '', section });
+    await book(at, '28000', { day: DAYS[1] ?? '', section });
+    const june = await book(at, '50000', { day: DAYS[2] ?? '', section });
+    const rowOf = async (id: string) => (await one<{ id: string }>('select id from radcore.tds_deductions where source_id = $1', [id]))?.id ?? '';
+    const [zero, due] = [await rowOf(april), await rowOf(june)];
+    const open = await run((ctx) => tdsDeductionsPage(ctx, { limit: 500, filter: { open: true } }));
+    expect([open.items.some((d) => d.id === due), open.items.some((d) => d.id === zero)]).toEqual([true, false]);
+    const deposit = (ids: string[], accountId = bank) => run((ctx) => depositTds(ctx, { businessDate: DAYS[3] ?? '', challanNumber: `C${letters(5)}`,
+      bsrCode: '0510002', accountId, deductionIds: ids }));
+    expect(await code(deposit([zero]))).toBe('nothing_to_deposit');
+    expect(await code(deposit([due], await systemAccount('cash')))).toBe('not_bank_account');
+    const { id } = await deposit([due]);
+    const lines = await run(async (ctx) => {
+      const page = await journalPage(ctx, { limit: 100, filter: { from: DAYS[3] ?? '', to: DAYS[3] ?? '', kind: 'tds_deposit' } });
+      return (await journalEntryById(ctx, { id: page.items.find((e) => e.source.id === id)?.id ?? '' })).lines.map((l) => `${l.account.name} ${l.debit} ${l.credit}`).sort();
+    });
+    expect(lines).toEqual(['Bank 0.00 1030.00', 'TDS Payable 1030.00 0.00']);
+    expect(await code(deposit([due]))).toBe('already_deposited');
+    expect(await code(run((ctx) => cancelExpenseNow(ctx, { id: june, businessDate: DAYS[3] ?? '', reason: 'Wrong' })))).toBe('tds_deposited');
   });
 
   it('refuses a TDS section on an overseas supplier’s line (tds_overseas, ADR-010 §4)', async () => {

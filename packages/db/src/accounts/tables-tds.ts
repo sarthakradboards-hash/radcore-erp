@@ -1,9 +1,9 @@
 // lib-accounts' TDS (M5-10, RAD-158; ADR-009 §4): the sections and their rates by date, like GST's (M2-12). Beside
 // ./tables.ts, one file per document family (ADR-009 §10). SQL zone (ADR-002 §3): `sql` only as a CHECK's argument.
 import { sql } from 'drizzle-orm';
-import { boolean, check, date, index, text, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { boolean, check, date, index, primaryKey, text, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { boundedText, createdMoment, id, money, percent, radcoreTable } from '../columns.ts';
-import { parties } from './tables.ts';
+import { accounts, journalEntries, parties } from './tables.ts';
 
 /** A TDS section (CA-18): its code, its name, the section of the Income-tax Act 2025 and the 1961 section it replaces,
  * and the payee it's for: `individual` (a PAN's fourth letter P or H), `other`, or `any`. Seeded; never deleted. */
@@ -82,4 +82,35 @@ export const tdsDeductions = radcoreTable('tds_deductions', {
   index('ix_tds_deductions_section').on(t.sectionId),
   // A row is reversed once.
   uniqueIndex('ux_tds_deductions_reverses').on(t.reversesId),
+]);
+
+/** A TDS deposit (ADR-009 §4, F18): a challan paid from a bank account on its date, paying the deductions it names, each
+ * in full. Posted at once (Dr TDS Payable, Cr the bank); its number from `accounts.tds_deposit`. Its correction waits on
+ * CA-22 (M7), so it's never cancelled here. */
+export const tdsDeposits = radcoreTable('tds_deposits', {
+  id: id(), createdAt: createdMoment(),
+  number: text().notNull(),
+  businessDate: date({ mode: 'string' }).notNull(),
+  challanNumber: boundedText({ max: 20 }).notNull(),
+  bsrCode: text().notNull(),
+  accountId: uuid().notNull().references(() => accounts.id, { onDelete: 'restrict' }),
+  amount: money().notNull(),
+  // Set by its posting, in the same save, once the deposit has an id for the entry to name.
+  postedEntryId: uuid().references(() => journalEntries.id, { onDelete: 'restrict' }),
+}, (t) => [
+  check('ck_tds_deposits_bsr_code', sql`${t.bsrCode} ~ '^[0-9]{7}$'`),
+  check('ck_tds_deposits_challan', sql`btrim(${t.challanNumber}) <> ''`),
+  uniqueIndex('ux_tds_deposits_number').on(t.number),
+  index('ix_tds_deposits_account').on(t.accountId),
+  index('ix_tds_deposits_entry').on(t.postedEntryId),
+  index('ix_tds_deposits_page').on(t.businessDate, t.createdAt, t.id),
+]);
+
+/** The deductions a deposit pays. A deduction is deposited once (the unique key), and a reversal never. */
+export const tdsDepositLines = radcoreTable('tds_deposit_lines', {
+  depositId: uuid().notNull().references(() => tdsDeposits.id, { onDelete: 'restrict' }),
+  deductionId: uuid().notNull().references(() => tdsDeductions.id, { onDelete: 'restrict' }),
+}, (t) => [
+  primaryKey({ name: 'pk_tds_deposit_lines', columns: [t.depositId, t.deductionId] }),
+  uniqueIndex('ux_tds_deposit_lines_deduction').on(t.deductionId),
 ]);
