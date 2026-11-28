@@ -20,7 +20,7 @@ import type { cancelExpense, createExpense, dropExpense, getExpense, listExpense
 import { getCompanyProfile } from './company.ts';
 import { holdPeriod, JOURNAL_SERIES, lockPeriod, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 import { refuseIfMatched } from './bank-matching.ts';
-import { holdParty } from './parties.ts';
+import { holdParty, partyNames } from './parties.ts';
 import { cashPaidOn } from './expense-cash.ts';
 import { bookTds, defaultTdsSection, reverseTds } from './tds-booking.ts';
 import { CASH_PAYMENT_LIMIT, moneyAccount } from './payments.ts';
@@ -337,13 +337,15 @@ export async function listExpensesPage(ctx: Ctx, input: In<typeof listExpenses>)
   )).orderBy(desc(expenses.businessDate), desc(expenses.createdAt), desc(expenses.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const waiting = await awaitingApproval(ctx, expenseCashSpec, page.map((r) => r.id));
+  const names = await partyNames(ctx, page.flatMap((r) => (r.partyId === null ? [] : [r.partyId])));
   const last = page.at(-1);
-  return { items: page.map((r) => headerOut(r, waiting.has(r.id))),
+  return { items: page.map((r) => headerOut(r, waiting.has(r.id), names)),
     next: rows.length > input.limit && last ? encodeCursor({ date: last.businessDate, at: last.createdAt, id: last.id }) : null };
 }
 
-const headerOut = (r: Row, waiting: boolean) => ({ id: r.id, number: r.number, status: r.status as 'draft', businessDate: r.businessDate,
-  supplierId: r.partyId, supplierInvoiceNumber: r.supplierInvoiceNumber, statedTotal: roundMoney(r.statedTotal), onCredit: r.payFromAccountId === null,
+const headerOut = (r: Row, waiting: boolean, names: ReadonlyMap<string, string>) => ({ id: r.id, number: r.number, status: r.status as 'draft',
+  businessDate: r.businessDate, supplierId: r.partyId, supplierName: r.partyId === null ? null : names.get(r.partyId) ?? null,
+  supplierInvoiceNumber: r.supplierInvoiceNumber, statedTotal: roundMoney(r.statedTotal), onCredit: r.payFromAccountId === null,
   awaitingApproval: waiting, tds: roundMoney(r.tds), createdAt: isoMoment(r.createdAt) });
 
 /** GET /expenses/:id: with its lines and, once posted, each line's credit. */
@@ -352,7 +354,8 @@ export async function getExpenseById(ctx: Ctx, { id }: In<typeof getExpense>): P
   const { lines } = await draftOf(ctx, e);
   const waiting = await awaitingApproval(ctx, expenseCashSpec, [id]);
   const m = (v: string) => roundMoney(v) as Money;
-  return { ...headerOut(e, waiting.has(id)), supplierInvoiceDate: e.supplierInvoiceDate, supplierGstin: e.supplierGstin,
+  const names = await partyNames(ctx, e.partyId === null ? [] : [e.partyId]);
+  return { ...headerOut(e, waiting.has(id), names), supplierInvoiceDate: e.supplierInvoiceDate, supplierGstin: e.supplierGstin,
     payFromAccountId: e.payFromAccountId, fileId: e.fileId, notes: e.notes, cancelReason: e.cancelReason,
     lines: lines.map((l) => ({ id: l.id, lineNo: l.lineNo, categoryId: l.categoryId, accountId: l.accountId, description: l.description,
       taxable: m(l.taxable), gstRate: l.gstRate as never, cgst: m(l.cgst), sgst: m(l.sgst), igst: m(l.igst),

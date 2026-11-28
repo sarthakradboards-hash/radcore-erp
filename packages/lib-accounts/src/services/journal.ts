@@ -105,8 +105,9 @@ async function write(ctx: Ctx, e: { kind: EntryKind; businessDate: string; sourc
   // The arithmetic first, before anything is read (posting.ts): each line one side above zero, and the entry balanced.
   const amounts = balancedAmounts(e.lines);
   // 1. The period lock (holdPeriod), again if the document's service already took it: a second FOR SHARE is free. The
-  // year-end close and its reversal pass it, dated their year's 31 March (ADR-009 §6), as the database's trigger does.
-  if (e.kind === 'year_close' && e.businessDate === financialYear(e.businessDate).end) {
+  // year-end close and its reversal pass it, dated their year's 31 March and naming their close (ADR-009 §6), as the
+  // database's trigger does; it also holds that the close is that year's (auditor-2 on #426).
+  if (e.kind === 'year_close' && e.source.table === 'year_closes' && e.businessDate === financialYear(e.businessDate).end) {
     await lockPeriod(ctx);
     await yearOpen(ctx, e.businessDate);
   } else await holdPeriod(ctx, e.businessDate);

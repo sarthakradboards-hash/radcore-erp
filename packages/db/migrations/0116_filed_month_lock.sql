@@ -60,7 +60,7 @@ GRANT EXECUTE ON FUNCTION radcore.set_filed_lock(text, date) TO radcore_app;
 -- Every door, by entry kind (ADR-009 §5): an outward entry (invoice, credit note) on or before GSTR-1's month, and any
 -- kind 3B reports on or before 3B's, is refused (RA010); so is a reversal of an outward entry whose original is in a
 -- GSTR-1-filed month, since a reversal is dated today. lib-accounts' postEntry and reverseEntry refuse them by name
--- (month_filed) first; this is the backstop. The period lock is as 0095 left it.
+-- (month_filed) first; this is the backstop. The period lock is as 0115_year_close_guard (#475) left it.
 CREATE OR REPLACE FUNCTION radcore.guard_journal_entry() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, radcore, pg_temp AS $$
 DECLARE
@@ -72,7 +72,9 @@ BEGIN
   NEW.tx_id := pg_current_xact_id()::text::bigint;
   SELECT locked_through INTO locked FROM radcore.period_lock WHERE id = 1;
   IF locked IS NOT NULL AND NEW.business_date <= locked
-     AND NOT (NEW.kind = 'year_close' AND extract(month from NEW.business_date) = 3 AND extract(day from NEW.business_date) = 31) THEN
+     AND NOT (NEW.kind = 'year_close' AND NEW.source_table = 'year_closes' AND EXISTS (
+       SELECT 1 FROM radcore.year_closes c
+       WHERE c.id = NEW.source_id AND NEW.business_date = (c.fy_start + interval '1 year' - interval '1 day')::date)) THEN
     RAISE EXCEPTION 'the books are locked through %, so nothing posts on %', locked, NEW.business_date USING ERRCODE = 'RA003';
   END IF;
   SELECT * INTO filed FROM radcore.gst_filed_lock WHERE id = 1;

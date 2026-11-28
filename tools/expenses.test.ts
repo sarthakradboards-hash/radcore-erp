@@ -5,10 +5,10 @@
 // day's limit waits for an owner's override.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addExpense, addExpenseCategory, addParty, cancelExpenseNow, changeExpense, changeExpenseCategory, expenseCashSpec, getExpenseById, journalEntryById,
+  addExpense, addExpenseCategory, addParty, cancelExpenseNow, changeExpense, changeExpenseCategory, expenseCashSpec, getExpenseById, journalEntryById, listExpensesPage,
   journalPage, openFinancialYear, postExpenseNow, recordPayment,
 } from '@radcore/lib-accounts';
-import { createExpense, recordPaymentContract } from '@radcore/lib-accounts/contract';
+import { createExpense, getExpense, listExpenses, recordPaymentContract } from '@radcore/lib-accounts/contract';
 import { gstinCheckChar, percentString } from '@radcore/lib-common';
 import { putGstRate, putRcmRule } from '@radcore/lib-gst';
 import { AppError, decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
@@ -151,6 +151,17 @@ describe.skipIf(!url || !superUrl)('expenses', { timeout: 60_000 }, () => {
       join radcore.accounts a on a.id = l.account_id where a.system_key = 'creditors' and l.party_id = $1`, [at.supplier])).rows;
     expect(owed?.v).toBe('0.00');
     expect((await run((ctx) => getExpenseById(ctx, { id }), at.staff)).status).toBe('cancelled');
+    // Both reads name the supplier, through their contracts' own outputs (ui's expense screens, Refs RAD-152).
+    const [{ name = '' } = {}] = (await su.query<{ name: string }>('select name from radcore.parties where id = $1', [at.supplier])).rows;
+    expect(getExpense.output.parse(await run((ctx) => getExpenseById(ctx, { id }), at.staff)).supplierName).toBe(name);
+    let listed: string | null | undefined;
+    for (let after: string | undefined, more = true; more && listed === undefined;) {
+      const page = listExpenses.output.parse(await run((ctx) => listExpensesPage(ctx, listExpenses.input.parse({ filter: { status: 'cancelled' }, limit: 100,
+        ...(after === undefined ? {} : { after }) })), at.staff));
+      listed = page.items.find((e) => e.id === id)?.supplierName;
+      [after, more] = [page.next ?? undefined, page.next !== null];
+    }
+    expect(listed).toBe(name);
   });
 
   it('refuses posting with no bill, tax that doesn’t match its rate, a total that doesn’t match, and on credit with no supplier', async () => {

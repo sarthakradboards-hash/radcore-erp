@@ -85,6 +85,12 @@ it('shows Purchases on purchasing:read, opening the orders, with the goods recei
   expect(['/purchases/receipts/new', '/purchases/orders', '/sales/orders'].map((p) => purchases !== undefined && isCurrent(purchases, p))).toEqual([true, true, false]);
 });
 
+it('offers expense categories only with both of its keys (e2e-playwright on #466)', () => {
+  const page = ACCOUNTS_PAGES.find((p) => p.href === '/accounts/expense-categories');
+  expect(page !== undefined && allowed(page, ['journal:read'])).toBe(false);
+  expect(page !== undefined && allowed(page, ['journal:read', 'expenses:read'])).toBe(true);
+});
+
 it('offers the bank page only with both of its keys (e2e-2 on #439)', () => {
   const bank = ACCOUNTS_PAGES.find((p) => p.href === '/accounts/bank');
   expect(bank !== undefined && allowed(bank, ['bank:read'])).toBe(false);

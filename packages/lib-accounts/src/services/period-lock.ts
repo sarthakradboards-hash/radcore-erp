@@ -13,7 +13,7 @@ import { AppError, defineSetting, principalsOf, requestApproval, type ApprovalSp
 import { and, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type { askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract } from '../contract-period.ts';
-import { filedLockRow, periodLockRow, postEntry, reverseEntry, type JournalLine } from './journal.ts';
+import { filedLockRow, lockPeriod, periodLockRow, postEntry, reverseEntry, type JournalLine } from './journal.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
@@ -93,10 +93,11 @@ async function checkUnlock(ctx: Ctx, kind: 'move_back' | 'reopen_year', through:
 
 /** POST /books/period/unlock-requests: the request, and its approval asked for (`period-unlock`). */
 export async function askToUnlock(ctx: Ctx, r: In<typeof askUnlockContract>): Promise<Out<typeof askUnlockContract>> {
-  const [lock] = await periodLockRow(ctx).for('share');
-  await checkUnlock(ctx, r.kind, r.through, lock?.through ?? null);
+  // ADR-009 §7's step 1 as a posting takes it: the company, then the period lock, both FOR SHARE.
+  const lock = await lockPeriod(ctx);
+  await checkUnlock(ctx, r.kind, r.through, lock);
   const [row] = await accountsTx(ctx).insert(periodUnlockRequests)
-    .values({ kind: r.kind, through: r.through, reason: r.reason, lockWas: lock?.through ?? '' }).returning({ id: periodUnlockRequests.id });
+    .values({ kind: r.kind, through: r.through, reason: r.reason, lockWas: lock ?? '' }).returning({ id: periodUnlockRequests.id });
   if (row === undefined) throw new Error('The request was not saved');
   return requestApproval(ctx, periodUnlockSpec, row.id);
 }
