@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { z } from 'zod';
 import { Dialog, CloseButton } from '../../../components/ui/dialog/dialog.tsx';
 import { Form, SubmitButton } from '../../../components/ui/form/form.tsx';
-import { ADMIN_PAGES, allowed, type NavPage } from '../../../components/shell/nav.ts';
+import { ADMIN_PAGES, allowed, currentHref, type NavPage } from '../../../components/shell/nav.ts';
 import { useMe } from '../../../components/shell/session-provider.tsx';
 import { announce } from '../../../components/ui/live-region.tsx';
 import { t } from '../../../lib/i18n/index.ts';
@@ -21,11 +21,12 @@ export function SectionNav({ label, pages }: { label: string; pages: readonly Na
   const { permissions } = useMe();
   // A page offered under either of two keys is listed once.
   const shown = pages.filter((page) => allowed(page, permissions)).filter((page, i, all) => all.findIndex((p) => p.href === page.href) === i);
+  const current = currentHref(shown.map((page) => page.href), here);
   return (
     <nav aria-label={label} className="admin-nav">
       <ul>
         {shown.map(({ href, label }) => (
-          <li key={href}><Link href={href} aria-current={here === href || here.startsWith(`${href}/`) ? 'page' : undefined}>{t(label)}</Link></li>
+          <li key={href}><Link href={href} aria-current={href === current ? 'page' : undefined}>{t(label)}</Link></li>
         ))}
       </ul>
     </nav>

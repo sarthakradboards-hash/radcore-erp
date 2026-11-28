@@ -111,6 +111,11 @@ export const NAV: readonly NavItem[] = [
 export const allowed = (page: NavPage, permissions: readonly string[]): boolean =>
   (page.perm === null || permissions.includes(page.perm)) && (page.also === undefined || permissions.includes(page.also));
 
+/** The one page of a section's menu that `path` is on: of those it's at or under, the closest, so /accounts/bank isn't
+ * marked beside /accounts/bank/reconciliation (e2e-2 on #470). */
+export const currentHref = (hrefs: readonly string[], path: string): string | undefined =>
+  hrefs.filter((h) => path === h || path.startsWith(`${h}/`)).toSorted((a, b) => b.length - a.length)[0];
+
 /** The menu one person sees: each entry they can use at all, pointing at the first of its pages they may open. */
 export function menuFor(items: readonly NavItem[], permissions: readonly string[]): MenuEntry[] {
   return items.flatMap((item) => {

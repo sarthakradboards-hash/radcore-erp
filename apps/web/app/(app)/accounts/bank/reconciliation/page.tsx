@@ -5,11 +5,13 @@
 import { dateString, formatDate, formatMoney, indiaDate } from '@radcore/lib-common';
 import { listMoneyAccounts, reconciliationContract } from '@radcore/lib-accounts/contract';
 import Link from 'next/link';
-import { useId, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useId, useState } from 'react';
 import type { z } from 'zod';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
 import '../../../../../components/ui/form/form.css';
 import { DataTable, type Column } from '../../../../../components/ui/table/data-table.tsx';
+import { ApiError } from '../../../../../lib/api-client.ts';
 import { useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ChoiceButtons } from '../../../admin/shared.tsx';
@@ -46,7 +48,8 @@ function Reconciliation({ accountId, asAt }: { accountId: string; asAt: string }
   if (q.error !== null) {
     return (
       <div role="alert" className="kit-form-alert">
-        {t('error.title')} <button type="button" className="kit-button" onClick={() => void q.refetch()}>{t('error.retry')}</button>
+        {q.error instanceof ApiError && q.error.code === 'not_a_bank_account' ? t('books.bank.err.not_a_bank_account') : t('error.title')}{' '}
+        <button type="button" className="kit-button" onClick={() => void q.refetch()}>{t('error.retry')}</button>
       </div>
     );
   }
@@ -83,14 +86,18 @@ function Reconciliation({ accountId, asAt }: { accountId: string; asAt: string }
   );
 }
 
-export default function ReconciliationPage() {
+/** The account and the date start from the address (?account=&date=) and are written back to it, so Back from an entry
+ * finds them (e2e-2 on #470). Held in state too, so typing a date never waits for the address. */
+function Chosen() {
   const { permissions } = useMe();
+  const asked = useSearchParams();
   const mayRead = permissions.includes('bank:read') && permissions.includes('money_accounts:read');
   const money = useApiQuery(listMoneyAccounts, {}, { enabled: mayRead });
   const banks = (money.data?.items ?? []).filter((a) => !a.cash);
-  const [picked, setPicked] = useState('');
+  const [picked, setPicked] = useState(() => asked.get('account') ?? '');
   const accountId = banks.some((b) => b.id === picked) ? picked : (banks[0]?.id ?? '');
-  const [asAt, setAsAt] = useState(() => indiaDate(new Date()));
+  const [asAt, setAsAt] = useState(() => asked.get('date') ?? indiaDate(new Date()));
+  const keep = (account: string, date: string) => window.history.replaceState(null, '', `?${new URLSearchParams({ account, date }).toString()}`);
   const dateId = useId();
   const dated = dateString().safeParse(asAt).success;
   const body = !mayRead ? <p>{t('books.bank.none')}</p>
@@ -100,20 +107,24 @@ export default function ReconciliationPage() {
     : (
       <>
         <div className="admin-toolbar">
-          <ChoiceButtons label={t('books.bank.account')} value={accountId} onChange={setPicked} options={banks.map((b) => ({ value: b.id, label: b.name }))} />
+          <ChoiceButtons label={t('books.bank.account')} value={accountId} onChange={(id) => { setPicked(id); keep(id, asAt); }} options={banks.map((b) => ({ value: b.id, label: b.name }))} />
           <div className="kit-field">
             <label htmlFor={dateId}>{t('books.recon.asAt')}</label>
-            <input id={dateId} type="date" value={asAt} onChange={(e) => setAsAt(e.currentTarget.value)} />
+            <input id={dateId} type="date" value={asAt} onChange={(e) => { setAsAt(e.currentTarget.value); keep(accountId, e.currentTarget.value); }} />
           </div>
         </div>
         {dated ? <Reconciliation accountId={accountId} asAt={asAt} /> : <p>{t('books.recon.pickDate')}</p>}
       </>
     );
+  return body;
+}
+
+export default function ReconciliationPage() {
   return (
     <>
       <h1>{t('books.recon.title')}</h1>
       <p>{t('books.recon.intro')}</p>
-      {body}
+      <Suspense fallback={<p>{t('loading')}</p>}><Chosen /></Suspense>
     </>
   );
 }

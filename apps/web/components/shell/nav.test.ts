@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ACCOUNTS_PAGES, ADMIN_PAGES, allowed, isCurrent, menuFor, NAV, PURCHASES_PAGES, SALES_PAGES, type NavItem } from './nav.ts';
+import { ACCOUNTS_PAGES, ADMIN_PAGES, allowed, currentHref, isCurrent, menuFor, NAV, PURCHASES_PAGES, SALES_PAGES, type NavItem } from './nav.ts';
 
 const items: NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
@@ -83,6 +83,14 @@ it('shows Purchases on purchasing:read, opening the orders, with the goods recei
   expect(purchases?.href).toBe('/purchases/orders');
   expect(menuFor(NAV, ['sales:read']).some((e) => e.label === 'nav.purchases')).toBe(false);
   expect(['/purchases/receipts/new', '/purchases/orders', '/sales/orders'].map((p) => purchases !== undefined && isCurrent(purchases, p))).toEqual([true, true, false]);
+});
+
+it('marks only the closest page of a section as current (e2e-2 on #470)', () => {
+  const hrefs = ['/accounts/bank', '/accounts/bank/reconciliation', '/accounts/journal'];
+  expect(currentHref(hrefs, '/accounts/bank/reconciliation')).toBe('/accounts/bank/reconciliation');
+  expect(currentHref(hrefs, '/accounts/journal/abc')).toBe('/accounts/journal');
+  expect(currentHref(hrefs.slice(0, 1), '/accounts/bank/reconciliation')).toBe('/accounts/bank');
+  expect(currentHref(hrefs, '/accounts/banking')).toBeUndefined();
 });
 
 it('offers the bank page only with both of its keys (e2e-2 on #439)', () => {
