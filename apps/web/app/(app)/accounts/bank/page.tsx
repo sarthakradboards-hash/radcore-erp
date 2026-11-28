@@ -4,11 +4,10 @@
 // (statement_files:write), then the import names the account's layout: its columns' headings, kept for the next upload.
 // The worker reads and checks it, all or nothing; the screen polls the import and lists every refused row, and an import
 // can be undone while nothing is matched. Which rows are new, already present or refused is the server's to judge.
-import { formatDate, formatMoment, formatMoney } from '@radcore/lib-common';
+import { formatMoment } from '@radcore/lib-common';
 import {
-  getStatementFormatContract, getStatementImportContract, importStatementContract, listMatchCandidatesContract, listMoneyAccounts,
-  listStatementImportsContract, listStatementLinesContract, matchLinesContract, unmatchContract,
-  undoStatementImportContract,
+  getStatementFormatContract, getStatementImportContract, importStatementContract, listMoneyAccounts, listStatementImportsContract,
+  listStatementLinesContract, undoStatementImportContract,
 } from '@radcore/lib-accounts/contract';
 import { statementFiles } from '@radcore/lib-platform/contract';
 import { useQueryClient } from '@tanstack/react-query';
@@ -17,8 +16,7 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { ReasonDialog } from '../../../../components/ui/dialog/reason-dialog.tsx';
-import { announce } from '../../../../components/ui/live-region.tsx';
-import { CheckboxField, RadioField, TextField } from '../../../../components/ui/form/fields.tsx';
+import { CheckboxField, TextField } from '../../../../components/ui/form/fields.tsx';
 import { Form, SubmitButton } from '../../../../components/ui/form/form.tsx';
 import { DataTable, type Column } from '../../../../components/ui/table/data-table.tsx';
 import { ApiError } from '../../../../lib/api-client.ts';
@@ -28,10 +26,9 @@ import { t } from '../../../../lib/i18n/index.ts';
 import '../../../../components/ui/table/table.css';
 import { ChoiceButtons } from '../../admin/shared.tsx';
 import { refreshLines } from './lines-refresh.ts';
-import { candidateLabel, MATCH_MESSAGES } from './match-values.ts';
+import { StatementLines } from './statement-lines.tsx';
 import { BANK_MESSAGES, importSchema, importValues, importWhenChecked, lineCounts, UPLOADABLE, uploadType, type ImportInput } from './statement-values.ts';
 
-type Line = z.output<typeof listStatementLinesContract.output>['items'][number];
 type PastImport = z.output<typeof listStatementImportsContract.output>['items'][number];
 
 /** The bank's file: chosen, sent straight to the bucket, then checked by the server; the form keeps its id. */
@@ -203,97 +200,6 @@ function PastImports({ accountId, mayUndo }: { accountId: string; mayUndo: boole
       <h2>{t('books.bank.past')}</h2>
       <DataTable caption={t('books.bank.past')} columns={cols} rowKey={(r) => r.id} list={list} empty={t('books.bank.past.empty')} />
       {open === undefined ? null : <ImportStatus key={open.id} id={open.id} mayUndo={mayUndo} undoable={open.undoable} />}
-    </>
-  );
-}
-
-/** A statement line in words, for the match panel's title and the row's buttons: which way the money went, how much, when
- * (auditor-3 on #456). */
-const lineWords = (l: Line) => ({ dir: t(l.direction === 'in' ? 'books.bank.dir.in' : 'books.bank.dir.out'), amount: formatMoney(l.amount),
-  date: formatDate(l.valueDate) });
-
-const pickSchema = z.object({ journalLineId: z.string().min(1, t('books.bank.match.err.pick')) });
-
-/** Matches one statement line to one of the book lines the server offers for it (same amount, nearby, best first). */
-function MatchPanel({ line, onClose }: { line: Line; onClose: () => void }) {
-  const headingId = useId();
-  const heading = useRef<HTMLHeadingElement>(null);
-  const q = useApiQuery(listMatchCandidatesContract, { id: line.id });
-  const match = useApiMutation(matchLinesContract, { invalidates: [listStatementLinesContract, listMatchCandidatesContract, listStatementImportsContract] });
-  // The panel opens below the table, so focus goes to its heading.
-  useEffect(() => { heading.current?.focus(); }, []);
-  const title = t('books.bank.match.title', lineWords(line));
-  const body = q.error !== null ? <p role="alert" className="kit-form-alert">{t('error.title')}</p>
-    : q.data === undefined ? <p>{t('loading')}</p>
-    : q.data.candidates.length === 0 ? <p>{t('books.bank.match.none')}</p>
-    : (
-      <Form aria-labelledby={headingId} schema={pickSchema} defaultValues={{ journalLineId: q.data.candidates[0]?.journalLineId ?? '' }}
-        saved={false} messages={MATCH_MESSAGES}
-        onSubmit={async (v) => {
-          await match.submit({ statementLineIds: [line.id], journalLineIds: [v.journalLineId] });
-          onClose();
-          setTimeout(() => announce(t('books.bank.match.done')), 0);
-        }}>
-        <RadioField name="journalLineId" label={t('books.bank.match.pick')}
-          options={q.data.candidates.map((c) => ({ value: c.journalLineId, label: candidateLabel(c) }))} />
-        <SubmitButton>{t('books.bank.match.save')}</SubmitButton>
-      </Form>
-    );
-  return (
-    <section aria-labelledby={headingId}>
-      <h3 id={headingId} ref={heading} tabIndex={-1}>{title}</h3>
-      <p>{t('books.bank.match.intro')}</p>
-      {body}
-      <div className="kit-actions">
-        <button type="button" className="kit-button" onClick={onClose}>{t('books.bank.match.close')}</button>
-      </div>
-    </section>
-  );
-}
-
-/** The account's statement lines, each matched or not; under bank:reconcile, Match an unmatched one, Unmatch a matched one. */
-function StatementLines({ accountId, mayMatch }: { accountId: string; mayMatch: boolean }) {
-  const lines = useApiList(listStatementLinesContract, { filter: { accountId } });
-  const unmatch = useApiMutation(unmatchContract, { invalidates: [listStatementLinesContract, listMatchCandidatesContract, listStatementImportsContract] });
-  const [matching, setMatching] = useState<Line | null>(null);
-  const [unmatching, setUnmatching] = useState<Line | null>(null);
-  const tableHeading = useRef<HTMLHeadingElement>(null);
-  // Matching or unmatching swaps the row's button, so focus goes back to the table's heading, not the body.
-  const backToTable = () => setTimeout(() => tableHeading.current?.focus(), 0);
-  const columns: Column<Line>[] = [
-    { id: 'date', header: t('books.bank.col.date'), cell: (l) => formatDate(l.valueDate) },
-    { id: 'narration', header: t('books.bank.col.narration'), cell: (l) => l.narration },
-    { id: 'reference', header: t('books.bank.col.reference'), cell: (l) => l.reference },
-    { id: 'out', header: t('books.bank.col.out'), numeric: true, cell: (l) => (l.direction === 'out' ? formatMoney(l.amount) : '') },
-    { id: 'in', header: t('books.bank.col.in'), numeric: true, cell: (l) => (l.direction === 'in' ? formatMoney(l.amount) : '') },
-    { id: 'balance', header: t('books.bank.col.balance'), numeric: true, cell: (l) => formatMoney(l.balance) },
-    { id: 'match', header: t('books.bank.col.match'), cell: (l) => (
-      <>
-        {l.matchId === null ? null : <span>{t('books.bank.matched')} </span>}
-        {!mayMatch ? null : l.matchId === null ? (
-          <button type="button" className="kit-button" aria-pressed={matching?.id === l.id} onClick={() => setMatching(l)}
-            aria-label={t('books.bank.match.for', lineWords(l))}>{t('books.bank.match')}</button>
-        ) : (
-          <button type="button" className="kit-button" onClick={() => setUnmatching(l)} aria-label={t('books.bank.unmatch.for', lineWords(l))}>
-            {t('books.bank.unmatch')}
-          </button>
-        )}
-      </>
-    ) },
-  ];
-  return (
-    <>
-      <h2 ref={tableHeading} tabIndex={-1}>{t('books.bank.lines')}</h2>
-      <DataTable caption={t('books.bank.lines')} columns={columns} rowKey={(l) => l.id} list={lines} empty={t('books.bank.lines.empty')} />
-      {matching === null ? null : <MatchPanel key={matching.id} line={matching} onClose={() => { setMatching(null); backToTable(); }} />}
-      <ReasonDialog open={unmatching !== null} onOpenChange={(open) => { if (!open) setUnmatching(null); }} messages={MATCH_MESSAGES}
-        title={t('books.bank.unmatch.title')} action={t('books.bank.unmatch')} done={t('books.bank.unmatched')}
-        onConfirm={async (reason) => {
-          const matchId = unmatching?.matchId;
-          if (matchId === null || matchId === undefined) return;
-          await unmatch.submit({ id: matchId, reason });
-          backToTable();
-        }} />
     </>
   );
 }
