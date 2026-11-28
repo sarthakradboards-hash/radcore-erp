@@ -36,7 +36,8 @@ export async function checkBooks(ctx: Ctx, { asAt }: In): Promise<Out> {
 }
 
 /** POST /books/years/:start/close (RAD-157): lib-accounts' close, with this books check as at the year's 31 March
- * (ADR-009 §6), which lib-accounts can't import. */
+ * (ADR-009 §6), which lib-accounts can't import. The close runs read committed, so postings dated after 31 March may
+ * commit between the check's statements: its figures stay right because every read in it filters by business date. */
 export function closeYearChecked(ctx: Ctx, input: z.output<(typeof closeYearContract)['input']>): Promise<z.input<(typeof closeYearContract)['output']>> {
   return closeYear(ctx, input, async (c, asAt) => (await checkBooks(c, { asAt })).problems);
 }

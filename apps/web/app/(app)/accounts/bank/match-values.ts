@@ -35,6 +35,8 @@ export const chargeAccounts = <A extends Pick<Account, 'type' | 'controlKind' | 
   accounts.filter((a) => a.type === (direction === 'out' ? 'expense' : 'income') && a.controlKind === 'none' && a.active);
 
 const isKind = (k: string): k is EntryKind => (ENTRY_KINDS as readonly string[]).includes(k);
+/** An entry's kind in words; one this screen doesn't know yet shows as sent. */
+export const kindWords = (k: string) => (isKind(k) ? t(`books.kind.${k}`) : k);
 
 /** "PAY/26-27/00012, Payment made, 3 Nov 2026, Shree Transport: by reference" and so on, best reason first. */
 export function candidateLabel(c: Candidate): string {
@@ -42,13 +44,13 @@ export function candidateLabel(c: Candidate): string {
     : c.byParty === 'whole' ? t('books.bank.match.byParty')
       : c.byParty === 'word' ? t('books.bank.match.byWord')
         : t(c.daysApart === 1 ? 'books.bank.match.day' : 'books.bank.match.days', { n: String(c.daysApart) });
-  const parts = [c.entryNumber, isKind(c.kind) ? t(`books.kind.${c.kind}`) : c.kind, formatDate(c.businessDate), ...(c.party === null ? [] : [c.party])];
+  const parts = [c.entryNumber, kindWords(c.kind), formatDate(c.businessDate), ...(c.party === null ? [] : [c.party])];
   return `${parts.join(', ')}: ${why}`;
 }
 
 /** A book line to tick in a several-line match: "JV/26-27/00012, Payment made, 3 Nov 2026, Shree Transport: ₹4,500.00 out". */
 export function bookLineLabel(b: BookLine): string {
-  const parts = [b.entryNumber, isKind(b.kind) ? t(`books.kind.${b.kind}`) : b.kind, formatDate(b.businessDate), ...(b.party === null ? [] : [b.party])];
+  const parts = [b.entryNumber, kindWords(b.kind), formatDate(b.businessDate), ...(b.party === null ? [] : [b.party])];
   return `${parts.join(', ')}: ${t(b.direction === 'in' ? 'books.bank.several.in' : 'books.bank.several.out', { amount: formatMoney(b.amount) })}`;
 }
 

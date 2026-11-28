@@ -4,6 +4,7 @@
 // for the list and get routes; refunds, which name a receipt, wait with them.
 import { formatMoney } from '@radcore/lib-common';
 import { recordPaymentContract } from '@radcore/lib-accounts/contract';
+import Link from 'next/link';
 import { useState } from 'react';
 import type { z } from 'zod';
 import { useMe } from '../../../../../components/shell/session-provider.tsx';
@@ -14,10 +15,12 @@ import { AllocateForm } from '../allocate-form.tsx';
 import { PaymentForm } from '../payment-form.tsx';
 import { NEW_PAYMENT, type PaymentValues } from '../payment-values.ts';
 
-type Recorded = z.output<typeof recordPaymentContract.output> & Pick<PaymentValues, 'kind' | 'partyId' | 'amount'>;
+type Recorded = z.output<typeof recordPaymentContract.output> & Pick<PaymentValues, 'kind' | 'partyId' | 'amount'> & { deducts: boolean };
 
 export default function NewPaymentPage() {
-  const mayWrite = useMe().permissions.includes('payments:write');
+  const { permissions } = useMe();
+  const mayWrite = permissions.includes('payments:write');
+  const mayOpen = permissions.includes('payments:read');
   const record = useApiMutation(recordPaymentContract);
   const [done, setDone] = useState<Recorded | null>(null);
   const [applied, setApplied] = useState<number | null>(null);
@@ -32,7 +35,7 @@ export default function NewPaymentPage() {
         <PaymentForm key={round} labelledBy="record-payment" initial={NEW_PAYMENT}
           onSubmit={async (v) => {
             const result = await record.submit(v);
-            setDone({ ...result, kind: v.kind, partyId: v.partyId, amount: v.amount });
+            setDone({ ...result, kind: v.kind, partyId: v.partyId, amount: v.amount, deducts: v.tdsSectionId !== undefined });
             setTimeout(() => announce(result.status === 'posted' ? t('books.pay.done.posted', { kind: t(`books.pay.done.kind.${v.kind}`), number: result.number ?? '' }) : t('books.pay.done.waiting', { kind: t(`books.pay.done.kind.${v.kind}`) })), 0);
           }} />
       ) : (
@@ -40,6 +43,10 @@ export default function NewPaymentPage() {
           <h2 id="payment-done">{t(`books.pay.done.kind.${done.kind}`)} {done.number ?? ''}</h2>
           <p>{done.status === 'posted' ? t('books.pay.done.posted', { kind: t(`books.pay.done.kind.${done.kind}`), number: done.number ?? '' }) : t('books.pay.done.waiting', { kind: t(`books.pay.done.kind.${done.kind}`) })}</p>
           <p>{formatMoney(done.amount)}</p>
+          {done.deducts ? (
+            // The answer carries no TDS figure: the payment's own page shows the one the server worked out.
+            <p>{t('books.pay.done.tds')} {mayOpen ? <Link href={`/accounts/payments/${done.id}`}>{t('books.pay.done.open')}</Link> : null}</p>
+          ) : null}
           {done.status === 'posted' && applied === null ? (
             <section aria-labelledby="payment-apply">
               <h3 id="payment-apply">{t('books.pay.allocate.title')}</h3>

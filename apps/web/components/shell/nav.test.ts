@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ACCOUNTS_PAGES, ADMIN_PAGES, allowed, isCurrent, menuFor, NAV, PURCHASES_PAGES, SALES_PAGES, type NavItem } from './nav.ts';
+import { ACCOUNTS_PAGES, ADMIN_PAGES, allowed, currentHref, isCurrent, menuFor, NAV, PURCHASES_PAGES, SALES_PAGES, type NavItem } from './nav.ts';
 
 const items: NavItem[] = [
   { label: 'nav.home', pages: [{ href: '/', label: 'nav.home', perm: null }] },
@@ -53,7 +53,7 @@ it('marks Admin current on any admin page, and Home only on /', () => {
 
 it('shows Accounts on journal:read, opening the journal, and marks it current on its pages only (RAD-100)', () => {
   expect(ACCOUNTS_PAGES.map((p) => [p.href, p.perm])).toEqual([['/accounts/journal', 'journal:read'], ['/accounts/chart', 'journal:read'], ['/accounts/collect', 'receivables:read'],
-    ['/accounts/payments', 'payments:read'], ['/accounts/bank', 'bank:read'], ['/accounts/transfers', 'payments:read'], ['/accounts/expenses', 'expenses:read'], ['/accounts/expenses/approvals', 'payments:approve'], ['/accounts/period', 'books:lock'],
+    ['/accounts/payments', 'payments:read'], ['/accounts/bank', 'bank:read'], ['/accounts/bank/reconciliation', 'bank:read'], ['/accounts/transfers', 'payments:read'], ['/accounts/expenses', 'expenses:read'], ['/accounts/expenses/approvals', 'payments:approve'], ['/accounts/period', 'books:lock'],
     ['/accounts/period/approvals', 'books:unlock'], ['/accounts/expense-categories', 'journal:read'], ['/accounts/gst/gstr1', 'gst:returns']]);
   const accounts = menuFor(NAV, ['journal:read']).find((e) => e.label === 'nav.accounts');
   expect(accounts?.href).toBe('/accounts/journal');
@@ -83,6 +83,20 @@ it('shows Purchases on purchasing:read, opening the orders, with the goods recei
   expect(purchases?.href).toBe('/purchases/orders');
   expect(menuFor(NAV, ['sales:read']).some((e) => e.label === 'nav.purchases')).toBe(false);
   expect(['/purchases/receipts/new', '/purchases/orders', '/sales/orders'].map((p) => purchases !== undefined && isCurrent(purchases, p))).toEqual([true, true, false]);
+});
+
+it('marks only the closest page of a section as current (e2e-2 on #470)', () => {
+  const hrefs = ['/accounts/bank', '/accounts/bank/reconciliation', '/accounts/journal'];
+  expect(currentHref(hrefs, '/accounts/bank/reconciliation')).toBe('/accounts/bank/reconciliation');
+  expect(currentHref(hrefs, '/accounts/journal/abc')).toBe('/accounts/journal');
+  expect(currentHref(hrefs.slice(0, 1), '/accounts/bank/reconciliation')).toBe('/accounts/bank');
+  expect(currentHref(hrefs, '/accounts/banking')).toBeUndefined();
+});
+
+it('offers expense categories only with both of its keys (e2e-playwright on #466)', () => {
+  const page = ACCOUNTS_PAGES.find((p) => p.href === '/accounts/expense-categories');
+  expect(page !== undefined && allowed(page, ['journal:read'])).toBe(false);
+  expect(page !== undefined && allowed(page, ['journal:read', 'expenses:read'])).toBe(true);
 });
 
 it('offers the bank page only with both of its keys (e2e-2 on #439)', () => {
