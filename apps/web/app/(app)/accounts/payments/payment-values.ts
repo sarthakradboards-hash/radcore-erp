@@ -14,6 +14,9 @@ const shape = recordPaymentContract.input.shape;
 const positive = (a: string) => moneyString().safeParse(a).success && dec(a).gt(0);
 
 export const PAYMENT_KINDS = ['receipt', 'payment'] as const;
+/** A TDS section as a picker offers it, with the kind of payee it's for (auditor-3 on #472). */
+export const sectionLabel = (s: { code: string; name: string; payee: 'individual' | 'other' | 'any' }) =>
+  `${s.code}: ${s.name} (${t(`books.pay.payee.${s.payee}`)})`;
 const hasTdsBox = (v: { kind: (typeof PAYMENT_KINDS)[number]; tdsSectionId: string }) => v.kind === 'receipt' || v.tdsSectionId !== '';
 
 export const paymentSchema = z.object({

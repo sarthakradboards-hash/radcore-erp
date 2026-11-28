@@ -14,8 +14,8 @@ it('sends empty boxes as none, empty tax as nothing charged, and leaves the TDS 
 });
 
 it('sends “no TDS” as null and a chosen section as its id', () => {
-  expect(expenseSchema.parse({ ...filled, lines: [{ ...line, tds: NO_TDS }] }).lines[0]?.tdsSectionId).toBeNull();
-  expect(expenseSchema.parse({ ...filled, lines: [{ ...line, tds: id(3) }] }).lines[0]?.tdsSectionId).toBe(id(3));
+  expect(expenseSchema.parse({ ...filled, lines: [{ ...line, tdsSection: NO_TDS }] }).lines[0]?.tdsSectionId).toBeNull();
+  expect(expenseSchema.parse({ ...filled, lines: [{ ...line, tdsSection: id(3) }] }).lines[0]?.tdsSectionId).toBe(id(3));
 });
 
 it('puts each problem on its own box: what’s missing, and CGST and SGST that differ', () => {
@@ -30,7 +30,7 @@ it('keeps a saved draft as stored: no section stays no TDS, and a choice that’
   const saved = { ...expenseSchema.parse(filled), id: id(9), number: null, status: 'draft', supplierName: null, onCredit: true, awaitingApproval: false,
     tds: '0.00', createdAt: '2026-11-20T10:00:00Z', cancelReason: null,
     lines: [{ ...expenseSchema.parse(filled).lines[0], id: id(8), lineNo: 1, tdsSectionId: null, sac: null, credit: null, reverseCharge: null }] };
-  expect(expenseToForm(saved as unknown as Parameters<typeof expenseToForm>[0]).lines[0]).toMatchObject({ tds: NO_TDS, sac: '' });
+  expect(expenseToForm(saved as unknown as Parameters<typeof expenseToForm>[0]).lines[0]).toMatchObject({ tdsSection: NO_TDS, sac: '' });
   expect(keeping([{ value: 'a', label: 'A' }], 'b', 'Saved')).toEqual([{ value: 'a', label: 'A' }, { value: 'b', label: 'Saved' }]);
   expect(keeping([{ value: 'a', label: 'A' }], '', 'Saved')).toHaveLength(1);
 });

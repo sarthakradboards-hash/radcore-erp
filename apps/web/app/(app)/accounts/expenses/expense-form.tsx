@@ -4,7 +4,7 @@
 // accounts with its tax as the bill shows it. The server checks all of it; posting is on the expense's page.
 import { listExpenseCategories, listParties, listTdsSections } from '@radcore/lib-accounts/contract';
 import { expenseBillFiles } from '@radcore/lib-platform/contract';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useMe } from '../../../../components/shell/session-provider.tsx';
 import { SelectField, TextAreaField, TextField } from '../../../../components/ui/form/fields.tsx';
@@ -17,7 +17,7 @@ import { PickedField } from '../../sales/picked-field.tsx';
 import { useMoneyAccounts } from '../../sales/money-accounts.ts';
 import { importWhenChecked } from '../bank/statement-values.ts';
 import { sectionLabel } from '../payments/payment-values.ts';
-import { EXPENSE_MESSAGES, namingLine } from './expense-values.ts';
+import { EXPENSE_MESSAGES } from './expense-values.ts';
 import { blankLine, expenseSchema, keeping, NO_TDS, type ExpenseInput, type ExpenseValues } from './form-values.ts';
 
 const useSuppliers = (query: string) => useApiSearch(listParties, query, { params: { filter: { buysFrom: true, active: true } } });
@@ -26,17 +26,19 @@ const useSuppliers = (query: string) => useApiSearch(listParties, query, { param
 function Supplier({ saved }: { saved: { id: string; name: string } | null }) {
   const { control, setValue } = useFormContext<ExpenseInput>();
   const supplierId = useWatch({ control, name: 'supplierId' });
+  // Taking the supplier off starts the box again, so it doesn't keep the name.
+  const [cleared, setCleared] = useState(0);
   return (
     <>
-      {/* Keyed so that clearing it empties the box too, not just the value. */}
-      <PickedField key={supplierId === '' ? 'none' : 'picked'} name="supplierId" label={t('books.expense.form.supplier')}
-        hint={t('books.expense.form.supplier.hint')} initial={saved !== null && saved.id === supplierId ? saved : null} useSearch={useSuppliers}
-        optionLabel={(p) => p.name} />
-      {supplierId === '' ? null : (
-        <button type="button" className="kit-button" onClick={() => { setValue('supplierId', '', { shouldDirty: true }); setValue('supplierGstin', ''); }}>
-          {t('books.expense.form.supplier.clear')}
-        </button>
-      )}
+      <PickedField key={cleared} name="supplierId" label={t('books.expense.form.supplier')} hint={t('books.expense.form.supplier.hint')}
+        initial={saved !== null && saved.id === supplierId ? saved : null} useSearch={useSuppliers} optionLabel={(p) => p.name} />
+      {/* Always drawn, so focus doesn't fall to the body when it's pressed. */}
+      <button type="button" className="kit-button" aria-disabled={supplierId === ''} onClick={() => {
+        if (supplierId === '') return;
+        setValue('supplierId', '', { shouldDirty: true });
+        setValue('supplierGstin', '');
+        setCleared((n) => n + 1);
+      }}>{t('books.expense.form.supplier.clear')}</button>
     </>
   );
 }
@@ -59,7 +61,7 @@ function ExpenseLine({ index, onRemove }: { index: number; onRemove: (() => void
   const { control, setValue } = useFormContext<ExpenseInput>();
   const categoryId = useWatch({ control, name: `lines.${index}.categoryId` });
   const accountId = useWatch({ control, name: `lines.${index}.accountId` });
-  const tds = useWatch({ control, name: `lines.${index}.tds` });
+  const tdsSection = useWatch({ control, name: `lines.${index}.tdsSection` });
   // A new category empties the account, which may not be one of its own.
   const seen = useRef(categoryId);
   useEffect(() => {
@@ -103,9 +105,9 @@ function ExpenseLine({ index, onRemove }: { index: number; onRemove: (() => void
           {t('books.pay.tdsSection.failed')} <button type="button" className="kit-button" onClick={() => void sections.refetch()}>{t('error.retry')}</button>
         </div>
       ) : sections.data === undefined ? <p>{t('loading')}</p> : (
-        <SelectField name={`lines.${index}.tds`} label={t('books.expense.form.tds')}
+        <SelectField name={`lines.${index}.tdsSection`} label={t('books.expense.form.tds')}
           options={keeping([{ value: '', label: t('books.expense.form.tds.default') }, { value: NO_TDS, label: t('books.pay.tdsSection.none') },
-            ...sections.data.items.map((s) => ({ value: s.id, label: sectionLabel(s) }))], tds, t('books.expense.form.savedSection'))} />
+            ...sections.data.items.map((s) => ({ value: s.id, label: sectionLabel(s) }))], tdsSection, t('books.expense.form.savedSection'))} />
       )}
       <TextField name={`lines.${index}.sac`} label={t('books.expense.form.sac')} hint={t('books.expense.form.sac.hint')} inputMode="numeric" autoComplete="off" />
       {onRemove === null ? null
@@ -133,7 +135,7 @@ export function ExpenseForm({ labelledBy, initial, supplier = null, submit, onSu
   return (
     <Form aria-labelledby={labelledBy} schema={expenseSchema} saved={false} messages={EXPENSE_MESSAGES} defaultValues={initial}
       // The bill's file may still be being checked, so a not_ready is asked again for a while.
-      onSubmit={async (v) => { await importWhenChecked(() => onSubmit(v)).catch((e: unknown) => { throw namingLine(e); }); }}>
+      onSubmit={async (v) => { await importWhenChecked(() => onSubmit(v)); }}>
       <Supplier saved={supplier} />
       <TextField name="supplierGstin" label={t('books.expense.gstin')} hint={t('books.expense.form.gstin.hint')} autoComplete="off" />
       <TextField name="supplierInvoiceNumber" label={t('books.expense.form.invoiceNumber')} autoComplete="off" />

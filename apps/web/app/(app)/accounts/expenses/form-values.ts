@@ -17,7 +17,7 @@ const orNull = (v: string) => (v === '' ? null : v);
 const formLine = z.object({
   categoryId: required(t('books.expense.form.err.category')), accountId: required(t('books.expense.form.err.account')),
   description: z.string().trim(), taxable: required(t('books.expense.form.err.taxable')), gstRate: required(t('books.expense.form.err.rate')),
-  cgst: z.string().trim(), sgst: z.string().trim(), igst: z.string().trim(), tds: z.string(), sac: z.string().trim(),
+  cgst: z.string().trim(), sgst: z.string().trim(), igst: z.string().trim(), tdsSection: z.string(), sac: z.string().trim(),
 });
 
 export const expenseSchema = z.object({
@@ -32,8 +32,9 @@ export const expenseSchema = z.object({
   statedTotal: v.statedTotal, fileId: orNull(v.fileId), notes: orNull(v.notes),
   lines: v.lines.map((l) => ({
     categoryId: l.categoryId, accountId: l.accountId, description: orNull(l.description), taxable: l.taxable, gstRate: l.gstRate,
-    cgst: l.cgst === '' ? '0' : l.cgst, sgst: l.sgst === '' ? '0' : l.sgst, igst: l.igst === '' ? '0' : l.igst,
-    ...(l.tds === '' ? {} : { tdsSectionId: l.tds === NO_TDS ? null : l.tds }),
+    // An empty tax box is nothing charged.
+    cgst: l.cgst || '0', sgst: l.sgst || '0', igst: l.igst || '0',
+    ...(l.tdsSection === '' ? {} : { tdsSectionId: l.tdsSection === NO_TDS ? null : l.tdsSection }),
     ...(l.sac === '' ? {} : { sac: l.sac }),
   })),
 })).pipe(createExpense.input);
@@ -43,7 +44,7 @@ export type ExpenseValues = z.output<typeof expenseSchema>;
 export type LineInput = ExpenseInput['lines'][number];
 
 export const blankLine = (): LineInput => ({
-  categoryId: '', accountId: '', description: '', taxable: '', gstRate: '', cgst: '', sgst: '', igst: '', tds: '', sac: '',
+  categoryId: '', accountId: '', description: '', taxable: '', gstRate: '', cgst: '', sgst: '', igst: '', tdsSection: '', sac: '',
 });
 export const blankExpense = (): ExpenseInput => ({
   businessDate: indiaDate(new Date()), supplierId: '', supplierInvoiceNumber: '', supplierInvoiceDate: '', supplierGstin: '',
@@ -60,7 +61,7 @@ export function expenseToForm(e: z.output<typeof getExpense.output>): ExpenseInp
     lines: e.lines.map((l) => ({
       categoryId: l.categoryId, accountId: l.accountId, description: l.description ?? '', taxable: asPrice(l.taxable),
       gstRate: asWritten(l.gstRate), cgst: asPrice(l.cgst), sgst: asPrice(l.sgst), igst: asPrice(l.igst),
-      tds: l.tdsSectionId ?? NO_TDS, sac: l.sac ?? '',
+      tdsSection: l.tdsSectionId ?? NO_TDS, sac: l.sac ?? '',
     })),
   };
 }

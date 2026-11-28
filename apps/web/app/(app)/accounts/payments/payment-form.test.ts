@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { allocateSchema, paymentSchema } from './payment-values.ts';
+import { allocateSchema, paymentSchema, sectionLabel } from './payment-values.ts';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const base = { kind: 'receipt', partyId: id(1), businessDate: '2026-11-23', amount: '5000', tds: '', tdsSectionId: '', accountId: id(2), reference: '', narration: '' };
@@ -38,4 +38,9 @@ it('applies a receipt to the bills that have an amount, and needs at least one',
   expect(paths(allocateSchema.safeParse({ businessDate: '2026-11-23', lines: [lines[1]] }))).toEqual(['lines']);
   expect(paths(allocateSchema.safeParse({ businessDate: '2026-11-23', lines: [{ ...lines[0], amount: 'x' }] }))).toEqual(['lines.0.amount']);
   expect(paths(allocateSchema.safeParse({ businessDate: '2026-11-23', lines: [{ ...lines[0], amount: '0' }] }))).toEqual(['lines.0.amount']);
+});
+
+it('names each TDS section with the kind of payee it’s for (auditor-3 on #472)', () => {
+  expect(sectionLabel({ code: '194C', name: 'Contractors', payee: 'individual' })).toBe('194C: Contractors (individuals and HUFs)');
+  expect(sectionLabel({ code: '194J', name: 'Fees', payee: 'any' })).toBe('194J: Fees (any payee)');
 });
