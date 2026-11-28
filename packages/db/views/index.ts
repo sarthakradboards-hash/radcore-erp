@@ -3,6 +3,7 @@ export { vAuditedTables } from './audited-tables.ts';
 export { vBatchOnHand } from './batch-on-hand.ts';
 export { vDeliveryLeft } from './delivery-left.ts';
 export { vDocumentPaid } from './document-paid.ts';
+export { vGstDocumentsIssued } from './gst-documents-issued.ts';
 export { vGstOutwardLines } from './gst-outward-lines.ts';
 export { vSalesDocumentRefs } from './sales-document-refs.ts';
 export { vAuditColumns } from './schema-audit-columns.ts';

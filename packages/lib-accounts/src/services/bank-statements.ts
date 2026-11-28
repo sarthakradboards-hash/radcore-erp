@@ -4,7 +4,7 @@
 // (its statement_formats row FOR UPDATE), so two files for one account are judged one after the other.
 //   POST /bank/statement-imports -> queued -> job: read file (before) -> readStatement -> chainToStored -> imported | refused
 // Nothing posts: statement lines aren't ledger rows.
-import { accounts, accountsTx, after, bankMatchStatementLines, bankStatementLines, statementFormats, statementImports } from '@radcore/db/accounts';
+import { accountsTx, after, bankMatchStatementLines, bankStatementLines, statementFormats, statementImports } from '@radcore/db/accounts';
 import { idString } from '@radcore/lib-common';
 import {
   AppError, decodeCursor, encodeCursor, ImportFileError, isoMoment, momentKey, readPdf, readTable, readyFile, type BeforeJob, type Ctx, type JobContract, type JobMeta, type Table,
@@ -16,20 +16,12 @@ import type {
   undoStatementImportContract,
 } from '../contract-bank.ts';
 import { STATEMENT_LAYOUTS, type StatementLayout } from './statement-layouts.ts';
-import { bankAutoMatchJob, matchesOfLines } from './bank-matching.ts';
+import { bankAccount, bankAutoMatchJob, matchesOfLines } from './bank-matching.ts';
 import { chainToStored, readStatement, type Refusal, type StatementFormat, type StatementLine } from './statement-read.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
 type Out<C extends { output: z.ZodType }> = z.input<C['output']>;
 const refuse = (code: string, message: string): never => { throw new AppError(code, message); };
-
-/** A bank account: Bank itself, or an account under it (ADR-009 §11). Cash, a party's or any other account is refused. */
-async function bankAccount(ctx: Ctx, id: string): Promise<void> {
-  const tx = accountsTx(ctx);
-  const [a] = await tx.select({ key: accounts.systemKey, parentId: accounts.parentId }).from(accounts).where(eq(accounts.id, id)).limit(1);
-  const [parent] = a?.parentId == null ? [] : await tx.select({ key: accounts.systemKey }).from(accounts).where(eq(accounts.id, a.parentId)).limit(1);
-  if (a === undefined || !(a.key === 'bank' || parent?.key === 'bank')) refuse('not_a_bank_account', 'Pick a bank account under Bank');
-}
 
 const formatColumns = {
   dateColumn: statementFormats.dateColumn, narrationColumn: statementFormats.narrationColumn, referenceColumn: statementFormats.referenceColumn,

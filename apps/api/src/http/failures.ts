@@ -10,6 +10,7 @@ import { AppError, describeError } from '@radcore/lib-platform';
 const SQLSTATE: Readonly<Record<string, PlatformErrorCode>> = {
   '23505': 'conflict', // unique_violation
   '23503': 'conflict', // foreign_key_violation
+  '23001': 'conflict', // restrict_violation: an ON DELETE RESTRICT key on PostgreSQL 17 and later (16 raises 23503)
   '40001': 'conflict', // serialization_failure
   '40P01': 'conflict', // deadlock_detected
   '55P03': 'conflict', // lock_not_available: lock_timeout ran out

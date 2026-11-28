@@ -5,7 +5,7 @@
 // cancel holding the document. Each test has its own bank account and its own statement lines, written as rows.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  AUTO_MATCH_BATCH, autoMatch, autoMatchBatch, cancelPayment, matchCandidates, matchLines, openFinancialYear, recordPayment, statementImportsPage, statementLinesPage, undoStatementImport,
+  AUTO_MATCH_BATCH, autoMatch, autoMatchBatch, bookLinesPage, cancelPayment, matchCandidates, matchLines, openFinancialYear, recordPayment, statementImportsPage, statementLinesPage, undoStatementImport,
   unmatch,
 } from '@radcore/lib-accounts';
 import { moneyString } from '@radcore/lib-common';
@@ -120,6 +120,29 @@ describe.skipIf(!url || !superUrl)('bank matching', { timeout: 60_000 }, () => {
     expect(await code(run((ctx) => matchLines(ctx, { statementLineIds: s.lines, journalLineIds: [first.line] })))).toBe('entry_reversed');
   });
 
+  it('lists an account’s unmatched live book lines for a many-to-many match, newest first, filtered (the architect on RAD-165)', async () => {
+    const who = await party(`Book ${tag()}`);
+    const s = await statement([['in', '10.00', 'MATCHED', '']]);
+    const matched = await receipt(s.bank, who, '10.00');
+    await run((ctx) => matchLines(ctx, { statementLineIds: s.lines, journalLineIds: [matched.line] }));
+    const cancelled = await receipt(s.bank, who, '20.00');
+    await run((ctx) => cancelPayment(ctx, { id: cancelled.id, businessDate: DAY, reason: 'Twice' }));
+    const [early, late] = [await receipt(s.bank, who, '30.00', undefined, '2026-11-08'), await receipt(s.bank, who, '40.00')];
+    const paidOut = await run((ctx) => recordPayment(ctx, { kind: 'payment', partyId: who, businessDate: DAY, amount: m('50.00'), accountId: s.bank }));
+    const page = (filter: Parameters<typeof bookLinesPage>[1]['filter'], limit = 10, after?: string) =>
+      run((ctx) => bookLinesPage(ctx, { id: s.bank, filter, limit, ...(after === undefined ? {} : { after }) }));
+    // Neither the matched receipt nor the cancelled one, nor its reversal: only the live, unmatched lines.
+    expect((await page({})).items.map((l) => [l.direction, l.amount]).toSorted()).toEqual([['in', '30.00'], ['in', '40.00'], ['out', '50.00']]);
+    expect((await page({ direction: 'in', amount: m('40.00') })).items.map((l) => l.journalLineId)).toEqual([late.line]);
+    expect((await page({ to: '2026-11-09' })).items.map((l) => l.journalLineId)).toEqual([early.line]);
+    expect((await page({ direction: 'out' })).items.map((l) => l.source.id)).toEqual([paidOut.id]);
+    const first = await page({}, 2);
+    const rest = await page({}, 2, first.next ?? '');
+    expect([first.items.length, rest.items.length, rest.next]).toEqual([2, 1, null]);
+    const cash = (await su.query<{ id: string }>("select id from radcore.accounts where system_key = 'cash'")).rows[0]?.id ?? '';
+    expect(await code(run((ctx) => bookLinesPage(ctx, { id: cash, filter: {}, limit: 5 })))).toBe('not_a_bank_account');
+  });
+
   it('waits for a match holding a statement line before it judges an undo (auditor-2 on #454)', async () => {
     const s = await statement([['in', '40.00', 'HELD', '']]);
     const paid = await receipt(s.bank, await party(`Held ${tag()}`), '40.00');
@@ -172,6 +195,34 @@ describe.skipIf(!url || !superUrl)('bank matching', { timeout: 60_000 }, () => {
       from radcore.bank_match_statement_lines x join radcore.bank_matches m on m.id = x.match_id
       join radcore.bank_match_journal_lines j on j.match_id = m.id where x.statement_line_id = any($1)`, [s.lines])).rows;
     expect(matched.map((r) => [r.line, r.journal, r.kind]).toSorted()).toEqual([[s.lines[0], byRef.line, 'auto'], [s.lines[1], byName.line, 'auto']].toSorted());
+  });
+
+  it('skips a line whose candidate a person matches mid-batch, and keeps the batch’s other matches (auditor-2 on #462)', async () => {
+    const other = await party(`Other ${tag()}`);
+    const s = await statement([['in', '310.00', 'NEFT UTR777', 'UTR777'], ['in', '310.00', 'BY HAND', ''], ['in', '320.00', 'NEFT UTR888', 'UTR888']]);
+    const taken = await receipt(s.bank, other, '310.00', 'UTR777');
+    const kept = await receipt(s.bank, other, '320.00', 'UTR888');
+    // A person matches line 2 to the receipt line 1 would pick, and holds the save open while the batch runs.
+    const held = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    const manual = run(async (ctx) => {
+      await matchLines(ctx, { statementLineIds: [s.lines[1] ?? ''], journalLineIds: [taken.line] });
+      held.resolve();
+      await gate.promise;
+    });
+    await held.promise;
+    const batch = run((ctx) => autoMatchBatch(ctx, s.imported, null));
+    // The batch's link to that receipt waits on the person's unique index entry, then meets their committed match.
+    await vi.waitFor(async () => expect((await su.query<{ n: number }>(`select count(*)::int n from pg_stat_activity
+      where application_name = $1 and cardinality(pg_blocking_pids(pid)) > 0`, [APP])).rows[0]?.n).toBe(1), { timeout: 10_000, interval: 20 });
+    gate.resolve();
+    await manual;
+    expect(await batch).toBeNull();
+    const matched = (await su.query<{ line: string; journal: string; kind: string }>(`select x.statement_line_id line, j.journal_line_id journal, m.kind
+      from radcore.bank_match_statement_lines x join radcore.bank_matches m on m.id = x.match_id
+      join radcore.bank_match_journal_lines j on j.match_id = m.id where x.statement_line_id = any($1)`, [s.lines])).rows;
+    expect(matched.map((r) => [r.line, r.journal, r.kind]).toSorted())
+      .toEqual([[s.lines[1], taken.line, 'manual'], [s.lines[2], kept.line, 'auto']].toSorted());
   });
 
   it('queues the next auto-match batch while an import’s lines remain, and none after the last', async () => {

@@ -1,5 +1,5 @@
 {
-  "id": "88b5e64a-0d6d-4e09-a37e-fb35a2e4b259",
+  "id": "1a37c358-3d49-46eb-a344-00e44256b139",
   "prevId": "4a62ef98-3f1d-4e5f-9baa-236e1c29e5c6",
   "version": "7",
   "dialect": "postgresql",
@@ -1063,16 +1063,6 @@
           "notNull": true,
           "default": "'0'"
         },
-        "signed_amount": {
-          "name": "signed_amount",
-          "type": "numeric(18, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "debit - credit",
-            "type": "stored"
-          }
-        },
         "party_id": {
           "name": "party_id",
           "type": "uuid",
@@ -1104,33 +1094,6 @@
             },
             {
               "expression": "account_control_kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ix_journal_lines_bank_candidates": {
-          "name": "ix_journal_lines_bank_candidates",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "signed_amount",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "business_date",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1306,10 +1269,6 @@
         "ck_journal_lines_credit": {
           "name": "ck_journal_lines_credit",
           "value": "\"radcore\".\"journal_lines\".\"credit\" >= 0 and \"radcore\".\"journal_lines\".\"credit\" <> 'NaN'"
-        },
-        "ck_journal_lines_signed_amount": {
-          "name": "ck_journal_lines_signed_amount",
-          "value": "\"radcore\".\"journal_lines\".\"signed_amount\" <> 'NaN'"
         },
         "ck_journal_lines_line_no": {
           "name": "ck_journal_lines_line_no",
@@ -24534,6 +24493,51 @@
       "isExisting": false,
       "materialized": false
     },
+    "radcore.gst_documents_issued": {
+      "columns": {
+        "documentTable": {
+          "name": "documentTable",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentId": {
+          "name": "documentId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentType": {
+          "name": "documentType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentNumber": {
+          "name": "documentNumber",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documentDate": {
+          "name": "documentDate",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select 'invoices' as document_table, id as document_id, 'Invoices for outward supply' as document_type, number as document_number,\n    business_date as document_date, status\n  from radcore.invoices where status <> 'draft'\n  union all\n  select 'credit_notes', id, 'Credit Note', number, business_date, status from radcore.credit_notes where status <> 'draft'\n  union all\n  select 'job_work_challans', id, 'Delivery Challan for job work', number, business_date, status from radcore.job_work_challans\n  where status <> 'draft'",
+      "name": "gst_documents_issued",
+      "schema": "radcore",
+      "isExisting": false,
+      "materialized": false
+    },
     "radcore.gst_outward_lines": {
       "columns": {
         "documentTable": {
@@ -24685,9 +24689,15 @@
           "type": "numeric",
           "primaryKey": false,
           "notNull": false
+        },
+        "documentValue": {
+          "name": "documentValue",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
         }
       },
-      "definition": "select 'invoices' as document_table, i.id as document_id, i.number as document_number, i.status, i.business_date as document_date,\n    i.id as invoice_id, i.number as invoice_number, i.business_date as invoice_date, i.total as invoice_value, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, false as late, l.id as line_id, l.hsn, it.unit as uqc, l.qty, l.gst_rate,\n    l.supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, l.cess_ad_valorem + l.cess_per_unit_amount as cess\n  from radcore.invoices i join radcore.invoice_lines l on l.invoice_id = i.id join radcore.items it on it.id = l.item_id\n  where i.status <> 'draft'\n  union all\n  select 'credit_notes', n.id, n.number, n.status, n.business_date, i.id, i.number, i.business_date, i.total, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, n.late, l.id, il.hsn, it.unit, coalesce(l.qty, 0), l.gst_rate,\n    l.supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, 0\n  from radcore.credit_notes n join radcore.credit_note_lines l on l.credit_note_id = n.id\n    join radcore.invoice_lines il on il.id = l.invoice_line_id join radcore.invoices i on i.id = n.invoice_id\n    join radcore.items it on it.id = il.item_id\n  where n.status <> 'draft'",
+      "definition": "select 'invoices' as document_table, i.id as document_id, i.number as document_number, i.status, i.business_date as document_date,\n    i.id as invoice_id, i.number as invoice_number, i.business_date as invoice_date, i.total as invoice_value, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, false as late, l.id as line_id, l.hsn, it.unit as uqc, l.qty, l.gst_rate,\n    l.supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, l.cess_ad_valorem + l.cess_per_unit_amount as cess, i.total as document_value\n  from radcore.invoices i join radcore.invoice_lines l on l.invoice_id = i.id join radcore.items it on it.id = l.item_id\n  where i.status <> 'draft'\n  union all\n  select 'credit_notes', n.id, n.number, n.status, n.business_date, i.id, i.number, i.business_date, i.total, i.buyer_gstin, i.place_of_supply,\n    i.issuer_state_code, i.ecommerce_gstin, n.late, l.id, il.hsn, it.unit, coalesce(l.qty, 0), l.gst_rate,\n    l.supply_kind,\n    l.taxable, l.cgst, l.sgst, l.igst, 0, n.total\n  from radcore.credit_notes n join radcore.credit_note_lines l on l.credit_note_id = n.id\n    join radcore.invoice_lines il on il.id = l.invoice_line_id join radcore.invoices i on i.id = n.invoice_id\n    join radcore.items it on it.id = il.item_id\n  where n.status <> 'draft'",
       "name": "gst_outward_lines",
       "schema": "radcore",
       "isExisting": false,

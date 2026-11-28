@@ -5,14 +5,14 @@
 //   match: lockPeriod -> the posting documents FOR SHARE, by table then id -> the statement lines FOR UPDATE, by id
 // A cancel takes its document FOR UPDATE, so a match and a cancel of one document take turns (`bank_matched`).
 import {
-  accountsTx, bankMatches, bankMatchJournalLines, bankMatchStatementLines, bankStatementLines, expenses, journalEntries, journalLines, parties,
+  accounts, accountsTx, after, bankMatches, bankMatchJournalLines, bankMatchStatementLines, bankStatementLines, expenses, journalEntries, journalLines, parties,
   payments, transfers,
 } from '@radcore/db/accounts';
 import { addDays, dec, idString, roundMoney } from '@radcore/lib-common';
-import { AppError, defineSetting, type Ctx, type JobContract } from '@radcore/lib-platform';
-import { and, asc, between, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { AppError, decodeCursor, defineSetting, describeError, encodeCursor, type Ctx, type JobContract } from '@radcore/lib-platform';
+import { and, asc, between, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, not, or } from 'drizzle-orm';
 import { z } from 'zod';
-import type { listMatchCandidatesContract, matchLinesContract, unmatchContract } from '../contract-bank.ts';
+import type { listBookLinesContract, listMatchCandidatesContract, matchLinesContract, unmatchContract } from '../contract-bank.ts';
 import { lockPeriod } from './journal.ts';
 
 type In<C extends { input: z.ZodType }> = z.output<C['input']>;
@@ -25,6 +25,14 @@ export const MATCH_DAYS = defineSetting('accounts.bank_match_days', z.number().i
   description: 'How many days either side of a bank statement line’s date a book entry may be dated and still be offered as its match.',
   input: { kind: 'integer' },
 });
+
+/** A bank account: Bank itself, or an account under it (ADR-009 §11). Cash, a party's or any other account is refused. */
+export async function bankAccount(ctx: Ctx, id: string): Promise<void> {
+  const tx = accountsTx(ctx);
+  const [a] = await tx.select({ key: accounts.systemKey, parentId: accounts.parentId }).from(accounts).where(eq(accounts.id, id)).limit(1);
+  const [parent] = a?.parentId == null ? [] : await tx.select({ key: accounts.systemKey }).from(accounts).where(eq(accounts.id, a.parentId)).limit(1);
+  if (a === undefined || !(a.key === 'bank' || parent?.key === 'bank')) refuse('not_a_bank_account', 'Pick a bank account under Bank');
+}
 
 /** Refuses with `bank_matched` when a line of the entry is matched to the bank statement: a document's cancel calls it
  * with its row already locked FOR UPDATE, so a match of the same document waits for the cancel or is seen by it. */
@@ -117,9 +125,20 @@ export async function autoMatchBatch(ctx: Ctx, importId: string, after: string |
     const byReference = candidates.filter((c) => c.byReference);
     const pick = byReference.length === 1 ? byReference[0]
       : byReference.length === 0 && candidates.length === 1 && candidates[0]?.byParty === 'whole' ? candidates[0] : undefined;
-    if (pick !== undefined) await matchAs('auto', ctx, { statementLineIds: [line.id], journalLineIds: [pick.journalLineId] });
+    if (pick === undefined) continue;
+    // Each line in a savepoint: one a person matched, or whose document was cancelled, while the batch ran is left for
+    // the person, and the batch's other matches stand (auditor-2 on #462).
+    await accountsTx(ctx).transaction(() => matchAs('auto', ctx, { statementLineIds: [line.id], journalLineIds: [pick.journalLineId] }))
+      .catch((e: unknown) => { if (!raced(e)) throw e; });
   }
   return lines.length < size ? null : lines.at(-1)?.id ?? null;
+}
+
+// What a line meets when a person or a cancel got there first: the refusals, or the link indexes' unique violation.
+const RACED = new Set(['already_matched', 'entry_reversed', '23505:ux_bank_match_statement_lines_line', '23505:ux_bank_match_journal_lines_line']);
+function raced(e: unknown): boolean {
+  const { code, constraint } = describeError(e);
+  return e instanceof AppError ? RACED.has(e.code) : RACED.has(`${code ?? ''}:${constraint ?? ''}`);
 }
 
 type AutoMatchIn = { importId: string; after: string | null };
@@ -224,4 +243,40 @@ export async function matchesOfLines(ctx: Ctx, lineIds: readonly string[]): Prom
   const rows = await accountsTx(ctx).select({ line: bankMatchStatementLines.statementLineId, match: bankMatchStatementLines.matchId })
     .from(bankMatchStatementLines).where(inArray(bankMatchStatementLines.statementLineId, [...lineIds]));
   return new Map(rows.map((r) => [r.line, r.match]));
+}
+
+/** GET /bank/accounts/:id/book-lines: newest first, then by id, so a page key is unique. Live entries only (neither
+ * reversed nor a reversal) and none already matched, filtered in the one read. */
+export async function bookLinesPage(ctx: Ctx, input: In<typeof listBookLinesContract>): Promise<Out<typeof listBookLinesContract>> {
+  const { id } = input;
+  const { from, to, direction, amount } = input.filter;
+  await bankAccount(ctx, id);
+  const tx = accountsTx(ctx);
+  const key = input.after === undefined ? undefined : decodeCursor(z.object({ date: z.iso.date(), id: z.uuid() }), input.after);
+  const rows = await tx.select({ id: journalLines.id, entryId: journalLines.entryId, date: journalLines.businessDate, debit: journalLines.debit,
+    credit: journalLines.credit, number: journalEntries.number, kind: journalEntries.kind, sourceTable: journalEntries.sourceTable,
+    sourceId: journalEntries.sourceId }).from(journalLines).innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
+    .where(and(eq(journalLines.accountId, id), isNull(journalEntries.reversesEntryId),
+      // NOT IN over subqueries that hold no null (notInArray isn't L1's: an empty list means every row).
+      not(inArray(journalEntries.id, tx.select({ id: journalEntries.reversesEntryId }).from(journalEntries).where(isNotNull(journalEntries.reversesEntryId)))),
+      not(inArray(journalLines.id, tx.select({ id: bankMatchJournalLines.journalLineId }).from(bankMatchJournalLines))),
+      from === undefined ? undefined : gte(journalLines.businessDate, from), to === undefined ? undefined : lte(journalLines.businessDate, to),
+      direction === undefined ? undefined : direction === 'in' ? gt(journalLines.debit, '0') : gt(journalLines.credit, '0'),
+      amount === undefined ? undefined : direction === 'out' ? eq(journalLines.credit, amount)
+        : direction === 'in' ? eq(journalLines.debit, amount) : or(eq(journalLines.debit, amount), eq(journalLines.credit, amount)),
+      after([journalLines.businessDate, journalLines.id], key && [key.date, key.id], 'desc')))
+    .orderBy(desc(journalLines.businessDate), desc(journalLines.id)).limit(input.limit + 1);
+  const page = rows.slice(0, input.limit);
+  const last = page.at(-1);
+  const docs = await documentsOf(ctx, page.map((r) => ({ table: r.sourceTable, id: r.sourceId })));
+  return {
+    items: page.map((r) => {
+      const doc = docs.get(`${r.sourceTable}:${r.sourceId}`);
+      const into = dec(r.debit).gt(0);
+      return { journalLineId: r.id, entryId: r.entryId, entryNumber: r.number, kind: r.kind, businessDate: r.date, direction: into ? 'in' : 'out',
+        amount: roundMoney(into ? r.debit : r.credit), source: { table: r.sourceTable, id: r.sourceId }, reference: doc?.reference ?? null,
+        party: doc?.party ?? null };
+    }),
+    next: rows.length > input.limit && last ? encodeCursor({ date: last.date, id: last.id }) : null,
+  };
 }

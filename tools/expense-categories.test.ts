@@ -3,19 +3,25 @@
 // and control kind), so one pointed at Bank or Debtors is refused even past the service; the service names the account
 // picked wrong. Every name is the test's own, so the shuffled files share nothing.
 import { randomUUID } from 'node:crypto';
-import { addAccount, addExpenseCategory, changeExpenseCategory, chartOfAccounts, expenseCategoriesList, systemAccountId } from '@radcore/lib-accounts';
+import { addAccount, addExpenseCategory, addParty, changeExpenseCategory, chartOfAccounts, expenseCategoriesList, systemAccountId } from '@radcore/lib-accounts';
 import { createAccount, createExpenseCategory, setExpenseCategory } from '@radcore/lib-accounts/contract';
-import { AppError, type Ctx, type Principal } from '@radcore/lib-platform';
+import { moneyString, requestFor } from '@radcore/lib-common';
+import { AppError, loadConfig, type Ctx, type Principal } from '@radcore/lib-platform';
+import { addBill } from '@radcore/lib-purchasing';
+import { testSettings } from '@radcore/test-helpers';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { createApp, listen } from '../apps/api/src/app.ts';
+import accountRoutes from '../apps/api/src/routes/accounts.ts';
 import { rawOf } from '../packages/db/src/tx.ts';
 
 const url = process.env['TEST_DATABASE_URL'];
 const superUrl = process.env['TEST_DATABASE_SUPERUSER_URL'];
 const WRITE = { readOnly: false, isolation: 'read committed' } as const;
-const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: ['accounts:write', 'journal:read'] };
+const staff: Principal = { kind: 'user', userId: randomUUID(), permissions: ['accounts:write', 'journal:read', 'expenses:read', 'bills:write', 'parties:write',
+  'purchasing:read'] };
 const named = (what: string) => `${what} ${randomUUID().slice(0, 8)}`;
 
 it.runIf(process.env['CI'] && !url)('has its test database in CI', () => {
@@ -101,6 +107,31 @@ describe.skipIf(!url || !superUrl)('expense categories', { timeout: 30_000 }, ()
     await as((ctx) => addAccount(ctx, { name, parentId, code: taken }));
     expect(await code(as((ctx) => addAccount(ctx, { name: ` ${name.toUpperCase()} `, parentId })))).toBe('duplicate_account');
     expect(await code(as((ctx) => addAccount(ctx, { name: named('Travel'), parentId, code: taken })))).toBe('code_taken');
+  });
+
+  // e2e-playwright on RAD-152: a bill's charge naming the pair holds it too, so the route answers account_in_use, not a 500.
+  it('answers account_in_use through the route when a bill’s charge names the account being taken off', async () => {
+    const [kept, used] = [await account('expense'), await account('expense')];
+    const { id } = await as((ctx) => addExpenseCategory(ctx, { name: named('Freight'), credit: 'allowed', blockedClause: null, accountIds: [kept, used] }));
+    await as(async (ctx) => {
+      const { id: supplierId } = await addParty(ctx, { name: named('Transporter'), kinds: ['supplier'], gstin: null, pan: null, composition: false,
+        stateCode: '27', phone: null, email: null, addressLine1: null, addressLine2: null, city: null, pincode: null });
+      await addBill(ctx, { supplierId, businessDate: '2026-11-16', supplierInvoiceNumber: `T/${randomUUID().slice(0, 6)}`, supplierInvoiceDate: '2026-11-16',
+        supplierGstin: null, statedTotal: moneyString().parse('1180'), fileId: null, notes: null,
+        lines: [{ kind: 'charge', charge: 'freight', description: 'Freight', hsn: '9965', amount: moneyString().parse('1000'), expenseCategoryId: id,
+          expenseAccountId: used }] });
+    });
+    const cfg = loadConfig(testSettings(), 'api');
+    const server = await listen(createApp(cfg, { info: vi.fn(), error: vi.fn() }, { db, authenticate: async () => staff, routes: accountRoutes }), 0, '127.0.0.1');
+    try {
+      const sent = requestFor(setExpenseCategory, { id, accountIds: [kept], reason: 'Not used' });
+      const res = await fetch(`http://127.0.0.1:${server.port}${sent.path}`, { method: sent.method, body: sent.body ?? null,
+        headers: { 'content-type': 'application/json', origin: cfg.publicOrigin, 'sec-fetch-site': 'same-origin', 'idempotency-key': randomUUID() } });
+      const answered = [res.status, ((await res.json()) as { code?: string }).code];
+      expect(answered).toEqual([422, 'account_in_use']);
+    } finally {
+      await server.stop();
+    }
   });
 
   it('refuses a second category of the same name, whatever its case or spacing', async () => {

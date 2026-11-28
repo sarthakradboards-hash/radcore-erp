@@ -1,6 +1,6 @@
 // lib-gst's route contracts (ADR-001 §6, §7a): declared once, shared by the API and the web app. Like every contract
 // file it imports only zod and lib-common (D5), so the browser can load it.
-import { dateString, dec, defineContract, idString, listInput, listOf, percentString, reason } from '@radcore/lib-common';
+import { dateString, dec, defineContract, idString, listInput, listOf, moneyString, percentString, reason } from '@radcore/lib-common';
 import { z } from 'zod';
 
 const read = { readOnly: true, isolation: 'read committed' } as const;
@@ -72,4 +72,37 @@ export const setRcmRule = defineContract({
     note: z.string().trim().max(500).nullable(), confirmed: z.boolean(), reason: reason(),
   }),
   output: z.object({ id: idString() }),
+});
+
+// GSTR-1 (M5-04, RAD-154; ADR-010 §3). A month's tables, built from its documents, never stored until it's filed (§1).
+const signed = () => moneyString({ signed: true });
+/** Table 13's document types, as the portal names them. */
+const DOCUMENT_TYPES = ['Invoices for outward supply', 'Credit Note', 'Delivery Challan for job work'] as const;
+const tax = z.object({ taxable: signed(), igst: signed(), cgst: signed(), sgst: signed(), cess: signed() });
+const gstDoc = z.object({ number: z.string().nullable(), date: dateString(), value: moneyString(), placeOfSupply: z.string(),
+  items: z.array(tax.extend({ rate: z.string() })) });
+const noteDoc = gstDoc.extend({ buyerGstin: z.string().nullable(), invoiceNumber: z.string().nullable(), invoiceDate: dateString() });
+
+/** GET /gst/returns/gstr1 (gst:returns): GSTR-1 for a month (YYYY-MM), by ADR-010 §3's tables, from the month's posted
+ * invoices and credit notes. A note past section 34's limit is in no table; a cancelled document is only in Table 13. */
+export const getGstr1 = defineContract({
+  method: 'GET', path: '/gst/returns/gstr1', auth: 'session', perm: 'gst:returns', tx: read,
+  input: z.object({ month: z.string().regex(/^[0-9]{4}-(0[1-9]|1[0-2])$/, 'A month is YYYY-MM') }),
+  output: z.object({
+    month: z.string(),
+    table4a: z.array(gstDoc.extend({ buyerGstin: z.string() })),
+    table4c: z.array(gstDoc.extend({ buyerGstin: z.string(), ecommerceGstin: z.string() })),
+    table5: z.array(gstDoc),
+    table7: z.array(tax.extend({ placeOfSupply: z.string(), rate: z.string(), ecommerceGstin: z.string().nullable() })),
+    table8: z.array(z.object({ supply: z.enum(['inter', 'intra']), buyer: z.enum(['registered', 'unregistered']), kind: z.string(), value: signed() })),
+    table9b: z.object({ cdnr: z.array(noteDoc), cdnur: z.array(noteDoc) }),
+    table11a: z.array(z.never()),
+    table11b: z.array(z.never()),
+    table12: z.array(tax.extend({ part: z.enum(['b2b', 'b2c']), hsn: z.string(), uqc: z.string(), rate: z.string(), qty: z.string() })),
+    // Each series under its portal document type (the architect on #457): invoices, credit notes, job-work challans.
+    table13: z.array(z.object({ documentType: z.enum(DOCUMENT_TYPES),
+      series: z.string(), from: z.string(), to: z.string(),
+      count: z.number().int(), cancelled: z.number().int() })),
+    table14: z.array(tax.extend({ ecommerceGstin: z.string() })),
+  }),
 });
