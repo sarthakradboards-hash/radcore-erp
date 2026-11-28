@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
-import { creditWords, expenseTitle, lineName, readCashVersion } from './expense-values.ts';
+import { cancelExpense, dropExpense, expenseCashApproval, postExpense } from '@radcore/lib-accounts/contract';
+import { ApiError } from '../../../../lib/api-client.ts';
+import { creditWords, EXPENSE_MESSAGES, expenseTitle, lineName, namingLine, readCashVersion } from './expense-values.ts';
 
 const categories = [{ id: 'c1', name: 'Travel', credit: 'blocked' as const, blockedClause: '(g)', active: true, defaultTdsSectionId: null, defaultSac: null,
   accounts: [{ id: 'a1', code: '5100', name: 'Fuel' }] }];
@@ -22,4 +24,19 @@ it('titles a draft by the supplier’s bill, and reads only a whole approval ver
     lines: [{ categoryId: 'c1', accountId: 'a1', taxable: '10000.00', cgst: '900.00', sgst: '900.00', igst: '0.00' }] };
   expect(readCashVersion(v)?.statedTotal).toBe('11800.00');
   expect(readCashVersion({ ...v, lines: undefined })).toBeNull();
+});
+
+it('words every refusal posting, deciding, cancelling and deleting declare (auditor-3 on #473)', () => {
+  const declared = [postExpense, cancelExpense, dropExpense, expenseCashApproval.decide].flatMap((c) => [...c.errors]);
+  expect(declared.filter((c) => EXPENSE_MESSAGES[c] === undefined)).toEqual([]);
+});
+
+it('keeps the line’s number on a refusal of one line, and leaves any other refusal as it was', () => {
+  const refusal = (path: (string | number)[]) => new ApiError(422, { code: 'tax_mismatch', message: 'server words', requestId: 'r',
+    issues: [{ path, code: 'tax_mismatch', message: 'server words' }] });
+  const named = namingLine(refusal(['lines', 2]));
+  expect(named instanceof ApiError && named.envelope.message).toBe(`Line 3: ${EXPENSE_MESSAGES['tax_mismatch']}`);
+  expect(named instanceof ApiError && EXPENSE_MESSAGES[named.code]).toBeUndefined();
+  const whole = refusal(['statedTotal']);
+  expect(namingLine(whole)).toBe(whole);
 });

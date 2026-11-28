@@ -14,7 +14,7 @@ import { useApiList, useApiMutation, useApiQuery } from '../../../../../lib/api/
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
 import { useMoneyAccounts } from '../../../sales/money-accounts.ts';
-import { EXPENSE_MESSAGES, readCashVersion } from '../expense-values.ts';
+import { EXPENSE_MESSAGES, namingLine, readCashVersion } from '../expense-values.ts';
 import { LinesTable } from '../lines-table.tsx';
 
 const { listPending, getApproval, decide } = expenseCashApproval;
@@ -80,7 +80,8 @@ function Review({ request }: { request: Pending }) {
         body={t('books.expense.approvals.approve.body')} action={t('books.expense.approvals.approve')} done={t('books.expense.approvals.approved')}
         onConfirm={async () => {
           // A refusal re-reads the request, so the figures and Approve follow what changed.
-          await decided.submit({ id: a.id, decision: 'approve', versionHash: a.versionHash }).catch((e: unknown) => { void q.refetch(); throw e; });
+          await decided.submit({ id: a.id, decision: 'approve', versionHash: a.versionHash })
+            .catch((e: unknown) => { void q.refetch(); throw namingLine(e); });
         }} />
       <ReasonDialog open={acting === 'reject'} onOpenChange={close} messages={EXPENSE_MESSAGES} title={t('books.expense.approvals.reject.title')}
         action={t('books.expense.approvals.reject')} done={t('books.expense.approvals.rejected')}

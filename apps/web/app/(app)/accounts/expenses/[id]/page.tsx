@@ -20,7 +20,7 @@ import { useApiMutation, useApiQuery } from '../../../../../lib/api/query.ts';
 import { t } from '../../../../../lib/i18n/index.ts';
 import { ConfirmDialog } from '../../../admin/shared.tsx';
 import { useMoneyAccounts } from '../../../sales/money-accounts.ts';
-import { EXPENSE_MESSAGES, expenseTitle } from '../expense-values.ts';
+import { EXPENSE_MESSAGES, expenseTitle, namingLine } from '../expense-values.ts';
 import { LinesTable } from '../lines-table.tsx';
 
 type Dialogs = 'post' | 'delete' | 'cancel' | null;
@@ -97,7 +97,7 @@ export default function ExpensePage() {
       <LinesTable caption={t('books.expense.lines')} lines={e.lines} posted={!draft} />
       {mayWrite && e.status !== 'cancelled' ? (
         <div className="kit-actions">
-          {draft && !e.awaitingApproval
+          {draft && !e.awaitingApproval && e.fileId !== null
             ? <button type="button" className="kit-button kit-button-primary" onClick={() => setDialog('post')}>{t('books.expense.post')}</button> : null}
           {draft ? <button type="button" className="kit-button" onClick={() => setDialog('delete')}>{t('books.expense.delete')}</button> : null}
           {e.status === 'posted' ? <button type="button" className="kit-button" onClick={() => setDialog('cancel')}>{t('books.expense.cancel')}</button> : null}
@@ -107,7 +107,7 @@ export default function ExpensePage() {
       <ConfirmDialog open={dialog === 'post'} onOpenChange={shut} messages={EXPENSE_MESSAGES} title={t('books.expense.post.title')}
         body={t('books.expense.post.body')} action={t('books.expense.post')} done={t('books.expense.sent')}
         onConfirm={async () => {
-          const r = await post.submit({ id });
+          const r = await post.submit({ id }).catch((x: unknown) => { throw namingLine(x); });
           toHeading();
           return r.status === 'posted' && r.number !== null ? t('books.expense.posted', { number: r.number }) : t('books.expense.sent');
         }} />
