@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { t } from '../../../../lib/i18n/index.ts';
 
 const CODES = ['amount_not_positive', 'same_account', 'unknown_account', 'not_money_account', 'account_inactive', 'date_in_future',
-  'period_locked', 'year_not_open', 'series_full', 'not_posted', 'date_before_source', 'already_reversed', 'bank_matched'] as const;
+  'period_locked', 'month_filed', 'year_not_open', 'series_full', 'not_posted', 'date_before_source', 'already_reversed', 'bank_matched'] as const;
 /** The transfer contracts' refusals in the screen's words, for Form's `messages`. */
 export const TRANSFER_MESSAGES: Partial<Record<string, string>> = Object.fromEntries(CODES.map((c) => [c, t(`books.transfers.err.${c}`)]));
 
