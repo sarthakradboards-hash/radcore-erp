@@ -33,7 +33,7 @@ async function ledgerAt(ctx: Ctx, asAt?: string) {
 }
 
 /** The stock side of the books check, as at `asAt` (every posting when it's left out): every figure but GRNI's and JWCB's. */
-export async function stockBooksFigures(ctx: Ctx, asAt?: string): Promise<Omit<BooksFigures, 'grni' | 'jwcb'>> {
+export async function stockBooksFigures(ctx: Ctx, asAt?: string): Promise<Omit<BooksFigures, 'grni' | 'jwcb' | 'tds'>> {
   const trial = await trialBalance(ctx, asAt);
   const books = await stockInHand(ctx, asAt);
   const ledger = await ledgerAt(ctx, asAt);

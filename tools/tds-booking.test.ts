@@ -5,7 +5,7 @@
 // overseas supplier takes no section.
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  addExpense, addExpenseCategory, addParty, allocatePayment, cancelExpenseNow, depositTds, getExpenseById, journalEntryById, journalPage, openFinancialYear,
+  addExpense, addExpenseCategory, addParty, allocatePayment, cancelExpenseNow, cancelPayment, depositTds, getExpenseById, journalEntryById, journalPage, openFinancialYear,
   postExpenseNow, recordPayment, tdsDeductionsPage,
 } from '@radcore/lib-accounts';
 import { createExpense, listTdsDeductions, recordPaymentContract } from '@radcore/lib-accounts/contract';
@@ -83,8 +83,8 @@ describe.skipIf(!url || !superUrl)('TDS at booking', { timeout: 60_000 }, () => 
   };
   const deducted = async (id: string) => (await one<{ v: string }>(`select coalesce(sum(amount), 0)::numeric(18, 2)::text as v from radcore.tds_deductions
     where source_id = $1`, [id]))?.v;
-  const entryOf = (id: string) => run(async (ctx) => {
-    const page = await journalPage(ctx, { limit: 100, filter: { from: DAYS[0] ?? '', to: '2026-11-30', kind: 'expense' } });
+  const entryOf = (id: string, kind: 'expense' | 'payment_out' = 'expense') => run(async (ctx) => {
+    const page = await journalPage(ctx, { limit: 100, filter: { from: DAYS[0] ?? '', to: '2026-11-30', kind } });
     const e = page.items.find((x) => x.source.id === id && x.reversesEntryId === null);
     return (await journalEntryById(ctx, { id: e?.id ?? '' })).lines.map((l) => `${l.account.name.replace(/ [A-Z]{6}$/, '')} ${l.debit} ${l.credit}`).sort();
   });
@@ -146,16 +146,51 @@ describe.skipIf(!url || !superUrl)('TDS at booking', { timeout: 60_000 }, () => 
       'TDS Payable 0.00 6000.00'].sort());
   });
 
-  it('applies an advance paid with TDS at what it debits Creditors, the cash and its TDS (the architect on RAD-158)', async () => {
-    const at = await setup();
-    const id = await book(at, '50000', { day: DAYS[0] ?? '', section: null });
-    await run(async (ctx) => {
-      const { id: payment } = await recordPayment(ctx, recordPaymentContract.input.parse({ kind: 'payment', partyId: at.partyId, businessDate: DAYS[0],
-        amount: '50000', tds: '500', accountId: await systemAccount('bank') }));
-      await allocatePayment(ctx, { id: payment, businessDate: DAYS[0] ?? '', lines: [{ documentTable: 'expenses', documentId: id, amount: moneyString().parse('50000') }] });
-    });
+  /** A payment to the supplier, by bank, of `amount` gross, under `section` when one is given. */
+  const advance = async (at: At, amount: string, o: { day: string; section?: string; tds?: string }) => run(async (ctx) =>
+    recordPayment(ctx, recordPaymentContract.input.parse({ kind: 'payment', partyId: at.partyId, businessDate: o.day, amount,
+      accountId: await systemAccount('bank'), ...(o.section === undefined ? {} : { tdsSectionId: o.section }), ...(o.tds === undefined ? {} : { tds: o.tds }) })));
+
+  // The architect on RAD-158 (28 Nov): a payment's TDS is worked out from its section on the gross, by the year's sums.
+  it('deducts an advance of 50,000.00 under F29’s section by the year’s sums, pays the rest, and later clears a bill with it exactly', async () => {
+    const [at, section] = [await setup(), await sectionId('194C-I')];
+    await book(at, '25000', { day: DAYS[0] ?? '', section });
+    await book(at, '28000', { day: DAYS[1] ?? '', section });
+    const { id } = await advance(at, '50000', { day: DAYS[2] ?? '', section });
+    expect(await deducted(id)).toBe('1030.00');
+    expect(await entryOf(id, 'payment_out')).toEqual(['Bank 0.00 48970.00', 'Creditors 50000.00 0.00', 'TDS Payable 0.00 1030.00'].sort());
+    expect((await one<{ tds: string }>('select tds::text from radcore.payments where id = $1', [id]))?.tds).toBe('1030.00');
+    // Applied in a later save, it clears what the supplier is owed at its gross, and changes neither row.
+    const bill = await book(at, '50000', { day: DAYS[3] ?? '', section: null });
+    await run((ctx) => allocatePayment(ctx, { id, businessDate: DAYS[3] ?? '', lines: [{ documentTable: 'expenses', documentId: bill,
+      amount: moneyString().parse('50000') }] }));
     expect((await one<{ v: string }>(`select coalesce(sum(case direction when 'apply' then amount else -amount end), 0)::numeric(18, 2)::text as v
-      from radcore.payment_allocations where document_table = 'expenses' and document_id = $1`, [id]))?.v).toBe('50000.00');
+      from radcore.payment_allocations where document_table = 'expenses' and document_id = $1`, [bill]))?.v).toBe('50000.00');
+    expect([await deducted(id), await deducted(bill)]).toEqual(['1030.00', '0.00']);
+  });
+
+  it('refuses a typed TDS that differs (tds_mismatch), typed TDS with no section (invalid_tds), and a section on a receipt', async () => {
+    const [at, section] = [await setup(), await sectionId('194C-I')];
+    expect(await code(advance(at, '50000', { day: DAYS[0] ?? '', section, tds: '400' }))).toBe('tds_mismatch');
+    expect(await code(advance(at, '50000', { day: DAYS[0] ?? '', tds: '500' }))).toBe('invalid_tds');
+    expect(await code(run(async (ctx) => recordPayment(ctx, recordPaymentContract.input.parse({ kind: 'receipt', partyId: at.partyId,
+      businessDate: DAYS[0], amount: '50000', tdsSectionId: section, accountId: await systemAccount('bank') })))))
+      .toBe('invalid_tds');
+    const { id } = await advance(at, '50000', { day: DAYS[0] ?? '', section, tds: '500' });
+    expect(await deducted(id)).toBe('500.00');
+    // Its cancel reverses its row, so the year leaves it out.
+    await run((ctx) => cancelPayment(ctx, { id, businessDate: DAYS[0] ?? '', reason: 'Paid twice' }));
+    expect(await deducted(id)).toBe('0.00');
+  });
+
+  it('refuses applying a payment that deducts TDS to a bill in the save that made it (tds_on_applied_payment)', async () => {
+    const [at, section] = [await setup(), await sectionId('194C-I')];
+    const bill = await book(at, '50000', { day: DAYS[0] ?? '', section: null });
+    expect(await code(run(async (ctx) => {
+      const { id } = await recordPayment(ctx, recordPaymentContract.input.parse({ kind: 'payment', partyId: at.partyId, businessDate: DAYS[0],
+        amount: '50000', tdsSectionId: section, accountId: await systemAccount('bank') }));
+      await allocatePayment(ctx, { id, businessDate: DAYS[0] ?? '', lines: [{ documentTable: 'expenses', documentId: bill, amount: moneyString().parse('49500') }] });
+    }))).toBe('tds_on_applied_payment');
   });
 
   // The architect on #452: a section for individuals needs a PAN whose 4th letter is P or H; with no PAN any section is

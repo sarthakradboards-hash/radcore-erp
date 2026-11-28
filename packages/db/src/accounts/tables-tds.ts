@@ -3,7 +3,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, check, date, index, primaryKey, text, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { boundedText, createdMoment, id, money, percent, radcoreTable } from '../columns.ts';
-import { accounts, journalEntries, parties } from './tables.ts';
+import { accounts, journalEntries, parties, payments } from './tables.ts';
 
 /** A TDS section (CA-18): its code, its name, the section of the Income-tax Act 2025 and the 1961 section it replaces,
  * and the payee it's for: `individual` (a PAN's fourth letter P or H), `other`, or `any`. Seeded; never deleted. */
@@ -51,6 +51,17 @@ export const partyTds = radcoreTable('party_tds', {
   defaultSectionId: uuid().references(() => tdsSections.id, { onDelete: 'restrict' }),
   panInoperative: boolean().notNull().default(false),
 }, (t) => [index('ix_party_tds_section').on(t.defaultSectionId)]);
+
+/**
+ * A payment's TDS section (ADR-009 §4, the architect on RAD-158): an advance paid under it deducts by the year's sums
+ * when it posts, as a booking does, on its gross amount. `expected` is the TDS the person typed, if any: the posting
+ * refuses a different figure (tds_mismatch).
+ */
+export const paymentTds = radcoreTable('payment_tds', {
+  paymentId: uuid().primaryKey().references(() => payments.id, { onDelete: 'restrict' }),
+  sectionId: uuid().notNull().references(() => tdsSections.id, { onDelete: 'restrict' }),
+  expected: money(),
+}, (t) => [index('ix_payment_tds_section').on(t.sectionId)]);
 
 /**
  * Every booking line with a TDS section (ADR-009 §4), written with the posting, even one that deducts nothing: its

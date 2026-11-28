@@ -25,6 +25,9 @@ export type BooksFigures = {
   /** Job Work Charges to be Billed as at the date, the same way: each posted job-work receipt line's charge and what's
    * left of it once bills have cleared theirs (RAD-95, after RAD-142's bills). */
   readonly jwcb: { readonly books: string; readonly lines: readonly (OpenLine & { readonly jobWorkLineId: string })[] };
+  /** TDS Payable as at the date, less payroll entries' lines, and the TDS deductions net of reversals less those
+   * deposited (ADR-009 §4, RAD-158; lib-accounts reads both). */
+  readonly tds: { readonly books: string; readonly open: string };
 };
 type OpenLine = { readonly accrued: string; readonly open: string };
 export type BooksProblem = { check: BooksCheck; itemId: string | null; locationId: string | null; message: string };
@@ -67,6 +70,10 @@ export function booksProblems(f: BooksFigures): BooksProblem[] {
     { check: 'grni', account: 'Goods Received Not Billed', clearedBy: 'bills and returns', lines: 'receipt lines' }));
   problems.push(...openAccruals(f.jwcb.books, f.jwcb.lines.map((l) => ({ ...l, name: `Job-work receipt line ${l.jobWorkLineId}` })),
     { check: 'jwcb', account: 'Job Work Charges to be Billed', clearedBy: 'bills', lines: 'job-work lines' }));
+  if (!dec(f.tds.books).eq(dec(f.tds.open))) {
+    problems.push({ check: 'tds_payable', itemId: null, locationId: null,
+      message: `TDS Payable shows ${roundMoney(f.tds.books)}, but the deductions not yet deposited come to ${roundMoney(f.tds.open)}` });
+  }
   return problems;
 }
 
