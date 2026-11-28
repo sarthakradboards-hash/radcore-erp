@@ -6,7 +6,7 @@ import {
   putTdsRate, setTdsTerms, tdsRatesPage, tdsSectionsList,
   addAccount, addExpenseCategory, changeExpenseCategory, expenseCategoriesList, partyStatement, remindersPage, reverseJournalEntry, setCompanyProfile, setCreditTerms, toCollectPage, listMoneyAccountsNow,
   askToUnlock, moveLockForward, periodState, periodUnlockSpec, cancelTransfer, recordTransfer, transferById, transfersPage,
-  importStatement, bookCharge, bookLinesPage, matchCandidates, matchLines, unmatch, statementFormatOf, statementImportById, statementImportsPage, statementLinesPage, undoStatementImport,
+  importStatement, bookCharge, bookLinesPage, matchCandidates, matchLines, reconciliation, unmatch, statementFormatOf, statementImportById, statementImportsPage, statementLinesPage, undoStatementImport,
 } from '@radcore/lib-accounts';
 import {
   allocatePaymentContract, applyCreditContract, cancelPaymentContract, cashLimitApproval, getPaymentContract, listPaymentsContract, reverseAllocationContract,
@@ -15,7 +15,7 @@ import {
   listTdsRates, listTdsSections, setPartyTds, setTdsRate,
   createAccount, createExpenseCategory, listExpenseCategories, setExpenseCategory, getPartyStatement, listReminders, listToCollect, recordReminder, setCompany, setPartyCredit, updateParty,
   askUnlockContract, closeYearContract, getPeriodContract, lockPeriodContract, periodUnlockApproval,
-  getStatementFormatContract, bookChargeContract, listBookLinesContract, listMatchCandidatesContract, matchLinesContract, unmatchContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
+  getStatementFormatContract, bookChargeContract, listBookLinesContract, listMatchCandidatesContract, reconciliationContract, matchLinesContract, unmatchContract, getStatementImportContract, importStatementContract, listStatementImportsContract, listStatementLinesContract,
   undoStatementImportContract,
   cancelTransferContract, getTransferContract, listTransfersContract, recordTransferContract,
 } from '@radcore/lib-accounts/contract';
@@ -83,6 +83,7 @@ export default [
   // Matching (RAD-165).
   defineRoute(listMatchCandidatesContract, matchCandidates),
   defineRoute(listBookLinesContract, bookLinesPage),
+  defineRoute(reconciliationContract, reconciliation),
   defineRoute(matchLinesContract, matchLines),
   defineRoute(unmatchContract, unmatch),
   defineRoute(bookChargeContract, bookCharge),
