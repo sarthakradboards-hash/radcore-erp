@@ -9,7 +9,7 @@ import {
   askToUnlock, bookCharge, closeYear, moveLockForward, openFinancialYear, periodState, periodUnlockSpec, postManualJournal, unmatch, type BooksCheck,
   type JournalLine,
 } from '@radcore/lib-accounts';
-import { indiaDate, type Money } from '@radcore/lib-common';
+import type { Money } from '@radcore/lib-common';
 import { decideApproval, type Ctx, type Principal } from '@radcore/lib-platform';
 import { createDatabase, runInTransaction } from '@radcore/lib-platform/runtime';
 import { checkBooks } from '@radcore/lib-service';
@@ -214,10 +214,16 @@ describe.skipIf(!adminUrl)('the period lock and year close', { timeout: 60_000 }
     const { matchId } = await as(clerk)((ctx) => bookCharge(ctx, { id: line, accountId: charges }));
     // The lock moves past the charge's day; unmatching still succeeds, reversing it today, not in the locked month.
     await setLock('2026-11-20');
-    await as(clerk)((ctx) => unmatch(ctx, { id: matchId, reason: 'Tax invoice came' }));
+    // Unmatched on 25 Nov, after the lock through 20 Nov: the service reads the date, so only Date is faked.
+    vi.useFakeTimers({ now: new Date('2026-11-25T06:00:00Z'), toFake: ['Date'] });
+    try {
+      await as(clerk)((ctx) => unmatch(ctx, { id: matchId, reason: 'Tax invoice came' }));
+    } finally {
+      vi.useRealTimers();
+    }
     const entries = (await su().query<{ date: string; reversal: boolean }>(`select business_date::text date, reverses_entry_id is not null reversal
       from radcore.journal_entries where source_table = 'bank_matches' and source_id = $1 order by reversal`, [matchId])).rows;
-    expect(entries).toEqual([{ date: '2026-11-10', reversal: false }, { date: indiaDate(new Date()), reversal: true }]);
+    expect(entries).toEqual([{ date: '2026-11-10', reversal: false }, { date: '2026-11-25', reversal: true }]);
     await setLock(null);
   });
 });
